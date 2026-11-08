@@ -21,6 +21,7 @@ import {
   type CommitOutcome,
   type ElementEditDraft,
 } from './elementEditDraft';
+import { elementSite } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
@@ -41,6 +42,8 @@ interface ElementEditorInputs {
   runs: PreviewRuns;
   /** The board is in Edit; outside it nothing stays selected. */
   active: boolean;
+  /** The element under the pointer is asked for, as it is in Edit and Design. */
+  hovering: boolean;
   onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
 }
 
@@ -49,6 +52,7 @@ export function useElementEditor({
   frames,
   runs,
   active,
+  hovering,
   onEditElement,
 }: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
@@ -65,7 +69,7 @@ export function useElementEditor({
   const enterOnAnswer = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
   const hover = useElementHover(
-    active,
+    hovering,
     (designId, at) => runs.get(designId)?.run.hover(at) ?? Promise.resolve(null),
   );
   const { rerun } = hover;
@@ -320,9 +324,8 @@ function selectionIn(selection: ElementSelection | null, designId: string, revis
 
 /** Where an element is written, known only once its revision has built. */
 function siteOf(frames: CanvasFrame[], designId: string, revisionId: string, elementId: string) {
-  const build = frames.find((frame) => frame.designId === designId)?.build;
-  if (build?.status !== 'ready' || build.revisionId !== revisionId) return undefined;
-  return build.elements.find((element) => element.elementId === elementId);
+  const frame = frames.find((each) => each.designId === designId);
+  return frame && elementSite(frame, revisionId, elementId);
 }
 
 function sameElement(a: PreviewTarget | ElementEditDraft['element'], b: PreviewElement): boolean {

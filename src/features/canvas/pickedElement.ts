@@ -29,9 +29,7 @@ export function pickedElement(
   revisionId: string,
   finding: PreviewFinding,
 ): PickedElement | null {
-  const { build } = frame;
-  if (build.status !== 'ready' || build.revisionId !== revisionId) return null;
-  const site = build.elements.find((element) => element.elementId === finding.elementId);
+  const site = elementSite(frame, revisionId, finding.elementId);
   if (!site) return null;
   return {
     designId: frame.designId,
@@ -44,4 +42,15 @@ export function pickedElement(
     box: finding.rect,
     text: finding.text && { excerpt: finding.text.excerpt, box: finding.text.rect },
   };
+}
+
+/** Where an element of the design's `revisionId` is written, known once that revision has built. */
+export function elementSite(
+  frame: Pick<CanvasFrame, 'build'>,
+  revisionId: string,
+  elementId: string,
+) {
+  const { build } = frame;
+  if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
+  return build.elements.find((element) => element.elementId === elementId);
 }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState, type ComponentType } from 'react';
+import { useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 
 const SKILL = 'var(--skill)';
@@ -27,6 +27,8 @@ export interface DraftSelection {
   // Sized through className by the row; a mark may carry its own colour, like
   // the skill Rosette and the Visualize pie.
   icon: ComponentType<{ className?: string }>;
+  /** A picture in the icon's place, such as a picked element's crop. */
+  thumbnail?: ReactNode;
   label: string;
   removeLabel: string;
   onRemove: () => void;
@@ -111,9 +113,11 @@ export function DraftSelections({
             title={item.removeLabel}
             aria-label={item.removeLabel}
           >
-            <span className="relative h-4 w-4 shrink-0">
-              <Icon className="h-4 w-4 transition-opacity group-hover:opacity-0" />
-              <X className="absolute inset-0 h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
+            <span className="relative flex shrink-0 items-center justify-center">
+              <span className="flex transition-opacity group-hover:opacity-0">
+                {item.thumbnail ?? <Icon className="h-4 w-4" />}
+              </span>
+              <X className="absolute h-4 w-4 opacity-0 transition-opacity group-hover:opacity-100" />
             </span>
             <span className="max-w-64 truncate">{item.label}</span>
           </button>

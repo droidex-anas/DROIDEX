@@ -1,6 +1,6 @@
 /* What the board draws around a selection and while frames are moved: the
    selected frame's size, a multiple selection's box, the resize handles, the
-   rubber band, the snap guides and the elements Edit hovers and picks. It loads with
+   rubber band, the snap guides and the elements Edit and Design hover and pick. It loads with
    canvasBoard.css, whose --board-scale and chrome font it uses.
 
    Chrome drawn inside the world layer divides by --board-scale, so it keeps
@@ -202,8 +202,8 @@
   transform: translate(-50%, -50%);
 }
 
-/* Edit's outlines over the guest, drawn like a frame's: the element under the
-   pointer as a 1px line named by its tag, the picked one at 1.5px. Outside any
+/* Edit's and Design's outlines over the guest, drawn like a frame's: the element
+   under the pointer as a 1px line named by its tag, each pick at 1.5px. Outside any
    frame, so they set the chrome font themselves. A changed box glides there,
    and a new hover fades in. Each is its own stacking context at 0, so the
    picked one's size badge stays under a sheet's notices and the selected
@@ -233,6 +233,16 @@
 .canvas-element-outline {
   box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
   background: color-mix(in srgb, var(--selection) 6%, transparent);
+}
+
+/* Design's quick prompt opens from the pick it sits below. */
+[data-design-pick-prompt][data-side='below'].canvas-popover-reveal {
+  animation-name: canvas-popover-drop;
+}
+
+/* Text being dragged across follows the pointer, so it never glides behind it. */
+.canvas-element-outline[data-dragging] {
+  transition: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -275,6 +285,13 @@
   color: var(--on-selection);
   font: 500 11px / 14px var(--canvas-chrome-font);
   white-space: nowrap;
+}
+
+/* In Design the tag names the component first, and the tag after it, quieter. */
+.canvas-element-tag-detail {
+  margin-left: 4px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--on-selection) 72%, transparent);
 }
 
 .canvas-element-tag[data-side='below'] > span,

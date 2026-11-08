@@ -26,10 +26,11 @@ import {
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import { showsFrameTools, type BoardInteraction } from './canvasState';
+import { picksElements, showsFrameTools, type BoardInteraction } from './canvasState';
 import type { CanvasPresence } from './canvasPresence';
 import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import { DesignFrame } from './DesignFrame';
+import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { ElementOutlines } from './ElementOutlines';
@@ -46,6 +47,7 @@ import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
+import { useDesignPicker, type DesignPins } from './useDesignPicker';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
@@ -95,6 +97,8 @@ export interface CanvasBoardProps {
   pinnedIds?: ReadonlySet<string>;
   /** Tags frames in the chat's next prompt, or untags them; absent where frames cannot be tagged. */
   onTagFrames?: (designIds: readonly string[]) => void;
+  /** What Design points the chat's next prompt at; absent where it cannot, as frames cannot be tagged. */
+  design?: DesignPins;
   /** What the selected frame's toolbar does to the canvas. */
   frameActions: FrameActions;
   /** Where the board was left for a document; it reopens there instead of fitting. */
@@ -124,6 +128,7 @@ export function CanvasBoard({
   onOpenSource,
   pinnedIds,
   onTagFrames,
+  design,
   frameActions,
   restoredViewport,
   onLeave,
@@ -141,8 +146,12 @@ export function CanvasBoard({
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
-  const latest = useRef<BoardReads>({ drawn: [], viewport: view.viewport });
-  const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames);
+  const latest = useRef<{ drawn: PlacedFrame[]; viewport: Viewport }>({
+    drawn: [],
+    viewport: view.viewport,
+  });
+  const canDesign = design !== undefined;
+  const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames, canDesign);
 
   const pickBand = useCallback(
     (origin: Point, current: Point, additive: boolean) => {
@@ -172,9 +181,15 @@ export function CanvasBoard({
     frames,
     runs: previewRuns,
     active: interaction.mode === 'edit',
+    hovering: picksElements(interaction.mode),
     onEditElement,
   });
-  const { hover } = editor;
+  const picker = useDesignPicker({
+    frames,
+    runs: previewRuns,
+    active: interaction.mode === 'design',
+    design,
+  });
 
   const gestures = useBoardGestures({
     board,
@@ -257,6 +272,7 @@ export function CanvasBoard({
     frames,
     drawn,
     dispatch,
+    canDesign,
     dropTool: () => {
       annotation.pickTool(null);
     },
@@ -265,7 +281,6 @@ export function CanvasBoard({
     stepZoom: view.stepZoom,
     place: gestures.place,
   });
-
   const focusBoard = () => board.current?.focus({ preventScroll: true });
 
   return (
@@ -296,7 +311,8 @@ export function CanvasBoard({
             interaction,
             order,
             dispatch,
-            cancel: () => gestures.cancel() || annotation.escape() || editor.clear(),
+            cancel: () =>
+              gestures.cancel() || annotation.escape() || editor.clear() || picker.clear(),
             annotationKey: annotation.runKey,
             editKey: editor.runKey,
             zoom: commands.zoom,
@@ -378,15 +394,16 @@ export function CanvasBoard({
               onPickElement={(picked, at) => {
                 editor.pick(picked.designId, at);
               }}
+              onDesignPress={picker.press}
               onHoverElement={(hovered, at) => {
-                if (at) hover.move(hovered.designId, at);
-                else hover.clear();
+                if (at) editor.hover.move(hovered.designId, at);
+                else editor.hover.clear();
               }}
               onEditEnter={(picked) => {
                 editor.enter(picked.designId);
               }}
               elementPicked={editor.selection?.draft.element.designId === frame.designId}
-              elementHovered={hover.hovered?.designId === frame.designId}
+              elementHovered={editor.hover.hovered?.designId === frame.designId}
               tabStop={frame.designId === tabStopId}
               onFocusLabel={onFocusLabel}
             />
@@ -401,7 +418,9 @@ export function CanvasBoard({
             drawn={drawn}
             scale={scale}
             selection={editor.selection}
-            hovered={hover.hovered}
+            hovered={editor.hover.hovered}
+            hoveredComponent={picker.componentOf(editor.hover.hovered)}
+            picks={picker.outlines}
           />
           <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
           <AnnotationLayer
@@ -422,6 +441,16 @@ export function CanvasBoard({
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
         {gestures.snapMarks && <SnapGuides marks={gestures.snapMarks} viewport={view.viewport} />}
+        {picker.prompt && (
+          <DesignPickPrompt
+            {...picker.prompt}
+            drawn={drawn}
+            viewport={view.viewport}
+            size={view.size}
+            motion={motion}
+            focusBoard={focusBoard}
+          />
+        )}
 
         <BoardControls
           scale={scale}
@@ -429,7 +458,8 @@ export function CanvasBoard({
           mode={interaction.mode}
           selectedCount={interaction.selectedFrameIds.length}
           hasFrames={frames.length > 0}
-          error={gestures.layoutError || annotation.error || editor.error}
+          canDesign={canDesign}
+          errors={[gestures.layoutError, annotation.error, editor.error, picker.error]}
           onMode={commands.setMode}
           onZoom={commands.zoom}
           onZoomTo={view.zoomTo}
@@ -466,9 +496,4 @@ export function CanvasBoard({
       )}
     </div>
   );
-}
-
-interface BoardReads {
-  drawn: PlacedFrame[];
-  viewport: Viewport;
 }

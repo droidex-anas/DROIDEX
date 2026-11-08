@@ -10,6 +10,7 @@ export default defineConfig({
     'electronCanvasRecovery.smoke.spec.ts',
     'electronCanvasBoard.smoke.spec.ts',
     'electronCanvasBoardEdit.smoke.spec.ts',
+    'electronCanvasBoardDesign.smoke.spec.ts',
     'electronCanvasBoardDelete.smoke.spec.ts',
     'electronCanvasBoardToolbar.smoke.spec.ts',
     'electronCanvasBoardLayout.smoke.spec.ts',

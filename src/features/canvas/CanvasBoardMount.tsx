@@ -18,6 +18,7 @@ import { lacksCanvasTools, type BoardInteraction } from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
+import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
 import type {
   ArrangeFramesInput,
@@ -26,6 +27,7 @@ import type {
   SwitchRevisionInput,
 } from './protocol';
 import { useCanvasPresence } from './useCanvasPresence';
+import type { DesignPins } from './useDesignPicker';
 import { useFrameActions } from './useFrameActions';
 
 const LazyDesignSystemDocument = lazy(async () => ({
@@ -127,10 +129,28 @@ export function CanvasBoardMount({
     () => new Set(pins.filter((pin) => pin.canvasId === canvasId).map((pin) => pin.designId)),
     [pins, canvasId],
   );
-  useEffect(
-    () => (pinnable ? syncFramePins(appSessionId, snapshot) : undefined),
-    [appSessionId, pinnable, snapshot],
-  );
+  const allElementPins = useElementPins(appSessionId);
+  const design = useMemo((): DesignPins | undefined => {
+    if (!pinnable) return undefined;
+    const pins = allElementPins.filter((pin) => pin.canvasId === canvasId);
+    return {
+      chatId: appSessionId,
+      pins,
+      pick: (frame, element, additive) =>
+        pickElement(appSessionId, canvasId, frame, element, additive),
+      clear: () => {
+        unpinElements(appSessionId, pins);
+      },
+      seed: (text, send) => {
+        dispatch({ type: 'SEED_COMPOSER', appSessionId, text, send, focus: false });
+      },
+    };
+  }, [allElementPins, appSessionId, canvasId, dispatch, pinnable]);
+  useEffect(() => {
+    if (!pinnable) return;
+    syncElementPins(appSessionId, snapshot);
+    return syncFramePins(appSessionId, snapshot);
+  }, [appSessionId, pinnable, snapshot]);
   useCoverCapture(canvasId, frames);
   const presence = useCanvasPresence(appSessionId, frames);
   const { selectedFrameIds } = interaction;
@@ -192,6 +212,7 @@ export function CanvasBoardMount({
           onInteractionChange={onInteractionChange}
           presence={presence}
           pinnedIds={pinnedIds}
+          design={design}
           frameActions={frameActions.actions}
           onTagFrames={
             pinnable

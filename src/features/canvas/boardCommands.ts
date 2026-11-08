@@ -10,7 +10,12 @@ import {
   type PlacedFrame,
   type Point,
 } from './canvasGeometry';
-import type { BoardInteraction, BoardInteractionEvent, BoardMode } from './canvasState';
+import {
+  picksElements,
+  type BoardInteraction,
+  type BoardInteractionEvent,
+  type BoardMode,
+} from './canvasState';
 import type { FrameSize } from './FrameSizeMenu';
 import type { CanvasFrame, FrameRect } from './protocol';
 import type { ZoomCommand } from './ZoomControl';
@@ -21,6 +26,8 @@ interface CommandInputs {
   /** Where every frame is drawn, which is what a fit measures. */
   drawn: PlacedFrame[];
   dispatch: (event: BoardInteractionEvent) => void;
+  /** Design is open only where the board can point the chat's prompt at elements. */
+  canDesign: boolean;
   /** Puts the annotation tool down, as every mode change does. */
   dropTool: () => void;
   fitTo: (rects: readonly FrameRect[]) => void;
@@ -35,6 +42,7 @@ export function boardCommands({
   frames,
   drawn,
   dispatch,
+  canDesign,
   dropTool,
   fitTo,
   zoomTo,
@@ -44,14 +52,15 @@ export function boardCommands({
   const selected = interaction.selectedFrameIds;
   return {
     setMode: (next: BoardMode) => {
+      if (next === 'design' && !canDesign) return;
       dropTool();
       if (next === interaction.mode) return;
       if (next === 'select') {
         dispatch({ type: 'escape' });
         return;
       }
-      if (next === 'edit') {
-        dispatch({ type: 'edit' });
+      if (picksElements(next)) {
+        dispatch({ type: next });
         return;
       }
       const target = selected.at(0) ?? frames.at(0)?.designId;

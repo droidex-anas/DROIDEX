@@ -1,11 +1,17 @@
 // The board's own tools, floating on it the way a design tool's do: Select,
-// Interact, the annotation tools and Fit in a raised rail at the top left, the
+// Interact, Edit element, Design, the annotation tools and Fit in a raised rail at the top left, the
 // zoom bar at the bottom left, and align and distribute centred at the bottom
 // while a multiple selection gives them work (spec §4). Every control works on
 // the board behind it, and each names its keyboard shortcut.
 
 import type { ReactNode } from 'react';
-import { Maximize, MousePointer, Play, SlidersHorizontal } from '@droidex/icons';
+import {
+  Maximize,
+  MousePointer,
+  MousePointerSquareDashed,
+  Play,
+  SlidersHorizontal,
+} from '@droidex/icons';
 import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
@@ -90,8 +96,10 @@ export interface BoardControlsProps {
   selectedCount: number;
   /** A board with no frames has nothing to interact with or fit. */
   hasFrames: boolean;
-  /** The last refused layout write, named for the user. */
-  error: string;
+  /** Design points a chat's next prompt at elements, so only the chat's own canvas offers it. */
+  canDesign: boolean;
+  /** What the board's tools last could not do, named for the user; the first one shows. */
+  errors: readonly string[];
   onMode: (mode: BoardMode) => void;
   onZoom: (command: ZoomCommand) => void;
   /** A zoom typed as a percentage, as a scale. */
@@ -110,7 +118,8 @@ export function BoardControls({
   mode,
   selectedCount,
   hasFrames,
-  error,
+  canDesign,
+  errors,
   onMode,
   onZoom,
   onZoomTo,
@@ -161,6 +170,19 @@ export function BoardControls({
         >
           <SlidersHorizontal className="h-4 w-4" aria-hidden />
         </Tool>
+        {canDesign && (
+          <Tool
+            label="Design"
+            tip="Design  D"
+            pressed={mode === 'design'}
+            disabled={!hasFrames}
+            onClick={() => {
+              onMode('design');
+            }}
+          >
+            <MousePointerSquareDashed className="h-4 w-4" aria-hidden />
+          </Tool>
+        )}
         <span aria-hidden className="canvas-rail-divider" />
         {annotationTools}
         <span aria-hidden className="canvas-rail-divider" />
@@ -216,9 +238,9 @@ export function BoardControls({
         </div>
       )}
 
-      {error && (
+      {errors.some(Boolean) && (
         <p role="alert" className="canvas-board-alert">
-          {error}
+          {errors.find(Boolean)}
         </p>
       )}
     </div>

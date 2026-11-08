@@ -44,12 +44,13 @@ function digitZoom(event: KeyboardEvent): ZoomCommand | null {
   return null;
 }
 
-/** V for Select, I for Interact and E for Edit element, as the rail's tips say. */
+/** V for Select, I for Interact, E for Edit element and D for Design, as the rail's tips say. */
 export function modeShortcut(event: KeyboardEvent): BoardMode | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
   if (event.key === 'v' || event.key === 'V') return 'select';
   if (event.key === 'i' || event.key === 'I') return 'interact';
   if (event.key === 'e' || event.key === 'E') return 'edit';
+  if (event.key === 'd' || event.key === 'D') return 'design';
   return null;
 }
 

@@ -1,5 +1,7 @@
-// Edit's outlines on the board: the element under the pointer, named by its
-// tag, and the picked one, with its size. They are drawn in the world layer
+// Edit's and Design's outlines on the board: the element under the pointer,
+// named by its tag (and in Design its component), Edit's picked one with its
+// size, and the elements and text Design picked or is being dragged across.
+// They are drawn in the world layer
 // after the frames rather than inside a design or its sheet, so pan, zoom and
 // a frame's move or resize carry them at once, and a chip at the sheet's edge
 // is not cut off. Each box is trimmed to its frame, where the design is
@@ -25,11 +27,21 @@ interface Box {
 
 type TagSide = 'above' | 'below' | 'inside';
 
+/** A box Design outlines in a frame: a pick, or the text a press is dragging across. */
+export interface PickOutline {
+  key: string;
+  designId: string;
+  box: FrameRect;
+  dragging: boolean;
+}
+
 export function ElementOutlines({
   drawn,
   scale,
   selection,
   hovered,
+  hoveredComponent,
+  picks,
 }: {
   /** Where the board draws each frame. */
   drawn: PlacedFrame[];
@@ -37,6 +49,10 @@ export function ElementOutlines({
   scale: number;
   selection: ElementSelection | null;
   hovered: HoveredElement | null;
+  /** The component the hovered element is written in, which Design names before its tag. */
+  hoveredComponent: string | null;
+  /** Design's picks, outlined where each was picked, and the text being dragged across. */
+  picks: readonly PickOutline[];
 }) {
   const [tag, tagWidth] = useScreenWidth();
   const [size, sizeWidth] = useScreenWidth();
@@ -77,7 +93,9 @@ export function ElementOutlines({
                 sizeChip,
               )}
             >
-              <span ref={tag}>{hovered.element.tagName}</span>
+              <span ref={tag}>
+                <TagName tagName={hovered.element.tagName} component={hoveredComponent} />
+              </span>
             </div>
           </div>
         </AtFrame>
@@ -93,6 +111,32 @@ export function ElementOutlines({
           </div>
         </AtFrame>
       )}
+      {picks.map((pick) => {
+        const shown = onBoard(drawn, pick.designId, pick.box);
+        return (
+          shown && (
+            <AtFrame key={pick.key} frame={shown.frame}>
+              <div
+                aria-hidden
+                data-design-pick
+                data-dragging={pick.dragging || undefined}
+                className="canvas-element-outline"
+                style={shown.box}
+              />
+            </AtFrame>
+          )
+        );
+      })}
+    </>
+  );
+}
+
+function TagName({ tagName, component }: { tagName: string; component: string | null }) {
+  if (!component) return tagName;
+  return (
+    <>
+      {component}
+      <span className="canvas-element-tag-detail">{tagName}</span>
     </>
   );
 }
