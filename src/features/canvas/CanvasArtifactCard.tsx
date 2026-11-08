@@ -128,8 +128,8 @@ export default function CanvasArtifactCard({
 }
 
 /**
- * The pinned revision's version label, the newest version when it is another,
- * and the pinned revision again when the frame has moved off it. Only a pinned
+ * The pinned revision's version label, the newest version when it is another
+ * one the frame can show, and the pinned revision again when the frame has moved off it. Only a pinned
  * card reads the frame's version list.
  */
 function useVersions(
@@ -151,7 +151,8 @@ function useVersions(
   const latest = list.status === 'listed' ? list.revisions.at(0) : undefined;
   return {
     label: version === null ? null : `v${String(version)}`,
-    newer: latest?.revisionId === pinned ? undefined : latest,
+    // A damaged revision cannot be shown, as the version menu says.
+    newer: latest?.state === 'saved' && latest.revisionId !== pinned ? latest : undefined,
     earlier: pinned && frame && frame.revisionId !== pinned ? pinned : null,
     /** Shows a version on the frame as its version menu does, adding no revision. */
     show: (revisionId: string) => {
