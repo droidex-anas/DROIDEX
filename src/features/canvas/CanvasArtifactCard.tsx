@@ -51,6 +51,8 @@ export default function CanvasArtifactCard({
   // The revision this card's turn wrote; a card without one follows the frame.
   const pinned = activity.revisionId;
   const { label, newer, earlier, show } = useVersions(appSessionId, canvasId, frame, pinned);
+  // Showing the pinned version needs the frame, so the card waits for its canvas.
+  const loading = pinned !== undefined && frame === undefined;
 
   const open = (revisionId: string | undefined) => {
     if (!frame) {
@@ -70,6 +72,8 @@ export default function CanvasArtifactCard({
       <button
         type="button"
         className="canvas-artifact"
+        disabled={loading}
+        aria-busy={loading}
         onClick={() => {
           open(pinned);
         }}
