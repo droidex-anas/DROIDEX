@@ -3,7 +3,8 @@
 // chat's own composer, with every pick on its chips; closed unsent, its words
 // go on in that composer's draft. It is drawn in the board's screen space, so
 // it keeps its size at any zoom, just below the pick, or above it when the
-// visible board has no room below, and never over the pick itself.
+// visible board has no room below. It covers the pick only when the pick fills
+// the view, and never leaves the view, since the caret is in it.
 
 import { useEffect, useRef } from 'react';
 import { CompactComposer } from '../../components/composer/CompactComposer';
@@ -80,14 +81,17 @@ export function DesignPickPrompt({
   if (!frame) return null;
   const picked = anchor.element.text?.box ?? anchor.element.box;
   const { scale } = viewport;
-  const left = viewport.x + (frame.x + picked.x) * scale;
-  const top = viewport.y + (frame.y + picked.y) * scale;
-  const pick = {
-    left,
-    top,
-    right: left + picked.width * scale,
-    bottom: top + picked.height * scale,
-  };
+  const toScreen = (x: number, y: number): Point => ({
+    x: viewport.x + (frame.x + x) * scale,
+    y: viewport.y + (frame.y + y) * scale,
+  });
+  // The frame clips an element that runs past its edges, so only what it shows counts.
+  const from = toScreen(Math.max(picked.x, 0), Math.max(picked.y, 0));
+  const to = toScreen(
+    Math.min(picked.x + picked.width, frame.width),
+    Math.min(picked.y + picked.height, frame.height),
+  );
+  const pick = { left: from.x, top: from.y, right: to.x, bottom: to.y };
   const width = Math.min(WIDTH_PX, size.x - EDGE_PX * 2);
   const { side, ...placed } = placePrompt(
     pick,
@@ -132,7 +136,7 @@ export function DesignPickPrompt({
  * Where the prompt of `box`'s size goes on the visible board, clear of the
  * pick: below it, else above it, else beside it, and kept on screen. A pick
  * scrolled out of view leaves it at that edge; one that leaves room on no
- * side, as one filling the view does, gets it over its bottom.
+ * side, as one filling the view does, gets it at the bottom of the view.
  */
 function placePrompt(
   pick: ScreenBox,

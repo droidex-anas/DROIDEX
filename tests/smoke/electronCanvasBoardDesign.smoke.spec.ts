@@ -10,12 +10,13 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   page,
 }) => {
   await stubGuests(page);
-  // The guest's design: a card holding a title, in the design's own pixels.
+  // The guest's design: a card holding a title, in the design's own pixels. The
+  // card runs on past the frame's bottom edge, which clips it.
   await page.addInitScript(() => {
     const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
     const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
     const titleRect = { x: 8, y: 8, width: 240, height: 30 };
-    const cardRect = { x: 0, y: 0, width: 400, height: 300 };
+    const cardRect = { x: 0, y: 0, width: 400, height: 900 };
     const at = (point: unknown) => {
       const { x, y } = point as { x: number; y: number };
       if (x > 390) return null;
@@ -78,6 +79,10 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   await settle();
   await expect(picks).toHaveCount(2);
   await expect(prompt).toBeVisible();
+  // It goes below what the frame shows of the card, just under the frame.
+  const placed = page.locator('[data-design-pick-prompt]');
+  await expect(placed).toHaveAttribute('data-side', 'below');
+  expect((await box(placed)).y).toBeCloseTo(drawn.y + drawn.height + 8, 0);
 
   // Sending hands the words to the chat's composer, which sends with every pick.
   await prompt.fill('Make it bolder');
