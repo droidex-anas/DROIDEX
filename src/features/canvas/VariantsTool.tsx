@@ -1,6 +1,8 @@
 // The frame toolbar's variant controls (spec §4). One click on Variants makes
 // three variants and asks the chat's agent for them at once; the chevron beside
 // it chooses what changes, how many, and a direction in the user's own words.
+// While the chat has elements picked in the frame, the variants rework those
+// elements, unless the options choose the whole frame.
 // On a variant, Use this variant gives its design to the frame it was made from.
 // Each holds, the busy one showing a spinner, while its source's set is busy.
 
@@ -10,6 +12,7 @@ import { Button } from '../../components/ui/Button';
 import { Field, Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
+import { elementLabel, elementName, type ElementPin } from './elementPins';
 import type { ToolButtonProps, ToolId } from './FrameToolbar';
 import type { CanvasFrame } from './protocol';
 import { SegmentedControl, type Segment } from './SegmentedControl';
@@ -34,6 +37,7 @@ const COUNTS: Segment<VariantCount>[] = [
   { value: 4, label: '4' },
 ];
 const MAX_DIRECTION_LENGTH = 500;
+const NO_PICKS: readonly ElementPin[] = [];
 /** Wide enough for five kinds side by side, "Explore" untruncated. */
 const OPTIONS_WIDTH_PX = 392;
 /** Why a source's variant buttons hold while its set is busy. */
@@ -44,15 +48,22 @@ const BUSY_TIP: Record<VariantWork, string> = {
 
 export function VariantsTool({
   frame,
+  picks,
   tool,
   work,
   onMake,
 }: {
   frame: CanvasFrame;
+  /** The elements the chat picked in the frame, which one click makes variants of. */
+  picks: readonly ElementPin[];
   /** The bar's roving focus for each of the two buttons. */
   tool: (id: ToolId) => ToolButtonProps;
   work: VariantWorkView;
-  onMake: (frame: CanvasFrame, choice: VariantChoice) => Promise<void>;
+  onMake: (
+    frame: CanvasFrame,
+    choice: VariantChoice,
+    picks: readonly ElementPin[],
+  ) => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
   const busy = useSyncExternalStore(work.subscribe, () => work.of(frame.designId));
@@ -61,25 +72,25 @@ export function VariantsTool({
     setOpen(false);
   }, []);
 
-  const make = (choice: VariantChoice) => {
+  const make = (choice: VariantChoice, of: readonly ElementPin[]) => {
     setOpen(false);
-    void onMake(frame, choice);
+    void onMake(frame, choice, of);
   };
 
+  const ask = `Make ${String(DEFAULT_VARIANT_CHOICE.count)} variants`;
+  const askOfPicks = picks.length > 0 ? `${ask} of ${picksName(picks)}` : null;
   return (
     <>
-      <Tooltip
-        label={busy ? BUSY_TIP[busy] : `Make ${String(DEFAULT_VARIANT_CHOICE.count)} variants`}
-      >
+      <Tooltip label={busy ? BUSY_TIP[busy] : (askOfPicks ?? ask)}>
         <button
           type="button"
           {...tool('variants')}
           className="canvas-frame-tool canvas-frame-tool-text relative"
-          aria-label={`Make ${String(DEFAULT_VARIANT_CHOICE.count)} variants of ${frame.name}`}
+          aria-label={askOfPicks ?? `${ask} of ${frame.name}`}
           aria-disabled={busy !== null || undefined}
           aria-busy={busy === 'making' || undefined}
           onClick={() => {
-            if (!busy) make(DEFAULT_VARIANT_CHOICE);
+            if (!busy) make(DEFAULT_VARIANT_CHOICE, picks);
           }}
         >
           <BusyLabel busy={busy === 'making'}>Variants</BusyLabel>
@@ -110,7 +121,7 @@ export function VariantsTool({
         width={OPTIONS_WIDTH_PX}
         label={`Variants of ${frame.name}`}
       >
-        <VariantOptions onMake={make} />
+        <VariantOptions frameName={frame.name} picks={picks} onMake={make} />
       </Popover>
     </>
   );
@@ -163,7 +174,21 @@ function BusyLabel({ busy, children }: { busy: boolean; children: string }) {
   );
 }
 
-function VariantOptions({ onMake }: { onMake: (choice: VariantChoice) => void }) {
+/** What a request names its picks by: the one pick's chip label, else how many. */
+function picksName(picks: readonly ElementPin[]): string {
+  return picks.length === 1 ? elementLabel(picks[0]) : `${String(picks.length)} picked elements`;
+}
+
+function VariantOptions({
+  frameName,
+  picks,
+  onMake,
+}: {
+  frameName: string;
+  picks: readonly ElementPin[];
+  onMake: (choice: VariantChoice, of: readonly ElementPin[]) => void;
+}) {
+  const [of, setOf] = useState<'frame' | 'picked'>('picked');
   const [kind, setKind] = useState(DEFAULT_VARIANT_CHOICE.kind);
   const [count, setCount] = useState(DEFAULT_VARIANT_CHOICE.count);
   const [direction, setDirection] = useState('');
@@ -172,9 +197,28 @@ function VariantOptions({ onMake }: { onMake: (choice: VariantChoice) => void })
       className="flex flex-col gap-3 p-3"
       onSubmit={(event) => {
         event.preventDefault();
-        onMake({ kind, count, direction });
+        onMake({ kind, count, direction }, of === 'picked' ? picks : NO_PICKS);
       }}
     >
+      {picks.length > 0 && (
+        <SegmentedControl
+          label="Of"
+          options={[
+            { value: 'frame', label: frameName },
+            {
+              value: 'picked',
+              label: picksName(picks),
+              text:
+                picks.length === 1
+                  ? elementName(picks[0].element)
+                  : `${String(picks.length)} elements`,
+            },
+          ]}
+          value={of}
+          disabled={false}
+          onPick={setOf}
+        />
+      )}
       <SegmentedControl
         label="Change"
         options={KINDS}

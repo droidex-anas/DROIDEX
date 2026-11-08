@@ -1,5 +1,6 @@
 // The board's Design mode against the harness: hovering and picking elements
-// in a stand-in guest, the outlines it draws, and the quick prompt it opens.
+// in a stand-in guest, the outlines it draws, the quick prompt it opens, and
+// the frame toolbar's Variants of what it picked.
 
 import { expect, test } from '@playwright/test';
 import { box, frame, openBoard, serveBoard, stubGuests } from './board/boardPage';
@@ -154,6 +155,62 @@ test('Design names what it hovers, picks by click, shift-click and text drag, an
   await page.mouse.click(empty.x, empty.y);
   await settle();
   await expect(picks).toHaveCount(0);
+});
+
+test('Variants of a frame with a picked element rework that element, unless the options choose the frame', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    window.guestAnswer = (command) =>
+      command === 'probe' || command === 'hover'
+        ? { ...title, rect: { x: 8, y: 8, width: 240, height: 30 } }
+        : null;
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1&design=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('d');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  await page.mouse.click(drawn.x + 20, drawn.y + 20);
+  await page.clock.runFor(64);
+  await expect(page.locator('[data-design-pick]')).toHaveCount(1);
+
+  // Back in Select with the frame selected, its toolbar offers variants of the pick.
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  const toolbar = page.getByRole('toolbar', { name: 'Design A actions' });
+  const ofPick = toolbar.getByRole('button', {
+    name: 'Make 3 variants of Card in Design A · main.tsx:3',
+  });
+  await expect(ofPick).toBeVisible();
+  await toolbar.getByRole('button', { name: 'Variant options for Design A' }).click();
+  const options = page.getByRole('dialog', { name: 'Variants of Design A' });
+  const of = options.getByRole('radiogroup', { name: 'Of' });
+  await expect(of.getByRole('radio', { name: 'Card' })).toBeChecked();
+  await expect(of.getByRole('radio', { name: 'Design A' })).not.toBeChecked();
+  await options.getByRole('button', { name: 'Make 3 variants' }).click();
+  await expect(options).toHaveCount(0);
+
+  // The request names the element and carries it to the agent as a picked element.
+  const [request] = await page.evaluate(() => window.boardHarness.elementVariantRequests);
+  expect(request).toMatch(/^Make 3 variants of Card in Design A\.\n/);
+  expect(request).toContain('(main.tsx line 3 of Design A’s source, the same lines in every copy)');
+  expect(request).toContain('<canvas_elements>');
+  expect(request).toContain('<element id="el_title" design="a" revision="rev_01"');
+
+  // Choosing the frame makes variants of the whole of it, the pick still held.
+  await page.evaluate(() => window.boardHarness.answerVariants(0));
+  await toolbar.getByRole('button', { name: 'Variant options for Design A' }).click();
+  await of.getByRole('radio', { name: 'Design A' }).click();
+  await options.getByRole('button', { name: 'Make 3 variants' }).click();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toHaveLength(2);
+  expect(await page.evaluate(() => window.boardHarness.elementVariantRequests)).toHaveLength(1);
+  await page.evaluate(() => window.boardHarness.answerVariants(1));
+  await expect(ofPick).toBeEnabled();
 });
 
 test('Design and Edit find the element under the pointer at any UI zoom', async ({ page }) => {
