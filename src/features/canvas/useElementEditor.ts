@@ -22,6 +22,7 @@ import {
   type ElementEditDraft,
 } from './elementEditDraft';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
+import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
 import type { CanvasFrame, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
@@ -37,17 +38,22 @@ export interface ElementSelection {
 interface ElementEditorInputs {
   canvasId: string;
   frames: CanvasFrame[];
+  runs: PreviewRuns;
   /** The board is in Edit; outside it nothing stays selected. */
   active: boolean;
   onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
 }
 
-export function useElementEditor({ canvasId, frames, active, onEditElement }: ElementEditorInputs) {
+export function useElementEditor({
+  canvasId,
+  frames,
+  runs,
+  active,
+  onEditElement,
+}: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [error, setError] = useState('');
   const [seenFrames, setSeenFrames] = useState(frames);
-  /** The one preview each design is running, as it attached. */
-  const runs = useRef(new Map<string, { revisionId: string; run: PreviewRun }>());
   /** The run whose guest holds the selection, so moving it elsewhere releases this one. */
   const holder = useRef<PreviewRun | null>(null);
   /**
@@ -60,7 +66,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   const panel = useRef<HTMLDivElement>(null);
   const hover = useElementHover(
     active,
-    (designId, at) => runs.current.get(designId)?.run.hover(at) ?? Promise.resolve(null),
+    (designId, at) => runs.get(designId)?.run.hover(at) ?? Promise.resolve(null),
   );
   const { rerun } = hover;
 
@@ -98,12 +104,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   // the guest's answer to this never sends it again.
   const draft = selection?.draft ?? null;
   useEffect(() => {
-    const held = draft ? runs.current.get(draft.element.designId) : undefined;
+    const held = draft ? runs.get(draft.element.designId) : undefined;
     const next = draft && held?.revisionId === draft.element.revisionId ? held.run : null;
     if (holder.current && holder.current !== next) holder.current.select(null, STYLE_PROPERTIES);
     if (draft && next) next.select(target(draft), STYLE_PROPERTIES);
     holder.current = next;
-  }, [draft]);
+  }, [draft, runs]);
 
   useEffect(() => {
     if (!enterOnAnswer.current || picking.current !== null) return;
@@ -144,7 +150,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
 
     return {
       attach(designId, revisionId, run) {
-        runs.current.set(designId, { revisionId, run });
+        runs.set(designId, revisionId, run);
         rerun(designId);
         const current = latest.current.selection?.draft;
         if (current?.element.designId === designId && current.element.revisionId === revisionId) {
@@ -152,15 +158,12 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
           holder.current = run;
         }
         return () => {
-          if (runs.current.get(designId)?.run === run) {
-            runs.current.delete(designId);
-            rerun(designId);
-          }
+          if (runs.release(designId, run)) rerun(designId);
           if (holder.current === run) holder.current = null;
         };
       },
       report(designId, revisionId, element, sequence) {
-        const held = runs.current.get(designId);
+        const held = runs.get(designId);
         if (held?.revisionId !== revisionId) return;
         const asked = picking.current;
         const answersPick = asked?.run === held.run && asked.sequence === sequence;
@@ -180,7 +183,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   });
   /** Picks in one design's live preview: at a point in its pixels, or a step along. */
   const pick = (designId: string, at: PreviewPick): boolean => {
-    const held = runs.current.get(designId);
+    const held = runs.get(designId);
     if (!held) {
       setError('This design’s preview isn’t running, so nothing in it can be picked.');
       return false;
@@ -235,7 +238,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
    * flight, into the panel of the element that pick finds.
    */
   const enter = (designId: string) => {
-    const held = runs.current.get(designId);
+    const held = runs.get(designId);
     if (held && picking.current?.run === held.run) enterOnAnswer.current = true;
     else if (latest.current.selection?.draft.element.designId === designId)
       focusFirstField(panel.current);
