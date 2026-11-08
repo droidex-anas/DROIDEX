@@ -92,6 +92,19 @@ test('a running create or write puts its agent on the frames it names until its 
   assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
 });
 
+test('a call whose input is still streaming is at work once it names its frame', () => {
+  const frames = [designed('a')];
+  const started = { ...call('t1', 'write', []), transient: true as const };
+  const named = { ...call('t1', 'write', ['a']), transient: true as const };
+
+  assert.equal(canvasPresence(sources([prompt(), started]), frames).size, 0);
+  assert.deepEqual(frameAgents(canvasPresence(sources([prompt(), named]), frames)), [
+    ['a', 'chat'],
+  ]);
+  // A stream cut off before the call was stored leaves no one behind.
+  assert.equal(canvasPresence(sources([prompt(), named], { primary: false }), frames), NO_PRESENCE);
+});
+
 test('a frame with no source yet belongs to the live agent whose create made it this turn', () => {
   const frames = [reserved('mine'), reserved('theirs'), reserved('left')];
   const events = [

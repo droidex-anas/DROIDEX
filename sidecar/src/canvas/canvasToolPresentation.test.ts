@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -231,8 +231,9 @@ const messageStart = (id: string, parent: string | null = null): SDKMessage =>
     parent,
   );
 
-test('a Canvas assistant error body is a correlated tool result, not assistant prose', async (t) => {
-  const directory = mkdtempSync(join(tmpdir(), 'claude-canvas-error-'));
+// A Claude chat's real event flow, timeline coalescer and stored transcript.
+function claudeCanvasChat(t: TestContext) {
+  const directory = mkdtempSync(join(tmpdir(), 'claude-canvas-'));
   const previous = process.env.DROIDEX_USER_DATA_DIR;
   process.env.DROIDEX_USER_DATA_DIR = directory;
   t.after(() => {
@@ -240,7 +241,6 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
     else process.env.DROIDEX_USER_DATA_DIR = previous;
     rmSync(directory, { recursive: true, force: true });
   });
-  const canary = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
   const summary = sessionSummary({ appSessionId: 'app-1', provider: 'claude' });
   const file = new ProviderTranscriptFile(summary.appSessionId, () => summary);
   const recorded: TranscriptEvent[] = [];
@@ -269,8 +269,17 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
     resolveChildScope: () => ({ childSessionId: 'child-1', role: 'worker' }),
     recordUsage: () => undefined,
   });
-  await timeline.announcePrompt('app-1', `Please show ${canary}`);
   const mapper = new ClaudeEventMapper('app-1');
+  const send = (entry: SDKMessage) => {
+    for (const event of mapper.map(entry)) flow.apply('app-1', 'app-1', 'primary', event);
+  };
+  return { directory, file, recorded, emitted, timeline, mapper, flow, send };
+}
+
+test('a Canvas assistant error body is a correlated tool result, not assistant prose', async (t) => {
+  const { directory, file, recorded, emitted, timeline, mapper, flow } = claudeCanvasChat(t);
+  const canary = 'CANVAS_INTERNAL_GUIDANCE_7E4B';
+  await timeline.announcePrompt('app-1', `Please show ${canary}`);
   for (const event of mapper.map(messageStart('ordinary-reply')))
     flow.apply('app-1', 'app-1', 'primary', event);
   for (const text of ['Ordinary ', 'reply.']) {
@@ -347,7 +356,7 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
       rows.filter((row) => row.kind === 'tool_result').map((row) => row.canvasActivity?.state),
       ['failed', 'failed'],
     );
-    assert.equal(rows.filter((row) => row.kind === 'tool_call').length, 2);
+    assert.equal(rows.filter((row) => row.kind === 'tool_call' && !row.transient).length, 2);
     const streamedResult = rows.find(
       (row) => row.toolUseId === streamedCall.id && row.kind === 'tool_result',
     );
@@ -371,4 +380,79 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
   );
   assert.equal(events[1].transcript?.isError, true);
   assert.equal(events[1].transcript?.text, 'Tool failed: CANVAS_INTERNAL_GUIDANCE_7E4B');
+});
+
+test('a streaming Canvas write shows its frame live before its input ends, and stores one call', async (t) => {
+  const { directory, file, emitted, timeline, send } = claudeCanvasChat(t);
+  const name = 'mcp__droidex-canvas__canvas_write';
+  const delta = (partial_json: string) =>
+    streamEvent({
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json },
+    });
+  const liveCalls = () => {
+    timeline.flushStreamingFor('app-1', 'app-1');
+    return emitted
+      .filter((row) => row.kind === 'tool_call')
+      .map((row) => [row.canvasActivity?.designIds, row.transient]);
+  };
+  send(messageStart('write-message'));
+  send(
+    streamEvent({
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'write-1', name },
+    }),
+  );
+  send(delta('{"scopeId":"scope-1",'));
+  assert.deepEqual(liveCalls(), [[[], true]]);
+  send(delta('"designId":"design-1","files":{"src/App.tsx":"export default'));
+  for (const token of [' function', ' App()', ' {}', '"}}']) send(delta(token));
+  assert.deepEqual(liveCalls(), [
+    [[], true],
+    [['design-1'], true],
+  ]);
+  send(streamEvent({ type: 'content_block_stop', index: 0 }));
+  send(
+    message({
+      type: 'user',
+      message: {
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: 'write-1',
+            content: JSON.stringify({
+              ok: true,
+              receipt: { designId: 'design-1', revisionId: 'r2' },
+            }),
+          },
+        ],
+      },
+    }),
+  );
+  await timeline.settleStreaming('app-1', 'app-1');
+
+  assert.deepEqual(liveCalls(), [
+    [[], true],
+    [['design-1'], true],
+    [['design-1'], undefined],
+  ]);
+  const stored = await file.read();
+  assert.equal(stored.split('"tool_use"').length - 1, 1);
+  const replay = parseFullSessionTranscript(
+    'app-1',
+    'app-1',
+    join(directory, 'provider-sessions', 'app-1.jsonl'),
+    'primary',
+  );
+  assert.deepEqual(
+    replay
+      .filter((row) => row.canvasActivity)
+      .map((row) => [row.kind, row.canvasActivity?.state, row.canvasActivity?.designIds]),
+    [
+      ['tool_call', 'running', ['design-1']],
+      ['tool_result', 'completed', ['design-1']],
+    ],
+  );
 });

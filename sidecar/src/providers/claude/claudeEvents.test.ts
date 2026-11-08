@@ -179,6 +179,32 @@ test('a tool call carries its streamed input and pairs with its result by id', (
   );
 });
 
+test('a Canvas create is announced live on its first input delta, and stored once at its stop', () => {
+  const delta = (partial_json: string) =>
+    streamEvent({
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json },
+    });
+  const create = { type: 'tool_use', id: 'toolu_c', name: 'mcp__droidex-canvas__canvas_create' };
+  const events = transcripts([
+    messageStart('native-message'),
+    streamEvent({ type: 'content_block_start', index: 0, content_block: create }),
+    // A designId inside a nested value names no frame of this call.
+    delta('{"frames":[{"designId":"inner"'),
+    delta('}]}'),
+    streamEvent({ type: 'content_block_stop', index: 0 }),
+  ]);
+
+  assert.deepEqual(
+    events.map((event) => [event.kind, event.toolUseId, event.toolArgs, event.transient]),
+    [
+      ['tool_call', 'toolu_c', {}, true],
+      ['tool_call', 'toolu_c', { frames: [{ designId: 'inner' }] }, undefined],
+    ],
+  );
+});
+
 test("a subagent's rows carry the spawn that owns them, never the parent's feed", () => {
   const events = mapped([
     messageStart('native-child', 'toolu_task'),

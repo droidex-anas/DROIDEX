@@ -355,6 +355,12 @@ export class CanvasToolPresentation {
       if (activeKey) this.active.delete(activeKey);
       return event;
     }
+    // A live-only snapshot binds nothing: the stored call is the occurrence a
+    // replay looks its binding up by.
+    if (event.transient && event.kind === 'tool_call' && provenance) {
+      const started = bindingFrom(provenance, event);
+      return started ? shownEvent(started, event) : event;
+    }
     let binding = activeKey ? this.active.get(activeKey) : undefined;
     if (occurrenceId && toolUseId)
       binding = this.bindings.get(bindingKey(source, toolUseId, occurrenceId));
@@ -418,16 +424,20 @@ export class CanvasToolPresentation {
         if (activeKey) this.active.set(activeKey, binding);
       }
     }
-    const shown = activity(binding, event);
     if (event.kind !== 'tool_call')
       this.settled.add(bindingKey(source, binding.toolUseId, binding.occurrenceId));
-    return {
-      ...event,
-      kind: event.kind === 'error' ? 'tool_result' : event.kind,
-      toolName: `Canvas ${binding.action}`,
-      toolArgs: undefined,
-      text: event.kind !== 'tool_call' ? shown.message : undefined,
-      canvasActivity: shown,
-    };
+    return shownEvent(binding, event);
   }
+}
+
+function shownEvent(binding: CanvasToolBinding, event: TranscriptEvent): TranscriptEvent {
+  const shown = activity(binding, event);
+  return {
+    ...event,
+    kind: event.kind === 'error' ? 'tool_result' : event.kind,
+    toolName: `Canvas ${binding.action}`,
+    toolArgs: undefined,
+    text: event.kind !== 'tool_call' ? shown.message : undefined,
+    canvasActivity: shown,
+  };
 }

@@ -1,16 +1,20 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
+import { canvasToolProvenance } from '../../canvas/canvasToolPresentation.js';
+
 type StreamEvent = Extract<SDKMessage, { type: 'stream_event' }>['event'];
 type Assistant = Extract<SDKMessage, { type: 'assistant' }>;
 
 export type ClaudeContent =
   | { kind: 'text' | 'thinking'; text: string; messageId: string }
-  | { kind: 'tool_call'; id: string; name: string; input: unknown };
+  | { kind: 'tool_call'; id: string; name: string; input: unknown; transient?: true };
 
 interface ToolBlock {
   id: string;
   name: string;
   json: string;
+  /** What the early snapshots of a canvas create or write have said: that it started, then its frame. */
+  announced?: 'started' | 'named';
   reported?: boolean;
 }
 
@@ -50,8 +54,9 @@ export class ClaudeMessageContent {
         const delta = event.delta;
         if (delta.type === 'input_json_delta') {
           const tool = state.blocks.get(event.index);
-          if (tool) tool.json += delta.partial_json;
-          return [];
+          if (!tool) return [];
+          tool.json += delta.partial_json;
+          return startedCanvasCall(tool);
         }
         if (delta.type !== 'text_delta' && delta.type !== 'thinking_delta') return [];
         const text = delta.type === 'text_delta' ? delta.text : delta.thinking;
@@ -145,6 +150,32 @@ export function toolBlock(block: { type: string }): { id: string; name: string }
   if (!TOOL_BLOCK_TYPES.has(block.type)) return undefined;
   const { id, name } = block as unknown as { id: string; name: string };
   return { id, name };
+}
+
+const STARTED_EARLY = new Set(['canvas_create', 'canvas_write']);
+// The top-level fields that open the input, each a plain scalar, up to its
+// designId. A nested value before it ends the read, so it never looks inside one.
+const LEADING_DESIGN_ID =
+  /^\s*\{(?:\s*"\w+"\s*:\s*(?:"[^"\\]*"|null|true|false|-?\d+(?:\.\d+)?)\s*,)*\s*"designId"\s*:\s*"([\w-]{1,128})"/;
+
+// A canvas create or write is announced while its input streams, so the board
+// shows its agent at work before the whole source has arrived: once when it
+// starts, and again once its designId can be read. These snapshots are live
+// only; the call is stored when its block stops.
+function startedCanvasCall(tool: ToolBlock): ClaudeContent[] {
+  if (tool.reported || tool.announced === 'named') return [];
+  const toolName = canvasToolProvenance(tool.name, tool.id)?.toolName;
+  if (!toolName || !STARTED_EARLY.has(toolName)) return [];
+  const designId = LEADING_DESIGN_ID.exec(tool.json)?.[1];
+  if (designId) {
+    tool.announced = 'named';
+    return [
+      { kind: 'tool_call', id: tool.id, name: tool.name, input: { designId }, transient: true },
+    ];
+  }
+  if (tool.announced) return [];
+  tool.announced = 'started';
+  return [{ kind: 'tool_call', id: tool.id, name: tool.name, input: {}, transient: true }];
 }
 
 function parseToolInput(json: string): unknown {
