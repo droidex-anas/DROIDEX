@@ -30,6 +30,7 @@ const FRAME_ACTIONS: FrameActions = {
   sourceOf: () => null,
   applyVariant: () => Promise.resolve(false),
   saveToLibrary: () => undefined,
+  exportImage: () => undefined,
 };
 
 function frame(designId: string, rect: FrameRect): CanvasFrame {

@@ -176,6 +176,10 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b']);
   await expect(menu).toHaveCount(0);
   await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await menu.getByRole('menuitem', { name: 'Export image…' }).click();
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b', 'export:b']);
+  await expect(more).toBeFocused();
 
   // Escape leaves the bar, not the selection; Tab comes back to the tool last used.
   await page.keyboard.press('Escape');

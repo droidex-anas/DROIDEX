@@ -24,6 +24,7 @@ import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { ElementPin } from './elementPins';
+import { exportableRevision } from './captureCanvasImage';
 import type { CanvasFrame } from './protocol';
 import { RevisionHistory } from './RevisionHistory';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
@@ -55,6 +56,7 @@ export interface FrameActions {
   /** Settles once the variant's design is the source's or has failed, which it reports itself. */
   applyVariant: (variant: CanvasFrame, source: CanvasFrame) => Promise<boolean>;
   saveToLibrary: (frame: CanvasFrame) => void;
+  exportImage: (frame: CanvasFrame) => void;
 }
 
 export interface FrameToolbarProps {
@@ -322,6 +324,14 @@ function SelectToolbar({
             onRun={() => {
               close();
               actions.saveToLibrary(frame);
+            }}
+          />
+          <MenuRow
+            label="Export image…"
+            disabled={!exportableRevision(frame)}
+            onRun={() => {
+              close();
+              actions.exportImage(frame);
             }}
           />
           <MenuRow

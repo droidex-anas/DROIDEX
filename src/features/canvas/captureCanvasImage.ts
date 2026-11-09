@@ -8,6 +8,7 @@ import {
 import type { PreviewVector } from './previewDocument';
 import type {
   CanvasCommand,
+  CanvasFrame,
   CanvasErrorCode,
   CanvasEvent,
   CaptureReport,
@@ -63,6 +64,14 @@ export function registerCanvasPreview(
     livePreviews.delete(key);
     live.ended.abort();
   };
+}
+
+/** The revision on show, while it has a working build main can capture. */
+export function exportableRevision(frame: CanvasFrame): RevisionRef | null {
+  const { build, revisionId } = frame;
+  if (revisionId === null || build.status !== 'ready' || build.revisionId !== revisionId)
+    return null;
+  return { designId: frame.designId, revisionId };
 }
 
 /** The mounted revision's root `<svg>` or why it has none, or null when no live preview shows it. */
