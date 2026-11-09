@@ -1488,8 +1488,12 @@ export class SessionManager {
     return summary.cwd;
   }
 
-  /** Admits an export into the chat's project folder, until the chat closes; null without one. */
+  /** Admits an export into the chat's project folder while the chat is open; null otherwise. */
   admitProjectExport(appSessionId: string): ProjectExportAdmission | null {
+    if (this.shutdownPromise) return null;
+    // A closed chat keeps its summary, and its exports were already ended.
+    const liveSession = this.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode === 'discard-pending') return null;
     const folder = this.projectFolder(appSessionId);
     return folder === null ? null : this.projectExports.admit(appSessionId, folder);
   }
