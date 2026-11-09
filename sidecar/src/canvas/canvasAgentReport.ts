@@ -106,7 +106,7 @@ export function buildReport(frame: CanvasFrame, preview: PreviewReport | null): 
       revisionId,
       diagnostics,
       lastWorkingRevisionId: build.lastWorkingRevisionId,
-      next: `Fix ${place(diagnostics[0])} and write again with expectedRevisionId "${revisionId}".`,
+      next: failedNext(diagnostics, revisionId),
     };
   }
   if (build.status === 'cancelled')
@@ -169,6 +169,13 @@ function readyReport(
   };
 }
 
+function failedNext(diagnostics: AgentDiagnostic[], revisionId: string): string {
+  const fix = `Fix ${place(diagnostics[0])} and write again with expectedRevisionId "${revisionId}".`;
+  // Only the canvas's strict rule fails a build on kit findings.
+  if (!diagnostics.some(isAdherenceDiagnostic)) return fix;
+  return `Strict design-system rule: the frame did not build because it strays from the pinned design system. Use its --ds-* tokens, fonts and primitives where noted, or keep a deliberate change as a --ds-* token override in source. ${fix}`;
+}
+
 function codeQualityReport(
   diagnostics: CanvasDiagnostic[],
 ): { diagnostics: AgentDiagnostic[]; next: string } | undefined {
@@ -187,7 +194,7 @@ function designSystemReport(
   return {
     diagnostics: diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic),
     next: strays
-      ? 'This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source. If the user asked to explore a new direction, the departure is expected: keep it, with its values as --ds-* overrides rather than literals.'
+      ? 'Guide design-system rule: the frame built, and the user sees these as notes on it. This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source. If the user asked to explore a new direction, the departure is expected: keep it, with its values as --ds-* overrides rather than literals.'
       : 'The token overrides are kept as deliberate; nothing to change for the design system.',
   };
 }

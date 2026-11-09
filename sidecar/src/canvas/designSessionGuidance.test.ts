@@ -24,6 +24,16 @@ test('project and kit first is a default that a prompt asking to explore sets as
     );
 });
 
+test('the Design brief and its MCP instructions name the user’s design-system rule and what Strict does', () => {
+  for (const copy of [DESIGN_SESSION_GUIDANCE, DESIGN_CANVAS_MCP_INSTRUCTIONS]) {
+    assert.match(
+      copy,
+      /designSystemAdherence, the user's off, guide or strict rule[^.]*never ask to change/,
+    );
+    assert.match(copy, /strict (fails its build|won't build a design that strays)/);
+  }
+});
+
 test('the Design brief and its MCP instructions stay within what every turn can afford', () => {
   // Both ride every Design turn, so each paragraph added is paid for on every request.
   assert.ok(Buffer.byteLength(DESIGN_SESSION_GUIDANCE) <= 13 * 1024);

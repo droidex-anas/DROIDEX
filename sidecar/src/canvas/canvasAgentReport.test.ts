@@ -60,3 +60,59 @@ test('a build without notes has no code-quality section', () => {
   assert.equal(report.warnings, undefined);
   assert.equal(report.designSystem, undefined);
 });
+
+test('a kit finding names the rule in effect: Guide notes it on the built frame, Strict fails the build', () => {
+  const finding = {
+    code: 'design_system_color',
+    message: 'A raw colour.',
+    file: 'main.tsx',
+    line: 4,
+  };
+  const guide = buildReport(frame([finding]), null);
+  assert.equal(guide.status, 'ready');
+  if (guide.status !== 'ready') return;
+  assert.match(
+    guide.designSystem?.next ?? '',
+    /^Guide design-system rule: [^.]*user sees these as notes/,
+  );
+
+  const strict = buildReport(
+    {
+      ...frame([]),
+      build: {
+        status: 'failed',
+        revisionId: 'revision-1',
+        diagnostics: [finding],
+        lastWorkingRevisionId: null,
+        generation: 1,
+      },
+    },
+    null,
+  );
+  assert.equal(strict.status, 'failed');
+  assert.match(strict.next, /^Strict design-system rule: the frame did not build/);
+  assert.match(
+    strict.next,
+    /Fix main\.tsx line 4 and write again with expectedRevisionId "revision-1"\.$/,
+  );
+
+  const broken = buildReport(
+    {
+      ...frame([]),
+      build: {
+        status: 'failed',
+        revisionId: 'revision-1',
+        diagnostics: [
+          { code: 'syntax_error', message: 'Unexpected token', file: 'main.tsx', line: 3 },
+        ],
+        lastWorkingRevisionId: null,
+        generation: 1,
+      },
+    },
+    null,
+  );
+  assert.equal(
+    broken.next,
+    'Fix main.tsx line 3 and write again with expectedRevisionId "revision-1".',
+  );
+});
