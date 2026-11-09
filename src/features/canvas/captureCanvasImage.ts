@@ -3,6 +3,7 @@ import {
   captureCanvasPreview,
   saveCanvasImage,
 } from '../../lib/desktop';
+import type { PreviewVector } from './previewDocument';
 import type {
   CanvasCommand,
   CanvasErrorCode,
@@ -34,6 +35,7 @@ interface LivePreview {
   width: number;
   height: number;
   scaleFactor: number;
+  vector: () => Promise<PreviewVector | null>;
   ended: AbortController;
 }
 
@@ -59,6 +61,15 @@ export function registerCanvasPreview(
     livePreviews.delete(key);
     live.ended.abort();
   };
+}
+
+/** The mounted revision's root `<svg>` or why it has none, or null when no live preview shows it. */
+export function readCanvasVector(
+  canvasId: string,
+  ref: RevisionRef,
+): Promise<PreviewVector | null> {
+  const preview = livePreviews.get(captureKey(canvasId, ref));
+  return preview ? preview.vector() : Promise.resolve(null);
 }
 
 /** Calls back each time main keeps a new picture of that revision. */

@@ -462,6 +462,19 @@ test("a locate is answered only by its own reply, never a probe's that echoes it
   assert.deepEqual(JSON.parse(await located), [rect]);
 });
 
+test('a vector answer has its own cap and carries only markup or a known refusal', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const answer = (data) => {
+    const asked = preview.vector();
+    reply({ event: 'vector', sequence: posted.at(-1).sequence, ...data });
+    return asked.then(JSON.parse);
+  };
+  const svg = `<svg>${'x'.repeat(8_000)}</svg>`;
+  assert.deepEqual(await answer({ svg }), { svg });
+  assert.deepEqual(await answer({ refused: 'not_vector', svg: 42 }), { refused: 'not_vector' });
+  assert.equal(await answer({ refused: 'anything' }), null);
+});
+
 test('a guest is not attachable until the preview session is configured', async () => {
   // The module that configures the session is what reports readiness, so main
   // has no second flag to forget: an unconfigured session routes DIRECT, and a

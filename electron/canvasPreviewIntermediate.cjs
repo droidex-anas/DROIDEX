@@ -3,7 +3,10 @@
 //
 // Kept free of `require('electron')` so it runs under plain Node.
 
-const { MAX_PREVIEW_SELECTION_BYTES } = require('./canvasPreviewReporter.cjs');
+const {
+  MAX_PREVIEW_SELECTION_BYTES,
+  MAX_PREVIEW_VECTOR_BYTES,
+} = require('./canvasPreviewReporter.cjs');
 
 /** One message from the generated frame, as JSON, except a selection, which has its own cap. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
@@ -26,6 +29,10 @@ const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
 const PREVIEW_HOVER_DEADLINE_MS = 250;
 /** How long a probe or a locate waits for the design to answer before it answers nothing. */
 const PREVIEW_ANSWER_DEADLINE_MS = 250;
+/** A vector answer walks every element of the design, so it gets longer than a probe. */
+const PREVIEW_VECTOR_DEADLINE_MS = 2_000;
+/** JSON escaping at most doubles the markup a vector answer carries. */
+const MAX_PREVIEW_VECTOR_EVENT_BYTES = 2 * MAX_PREVIEW_VECTOR_BYTES + 1024;
 /** Elements one locate may name, and how long each name may be. */
 const MAX_PREVIEW_LOCATE_ELEMENTS = 8;
 const MAX_PREVIEW_ELEMENT_ID_LENGTH = 128;
@@ -43,8 +50,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `hover` asks which element is under a point and answers with it directly,
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
- * between two points, and `locate` with the boxes of the elements it names;
- * each of those waits for its own answer.
+ * between two points, `locate` with the boxes of the elements it names, and
+ * `vector` with the design's root `<svg>` or why it has none; each of those
+ * waits for its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -151,7 +159,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
   let answerSequence = 0;
   // Sends the frame a command it answers directly, outside the queue, and
   // answers with what read makes of that answer, or null at the deadline.
-  const askFrame = (command, read) => {
+  const askFrame = (command, read, deadlineMs = ${String(PREVIEW_ANSWER_DEADLINE_MS)}) => {
     answerSequence += 1;
     const sequence = answerSequence;
     return new Promise((resolve) => {
@@ -160,7 +168,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         waiting.delete(sequence);
         resolve(JSON.stringify(found));
       };
-      const deadline = setTimeout(() => settle(null), ${String(PREVIEW_ANSWER_DEADLINE_MS)});
+      const deadline = setTimeout(() => settle(null), deadlineMs);
       waiting.set(sequence, { event: command.command, settle: (data) => settle(read(data)) });
       frame.contentWindow.postMessage(
         Object.assign({ canvasPreviewCommand: instance.nonce, sequence }, command),
@@ -235,7 +243,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
     const oversized =
       data.event === 'selection'
         ? bytes(encoded) > ${String(MAX_PREVIEW_SELECTION_BYTES)}
-        : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+        : data.event === 'vector'
+          ? bytes(encoded) > ${String(MAX_PREVIEW_VECTOR_EVENT_BYTES)}
+          : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -244,7 +254,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (data.event === 'probe' || data.event === 'locate') {
+    if (data.event === 'probe' || data.event === 'locate' || data.event === 'vector') {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -382,6 +392,17 @@ const INTERMEDIATE_SCRIPT = `(() => {
       const read = (data) =>
         Array.isArray(data.rects) && data.rects.length === elementIds.length ? data.rects.map(rectOf) : null;
       return askFrame({ command: 'locate', elementIds: elementIds.slice() }, read);
+    },
+    vector() {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const read = (data) => {
+        if (typeof data.svg === 'string' && bytes(data.svg) <= ${String(MAX_PREVIEW_VECTOR_BYTES)})
+          return { svg: data.svg };
+        return data.refused === 'not_vector' || data.refused === 'too_large'
+          ? { refused: data.refused }
+          : null;
+      };
+      return askFrame({ command: 'vector' }, read, ${String(PREVIEW_VECTOR_DEADLINE_MS)});
     },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');

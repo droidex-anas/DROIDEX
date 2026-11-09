@@ -9,6 +9,7 @@ import {
   readPreviewHover,
   readPreviewLocations,
   readPreviewSnapshot,
+  readPreviewVector,
   type PreviewInstance,
 } from './previewDocument';
 
@@ -248,6 +249,18 @@ test('a locate is a fixed call, answered with a box or null for each element in 
   assert.deepEqual(readPreviewLocations(JSON.stringify(unreadable), 2), [null, box]);
   for (const value of ['null', 'invalid_request', null, JSON.stringify([box])]) {
     assert.equal(readPreviewLocations(value, 2), null, String(value));
+  }
+});
+
+test('a vector answer is markup within the cap or a known refusal', () => {
+  const svg = `<svg>${'x'.repeat(8_000)}</svg>`;
+  assert.deepEqual(readPreviewVector(JSON.stringify({ svg })), { svg });
+  assert.deepEqual(readPreviewVector(JSON.stringify({ refused: 'too_large' })), {
+    refused: 'too_large',
+  });
+  const oversized = JSON.stringify({ svg: 'x'.repeat(256 * 1024 + 1) });
+  for (const value of [oversized, JSON.stringify({ refused: 'other' }), 'null', null]) {
+    assert.equal(readPreviewVector(value), null, String(value).slice(0, 40));
   }
 });
 

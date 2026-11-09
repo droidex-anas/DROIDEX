@@ -50,6 +50,7 @@ function mount(guestId: number) {
     width: 720,
     height: 720,
     scaleFactor: 2,
+    vector: () => Promise.resolve(null),
   });
 }
 

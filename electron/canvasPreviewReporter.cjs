@@ -18,7 +18,8 @@
  * command with a `hover` event naming the element under a point. Its probe
  * command selects nothing either: a `probe` event names the element at a point,
  * or the text between two points and the element that holds it, and a `locate`
- * event gives the box of the first drawn instance of each element it names. A kit preview's
+ * event gives the box of the first drawn instance of each element it names; a
+ * `vector` event carries the design's root `<svg>` as a standalone file. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -29,6 +30,8 @@
  * until its answer fits rather than let the intermediate drop it.
  */
 const MAX_PREVIEW_SELECTION_BYTES = 16384;
+/** Bytes a vector design's markup may measure; a larger one is refused, never cut. */
+const MAX_PREVIEW_VECTOR_BYTES = 256 * 1024;
 
 const GENERATED_FRAME_REPORTER = `(() => {
   const nonce = '__CANVAS_PREVIEW_NONCE__';
@@ -266,6 +269,54 @@ const GENERATED_FRAME_REPORTER = `(() => {
       text: spanned,
     };
   };
+  // A vector design is one <svg> under the root. Its copy carries the paint
+  // and type the page's CSS gave each element, its tokens resolved, as inline
+  // style, so the file draws the same on its own. An inherited property is
+  // written where it changes; the others where they leave their initial value.
+  const INHERITED_PAINT = [
+    'fill',
+    'fill-opacity',
+    'stroke',
+    'stroke-width',
+    'stroke-opacity',
+    'color',
+    'font-family',
+    'font-size',
+    'font-style',
+    'font-weight',
+    'letter-spacing',
+  ];
+  const OWN_PAINT = { 'stop-color': 'rgb(0, 0, 0)', 'flood-color': 'rgb(0, 0, 0)', opacity: '1' };
+  const ABSOLUTE_LENGTH = /^[0-9]+([.][0-9]+)?(px)?$/;
+  const vector = () => {
+    const svg = root.childElementCount === 1 ? root.firstElementChild : null;
+    if (!(svg instanceof SVGSVGElement)) return { refused: 'not_vector' };
+    const copy = svg.cloneNode(true);
+    const drawn = [svg, ...svg.querySelectorAll('*')];
+    const copied = [copy, ...copy.querySelectorAll('*')];
+    const computedOf = new Map();
+    drawn.forEach((node, index) => {
+      const computed = getComputedStyle(node);
+      computedOf.set(node, computed);
+      const inherited = index === 0 ? null : computedOf.get(node.parentElement);
+      const style = copied[index].style;
+      for (const name of INHERITED_PAINT) {
+        const value = computed.getPropertyValue(name);
+        if (!inherited || inherited.getPropertyValue(name) !== value) style.setProperty(name, value);
+      }
+      for (const [name, initial] of Object.entries(OWN_PAINT)) {
+        const value = computed.getPropertyValue(name);
+        if (value !== initial) style.setProperty(name, value);
+      }
+    });
+    // A size from CSS or in percent means nothing outside the page: the file gets the drawn one.
+    const box = svg.getBoundingClientRect();
+    for (const [side, length] of [['width', box.width], ['height', box.height]]) {
+      if (!ABSOLUTE_LENGTH.test(copy.getAttribute(side) || '')) copy.setAttribute(side, String(Math.ceil(length)));
+    }
+    const markup = new XMLSerializer().serializeToString(copy);
+    return bytes(markup) <= ${String(MAX_PREVIEW_VECTOR_BYTES)} ? { svg: markup } : { refused: 'too_large' };
+  };
   let draftTokens = [];
   const setTokens = (tokens) => {
     const style = document.documentElement.style;
@@ -330,6 +381,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
         return node ? rectOf(node) : null;
       });
       post('locate', { sequence: command.sequence, rects: rects });
+    } else if (command.command === 'vector') {
+      post('vector', Object.assign({ sequence: command.sequence }, vector()));
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
@@ -345,4 +398,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
   });
 })();`;
 
-module.exports = { GENERATED_FRAME_REPORTER, MAX_PREVIEW_SELECTION_BYTES };
+module.exports = {
+  GENERATED_FRAME_REPORTER,
+  MAX_PREVIEW_SELECTION_BYTES,
+  MAX_PREVIEW_VECTOR_BYTES,
+};
