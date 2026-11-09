@@ -1,7 +1,7 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the seven audited literals below.
+// element's `executeJavaScript`, with exactly the eight audited literals below.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -18,6 +18,8 @@ const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
 /** Style properties one selection command may name, as the intermediate caps them. */
 const MAX_PREVIEW_STYLE_PROPERTIES = 64;
+/** Elements one locate may name, as the intermediate caps them. */
+export const MAX_PREVIEW_LOCATE_ELEMENTS = 8;
 /** Bytes one queued event may measure, as the intermediate accepts it. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** Bytes a selection may measure: the intermediate gives it its own cap and keeps only one. */
@@ -178,6 +180,14 @@ export function previewProbeScript(probe: PreviewProbe): string {
 }
 
 /**
+ * Asks where each element is drawn in the design's pixels, by the first of its
+ * instances that is; the call itself answers.
+ */
+export function previewLocateScript(elementIds: readonly string[]): string {
+  return `globalThis.__droidexCanvasPreview.locate(${jsonArgument({ elementIds })})`;
+}
+
+/**
  * Sets a kit's draft token values on the design's root, replacing the set this
  * guest was given before; an empty set puts the saved values back.
  */
@@ -304,6 +314,16 @@ export function readPreviewFinding(value: unknown): PreviewFinding | null {
     rect,
     text,
   };
+}
+
+/**
+ * A locate's answer: a box for each of the `asked` elements in order, null for
+ * one that is not drawn, or null when the answer is not one.
+ */
+export function readPreviewLocations(value: unknown, asked: number): (FrameRect | null)[] | null {
+  const parsed = readAnswer(value);
+  if (!Array.isArray(parsed) || parsed.length !== asked) return null;
+  return parsed.map(readRect);
 }
 
 /** A direct answer's JSON, within one event's cap, or undefined. */

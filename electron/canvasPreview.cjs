@@ -73,8 +73,11 @@ const MAX_PREVIEW_TOKENS = 128;
 const MAX_PREVIEW_TOKEN_VALUE_LENGTH = 160;
 /** How long a hover waits for the design to answer before it answers nothing. */
 const PREVIEW_HOVER_DEADLINE_MS = 250;
-/** How long a probe waits for the design to answer before it answers nothing. */
-const PREVIEW_PROBE_DEADLINE_MS = 250;
+/** How long a probe or a locate waits for the design to answer before it answers nothing. */
+const PREVIEW_ANSWER_DEADLINE_MS = 250;
+/** Elements one locate may name, and how long each name may be. */
+const MAX_PREVIEW_LOCATE_ELEMENTS = 8;
+const MAX_PREVIEW_ELEMENT_ID_LENGTH = 128;
 /** The nonce charset the intermediate will embed; the renderer mints hex. */
 const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
 
@@ -89,7 +92,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `hover` asks which element is under a point and answers with it directly,
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
- * between two points, and every probe waits for its own answer.
+ * between two points, and `locate` with the boxes of the elements it names;
+ * each of those waits for its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -191,9 +195,30 @@ const INTERMEDIATE_SCRIPT = `(() => {
       text: spannedRect ? { excerpt: text(spanned.excerpt), rect: spannedRect } : null,
     };
   };
-  // Each probe waiting for the frame's answer, by the sequence number it echoes.
-  const probes = new Map();
-  let probeSequence = 0;
+  // Each probe or locate waiting for the frame's answer, by the sequence number it echoes.
+  const waiting = new Map();
+  let answerSequence = 0;
+  // Sends the frame a command it answers directly, outside the queue, and
+  // answers with what read makes of that answer, or null at the deadline.
+  const askFrame = (command, read) => {
+    answerSequence += 1;
+    const sequence = answerSequence;
+    return new Promise((resolve) => {
+      const settle = (found) => {
+        clearTimeout(deadline);
+        waiting.delete(sequence);
+        resolve(JSON.stringify(found));
+      };
+      const deadline = setTimeout(() => settle(null), ${String(PREVIEW_ANSWER_DEADLINE_MS)});
+      waiting.set(sequence, { event: command.command, settle: (data) => settle(read(data)) });
+      frame.contentWindow.postMessage(
+        Object.assign({ canvasPreviewCommand: instance.nonce, sequence }, command),
+        '*',
+      );
+    });
+  };
+  const isElementId = (value) =>
+    typeof value === 'string' && value.length > 0 && value.length <= ${String(MAX_PREVIEW_ELEMENT_ID_LENGTH)};
   const pointOf = (value) =>
     value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
       ? { x: value.x, y: value.y }
@@ -268,8 +293,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (data.event === 'probe') {
-      probes.get(data.sequence)?.(normalizeProbe(data.element));
+    if (data.event === 'probe' || data.event === 'locate') {
+      const question = waiting.get(data.sequence);
+      if (question?.event === data.event) question.settle(data);
       return;
     }
     const event = normalize(data);
@@ -393,21 +419,18 @@ const INTERMEDIATE_SCRIPT = `(() => {
       const to = pointOf(request.to);
       if (!at && !(from && to)) return 'invalid_request';
       const asked = at ? { at } : { from, to };
-      probeSequence += 1;
-      const sequence = probeSequence;
-      return new Promise((resolve) => {
-        const settle = (found) => {
-          clearTimeout(deadline);
-          probes.delete(sequence);
-          resolve(JSON.stringify(found));
-        };
-        const deadline = setTimeout(() => settle(null), ${String(PREVIEW_PROBE_DEADLINE_MS)});
-        probes.set(sequence, settle);
-        frame.contentWindow.postMessage(
-          Object.assign({ canvasPreviewCommand: instance.nonce, command: 'probe', sequence }, asked),
-          '*',
-        );
-      });
+      return askFrame(Object.assign({ command: 'probe' }, asked), (data) =>
+        normalizeProbe(data.element),
+      );
+    },
+    locate(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const elementIds = request && typeof request === 'object' ? request.elementIds : null;
+      const named = Array.isArray(elementIds) && elementIds.length <= ${String(MAX_PREVIEW_LOCATE_ELEMENTS)};
+      if (!named || !elementIds.every(isElementId)) return 'invalid_request';
+      const read = (data) =>
+        Array.isArray(data.rects) && data.rects.length === elementIds.length ? data.rects.map(rectOf) : null;
+      return askFrame({ command: 'locate', elementIds: elementIds.slice() }, read);
     },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
