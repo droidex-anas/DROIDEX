@@ -3,8 +3,9 @@
 // root `<svg>`. Main captures and writes the bytes; this only asks for them.
 
 import { useEffect, useId, useRef, useState } from 'react';
+import { Button } from '../../components/ui/Button';
 import { toast } from '../../lib/toast';
-import { CanvasDialog, PRIMARY_BUTTON_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
+import { CanvasDialog } from './CanvasDialog';
 import {
   CanvasImageError,
   exportCanvasImage,
@@ -135,12 +136,19 @@ export function ExportImageDialog({
           />
         )}
         <div className="flex items-center justify-end gap-2">
-          <button type="button" disabled={pending} onClick={onClose} className={QUIET_BUTTON_CLASS}>
+          <Button variant="ghost" size="sm" disabled={pending} onClick={onClose}>
             Cancel
-          </button>
-          <button ref={exportRef} type="submit" disabled={pending} className={PRIMARY_BUTTON_CLASS}>
-            {pending ? 'Exporting…' : 'Export…'}
-          </button>
+          </Button>
+          <Button
+            ref={exportRef}
+            type="submit"
+            variant="primary"
+            size="sm"
+            loading={pending}
+            disabled={pending}
+          >
+            Export…
+          </Button>
         </div>
       </form>
     </CanvasDialog>
