@@ -1,24 +1,34 @@
 // The Canvas wordmark, and the picker it opens: the canvas on screen with what
 // can be done to it (tagging in the chat, the library and deletion, spec §4 and
-// §7), New canvas and the saved ones (spec §4). The wordmark stays the label so
-// the row reads the same before and after the list is read; the canvas's own
-// name heads the popover. Which chats work on that canvas is the chat column
+// §7) and its design-system rule, New canvas and the saved ones (spec §4). The
+// wordmark stays the label so the row reads the same before and after the list
+// is read; the canvas's own name heads the popover. Which chats work on that canvas is the chat column
 // header's menu (`AttachedChatsMenu`), beside the transcript they write.
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronDown } from '@droidex/icons';
+import { navigationIndex } from '../../components/ui/menuKeys';
 import { Popover } from '../../components/ui/Popover';
+import { toast } from '../../lib/toast';
 import { TAG_KEY_LABEL } from './boardKeys';
 import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
 import { canvasClient, frameRemovals } from './canvasClient';
-import { CanvasRequestError } from './client';
+import { canvasMessage, CanvasRequestError } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
+import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
+import { DESIGN_SYSTEM_RULES } from './designSystemRule';
 import { tagFramesLabel, toggleFramePins, useFramePins } from './framePins';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
 import { libraryFrame } from './libraryRequests';
-import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRow } from './menuRows';
-import type { CanvasRemovalPreview, LibraryItem, RevisionRef } from './protocol';
+import { MENU_WIDTH_PX, MenuHeading, MenuNote, MenuRadioRow, MenuRow } from './menuRows';
+import type {
+  CanvasRemovalPreview,
+  CanvasSummary,
+  DesignSystemAdherence,
+  LibraryItem,
+  RevisionRef,
+} from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';
@@ -103,6 +113,14 @@ export function CanvasMenu({
                 close();
                 toggleFramePins(shown.appSessionId, shown.canvasId, shown.selected);
               }}
+            />
+          )}
+          {canvasId !== null && canvas && (
+            <DesignSystemRuleRows
+              appSessionId={appSessionId}
+              canvas={canvas}
+              board={board}
+              onClose={close}
             />
           )}
 
@@ -230,6 +248,65 @@ function TagFramesRow({
         if (attached && selected.length > 0) onTagFrames(attached);
       }}
     />
+  );
+}
+
+/**
+ * How the canvas holds its designs to their kit. Only an attached chat may
+ * change it; the arrows move between the choices as in any radio group.
+ */
+function DesignSystemRuleRows({
+  appSessionId,
+  canvas,
+  board,
+  onClose,
+}: {
+  appSessionId: string;
+  canvas: CanvasSummary;
+  board: BoardOnScreen | null;
+  onClose: () => void;
+}) {
+  const canChange = canvas.attachedAppSessionIds.includes(appSessionId);
+  const usesKit = board?.frames.some(
+    (frame) => frame.designSystem.id !== AUTO_DESIGN_SYSTEM.ref.id,
+  );
+  const choose = (rule: DesignSystemAdherence) => {
+    onClose();
+    if (rule === canvas.designSystemAdherence) return;
+    canvasClient
+      .setDesignSystemAdherence(appSessionId, canvas.canvasId, rule)
+      .catch((error: unknown) => {
+        toast.error(canvasMessage(error));
+      });
+  };
+  const moveBetween = (event: KeyboardEvent<HTMLDivElement>) => {
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]:enabled'),
+    );
+    const current = rows.findIndex((row) => row === document.activeElement);
+    const next = navigationIndex(event.key, current, rows.length);
+    if (next === null) return;
+    event.preventDefault();
+    rows[next].focus();
+  };
+  return (
+    <div role="group" aria-label="Design system" onKeyDown={moveBetween}>
+      <MenuHeading>Design system</MenuHeading>
+      {!canChange && <MenuNote>Open a chat on this canvas to change this</MenuNote>}
+      {canChange && board && !usesKit && <MenuNote>Checks apply once a design uses a kit</MenuNote>}
+      {DESIGN_SYSTEM_RULES.map(({ rule, label, note }) => (
+        <MenuRadioRow
+          key={rule}
+          label={label}
+          note={note}
+          checked={rule === canvas.designSystemAdherence}
+          disabled={!canChange}
+          onRun={() => {
+            choose(rule);
+          }}
+        />
+      ))}
+    </div>
   );
 }
 

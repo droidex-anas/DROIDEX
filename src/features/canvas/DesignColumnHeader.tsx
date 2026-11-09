@@ -1,6 +1,6 @@
 // The Design chat column's top row (spec §4). The canvas on the board names
-// it; its menu lists the chats on that canvas, the other canvases and what can
-// be done to the canvas itself. The + at the row's end starts the next chat.
+// it; its menu lists the chats on that canvas, sets its design-system rule, and
+// lists the other canvases and what can be done to the canvas itself. The + at the row's end starts the next chat.
 
 import { useRef, useState, type MouseEvent } from 'react';
 import {
@@ -19,9 +19,14 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { opensInNewTab } from '../../lib/shortcuts';
+import { toast } from '../../lib/toast';
 import { searchCanvases } from './canvasChats';
+import { canvasClient } from './canvasClient';
+import { canvasMessage } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
+import { DESIGN_SYSTEM_RULES } from './designSystemRule';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
+import type { CanvasSummary } from './protocol';
 import { useCanvases, type Canvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 
@@ -101,6 +106,12 @@ function CanvasNameMenu({ appSessionId, canvasId }: { appSessionId: string; canv
           attached={canvas?.attachedAppSessionIds ?? []}
         />
         <Menu.Divider />
+        {canvas && (
+          <>
+            <DesignSystemRuleItems appSessionId={appSessionId} canvas={canvas} />
+            <Menu.Divider />
+          </>
+        )}
         <OtherCanvases canvases={canvases} canvasId={canvasId} />
         <Menu.Divider />
         <Menu.Item
@@ -188,6 +199,47 @@ function ChatsOnCanvas({
             {id === appSessionId && (
               <Check aria-hidden className="size-icon-sm shrink-0 text-secondary" />
             )}
+          </Menu.Item>
+        );
+      })}
+    </>
+  );
+}
+
+/** The board menu's design-system rule, without its notes. */
+function DesignSystemRuleItems({
+  appSessionId,
+  canvas,
+}: {
+  appSessionId: string;
+  canvas: CanvasSummary;
+}) {
+  const canChange = canvas.attachedAppSessionIds.includes(appSessionId);
+  return (
+    <>
+      <Menu.Label>Design system</Menu.Label>
+      {DESIGN_SYSTEM_RULES.map(({ rule, label }) => {
+        const checked = rule === canvas.designSystemAdherence;
+        return (
+          <Menu.Item
+            key={rule}
+            role="menuitemradio"
+            aria-checked={checked}
+            disabled={!canChange}
+            title={canChange ? undefined : 'Open a chat on this canvas to change this'}
+            onSelect={() => {
+              if (checked) return;
+              canvasClient
+                .setDesignSystemAdherence(appSessionId, canvas.canvasId, rule)
+                .catch((error: unknown) => {
+                  toast.error(canvasMessage(error));
+                });
+            }}
+          >
+            {/* The icon column the chat rows above hold, so every label starts on one edge. */}
+            <span aria-hidden className="size-icon-md shrink-0" />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {checked && <Check aria-hidden className="size-icon-sm shrink-0 text-secondary" />}
           </Menu.Item>
         );
       })}
