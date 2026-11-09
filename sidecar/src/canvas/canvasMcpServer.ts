@@ -116,7 +116,10 @@ export function createCanvasMcpServer(
         'capture_unavailable',
         'That revision has no working build to capture. Inspect its diagnostics, and capture it once it is ready.',
       );
-    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId));
+    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId), {
+      format: 'png',
+      scale: null,
+    });
   };
 
   const tools = [

@@ -121,7 +121,11 @@ export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEv
       return isChange(value.change);
     case 'canvas.captureRequest':
       return (
-        id(value.captureId) && id(value.canvasId) && id(value.designId) && id(value.revisionId)
+        id(value.captureId) &&
+        id(value.canvasId) &&
+        id(value.designId) &&
+        id(value.revisionId) &&
+        isCaptureImage(value.image)
       );
     case 'canvas.designSystemsChanged':
       return id(value.id);
@@ -231,6 +235,12 @@ function isReply(value: unknown): boolean {
 }
 
 /** A base64 PNG within `maxLength`, or null where there is none. */
+function isCaptureImage(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.format === 'svg') return true;
+  return value.format === 'png' && [1, 2, 3, null].includes(value.scale as number | null);
+}
+
 function isPngOrNone(value: unknown, maxLength: number): boolean {
   return value === null || (typeof value === 'string' && value.length <= maxLength);
 }

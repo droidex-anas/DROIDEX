@@ -574,15 +574,24 @@ export type CanvasCommand =
       expectedSequence: number;
       expectedAttachedAppSessionIds: string[];
     }
-  // A page's answer to an agent's inspect screenshot; only a page that was
+  // A page's answer to an agent's screenshot or render; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
 
 /**
- * A page's answer to one `canvas.captureRequest`: the base64 PNG its live
- * preview of exactly that revision produced, or why it could not capture it.
+ * What a capture asks a page for: a PNG at a scale, where null is the page's
+ * display scale, or a vector design's own root `<svg>`.
  */
-type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
+export type CaptureImage = { format: 'png'; scale: 1 | 2 | 3 | null } | { format: 'svg' };
+
+/**
+ * A page's answer to one `canvas.captureRequest`: the base64 PNG or the SVG
+ * its live preview of exactly that revision produced, or why it could not.
+ */
+type CaptureReport =
+  | { ok: true; png: string }
+  | { ok: true; svg: string }
+  | { ok: false; message: string };
 
 /** A canvas an earlier DROIDEX saved in an older format; it is not opened. */
 export interface OutdatedCanvas {
@@ -648,6 +657,7 @@ export type CanvasEvent =
       canvasId: string;
       designId: string;
       revisionId: string;
+      image: CaptureImage;
     }
   // After any write to a kit, so every open list and document reads it again.
   | { type: 'canvas.designSystemsChanged'; id: string };

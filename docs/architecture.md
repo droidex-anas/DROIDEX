@@ -551,10 +551,12 @@ scope.
 An inspect screenshot reuses the preview capture below; the sidecar holds no
 pixels. It needs the frame's current revision to have a ready build, then
 `CanvasCaptures` broadcasts `canvas.captureRequest` naming that exact revision
-and waits for `canvas.reportCapture` from the pages watching the canvas when it
-asked. A page answers from its registered live preview of that revision through
-`captureCanvasImage`, or refuses. The first valid PNG, at most 8 MiB, returns to
-the model as image content beside the build facts; Codex receives it as an
+and the image it wants (a PNG at 1x, 2x, 3x or the page's display scale, or a
+vector design's root `<svg>`), and waits for `canvas.reportCapture` from the
+pages watching the canvas when it asked. A page answers from its registered live
+preview of that revision through `captureCanvasImage`, or refuses. The first
+valid answer in the format asked for, a PNG at most 8 MiB or an SVG at most
+256 KiB, returns to the model as image content beside the build facts; Codex receives it as an
 `inputImage` data URL. No watching page, every watching page refusing or leaving,
 or seven seconds without an answer return `capture_unavailable`. Revoking the
 turn's lease aborts the wait, and a read revalidates its lease before delivery,

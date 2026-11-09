@@ -128,7 +128,8 @@ const manager = new SessionManager(
   {
     canvasTurns,
     canvasWorkspace: () => canvasReady,
-    canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
+    canvasCapture: (canvasId, ref, signal, image) =>
+      canvasBridge.capture(canvasId, ref, signal, image),
     kitPreviews,
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);

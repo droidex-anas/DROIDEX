@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { documentIdSchema } from './designSystemDocument.js';
 import { DESIGN_SYSTEM_LIMITS, designSystemObjectSchema } from './designSystems.js';
-import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
+import { MAX_CAPTURE_BASE64_LENGTH, MAX_CAPTURE_SVG_BYTES } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
@@ -400,11 +400,20 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.reportCapture'),
       ...request,
       captureId: canvasIdentifierSchema,
-      capture: z.discriminatedUnion('ok', [
+      capture: z.union([
         z
           .object({
             ok: z.literal(true),
             png: base64Schema(MAX_CAPTURE_BASE64_LENGTH),
+          })
+          .strict(),
+        z
+          .object({
+            ok: z.literal(true),
+            svg: z
+              .string()
+              .max(MAX_CAPTURE_SVG_BYTES)
+              .refine((svg) => Buffer.byteLength(svg) <= MAX_CAPTURE_SVG_BYTES),
           })
           .strict(),
         z.object({ ok: z.literal(false), message: z.string().min(1).max(300) }).strict(),

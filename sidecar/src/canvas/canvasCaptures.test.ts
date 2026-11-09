@@ -7,6 +7,7 @@ import {
   harness,
   turnScope,
 } from '../testing/canvasBridgeSupport.js';
+import type { CaptureImage } from '../canvas/protocol.js';
 import { CANVAS_PNG } from '../testing/canvasStorageSupport.js';
 
 const png = CANVAS_PNG.toString('base64');
@@ -19,13 +20,14 @@ async function canvasWithTurn(t: TestContext) {
   const scope = turnScope(canvasId, 'turn:capture');
   canvas.scopes.register(scope);
   const ref = { designId, revisionId: 'rev_current' };
-  const capture = () => canvas.capture(canvasId, ref, canvas.scopes.ended(scope.scopeId));
-  const report = (captureId: string) =>
+  const capture = (image: CaptureImage = { format: 'png', scale: null }) =>
+    canvas.capture(canvasId, ref, canvas.scopes.ended(scope.scopeId), image);
+  const report = (captureId: string, answer: { png: string } | { svg: string } = { png }) =>
     canvas.handle({
       type: 'canvas.reportCapture',
       requestId: `report-${captureId}`,
       captureId,
-      capture: { ok: true, png },
+      capture: { ok: true, ...answer },
     });
   return { canvas, canvasId, designId, scope, capture, report };
 }
@@ -51,6 +53,24 @@ test('no watching page refuses at once, and a watching page’s PNG of the asked
   );
   await report(request.captureId);
   assert.equal(await pending, png);
+});
+
+test('a render asks for its scale or its SVG, and relays only an answer in that format', async (t) => {
+  const { canvas, canvasId, capture, report } = await canvasWithTurn(t);
+  await canvas.handle({ type: 'canvas.subscribe', requestId: 'req-watch', canvasId });
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+
+  const scaled = capture({ format: 'png', scale: 3 });
+  const asked = await captureRequest(canvas.events, 0);
+  assert.deepEqual(asked.image, { format: 'png', scale: 3 });
+  await report(asked.captureId, { svg });
+  await assert.rejects(scaled, { code: 'capture_unavailable', message: /wrong format/ });
+
+  const vector = capture({ format: 'svg' });
+  const askedSvg = await captureRequest(canvas.events, 1);
+  assert.deepEqual(askedSvg.image, { format: 'svg' });
+  await report(askedSvg.captureId, { svg });
+  assert.equal(await vector, svg);
 });
 
 test('a capture fails at its deadline, and ends with its turn even when the page answers later', async (t) => {

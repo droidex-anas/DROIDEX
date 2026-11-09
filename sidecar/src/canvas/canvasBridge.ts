@@ -422,7 +422,8 @@ export function createCanvasCommandHandler(
   };
   return {
     handle,
-    capture: (canvasId, ref, signal) => dispatch.captures.capture(canvasId, ref, signal),
+    capture: (canvasId, ref, signal, image) =>
+      dispatch.captures.capture(canvasId, ref, signal, image),
   };
 }
 

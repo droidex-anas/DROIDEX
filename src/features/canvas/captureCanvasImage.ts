@@ -202,28 +202,42 @@ function saved(result: CanvasImageSaveResult): boolean {
 }
 
 /**
- * An agent's inspect screenshot, answered from this page's live preview of
+ * An agent's screenshot or render, answered from this page's live preview of
  * exactly that revision. A page that is not showing it says so.
  */
 export async function answerCaptureRequest(
   request: Extract<CanvasEvent, { type: 'canvas.captureRequest' }>,
 ): Promise<ReportCapture> {
-  const { captureId, canvasId, designId, revisionId } = request;
+  const { captureId, canvasId, designId, revisionId, image } = request;
+  const ref = { designId, revisionId };
   const reported = (capture: CaptureReport): ReportCapture => ({
     type: 'canvas.reportCapture',
     requestId: crypto.randomUUID(),
     captureId,
     capture,
   });
-  if (!livePreviews.has(captureKey(canvasId, { designId, revisionId })))
+  if (!livePreviews.has(captureKey(canvasId, ref)))
     return reported({ ok: false, message: NOT_SHOWN });
+  if (image.format === 'svg') {
+    const vector = await readCanvasVector(canvasId, ref);
+    if (vector === null) return reported({ ok: false, message: NOT_SHOWN });
+    if ('svg' in vector) return reported({ ok: true, svg: vector.svg });
+    return reported({
+      ok: false,
+      message:
+        vector.refused === 'too_large'
+          ? 'This design’s SVG is over 256 KiB. Render it as a PNG.'
+          : 'This design is not a single root <svg>, so it has no SVG. Render it as a PNG.',
+    });
+  }
   try {
-    const image = await captureCanvasImage(
+    const { bytes } = await captureCanvasImage(
       canvasId,
-      { designId, revisionId },
+      ref,
       new AbortController().signal,
+      image.scale ?? undefined,
     );
-    return reported({ ok: true, png: base64(image.bytes) });
+    return reported({ ok: true, png: base64(bytes) });
   } catch (error) {
     return reported({
       ok: false,

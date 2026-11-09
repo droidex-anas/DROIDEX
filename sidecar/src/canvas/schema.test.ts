@@ -554,6 +554,15 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       canvasId: 'cv_01',
       designId: 'dsg_01',
       revisionId: 'rev_01',
+      image: { format: 'png', scale: 3 },
+    },
+    {
+      type: 'canvas.captureRequest',
+      captureId: '0b6b9f3e-7c1d-4f43-9a5e-2f1c8d4e6a71',
+      canvasId: 'cv_01',
+      designId: 'dsg_01',
+      revisionId: 'rev_01',
+      image: { format: 'svg' },
     },
   ];
   // Types agreeing is not enough: the two runtime bounds have to agree too, or
@@ -562,6 +571,7 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     const serialized: unknown = JSON.parse(JSON.stringify(event));
     assert.ok(isRecord(serialized) && isCanvasEvent(serialized), `rejected ${event.type}`);
   }
+  assert.equal(isCanvasEvent({ ...events.at(-1), image: { format: 'png', scale: 4 } }), false);
   // The renderer's half of the one correlation bound; canvasBridge.test.ts
   // holds the sidecar to the same length through the dispatch boundary.
   assert.ok(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(128) }));

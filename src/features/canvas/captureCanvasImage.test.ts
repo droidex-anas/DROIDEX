@@ -204,6 +204,7 @@ test('an agent screenshot is answered only from a live preview of that exact rev
     captureId: 'capture-1',
     canvasId: 'cv_01',
     ...ref,
+    image: { format: 'png', scale: null },
   } as const;
   try {
     const unshown = await answerCaptureRequest(request);
@@ -226,6 +227,33 @@ test('an agent screenshot is answered only from a live preview of that exact rev
       release();
     }
   } finally {
+    desktop.close();
+  }
+});
+
+test('a render asks the live preview for its scale, or for its root svg', async () => {
+  const desktop = desktopCapture();
+  let release = mount(41, { refused: 'not_vector' });
+  const request = {
+    type: 'canvas.captureRequest',
+    captureId: 'capture-2',
+    canvasId: 'cv_01',
+    ...ref,
+  } as const;
+  try {
+    const scaled = answerCaptureRequest({ ...request, image: { format: 'png', scale: 3 } });
+    assert.equal(desktop.pending[0].request.scaleFactor, 3);
+    desktop.pending[0].answer({ ok: true, mediaType: 'image/png', bytes: new Uint8Array([1]) });
+    assert.equal((await scaled).capture.ok, true);
+
+    const refused = await answerCaptureRequest({ ...request, image: { format: 'svg' } });
+    assert.equal(refused.capture.ok, false);
+    release();
+    release = mount(42, { svg: '<svg/>' });
+    const vector = await answerCaptureRequest({ ...request, image: { format: 'svg' } });
+    assert.deepEqual(vector.capture, { ok: true, svg: '<svg/>' });
+  } finally {
+    release();
     desktop.close();
   }
 });
