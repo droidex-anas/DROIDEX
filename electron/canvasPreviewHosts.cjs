@@ -81,11 +81,13 @@ function tooLarge(width, height, scaleFactor) {
 /**
  * The compositor answers at the display's own scale, and its PNG cannot be
  * scaled up without blurring, so another scale is drawn again by Chromium.
+ * The native PNG never leaves main, so the output caps do not apply to it:
+ * a 1x capture on a 2x display can start from a native image over them.
  */
 async function atScale(contents, bytes, width, height, scaleFactor) {
-  if (validPng(bytes, width, height, scaleFactor) || !validPng(bytes, width, height, null))
-    return bytes;
-  const nativeScale = bytes.readUInt32BE(16) / width;
+  const native = pngSize(bytes);
+  if (!native || isAtScale(native, width, height, scaleFactor)) return bytes;
+  const nativeScale = native.pixelWidth / width;
   const debuggerClient = contents.debugger;
   const wasAttached = debuggerClient.isAttached();
   if (!wasAttached) debuggerClient.attach('1.3');
@@ -100,24 +102,31 @@ async function atScale(contents, bytes, width, height, scaleFactor) {
   }
 }
 
-/**
- * The PNG header is checked before any bytes leave main or enter its cache;
- * a null scale accepts any size under the caps.
- */
-function validPng(bytes, width, height, scaleFactor) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 33 || bytes.length > MAX_CAPTURE_BYTES)
-    return false;
+/** A PNG's pixel size from its header, or null for bytes that are not a PNG. */
+function pngSize(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 33) return null;
   if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString('ascii', 12, 16) !== 'IHDR')
-    return false;
-  const pixelWidth = bytes.readUInt32BE(16);
-  const pixelHeight = bytes.readUInt32BE(20);
+    return null;
+  return { pixelWidth: bytes.readUInt32BE(16), pixelHeight: bytes.readUInt32BE(20) };
+}
+
+function isAtScale({ pixelWidth, pixelHeight }, width, height, scaleFactor) {
+  return (
+    Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
+    Math.abs(pixelHeight - height * scaleFactor) <= 1
+  );
+}
+
+/** The PNG header is checked against the caps before any bytes leave main or enter its cache. */
+function validPng(bytes, width, height, scaleFactor) {
+  const size = pngSize(bytes);
+  if (!size || bytes.length > MAX_CAPTURE_BYTES) return false;
+  const { pixelWidth, pixelHeight } = size;
   return (
     pixelWidth <= MAX_CAPTURE_DIMENSION_PX &&
     pixelHeight <= MAX_CAPTURE_DIMENSION_PX &&
     pixelWidth * pixelHeight <= MAX_CAPTURE_PIXELS &&
-    (scaleFactor === null ||
-      (Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
-        Math.abs(pixelHeight - height * scaleFactor) <= 1))
+    isAtScale(size, width, height, scaleFactor)
   );
 }
 

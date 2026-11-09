@@ -567,6 +567,32 @@ test('a capture at a scale the display does not draw is drawn again by Chromium 
   assert.equal(guest.debugger.attached, false);
 });
 
+test('a Poster at 1x on a 2x display is drawn again, though its native image is over the caps', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push(params.clip.scale);
+      return Promise.resolve({ data: capturedImage(1728, 2304).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const poster = { ...captureRequest, width: 1728, height: 2304, scaleFactor: 1 };
+  const capture = hosts.capture(poster);
+  await new Promise(setImmediate);
+  guest.captures[0].resolve(capturedImage(3456, 4608));
+  const result = await capture;
+  assert.equal(result.ok, true);
+  assert.deepEqual([result.bytes.readUInt32BE(16), result.bytes.readUInt32BE(20)], [1728, 2304]);
+  assert.deepEqual(sent, [0.5]);
+});
+
 test('a capture over the pixel caps is refused with the largest scale that fits', async () => {
   const { hosts } = createHosts();
   hosts.attach(createGuest(41));
