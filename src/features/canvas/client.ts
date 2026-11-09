@@ -22,6 +22,7 @@ import type {
   CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
+  DesignSystemAdherence,
   OwnedAsset,
   PreviewArtifact,
   RemoveFramesInput,
@@ -150,6 +151,22 @@ export class CanvasClient {
       appSessionId,
     });
     reply(event, 'attachment');
+  }
+
+  /** The chat must be attached to the canvas; the sidecar rebuilds its frames under the new rule. */
+  async setDesignSystemAdherence(
+    appSessionId: string,
+    canvasId: string,
+    designSystemAdherence: DesignSystemAdherence,
+  ): Promise<void> {
+    const event = await this.request({
+      type: 'canvas.setDesignSystemAdherence',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      designSystemAdherence,
+    });
+    reply(event, 'ok');
   }
 
   async createFrames(
