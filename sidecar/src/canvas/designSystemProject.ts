@@ -12,6 +12,7 @@ import {
   type ImportDesignSystemResult,
   type ImportSource,
 } from './designSystemImport.js';
+import { isInsideProject, projectRelativePath } from './projectPaths.js';
 
 const MAX_FILE_BYTES = 256 * 1024;
 
@@ -61,7 +62,7 @@ async function readProjectSources(
   // By file identity, so two spellings of one file on a case-insensitive disk are one.
   const named = new Map<string, string>();
   for (const source of sources) {
-    const file = relativePath(source.path);
+    const file = projectRelativePath(source.path);
     if ('problem' in file) return refused(file.problem);
     const opened = await readInside(root, file.path);
     if ('problem' in opened) return refused(opened.problem);
@@ -80,21 +81,6 @@ async function readProjectSources(
   return { status: 'read', sources: read };
 }
 
-/** The path in its normal form, or why it cannot name a file inside the folder. */
-function relativePath(raw: string): { path: string } | { problem: string } {
-  const shown = JSON.stringify(raw.slice(0, 120));
-  if (raw.length > DESIGN_SYSTEM_LIMITS.maxProjectPathLength || raw.includes('\0'))
-    return { problem: `${shown} is not a file path.` };
-  if (path.posix.isAbsolute(raw) || path.win32.isAbsolute(raw))
-    return { problem: `${shown} is absolute. Name the file relative to the project folder.` };
-  // Either separator counts, so a Windows-style `..\` cannot pass as a name.
-  const segments = raw.split(/[\\/]/).filter((segment) => segment !== '' && segment !== '.');
-  if (segments.includes('..'))
-    return { problem: `${shown} leaves the project folder. Name a file inside it.` };
-  if (segments.length === 0) return { problem: `${shown} is not a file path.` };
-  return { path: segments.join('/') };
-}
-
 /** The bytes of the file the checks passed, read through the handle that opened it. */
 async function readInside(
   root: string,
@@ -107,7 +93,7 @@ async function readInside(
       return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
     if (!entry.isFile()) return { problem: `${file} is not a regular file.` };
     // A linked folder on the way can still lead out of the project.
-    if (!isInside(root, await realpath(full)))
+    if (!isInsideProject(root, await realpath(full)))
       return { problem: `${file} leaves the project folder. Name a file inside it.` };
     // The path may change once checked: no-follow refuses a link swapped in for
     // the file, and the identity check a folder on the way swapped for a link.
@@ -131,11 +117,6 @@ async function readInside(
       return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
     return { problem: `${file} cannot be read.` };
   }
-}
-
-function isInside(root: string, target: string): boolean {
-  const relative = path.relative(root, target);
-  return relative !== '' && !path.isAbsolute(relative) && relative.split(path.sep)[0] !== '..';
 }
 
 function tooLarge(file: string): string {
