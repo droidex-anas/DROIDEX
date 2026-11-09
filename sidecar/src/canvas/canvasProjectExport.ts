@@ -10,7 +10,8 @@ import { kitModes } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
 import { makeFolderInside, projectRelativePath } from './projectPaths.js';
 
-const NO_FOLDER = 'This chat has no project folder. Start the chat in a project to export to it.';
+export const NO_PROJECT_FOLDER =
+  'This chat has no project folder. Start the chat in a project to export to it.';
 
 /** A folder inside a chat's project, and the project's real path it must stay inside. */
 export interface ProjectDestination {
@@ -20,11 +21,10 @@ export interface ProjectDestination {
 
 /** The export folder's real path inside the project, made with any missing parents. */
 export async function projectExportDestination(
-  projectFolder: string | null,
+  projectFolder: string,
   folder: string,
   signal: AbortSignal,
 ): Promise<ProjectDestination> {
-  if (projectFolder === null) throw canvasError('invalid_input', NO_FOLDER);
   const named = projectRelativePath(folder);
   if ('problem' in named) throw canvasError('invalid_input', named.problem);
   let root: string;

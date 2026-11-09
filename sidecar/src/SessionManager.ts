@@ -2,6 +2,7 @@ import type { SteeredReportDelivery } from './SessionLifecycle.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { ProjectExports, type ProjectExportAdmission } from './canvas/projectExports.js';
 import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasCapture } from './canvas/canvasCaptures.js';
@@ -336,6 +337,7 @@ export class SessionManager {
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
+  private readonly projectExports = new ProjectExports();
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly canvasCapture: CanvasCapture;
   private readonly importProjectImage: ImportProjectImage;
@@ -798,6 +800,7 @@ export class SessionManager {
       },
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       canvasTurns: this.canvasTurns,
+      projectExports: this.projectExports,
       eventFlow: this.eventFlow,
       settleStreaming: (appSessionId, sourceSessionId) =>
         this.timeline.settleStreaming(appSessionId, sourceSessionId),
@@ -1483,6 +1486,12 @@ export class SessionManager {
     const summary = this.registry.resolveSummary(appSessionId);
     if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
     return summary.cwd;
+  }
+
+  /** Admits an export into the chat's project folder, until the chat closes; null without one. */
+  admitProjectExport(appSessionId: string): ProjectExportAdmission | null {
+    const folder = this.projectFolder(appSessionId);
+    return folder === null ? null : this.projectExports.admit(appSessionId, folder);
   }
 
   transcriptTail(appSessionId: string, limit: number, fullText = false) {

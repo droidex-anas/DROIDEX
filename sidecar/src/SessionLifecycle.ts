@@ -12,6 +12,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { CanvasTurnContext } from './canvas/protocol.js';
 import type { CanvasTurnLeases, CanvasTurns } from './canvas/canvasTurnContext.js';
+import type { ProjectExports } from './canvas/projectExports.js';
 import type { FactorySession } from './DroidRuntime.js';
 import { droidexUserDataDir } from './droidexPaths.js';
 import { sessionFilePath } from './history.js';
@@ -224,6 +225,7 @@ export interface SessionLifecycleDependencies {
   waitForSettingsMutations?: (appSessionId: string) => Promise<void>;
   runPrimaryTurn: (liveSession: LiveSession, request: PrimaryTurnRequest) => Promise<void>;
   canvasTurns: Pick<CanvasTurns, 'beginTurn' | 'endSession' | 'activeScope'>;
+  projectExports: Pick<ProjectExports, 'endSession' | 'endAll'>;
   eventFlow: Pick<SessionEventFlow, 'apply' | 'beginTurn'>;
   context: Pick<
     SessionContext,
@@ -1248,9 +1250,11 @@ export class SessionLifecycle {
     // A resume in flight is filed under the chat's own id.
     const appSessionId = this.chatKey(requestedId);
     this.closedAt.set(appSessionId, ++this.closeGeneration);
-    // Closing a chat for good takes back whatever was about to be sent to it.
+    // Closing a chat for good takes back whatever was about to be sent to it,
+    // and stops its exports to project, whether or not a runtime is live.
     if (mode === 'discard-pending') {
       this.noteStop(appSessionId);
+      this.dependencies.projectExports.endSession(appSessionId);
       const relaunch = this.relaunches.get(appSessionId);
       this.relaunches.delete(appSessionId);
       relaunch?.waiting.splice(0);
@@ -1417,6 +1421,7 @@ export class SessionLifecycle {
       liveSession.createAdmission?.cancel();
       this.dependencies.canvasTurns.endSession(liveSession.summary.appSessionId);
     }
+    this.dependencies.projectExports.endAll();
     this.forkOpens.clear();
     if (this.dependencies.isShutdownStarted()) {
       for (const liveSession of snapshot)

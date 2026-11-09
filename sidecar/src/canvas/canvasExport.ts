@@ -27,10 +27,12 @@ import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
 import {
+  NO_PROJECT_FOLDER,
   projectExportDestination,
   projectMapping,
   type ProjectDestination,
 } from './canvasProjectExport.js';
+import type { ProjectExportAdmission } from './projectExports.js';
 import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
@@ -39,6 +41,7 @@ const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
 const EXPORT_FAILED = 'The export could not be written. Check the folder and try again.';
 const MOVED = 'The export folder moved while it was written. Nothing was published there.';
+const CLOSED = 'The chat closed before the export finished. Nothing was published.';
 const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
 
 /** The folder Electron main chose; each export also requires it to be absolute. */
@@ -375,7 +378,7 @@ export function serveCanvasSourceExport(
   request: IncomingMessage,
   response: ServerResponse,
   token: string | undefined,
-  projectFolder: (appSessionId: string) => string | null,
+  admitProjectExport: (appSessionId: string) => ProjectExportAdmission | null,
 ): boolean {
   if (request.url !== '/canvas/source-export') return false;
   serveExportRequest(request, response, token, async (input, signal) => {
@@ -391,12 +394,20 @@ export function serveCanvasSourceExport(
     if (!inProject.success)
       throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
     const { canvasId, ref, project } = inProject.data;
-    const destination = await projectExportDestination(
-      projectFolder(project.appSessionId),
-      project.folder,
-      signal,
-    );
-    return exportCanvasSource(canvasId, ref, destination, signal);
+    const admission = admitProjectExport(project.appSessionId);
+    if (admission === null) throw canvasError('invalid_input', NO_PROJECT_FOLDER);
+    const running = AbortSignal.any([signal, admission.signal]);
+    try {
+      const { projectFolder } = admission;
+      const destination = await projectExportDestination(projectFolder, project.folder, running);
+      return await exportCanvasSource(canvasId, ref, destination, running);
+    } catch (error) {
+      // Main is still waiting when only the chat closed, so it hears why.
+      if (admission.signal.aborted && !signal.aborted) throw canvasError('scope_expired', CLOSED);
+      throw error;
+    } finally {
+      admission.settle();
+    }
   });
   return true;
 }
