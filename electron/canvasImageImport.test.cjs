@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mkdtemp, rm, writeFile } = require('node:fs/promises');
+const { lstat, mkdir, mkdtemp, rename, rm, symlink, writeFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const {
@@ -165,18 +165,52 @@ test('a sidecar storage failure keeps its curated code', async (t) => {
   });
 });
 
+test('a project image whose folder was swapped for a link after the sidecar checked it is refused', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'canvas-import-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  await mkdir(join(directory, 'project/assets'), { recursive: true });
+  await mkdir(join(directory, 'outside'));
+  const filePath = join(directory, 'project/assets/logo.png');
+  await writeFile(filePath, PNG);
+  await writeFile(join(directory, 'outside/logo.png'), PNG);
+  const { dev, ino, size } = await lstat(filePath);
+  await rename(join(directory, 'project/assets'), join(directory, 'project/moved'));
+  await symlink(join(directory, 'outside'), join(directory, 'project/assets'));
+  const originalFetch = global.fetch;
+  const fetched = [];
+  global.fetch = async (url) => {
+    fetched.push(url);
+    return new Response(JSON.stringify({ assetId: 'outside' }), { status: 200 });
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  await assert.rejects(importer()(CANVAS, filePath, { file: { dev, ino, size } }), {
+    code: 'invalid_input',
+    message: 'The image changed while it was being imported. Try again.',
+  });
+  assert.deepEqual(fetched, []);
+});
+
 test('the sidecar’s request for a project image is answered under its id', async () => {
+  const file = { dev: 1, ino: 2, size: 68 };
   const request = {
     type: 'canvas.importImage',
     id: 'request-1',
     canvasId: 'canvas-one',
     filePath: '/project/logo.png',
+    file,
   };
   assert.equal(isProjectImageRequest(request), true);
   assert.equal(isProjectImageRequest({ type: 'browser.request', id: 'request-1' }), false);
   const replies = [];
   const reply = (message) => replies.push(message);
-  await answerProjectImageRequest(async (owner, filePath) => ({ owner, filePath }), request, reply);
+  await answerProjectImageRequest(
+    async (owner, filePath, project) => ({ owner, filePath, file: project.file }),
+    request,
+    reply,
+  );
   await answerProjectImageRequest(
     async () => {
       throw new Error('EACCES /project/logo.png');
@@ -188,7 +222,7 @@ test('the sidecar’s request for a project image is answered under its id', asy
     {
       type: 'canvas.importImageResult',
       id: 'request-1',
-      result: { ok: true, asset: { owner: CANVAS, filePath: '/project/logo.png' } },
+      result: { ok: true, asset: { owner: CANVAS, filePath: '/project/logo.png', file } },
     },
     {
       type: 'canvas.importImageResult',

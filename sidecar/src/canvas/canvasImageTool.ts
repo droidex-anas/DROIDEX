@@ -72,8 +72,9 @@ export async function importFromProject(
     throw refusal(`${file} is not a PNG, JPEG, WebP or SVG image.`);
   const root = await projectRoot(folder);
   const full = path.join(root, ...file.split('/'));
+  let entry;
   try {
-    const entry = await lstat(full);
+    entry = await lstat(full);
     if (entry.isSymbolicLink()) throw symbolicLink(file);
     if (!entry.isFile()) throw refusal(`${file} is not a regular file.`);
     if (entry.size > MAX_IMPORT_BYTES) throw refusal(`${file} is over 10 MiB.`);
@@ -82,7 +83,9 @@ export async function importFromProject(
   } catch (error) {
     throw fileProblem(error, file);
   }
-  const asset = await importImage(canvasId, full, signal);
+  // Main opens the path later, so it reads only the file these checks passed.
+  const checked = { path: full, dev: entry.dev, ino: entry.ino, size: entry.size };
+  const asset = await importImage(canvasId, checked, signal);
   return {
     assetId: asset.assetId,
     mediaType: asset.mediaType,

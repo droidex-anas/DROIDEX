@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  lstat,
   mkdir,
   mkdtemp,
   readdir,
@@ -17,7 +18,7 @@ import { CANVAS_PNG, pinScratchProfile } from '../testing/canvasStorageSupport.j
 import type { CanvasCapture } from './canvasCaptures.js';
 import { canvasError } from './canvasError.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
-import type { ImportProjectImage } from './desktopImageChannel.js';
+import type { ImportProjectImage, ProjectImageFile } from './desktopImageChannel.js';
 import type { CaptureImage } from './protocol.js';
 
 pinScratchProfile();
@@ -167,12 +168,12 @@ test('an SVG render is sanitised before it is written, and a refused capture wri
 });
 
 test('an import hands main an image inside the project and answers with its asset reference', async (t) => {
-  const imports: { canvasId: string; filePath: string }[] = [];
+  const imports: { canvasId: string; file: ProjectImageFile }[] = [];
   const turn = await imageTurn(
     t,
     () => Promise.resolve(PNG),
-    (canvasId, filePath) => {
-      imports.push({ canvasId, filePath });
+    (canvasId, file) => {
+      imports.push({ canvasId, file });
       return Promise.resolve(ASSET);
     },
   );
@@ -195,7 +196,7 @@ test('an import hands main an image inside the project and answers with its asse
   for (const from of ['../secret.png', 'secret.png', 'notes.txt', 'missing.png']) {
     assert.equal((await turn.image({ kind: 'import', from })).code, 'invalid_input', from);
   }
-  assert.deepEqual(imports, [
-    { canvasId: turn.canvasId, filePath: join(turn.project, 'assets/logo.png') },
-  ]);
+  const logo = join(turn.project, 'assets/logo.png');
+  const { dev, ino, size } = await lstat(logo);
+  assert.deepEqual(imports, [{ canvasId: turn.canvasId, file: { path: logo, dev, ino, size } }]);
 });

@@ -15,10 +15,18 @@ const IMPORT_TIMEOUT_MS = 20_000;
 const UNAVAILABLE = 'Importing project images needs the DROIDEX desktop app.';
 const NO_ANSWER = 'DROIDEX did not import that image in time. Try again.';
 
-/** Saves the image at an absolute path as one of the canvas's assets. */
+/** A project file at an absolute path, and the identity it had when it was checked. */
+export interface ProjectImageFile {
+  path: string;
+  dev: number;
+  ino: number;
+  size: number;
+}
+
+/** Saves the checked file as one of the canvas's assets, refused if it is no longer that file. */
 export type ImportProjectImage = (
   canvasId: string,
-  filePath: string,
+  file: ProjectImageFile,
   signal: AbortSignal,
 ) => Promise<OwnedAsset>;
 
@@ -41,7 +49,7 @@ export function createDesktopImageChannel(
       entry.settle(canvasError('storage_failed', UNAVAILABLE));
   });
 
-  return (canvasId, filePath, signal) => {
+  return (canvasId, file, signal) => {
     if (signal.aborted) return Promise.reject(canvasError('scope_expired', EXPIRED_TURN));
     const send = channel.send?.bind(channel);
     if (!send || !channel.connected)
@@ -65,7 +73,8 @@ export function createDesktopImageChannel(
       waiting.set(id, { settle });
       signal.addEventListener('abort', abort, { once: true });
       try {
-        send({ type: 'canvas.importImage', id, canvasId, filePath }, (error) => {
+        const { path: filePath, ...identity } = file;
+        send({ type: 'canvas.importImage', id, canvasId, filePath, file: identity }, (error) => {
           if (error) settle(canvasError('storage_failed', UNAVAILABLE));
         });
       } catch {

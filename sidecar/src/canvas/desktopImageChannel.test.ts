@@ -12,11 +12,15 @@ const ASSET = {
   height: 1,
 } as const;
 
+function projectFile(path: string) {
+  return { path, dev: 1, ino: 2, size: 68 };
+}
+
 /** Main's end of the IPC channel: it records each request and answers when told. */
 function mainProcess() {
   const channel = new EventEmitter() as EventEmitter & { connected: boolean };
   channel.connected = true;
-  const requests: { id: string; canvasId: string; filePath: string }[] = [];
+  const requests: { id: string; canvasId: string; filePath: string; file: object }[] = [];
   Object.assign(channel, {
     send: (message: (typeof requests)[number], callback: (error: Error | null) => void) => {
       requests.push(message);
@@ -40,12 +44,12 @@ test('a project image is imported by main and its refusal keeps the importer’s
   const importImage = createDesktopImageChannel(main.channel);
   const signal = new AbortController().signal;
 
-  const imported = importImage('canvas-one', '/project/logo.png', signal);
-  const refused = importImage('canvas-one', '/project/broken.png', signal);
+  const imported = importImage('canvas-one', projectFile('/project/logo.png'), signal);
+  const refused = importImage('canvas-one', projectFile('/project/broken.png'), signal);
   const [first, second] = main.requests;
   assert.deepEqual(
-    { canvasId: first.canvasId, filePath: first.filePath },
-    { canvasId: 'canvas-one', filePath: '/project/logo.png' },
+    { canvasId: first.canvasId, filePath: first.filePath, file: first.file },
+    { canvasId: 'canvas-one', filePath: '/project/logo.png', file: { dev: 1, ino: 2, size: 68 } },
   );
   main.answer(second.id, {
     ok: false,
@@ -65,8 +69,12 @@ test('an ended turn or a closed channel fails a waiting import, and a late answe
   const importImage = createDesktopImageChannel(main.channel);
   const turn = new AbortController();
 
-  const ended = importImage('canvas-one', '/project/logo.png', turn.signal);
-  const closed = importImage('canvas-one', '/project/icon.png', new AbortController().signal);
+  const ended = importImage('canvas-one', projectFile('/project/logo.png'), turn.signal);
+  const closed = importImage(
+    'canvas-one',
+    projectFile('/project/icon.png'),
+    new AbortController().signal,
+  );
   turn.abort();
   await assert.rejects(ended, { code: 'scope_expired' });
   main.answer(main.requests[0].id, { ok: true, asset: ASSET });

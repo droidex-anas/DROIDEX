@@ -36,15 +36,23 @@ function storageFailure() {
   );
 }
 
+/**
+ * `project` is set for the sidecar's request: `project.file` is the identity
+ * the sidecar checked inside the project, so a path swapped since is refused.
+ */
 function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
-  return async function importCanvasImage(owner, filePath) {
+  return async function importCanvasImage(owner, filePath, project = null) {
     if (!isImageOwner(owner) || typeof filePath !== 'string' || !isAbsolute(filePath))
+      throw invalidImage('Choose a canvas and an image first.');
+    if (project && !isFileIdentity(project.file))
       throw invalidImage('Choose a canvas and an image first.');
     let bytes;
     try {
       const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         const info = await file.stat();
+        if (project && !isSameFile(info, project.file))
+          throw invalidImage('The image changed while it was being imported. Try again.');
         if (!info.isFile() || info.size < 1 || info.size > 10 * 1024 * 1024)
           throw invalidImage('Choose an image under 10 MiB.');
         bytes = Buffer.alloc(info.size);
@@ -139,6 +147,18 @@ async function decodedSize(nativeImage, bytes, mediaType) {
   }
 }
 
+function isFileIdentity(file) {
+  return (
+    Number.isSafeInteger(file?.dev) &&
+    Number.isSafeInteger(file?.ino) &&
+    Number.isSafeInteger(file?.size)
+  );
+}
+
+function isSameFile(info, file) {
+  return info.dev === file.dev && info.ino === file.ino && info.size === file.size;
+}
+
 function isImageOwner(owner) {
   if (owner?.kind === 'kit') return true;
   return (
@@ -222,9 +242,9 @@ function webpDimensions(bytes) {
   return null;
 }
 
-async function canvasImageImportResult(importImage, owner, filePath) {
+async function canvasImageImportResult(importImage, owner, filePath, project = null) {
   try {
-    return { ok: true, asset: await importImage(owner, filePath) };
+    return { ok: true, asset: await importImage(owner, filePath, project) };
   } catch (error) {
     const failure = error instanceof CanvasImageImportError ? error : storageFailure();
     return { ok: false, error: { code: failure.code, message: failure.message } };
@@ -244,7 +264,9 @@ async function answerProjectImageRequest(importImage, message, reply) {
   reply({
     type: 'canvas.importImageResult',
     id: message.id,
-    result: await canvasImageImportResult(importImage, owner, message.filePath),
+    result: await canvasImageImportResult(importImage, owner, message.filePath, {
+      file: message.file,
+    }),
   });
 }
 
