@@ -30,7 +30,6 @@ import {
   NO_PROJECT_FOLDER,
   projectExportDestination,
   projectMapping,
-  type ProjectDestination,
 } from './canvasProjectExport.js';
 import type { ProjectExportAdmission } from './projectExports.js';
 import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
@@ -95,24 +94,27 @@ async function readPinned<T>(canvasId: string, read: () => Promise<T>): Promise<
   }
 }
 
-/**
- * Export one immutable revision into a folder main chose, or one inside a
- * chat's project. Only Electron main calls this over its private route.
- */
+/** Export one immutable revision into a folder Electron main chose, over its private route. */
 export async function exportCanvasSource(
   canvasId: string,
   ref: RevisionRef,
-  destination: string | ProjectDestination,
+  destinationDirectory: string,
   signal?: AbortSignal,
 ): Promise<{ filesWritten: number }> {
-  const { directory, projectRoot } =
-    typeof destination === 'string'
-      ? { directory: destination, projectRoot: undefined }
-      : destination;
-  const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory: directory });
-  if (!parsed.success || !isAbsolute(directory))
+  const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory });
+  if (!parsed.success || !isAbsolute(destinationDirectory))
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
+  const files = await canvasSourceFiles(canvasId, ref, signal);
+  await writeExport(resolve(destinationDirectory), files, signal);
+  return { filesWritten: files.length };
+}
 
+/** Everything one revision's export writes, read and checked before any folder is touched. */
+async function canvasSourceFiles(
+  canvasId: string,
+  ref: RevisionRef,
+  signal?: AbortSignal,
+): Promise<ExportFile[]> {
   signal?.throwIfAborted();
   // Everything this export needs from the canvas is read up front, under a
   // pin that removing the canvas waits for (10a: deletion never cancels it).
@@ -171,8 +173,7 @@ export async function exportCanvasSource(
   files.push({ path: 'package.json', content: exportPackageJson() });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
-  await writeExport(resolve(directory), files, signal, projectRoot);
-  return { filesWritten: files.length };
+  return files;
 }
 
 function exportPackageJson(): string {
@@ -398,9 +399,15 @@ export function serveCanvasSourceExport(
     if (admission === null) throw canvasError('invalid_input', NO_PROJECT_FOLDER);
     const running = AbortSignal.any([signal, admission.signal]);
     try {
-      const { projectFolder } = admission;
-      const destination = await projectExportDestination(projectFolder, project.folder, running);
-      return await exportCanvasSource(canvasId, ref, destination, running);
+      // The folder is made only once there is an export to put in it.
+      const files = await canvasSourceFiles(canvasId, ref, running);
+      const { projectRoot, directory } = await projectExportDestination(
+        admission.projectFolder,
+        project.folder,
+        running,
+      );
+      await writeExport(directory, files, running, projectRoot);
+      return { filesWritten: files.length };
     } catch (error) {
       // Main is still waiting when only the chat closed, so it hears why.
       if (admission.signal.aborted && !signal.aborted) throw canvasError('scope_expired', CLOSED);

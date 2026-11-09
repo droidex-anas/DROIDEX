@@ -21,7 +21,6 @@ import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
-import { projectExportDestination } from './canvasProjectExport.js';
 import { ProjectExports, type ProjectExportAdmission } from './projectExports.js';
 import { kitGuidance } from './designSystemDocument.js';
 import { importDesignSystem } from './designSystemImport.js';
@@ -339,7 +338,6 @@ async function beforeFirstWrite(t: TestContext, scratch: string, act: () => Prom
 
 test('an export to project writes a new folder inside the chat project and never leaves it', async (t) => {
   const { root } = await profile(t);
-  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
   const project = join(root, 'project');
   const outside = join(root, 'outside');
   await mkdir(project);
@@ -349,6 +347,10 @@ test('an export to project writes a new folder inside the chat project and never
     appSessionId === 'project-chat' ? exports.admit(appSessionId, project) : null,
   );
 
+  // A revision that cannot be read makes no folder in the project.
+  assert.equal((await exportTo('project-chat', 'design/hey')).status, 400);
+  assert.deepEqual(await readdir(project), []);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
   const written = await exportTo('project-chat', 'design/hey');
   assert.equal(written.status, 200);
   assert.ok((await fileSet(join(project, 'design/hey'))).includes('src/main.tsx'));
@@ -379,23 +381,24 @@ test('an export to project writes a new folder inside the chat project and never
 test('a project folder whose parent becomes a link mid-export writes nothing outside and publishes nothing', async (t) => {
   const { root } = await profile(t);
   await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
-  await mkdir(join(root, 'project'));
+  const project = join(root, 'project');
+  await mkdir(project);
   const outside = join(root, 'outside');
   await mkdir(join(outside, 'hey'), { recursive: true });
-  const destination = await projectExportDestination(
-    join(root, 'project'),
-    'design/hey',
-    new AbortController().signal,
-  );
-  const design = dirname(destination.directory);
+  const exports = new ProjectExports();
+  const exportTo = await projectRoute(t, (appSessionId) => exports.admit(appSessionId, project));
+  const design = join(project, 'design');
   const swapped = await beforeFirstWrite(t, root, async () => {
     await rename(design, `${design}-moved`);
     await symlink(outside, design);
   });
 
-  await assert.rejects(exportCanvasSource(canvasId, ref, destination), {
-    code: 'invalid_source_path',
-    message: 'The export folder moved while it was written. Nothing was published there.',
+  assert.deepEqual(await exportTo('project-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_source_path',
+      message: 'The export folder moved while it was written. Nothing was published there.',
+    },
   });
   assert.ok(swapped());
   assert.deepEqual(await readdir(outside), ['hey']);
