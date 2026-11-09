@@ -4,6 +4,7 @@
 // gone, and a frame nobody is writing must not shimmer as though someone were.
 
 import type { CanvasActivityStage } from './canvasMotion';
+import { blockedByStrictRule } from './designSystemRule';
 import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame } from './protocol';
 
 /** The board's stage for a frame, and the revision whose picture it can show. */
@@ -150,6 +151,11 @@ export function sheetState(
         detail: 'It builds when a slot is free.',
       };
   }
+}
+
+/** Why a build failed when the canvas's Strict rule failed it, said beside its findings. */
+export function strictRuleNote(diagnostics: readonly CanvasDiagnostic[]): string | null {
+  return blockedByStrictRule(diagnostics) ? 'Blocked by the Strict design-system rule' : null;
 }
 
 /** Where a diagnostic points, for a person: "main.tsx · line 12". */

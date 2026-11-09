@@ -37,7 +37,13 @@ import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
 import { FrameWorkingState } from './FrameWorkingState';
 import { PendingBloom } from './PendingBloom';
-import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
+import {
+  diagnosticPlace,
+  isPending,
+  sheetState,
+  strictRuleNote,
+  type SheetState,
+} from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
 import type { ToolbarRoom } from './toolbarPlacement';
 import type { DesignPress } from './useDesignPicker';
@@ -176,6 +182,7 @@ export function DesignFrame(props: DesignFrameProps) {
           onPick={onPick}
           onInteract={onInteract}
           onTagFrames={props.onTagFrames}
+          onOpenSource={props.onOpenSource}
           onEnter={(picked) => {
             // Edit goes into the frame's elements; otherwise Enter picks the
             // frame, and on one already picked starts interacting with it.
@@ -407,12 +414,14 @@ function FailedNote({
   const first = state.diagnostics.at(0);
   const more = state.diagnostics.length - 1;
   const place = first ? diagnosticPlace(first) : null;
+  const ruleNote = strictRuleNote(state.diagnostics);
   return (
     <>
       <span className="canvas-sheet-icon" data-tone="danger">
         <AlertTriangle className="h-4 w-4" aria-hidden />
       </span>
       <p className="canvas-sheet-title">Didn’t build</p>
+      {!compact && ruleNote && <p className="canvas-sheet-detail">{ruleNote}</p>}
       {!compact && first && (
         <p className="canvas-sheet-detail canvas-sheet-clamp">
           {place && <strong>{place} · </strong>}

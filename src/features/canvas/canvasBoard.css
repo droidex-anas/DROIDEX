@@ -167,6 +167,22 @@
   color: var(--selection-label);
 }
 
+/* Guide's kit notes on a built frame. The inset gives the 20px badge a 28px
+   target, and only a badge that opens the source takes the pointer. */
+.canvas-frame-kit-notes {
+  position: relative;
+}
+
+.canvas-frame-kit-notes::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
+.canvas-frame-kit-notes[data-opens] {
+  cursor: pointer;
+}
+
 /* The name while it is renamed: a raised field where the plain name stood. */
 .canvas-frame-name-field {
   width: 100%;

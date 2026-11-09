@@ -302,3 +302,32 @@ test('saved marks draw in their theme colour, and an agent’s carry its glyph',
     assert.match(markup, new RegExp(`aria-label="${tool}"`));
   assert.equal(markup.includes('aria-label="Colour"'), false);
 });
+
+test('a built frame that strays from its kit says so on its label; a strict failure names the rule', () => {
+  const finding = (line: number) => ({
+    code: 'design_system_color',
+    message: `#${String(line)}00 is a hard-coded colour.`,
+    file: 'main.tsx',
+    line,
+  });
+  const strays = withBuild(frame('a', ACKNOWLEDGED), {
+    status: 'ready',
+    revisionId: 'rev_01',
+    artifactId: 'art_01',
+    elements: [],
+    diagnostics: [finding(1), finding(2)],
+    generation: 2,
+  });
+  const blocked = withBuild(frame('b', { ...ACKNOWLEDGED, x: 600 }), {
+    status: 'failed',
+    revisionId: 'rev_01',
+    diagnostics: [finding(3)],
+    lastWorkingRevisionId: null,
+    generation: 2,
+  });
+  const markup = render(snapshotOf(strays, blocked));
+
+  assert.equal(markup.match(/canvas-frame-kit-notes/g)?.length, 1);
+  assert.match(markup, />2 kit notes</);
+  assert.match(markup, /Blocked by the Strict design-system rule/);
+});

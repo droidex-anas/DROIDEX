@@ -1,7 +1,8 @@
 // A frame's name above its sheet, and the handle that drags it in either mode
 // (spec §4). It sits outside the Select overlay, so a drag is always available
 // even while the preview owns the pointer. Its tag says when the frame is tagged
-// in the chat's next prompt, and tags it from the label.
+// in the chat's next prompt, and tags it from the label; its kit notes badge
+// says when a built design strays from its kit.
 //
 // It is also the keyboard's way onto the board. The labels share one tab stop,
 // the frame focus last rested on, and the board moves focus between them with
@@ -9,11 +10,13 @@
 
 import { useEffect, useRef, useState, type MouseEvent, type PointerEvent, type Ref } from 'react';
 import { MessageThread } from '@droidex/icons';
+import { Badge } from '../../components/ui/Badge';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { toast } from '../../lib/toast';
 import { TAG_KEY_LABEL } from './boardKeys';
 import { canvasMessage } from './client';
-import type { CanvasFrame } from './protocol';
+import { kitNotes, kitNotesLabel, kitNotesSummary } from './designSystemRule';
+import type { CanvasDiagnostic, CanvasFrame } from './protocol';
 import { splitVariantName } from './variantRequests';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
@@ -33,6 +36,7 @@ export function FrameLabel({
   onPick,
   onInteract,
   onTagFrames,
+  onOpenSource,
   onEnter,
   onFocusLabel,
 }: {
@@ -53,10 +57,13 @@ export function FrameLabel({
   onInteract: (frame: CanvasFrame) => void;
   /** Undefined where frames cannot be tagged; the label then shows no tag. */
   onTagFrames: ((designIds: readonly string[]) => void) | undefined;
+  /** Where the kit notes badge takes the user: the frame's source and its issues. */
+  onOpenSource: ((designId: string) => void) | undefined;
   onEnter: (frame: CanvasFrame) => void;
   onFocusLabel: (frame: CanvasFrame) => void;
 }) {
   const { base, suffix } = splitVariantName(frame.name);
+  const notes = kitNotes(frame.build);
   const keysHint = onTagFrames ? `${KEYS_HINT}; ${TAG_KEY_LABEL} toggles its chat tag` : KEYS_HINT;
   return (
     <div
@@ -101,6 +108,17 @@ export function FrameLabel({
         <span className="canvas-frame-name">{frame.name}</span>
       )}
       {interacted && <span className="canvas-frame-note">Interacting</span>}
+      {notes.length > 0 && (
+        <KitNotesBadge
+          notes={notes}
+          onOpen={
+            onOpenSource &&
+            (() => {
+              onOpenSource(frame.designId);
+            })
+          }
+        />
+      )}
       {onTagFrames && (
         <FrameTag
           tagged={tagged}
@@ -148,6 +166,48 @@ function FrameTag({ tagged, onTag }: { tagged: boolean; onTag: () => void }) {
         </span>
       </Tooltip>
       {tagged && <span className="sr-only">, tagged in chat</span>}
+    </>
+  );
+}
+
+/**
+ * Guide's findings on a frame that built. Like the tag it is no tab stop: the
+ * keyboard reaches the same issues through the toolbar's source button.
+ */
+function KitNotesBadge({
+  notes,
+  onOpen,
+}: {
+  notes: readonly CanvasDiagnostic[];
+  onOpen: (() => void) | undefined;
+}) {
+  const label = kitNotesLabel(notes);
+  return (
+    <>
+      <Tooltip label={kitNotesSummary(notes)}>
+        <Badge
+          tone="warning"
+          aria-hidden
+          data-opens={onOpen ? true : undefined}
+          className="canvas-frame-kit-notes"
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onMouseDown={(event) => {
+            event.preventDefault();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpen?.();
+          }}
+          onDoubleClick={(event) => {
+            event.stopPropagation();
+          }}
+        >
+          {label}
+        </Badge>
+      </Tooltip>
+      <span className="sr-only">, {label}</span>
     </>
   );
 }
