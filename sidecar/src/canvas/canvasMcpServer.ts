@@ -11,6 +11,18 @@ import {
 } from './canvasAgentReport.js';
 import { agentAnnotation } from './canvasAnnotationReport.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
+import {
+  annotateSchema,
+  arrangeSchema,
+  createSchema,
+  inspectSchema,
+  pageSchema,
+  readSchema,
+  scopeArgumentSchema,
+  scopeIdSchema,
+  themeSchema,
+  writeSchema,
+} from './canvasMcpSchemas.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { KitBuildError, kitSaveShape, saveKit } from './canvasMcpDesignSystemSave.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
@@ -24,91 +36,8 @@ import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
 import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasFrame, CanvasScope } from './protocol.js';
-import {
-  arrangeFramesInputSchema,
-  canvasIdentifierSchema,
-  createFramesInputSchema,
-  designSystemRefSchema,
-  writeFilesInputSchema,
-} from './schema.js';
+import { canvasIdentifierSchema, designSystemRefSchema, writeFilesInputSchema } from './schema.js';
 import { listDesignSystems, readDesignSystem } from './designSystems.js';
-
-const scopeIdSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .describe(
-    'The exact scopeId returned by this turn’s canvas_read. Never invent an ID or reuse one from an earlier turn.',
-  );
-const scopeShape = {
-  scopeId: scopeIdSchema
-    .optional()
-    .describe(
-      'Omit scopeId to begin the turn. Only supply a scopeId this turn’s canvas_read returned to keep reading that lease’s pinned references.',
-    ),
-};
-const mutationScopeShape = { scopeId: scopeIdSchema };
-const scopeArgumentSchema = z.object(scopeShape).passthrough();
-const pageSchema = z.number().int().min(0).max(100_000);
-const readSchema = z
-  .object({
-    ...scopeShape,
-    view: z.enum(['summary', 'design']).default('summary'),
-    designId: canvasIdentifierSchema.optional(),
-    revisionId: canvasIdentifierSchema.optional(),
-    elementId: canvasIdentifierSchema.optional(),
-    paths: z.array(z.string().min(1).max(256)).max(16).optional(),
-    offset: pageSchema.default(0),
-    limit: z.number().int().min(1).max(32).default(32),
-  })
-  .strict()
-  .refine((input) => input.view === 'design' || !input.elementId, 'elementId needs view design.');
-const createSchema = createFramesInputSchema.extend(mutationScopeShape).strict();
-const writeSchema = z
-  .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
-  .strict();
-const arrangeSchema = arrangeFramesInputSchema.extend(mutationScopeShape).strict();
-const annotateSchema = z
-  .object({ ...annotateCanvasInputSchema.innerType().shape, ...mutationScopeShape })
-  .strict();
-const inspectSchema = z
-  .object({
-    ...scopeShape,
-    designId: canvasIdentifierSchema,
-    revisionId: canvasIdentifierSchema.optional(),
-    kind: z.enum(['diagnostics', 'element', 'screenshot']).default('diagnostics'),
-    elementId: canvasIdentifierSchema.optional(),
-  })
-  .strict();
-const themeSchema = z.discriminatedUnion('operation', [
-  z
-    .object({
-      ...scopeShape,
-      operation: z.literal('list'),
-      offset: pageSchema.default(0),
-      limit: z.number().int().min(1).max(32).default(32),
-    })
-    .strict(),
-  z.object({ ...scopeShape, operation: z.literal('read'), ref: designSystemRefSchema }).strict(),
-  z
-    .object({
-      ...mutationScopeShape,
-      operation: z.literal('save'),
-      mutationId: canvasIdentifierSchema,
-      ...kitSaveShape,
-    })
-    .strict(),
-  z
-    .object({
-      ...mutationScopeShape,
-      operation: z.literal('apply'),
-      mutationId: canvasIdentifierSchema,
-      designId: canvasIdentifierSchema,
-      expectedRevisionId: canvasIdentifierSchema,
-      ref: designSystemRefSchema,
-    })
-    .strict(),
-]);
 
 /** The facts a tool answers with, and a base64 PNG the model sees beside them. */
 type ToolValue = Record<string, unknown> & { png?: string };
