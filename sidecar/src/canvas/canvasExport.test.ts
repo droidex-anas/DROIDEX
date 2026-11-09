@@ -453,7 +453,7 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
   assert.deepEqual(await fileSet(destination), []);
 });
 
-test('a kit imported from a project is copied, and the README says which project token each kit token came from', async (t) => {
+test('a kit imported from a project is copied, and the README names each kit token’s alias', async (t) => {
   const { root, destination } = await profile(t);
   const imported = importDesignSystem(
     [
@@ -485,11 +485,13 @@ test('a kit imported from a project is copied, and the README says which project
   const readme = await readFile(join(destination, 'README.md'), 'utf8');
   assert.match(readme, /## Mapping to shop/);
   assert.match(readme, /\| `@droidex\/design-system` \| `design-system\/`, copied \|/);
-  assert.match(readme, /\| `--ds-accent` \| `--primary` \|/);
-  assert.match(readme, /\| `--ds-canvas` \| `--background` \|/);
-  assert.match(readme, /\| `--ds-brand-500` \| unmapped \|/);
-  assert.match(readme, /\| `--ds-radius-sm` \| unmapped \|/);
-  assert.doesNotMatch(readme, /\| `--ds-primary` \|/);
+  // The kit keeps only normalised names, so the README claims no original spelling.
+  assert.match(readme, /\| `--ds-accent` \| `--ds-primary` \|/);
+  assert.match(readme, /\| `--ds-canvas` \| `--ds-background` \|/);
+  assert.match(readme, /\| `--ds-brand-500` \| none \|/);
+  assert.match(readme, /\| `--ds-radius-sm` \| none \|/);
+  assert.doesNotMatch(readme, /^\| `--ds-primary` \|/m);
+  assert.doesNotMatch(readme, /imported from|\| `--primary` \|/);
 });
 test('kit images travel with canvas and kit exports, one file per image', async (t) => {
   const { root, destination } = await profile(t);

@@ -1,5 +1,5 @@
 // Export to project: a frame's source export written into a folder of its
-// chat's project, and what a kit imported from a project became. The project
+// chat's project, and what a kit read from a project became. The project
 // folder comes from the session, never from the renderer; the renderer names
 // only the folder inside it.
 
@@ -40,38 +40,31 @@ export async function projectExportDestination(
 }
 
 /**
- * The README's account of what a kit imported from a project became, or null
- * for any other kit. Source is not rewritten to the project's names: an import
- * can change a value on the way in (bare HSL channels gain `hsl()`), and the
- * export still builds on its own copy of the kit, which defines only `--ds-*`.
+ * The README's account of what a kit read from a project became, or null for
+ * any other kit. The kit keeps no original property names, only the normalised
+ * aliases it made, so those are what the README names. Source is not rewritten:
+ * an import can change a value on the way in (bare HSL channels gain `hsl()`),
+ * and the export still builds on its own copy of the kit.
  */
 export function projectMapping(kit: DesignSystem): string | null {
   const provenance = kit.provenance;
   if (!provenance || !('project' in provenance)) return null;
   const { name, files } = provenance.project;
   const { light, dark } = kitModes(kit.sections);
-  const importedAs = new Map<string, string[]>();
+  const aliases = new Map<string, string[]>();
   for (const token of Object.keys(light)) {
     if (!isContractAlias(token, light[token]) || dark[token] !== light[token]) continue;
     const contract = light[token].slice('var('.length, -1);
-    const projectToken = token.startsWith('--ds-') ? `--${token.slice('--ds-'.length)}` : token;
-    importedAs.set(contract, [...(importedAs.get(contract) ?? []), projectToken]);
+    aliases.set(contract, [...(aliases.get(contract) ?? []), `\`${token}\``]);
   }
-  const rows: string[] = [];
-  for (const token of Object.keys(light)) {
-    if (importedAs.has(token) || isContractAlias(token, light[token])) continue;
-    rows.push(`| \`${token}\` | unmapped |`);
-  }
-  for (const [contract, projectTokens] of importedAs) {
-    // Two project names for one kit token would make either rewrite a guess.
-    const project = projectTokens.length === 1 ? `\`${projectTokens[0]}\`` : 'unmapped';
-    rows.push(`| \`${contract}\` | ${project} |`);
-  }
-  rows.sort();
+  const rows = Object.keys(light)
+    .filter((token) => !isContractAlias(token, light[token]))
+    .sort()
+    .map((token) => `| \`${token}\` | ${aliases.get(token)?.join(', ') ?? 'none'} |`);
   return `
 ## Mapping to ${name}
 
-This kit was imported from ${files.map((file) => `\`${file}\``).join(', ')} in ${name}.
+This kit was read from ${files.map((file) => `\`${file}\``).join(', ')} in ${name}.
 
 | Kit import | Became |
 | --- | --- |
@@ -80,13 +73,18 @@ This kit was imported from ${files.map((file) => `\`${file}\``).join(', ')} in $
 The kit's components are DROIDEX's shared primitives styled with the project's
 tokens, not the project's own components, so the source keeps importing the copy.
 
-Each kit token and the project token it was imported from. The source still
-uses the \`--ds-*\` names, because the import may have changed a value on the
-way in (bare HSL channels are wrapped in \`hsl()\`). Compare the values in
-\`canvas-export/modes.json\` before replacing a name. An unmapped token has no
-single project name and stays as it is.
+The import normalised the project's property names: lower case, with other
+punctuation turned into hyphens, so \`--Brand_500\` became \`--brand-500\`. The
+kit does not keep the original spelling. A property it matched to a kit token
+stays as an alias of that token, usually with \`--ds-\` in front, so
+\`--ds-primary\` refers to \`--ds-accent\`. One it did not match is a kit token of
+its own, under its normalised name.
 
-| Kit token | Project token |
+The source still uses the kit's names, because the import may have changed a
+value on the way in (bare HSL channels are wrapped in \`hsl()\`). Compare the
+values in \`canvas-export/modes.json\` before replacing a name with the project's.
+
+| Kit token | Kit alias |
 | --- | --- |
 ${rows.join('\n')}
 `;
