@@ -4,9 +4,8 @@ const { lstat, mkdir, mkdtemp, rename, rm, symlink, writeFile } = require('node:
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
 const {
-  answerProjectImageRequest,
   createCanvasImageImporter,
-  isProjectImageRequest,
+  createProjectImageRequests,
 } = require('./canvasImageImport.cjs');
 
 const CANVAS = { kind: 'canvas', canvasId: 'canvas-one' };
@@ -186,43 +185,140 @@ test('a project image whose folder was swapped for a link after the sidecar chec
     global.fetch = originalFetch;
   });
 
-  await assert.rejects(importer()(CANVAS, filePath, { file: { dev, ino, size } }), {
+  const project = {
+    requestId: 'request-1',
+    file: { dev, ino, size },
+    bridge: { port: 1234, secret: 'secret' },
+    signal: new AbortController().signal,
+    runEnded: () => false,
+  };
+  await assert.rejects(importer()(CANVAS, filePath, project), {
     code: 'invalid_input',
     message: 'The image changed while it was being imported. Try again.',
   });
   assert.deepEqual(fetched, []);
 });
 
-test('the sidecar’s request for a project image is answered under its id', async () => {
-  const file = { dev: 1, ino: 2, size: 68 };
-  const request = {
+/** The sidecar's side of main's project image requests: each reply lands when it is sent. */
+function sidecarRun(handle) {
+  const replies = [];
+  let replied = Promise.withResolvers();
+  let ended = false;
+  const send = (message) =>
+    handle(
+      message,
+      (answer) => {
+        replies.push(answer);
+        replied.resolve();
+        replied = Promise.withResolvers();
+      },
+      () => ended,
+    );
+  return {
+    replies,
+    send,
+    nextReply: () => replied.promise,
+    end: () => {
+      ended = true;
+    },
+  };
+}
+
+async function projectImage(t) {
+  const directory = await mkdtemp(join(tmpdir(), 'canvas-import-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, 'logo.png');
+  await writeFile(filePath, PNG);
+  const { dev, ino, size } = await lstat(filePath);
+  return {
     type: 'canvas.importImage',
     id: 'request-1',
     canvasId: 'canvas-one',
-    filePath: '/project/logo.png',
-    file,
+    filePath,
+    file: { dev, ino, size },
   };
-  assert.equal(isProjectImageRequest(request), true);
-  assert.equal(isProjectImageRequest({ type: 'browser.request', id: 'request-1' }), false);
-  const replies = [];
-  const reply = (message) => replies.push(message);
-  await answerProjectImageRequest(
-    async (owner, filePath, project) => ({ owner, filePath, file: project.file }),
-    request,
-    reply,
-  );
-  await answerProjectImageRequest(
-    async () => {
-      throw new Error('EACCES /project/logo.png');
+}
+
+test('a project import stops before it posts once its sidecar is replaced or cancels it', async (t) => {
+  const request = await projectImage(t);
+  const originalFetch = global.fetch;
+  const fetched = [];
+  global.fetch = async (url) => {
+    fetched.push(url);
+    return new Response(JSON.stringify({ assetId: 'unused' }), { status: 200 });
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  let port = 1111;
+  let duringDecode = () => undefined;
+  const importImage = createCanvasImageImporter(
+    {
+      createFromBuffer: () => {
+        duringDecode();
+        return {
+          isEmpty: () => false,
+          getSize: () => ({ width: 1, height: 1 }),
+          toBitmap: () => Buffer.alloc(4),
+        };
+      },
     },
-    { ...request, id: 'request-2' },
-    reply,
+    { getBridgeInfo: async () => ({ port }), canvasAssetSecret: () => 'secret' },
   );
-  assert.deepEqual(replies, [
+  const handle = createProjectImageRequests(importImage, {
+    getBridgeInfo: async () => ({ port }),
+    canvasAssetSecret: () => 'secret',
+  });
+
+  const replaced = sidecarRun(handle);
+  duringDecode = () => {
+    replaced.end();
+    port = 2222;
+  };
+  assert.equal(replaced.send(request), true);
+  await replaced.nextReply();
+
+  const cancelling = sidecarRun(handle);
+  duringDecode = () => cancelling.send({ type: 'canvas.importImageCancel', id: 'request-2' });
+  assert.equal(cancelling.send({ ...request, id: 'request-2' }), true);
+  await cancelling.nextReply();
+
+  assert.deepEqual(fetched, []);
+  assert.equal(replaced.replies[0].result.ok, false);
+  assert.equal(cancelling.replies[0].result.ok, false);
+});
+
+test('the sidecar’s request for a project image is answered under its id', async (t) => {
+  const request = await projectImage(t);
+  const posted = [];
+  const originalFetch = global.fetch;
+  global.fetch = async (url, init) => {
+    posted.push({ url, body: JSON.parse(init.body) });
+    return new Response(JSON.stringify({ assetId: 'logo' }), { status: 200 });
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+  const handle = createProjectImageRequests(importer(), {
+    getBridgeInfo: async () => ({ port: 1234 }),
+    canvasAssetSecret: () => 'secret',
+  });
+  const run = sidecarRun(handle);
+  assert.equal(run.send({ type: 'browser.request', id: 'request-1' }), false);
+
+  assert.equal(run.send(request), true);
+  await run.nextReply();
+  assert.equal(run.send({ ...request, id: 'request-2', file: { ...request.file, ino: 0 } }), true);
+  await run.nextReply();
+
+  assert.equal(posted.length, 1);
+  assert.equal(posted[0].url, 'http://127.0.0.1:1234/canvas/import-image');
+  assert.equal(posted[0].body.requestId, 'request-1');
+  assert.deepEqual(run.replies, [
     {
       type: 'canvas.importImageResult',
       id: 'request-1',
-      result: { ok: true, asset: { owner: CANVAS, filePath: '/project/logo.png', file } },
+      result: { ok: true, asset: { assetId: 'logo' } },
     },
     {
       type: 'canvas.importImageResult',
@@ -230,8 +326,8 @@ test('the sidecar’s request for a project image is answered under its id', asy
       result: {
         ok: false,
         error: {
-          code: 'storage_failed',
-          message: 'The image could not be saved. Reopen DROIDEX and try again.',
+          code: 'invalid_input',
+          message: 'The image changed while it was being imported. Try again.',
         },
       },
     },

@@ -571,7 +571,10 @@ on the way, and no replacing a file unless `overwrite` is set. An import checks 
 named file the same way, then sends main a `canvas.importImage` request over the
 sidecar's IPC channel (`desktopImageChannel.ts`); main reads and decodes it with the
 importer it uses for a picked image and answers `canvas.importImageResult`, and the
-agent gets a `canvas-asset:` reference. Ending the turn aborts both waits.
+agent gets a `canvas-asset:` reference. Main opens only the file the sidecar checked,
+by its device, inode and size, and posts it only to the sidecar run that asked.
+Ending the turn aborts both waits; an import that ends or times out is cancelled
+with `canvas.importImageCancel`, and the image route refuses to save it.
 
 ### Canvas live previews
 

@@ -9,6 +9,8 @@ import type { OwnedAsset } from './protocol.js';
 // decodes the file, then saves it through the sidecar's private image route.
 // A request is never resent; one still waiting when the channel closes, past
 // its timeout, or after its turn ends fails, and a late answer is dropped.
+// Main is told to stop a request its turn ended or that timed out, and the
+// image route refuses to save one that is no longer waiting.
 
 /** Main's importer answers within its own 15 s route timeout, plus a decode. */
 const IMPORT_TIMEOUT_MS = 20_000;
@@ -34,11 +36,25 @@ interface Waiting {
   settle: (result: OwnedAsset | Error) => void;
 }
 
+export interface DesktopImageChannel {
+  importImage: ImportProjectImage;
+  /** Whether main's import `requestId` is still waited for, so its asset may be saved. */
+  isWaiting: (requestId: string) => boolean;
+}
+
 export function createDesktopImageChannel(
   channel: BrowserChannelProcess = process,
   timeoutMs = IMPORT_TIMEOUT_MS,
-): ImportProjectImage {
+): DesktopImageChannel {
   const waiting = new Map<string, Waiting>();
+  const cancel = (id: string) => {
+    if (!channel.connected) return;
+    try {
+      channel.send?.({ type: 'canvas.importImageCancel', id }, () => undefined);
+    } catch {
+      // A channel closing now has no import left to stop.
+    }
+  };
 
   channel.on('message', (message: unknown) => {
     const answer = importAnswer(message);
@@ -49,7 +65,7 @@ export function createDesktopImageChannel(
       entry.settle(canvasError('storage_failed', UNAVAILABLE));
   });
 
-  return (canvasId, file, signal) => {
+  const importImage: ImportProjectImage = (canvasId, file, signal) => {
     if (signal.aborted) return Promise.reject(canvasError('scope_expired', EXPIRED_TURN));
     const send = channel.send?.bind(channel);
     if (!send || !channel.connected)
@@ -66,9 +82,11 @@ export function createDesktopImageChannel(
       };
       const abort = () => {
         settle(canvasError('scope_expired', EXPIRED_TURN));
+        cancel(id);
       };
       const timer = setTimeout(() => {
         settle(canvasError('storage_failed', NO_ANSWER));
+        cancel(id);
       }, timeoutMs);
       waiting.set(id, { settle });
       signal.addEventListener('abort', abort, { once: true });
@@ -82,6 +100,7 @@ export function createDesktopImageChannel(
       }
     });
   };
+  return { importImage, isWaiting: (requestId) => waiting.has(requestId) };
 }
 
 /** Main's answer, its refusal kept only when it is one of the importer's own. */

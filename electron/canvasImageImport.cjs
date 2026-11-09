@@ -36,9 +36,14 @@ function storageFailure() {
   );
 }
 
+function cancelledImport() {
+  return new CanvasImageImportError('storage_failed', 'The image import was cancelled.');
+}
+
 /**
  * `project` is set for the sidecar's request: `project.file` is the identity
- * the sidecar checked inside the project, so a path swapped since is refused.
+ * the sidecar checked inside the project, so a path swapped since is refused,
+ * and it posts only to the run that asked, while that run still wants it.
  */
 function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
   return async function importCanvasImage(owner, filePath, project = null) {
@@ -46,6 +51,7 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
       throw invalidImage('Choose a canvas and an image first.');
     if (project && !isFileIdentity(project.file))
       throw invalidImage('Choose a canvas and an image first.');
+    const stillWanted = () => !project || (!project.signal.aborted && !project.runEnded());
     let bytes;
     try {
       const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -69,6 +75,7 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
       if (error instanceof CanvasImageImportError) throw error;
       throw invalidImage('The selected image could not be read. Choose it again.');
     }
+    if (!stillWanted()) throw cancelledImport();
 
     const expectedType = EXTENSIONS[extname(filePath).toLowerCase()];
     const actualType = imageMediaType(bytes);
@@ -81,24 +88,29 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
       );
     const size =
       expectedType === 'image/svg+xml' ? null : await decodedSize(nativeImage, bytes, expectedType);
+    if (!stillWanted()) throw cancelledImport();
 
     let response;
     try {
-      const { port } = await sidecarSupervisor.getBridgeInfo();
+      const { port, secret } = project
+        ? project.bridge
+        : {
+            port: (await sidecarSupervisor.getBridgeInfo()).port,
+            secret: sidecarSupervisor.canvasAssetSecret(),
+          };
       const route = owner.kind === 'kit' ? 'import-kit-image' : 'import-image';
+      const timeout = AbortSignal.timeout(15_000);
       response = await fetch(`http://127.0.0.1:${String(port)}/canvas/${route}`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-canvas-secret': sidecarSupervisor.canvasAssetSecret(),
-        },
+        headers: { 'content-type': 'application/json', 'x-canvas-secret': secret },
         body: JSON.stringify({
           ...(owner.kind === 'canvas' ? { canvasId: owner.canvasId } : {}),
+          ...(project ? { requestId: project.requestId } : {}),
           filePath,
           digest: createHash('sha256').update(bytes).digest('hex'),
           ...size,
         }),
-        signal: AbortSignal.timeout(15_000),
+        signal: project ? AbortSignal.any([project.signal, timeout]) : timeout,
       });
     } catch {
       throw storageFailure();
@@ -242,9 +254,9 @@ function webpDimensions(bytes) {
   return null;
 }
 
-async function canvasImageImportResult(importImage, owner, filePath, project = null) {
+async function canvasImageImportResult(importImage, owner, filePath) {
   try {
-    return { ok: true, asset: await importImage(owner, filePath, project) };
+    return { ok: true, asset: await importImage(owner, filePath) };
   } catch (error) {
     const failure = error instanceof CanvasImageImportError ? error : storageFailure();
     return { ok: false, error: { code: failure.code, message: failure.message } };
@@ -252,27 +264,47 @@ async function canvasImageImportResult(importImage, owner, filePath, project = n
 }
 
 /**
- * The sidecar's request for an image an agent named in its chat's project
- * folder; the sidecar has already kept the path inside that folder.
+ * The sidecar's requests for images an agent named in its chat's project
+ * folder, which the sidecar has kept inside that folder. The handler says
+ * whether a message was one; a request the sidecar cancels stops before it posts.
  */
-function isProjectImageRequest(message) {
-  return message?.type === 'canvas.importImage' && typeof message.id === 'string';
-}
+function createProjectImageRequests(importImage, sidecarSupervisor) {
+  const running = new Map(); // request id -> its cancellation
 
-async function answerProjectImageRequest(importImage, message, reply) {
-  const owner = { kind: 'canvas', canvasId: message.canvasId };
-  reply({
-    type: 'canvas.importImageResult',
-    id: message.id,
-    result: await canvasImageImportResult(importImage, owner, message.filePath, {
-      file: message.file,
-    }),
-  });
+  async function answer(message, reply, runEnded, signal) {
+    const owner = { kind: 'canvas', canvasId: message.canvasId };
+    const importForRun = async () => {
+      // Pinned now: a replacement sidecar must never receive this run's import.
+      const { port } = await sidecarSupervisor.getBridgeInfo();
+      const bridge = { port, secret: sidecarSupervisor.canvasAssetSecret() };
+      const project = { requestId: message.id, file: message.file, bridge, signal, runEnded };
+      return importImage(owner, message.filePath, project);
+    };
+    reply({
+      type: 'canvas.importImageResult',
+      id: message.id,
+      result: await canvasImageImportResult(importForRun, owner, message.filePath),
+    });
+  }
+
+  return function handle(message, reply, runEnded) {
+    if (message?.type === 'canvas.importImageCancel') {
+      running.get(message.id)?.abort();
+      return true;
+    }
+    if (message?.type !== 'canvas.importImage' || typeof message.id !== 'string') return false;
+    if (runEnded() || running.has(message.id)) return true;
+    const cancellation = new AbortController();
+    running.set(message.id, cancellation);
+    void answer(message, reply, runEnded, cancellation.signal).finally(() => {
+      running.delete(message.id);
+    });
+    return true;
+  };
 }
 
 module.exports = {
   createCanvasImageImporter,
   canvasImageImportResult,
-  isProjectImageRequest,
-  answerProjectImageRequest,
+  createProjectImageRequests,
 };

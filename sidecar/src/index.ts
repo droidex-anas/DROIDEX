@@ -71,12 +71,17 @@ function queueUsageSessions(ids: readonly string[]): Promise<void> {
   return operation;
 }
 
+const projectImages = createDesktopImageChannel();
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
-    importImage: async (request) => (await canvasReady).importCanvasImage(request),
+    importImage: async (request) => {
+      const { requestId } = request;
+      const isWanted = () => requestId === undefined || projectImages.isWaiting(requestId);
+      return (await canvasReady).importCanvasImage(request, isWanted);
+    },
     importKitImage,
   },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
@@ -132,7 +137,7 @@ const manager = new SessionManager(
     canvasCapture: (canvasId, ref, signal, image) =>
       canvasBridge.capture(canvasId, ref, signal, image),
     kitPreviews,
-    importProjectImage: createDesktopImageChannel(),
+    importProjectImage: projectImages.importImage,
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);
     },

@@ -85,6 +85,33 @@ test('main-attested image imports reject invalid inputs and dedupe owned bytes',
   assert.equal(canvasImageImportSchema.safeParse({ ...request, height: 0 }).success, false);
 });
 
+test('an import its requester stopped wanting while it was read is never saved', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'canvas-assets-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const scopes = new CanvasScopes();
+  const workspace = await CanvasWorkspace.open(root, quietBuilds(), {
+    isChatKnown: (appSessionId) => appSessionId === 'image-chat',
+    isScopeActive: (scopeId) => scopes.isScopeActive(scopeId),
+    bindScopeCanvas: (scopeId, canvasId) => scopes.bindScopeCanvas(scopeId, canvasId),
+  });
+  t.after(() => workspace.close());
+  const { canvasId } = await workspace.createCanvas('image-chat', 'create-image-canvas');
+  const filePath = join(root, 'chosen.png');
+  await writeFile(filePath, CANVAS_PNG);
+  const request = { canvasId, filePath, digest: CANVAS_PNG_ASSET_ID, width: 1, height: 1 };
+
+  let asked = 0;
+  const stoppedWanting = () => {
+    asked += 1;
+    return false;
+  };
+  await assert.rejects(workspace.importCanvasImage(request, stoppedWanting), {
+    code: 'scope_expired',
+  });
+  assert.equal(asked, 1);
+  assert.deepEqual(await listCanvasAssets(root, canvasId), []);
+});
+
 test('an SVG import keeps sanitised vectors under the hash of what it keeps', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'canvas-svg-assets-'));
   t.after(() => rm(root, { recursive: true, force: true }));

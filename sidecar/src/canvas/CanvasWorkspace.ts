@@ -132,11 +132,11 @@ export class CanvasWorkspace {
     return this.heads.damagedIds();
   }
 
-  importCanvasImage(request: CanvasImageImport): Promise<OwnedAsset> {
+  importCanvasImage(request: CanvasImageImport, isWanted?: () => boolean): Promise<OwnedAsset> {
     return this.commits.admit(() => {
       this.commits.requireOpen();
       this.canvas(request.canvasId);
-      return importCanvasImage(this.writerLease.directory, request);
+      return importCanvasImage(this.writerLease.directory, request, isWanted);
     });
   }
 

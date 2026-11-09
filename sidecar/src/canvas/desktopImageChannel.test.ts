@@ -21,9 +21,14 @@ function mainProcess() {
   const channel = new EventEmitter() as EventEmitter & { connected: boolean };
   channel.connected = true;
   const requests: { id: string; canvasId: string; filePath: string; file: object }[] = [];
+  const cancels: string[] = [];
   Object.assign(channel, {
-    send: (message: (typeof requests)[number], callback: (error: Error | null) => void) => {
-      requests.push(message);
+    send: (
+      message: (typeof requests)[number] & { type: string },
+      callback: (error: Error | null) => void,
+    ) => {
+      if (message.type === 'canvas.importImageCancel') cancels.push(message.id);
+      else requests.push(message);
       callback(null);
       return true;
     },
@@ -35,13 +40,14 @@ function mainProcess() {
     channel: channel as unknown as BrowserChannelProcess,
     emitter: channel,
     requests,
+    cancels,
     answer,
   };
 }
 
 test('a project image is imported by main and its refusal keeps the importer’s message', async () => {
   const main = mainProcess();
-  const importImage = createDesktopImageChannel(main.channel);
+  const { importImage } = createDesktopImageChannel(main.channel);
   const signal = new AbortController().signal;
 
   const imported = importImage('canvas-one', projectFile('/project/logo.png'), signal);
@@ -66,7 +72,7 @@ test('a project image is imported by main and its refusal keeps the importer’s
 
 test('an ended turn or a closed channel fails a waiting import, and a late answer is dropped', async () => {
   const main = mainProcess();
-  const importImage = createDesktopImageChannel(main.channel);
+  const { importImage, isWaiting } = createDesktopImageChannel(main.channel);
   const turn = new AbortController();
 
   const ended = importImage('canvas-one', projectFile('/project/logo.png'), turn.signal);
@@ -75,10 +81,31 @@ test('an ended turn or a closed channel fails a waiting import, and a late answe
     projectFile('/project/icon.png'),
     new AbortController().signal,
   );
+  const endedId = main.requests[0].id;
+  assert.equal(isWaiting(endedId), true);
   turn.abort();
   await assert.rejects(ended, { code: 'scope_expired' });
-  main.answer(main.requests[0].id, { ok: true, asset: ASSET });
+  // Main stops the import, and a save it still asks for is refused.
+  assert.deepEqual(main.cancels, [endedId]);
+  assert.equal(isWaiting(endedId), false);
+  main.answer(endedId, { ok: true, asset: ASSET });
 
   main.emitter.emit('disconnect');
   await assert.rejects(closed, { code: 'storage_failed' });
+});
+
+test('an import main does not answer in time is cancelled there', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const main = mainProcess();
+  const { importImage, isWaiting } = createDesktopImageChannel(main.channel, 1_000);
+
+  const late = importImage(
+    'canvas-one',
+    projectFile('/project/logo.png'),
+    new AbortController().signal,
+  );
+  t.mock.timers.tick(1_000);
+  await assert.rejects(late, { code: 'storage_failed' });
+  assert.deepEqual(main.cancels, [main.requests[0].id]);
+  assert.equal(isWaiting(main.requests[0].id), false);
 });

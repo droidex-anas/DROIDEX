@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import { canvasError, CanvasCommandError } from './canvasError.js';
+import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
 import type { OwnedAsset } from './protocol.js';
 import { canvasIdentifierSchema } from './schema.js';
@@ -43,7 +43,11 @@ function chosenImage<Owner extends z.ZodRawShape>(owner: Owner) {
 }
 
 export const chosenImageSchema = chosenImage({});
-export const canvasImageImportSchema = chosenImage({ canvasId: canvasIdentifierSchema });
+// An import an agent asked for names main's request, so a cancelled one is not saved.
+export const canvasImageImportSchema = chosenImage({
+  canvasId: canvasIdentifierSchema,
+  requestId: z.string().uuid().optional(),
+});
 
 export type ChosenImage = z.infer<typeof chosenImageSchema>;
 export type CanvasImageImport = z.infer<typeof canvasImageImportSchema>;
@@ -54,12 +58,17 @@ export interface OwnedImage {
   bytes: Buffer;
 }
 
-/** The sidecar owns the durable copy; only Electron main may call this route. */
+/**
+ * The sidecar owns the durable copy; only Electron main may call this route.
+ * `isWanted` is asked once the bytes are read, just before the asset is saved.
+ */
 export async function importCanvasImage(
   root: string,
   request: CanvasImageImport,
+  isWanted: () => boolean = () => true,
 ): Promise<OwnedAsset> {
   const { asset, bytes } = await readChosenImage(request);
+  if (!isWanted()) throw canvasError('scope_expired', EXPIRED_TURN);
   await saveOwnedAsset(root, request.canvasId, asset, bytes);
   return asset;
 }

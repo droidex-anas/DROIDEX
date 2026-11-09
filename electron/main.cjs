@@ -49,8 +49,7 @@ const {
 const {
   createCanvasImageImporter,
   canvasImageImportResult,
-  isProjectImageRequest,
-  answerProjectImageRequest,
+  createProjectImageRequests,
 } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
@@ -135,12 +134,12 @@ const sidecarSupervisor = createSidecarSupervisor({
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
   onMessage: (message, reply, runEnded) => {
-    if (isProjectImageRequest(message))
-      void answerProjectImageRequest(importCanvasImage, message, reply);
-    else void nativeBrowserRequests.handle(message, reply, runEnded);
+    if (!projectImageRequests(message, reply, runEnded))
+      void nativeBrowserRequests.handle(message, reply, runEnded);
   },
 });
 const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
+const projectImageRequests = createProjectImageRequests(importCanvasImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
