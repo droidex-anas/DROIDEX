@@ -116,7 +116,7 @@ export function Tooltip({
               role="tooltip"
               data-side={side}
               className={cn(
-                'floating-layer max-w-60 rounded-sm bg-raised px-2 py-1 text-center text-label text-primary shadow-sm',
+                'floating-layer max-w-60 whitespace-pre-line rounded-sm bg-raised px-2 py-1 text-center text-label text-primary shadow-sm',
                 isPositioned ? 'floating-layer-enter' : 'opacity-0',
               )}
             >

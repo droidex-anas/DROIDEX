@@ -11,7 +11,7 @@ import {
   canvasPreviewUrl,
   terminateCanvasPreviewGuest,
 } from '../../lib/desktop';
-import { diagnosticPlace, missingLabel } from './previewLabels';
+import { diagnosticPlace, missingLabel, strictRuleNote } from './previewLabels';
 import { CanvasImageError, captureCanvasImage, registerCanvasPreview } from './captureCanvasImage';
 import type { PreviewElement } from './previewDocument';
 import { createGuestElement } from './previewGuestElement';
@@ -423,9 +423,11 @@ function PreviewNotice({
   const first = diagnostics.at(0);
   const more = diagnostics.length - 1;
   const place = first ? diagnosticPlace(first) : null;
+  const ruleNote = strictRuleNote(diagnostics);
   return (
     <div role="status" className="canvas-sheet-banner">
       <p className="canvas-sheet-title">{title}</p>
+      {ruleNote && <p className="canvas-sheet-detail">{ruleNote}</p>}
       {first && (
         <p className="canvas-sheet-detail canvas-sheet-clamp">
           {place && <strong>{place} · </strong>}

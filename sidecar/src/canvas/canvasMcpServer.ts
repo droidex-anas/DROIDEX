@@ -39,7 +39,7 @@ import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
 import type { ImportProjectImage } from './desktopImageChannel.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type { CanvasFrame, CanvasScope, CaptureImage } from './protocol.js';
+import type { CanvasFrame, CanvasScope, CanvasSnapshot, CaptureImage } from './protocol.js';
 import { canvasIdentifierSchema, designSystemRefSchema, writeFilesInputSchema } from './schema.js';
 import { listDesignSystems, readDesignSystem } from './designSystems.js';
 
@@ -93,18 +93,12 @@ export function createCanvasMcpServer(
     }
   };
 
-  const board = async (
-    scope: CanvasScope,
-  ): Promise<ReturnType<CanvasWorkspace['snapshot']> | null> => {
-    if (scope.canvasId === null) return null;
-    const owner = await workspace();
-    const snapshot = owner.snapshot(scope.canvasId);
-    const allowed = scope.allowedDesignIds;
-    if (allowed === 'canvas') return snapshot;
-    return {
-      ...snapshot,
-      frames: snapshot.frames.filter((frame) => allowed.includes(frame.designId)),
-    };
+  const wholeBoard = async (scope: CanvasScope): Promise<CanvasSnapshot | null> =>
+    scope.canvasId === null ? null : (await workspace()).snapshot(scope.canvasId);
+
+  const board = async (scope: CanvasScope): Promise<CanvasSnapshot | null> => {
+    const snapshot = await wholeBoard(scope);
+    return snapshot && withinScope(snapshot, scope);
   };
 
   /** A frame this turn may use, on the canvas the chat is attached to. */
@@ -147,11 +141,18 @@ export function createCanvasMcpServer(
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);
+          const whole = await wholeBoard(scope);
+          const snapshot = whole && withinScope(whole, scope);
           // A turn's opening read carries its pinned kit, so the agent need not fetch it.
+          // Every frame counts toward its offers, whichever frames this turn may change.
           const kit = input.scopeId
             ? {}
-            : { designSystem: await designSystemBrief(scope.context.designSystem) };
-          const snapshot = await board(scope);
+            : {
+                designSystem: await designSystemBrief(scope.context.designSystem, {
+                  hasProjectFolder: projectFolder(scope.appSessionId) !== null,
+                  hasDesigns: hasDesigns(whole),
+                }),
+              };
           if (!snapshot)
             return {
               scopeId: scope.scopeId,
@@ -456,6 +457,20 @@ export function createCanvasMcpServer(
     },
     purpose === 'design' ? DESIGN_CANVAS_MCP_INSTRUCTIONS : undefined,
   );
+}
+
+/** The canvas as this turn sees it: every frame, or only the frames it was assigned. */
+function withinScope(snapshot: CanvasSnapshot, scope: CanvasScope): CanvasSnapshot {
+  const allowed = scope.allowedDesignIds;
+  if (allowed === 'canvas') return snapshot;
+  return {
+    ...snapshot,
+    frames: snapshot.frames.filter((frame) => allowed.includes(frame.designId)),
+  };
+}
+
+function hasDesigns(snapshot: CanvasSnapshot | null): boolean {
+  return snapshot?.frames.some((frame) => frame.revisionId !== null) ?? false;
 }
 
 function toolFailure(error: unknown): CanvasCommandError {

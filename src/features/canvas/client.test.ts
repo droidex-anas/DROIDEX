@@ -174,6 +174,27 @@ test('a reported failure rejects its own request with the stable code', async ()
   assert.equal((await mutating).sequence, 6);
 });
 
+test('changing the design-system rule names the chat, the canvas and the rule', async () => {
+  const bridge = fakeCanvasBridge();
+  const client = new CanvasClient(bridge.transport);
+  const changing = client.setDesignSystemAdherence('app-1', CANVAS, 'strict');
+  const sent = bridge.last('canvas.setDesignSystemAdherence');
+  assert.deepEqual(sent, {
+    type: 'canvas.setDesignSystemAdherence',
+    requestId: sent.requestId,
+    appSessionId: 'app-1',
+    canvasId: CANVAS,
+    designSystemAdherence: 'strict',
+  });
+  bridge.deliver({
+    type: 'canvas.result',
+    requestId: sent.requestId,
+    ok: true,
+    reply: { kind: 'ok' },
+  });
+  await changing;
+});
+
 test('asset listing round trips through the renderer boundary and rejects a refused request', async (t) => {
   const scopes = new CanvasScopes();
   const builds = quietBuilds();

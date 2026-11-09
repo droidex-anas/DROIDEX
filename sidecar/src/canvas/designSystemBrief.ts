@@ -3,11 +3,17 @@
 // the primitives its entry exports and its guidance. Token values, files and
 // examples stay with canvas_theme. The kit schema caps the notes and usage notes
 // the guidance carries at 16 KiB, not counting its headings, and the name lists
-// share 4 KiB.
+// share 4 KiB. Under Auto, before a project chat's first design, it also asks
+// the agent to offer a kit from the project.
 
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, type TokenSectionKind } from './designSystemDocument.js';
-import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
+import {
+  designSystemKind,
+  KIT_ENTRY,
+  readDesignSystem,
+  type DesignSystem,
+} from './designSystems.js';
 import type { DesignSystemRef } from './protocol.js';
 
 /** What the name lists may cost, counting the JSON quotes, commas and keys around them. */
@@ -24,6 +30,15 @@ export interface DesignSystemBrief {
   guidance: string;
 }
 
+const PROJECT_KIT_OFFER =
+  "This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's Tailwind config, CSS tokens and design docs for the designs that follow. Build it only when the user says so.";
+
+/** Where the turn starts: whether the chat has a project folder and its canvas any design. */
+export interface OpeningBoard {
+  hasProjectFolder: boolean;
+  hasDesigns: boolean;
+}
+
 /** A pinned kit this machine cannot read, missing or damaged; its builds report the same. */
 interface UnavailableDesignSystem {
   ref: DesignSystemRef;
@@ -32,6 +47,7 @@ interface UnavailableDesignSystem {
 
 export async function designSystemBrief(
   ref: DesignSystemRef,
+  board: OpeningBoard,
 ): Promise<DesignSystemBrief | UnavailableDesignSystem> {
   let system: DesignSystem;
   try {
@@ -63,13 +79,16 @@ export async function designSystemBrief(
     const listed = names.filter((name, index) => fits(name, index === 0 ? keyBytes : 0));
     if (listed.length > 0) tokens[kind] = listed;
   }
+  const guidance = kitGuidance(system.name, system.sections);
+  const offersProjectKit =
+    designSystemKind(ref.id) === 'auto' && board.hasProjectFolder && !board.hasDesigns;
   return {
     ref,
     name: system.name,
     primitives,
     tokens,
     ...(omittedNames > 0 ? { omittedNames } : {}),
-    guidance: kitGuidance(system.name, system.sections),
+    guidance: offersProjectKit ? `${guidance}\n\n${PROJECT_KIT_OFFER}` : guidance,
   };
 }
 

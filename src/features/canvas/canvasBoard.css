@@ -53,9 +53,9 @@
   font-family: var(--canvas-chrome-font);
 }
 
-/* The name above the sheet, which is also the frame's drag handle and tab stop.
-   Plain text on the board, its first letter on the sheet's left edge: the
-   inset that gives the focus line room is taken back by the margin. */
+/* The row above the sheet, which drags the frame: the name, then its kit notes
+   and tag. Plain text on the board, its first letter on the sheet's left edge:
+   the inset that gives the focus line room is taken back by the margin. */
 .canvas-frame-label {
   position: absolute;
   bottom: 100%;
@@ -65,9 +65,17 @@
   gap: 6px;
   padding-bottom: 4px;
   transform-origin: 0 100%;
-  outline: none;
   touch-action: none;
   user-select: none;
+}
+
+/* The name and its Interacting note: the frame's tab stop. */
+.canvas-frame-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  outline: none;
 }
 
 .canvas-frame-name {
@@ -109,7 +117,8 @@
 
 /* The keyboard's place on the board: the selection line around the name, which
    holds 3:1 against every board, where a tint read as nothing on dark ones. */
-.canvas-frame-label:focus-visible .canvas-frame-name {
+.canvas-frame-header:focus-visible .canvas-frame-name,
+.canvas-frame-kit-notes:focus-visible > * {
   box-shadow: 0 0 0 1.5px var(--selection);
 }
 
@@ -165,6 +174,31 @@
   pointer-events: auto;
   background: color-mix(in srgb, var(--selection) 14%, transparent);
   color: var(--selection-label);
+}
+
+/* Guide's kit notes on a built frame. The inset gives the 20px badge a 28px
+   target, and only a badge that opens the source takes the pointer; any other
+   press falls through to the row and picks or drags the frame. */
+.canvas-frame-kit-notes {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  pointer-events: none;
+}
+
+.canvas-frame-kit-notes::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
+.canvas-frame-kit-notes[data-opens] {
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /* The name while it is renamed: a raised field where the plain name stood. */

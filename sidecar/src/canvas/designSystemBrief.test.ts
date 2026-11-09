@@ -8,7 +8,7 @@ import {
   writtenTextBytes,
   type DocumentSection,
 } from './designSystemDocument.js';
-import { DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
+import { AUTO_DESIGN_SYSTEM_REF, DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 pinScratchProfile();
@@ -55,7 +55,10 @@ test('a full kit’s brief lists token names by section kind within the 4 KiB na
     { ...SAMPLE_KIT, id: 'full', name: 'Full', sections },
     { mutationId: 'full-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
-  const brief = await designSystemBrief({ ...ref, mode: 'dark' });
+  const brief = await designSystemBrief(
+    { ...ref, mode: 'dark' },
+    { hasProjectFolder: false, hasDesigns: false },
+  );
   assert.ok(!('unavailable' in brief));
 
   const { primitives, tokens, omittedNames } = brief;
@@ -82,4 +85,28 @@ test('a full kit’s brief lists token names by section kind within the 4 KiB na
   assert.ok(omittedNames !== undefined && omittedNames > 0);
   assert.equal(listed + omittedNames, DOCUMENT_LIMITS.maxTokens);
   assert.ok(Buffer.byteLength(JSON.stringify(brief), 'utf8') < 21 * 1024);
+});
+
+test('under Auto, the opening read before a project chat’s first design offers a kit from the project', async () => {
+  const offer =
+    /offer in one sentence[^.]*build one from the project's[^.]*\. Build it only when the user says so\./;
+  const guidance = async (
+    ref: typeof AUTO_DESIGN_SYSTEM_REF,
+    hasProjectFolder: boolean,
+    hasDesigns: boolean,
+  ) => {
+    const brief = await designSystemBrief(ref, { hasProjectFolder, hasDesigns });
+    assert.ok(!('unavailable' in brief));
+    return brief.guidance;
+  };
+  assert.match(await guidance(AUTO_DESIGN_SYSTEM_REF, true, false), offer);
+  // A canvas already designed has its look, and a chat with no folder has nothing to read.
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, true, true), offer);
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, false, false), offer);
+  // A chosen kit is the system already.
+  const kit = await saveDesignSystem(
+    { ...SAMPLE_KIT, id: 'chosen', name: 'Chosen' },
+    { mutationId: 'chosen-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  assert.doesNotMatch(await guidance({ ...kit, mode: 'light' }, true, false), offer);
 });

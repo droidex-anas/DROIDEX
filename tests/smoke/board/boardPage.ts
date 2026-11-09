@@ -143,8 +143,7 @@ export function frame(page: Page, name: string): Locator {
   return page
     .getByTestId('canvas-board')
     .getByText(`Design ${name}`, { exact: true })
-    .locator('..')
-    .locator('..');
+    .locator('xpath=ancestor::*[@data-design-frame][1]');
 }
 
 export async function box(locator: Locator) {

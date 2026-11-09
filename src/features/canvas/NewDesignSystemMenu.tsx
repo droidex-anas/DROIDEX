@@ -8,13 +8,19 @@ import { ChevronRight, Plus } from '@droidex/icons';
 import { Menu } from '../../components/ui/Menu';
 import type { DesignSystemSource } from './protocol';
 
+/** The chat's project folder, by name, and asking its agent for a kit from it. */
+export interface FromProject {
+  folderName: string;
+  onSelect: () => void;
+}
+
 export function NewDesignSystemMenu({
   onCompose,
-  onFromProject,
+  fromProject,
 }: {
   onCompose: (kind: DesignSystemSource['kind']) => void;
   /** Null where the chat has no project folder or no Canvas tools. */
-  onFromProject: (() => void) | null;
+  fromProject: FromProject | null;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -44,7 +50,16 @@ export function NewDesignSystemMenu({
         width={240}
         label="New design system"
       >
-        {onFromProject && <Menu.Item onSelect={onFromProject}>From this project</Menu.Item>}
+        {fromProject && (
+          <Menu.Item onSelect={fromProject.onSelect}>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate">From this project: {fromProject.folderName}</span>
+              <span className="text-caption text-muted">
+                Reads your Tailwind config, CSS tokens and design docs
+              </span>
+            </span>
+          </Menu.Item>
+        )}
         <Menu.Item
           onSelect={() => {
             onCompose('designMd');
