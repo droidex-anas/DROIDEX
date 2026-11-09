@@ -13,7 +13,7 @@ import { useBoardOnScreen, type BoardOnScreen } from './boardOnScreen';
 import { canvasClient, frameRemovals } from './canvasClient';
 import { CanvasRequestError } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
-import { toggleFramePins, untagsFrames, useFramePins } from './framePins';
+import { tagFramesLabel, toggleFramePins, useFramePins } from './framePins';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import { LibraryPicker } from './LibraryPicker';
 import { libraryFrame } from './libraryRequests';
@@ -221,13 +221,9 @@ function TagFramesRow({
 }) {
   const pins = useFramePins(attached?.appSessionId ?? null);
   const selected = attached?.selected ?? [];
-  const count = selected.length > 1 ? ` ${String(selected.length)} frames` : '';
-  const label = untagsFrames(pins, canvasId, selected)
-    ? `Untag${count} from chat`
-    : `Tag${count} in chat`;
   return (
     <MenuRow
-      label={label}
+      label={tagFramesLabel(pins, canvasId, selected)}
       hint={TAG_KEY_LABEL}
       disabled={selected.length === 0}
       onRun={() => {

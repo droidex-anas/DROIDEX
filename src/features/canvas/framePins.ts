@@ -106,6 +106,21 @@ export function untagsFrames(
 }
 
 /**
+ * What pressing tag on these frames says it does, counting the frames it
+ * changes: untagging takes off only the tagged ones, and tagging adds the rest.
+ */
+export function tagFramesLabel(
+  pins: readonly FramePin[],
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): string {
+  const untags = untagsFrames(pins, canvasId, frames);
+  const changed = frames.filter((frame) => isTagged(pins, canvasId, frame) === untags).length;
+  const count = changed > 1 ? ` ${String(changed)} frames` : '';
+  return untags ? `Untag${count} from chat` : `Tag${count} in chat`;
+}
+
+/**
  * Tags these frames in the chat's next prompt, as many as it has room for, or
  * untags them by `untagsFrames`. A request pins frames of one canvas, so a frame
  * from another starts over.
