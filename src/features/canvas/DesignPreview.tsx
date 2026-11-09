@@ -231,6 +231,7 @@ export function PreviewGuestFrame({
           width,
           height,
           scaleFactor,
+          vector: () => run?.vector() ?? Promise.resolve(null),
         },
       );
       thumbnailTimer = setTimeout(() => {

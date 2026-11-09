@@ -8,7 +8,7 @@ import { objectValue } from '../values.js';
 
 export interface CanvasActivity {
   toolUseId: string;
-  action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme';
+  action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme' | 'image';
   designIds: string[];
   state: 'running' | 'completed' | 'failed';
   message: string;
@@ -33,6 +33,8 @@ export interface KitReference {
 
 const THEME_OPERATIONS = ['list', 'read', 'save', 'apply'] as const;
 type ThemeOperation = (typeof THEME_OPERATIONS)[number];
+const IMAGE_KINDS = ['render', 'import'] as const;
+type ImageKind = (typeof IMAGE_KINDS)[number];
 
 export interface ToolProvenance {
   serverName: string;
@@ -52,6 +54,8 @@ export interface CanvasToolBinding {
   firstArtifact?: true;
   /** What a theme call was asked to do, which its messages name. */
   themeOperation?: ThemeOperation;
+  /** What an image call was asked to do, which its messages name. */
+  imageKind?: ImageKind;
   designSystem?: KitReference;
 }
 
@@ -69,6 +73,7 @@ const ACTIONS: Record<CanvasToolName, CanvasActivity['action']> = {
   canvas_arrange: 'arrange',
   canvas_annotate: 'annotate',
   canvas_theme: 'theme',
+  canvas_image: 'image',
 };
 const VERBS = {
   create: ['Creating designs', 'Created designs', 'Could not create designs'],
@@ -77,12 +82,17 @@ const VERBS = {
   arrange: ['Arranging designs', 'Arranged designs', 'Could not arrange designs'],
   annotate: ['Annotating canvas', 'Annotated canvas', 'Could not annotate canvas'],
   theme: ['Reading design system', 'Read design system', 'Could not read design system'],
+  image: ['Rendering image', 'Rendered image', 'Could not render image'],
 } as const;
 const THEME_VERBS: Record<ThemeOperation, readonly [string, string, string]> = {
   list: VERBS.theme,
   read: VERBS.theme,
   save: ['Saving design system', 'Saved design system', 'Could not save design system'],
   apply: ['Applying design system', 'Applied design system', 'Could not apply design system'],
+};
+const IMAGE_VERBS: Record<ImageKind, readonly [string, string, string]> = {
+  render: VERBS.image,
+  import: ['Importing image', 'Imported image', 'Could not import image'],
 };
 
 function canvasToolName(name: string | undefined): CanvasToolName | undefined {
@@ -155,6 +165,10 @@ export function themeOperation(value: unknown): ThemeOperation | undefined {
   return THEME_OPERATIONS.find((operation) => operation === value);
 }
 
+export function imageKind(value: unknown): ImageKind | undefined {
+  return IMAGE_KINDS.find((kind) => kind === value);
+}
+
 function resultReferences(text: string | undefined): ResultReferences {
   if (!text || text.length > 256_000) return { designIds: [] };
   try {
@@ -223,10 +237,9 @@ function bindingFrom(
   if (provenance.serverName !== CANVAS_MCP_SERVER_NAME || !provenance.toolUseId) return undefined;
   const toolName = CANVAS_TOOL_NAMES.find((name) => name === provenance.toolName);
   if (!toolName) return undefined;
-  const operation =
-    toolName === 'canvas_theme'
-      ? themeOperation(objectValue(event.toolArgs)?.operation)
-      : undefined;
+  const args = objectValue(event.toolArgs);
+  const operation = toolName === 'canvas_theme' ? themeOperation(args?.operation) : undefined;
+  const kind = toolName === 'canvas_image' ? imageKind(args?.kind) : undefined;
   return {
     occurrenceId: event.id,
     toolUseId: provenance.toolUseId,
@@ -234,14 +247,21 @@ function bindingFrom(
     action: ACTIONS[toolName],
     designIds: designIds(event.toolArgs),
     ...(operation ? { themeOperation: operation } : {}),
+    ...(kind ? { imageKind: kind } : {}),
   };
+}
+
+function verbsOf(binding: CanvasToolBinding): readonly [string, string, string] {
+  if (binding.themeOperation) return THEME_VERBS[binding.themeOperation];
+  if (binding.imageKind) return IMAGE_VERBS[binding.imageKind];
+  return VERBS[binding.action];
 }
 
 function activity(binding: CanvasToolBinding, event: TranscriptEvent): CanvasActivity {
   let state: CanvasActivity['state'] = 'completed';
   if (event.kind === 'tool_call') state = 'running';
   else if (event.kind === 'error' || event.isError || event.interrupted) state = 'failed';
-  const verb = binding.themeOperation ? THEME_VERBS[binding.themeOperation] : VERBS[binding.action];
+  const verb = verbsOf(binding);
   let message = completedMessage(binding, verb[1]);
   if (event.interrupted) message = 'Canvas tool stopped.';
   else if (state === 'running') message = verb[0];
@@ -393,13 +413,15 @@ export class CanvasToolPresentation {
             occurrenceId: next.occurrenceId,
             designIds: [...new Set([...selected.designIds, ...next.designIds])],
             ...(next.themeOperation ? { themeOperation: next.themeOperation } : {}),
+            ...(next.imageKind ? { imageKind: next.imageKind } : {}),
           };
         }
         if (
           binding?.occurrenceId !== selected.occurrenceId ||
           binding.action !== selected.action ||
           binding.designIds.join() !== selected.designIds.join() ||
-          binding.themeOperation !== selected.themeOperation
+          binding.themeOperation !== selected.themeOperation ||
+          binding.imageKind !== selected.imageKind
         ) {
           binding = selected;
           this.remember?.(binding);

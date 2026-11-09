@@ -1,23 +1,24 @@
 // The frame toolbar's actions bound to the chat whose pane shows the canvas,
-// and the dialog its Save to library… opens.
+// and the dialogs its Save to library… and Export image… open.
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { canvasClient as canvas, variantSets } from './canvasClient';
+import { exportableRevision } from './captureCanvasImage';
 import { useElementPins } from './elementPins';
+import { ExportImageDialog } from './ExportImageDialog';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
-import type { CanvasFrame, RevisionRef } from './protocol';
+import type { CanvasFrame, FrameRect, RevisionRef } from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useVariantRequests } from './useVariantRequests';
 import { variantSetSource } from './variantSets';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
-/** What Save to library… saves, fixed when it opens so a later build cannot retarget it. */
-interface Saving {
-  revision: RevisionRef;
-  frameName: string;
-}
+/** What a dialog acts on, fixed when it opens so a later build cannot retarget it. */
+type OpenDialog =
+  | { kind: 'save'; revision: RevisionRef; frameName: string }
+  | { kind: 'export'; revision: RevisionRef; frameName: string; rect: FrameRect };
 
 export function useFrameActions(
   appSessionId: string,
@@ -26,9 +27,9 @@ export function useFrameActions(
   attached: boolean,
   frames: readonly CanvasFrame[],
 ): { actions: FrameActions; dialog: ReactNode } {
-  const [saving, setSaving] = useState<Saving | null>(null);
+  const [open, setOpen] = useState<OpenDialog | null>(null);
   const close = useCallback(() => {
-    setSaving(null);
+    setOpen(null);
   }, []);
   const makeVariants = useVariantRequests(appSessionId, canvasId);
   const picks = useElementPins(appSessionId);
@@ -67,22 +68,39 @@ export function useFrameActions(
     applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),
     saveToLibrary: (frame) => {
       if (frame.revisionId)
-        setSaving({
+        setOpen({
+          kind: 'save',
           revision: { designId: frame.designId, revisionId: frame.revisionId },
           frameName: frame.name,
         });
     },
+    exportImage: (frame) => {
+      const revision = exportableRevision(frame);
+      if (revision) setOpen({ kind: 'export', revision, frameName: frame.name, rect: frame.rect });
+    },
   };
 
-  return {
-    actions,
-    dialog: saving && (
+  return { actions, dialog: open && dialogFor(canvasId, open, close) };
+}
+
+function dialogFor(canvasId: string, open: OpenDialog, onClose: () => void): ReactNode {
+  if (open.kind === 'save')
+    return (
       <SaveToLibraryDialog
         canvasId={canvasId}
-        revision={saving.revision}
-        frameName={saving.frameName}
-        onClose={close}
+        revision={open.revision}
+        frameName={open.frameName}
+        onClose={onClose}
       />
-    ),
-  };
+    );
+  return (
+    <ExportImageDialog
+      canvasId={canvasId}
+      revision={open.revision}
+      frameName={open.frameName}
+      width={open.rect.width}
+      height={open.rect.height}
+      onClose={onClose}
+    />
+  );
 }

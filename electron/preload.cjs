@@ -168,8 +168,10 @@ contextBridge.exposeInMainWorld('droidex', {
     ipcRenderer.invoke('canvas-preview-cancel-capture', { requestId }),
   canvasThumbnailRead: (canvasId, designId, revisionId) =>
     ipcRenderer.invoke('canvas-thumbnail-read', { canvasId, designId, revisionId }),
-  canvasImageSave: (canvasId, designId, revisionId, suggestedName) =>
-    ipcRenderer.invoke('canvas-image-save', { canvasId, designId, revisionId, suggestedName }),
+  canvasImageSave: (requestId, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { requestId, suggestedName }),
+  canvasSvgSave: (svg, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { format: 'svg', svg, suggestedName }),
   canvasExportSource: (canvasId, ref) =>
     ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
   canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),

@@ -74,7 +74,7 @@ export function CanvasDialog({
           wrapTabFocus(event, dialogRef.current);
         }}
         style={style}
-        className={`rounded-2xl bg-raised shadow-lg focus:outline-none ${className}`}
+        className={`raised-fields rounded-2xl bg-raised shadow-lg focus:outline-none ${className}`}
       >
         {children}
       </div>

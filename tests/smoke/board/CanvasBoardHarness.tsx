@@ -445,6 +445,7 @@ const frameActions: FrameActions = {
   sourceOf: (frame) => variantSetSource(shown.current.frames, frame),
   applyVariant: (variant, source) => variantSets.apply('chat_1', 'cv_board', variant, source),
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
+  exportImage: (frame) => dialogs.push(`export:${frame.designId}`),
 };
 
 function revision(revisionId: string, sequence: number, author: 'user' | 'agent'): RevisionSummary {

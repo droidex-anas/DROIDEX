@@ -13,6 +13,7 @@ import { isDocumentVisible, subscribeVisibilityChange } from '../../hooks/useDoc
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
+  PREVIEW_VECTOR_SCRIPT,
   previewHoverScript,
   previewLocateScript,
   previewNonce,
@@ -25,6 +26,7 @@ import {
   readPreviewHover,
   readPreviewLocations,
   readPreviewSnapshot,
+  readPreviewVector,
   type PreviewElement,
   type PreviewEvent,
   type PreviewFinding,
@@ -33,6 +35,7 @@ import {
   type PreviewPick,
   type PreviewProbe,
   type PreviewTarget,
+  type PreviewVector,
 } from './previewDocument';
 import type { CanvasDiagnostic, FrameRect } from './protocol';
 
@@ -119,8 +122,8 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
- * `setTokens` reaches the same guests and is not answered. `hover`, `probe`
- * and `locate` answer themselves, with null when nothing is there or this run
+ * `setTokens` reaches the same guests and is not answered. `hover`, `probe`,
+ * `locate` and `vector` answer themselves, with null when nothing is there or this run
  * can no longer ask, and leave the selection alone.
  */
 export interface PreviewRun {
@@ -131,6 +134,8 @@ export interface PreviewRun {
   probe(probe: PreviewProbe): Promise<PreviewFinding | null>;
   /** Where each element is drawn, in order, null for one that is not. */
   locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null>;
+  /** The design's root `<svg>` as a standalone file, or why it has none. */
+  vector(): Promise<PreviewVector | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -259,6 +264,12 @@ class GuestRun implements PreviewRun {
     if (!this.canAsk()) return null;
     const answer = await this.ask(previewLocateScript(elementIds));
     return this.canAsk() ? readPreviewLocations(answer, elementIds.length) : null;
+  }
+
+  async vector(): Promise<PreviewVector | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(PREVIEW_VECTOR_SCRIPT);
+    return this.canAsk() ? readPreviewVector(answer) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

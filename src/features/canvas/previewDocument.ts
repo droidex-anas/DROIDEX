@@ -1,7 +1,7 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the eight audited literals below.
+// element's `executeJavaScript`, with exactly the nine audited literals below.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -24,6 +24,10 @@ export const MAX_PREVIEW_LOCATE_ELEMENTS = 8;
 const MAX_PREVIEW_EVENT_BYTES = 4096;
 /** Bytes a selection may measure: the intermediate gives it its own cap and keeps only one. */
 const MAX_PREVIEW_SELECTION_BYTES = 16384;
+/** Bytes a vector design's markup may measure, as the reporter caps it. */
+const MAX_PREVIEW_VECTOR_BYTES = 256 * 1024;
+/** JSON escaping at most doubles the markup a vector answer carries. */
+const MAX_PREVIEW_VECTOR_ANSWER_BYTES = 2 * MAX_PREVIEW_VECTOR_BYTES + 1024;
 /** The queue cap times the largest event, plus the one selection the guest keeps, with headroom. */
 const MAX_PREVIEW_SNAPSHOT_BYTES =
   MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + MAX_PREVIEW_SELECTION_BYTES + 1024;
@@ -110,6 +114,13 @@ export type PreviewEvent =
   | { event: 'selection'; sequence: number; element: PreviewElement | null }
   | { event: 'interaction'; kind: string };
 
+/**
+ * A vector design's root `<svg>`, standalone with its tokens resolved, or why
+ * there is none: the root is not one svg, or its markup is over the cap.
+ * Untrusted markup, which the sidecar sanitises before anything stores it.
+ */
+export type PreviewVector = { svg: string } | { refused: 'not_vector' | 'too_large' };
+
 /** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
 export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
 
@@ -186,6 +197,9 @@ export function previewProbeScript(probe: PreviewProbe): string {
 export function previewLocateScript(elementIds: readonly string[]): string {
   return `globalThis.__droidexCanvasPreview.locate(${jsonArgument({ elementIds })})`;
 }
+
+/** Asks for the design's root `<svg>`; the call itself answers. */
+export const PREVIEW_VECTOR_SCRIPT = 'globalThis.__droidexCanvasPreview.vector()';
 
 /**
  * Sets a kit's draft token values on the design's root, replacing the set this
@@ -326,9 +340,19 @@ export function readPreviewLocations(value: unknown, asked: number): (FrameRect 
   return parsed.map(readRect);
 }
 
-/** A direct answer's JSON, within one event's cap, or undefined. */
-function readAnswer(value: unknown): unknown {
-  if (typeof value !== 'string' || utf8Bytes(value) > MAX_PREVIEW_EVENT_BYTES) return undefined;
+/** A vector answer, or null when the answer is not one. */
+export function readPreviewVector(value: unknown): PreviewVector | null {
+  const parsed = readAnswer(value, MAX_PREVIEW_VECTOR_ANSWER_BYTES);
+  if (!record(parsed)) return null;
+  if (typeof parsed.svg === 'string' && utf8Bytes(parsed.svg) <= MAX_PREVIEW_VECTOR_BYTES)
+    return { svg: parsed.svg };
+  const { refused } = parsed;
+  return refused === 'not_vector' || refused === 'too_large' ? { refused } : null;
+}
+
+/** A direct answer's JSON, within its cap, or undefined. */
+function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
+  if (typeof value !== 'string' || utf8Bytes(value) > capBytes) return undefined;
   try {
     return JSON.parse(value);
   } catch {

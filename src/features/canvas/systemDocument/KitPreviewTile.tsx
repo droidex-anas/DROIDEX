@@ -218,6 +218,7 @@ function KitGuest({
         width,
         height,
         scaleFactor: window.devicePixelRatio,
+        retain: false,
       })
         .then((result) => {
           captureId = null;

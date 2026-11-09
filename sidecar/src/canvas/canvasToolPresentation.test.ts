@@ -217,6 +217,46 @@ test('a theme save, proposal or apply keeps only its kit reference, live and on 
   assert.ok(!persisted.includes(CANARY));
 });
 
+test('an image call says whether it renders or imports, live and on replay', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'canvas-image-bindings-'));
+  const previous = process.env.DROIDEX_USER_DATA_DIR;
+  process.env.DROIDEX_USER_DATA_DIR = directory;
+  t.after(() => {
+    if (previous === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previous;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const projector = new CanvasToolPresentation([], (binding) => {
+    appendCanvasToolBinding('app', binding);
+  });
+  const name = 'mcp__droidex-canvas__canvas_image';
+  const image = (toolUseId: string, toolArgs: Record<string, unknown>) => {
+    const call = projector.project(
+      event('tool_call', { toolName: name, toolUseId, toolArgs }),
+      canvasToolProvenance(name, toolUseId),
+    );
+    const result = event('tool_result', { toolUseId, text: '{"ok":true}' });
+    return { call, result, done: projector.project(result) };
+  };
+  const rendered = image('render-1', { kind: 'render', designId: 'design-1', to: 'poster.png' });
+  const imported = image('import-1', { kind: 'import', from: 'logo.svg' });
+  assert.deepEqual(
+    [rendered, imported].map(({ call, done }) => [
+      call.canvasActivity?.message,
+      done.canvasActivity?.message,
+    ]),
+    [
+      ['Rendering image', 'Rendered image'],
+      ['Importing image', 'Imported image'],
+    ],
+  );
+  const replayed = new CanvasToolPresentation(readCanvasToolBindings('app'));
+  assert.deepEqual(
+    [rendered, imported].map(({ result }) => replayed.project(result).canvasActivity?.message),
+    ['Rendered image', 'Imported image'],
+  );
+});
+
 const message = (value: unknown): SDKMessage => value as SDKMessage;
 
 const streamEvent = (event: unknown, parent: string | null = null): SDKMessage =>

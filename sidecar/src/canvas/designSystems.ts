@@ -38,6 +38,7 @@ import {
   writeVersion,
 } from './designSystemStorage.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
+import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
   canvasIdentifierSchema,
@@ -53,7 +54,6 @@ export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
   maxProjectFiles: 8,
-  maxProjectPathLength: 1024,
 } as const;
 
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -100,7 +100,7 @@ export const designSystemObjectSchema = z
               .object({
                 name: z.string().min(1).max(255),
                 files: z
-                  .array(z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxProjectPathLength))
+                  .array(z.string().min(1).max(MAX_PROJECT_PATH_LENGTH))
                   .min(1)
                   .max(DESIGN_SYSTEM_LIMITS.maxProjectFiles),
               })

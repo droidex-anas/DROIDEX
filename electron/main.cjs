@@ -46,7 +46,11 @@ const {
   readCanvasPreviewAsset,
   readKitImage,
 } = require('./canvasPreviewAssets.cjs');
-const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
+const {
+  createCanvasImageImporter,
+  canvasImageImportResult,
+  createProjectImageRequests,
+} = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
@@ -129,10 +133,13 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
-  onMessage: (message, reply, runEnded) =>
-    void nativeBrowserRequests.handle(message, reply, runEnded),
+  onMessage: (message, reply, runEnded) => {
+    if (!projectImageRequests(message, reply, runEnded))
+      void nativeBrowserRequests.handle(message, reply, runEnded);
+  },
 });
 const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
+const projectImageRequests = createProjectImageRequests(importCanvasImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
@@ -159,8 +166,9 @@ const canvasPreviewHosts = createCanvasPreviewHosts({
 const saveCanvasImage = createCanvasImageSave({
   dialog,
   fs: fsp,
-  readThumbnail: canvasPreviewHosts.readThumbnail,
+  takeCapture: canvasPreviewHosts.takeCapture,
   getWindow: () => mainWindow,
+  sidecar: sidecarSupervisor,
 });
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via

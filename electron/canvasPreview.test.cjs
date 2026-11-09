@@ -34,13 +34,14 @@ function createGuest(id, frames = []) {
     id,
     captures,
     identity: { designId: 'dsg_01', revisionId: 'rev_01', generation: 1 },
+    displayScale: 2,
     crashes: 0,
     destroyed: false,
     windowOpenHandler: null,
     webRtcPolicy: null,
     mainFrame: { frames },
-    executeJavaScript() {
-      return Promise.resolve(this.identity);
+    executeJavaScript(script) {
+      return Promise.resolve(script === 'devicePixelRatio' ? this.displayScale : this.identity);
     },
     capturePage(rect, options) {
       return new Promise((resolve, reject) => captures.push({ rect, options, resolve, reject }));
@@ -462,6 +463,19 @@ test("a locate is answered only by its own reply, never a probe's that echoes it
   assert.deepEqual(JSON.parse(await located), [rect]);
 });
 
+test('a vector answer has its own cap and carries only markup or a known refusal', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const answer = (data) => {
+    const asked = preview.vector();
+    reply({ event: 'vector', sequence: posted.at(-1).sequence, ...data });
+    return asked.then(JSON.parse);
+  };
+  const svg = `<svg>${'x'.repeat(8_000)}</svg>`;
+  assert.deepEqual(await answer({ svg }), { svg });
+  assert.deepEqual(await answer({ refused: 'not_vector', svg: 42 }), { refused: 'not_vector' });
+  assert.equal(await answer({ refused: 'anything' }), null);
+});
+
 test('a guest is not attachable until the preview session is configured', async () => {
   // The module that configures the session is what reports readiness, so main
   // has no second flag to forget: an unconfigured session routes DIRECT, and a
@@ -496,6 +510,7 @@ const captureRequest = {
   width: 720,
   height: 720,
   scaleFactor: 2,
+  retain: false,
 };
 
 function capturedImage(width = 1440, height = 1440) {
@@ -525,6 +540,92 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), result.bytes);
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_02'), null);
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('a capture at a scale the display does not draw is drawn again by Chromium at that scale', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve({ data: capturedImage(2160, 2160).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const capture = hosts.capture({ ...captureRequest, scaleFactor: 3 });
+  await new Promise(setImmediate);
+  guest.captures[0].resolve(capturedImage());
+  const result = await capture;
+  assert.equal(result.ok, true);
+  assert.equal(result.bytes.readUInt32BE(16), 2160);
+  const clip = { x: 0, y: 0, width: 720, height: 720, scale: 1.5 };
+  assert.deepEqual(sent, [{ method: 'Page.captureScreenshot', params: { format: 'png', clip } }]);
+  assert.equal(guest.debugger.attached, false);
+});
+
+test('a Poster at 1x on a 3x display is drawn by Chromium without a native image over the caps', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  guest.displayScale = 3;
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push(params.clip.scale);
+      return Promise.resolve({ data: capturedImage(1728, 2304).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const poster = { ...captureRequest, width: 1728, height: 2304, scaleFactor: 1 };
+  const result = await hosts.capture(poster);
+  assert.equal(result.ok, true);
+  assert.deepEqual([result.bytes.readUInt32BE(16), result.bytes.readUInt32BE(20)], [1728, 2304]);
+  assert.equal(guest.captures.length, 0);
+  assert.deepEqual(sent, [1 / 3]);
+});
+
+test('a save reads the capture kept for its own request, not the revision’s latest picture', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const captureAt = async (requestId, scaleFactor, side) => {
+    const capture = hosts.capture({ ...captureRequest, requestId, scaleFactor, retain: true });
+    await new Promise(setImmediate);
+    guest.captures.at(-1).resolve(capturedImage(side, side));
+    assert.equal((await capture).ok, true);
+  };
+  await captureAt('capture_1x', 1, 720);
+  await captureAt('capture_2x', 2, 1440);
+  await captureAt('capture_released', 2, 1440);
+
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01').readUInt32BE(16), 1440);
+  assert.equal(hosts.takeCapture('capture_1x').readUInt32BE(16), 720);
+  assert.equal(hosts.takeCapture('capture_1x'), null);
+  assert.equal((await hosts.capture({ ...captureRequest, requestId: 'capture_2x' })).ok, false);
+  assert.equal(hosts.cancelCapture('capture_released'), true);
+  assert.equal(hosts.takeCapture('capture_released'), null);
+  assert.equal(hosts.takeCapture('capture_2x').readUInt32BE(16), 1440);
+});
+
+test('a capture over the pixel caps is refused with the largest scale that fits', async () => {
+  const { hosts } = createHosts();
+  hosts.attach(createGuest(41));
+  const refusal = async (side, scaleFactor) =>
+    (await hosts.capture({ ...captureRequest, width: side, height: side, scaleFactor })).error
+      .message;
+  assert.equal(await refusal(1800, 3), 'Too large at 3x; try 2x.');
+  assert.equal(await refusal(4000, 2), 'Too large at 2x; try 1x.');
+  assert.equal(await refusal(5000, 1), 'Too large to capture at 1x.');
 });
 
 test('a kit-bound guest is captured without a canvas, and main keeps no copy', async () => {

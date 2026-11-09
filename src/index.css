@@ -1070,6 +1070,13 @@
     --field: var(--field-raised);
   }
 
+  /* A raised panel that is not a floating layer, such as a Canvas dialog,
+     takes the same field fill: on dark, a recessed well mixed halfway from
+     the raised tone toward --bg, since plain --field matches the panel. */
+  .raised-fields {
+    --field: var(--field-raised);
+  }
+
   /* Enter from the side the layer actually landed on (data-side): fade in
      while rising 4px away from the anchor, growing from its edge. */
   @keyframes floating-layer-enter {

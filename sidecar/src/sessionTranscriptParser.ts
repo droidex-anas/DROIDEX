@@ -388,9 +388,9 @@ function canvasActivityField(block: Record<string, unknown>): { canvasActivity?:
   const activity = objectValue(block.canvasActivity);
   const toolUseId = stringValue(block.id ?? block.tool_use_id ?? block.toolUseId);
   if (!activity || !toolUseId || activity.toolUseId !== toolUseId) return {};
-  const action = (['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'] as const).find(
-    (value) => value === activity.action,
-  );
+  const action = (
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme', 'image'] as const
+  ).find((value) => value === activity.action);
   const state = (['running', 'completed', 'failed'] as const).find(
     (value) => value === activity.state,
   );

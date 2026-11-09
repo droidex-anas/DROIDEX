@@ -476,8 +476,8 @@ successfully; build publication checks the captured job at the final manifest re
 
 ### Canvas agent tools
 
-Each chat gets one local `droidex-canvas` MCP server with seven tools: read, create,
-write, inspect, arrange, annotate, and theme. Annotations are the board's own layer,
+Each chat gets one local `droidex-canvas` MCP server with eight tools: read, create,
+write, inspect, image, arrange, annotate, and theme. Annotations are the board's own layer,
 versioned apart from frames; `canvas_read` relates each one to the frames it is
 over, near or points at, and an agent may change only the annotations its chat drew. `CanvasTurns` mints a scope when a turn starts;
 call `canvas_read` with no arguments first to obtain that chat's newest live lease.
@@ -551,15 +551,30 @@ scope.
 An inspect screenshot reuses the preview capture below; the sidecar holds no
 pixels. It needs the frame's current revision to have a ready build, then
 `CanvasCaptures` broadcasts `canvas.captureRequest` naming that exact revision
-and waits for `canvas.reportCapture` from the pages watching the canvas when it
-asked. A page answers from its registered live preview of that revision through
-`captureCanvasImage`, or refuses. The first valid PNG, at most 8 MiB, returns to
-the model as image content beside the build facts; Codex receives it as an
+and the image it wants (a PNG at 1x, 2x, 3x or the page's display scale, or a
+vector design's root `<svg>`), and waits for `canvas.reportCapture` from the
+pages watching the canvas when it asked. A page answers from its registered live
+preview of that revision through `captureCanvasImage`, or refuses. The first
+valid answer in the format asked for, a PNG at most 8 MiB or an SVG at most
+256 KiB, returns to the model as image content beside the build facts; Codex receives it as an
 `inputImage` data URL. No watching page, every watching page refusing or leaving,
 or seven seconds without an answer return `capture_unavailable`. Revoking the
 turn's lease aborts the wait, and a read revalidates its lease before delivery,
 so a capture that settles after its turn ended is dropped. Writes and turn
 settlement never wait on a capture. Element capture remains `capture_unavailable`.
+
+`canvas_image` (`canvasImageTool.ts`) works in the chat's project folder, which
+comes from the session, never from the agent. A render takes the same capture at
+the scale or format asked for, sanitises an SVG with `sanitiseSvg`, and writes it
+to a relative path inside the folder: no `..`, no absolute path, no symbolic link
+on the way, and no replacing a file unless `overwrite` is set. An import checks the
+named file the same way, then sends main a `canvas.importImage` request over the
+sidecar's IPC channel (`desktopImageChannel.ts`); main reads and decodes it with the
+importer it uses for a picked image and answers `canvas.importImageResult`, and the
+agent gets a `canvas-asset:` reference. Main opens only the file the sidecar checked,
+by its device, inode and size, and posts it only to the sidecar run that asked.
+Ending the turn aborts both waits; an import that ends or times out is cancelled
+with `canvas.importImageCancel`, and the image route refuses to save it.
 
 ### Canvas live previews
 
@@ -578,12 +593,13 @@ The intermediate holds the compiled design in an opaque-origin
 `sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
 intermediate rather than the chat renderer and the three documents hold three
 processes. Generated code gets no preload and no Electron API. The board drives
-a preview through the webview element's `executeJavaScript` with eight audited
+a preview through the webview element's `executeJavaScript` with nine audited
 literals in `src/features/canvas/previewDocument.ts`: one hands over the
 artifact and the instance identity, one drains a bounded queue of
 `ready`/`resize`/`diagnostics`/`selection` events as one validated JSON
-snapshot, and the rest carry the board's element commands (pick, select, hover,
-probe, locate and a kit's draft tokens) as JSON data to fixed calls.
+snapshot, one reads a vector design's root `<svg>`, and the rest carry the
+board's element commands (pick, select, hover, probe, locate and a kit's draft
+tokens) as JSON data to fixed calls.
 `previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
 cadence and revalidates the instance after every await, so a replaced preview
 can never be reached by the guest it replaced.
