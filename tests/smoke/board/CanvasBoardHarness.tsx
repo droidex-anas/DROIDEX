@@ -573,7 +573,10 @@ function Harness() {
           { ...frame, rect: placement.rect, layoutVersion: placement.expectedLayoutVersion + 1 },
         ];
       });
-      setSnapshot(applyCanvasChange(shown.current, change(placed, [])));
+      // The client's projection holds the answer before React renders it, and
+      // the history reads it as soon as the reply settles.
+      shown.current = applyCanvasChange(shown.current, change(placed, []));
+      setSnapshot(shown.current);
       replies[index].resolve();
     },
     focusFrame: (frameId) => {
