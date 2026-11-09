@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { canvasError, CanvasCommandError } from './canvasError.js';
+import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
 import type { ImportProjectImage } from './desktopImageChannel.js';
 import { isInsideProject, projectRelativePath } from './projectPaths.js';
@@ -38,15 +38,23 @@ export async function renderTarget(
   return { root: await projectRoot(folder), file };
 }
 
-/** Writes the render, an SVG sanitised first, and says what was written. */
-export async function saveRender(target: RenderTarget, image: RenderedImage, overwrite: boolean) {
+/**
+ * Writes the render, an SVG sanitised first, and says what was written.
+ * Nothing is published once `turnEnded` aborts, however far the write got.
+ */
+export async function saveRender(
+  target: RenderTarget,
+  image: RenderedImage,
+  overwrite: boolean,
+  turnEnded: AbortSignal,
+) {
   if (image.format === 'svg') {
     const { bytes, width, height } = sanitiseSvg(Buffer.from(image.markup, 'utf8'));
-    await writeInside(target, bytes, overwrite);
+    await writeInside(target, bytes, overwrite, turnEnded);
     return { path: target.file, format: 'svg', width, height, bytes: bytes.length };
   }
   const bytes = Buffer.from(image.base64, 'base64');
-  await writeInside(target, bytes, overwrite);
+  await writeInside(target, bytes, overwrite, turnEnded);
   // The capture relay only passes a PNG, whose IHDR holds its pixel size.
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
@@ -103,12 +111,18 @@ export async function importFromProject(
  * swapped for a link once checked, so the staged file is opened under the
  * folder's real path and written only once it is still found inside the project.
  */
-async function writeInside({ root, file }: RenderTarget, bytes: Buffer, overwrite: boolean) {
+async function writeInside(
+  { root, file }: RenderTarget,
+  bytes: Buffer,
+  overwrite: boolean,
+  turnEnded: AbortSignal,
+) {
   const segments = file.split('/');
   const name = segments[segments.length - 1];
   const stagedName = `.${name}.${randomUUID()}.tmp`;
   let staged: string | null = null;
   try {
+    requireTurn(turnEnded);
     let directory = root;
     for (const segment of segments.slice(0, -1)) {
       directory = path.join(directory, segment);
@@ -116,11 +130,13 @@ async function writeInside({ root, file }: RenderTarget, bytes: Buffer, overwrit
         if (errorCode(error) === 'ENOENT') return null;
         throw error;
       });
+      requireTurn(turnEnded);
       if (entry === null) await mkdir(directory);
       else if (entry.isSymbolicLink()) throw symbolicLink(file);
       else if (!entry.isDirectory()) throw refusal(`${file} goes through a file, not a folder.`);
     }
     const parent = await folderInside(root, directory, file);
+    requireTurn(turnEnded);
     staged = path.join(parent, stagedName);
     const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
     const handle = await open(staged, flags, 0o644);
@@ -133,6 +149,8 @@ async function writeInside({ root, file }: RenderTarget, bytes: Buffer, overwrit
       await handle.close();
     }
     const target = path.join(parent, name);
+    // The one commit point: an ended turn stops here and its staged file is removed.
+    requireTurn(turnEnded);
     if (overwrite) {
       await rename(staged, target);
       staged = null;
@@ -153,6 +171,10 @@ async function folderInside(root: string, folder: string, file: string): Promise
   const real = await realpath(folder);
   if (real !== root && !isInsideProject(root, real)) throw leaves(file);
   return real;
+}
+
+function requireTurn(turnEnded: AbortSignal): void {
+  if (turnEnded.aborted) throw canvasError('scope_expired', EXPIRED_TURN);
 }
 
 function insideProject(raw: string): string {

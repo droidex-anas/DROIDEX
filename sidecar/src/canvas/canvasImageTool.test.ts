@@ -45,7 +45,7 @@ async function temporaryFolder(t: TestContext, prefix: string): Promise<string> 
 async function imageTurn(t: TestContext, capture: CanvasCapture, importImage?: ImportProjectImage) {
   const project = await temporaryFolder(t, 'canvas-image-project-');
   const h = await harness(t, undefined, capture, () => project, importImage);
-  h.turns.beginTurn('chat-one', undefined);
+  const lease = h.turns.beginTurn('chat-one', undefined);
   const scopeId = (await h.call('canvas_read', {})).scopeId;
   const designSystem = { id: 'droidex', version: 1, mode: 'dark' };
   const frame = { name: 'Poster', width: 794, height: 1123, designSystem };
@@ -64,7 +64,7 @@ async function imageTurn(t: TestContext, capture: CanvasCapture, importImage?: I
   assert.ok(written.receipt);
   const image = (input: Record<string, unknown>) => h.call('canvas_image', { scopeId, ...input });
   const { revisionId } = written.receipt;
-  return { h, project, scopeId, canvasId, designId, revisionId, image };
+  return { h, lease, project, scopeId, canvasId, designId, revisionId, image };
 }
 
 test('a render writes the revision’s PNG at its scale into the project, and keeps an existing file', async (t) => {
@@ -152,6 +152,43 @@ test('a render whose folder is swapped for a link after it was checked writes no
   }
   assert.deepEqual(await readdir(outside), []);
   assert.deepEqual(await readdir(join(turn.project, 'moved')), []);
+});
+
+test('a render whose turn ends while it is writing leaves the existing file and no staged file', async (t) => {
+  const turn = await imageTurn(t, () => Promise.resolve(PNG));
+  const exports = join(turn.project, 'exports');
+  await mkdir(exports);
+  await writeFile(join(exports, 'poster.png'), 'before');
+  let reached!: () => void;
+  const lstatReached = new Promise<void>((resolve) => (reached = resolve));
+  let release!: () => void;
+  const lstatReleased = new Promise<void>((resolve) => (release = resolve));
+  const realLstat = fs.lstat;
+  const held = t.mock.method(fs, 'lstat', async (...args: Parameters<typeof fs.lstat>) => {
+    if (String(args[0]) === exports) {
+      reached();
+      await lstatReleased;
+    }
+    return realLstat(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const reply = turn.image({
+      kind: 'render',
+      designId: turn.designId,
+      to: 'exports/poster.png',
+      overwrite: true,
+    });
+    await lstatReached;
+    turn.lease.revoke();
+    release();
+    assert.equal((await reply).code, 'scope_expired');
+  } finally {
+    held.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.equal(await readFile(join(exports, 'poster.png'), 'utf8'), 'before');
+  assert.deepEqual(await readdir(exports), ['poster.png']);
 });
 
 test('an SVG render is sanitised before it is written, and a refused capture writes nothing', async (t) => {

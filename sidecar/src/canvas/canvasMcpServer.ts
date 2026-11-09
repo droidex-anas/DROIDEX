@@ -336,14 +336,13 @@ export function createCanvasMcpServer(
           const image: CaptureImage =
             input.format === 'svg' ? { format: 'svg' } : { format: 'png', scale: input.scale };
           const captured = await captureFrame(canvasId, frame, scope, image);
-          // A render the turn outlived is not written.
-          turns.requireScope(scope.scopeId);
           const saved = await saveRender(
             target,
             input.format === 'svg'
               ? { format: 'svg', markup: captured }
               : { format: 'png', base64: captured },
             input.overwrite,
+            turns.scopeEnded(scope.scopeId),
           );
           return { designId: frame.designId, revisionId: frame.revisionId, ...saved };
         }),
