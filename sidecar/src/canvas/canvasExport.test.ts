@@ -272,6 +272,58 @@ test('the renderer bridge token cannot invoke host-only export', async (t) => {
   });
 });
 
+test('an export to project writes a new folder inside the chat project and never leaves it', async (t) => {
+  const { root } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const project = join(root, 'project');
+  const outside = join(root, 'outside');
+  await mkdir(project);
+  await mkdir(outside);
+  const bridge = startBridgeServer({
+    requestedPort: 0,
+    token: 'renderer-token',
+    canvasExportToken: 'host-token',
+    projectFolder: (appSessionId) => (appSessionId === 'project-chat' ? project : null),
+    onCommand: async () => undefined,
+  });
+  t.after(() => bridge.close());
+  await bridge.ready;
+  const exportTo = async (appSessionId: string, folder: string) => {
+    const response = await fetch(`http://127.0.0.1:${String(bridge.port)}/canvas/source-export`, {
+      method: 'POST',
+      headers: { 'x-canvas-export-token': 'host-token' },
+      body: JSON.stringify({ canvasId, ref, project: { appSessionId, folder } }),
+    });
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+
+  const written = await exportTo('project-chat', 'design/hey');
+  assert.equal(written.status, 200);
+  assert.ok((await fileSet(join(project, 'design/hey'))).includes('src/main.tsx'));
+  assert.deepEqual(await exportTo('project-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_input',
+      message: 'The chosen folder is not empty. Choose an empty folder.',
+    },
+  });
+
+  await symlink(outside, join(project, 'linked'));
+  for (const folder of ['../outside', 'linked/hey', '/tmp/hey']) {
+    const refused = await exportTo('project-chat', folder);
+    assert.equal(refused.status, 400, folder);
+    assert.equal(refused.body.code, 'invalid_input', folder);
+  }
+  assert.deepEqual(await fileSet(outside), []);
+  assert.deepEqual(await exportTo('folderless-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_input',
+      message: 'This chat has no project folder. Start the chat in a project to export to it.',
+    },
+  });
+});
+
 test('refuses linked destination paths and escaping revision paths', async (t) => {
   const { root, destination } = await profile(t);
   await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);

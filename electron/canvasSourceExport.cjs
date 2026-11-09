@@ -27,14 +27,33 @@ function isCanvasId(value) {
   return typeof value === 'string' && CANVAS_ID.test(value);
 }
 
-function isExportRequest(input) {
+function isRevision(input) {
   return (
-    hasKeys(input, ['canvasId', 'ref']) &&
     isCanvasId(input.canvasId) &&
     hasKeys(input.ref, ['designId', 'revisionId']) &&
     isCanvasId(input.ref.designId) &&
     isCanvasId(input.ref.revisionId)
   );
+}
+
+// An export to project names the chat and a folder inside its project; the
+// sidecar finds the project folder and keeps the export inside it.
+function isProjectExport(input) {
+  return (
+    hasKeys(input, ['canvasId', 'ref', 'project']) &&
+    isRevision(input) &&
+    hasKeys(input.project, ['appSessionId', 'folder']) &&
+    typeof input.project.appSessionId === 'string' &&
+    input.project.appSessionId.length > 0 &&
+    input.project.appSessionId.length <= 256 &&
+    typeof input.project.folder === 'string' &&
+    input.project.folder.length > 0 &&
+    input.project.folder.length <= 1024
+  );
+}
+
+function isExportRequest(input) {
+  return (hasKeys(input, ['canvasId', 'ref']) && isRevision(input)) || isProjectExport(input);
 }
 
 function isDesignSystemExportRequest(input) {
@@ -72,15 +91,20 @@ function refusal(code, message) {
 }
 
 // Main chooses the folder, then the sidecar's host-only route writes there; the
-// renderer only ever names what to export. The answer is a result, never a
-// throw, so a refusal reaches the renderer as its own message:
+// renderer only ever names what to export, or for an export to project, the
+// folder inside the chat's project. The answer is a result, never a throw, so a
+// refusal reaches the renderer as its own message:
 // { ok: true, filesWritten } | { ok: false, cancelled: true } | { ok: false, code, message }.
 function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
   const { chooseDirectory, getBridgeInfo, exportToken, fetchRequest } = host;
   return async (input) => {
     if (!isRequest(input)) return refusal('invalid_input', invalidRequest);
-    const result = await chooseDirectory();
-    if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+    let body = input;
+    if (!isProjectExport(input)) {
+      const result = await chooseDirectory();
+      if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
+      body = { ...input, destinationDirectory: result.filePaths[0] };
+    }
     let port;
     try {
       ({ port } = await getBridgeInfo());
@@ -100,7 +124,7 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
           'content-type': 'application/json',
           'x-canvas-export-token': exportToken(),
         },
-        body: JSON.stringify({ ...input, destinationDirectory: result.filePaths[0] }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
       });
     } catch (error) {

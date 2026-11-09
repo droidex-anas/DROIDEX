@@ -107,6 +107,12 @@ export type CanvasExportResult =
   | { ok: false; cancelled: true }
   | { ok: false; code: CanvasErrorCode; message: string };
 
+/** A folder inside a chat's project, named relative to the project folder. */
+export interface ProjectExportTarget {
+  appSessionId: string;
+  folder: string;
+}
+
 export type CanvasImageSaveResult =
   | { ok: true }
   | { ok: false; cancelled: true }
@@ -329,7 +335,11 @@ export interface DroidexApi {
   ) => Promise<Uint8Array | null>;
   canvasImageSave: (requestId: string, suggestedName: string) => Promise<CanvasImageSaveResult>;
   canvasSvgSave: (svg: string, suggestedName: string) => Promise<CanvasImageSaveResult>;
-  canvasExportSource: (canvasId: string, ref: RevisionRef) => Promise<CanvasExportResult>;
+  canvasExportSource: (
+    canvasId: string,
+    ref: RevisionRef,
+    project?: ProjectExportTarget,
+  ) => Promise<CanvasExportResult>;
   canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
@@ -921,6 +931,18 @@ export async function saveCanvasSvg(
   if (!api)
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
   return api.canvasSvgSave(svg, suggestedName);
+}
+
+/** Writes one revision's source into a folder of its chat's project, without a chooser. */
+export async function exportCanvasToProject(
+  canvasId: string,
+  ref: RevisionRef,
+  project: ProjectExportTarget,
+): Promise<CanvasExportResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'storage_failed', message: 'Open DROIDEX to export a design.' };
+  return api.canvasExportSource(canvasId, ref, project);
 }
 
 /** Opens the host's folder chooser, then writes one kit version there. */

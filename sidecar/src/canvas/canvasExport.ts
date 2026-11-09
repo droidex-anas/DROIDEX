@@ -16,6 +16,8 @@ import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
+import { projectExportDirectory } from './canvasProjectExport.js';
+import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
@@ -27,13 +29,25 @@ const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
 /** The folder Electron main chose; each export also requires it to be absolute. */
 export const exportDestinationSchema = z.string().min(1).max(4096);
 
+const exportedRevision = {
+  canvasId: canvasIdentifierSchema,
+  ref: z.object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema }).strict(),
+};
+
 const exportRequestSchema = z
+  .object({ ...exportedRevision, destinationDirectory: exportDestinationSchema })
+  .strict();
+
+// Export to project names the chat whose project folder receives the export.
+const projectExportRequestSchema = z
   .object({
-    canvasId: canvasIdentifierSchema,
-    ref: z
-      .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
+    ...exportedRevision,
+    project: z
+      .object({
+        appSessionId: z.string().min(1).max(256),
+        folder: z.string().min(1).max(MAX_PROJECT_PATH_LENGTH),
+      })
       .strict(),
-    destinationDirectory: exportDestinationSchema,
   })
   .strict();
 
@@ -300,17 +314,28 @@ export function serveCanvasSourceExport(
   request: IncomingMessage,
   response: ServerResponse,
   token: string | undefined,
+  projectFolder: (appSessionId: string) => string | null,
 ): boolean {
   if (request.url !== '/canvas/source-export') return false;
-  serveExportRequest(request, response, token, (input, signal) => {
-    const parsed = exportRequestSchema.safeParse(input);
-    if (!parsed.success) throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
-    return exportCanvasSource(
-      parsed.data.canvasId,
-      parsed.data.ref,
-      parsed.data.destinationDirectory,
+  serveExportRequest(request, response, token, async (input, signal) => {
+    const chosen = exportRequestSchema.safeParse(input);
+    if (chosen.success)
+      return exportCanvasSource(
+        chosen.data.canvasId,
+        chosen.data.ref,
+        chosen.data.destinationDirectory,
+        signal,
+      );
+    const inProject = projectExportRequestSchema.safeParse(input);
+    if (!inProject.success)
+      throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
+    const { canvasId, ref, project } = inProject.data;
+    const directory = await projectExportDirectory(
+      projectFolder(project.appSessionId),
+      project.folder,
       signal,
     );
+    return exportCanvasSource(canvasId, ref, directory, signal);
   });
   return true;
 }

@@ -37,6 +37,35 @@ test('refuses malformed Canvas source export requests before opening the chooser
   assert.equal(chooserCalls, 1);
 });
 
+test('an export to project posts its folder without opening the chooser', async () => {
+  let chooserCalls = 0;
+  const posted = [];
+  const exportSource = createCanvasSourceExport({
+    chooseDirectory: async () => {
+      chooserCalls += 1;
+      return { canceled: false, filePaths: ['/tmp/export'] };
+    },
+    getBridgeInfo: async () => ({ port: 1234 }),
+    exportToken: () => 'host-token',
+    fetchRequest: async (_url, init) => {
+      posted.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ filesWritten: 3 }));
+    },
+  });
+  const project = { appSessionId: 'chat_1', folder: 'design/hey' };
+
+  for (const input of [
+    { ...validRequest, project: { ...project, folder: '' } },
+    { ...validRequest, project: { ...project, extra: true } },
+    { ...validRequest, project, destinationDirectory: '/tmp/export' },
+  ]) {
+    assert.equal((await exportSource(input)).code, 'invalid_input');
+  }
+  assert.deepEqual(await exportSource({ ...validRequest, project }), { ok: true, filesWritten: 3 });
+  assert.equal(chooserCalls, 0);
+  assert.deepEqual(posted, [{ ...validRequest, project }]);
+});
+
 test('refuses malformed sidecar replies before forwarding the export result', async () => {
   let response = new Response(JSON.stringify({ filesWritten: 'many' }), { status: 200 });
   const exportSource = createCanvasSourceExport({

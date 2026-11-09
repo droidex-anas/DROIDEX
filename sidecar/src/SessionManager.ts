@@ -1478,6 +1478,13 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  /** The chat's project folder, or null for a chat started outside a project. */
+  projectFolder(appSessionId: string): string | null {
+    const summary = this.registry.resolveSummary(appSessionId);
+    if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
+    return summary.cwd;
+  }
+
   transcriptTail(appSessionId: string, limit: number, fullText = false) {
     return this.timeline.tail(appSessionId, limit, fullText);
   }
@@ -1701,11 +1708,7 @@ export class SessionManager {
       this.canvasCapture,
       this.kitPreviews,
       () => ref.id,
-      (appSessionId) => {
-        const summary = this.registry.resolveSummary(appSessionId);
-        if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
-        return summary.cwd;
-      },
+      (appSessionId) => this.projectFolder(appSessionId),
       this.importProjectImage,
       ref.purpose,
     );

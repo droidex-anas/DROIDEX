@@ -57,6 +57,8 @@ export function startBridgeServer(options: {
   token: string;
   canvasImages?: CanvasImages;
   canvasExportToken?: string;
+  /** The chat's project folder, which an export to project writes into. */
+  projectFolder?: (appSessionId: string) => string | null;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -83,13 +85,14 @@ export function startBridgeServer(options: {
       });
   });
   const replay = new BridgeReplayBuffer();
+  const projectFolder = options.projectFolder ?? (() => null);
   let boundPort = options.requestedPort;
   let closed = false;
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
     if (serveCanvasImages(req, res, options.canvasImages)) return;
-    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken, projectFolder)) return;
     if (serveDesignSystemExport(req, res, options.canvasExportToken)) return;
     if (serveProfileUsage(req, res, options.token, options.getProfileUsage)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;
