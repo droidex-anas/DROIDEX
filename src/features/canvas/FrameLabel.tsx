@@ -65,20 +65,12 @@ export function FrameLabel({
   const { base, suffix } = splitVariantName(frame.name);
   const notes = kitNotes(frame.build);
   const keysHint = onTagFrames ? `${KEYS_HINT}; ${TAG_KEY_LABEL} toggles its chat tag` : KEYS_HINT;
+  // The whole row drags the frame. The header in it is what the keyboard and
+  // assistive technology reach, so the kit notes button sits beside it, not in it.
   return (
     <div
-      ref={ref}
-      data-frame-header
-      role="button"
-      tabIndex={tabStop ? 0 : -1}
-      aria-pressed={selected}
-      aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
-      title={`${frame.name}\n${keysHint}`}
       className="canvas-frame-label canvas-chrome"
       style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
-      onFocus={() => {
-        onFocusLabel(frame);
-      }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.stopPropagation();
@@ -89,28 +81,44 @@ export function FrameLabel({
         event.stopPropagation();
         onInteract(frame);
       }}
-      // The keyboard's route to spec §4's click: Enter does what the board's
-      // mode makes of one, while Space toggles the frame in a multiple selection.
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' && event.key !== ' ') return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (event.key === ' ') onPick(frame, true);
-        else onEnter(frame);
-      }}
     >
-      {suffix ? (
-        <span className="canvas-frame-name canvas-frame-name-split">
-          <span className="canvas-frame-name-base">{base}</span>
-          <span className="canvas-frame-name-suffix">{suffix}</span>
-        </span>
-      ) : (
-        <span className="canvas-frame-name">{frame.name}</span>
-      )}
-      {interacted && <span className="canvas-frame-note">Interacting</span>}
+      <div
+        ref={ref}
+        data-frame-header
+        role="button"
+        tabIndex={tabStop ? 0 : -1}
+        aria-pressed={selected}
+        aria-keyshortcuts="ArrowLeft ArrowRight Home End Alt+ArrowLeft Alt+ArrowRight Alt+ArrowUp Alt+ArrowDown"
+        title={`${frame.name}\n${keysHint}`}
+        className="canvas-frame-header"
+        onFocus={() => {
+          onFocusLabel(frame);
+        }}
+        // The keyboard's route to spec §4's click: Enter does what the board's
+        // mode makes of one, while Space toggles the frame in a multiple selection.
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          event.stopPropagation();
+          if (event.key === ' ') onPick(frame, true);
+          else onEnter(frame);
+        }}
+      >
+        {suffix ? (
+          <span className="canvas-frame-name canvas-frame-name-split">
+            <span className="canvas-frame-name-base">{base}</span>
+            <span className="canvas-frame-name-suffix">{suffix}</span>
+          </span>
+        ) : (
+          <span className="canvas-frame-name">{frame.name}</span>
+        )}
+        {interacted && <span className="canvas-frame-note">Interacting</span>}
+        {tagged && <span className="sr-only">, tagged in chat</span>}
+      </div>
       {notes.length > 0 && (
         <KitNotesBadge
           notes={notes}
+          tabStop={tabStop}
           onOpen={
             onOpenSource &&
             (() => {
@@ -137,78 +145,79 @@ export function FrameLabel({
  */
 function FrameTag({ tagged, onTag }: { tagged: boolean; onTag: () => void }) {
   return (
-    <>
-      <Tooltip
-        label={
-          tagged ? `Tagged in chat. Untag (${TAG_KEY_LABEL})` : `Tag in chat (${TAG_KEY_LABEL})`
-        }
+    <Tooltip
+      label={tagged ? `Tagged in chat. Untag (${TAG_KEY_LABEL})` : `Tag in chat (${TAG_KEY_LABEL})`}
+    >
+      <span
+        aria-hidden
+        data-tagged={tagged || undefined}
+        className="canvas-frame-tag"
+        // Neither picks nor drags the frame, and leaves focus where it was.
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onTag();
+        }}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+        }}
       >
-        <span
-          aria-hidden
-          data-tagged={tagged || undefined}
-          className="canvas-frame-tag"
-          // Neither picks nor drags the frame, and leaves focus where it was.
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onTag();
-          }}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-          }}
-        >
-          <MessageThread className="size-icon-sm" aria-hidden />
-        </span>
-      </Tooltip>
-      {tagged && <span className="sr-only">, tagged in chat</span>}
-    </>
+        <MessageThread className="size-icon-sm" aria-hidden />
+      </span>
+    </Tooltip>
   );
 }
 
 /**
- * Guide's findings on a frame that built. Like the tag it is no tab stop: the
- * keyboard reaches the same issues through the toolbar's source button.
+ * Guide's findings on a frame that built. Where it opens the source it is a
+ * button, reached by Tab from the label holding the frames' tab stop; pressing
+ * it neither picks nor drags the frame.
  */
 function KitNotesBadge({
   notes,
+  tabStop,
   onOpen,
 }: {
   notes: readonly CanvasDiagnostic[];
+  tabStop: boolean;
   onOpen: (() => void) | undefined;
 }) {
   const label = kitNotesLabel(notes);
-  return (
-    <>
+  if (!onOpen)
+    return (
       <Tooltip label={kitNotesSummary(notes)}>
-        <Badge
-          tone="warning"
-          aria-hidden
-          data-opens={onOpen ? true : undefined}
-          className="canvas-frame-kit-notes"
-          onPointerDown={(event) => {
-            event.stopPropagation();
-          }}
-          onMouseDown={(event) => {
-            event.preventDefault();
-          }}
-          onClick={(event) => {
-            event.stopPropagation();
-            onOpen?.();
-          }}
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-          }}
-        >
+        <Badge tone="warning" className="canvas-frame-kit-notes">
           {label}
         </Badge>
       </Tooltip>
-      <span className="sr-only">, {label}</span>
-    </>
+    );
+  return (
+    <Tooltip label={kitNotesSummary(notes)}>
+      <button
+        type="button"
+        data-opens
+        tabIndex={tabStop ? 0 : -1}
+        aria-label={`${label}. Open source`}
+        className="canvas-frame-kit-notes"
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpen();
+        }}
+        onDoubleClick={(event) => {
+          event.stopPropagation();
+        }}
+      >
+        <Badge tone="warning">{label}</Badge>
+      </button>
+    </Tooltip>
   );
 }
 
