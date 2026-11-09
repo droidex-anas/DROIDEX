@@ -11,7 +11,7 @@ import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import { workspaceName } from '../../lib/workspaces';
+import { pathFileName } from '../../lib/pathDisplay';
 import { canvasClient } from './canvasClient';
 import { lacksCanvasTools } from './canvasState';
 import {
@@ -225,7 +225,7 @@ function useFromProject(appSessionId: string | null, close: () => void): FromPro
   });
   if (appSessionId === null || projectFolder === null) return null;
   return {
-    folderName: workspaceName(projectFolder),
+    folderName: pathFileName(projectFolder),
     onSelect: () => {
       close();
       dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
