@@ -107,6 +107,13 @@ export function createCanvasMcpServer(
     };
   };
 
+  /** Any frame on the canvas has source, whichever frames this turn may change. */
+  const canvasHasDesigns = async (canvasId: string | null): Promise<boolean> => {
+    if (canvasId === null) return false;
+    const { frames } = (await workspace()).snapshot(canvasId);
+    return frames.some((frame) => frame.revisionId !== null);
+  };
+
   /** A frame this turn may use, on the canvas the chat is attached to. */
   const scopedFrame = async (scope: CanvasScope, designId: string) => {
     if (scope.allowedDesignIds !== 'canvas' && !scope.allowedDesignIds.includes(designId))
@@ -147,11 +154,16 @@ export function createCanvasMcpServer(
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);
+          const snapshot = await board(scope);
           // A turn's opening read carries its pinned kit, so the agent need not fetch it.
           const kit = input.scopeId
             ? {}
-            : { designSystem: await designSystemBrief(scope.context.designSystem) };
-          const snapshot = await board(scope);
+            : {
+                designSystem: await designSystemBrief(scope.context.designSystem, {
+                  hasProjectFolder: projectFolder(scope.appSessionId) !== null,
+                  hasDesigns: await canvasHasDesigns(scope.canvasId),
+                }),
+              };
           if (!snapshot)
             return {
               scopeId: scope.scopeId,
