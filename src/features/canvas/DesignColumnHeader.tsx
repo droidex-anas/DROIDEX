@@ -221,27 +221,29 @@ function TagFramesItem({ canvasId }: { canvasId: string }) {
   const attached = board?.attached ? board : null;
   const pins = useFramePins(attached?.appSessionId ?? null);
   if (!attached) return null;
-  if (attached.selected.length === 0) {
-    const tagged = pins.filter((pin) => pin.canvasId === canvasId).length;
-    if (tagged === 0) return null;
-    return (
-      <p className="px-2 py-1.5 text-caption text-muted">
-        {tagged === 1 ? '1 frame tagged in chat' : `${String(tagged)} frames tagged in chat`}
-      </p>
-    );
-  }
+  const tagged = pins.filter((pin) => pin.canvasId === canvasId).length;
+  if (attached.selected.length === 0 && tagged === 0) return null;
   return (
-    <Menu.Item
-      icon={MessageThread}
-      onSelect={() => {
-        toggleFramePins(attached.appSessionId, canvasId, attached.selected);
-      }}
-    >
-      <span className="min-w-0 flex-1 truncate">
-        {tagFramesLabel(pins, canvasId, attached.selected)}
-      </span>
-      <Menu.Shortcut>{TAG_KEY_LABEL}</Menu.Shortcut>
-    </Menu.Item>
+    <>
+      <Menu.Divider />
+      {attached.selected.length === 0 ? (
+        <p className="px-2 py-1.5 text-caption text-muted">
+          {tagged === 1 ? '1 frame tagged in chat' : `${String(tagged)} frames tagged in chat`}
+        </p>
+      ) : (
+        <Menu.Item
+          icon={MessageThread}
+          onSelect={() => {
+            toggleFramePins(attached.appSessionId, canvasId, attached.selected);
+          }}
+        >
+          <span className="min-w-0 flex-1 truncate">
+            {tagFramesLabel(pins, canvasId, attached.selected)}
+          </span>
+          <Menu.Shortcut>{TAG_KEY_LABEL}</Menu.Shortcut>
+        </Menu.Item>
+      )}
+    </>
   );
 }
 
