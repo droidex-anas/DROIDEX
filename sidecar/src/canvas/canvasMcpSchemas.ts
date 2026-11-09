@@ -20,14 +20,14 @@ export const scopeIdSchema = z
   .describe(
     'The exact scopeId returned by this turn’s canvas_read. Never invent an ID or reuse one from an earlier turn.',
   );
-export const scopeShape = {
+const scopeShape = {
   scopeId: scopeIdSchema
     .optional()
     .describe(
       'Omit scopeId to begin the turn. Only supply a scopeId this turn’s canvas_read returned to keep reading that lease’s pinned references.',
     ),
 };
-export const mutationScopeShape = { scopeId: scopeIdSchema };
+const mutationScopeShape = { scopeId: scopeIdSchema };
 export const scopeArgumentSchema = z.object(scopeShape).passthrough();
 export const pageSchema = z.number().int().min(0).max(100_000);
 export const readSchema = z
