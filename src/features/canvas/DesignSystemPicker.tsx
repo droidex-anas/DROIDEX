@@ -12,6 +12,7 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { pathFileName } from '../../lib/pathDisplay';
+import { repositoryRootCwd } from '../../lib/workspaces';
 import { canvasClient } from './canvasClient';
 import { lacksCanvasTools } from './canvasState';
 import {
@@ -218,14 +219,15 @@ function ChipName({
 /** Puts the §12 sentence in the chat's composer, where its agent can read the project folder. */
 function useFromProject(appSessionId: string | null, close: () => void): FromProject | null {
   const dispatch = useStoreDispatch();
-  const projectFolder = useStoreSelector((state) => {
+  // The repository, as the sidebar names it, even when the chat runs in one of its worktrees.
+  const projectRoot = useStoreSelector((state) => {
     const session = appSessionId === null ? undefined : state.sessions[appSessionId];
-    if (!session || lacksCanvasTools(session)) return null;
-    return session.workspaceKind !== 'none' && session.cwd !== '' ? session.cwd : null;
+    if (!session || lacksCanvasTools(session) || session.workspaceKind === 'none') return null;
+    return repositoryRootCwd(session.cwd);
   });
-  if (appSessionId === null || projectFolder === null) return null;
+  if (appSessionId === null || projectRoot === null) return null;
   return {
-    folderName: pathFileName(projectFolder),
+    folderName: pathFileName(projectRoot),
     onSelect: () => {
       close();
       dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
