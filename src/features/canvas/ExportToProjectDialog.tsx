@@ -37,8 +37,18 @@ export function ExportToProjectDialog({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const folderRef = useRef<HTMLInputElement>(null);
+  const ended = useRef<AbortSignal | null>(null);
   const titleId = useId();
   const trimmed = folder.trim();
+
+  // Closing the dialog, or anything that unmounts it, cancels the export it runs.
+  useEffect(() => {
+    const controller = new AbortController();
+    ended.current = controller.signal;
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   // The field was disabled while the export ran; a refusal hands it back to be edited.
   useEffect(() => {
@@ -46,20 +56,24 @@ export function ExportToProjectDialog({
   }, [error]);
 
   const run = async () => {
-    if (pending || trimmed === '') return;
+    const closed = ended.current;
+    if (pending || trimmed === '' || closed === null) return;
     setPending(true);
     setError(null);
-    const message = await exportCanvasToProject(canvasId, revision, {
-      appSessionId,
-      folder: trimmed,
-    }).then(
+    const message = await exportCanvasToProject(
+      canvasId,
+      revision,
+      { appSessionId, folder: trimmed },
+      closed,
+    ).then(
       (result) => {
         if (result.ok) return null;
-        // The host never opens a chooser here, so every answer that is not ok is a refusal.
+        // Only closing cancels, and a closed dialog shows nothing, so this is a refusal.
         return 'message' in result ? result.message : 'This design could not be exported.';
       },
       (failure: unknown) => canvasMessage(failure),
     );
+    if (closed.aborted) return;
     if (message === null) {
       toast.success(`Exported “${frameName}” to ${trimmed}.`);
       onClose();
@@ -72,7 +86,7 @@ export function ExportToProjectDialog({
   return (
     <CanvasDialog
       labelledBy={titleId}
-      onClose={pending ? null : onClose}
+      onClose={onClose}
       initialFocus={folderRef}
       className="w-full max-w-sm"
     >
@@ -111,7 +125,7 @@ export function ExportToProjectDialog({
           />
         </Field>
         <div className="flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" disabled={pending} onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             Cancel
           </Button>
           <Button

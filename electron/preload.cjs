@@ -175,8 +175,17 @@ contextBridge.exposeInMainWorld('droidex', {
   canvasExportSource: (canvasId, ref, project) =>
     ipcRenderer.invoke(
       'canvas-export-source',
-      project === undefined ? { canvasId, ref } : { canvasId, ref, project },
+      project === undefined
+        ? { canvasId, ref }
+        : {
+            canvasId,
+            ref,
+            project: { appSessionId: project.appSessionId, folder: project.folder },
+            requestId: project.requestId,
+          },
     ),
+  canvasExportSourceCancel: (requestId) =>
+    ipcRenderer.invoke('canvas-export-source-cancel', { requestId }),
   canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),
   terminalSubscribe: (id) => subscribeTerminalPort(id),
 });

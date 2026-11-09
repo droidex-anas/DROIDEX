@@ -338,8 +338,9 @@ export interface DroidexApi {
   canvasExportSource: (
     canvasId: string,
     ref: RevisionRef,
-    project?: ProjectExportTarget,
+    project?: ProjectExportTarget & { requestId: string },
   ) => Promise<CanvasExportResult>;
+  canvasExportSourceCancel: (requestId: string) => Promise<void>;
   canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
@@ -933,16 +934,29 @@ export async function saveCanvasSvg(
   return api.canvasSvgSave(svg, suggestedName);
 }
 
-/** Writes one revision's source into a folder of its chat's project, without a chooser. */
+/**
+ * Writes one revision's source into a folder of its chat's project, without a
+ * chooser. Aborting `signal` cancels the export before it is published.
+ */
 export async function exportCanvasToProject(
   canvasId: string,
   ref: RevisionRef,
   project: ProjectExportTarget,
+  signal: AbortSignal,
 ): Promise<CanvasExportResult> {
   const api = desktopApi();
   if (!api)
     return { ok: false, code: 'storage_failed', message: 'Open DROIDEX to export a design.' };
-  return api.canvasExportSource(canvasId, ref, project);
+  const requestId = crypto.randomUUID();
+  const cancel = () => {
+    void api.canvasExportSourceCancel(requestId);
+  };
+  signal.addEventListener('abort', cancel);
+  try {
+    return await api.canvasExportSource(canvasId, ref, { ...project, requestId });
+  } finally {
+    signal.removeEventListener('abort', cancel);
+  }
 }
 
 /** Opens the host's folder chooser, then writes one kit version there. */

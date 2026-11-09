@@ -37,11 +37,13 @@ function isRevision(input) {
 }
 
 // An export to project names the chat and a folder inside its project; the
-// sidecar finds the project folder and keeps the export inside it.
+// sidecar finds the project folder and keeps the export inside it. Its request
+// ID is what the renderer names to cancel it.
 function isProjectExport(input) {
   return (
-    hasKeys(input, ['canvasId', 'ref', 'project']) &&
+    hasKeys(input, ['canvasId', 'ref', 'project', 'requestId']) &&
     isRevision(input) &&
+    isCanvasId(input.requestId) &&
     hasKeys(input.project, ['appSessionId', 'folder']) &&
     typeof input.project.appSessionId === 'string' &&
     input.project.appSessionId.length > 0 &&
@@ -95,16 +97,31 @@ function refusal(code, message) {
 // folder inside the chat's project. The answer is a result, never a throw, so a
 // refusal reaches the renderer as its own message:
 // { ok: true, filesWritten } | { ok: false, cancelled: true } | { ok: false, code, message }.
+// `cancel(requestId)` aborts a running export to project; the sidecar sees its
+// request go and removes its staging copy.
 function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
   const { chooseDirectory, getBridgeInfo, exportToken, fetchRequest } = host;
-  return async (input) => {
+  const running = new Map();
+  const run = async (input) => {
     if (!isRequest(input)) return refusal('invalid_input', invalidRequest);
-    let body = input;
     if (!isProjectExport(input)) {
       const result = await chooseDirectory();
       if (result.canceled || !result.filePaths[0]) return { ok: false, cancelled: true };
-      body = { ...input, destinationDirectory: result.filePaths[0] };
+      const chosen = { ...input, destinationDirectory: result.filePaths[0] };
+      return answerFor(chosen, new AbortController().signal);
     }
+    const { requestId, ...body } = input;
+    if (running.has(requestId)) return refusal('invalid_input', invalidRequest);
+    const cancel = new AbortController();
+    running.set(requestId, cancel);
+    try {
+      const answer = await answerFor(body, cancel.signal);
+      return cancel.signal.aborted && !answer.ok ? { ok: false, cancelled: true } : answer;
+    } finally {
+      running.delete(requestId);
+    }
+  };
+  const answerFor = async (body, cancelled) => {
     let port;
     try {
       ({ port } = await getBridgeInfo());
@@ -125,10 +142,10 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
           'x-canvas-export-token': exportToken(),
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(EXPORT_TIMEOUT_MS),
+        signal: AbortSignal.any([cancelled, AbortSignal.timeout(EXPORT_TIMEOUT_MS)]),
       });
     } catch (error) {
-      console.error('Canvas export request failed:', error);
+      if (!cancelled.aborted) console.error('Canvas export request failed:', error);
       const timedOut = error?.name === 'TimeoutError';
       return refusal(
         'storage_failed',
@@ -154,6 +171,11 @@ function createHostExport(host, { route, isRequest, invalidRequest, failed }) {
       return refusal('storage_failed', 'Canvas export returned an invalid result. Try again.');
     return { ok: true, filesWritten: answer.filesWritten };
   };
+  return Object.assign(run, {
+    cancel: (requestId) => {
+      running.get(requestId)?.abort();
+    },
+  });
 }
 
 function createCanvasSourceExport(host) {

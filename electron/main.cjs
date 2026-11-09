@@ -909,6 +909,10 @@ function registerIpc() {
     assertMainRenderer(event);
     return exportCanvasSource(input);
   });
+  ipcMain.handle('canvas-export-source-cancel', (event, request) => {
+    assertMainRenderer(event);
+    exportCanvasSource.cancel(request?.requestId);
+  });
   ipcMain.handle('canvas-export-design-system', (event, input) => {
     assertMainRenderer(event);
     return exportDesignSystem(input);

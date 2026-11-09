@@ -131,6 +131,27 @@ const invokeContract = [
     { requestId: 'capture-1', suggestedName: 'design' },
   ],
   [
+    'canvasExportSource',
+    [
+      'canvas_1',
+      { designId: 'd', revisionId: 'r' },
+      { appSessionId: 'app-1', folder: 'design/a', requestId: 'export-1', extra: true },
+    ],
+    'canvas-export-source',
+    {
+      canvasId: 'canvas_1',
+      ref: { designId: 'd', revisionId: 'r' },
+      project: { appSessionId: 'app-1', folder: 'design/a' },
+      requestId: 'export-1',
+    },
+  ],
+  [
+    'canvasExportSourceCancel',
+    ['export-1'],
+    'canvas-export-source-cancel',
+    { requestId: 'export-1' },
+  ],
+  [
     'canvasSvgSave',
     ['<svg/>', 'mark'],
     'canvas-image-save',
@@ -158,7 +179,7 @@ test('invoke methods send closed payloads and return the main-process result unc
     assert.equal(calls.length, 1, method);
     assert.equal(calls[0].channel, channel, method);
     // The payload is built inside the preload's realm; copy it before comparing.
-    const sent = calls[0].payload === undefined ? undefined : { ...calls[0].payload };
+    const sent = calls[0].payload === undefined ? undefined : structuredClone(calls[0].payload);
     assert.deepEqual(sent, payload, method);
   }
 });

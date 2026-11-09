@@ -7,6 +7,17 @@ import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
 
 serveBoard();
 
+declare global {
+  interface Window {
+    /** What the stand-in host was asked to export to a project, and to cancel. */
+    projectExports: {
+      asked: unknown[];
+      cancelled: string[];
+      answer: (index: number, result: object) => void;
+    };
+  }
+}
+
 test('the toolbar renames a frame, switches its version and opens its source', async ({ page }) => {
   await openBoard(page);
   await page.evaluate(() => window.boardHarness.select(['a']));
@@ -200,6 +211,77 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('ArrowRight');
   await expect(versions).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('closing Export to project cancels its export, and a late answer shows nothing', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const answers: ((result: object) => void)[] = [];
+    const exports: Window['projectExports'] = {
+      asked: [],
+      cancelled: [],
+      answer: (index, result) => {
+        answers[index](result);
+      },
+    };
+    window.projectExports = exports;
+    Object.defineProperty(window, 'droidex', {
+      value: {
+        canvasExportSource: (_canvasId: string, _ref: unknown, project: object) => {
+          exports.asked.push(project);
+          return new Promise((resolve) => answers.push(resolve));
+        },
+        canvasExportSourceCancel: async (requestId: string) => {
+          exports.cancelled.push(requestId);
+        },
+      },
+    });
+  });
+  await openBoard(page, 14, 'reduce', '&project=1');
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const more = page
+    .getByRole('toolbar', { name: 'Design B actions' })
+    .getByRole('button', { name: 'More for Design B' });
+  const dialog = page.getByRole('dialog', { name: 'Export to project' });
+  const folder = dialog.getByRole('textbox', { name: 'Folder in the project' });
+  const exportButton = dialog.getByRole('button', { name: 'Export', exact: true });
+  const openDialog = async () => {
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Export to project…' }).click();
+    await expect(folder).toHaveValue('design/design-b');
+  };
+  const exports = () =>
+    page.evaluate(() => ({
+      asked: window.projectExports.asked,
+      cancelled: window.projectExports.cancelled,
+    }));
+  const toasts = () => page.evaluate(() => window.boardHarness.toasts());
+
+  // While the export runs the user can still walk away, and Escape cancels it.
+  await openDialog();
+  await exportButton.click();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  await expect.poll(exports).toEqual({
+    asked: [{ appSessionId: 'chat_1', folder: 'design/design-b', requestId: expect.any(String) }],
+    cancelled: [],
+  });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  const { asked } = await exports();
+  expect((await exports()).cancelled).toEqual([(asked[0] as { requestId: string }).requestId]);
+
+  // Its answer, landing after all, neither toasts nor closes the dialog opened since.
+  await openDialog();
+  await folder.fill('design/again');
+  await page.evaluate(() => window.projectExports.answer(0, { ok: true, filesWritten: 3 }));
+  await exportButton.click();
+  await expect.poll(() => exports().then(({ asked }) => asked.length)).toBe(2);
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => window.projectExports.answer(1, { ok: true, filesWritten: 3 }));
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(toasts).toEqual(['Exported “Design B” to design/again.']);
+  expect((await exports()).cancelled).toHaveLength(1);
 });
 
 test('Variants asks for three in one click, and its options choose kind, count and direction', async ({
