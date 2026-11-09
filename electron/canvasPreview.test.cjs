@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 
 const {
   CANVAS_PREVIEW_CSP,
@@ -379,6 +380,86 @@ test('the intermediate measures its message cap in bytes', () => {
   assert.match(document, /new TextEncoder\(\)/);
   assert.match(document, /bytes\(encoded\) > 4096/);
   assert.equal(/encoded\.length >/.test(document), false);
+});
+
+/**
+ * The intermediate's own script, run against a stand-in for its document: what
+ * it posts to the generated frame, and `reply` for the frame's messages back.
+ */
+function runIntermediate() {
+  const document = canvasPreviewDocument();
+  const script = document.slice(
+    document.lastIndexOf('<script>') + 8,
+    document.lastIndexOf('</script>'),
+  );
+  const posted = [];
+  const contentWindow = { postMessage: (message) => posted.push(message) };
+  let receive = null;
+  const context = vm.createContext({
+    document: { querySelector: () => ({ contentWindow }) },
+    addEventListener: (type, listener) => {
+      if (type === 'message') receive = listener;
+    },
+    TextEncoder,
+    // No answer deadline fires here; the test settles every question itself.
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  });
+  vm.runInContext(script, context);
+  const preview = context.__droidexCanvasPreview;
+  const nonce = 'a'.repeat(32);
+  assert.equal(
+    preview.start({ nonce, html: '', designId: 'dsg_01', revisionId: 'rev_01', generation: 1 }),
+    'started',
+  );
+  return {
+    preview,
+    posted,
+    reply: (data) =>
+      receive({ source: contentWindow, data: Object.assign({ canvasPreview: nonce }, data) }),
+  };
+}
+
+test('the intermediate refuses a locate that names too many, empty or overlong elements', () => {
+  const { preview, posted } = runIntermediate();
+  const ids = (count) => Array.from({ length: count }, (_, index) => `el_${index}`);
+
+  for (const request of [
+    { elementIds: ids(9) },
+    { elementIds: [''] },
+    { elementIds: ['e'.repeat(129)] },
+    { elementIds: 'el_1' },
+    null,
+  ])
+    assert.equal(preview.locate(request), 'invalid_request');
+  assert.deepEqual(posted, []);
+  preview.locate({ elementIds: ids(8) });
+  assert.equal(posted.length, 1);
+});
+
+test("a locate is answered only by its own reply, never a probe's that echoes its sequence", async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const rect = { x: 1, y: 2, width: 30, height: 40 };
+  const probed = preview.probe({ at: { x: 5, y: 5 } });
+  const located = preview.locate({ elementIds: ['el_1'] });
+  const settled = [];
+  void probed.then(() => settled.push('probe'));
+  void located.then(() => settled.push('locate'));
+  assert.deepEqual(
+    posted.map(({ command, sequence }) => [command, sequence]),
+    [
+      ['probe', 1],
+      ['locate', 2],
+    ],
+  );
+
+  reply({ event: 'probe', sequence: 2, element: { elementId: 'el_1', rect } });
+  reply({ event: 'locate', sequence: 1, rects: [rect] });
+  await new Promise(setImmediate);
+  assert.deepEqual(settled, []);
+
+  reply({ event: 'locate', sequence: 2, rects: [rect] });
+  assert.deepEqual(JSON.parse(await located), [rect]);
 });
 
 test('a guest is not attachable until the preview session is configured', async () => {
