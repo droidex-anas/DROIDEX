@@ -1,13 +1,22 @@
-// The board's presence, kept in step with the store. The derivation runs in
-// the store selector and compares by value, so the board re-renders when an
-// agent starts or stops on a frame, never for a streamed token.
+// The board's presence and the writes that landed on it, kept in step with the
+// store. Each derivation runs in a store selector and compares by value, so the
+// board re-renders when an agent starts or stops on a frame or a write lands,
+// never for a streamed token.
 
 import { useCallback, useMemo, useRef } from 'react';
 import { useStoreSelector, type AppState } from '../../hooks/useStore';
 import { isWorkingAgent } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
 import type { TranscriptEvent } from '../../types/bridge';
-import { canvasPresence, samePresence, type CanvasPresence } from './canvasPresence';
+import {
+  canvasPresence,
+  landedWrites,
+  sameLandedWrites,
+  samePresence,
+  type CanvasPresence,
+  type LandedWrites,
+  type PresenceSources,
+} from './canvasPresence';
 import type { CanvasFrame } from './protocol';
 
 const NO_EVENTS: TranscriptEvent[] = [];
@@ -15,31 +24,37 @@ const NO_EVENTS: TranscriptEvent[] = [];
 export function useCanvasPresence(appSessionId: string, frames: CanvasFrame[]): CanvasPresence {
   const arrivedAt = useFrameArrivalTimes(frames);
   const select = useCallback(
-    (state: AppState) => {
-      const session = Object.hasOwn(state.sessions, appSessionId)
-        ? state.sessions[appSessionId]
-        : undefined;
-      const primaryLive = session ? sessionIsLive(session) : false;
-      const children = state.childSessions[appSessionId] ?? {};
-      // A subagent running inside the chat's own process has no runtime of its
-      // own, so whether it is at work is its status alone.
-      const liveChildren = new Map<string, number | undefined>();
-      for (const [childSessionId, child] of Object.entries(children))
-        if (isWorkingAgent(child, primaryLive)) liveChildren.set(childSessionId, child.startedAt);
-      return canvasPresence(
-        {
-          appSessionId,
-          events: state.transcripts[appSessionId] ?? NO_EVENTS,
-          primaryLive,
-          liveChildren,
-        },
-        frames,
-        arrivedAt,
-      );
-    },
+    (state: AppState) => canvasPresence(presenceSources(state, appSessionId), frames, arrivedAt),
     [appSessionId, frames, arrivedAt],
   );
   return useStoreSelector(select, samePresence);
+}
+
+export function useLandedWrites(appSessionId: string): LandedWrites {
+  const select = useCallback(
+    (state: AppState) => landedWrites(presenceSources(state, appSessionId)),
+    [appSessionId],
+  );
+  return useStoreSelector(select, sameLandedWrites);
+}
+
+function presenceSources(state: AppState, appSessionId: string): PresenceSources {
+  const session = Object.hasOwn(state.sessions, appSessionId)
+    ? state.sessions[appSessionId]
+    : undefined;
+  const primaryLive = session ? sessionIsLive(session) : false;
+  const children = state.childSessions[appSessionId] ?? {};
+  // A subagent running inside the chat's own process has no runtime of its
+  // own, so whether it is at work is its status alone.
+  const liveChildren = new Map<string, number | undefined>();
+  for (const [childSessionId, child] of Object.entries(children))
+    if (isWorkingAgent(child, primaryLive)) liveChildren.set(childSessionId, child.startedAt);
+  return {
+    appSessionId,
+    events: state.transcripts[appSessionId] ?? NO_EVENTS,
+    primaryLive,
+    liveChildren,
+  };
 }
 
 /**

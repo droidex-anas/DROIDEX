@@ -27,7 +27,7 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import { picksElements, showsFrameTools, type BoardInteraction } from './canvasState';
-import type { CanvasPresence } from './canvasPresence';
+import type { CanvasPresence, LandedWrites } from './canvasPresence';
 import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
@@ -93,6 +93,7 @@ export interface CanvasBoardProps {
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   presence: CanvasPresence;
+  writes: LandedWrites;
   /** One revision's source, bound to `CanvasClient.source.read` for this canvas. */
   readSource: ReadSource;
   onOpenSource?: (designId: string) => void;
@@ -128,6 +129,7 @@ export function CanvasBoard({
   interaction,
   onInteractionChange,
   presence,
+  writes,
   readSource,
   onOpenSource,
   pinnedIds,
@@ -414,6 +416,7 @@ export function CanvasBoard({
           ))}
           <CanvasPresenceLayer
             presence={presence}
+            writes={writes}
             frames={frames}
             drawn={drawn}
             visible={visible}

@@ -62,11 +62,8 @@ test('an agent draws nothing over a frame panned off screen', async ({ page }) =
   await expect(presences(page).getByText('Kairo', { exact: true })).toBeAttached();
 });
 
-/**
- * Lyra's write on Design B lands with its title rewritten, which the guest draws
- * centred at 35% across and a sixth down the 400 × 300 frame, and her call ends.
- */
-async function landLyrasWrite(page: Page, reducedMotion: 'reduce' | 'no-preference') {
+/** Live previews whose guests draw Design B's title centred at 35% across and a sixth down. */
+async function openWithGuests(page: Page, reducedMotion: 'reduce' | 'no-preference') {
   await stubGuests(page);
   await openBoard(page, 14, reducedMotion, '&presence=1&preview=guest&edit=1');
   await page.evaluate(() => {
@@ -75,15 +72,21 @@ async function landLyrasWrite(page: Page, reducedMotion: 'reduce' | 'no-preferen
       command === 'locate' ? [{ x: 40, y: 30, width: 200, height: 40 }] : null;
   });
   await page.clock.runFor(300);
+}
+
+function locates(page: Page) {
+  return page.evaluate(() => window.guestCommands.filter(({ command }) => command === 'locate'));
+}
+
+/** Lyra's write on Design B lands with its title rewritten, and her call ends. */
+async function landLyrasWrite(page: Page, reducedMotion: 'reduce' | 'no-preference') {
+  await openWithGuests(page, reducedMotion);
   await page.evaluate(() => window.boardHarness.landWrite('b'));
   // The write's revision renders in a guest of its own before its call ends.
   await page.clock.runFor(300);
   await page.evaluate(() => window.boardHarness.leave());
   await page.clock.runFor(32);
-  expect(await page.evaluate(() => window.guestCommands)).toContainEqual({
-    command: 'locate',
-    elementIds: ['el_title'],
-  });
+  expect(await locates(page)).toEqual([{ command: 'locate', elementIds: ['el_title'] }]);
 }
 
 const TITLE = /translate\(35(\.0*\d*)?%, 16\.66\d*%\)/;
@@ -121,6 +124,40 @@ test("a new write ends the last one's tour, and its cursor wanders again", async
   await page.clock.runFor(1100);
   await expect(presences(page).getByText('Lyra', { exact: true })).toBeVisible();
   expect(await runningAnimations(page)).toBeGreaterThan(0);
+});
+
+test("a user's edit during an agent's call that then stops is no tour of hers", async ({
+  page,
+}) => {
+  await openWithGuests(page, 'no-preference');
+  await page.evaluate(() => window.boardHarness.editByUser('b'));
+  await page.clock.runFor(300);
+  await page.evaluate(() => window.boardHarness.leave());
+  await page.clock.runFor(1100);
+  await expect(presences(page)).toHaveCount(0);
+  expect(await locates(page)).toEqual([]);
+});
+
+test('a frame taken off while its tour is found comes back with no one on it', async ({ page }) => {
+  await openWithGuests(page, 'no-preference');
+  await page.evaluate(() => {
+    window.boardHarness.holdSourceReads();
+    window.boardHarness.landWrite('b');
+  });
+  await page.clock.runFor(300);
+  await page.evaluate(() => window.boardHarness.leave());
+  await expect(presences(page).getByText('Lyra', { exact: true })).toBeVisible();
+
+  await page.evaluate(() => window.boardHarness.takeOff('b'));
+  await expect(frame(page, 'B')).toHaveCount(0);
+  await page.evaluate(() => window.boardHarness.putBack('b'));
+  await page.clock.runFor(1100);
+  await expect(presences(page)).toHaveCount(0);
+  // Both revisions' reads were waiting, and once answered they find the tour gone.
+  expect(await page.evaluate(() => window.boardHarness.releaseSourceReads())).toBe(2);
+  await page.clock.runFor(32);
+  expect(await locates(page)).toEqual([]);
+  await expect(presences(page)).toHaveCount(0);
 });
 
 test('under reduced motion a landed write shows its cursor on what changed', async ({ page }) => {

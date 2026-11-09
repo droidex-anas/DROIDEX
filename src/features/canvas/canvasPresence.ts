@@ -94,6 +94,47 @@ export function canvasPresence(
   return presence;
 }
 
+/** A write that landed this turn: the agent whose call made it, and the revision it committed. */
+export interface LandedWrite {
+  agentKey: string;
+  revisionId: string;
+}
+
+/** The latest write that landed on each frame this turn, by design id. */
+export type LandedWrites = ReadonlyMap<string, LandedWrite>;
+
+export const NO_LANDED_WRITES: LandedWrites = new Map();
+
+/**
+ * Reads the same turn as `canvasPresence`: each completed write's result names
+ * its frame and the revision it committed. A revision no result names, such
+ * as a user's own edit, was no agent's write.
+ */
+export function landedWrites(sources: PresenceSources): LandedWrites {
+  const { appSessionId, primaryLive, liveChildren } = sources;
+  if (!primaryLive && liveChildren.size === 0) return NO_LANDED_WRITES;
+  const landed = new Map<string, LandedWrite>();
+  for (const event of turnCanvasEvents(sources.events, liveChildren)) {
+    const activity = event.canvasActivity;
+    if (activity?.action !== 'write' || activity.state !== 'completed' || !activity.revisionId)
+      continue;
+    const source = event.role === 'primary' ? PRIMARY : event.sourceSessionId;
+    const write = { agentKey: agentKey(appSessionId, source), revisionId: activity.revisionId };
+    for (const designId of activity.designIds) landed.set(designId, write);
+  }
+  return landed.size > 0 ? landed : NO_LANDED_WRITES;
+}
+
+export function sameLandedWrites(left: LandedWrites, right: LandedWrites): boolean {
+  if (left === right) return true;
+  if (left.size !== right.size) return false;
+  for (const [designId, { agentKey, revisionId }] of left) {
+    const other = right.get(designId);
+    if (other?.agentKey !== agentKey || other.revisionId !== revisionId) return false;
+  }
+  return true;
+}
+
 /** What the turn's canvas calls say, by agent: `PRIMARY` or a child session id. */
 interface TurnWork {
   /** Each create or write still running, in the order they started, with the frames it names. */
@@ -299,13 +340,17 @@ function assignAgents(
   const colors = new Set<PresenceColor>();
   const agents = new Map<string, PresenceAgent>();
   for (const source of sources) {
-    const key = source === PRIMARY ? appSessionId : `${appSessionId}/${source}`;
+    const key = agentKey(appSessionId, source);
     const hash = fnv1a(key);
     const name = take(AGENT_NAMES, hash, names);
     const color = take(COLORS, Math.floor(hash / AGENT_NAMES.length), colors);
     agents.set(source, { key, name, color });
   }
   return agents;
+}
+
+function agentKey(appSessionId: string, source: string): string {
+  return source === PRIMARY ? appSessionId : `${appSessionId}/${source}`;
 }
 
 /** The first option from the hashed one on that is not taken, which it then takes. */

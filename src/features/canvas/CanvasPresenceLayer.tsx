@@ -10,7 +10,12 @@ import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { AgentCursor } from '../../components/AgentCursor';
 import type { PlacedFrame } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
-import { fnv1a, type CanvasPresence, type PresenceAgent } from './canvasPresence';
+import {
+  fnv1a,
+  type CanvasPresence,
+  type LandedWrites,
+  type PresenceAgent,
+} from './canvasPresence';
 import type { PreviewRuns } from './previewRuns';
 import type { CanvasFrame, FrameRect } from './protocol';
 import {
@@ -39,6 +44,7 @@ interface Cursor {
 
 export function CanvasPresenceLayer({
   presence,
+  writes,
   frames,
   drawn,
   visible,
@@ -47,6 +53,8 @@ export function CanvasPresenceLayer({
   readSource,
 }: {
   presence: CanvasPresence;
+  /** The writes that landed this turn, which a change tour is owed to. */
+  writes: LandedWrites;
   frames: readonly CanvasFrame[];
   drawn: readonly PlacedFrame[];
   /** The frames on screen; one off screen draws no presence, so nothing of it runs. */
@@ -57,7 +65,15 @@ export function CanvasPresenceLayer({
   readSource: ReadSource;
 }) {
   const moves = motion.presenceMs > 0;
-  const tours = useChangeTours({ frames, presence, visible, runs, readSource, moves });
+  const tours = useChangeTours({
+    frames,
+    presence,
+    writes,
+    visible,
+    runs,
+    readSource,
+    moves,
+  });
   // One cursor per agent: an agent at work on several frames is drawn over
   // the one on screen its running call names, else over the first of them on
   // screen, and its other frames keep only their edge. An agent no longer at

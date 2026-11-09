@@ -26,7 +26,7 @@ import type {
   CanvasSnapshot,
   SwitchRevisionInput,
 } from './protocol';
-import { useCanvasPresence } from './useCanvasPresence';
+import { useCanvasPresence, useLandedWrites } from './useCanvasPresence';
 import type { DesignPins } from './useDesignPicker';
 import { useFrameActions } from './useFrameActions';
 
@@ -157,6 +157,7 @@ export function CanvasBoardMount({
   }, [appSessionId, pinnable, snapshot]);
   useCoverCapture(canvasId, frames);
   const presence = useCanvasPresence(appSessionId, frames);
+  const writes = useLandedWrites(appSessionId);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   useEffect(() => {
@@ -215,6 +216,7 @@ export function CanvasBoardMount({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           presence={presence}
+          writes={writes}
           readSource={readSource}
           pinnedIds={pinnedIds}
           design={design}

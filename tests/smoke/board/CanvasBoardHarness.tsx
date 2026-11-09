@@ -10,7 +10,12 @@ import { BoardHistory, recordPlacements } from '../../../src/features/canvas/boa
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
-import { NO_PRESENCE, type CanvasPresence } from '../../../src/features/canvas/canvasPresence';
+import {
+  NO_LANDED_WRITES,
+  NO_PRESENCE,
+  type CanvasPresence,
+  type LandedWrites,
+} from '../../../src/features/canvas/canvasPresence';
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
@@ -77,8 +82,19 @@ interface BoardHarness {
   buildReady: () => void;
   /** The agents at work finish: their frames' designs land and they leave. */
   finishWork: () => void;
-  /** The write on a frame lands as `rev_landed`, built, rewriting the title `?edit=1` maps. */
+  /**
+   * The write of the agent on a frame lands as `rev_landed`, built, rewriting
+   * the title `?edit=1` maps, and its result names that revision.
+   */
   landWrite: (designId: string) => void;
+  /** The user's own edit lands as `rev_landed`, the same source, with no agent's result. */
+  editByUser: (designId: string) => void;
+  /** Source reads wait until released; releasing answers them and says how many there were. */
+  holdSourceReads: () => void;
+  releaseSourceReads: () => number;
+  /** A frame leaves the board, and comes back as it was. */
+  takeOff: (designId: string) => void;
+  putBack: (designId: string) => void;
   /** The agents' calls end and they leave, their frames as they are. */
   leave: () => void;
   /** The agents start new calls on the frames they opened on. */
@@ -453,17 +469,23 @@ const readArtifact = (_canvasId: string, _designId: string, revisionId: string) 
 
 // Every revision's source is the same but `rev_landed`'s, whose title (40 to 90) is new.
 const SOURCE = '-'.repeat(200);
-const readSource = (_designId: string, revisionId: string) =>
-  Promise.resolve({
+const sourceReads: { held: boolean; waiting: (() => void)[] } = { held: false, waiting: [] };
+const readSource = (_designId: string, revisionId: string) => {
+  const files = {
     'main.tsx':
       revisionId === 'rev_landed'
         ? `${SOURCE.slice(0, 40)}${'T'.repeat(50)}${SOURCE.slice(90)}`
         : SOURCE,
-  });
+  };
+  if (!sourceReads.held) return Promise.resolve(files);
+  return new Promise<typeof files>((resolve) => sourceReads.waiting.push(() => resolve(files)));
+};
+const takenOff = new Map<string, CanvasFrame>();
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
   const [presence, setPresence] = useState(PRESENCE);
+  const [writes, setWrites] = useState<LandedWrites>(NO_LANDED_WRITES);
   const [interaction, setInteraction] = useState(SELECT_MODE);
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
@@ -586,10 +608,33 @@ function Harness() {
       setPresence(NO_PRESENCE);
     },
     landWrite: (designId) => {
+      window.boardHarness.editByUser(designId);
+      const agentKey = PRESENCE.get(designId)?.agent.key;
+      if (agentKey) setWrites(new Map([[designId, { agentKey, revisionId: 'rev_landed' }]]));
+    },
+    editByUser: (designId) => {
       const landed = shown.current.frames
         .filter((frame) => frame.designId === designId)
         .map((frame) => ({ ...frame, revisionId: 'rev_landed', build: built('rev_landed') }));
       setSnapshot(applyCanvasChange(shown.current, change(landed, [])));
+    },
+    holdSourceReads: () => {
+      sourceReads.held = true;
+    },
+    releaseSourceReads: () => {
+      const waiting = sourceReads.waiting.splice(0);
+      sourceReads.held = false;
+      for (const answer of waiting) answer();
+      return waiting.length;
+    },
+    takeOff: (designId) => {
+      const leaving = shown.current.frames.find((frame) => frame.designId === designId);
+      if (leaving) takenOff.set(designId, leaving);
+      setSnapshot(applyCanvasChange(shown.current, change([], [designId])));
+    },
+    putBack: (designId) => {
+      const returning = takenOff.get(designId);
+      if (returning) setSnapshot(applyCanvasChange(shown.current, change([returning], [])));
     },
     leave: () => {
       setPresence(NO_PRESENCE);
@@ -705,6 +750,7 @@ function Harness() {
           snapshot={snapshot}
           interaction={interaction}
           presence={presence}
+          writes={writes}
           readSource={readSource}
           onInteractionChange={setInteraction}
           renderPreview={(frame, revisionId, selections) =>

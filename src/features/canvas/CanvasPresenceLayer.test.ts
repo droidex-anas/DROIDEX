@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { canvasMotion } from './canvasMotion';
-import type { CanvasPresence } from './canvasPresence';
+import { NO_LANDED_WRITES, type CanvasPresence } from './canvasPresence';
 import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import { PreviewRuns } from './previewRuns';
 
@@ -17,6 +17,7 @@ function cursorFrames(presence: CanvasPresence, visible: string[]): string[] {
   const markup = renderToStaticMarkup(
     createElement(CanvasPresenceLayer, {
       presence,
+      writes: NO_LANDED_WRITES,
       frames: [],
       drawn: DRAWN,
       visible,

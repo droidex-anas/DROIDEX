@@ -6,7 +6,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { changedElements } from './changedElements';
-import type { CanvasPresence, PresenceAgent } from './canvasPresence';
+import type { CanvasPresence, LandedWrites, PresenceAgent } from './canvasPresence';
 import { isDrawn, MAX_PREVIEW_LOCATE_ELEMENTS } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { CanvasFrame, SourceFiles } from './protocol';
@@ -17,9 +17,13 @@ export interface TourStop {
   y: number;
 }
 
-/** A landed write's tour: `stops` is null while its regions are still being found. */
+/**
+ * A landed write's tour of the revision it committed: `stops` is null while
+ * its regions are still being found.
+ */
 interface ChangeTour {
   agent: PresenceAgent;
+  revisionId: string;
   stops: readonly TourStop[] | null;
 }
 
@@ -37,12 +41,13 @@ const NO_TOURS: ChangeTours = new Map();
 
 /**
  * The tour on each frame, by design id. A write has landed when the running
- * call that named a frame ends with the frame on a newer revision than it had
- * when the call began.
+ * call that named a frame ends with the frame on the revision a completed
+ * write of that same agent committed, other than the one the call began on.
  */
 export function useChangeTours({
   frames,
   presence,
+  writes,
   visible,
   runs,
   readSource,
@@ -50,6 +55,7 @@ export function useChangeTours({
 }: {
   frames: readonly CanvasFrame[];
   presence: CanvasPresence;
+  writes: LandedWrites;
   visible: readonly string[];
   runs: PreviewRuns;
   readSource: ReadSource;
@@ -61,33 +67,46 @@ export function useChangeTours({
   // The frames a running call names, each with its agent and the revision it began on.
   const writing = useRef(new Map<string, { agent: PresenceAgent; revisionId: string | null }>());
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
-  const latest = useRef({ visible, runs, readSource, moves });
-  latest.current = { visible, runs, readSource, moves };
+  const latest = useRef({ frames, visible, runs, readSource, moves });
+  latest.current = { frames, visible, runs, readSource, moves };
 
   // Before paint, so a cursor whose write just landed stays rather than starting to leave.
   useLayoutEffect(() => {
     const publish = () => {
       setTours(new Map(owned.current));
     };
+    // Still the frame's tour, and the frame still on the revision it tours.
+    const isCurrent = (designId: string, tour: ChangeTour) =>
+      owned.current.get(designId) === tour &&
+      latest.current.frames.some(
+        (frame) => frame.designId === designId && frame.revisionId === tour.revisionId,
+      );
     const finish = (designId: string, tour: ChangeTour) => {
       if (owned.current.get(designId) !== tour) return;
       owned.current.delete(designId);
       publish();
     };
-    const begin = async (frame: CanvasFrame, agent: PresenceAgent, before: string) => {
-      const finding: ChangeTour = { agent, stops: null };
+    const begin = async (
+      frame: CanvasFrame,
+      revisionId: string,
+      agent: PresenceAgent,
+      before: string,
+    ) => {
+      const finding: ChangeTour = { agent, revisionId, stops: null };
       owned.current.set(frame.designId, finding);
       publish();
-      const stops = await tourStops(frame, before, latest.current).catch((error: unknown) => {
+      const stops = await tourStops(frame, before, latest.current, () =>
+        isCurrent(frame.designId, finding),
+      ).catch((error: unknown) => {
         console.error('A Canvas change tour could not read the revisions it compares:', error);
         return null;
       });
-      if (owned.current.get(frame.designId) !== finding) return;
+      if (!isCurrent(frame.designId, finding)) return;
       if (!stops) {
         finish(frame.designId, finding);
         return;
       }
-      const touring: ChangeTour = { agent, stops };
+      const touring: ChangeTour = { agent, revisionId, stops };
       owned.current.set(frame.designId, touring);
       publish();
       const travelMs = latest.current.moves ? stops.length * (TOUR_TRAVEL_MS + TOUR_REST_MS) : 0;
@@ -98,22 +117,24 @@ export function useChangeTours({
       timers.current.add(timer);
     };
 
+    if (forgetStale(frames, writing.current, owned.current)) publish();
     for (const frame of frames) {
       const { designId, revisionId } = frame;
       const worker = presence.get(designId);
       const write = writing.current.get(designId);
       if (worker?.named) {
-        if (!write) writing.current.set(designId, { agent: worker.agent, revisionId });
+        if (write?.agent.key !== worker.agent.key)
+          writing.current.set(designId, { agent: worker.agent, revisionId });
         if (owned.current.delete(designId)) publish();
         continue;
       }
       if (!write) continue;
       writing.current.delete(designId);
-      if (write.revisionId === null || revisionId === write.revisionId) continue;
-      if (latest.current.visible.includes(designId))
-        void begin(frame, write.agent, write.revisionId);
+      const landed = landedRevision(frame, write, writes);
+      if (landed && write.revisionId !== null && latest.current.visible.includes(designId))
+        void begin(frame, landed, write.agent, write.revisionId);
     }
-  }, [frames, presence]);
+  }, [frames, presence, writes]);
 
   useEffect(() => {
     const pending = timers.current;
@@ -129,14 +150,53 @@ export function useChangeTours({
 }
 
 /**
+ * Forgets the calls and tours of frames no longer on the board, and the tours
+ * of frames whose revision moved on; true when a tour went.
+ */
+function forgetStale(
+  frames: readonly CanvasFrame[],
+  writing: Map<string, unknown>,
+  owned: Map<string, ChangeTour>,
+): boolean {
+  const revisions = new Map(frames.map((frame) => [frame.designId, frame.revisionId]));
+  for (const designId of writing.keys()) if (!revisions.has(designId)) writing.delete(designId);
+  let dropped = false;
+  for (const [designId, tour] of owned) {
+    if (revisions.get(designId) === tour.revisionId) continue;
+    owned.delete(designId);
+    dropped = true;
+  }
+  return dropped;
+}
+
+/**
+ * The revision a call that named the frame ended on, when it is not the one
+ * the call began on and a completed write of the same agent committed it.
+ */
+function landedRevision(
+  { designId, revisionId }: CanvasFrame,
+  write: { agent: PresenceAgent; revisionId: string | null },
+  writes: LandedWrites,
+): string | null {
+  if (write.revisionId === null || revisionId === null || revisionId === write.revisionId)
+    return null;
+  const landed = writes.get(designId);
+  return landed?.agentKey === write.agent.key && landed.revisionId === revisionId
+    ? revisionId
+    : null;
+}
+
+/**
  * Where on the frame the regions its latest write changed are drawn, in source
  * order, or null when none can be found: its live preview must be running the
- * revision the write made.
+ * revision the write made, and the tour must still be current once the
+ * sources are read.
  */
 async function tourStops(
   frame: CanvasFrame,
   before: string,
   { runs, readSource }: { runs: PreviewRuns; readSource: ReadSource },
+  isCurrent: () => boolean,
 ): Promise<TourStop[] | null> {
   const { designId, build, rect } = frame;
   const held = runs.get(designId);
@@ -145,6 +205,7 @@ async function tourStops(
     readSource(designId, before),
     readSource(designId, build.revisionId),
   ]);
+  if (!isCurrent()) return null;
   const changed = changedElements(build.elements, earlier, written);
   if (changed.length === 0) return null;
   const boxes = await held.run.locate(
