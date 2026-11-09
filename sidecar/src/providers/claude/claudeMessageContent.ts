@@ -155,6 +155,8 @@ export function toolBlock(block: { type: string }): { id: string; name: string }
 const STARTED_EARLY = new Set(['canvas_create', 'canvas_write']);
 // The top-level fields that open the input, each a plain scalar, up to its
 // designId. A nested value before it ends the read, so it never looks inside one.
+// A nested or escaped field before the designId, or an escaped designId, leaves
+// the call unnamed until it completes; so does canvas_create, whose ids sit in `frames`.
 const LEADING_DESIGN_ID =
   /^\s*\{(?:\s*"\w+"\s*:\s*(?:"[^"\\]*"|null|true|false|-?\d+(?:\.\d+)?)\s*,)*\s*"designId"\s*:\s*"([\w-]{1,128})"/;
 
