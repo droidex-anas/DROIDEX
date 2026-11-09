@@ -207,6 +207,10 @@ function KitNotesBadge({
         onPointerDown={(event) => {
           event.stopPropagation();
         }}
+        // A click opens the source without taking focus from the frame's header; Tab still reaches it.
+        onMouseDown={(event) => {
+          event.preventDefault();
+        }}
         onClick={(event) => {
           event.stopPropagation();
           onOpen();

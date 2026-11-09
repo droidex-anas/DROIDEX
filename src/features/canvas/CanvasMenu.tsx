@@ -108,13 +108,9 @@ export function CanvasMenu({
         placement="bottom-end"
         width={MENU_WIDTH_PX}
         label="Canvas"
+        onKeyDown={moveBetweenRows}
       >
-        <div
-          role="menu"
-          aria-label="Canvas"
-          className="min-h-0 overflow-y-auto p-1"
-          onKeyDown={moveBetweenRows}
-        >
+        <div role="menu" aria-label="Canvas" className="min-h-0 overflow-y-auto p-1">
           {canvasId !== null && (
             <CanvasActions
               appSessionId={appSessionId}
