@@ -78,11 +78,15 @@ export function onCanvasImageCaptured(
   };
 }
 
-/** Captures the mounted revision, independently of any source write or turn. */
+/**
+ * Captures the mounted revision, independently of any source write or turn,
+ * at the display's scale unless the caller names another.
+ */
 export function captureCanvasImage(
   canvasId: string,
   ref: RevisionRef,
   signal: AbortSignal,
+  scaleFactor?: number,
 ): Promise<{ mediaType: 'image/png'; bytes: Uint8Array }> {
   const key = captureKey(canvasId, ref);
   const preview = livePreviews.get(key);
@@ -124,7 +128,7 @@ export function captureCanvasImage(
       generation: preview.generation,
       width: preview.width,
       height: preview.height,
-      scaleFactor: preview.scaleFactor,
+      scaleFactor: scaleFactor ?? preview.scaleFactor,
     }).then(
       (result) => {
         // Main keeps every picture it reports, even one this request no longer wants.
@@ -148,9 +152,10 @@ export async function exportCanvasImage(
   canvasId: string,
   ref: RevisionRef,
   suggestedName: string,
+  scaleFactor: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  await captureCanvasImage(canvasId, ref, signal);
+  await captureCanvasImage(canvasId, ref, signal, scaleFactor);
   const saved = await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName);
   if (saved.ok) return true;
   if ('cancelled' in saved) return false;

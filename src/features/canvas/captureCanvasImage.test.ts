@@ -138,16 +138,17 @@ test('a picture main keeps reaches the listeners of that revision, a failed capt
   }
 });
 
-test('export saves the captured revision identifiers without forwarding renderer bytes', async () => {
+test('export saves the revision captured at its scale without forwarding renderer bytes', async () => {
   const desktop = desktopCapture();
   const release = mount(41);
   try {
-    const exported = exportCanvasImage('cv_01', ref, 'design', new AbortController().signal);
+    const exported = exportCanvasImage('cv_01', ref, 'design', 3, new AbortController().signal);
     assert.deepEqual(desktop.saves, []);
     const request = desktop.pending[0].request;
     assert.equal(request.canvasId, 'cv_01');
     assert.equal(request.designId, 'dsg_01');
     assert.equal(request.revisionId, 'rev_01');
+    assert.equal(request.scaleFactor, 3);
     desktop.pending[0].answer({
       ok: true,
       mediaType: 'image/png',

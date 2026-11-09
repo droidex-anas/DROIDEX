@@ -42,19 +42,21 @@ function isKitCapture(guest, canvasId, designId, revisionId) {
   );
 }
 
-function captureBounds(width, height, scaleFactor) {
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    width > 8_192 ||
-    height > 8_192 ||
-    !Number.isFinite(scaleFactor) ||
-    scaleFactor < 1 ||
-    scaleFactor > 4
-  )
-    return false;
+function validSize(width, height, scaleFactor) {
+  return (
+    Number.isSafeInteger(width) &&
+    Number.isSafeInteger(height) &&
+    width >= 1 &&
+    height >= 1 &&
+    width <= 8_192 &&
+    height <= 8_192 &&
+    Number.isFinite(scaleFactor) &&
+    scaleFactor >= 1 &&
+    scaleFactor <= 4
+  );
+}
+
+function fitsCaps(width, height, scaleFactor) {
   const pixelWidth = Math.ceil(width * scaleFactor);
   const pixelHeight = Math.ceil(height * scaleFactor);
   return (
@@ -64,7 +66,44 @@ function captureBounds(width, height, scaleFactor) {
   );
 }
 
-/** The PNG header is checked before any bytes leave main or enter its cache. */
+/** Names the largest whole scale under the caps, so a refusal says what would work. */
+function tooLarge(width, height, scaleFactor) {
+  let fits = Math.ceil(scaleFactor) - 1;
+  while (fits >= 1 && !fitsCaps(width, height, fits)) fits -= 1;
+  const asked = `${String(scaleFactor)}x`;
+  return captureFailure(
+    fits >= 1
+      ? `Too large at ${asked}; try ${String(fits)}x.`
+      : `Too large to capture at ${asked}.`,
+  );
+}
+
+/**
+ * The compositor answers at the display's own scale, and its PNG cannot be
+ * scaled up without blurring, so another scale is drawn again by Chromium.
+ */
+async function atScale(contents, bytes, width, height, scaleFactor) {
+  if (validPng(bytes, width, height, scaleFactor) || !validPng(bytes, width, height, null))
+    return bytes;
+  const nativeScale = bytes.readUInt32BE(16) / width;
+  const debuggerClient = contents.debugger;
+  const wasAttached = debuggerClient.isAttached();
+  if (!wasAttached) debuggerClient.attach('1.3');
+  try {
+    const { data } = await debuggerClient.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: 0, y: 0, width, height, scale: scaleFactor / nativeScale },
+    });
+    return Buffer.from(data, 'base64');
+  } finally {
+    if (!wasAttached && !contents.isDestroyed()) debuggerClient.detach();
+  }
+}
+
+/**
+ * The PNG header is checked before any bytes leave main or enter its cache;
+ * a null scale accepts any size under the caps.
+ */
 function validPng(bytes, width, height, scaleFactor) {
   if (!Buffer.isBuffer(bytes) || bytes.length < 33 || bytes.length > MAX_CAPTURE_BYTES)
     return false;
@@ -76,8 +115,9 @@ function validPng(bytes, width, height, scaleFactor) {
     pixelWidth <= MAX_CAPTURE_DIMENSION_PX &&
     pixelHeight <= MAX_CAPTURE_DIMENSION_PX &&
     pixelWidth * pixelHeight <= MAX_CAPTURE_PIXELS &&
-    Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
-    Math.abs(pixelHeight - height * scaleFactor) <= 1
+    (scaleFactor === null ||
+      (Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
+        Math.abs(pixelHeight - height * scaleFactor) <= 1))
   );
 }
 
@@ -249,9 +289,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         !captureAvailable() ||
         !Number.isSafeInteger(generation) ||
         generation < 1 ||
-        !captureBounds(width, height, scaleFactor)
+        !validSize(width, height, scaleFactor)
       )
         return Promise.resolve(captureFailure());
+      if (!fitsCaps(width, height, scaleFactor))
+        return Promise.resolve(tooLarge(width, height, scaleFactor));
 
       return new Promise((resolve) => {
         let releaseDeadline = null;
@@ -300,7 +342,10 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
             if (!isCurrent()) return;
             if (!image) return;
             if (image.isEmpty()) return complete(captureFailure());
-            const bytes = image.toPNG({ scaleFactor });
+            return atScale(guest.contents, image.toPNG(), width, height, scaleFactor);
+          })
+          .then((bytes) => {
+            if (!isCurrent() || !bytes) return;
             if (!captureAvailable() || !validPng(bytes, width, height, scaleFactor))
               return complete(captureFailure());
             return guest.contents.executeJavaScript(PREVIEW_IDENTITY_SCRIPT).then((identity) => {

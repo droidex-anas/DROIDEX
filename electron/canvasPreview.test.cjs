@@ -527,6 +527,44 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
 });
 
+test('a capture at a scale the display does not draw is drawn again by Chromium at that scale', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve({ data: capturedImage(2160, 2160).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const capture = hosts.capture({ ...captureRequest, scaleFactor: 3 });
+  await new Promise(setImmediate);
+  guest.captures[0].resolve(capturedImage());
+  const result = await capture;
+  assert.equal(result.ok, true);
+  assert.equal(result.bytes.readUInt32BE(16), 2160);
+  const clip = { x: 0, y: 0, width: 720, height: 720, scale: 1.5 };
+  assert.deepEqual(sent, [{ method: 'Page.captureScreenshot', params: { format: 'png', clip } }]);
+  assert.equal(guest.debugger.attached, false);
+});
+
+test('a capture over the pixel caps is refused with the largest scale that fits', async () => {
+  const { hosts } = createHosts();
+  hosts.attach(createGuest(41));
+  const refusal = async (side, scaleFactor) =>
+    (await hosts.capture({ ...captureRequest, width: side, height: side, scaleFactor })).error
+      .message;
+  assert.equal(await refusal(1800, 3), 'Too large at 3x; try 2x.');
+  assert.equal(await refusal(4000, 2), 'Too large at 2x; try 1x.');
+  assert.equal(await refusal(5000, 1), 'Too large to capture at 1x.');
+});
+
 test('a kit-bound guest is captured without a canvas, and main keeps no copy', async () => {
   const { hosts } = createHosts();
   const kitGuest = createGuest(41);
