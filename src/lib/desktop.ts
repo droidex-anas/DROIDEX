@@ -949,7 +949,9 @@ export async function exportCanvasToProject(
     return { ok: false, code: 'storage_failed', message: 'Open DROIDEX to export a design.' };
   const requestId = crypto.randomUUID();
   const cancel = () => {
-    void api.canvasExportSourceCancel(requestId);
+    void api.canvasExportSourceCancel(requestId).catch(() => {
+      // A request main no longer holds has nothing left to cancel.
+    });
   };
   signal.addEventListener('abort', cancel);
   try {
