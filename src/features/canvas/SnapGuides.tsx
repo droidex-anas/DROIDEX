@@ -1,9 +1,15 @@
 import { canvasToScreen, type Viewport } from './canvasGeometry';
 import type { SnapGap, SnapGuide, SnapMarks } from './frameSnap';
+import { distanceLabel } from './measureDistances';
+import { useScreenSize } from './useScreenSize';
+
+/** Screen pixels a centred distance keeps clear of the line's end ticks. */
+const TICK_CLEARANCE_PX = 4;
 
 /**
- * The lines a snapped drag lined up on and the spaces it measured, drawn in
- * screen space above the board's world layer so they stay hairlines at any zoom.
+ * The lines a snapped drag lined up on and the spaces it measured, or the
+ * distances Alt measures under the pointer, drawn in screen space above the
+ * board's world layer so they stay hairlines at any zoom.
  */
 export function SnapGuides({ marks, viewport }: { marks: SnapMarks; viewport: Viewport }) {
   if (marks.guides.length === 0 && marks.gaps.length === 0) return null;
@@ -16,31 +22,37 @@ export function SnapGuides({ marks, viewport }: { marks: SnapMarks; viewport: Vi
           style={guideBox(guide, viewport)}
         />
       ))}
-      {marks.gaps.map((gap) => (
-        <GapMark
-          key={`${gap.axis}:${String(gap.from)}:${String(gap.to)}`}
-          gap={gap}
-          viewport={viewport}
-        />
+      {marks.gaps.map((gap, index) => (
+        // Kept mounted while the gaps follow the pointer, so each distance is measured once.
+        <GapMark key={index} gap={gap} viewport={viewport} />
       ))}
     </div>
   );
 }
 
-/** A space between two frames: a measured line with end ticks, and its distance. */
+/**
+ * A measured space: a line with end ticks, and its distance centred on it, or
+ * beside it when the line is too short to hold the distance clear of its ticks.
+ */
 function GapMark({ gap, viewport }: { gap: SnapGap; viewport: Viewport }) {
   const box = gapBox(gap, viewport);
+  const [pill, pillSize] = useScreenSize();
+  const length = gap.axis === 'x' ? box.width : box.height;
+  const pillLength = gap.axis === 'x' ? pillSize.width : pillSize.height;
   return (
     <>
       <span className="canvas-snap-gap" data-axis={gap.axis} style={box} />
       <span
+        ref={pill}
         className="canvas-snap-pill"
+        data-axis={gap.axis}
+        data-beside={length < pillLength + 2 * TICK_CLEARANCE_PX || undefined}
         style={{
           left: box.left + box.width / 2,
           top: box.top + box.height / 2,
         }}
       >
-        {Math.round(gap.to - gap.from)}
+        {distanceLabel(gap.to - gap.from)}
       </span>
     </>
   );

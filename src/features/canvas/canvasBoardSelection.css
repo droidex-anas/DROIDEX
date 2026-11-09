@@ -202,6 +202,15 @@
   transform: translate(-50%, -50%);
 }
 
+/* A line too short to hold its distance puts it beside the line, clear of the ticks. */
+.canvas-snap-pill[data-axis='x'][data-beside] {
+  transform: translate(-50%, calc(-100% - 6px));
+}
+
+.canvas-snap-pill[data-axis='y'][data-beside] {
+  transform: translate(6px, -50%);
+}
+
 /* Edit's and Design's outlines over the guest, drawn like a frame's: the element
    under the pointer as a 1px line named by its tag, each pick at 1.5px. Outside any
    frame, so they set the chrome font themselves. A changed box glides there,
