@@ -8,6 +8,8 @@ const GENERATED_PROBE_INTERVAL_MS = 2_000;
 const GENERATED_PROBE_DEADLINE_MS = 3_000;
 const GENERATED_PROBE = '0';
 const PREVIEW_IDENTITY_SCRIPT = 'globalThis.__droidexCanvasPreview.identity()';
+// Read in the guest's own top frame, which generated code cannot reach.
+const DISPLAY_SCALE_SCRIPT = 'devicePixelRatio';
 const CAPTURE_DEADLINE_MS = 6_000;
 const MAX_CAPTURE_DIMENSION_PX = 4_096;
 const MAX_CAPTURE_PIXELS = 16_000_000;
@@ -82,20 +84,22 @@ function tooLarge(width, height, scaleFactor) {
 /**
  * The compositor answers at the display's own scale, and its PNG cannot be
  * scaled up without blurring, so another scale is drawn again by Chromium.
- * The native PNG never leaves main, so the output caps do not apply to it:
- * a 1x capture on a 2x display can start from a native image over them.
  */
-async function atScale(contents, bytes, width, height, scaleFactor) {
+function atScale(contents, bytes, width, height, scaleFactor) {
   const native = pngSize(bytes);
   if (!native || isAtScale(native, width, height, scaleFactor)) return bytes;
-  const nativeScale = native.pixelWidth / width;
+  return redraw(contents, width, height, scaleFactor / (native.pixelWidth / width));
+}
+
+/** Chromium's own drawing of the page at `scale` times the display's scale. */
+async function redraw(contents, width, height, scale) {
   const debuggerClient = contents.debugger;
   const wasAttached = debuggerClient.isAttached();
   if (!wasAttached) debuggerClient.attach('1.3');
   try {
     const { data } = await debuggerClient.sendCommand('Page.captureScreenshot', {
       format: 'png',
-      clip: { x: 0, y: 0, width, height, scale: scaleFactor / nativeScale },
+      clip: { x: 0, y: 0, width, height, scale },
     });
     return Buffer.from(data, 'base64');
   } finally {
@@ -362,13 +366,22 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
               complete(captureFailure());
               return;
             }
-            return guest.contents.capturePage({ x: 0, y: 0, width, height }, { stayHidden: true });
+            return guest.contents.executeJavaScript(DISPLAY_SCALE_SCRIPT);
           })
-          .then((image) => {
+          .then((displayScale) => {
             if (!isCurrent()) return;
-            if (!image) return;
-            if (image.isEmpty()) return complete(captureFailure());
-            return atScale(guest.contents, image.toPNG(), width, height, scaleFactor);
+            if (!Number.isFinite(displayScale) || displayScale <= 0)
+              return complete(captureFailure());
+            // A native image over the caps is never made: a Poster at 1x on a
+            // 3x display is drawn by Chromium at the asked scale instead.
+            if (!fitsCaps(width, height, displayScale))
+              return redraw(guest.contents, width, height, scaleFactor / displayScale);
+            const rect = { x: 0, y: 0, width, height };
+            return guest.contents.capturePage(rect, { stayHidden: true }).then((image) => {
+              if (!isCurrent() || !image) return;
+              if (image.isEmpty()) return complete(captureFailure());
+              return atScale(guest.contents, image.toPNG(), width, height, scaleFactor);
+            });
           })
           .then((bytes) => {
             if (!isCurrent() || !bytes) return;
