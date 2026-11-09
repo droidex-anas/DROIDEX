@@ -2,7 +2,7 @@
 // source tree into an empty folder of the chat's project. The sidecar finds the
 // project folder from the chat and keeps the export inside it.
 
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Field, Input } from '../../components/ui/Field';
 import { exportCanvasToProject } from '../../lib/desktop';
@@ -39,6 +39,11 @@ export function ExportToProjectDialog({
   const folderRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const trimmed = folder.trim();
+
+  // The field was disabled while the export ran; a refusal hands it back to be edited.
+  useEffect(() => {
+    if (error !== null) folderRef.current?.focus();
+  }, [error]);
 
   const run = async () => {
     if (pending || trimmed === '') return;
