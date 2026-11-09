@@ -10,8 +10,8 @@
 import type { ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
 import { isDrawn, type PreviewHover } from './previewDocument';
-import type { ElementRef, FrameRect } from './protocol';
-import type { HoveredElement } from './useElementHover';
+import type { FrameRect } from './protocol';
+import { isPicked, type HoveredElement } from './useElementHover';
 import type { ElementSelection } from './useElementEditor';
 import { useScreenSize } from './useScreenSize';
 
@@ -142,13 +142,6 @@ function TagName({ tagName, component }: { tagName: string; component: string | 
   );
 }
 
-function isPicked(picked: ElementRef, hovered: HoveredElement): boolean {
-  return (
-    picked.designId === hovered.designId &&
-    picked.elementId === hovered.element.elementId &&
-    picked.instancePath === hovered.element.instancePath
-  );
-}
 /** The frame's corner, which a dragged frame moves without the outline's glide. */
 function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode }) {
   return (

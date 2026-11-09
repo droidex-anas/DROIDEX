@@ -50,6 +50,7 @@ import { useDesignPicker, type DesignPins } from './useDesignPicker';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
+import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
@@ -257,6 +258,7 @@ export function CanvasBoard({
     focusLabel,
   ]);
 
+  const measured = useHoverMeasurements(board, drawn, interaction, editor);
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
   const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
     renderPreview(frame, revisionId, editor.selections),
@@ -439,7 +441,7 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
-        {gestures.snapMarks && <SnapGuides marks={gestures.snapMarks} viewport={view.viewport} />}
+        <SnapGuides marks={gestures.snapMarks ?? measured} viewport={view.viewport} />
         {picker.prompt && (
           <DesignPickPrompt
             {...picker.prompt}
