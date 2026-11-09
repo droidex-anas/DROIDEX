@@ -21,7 +21,7 @@ import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 type OpenDialog =
   | { kind: 'save'; revision: RevisionRef; frameName: string }
   | { kind: 'export'; revision: RevisionRef; frameName: string; rect: FrameRect }
-  | { kind: 'project'; revision: RevisionRef; frameName: string };
+  | { kind: 'project'; revision: RevisionRef; frameName: string; appSessionId: string };
 
 export function useFrameActions(
   appSessionId: string,
@@ -93,20 +93,16 @@ export function useFrameActions(
               kind: 'project',
               revision: { designId: frame.designId, revisionId: frame.revisionId },
               frameName: frame.name,
+              appSessionId,
             });
         }
       : null,
   };
 
-  return { actions, dialog: open && dialogFor(appSessionId, canvasId, open, close) };
+  return { actions, dialog: open && dialogFor(canvasId, open, close) };
 }
 
-function dialogFor(
-  appSessionId: string,
-  canvasId: string,
-  open: OpenDialog,
-  onClose: () => void,
-): ReactNode {
+function dialogFor(canvasId: string, open: OpenDialog, onClose: () => void): ReactNode {
   if (open.kind === 'save')
     return (
       <SaveToLibraryDialog
@@ -119,7 +115,7 @@ function dialogFor(
   if (open.kind === 'project')
     return (
       <ExportToProjectDialog
-        appSessionId={appSessionId}
+        appSessionId={open.appSessionId}
         canvasId={canvasId}
         revision={open.revision}
         frameName={open.frameName}
