@@ -234,13 +234,13 @@ function isReply(value: unknown): boolean {
   }
 }
 
-/** A base64 PNG within `maxLength`, or null where there is none. */
 function isCaptureImage(value: unknown): boolean {
   if (!record(value)) return false;
   if (value.format === 'svg') return true;
   return value.format === 'png' && [1, 2, 3, null].includes(value.scale as number | null);
 }
 
+/** A base64 PNG within `maxLength`, or null where there is none. */
 function isPngOrNone(value: unknown, maxLength: number): boolean {
   return value === null || (typeof value === 'string' && value.length <= maxLength);
 }

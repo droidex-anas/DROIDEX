@@ -590,12 +590,13 @@ The intermediate holds the compiled design in an opaque-origin
 `sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
 intermediate rather than the chat renderer and the three documents hold three
 processes. Generated code gets no preload and no Electron API. The board drives
-a preview through the webview element's `executeJavaScript` with eight audited
+a preview through the webview element's `executeJavaScript` with nine audited
 literals in `src/features/canvas/previewDocument.ts`: one hands over the
 artifact and the instance identity, one drains a bounded queue of
 `ready`/`resize`/`diagnostics`/`selection` events as one validated JSON
-snapshot, and the rest carry the board's element commands (pick, select, hover,
-probe, locate and a kit's draft tokens) as JSON data to fixed calls.
+snapshot, one reads a vector design's root `<svg>`, and the rest carry the
+board's element commands (pick, select, hover, probe, locate and a kit's draft
+tokens) as JSON data to fixed calls.
 `previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
 cadence and revalidates the instance after every await, so a replaced preview
 can never be reached by the guest it replaced.
