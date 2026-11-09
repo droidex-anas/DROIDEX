@@ -114,6 +114,10 @@ export function CanvasBoardMount({
     },
     [appSessionId, canvasId, frames, switchRevision],
   );
+  const readSource = useCallback(
+    (designId: string, revisionId: string) => canvas.source.read(canvasId, designId, revisionId),
+    [canvasId],
+  );
   const removeFrames = useCallback(
     (removing: CanvasFrame[]) => frameRemovals.remove(appSessionId, canvasId, removing),
     [appSessionId, canvasId],
@@ -211,6 +215,7 @@ export function CanvasBoardMount({
           interaction={interaction}
           onInteractionChange={onInteractionChange}
           presence={presence}
+          readSource={readSource}
           pinnedIds={pinnedIds}
           design={design}
           frameActions={frameActions.actions}

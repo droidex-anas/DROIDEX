@@ -1,16 +1,25 @@
 // The agents at work on the board, each drawn over a frame it works on: its
 // cursor with its name, wandering the frame, and under it a halftone cloud in
-// its colour, on the same dot lattice as the frame's blank sheet. Only
-// transform and opacity move, a frame off screen draws none, and under reduced
-// motion each agent rests in one place.
+// its colour, on the same dot lattice as the frame's blank sheet. Once its
+// write lands, the cursor visits what the write changed before it leaves
+// (useChangeTours). Only transform and opacity move, a frame off screen draws
+// none, and under reduced motion each agent rests in one place.
 
 import { AnimatePresence, motion as animated } from 'framer-motion';
 import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { AgentCursor } from '../../components/AgentCursor';
 import type { PlacedFrame } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
-import { fnv1a, type CanvasPresence, type FrameWorker, type PresenceAgent } from './canvasPresence';
-import type { FrameRect } from './protocol';
+import { fnv1a, type CanvasPresence, type PresenceAgent } from './canvasPresence';
+import type { PreviewRuns } from './previewRuns';
+import type { CanvasFrame, FrameRect } from './protocol';
+import {
+  TOUR_REST_MS,
+  TOUR_TRAVEL_MS,
+  useChangeTours,
+  type ReadSource,
+  type TourStop,
+} from './useChangeTours';
 
 const CURSOR_SIZE = 22;
 // The cloud's box as a share of the frame's width, centred on the cursor's tip.
@@ -20,38 +29,68 @@ const CLOUD_HEIGHT = 0.3;
 const CLOUD_LAG_MS = 240;
 const TRAVEL_EASE = 'cubic-bezier(0.45, 0, 0.1, 1)';
 
+interface Cursor {
+  designId: string;
+  rect: FrameRect;
+  agent: PresenceAgent;
+  named: boolean;
+  tour: readonly TourStop[] | null;
+}
+
 export function CanvasPresenceLayer({
   presence,
+  frames,
   drawn,
   visible,
   motion,
+  runs,
+  readSource,
 }: {
   presence: CanvasPresence;
+  frames: readonly CanvasFrame[];
   drawn: readonly PlacedFrame[];
   /** The frames on screen; one off screen draws no presence, so nothing of it runs. */
   visible: readonly string[];
   motion: CanvasMotion;
+  /** The live previews, which locate what a landed write changed. */
+  runs: PreviewRuns;
+  readSource: ReadSource;
 }) {
+  const moves = motion.presenceMs > 0;
+  const tours = useChangeTours({ frames, presence, visible, runs, readSource, moves });
   // One cursor per agent: an agent at work on several frames is drawn over
   // the one on screen its running call names, else over the first of them on
-  // screen, and its other frames keep only their edge.
-  const cursors = new Map<string, { designId: string; rect: FrameRect; worker: FrameWorker }>();
+  // screen, and its other frames keep only their edge. An agent no longer at
+  // work anywhere on screen tours the frame its write just landed on.
+  const cursors = new Map<string, Cursor>();
   for (const { designId, rect } of drawn) {
     const worker = presence.get(designId);
     if (!worker || !visible.includes(designId)) continue;
     const shown = cursors.get(worker.agent.key);
-    if (shown && (shown.worker.named || !worker.named)) continue;
-    cursors.set(worker.agent.key, { designId, rect, worker });
+    if (shown && (shown.named || !worker.named)) continue;
+    cursors.set(worker.agent.key, { designId, rect, ...worker, tour: null });
+  }
+  for (const { designId, rect } of drawn) {
+    const tour = tours.get(designId);
+    if (!tour || !visible.includes(designId) || cursors.has(tour.agent.key)) continue;
+    cursors.set(tour.agent.key, {
+      designId,
+      rect,
+      agent: tour.agent,
+      named: true,
+      tour: tour.stops,
+    });
   }
   return (
     <AnimatePresence>
-      {[...cursors.values()].map(({ designId, rect, worker }) => (
+      {[...cursors.values()].map(({ designId, rect, agent, tour }) => (
         <FramePresence
-          key={`${designId}\0${worker.agent.key}`}
+          key={`${designId}\0${agent.key}`}
           designId={designId}
           rect={rect}
-          agent={worker.agent}
+          agent={agent}
           motion={motion}
+          tour={tour}
         />
       ))}
     </AnimatePresence>
@@ -63,36 +102,50 @@ function FramePresence({
   rect,
   agent,
   motion,
+  tour,
 }: {
   designId: string;
   rect: FrameRect;
   agent: PresenceAgent;
   motion: CanvasMotion;
+  /** The changed regions it visits, or null while it wanders. */
+  tour: readonly TourStop[] | null;
 }) {
   const cursor = useRef<HTMLDivElement>(null);
   const cloud = useRef<HTMLDivElement>(null);
   const lattice = useRef<HTMLDivElement>(null);
+  // Where each track stood when its last animation ended, so a tour sets out from there.
+  const stood = useRef<string[]>([]);
   // Kept across the board's renders, which come with every pan, so the loop
   // never restarts while the agent stays.
   const path = useMemo(() => wanderPath(`${agent.key}\0${designId}`), [agent.key, designId]);
   const moves = motion.presenceMs > 0;
+  // Without motion a tour shows the cursor on its last region at once.
+  const rest = tour?.at(-1) ?? path[0];
 
   useEffect(() => {
-    if (!moves || !cursor.current || !cloud.current || !lattice.current) return;
-    const duration = path.reduce((total, stop) => total + stop.travelMs + stop.restMs, 0);
-    const timing = { duration, iterations: Infinity };
-    const lagged = { ...timing, delay: CLOUD_LAG_MS };
+    const tracks = [cursor.current, cloud.current, lattice.current];
+    if (!moves || !tracks.every((track) => track !== null)) return;
+    const signs = [1, 1, -1] as const;
     // The lattice moves against the cloud that holds it, so its dots stay on
     // the frame's own grid while the cloud's soft edge passes over them.
-    const animations = [
-      cursor.current.animate(wanderKeyframes(path, duration, 1), timing),
-      cloud.current.animate(wanderKeyframes(path, duration, 1), lagged),
-      lattice.current.animate(wanderKeyframes(path, duration, -1), lagged),
-    ];
+    const animations = tracks.map((track, index) => {
+      const delay = index === 0 ? 0 : CLOUD_LAG_MS;
+      if (tour) {
+        const from = stood.current[index] ?? at(path[0], signs[index]);
+        const keyframes = tourKeyframes(from, tour, signs[index]);
+        const duration = tour.length * (TOUR_TRAVEL_MS + TOUR_REST_MS);
+        return track.animate(keyframes, { duration, delay, fill: 'both' });
+      }
+      const duration = path.reduce((total, stop) => total + stop.travelMs + stop.restMs, 0);
+      const keyframes = wanderKeyframes(path, duration, signs[index]);
+      return track.animate(keyframes, { duration, delay, iterations: Infinity });
+    });
     return () => {
+      stood.current = tracks.map((track) => getComputedStyle(track).transform);
       for (const animation of animations) animation.cancel();
     };
-  }, [moves, path]);
+  }, [moves, path, tour]);
 
   const cloudWidth = rect.width * CLOUD_WIDTH;
   const cloudHeight = rect.width * CLOUD_HEIGHT;
@@ -122,7 +175,7 @@ function FramePresence({
       exit={{ opacity: 0, transition: leave }}
     >
       <div className="canvas-presence-clip">
-        <div ref={cloud} className="canvas-presence-track" style={{ transform: at(path[0], 1) }}>
+        <div ref={cloud} className="canvas-presence-track" style={{ transform: at(rest, 1) }}>
           <div
             className="canvas-presence-cloud"
             style={{
@@ -140,13 +193,13 @@ function FramePresence({
                 top: cloudHeight / 2,
                 width: rect.width,
                 height: rect.height,
-                transform: at(path[0], -1),
+                transform: at(rest, -1),
               }}
             />
           </div>
         </div>
       </div>
-      <div ref={cursor} className="canvas-presence-track" style={{ transform: at(path[0], 1) }}>
+      <div ref={cursor} className="canvas-presence-track" style={{ transform: at(rest, 1) }}>
         <div className="canvas-presence-cursor">
           <AgentCursor
             size={CURSOR_SIZE}
@@ -198,6 +251,26 @@ function wanderKeyframes(path: WanderStop[], duration: number, sign: 1 | -1): Ke
     keyframes.push({ offset: elapsed / duration, transform: at(stop, sign), easing: TRAVEL_EASE });
     elapsed += stop.travelMs;
     if (index === path.length - 1) keyframes.push({ offset: 1, transform: at(next, sign) });
+  }
+  return keyframes;
+}
+
+/** From where the track stands to each stop in turn, with a pause at each. */
+function tourKeyframes(from: string, tour: readonly TourStop[], sign: 1 | -1): Keyframe[] {
+  const visits = tour.length;
+  const keyframes: Keyframe[] = [{ offset: 0, transform: from, easing: TRAVEL_EASE }];
+  const travelShare = TOUR_TRAVEL_MS / (TOUR_TRAVEL_MS + TOUR_REST_MS) / visits;
+  for (const [index, stop] of tour.entries()) {
+    keyframes.push({
+      offset: index / visits + travelShare,
+      transform: at(stop, sign),
+      easing: 'linear',
+    });
+    keyframes.push({
+      offset: (index + 1) / visits,
+      transform: at(stop, sign),
+      easing: TRAVEL_EASE,
+    });
   }
   return keyframes;
 }

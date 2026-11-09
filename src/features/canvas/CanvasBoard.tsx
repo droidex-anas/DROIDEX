@@ -38,6 +38,7 @@ import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
+import type { ReadSource } from './useChangeTours';
 import { RubberBand } from './RubberBand';
 import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
@@ -92,6 +93,8 @@ export interface CanvasBoardProps {
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   presence: CanvasPresence;
+  /** One revision's source, bound to `CanvasClient.source.read` for this canvas. */
+  readSource: ReadSource;
   onOpenSource?: (designId: string) => void;
   /** The frames tagged in the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
@@ -125,6 +128,7 @@ export function CanvasBoard({
   interaction,
   onInteractionChange,
   presence,
+  readSource,
   onOpenSource,
   pinnedIds,
   onTagFrames,
@@ -410,9 +414,12 @@ export function CanvasBoard({
           ))}
           <CanvasPresenceLayer
             presence={presence}
+            frames={frames}
             drawn={drawn}
             visible={visible}
             motion={motion}
+            runs={previewRuns}
+            readSource={readSource}
           />
           <ElementOutlines
             drawn={drawn}

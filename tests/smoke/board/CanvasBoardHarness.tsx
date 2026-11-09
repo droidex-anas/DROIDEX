@@ -77,6 +77,12 @@ interface BoardHarness {
   buildReady: () => void;
   /** The agents at work finish: their frames' designs land and they leave. */
   finishWork: () => void;
+  /** The write on a frame lands as `rev_landed`, built, rewriting the title `?edit=1` maps. */
+  landWrite: (designId: string) => void;
+  /** The agents' calls end and they leave, their frames as they are. */
+  leave: () => void;
+  /** The agents start new calls on the frames they opened on. */
+  returnToWork: () => void;
   /** A frame joins the open board, the way an agent's create lands. */
   arrive: (designId?: string, rect?: FrameRect) => void;
   /** The pane narrows or widens around the board. */
@@ -438,7 +444,22 @@ function revision(revisionId: string, sequence: number, author: 'user' | 'agent'
   };
 }
 
-const readArtifact = () => Promise.resolve({ artifactId: 'a'.repeat(64), html: '<p>Ready</p>' });
+// A landed write's revision has an artifact of its own, so its preview mounts afresh.
+const readArtifact = (_canvasId: string, _designId: string, revisionId: string) =>
+  Promise.resolve({
+    artifactId: (revisionId === 'rev_landed' ? 'b' : 'a').repeat(64),
+    html: '<p>Ready</p>',
+  });
+
+// Every revision's source is the same but `rev_landed`'s, whose title (40 to 90) is new.
+const SOURCE = '-'.repeat(200);
+const readSource = (_designId: string, revisionId: string) =>
+  Promise.resolve({
+    'main.tsx':
+      revisionId === 'rev_landed'
+        ? `${SOURCE.slice(0, 40)}${'T'.repeat(50)}${SOURCE.slice(90)}`
+        : SOURCE,
+  });
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
@@ -564,6 +585,18 @@ function Harness() {
       }));
       setPresence(NO_PRESENCE);
     },
+    landWrite: (designId) => {
+      const landed = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({ ...frame, revisionId: 'rev_landed', build: built('rev_landed') }));
+      setSnapshot(applyCanvasChange(shown.current, change(landed, [])));
+    },
+    leave: () => {
+      setPresence(NO_PRESENCE);
+    },
+    returnToWork: () => {
+      setPresence(PRESENCE);
+    },
     editCalls,
     seeds,
     answerEdit: (index) => {
@@ -672,6 +705,7 @@ function Harness() {
           snapshot={snapshot}
           interaction={interaction}
           presence={presence}
+          readSource={readSource}
           onInteractionChange={setInteraction}
           renderPreview={(frame, revisionId, selections) =>
             params.get('preview') === 'guest' ? (
