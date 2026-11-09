@@ -15,7 +15,7 @@ import { activeRow, pickerRows, rowAfterKey, type PickerRow } from './designSyst
 import { sameKit, type KitList } from './designSystemsState';
 import { KitThumbnail } from './KitThumbnail';
 import { MenuHeading, MenuNote } from './menuRows';
-import { NewDesignSystemMenu } from './NewDesignSystemMenu';
+import { NewDesignSystemMenu, type FromProject } from './NewDesignSystemMenu';
 import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
 import type { DesignSystemRef, DesignSystemSource, DesignSystemSummary } from './protocol';
 
@@ -28,7 +28,7 @@ export function DesignSystemPickerPanel({
   onPick,
   onOpen,
   onCompose,
-  onFromProject,
+  fromProject,
 }: {
   list: KitList;
   onRetry: () => void;
@@ -37,7 +37,7 @@ export function DesignSystemPickerPanel({
   /** Shows a kit's document in the canvas area; null where there is none, as on the Design home. */
   onOpen: ((kit: DesignSystemSummary) => void) | null;
   onCompose: (kind: DesignSystemSource['kind'], mode: PreviewMode) => void;
-  onFromProject: (() => void) | null;
+  fromProject: FromProject | null;
 }) {
   const [query, setQuery] = useState('');
   const [mode, setMode] = useState<PreviewMode>(current.mode);
@@ -153,7 +153,7 @@ export function DesignSystemPickerPanel({
           onCompose={(kind) => {
             onCompose(kind, mode);
           }}
-          onFromProject={onFromProject}
+          fromProject={fromProject}
         />
       </div>
     </>

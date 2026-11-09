@@ -11,6 +11,7 @@ import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { cn } from '../../components/ui/cn';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { workspaceName } from '../../lib/workspaces';
 import { canvasClient } from './canvasClient';
 import { lacksCanvasTools } from './canvasState';
 import {
@@ -24,6 +25,7 @@ import { choiceOf, shownKit } from './designSystemPickerRows';
 import { DesignSystemPickerPanel, PICKER_WIDTH_PX } from './DesignSystemPickerPanel';
 import { useFramePins } from './framePins';
 import { KitThumbnail } from './KitThumbnail';
+import type { FromProject } from './NewDesignSystemMenu';
 import { NewDesignSystemDialog } from './NewDesignSystemDialog';
 import { useOpenCanvasPane } from './openCanvasPane';
 import type { PreviewMode } from './PreviewModeToggle';
@@ -174,7 +176,7 @@ export function CanvasDesignSystem({
             close();
             setComposing({ kind, mode });
           }}
-          onFromProject={fromProject}
+          fromProject={fromProject}
         />
       </Popover>
       {composing && (
@@ -214,16 +216,19 @@ function ChipName({
 }
 
 /** Puts the §12 sentence in the chat's composer, where its agent can read the project folder. */
-function useFromProject(appSessionId: string | null, close: () => void): (() => void) | null {
+function useFromProject(appSessionId: string | null, close: () => void): FromProject | null {
   const dispatch = useStoreDispatch();
-  const canReadProject = useStoreSelector((state) => {
+  const projectFolder = useStoreSelector((state) => {
     const session = appSessionId === null ? undefined : state.sessions[appSessionId];
-    if (!session || lacksCanvasTools(session)) return false;
-    return session.workspaceKind !== 'none' && session.cwd !== '';
+    if (!session || lacksCanvasTools(session)) return null;
+    return session.workspaceKind !== 'none' && session.cwd !== '' ? session.cwd : null;
   });
-  if (appSessionId === null || !canReadProject) return null;
-  return () => {
-    close();
-    dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
+  if (appSessionId === null || projectFolder === null) return null;
+  return {
+    folderName: workspaceName(projectFolder),
+    onSelect: () => {
+      close();
+      dispatch({ type: 'SEED_COMPOSER', appSessionId, text: FROM_PROJECT_PROMPT });
+    },
   };
 }
