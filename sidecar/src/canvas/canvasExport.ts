@@ -16,7 +16,7 @@ import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
-import { projectExportDirectory } from './canvasProjectExport.js';
+import { projectExportDirectory, projectMapping } from './canvasProjectExport.js';
 import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
@@ -145,7 +145,7 @@ export async function exportCanvasSource(
 
   files.push({ path: 'package.json', content: exportPackageJson() });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
-  files.push({ path: 'README.md', content: README });
+  files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
   await writeExport(resolve(destinationDirectory), files, signal);
   return { filesWritten: files.length };
 }

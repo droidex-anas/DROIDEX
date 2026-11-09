@@ -120,7 +120,7 @@ export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files
 }
 
 /** An import alias reads as mapped: its whole value is a reference to a contract token. */
-function isContractAlias(name: string, value: string): boolean {
+export function isContractAlias(name: string, value: string): boolean {
   const reference = /^var\((--ds-[a-z0-9-]+)\)$/.exec(value);
   return reference !== null && reference[1] !== name && CONTRACT_TOKEN_NAMES.has(reference[1]);
 }

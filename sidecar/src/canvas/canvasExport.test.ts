@@ -12,6 +12,7 @@ import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
 import { kitGuidance } from './designSystemDocument.js';
+import { importDesignSystem } from './designSystemImport.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
@@ -135,6 +136,7 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   assert.deepEqual(await fileSet(destination), expected);
   assert.equal(result.filesWritten, expected.length);
   assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
+  assert.doesNotMatch(await readFile(join(destination, 'README.md'), 'utf8'), /## Mapping/);
   assert.deepEqual(await readFile(join(destination, 'assets', assetId)), image);
   assert.deepEqual(await readFile(join(destination, 'fonts', `${fontId}.woff2`)), font);
   assert.equal(
@@ -346,6 +348,44 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
   assert.deepEqual(await fileSet(destination), []);
 });
 
+test('a kit imported from a project is copied, and the README says which project token each kit token came from', async (t) => {
+  const { root, destination } = await profile(t);
+  const imported = importDesignSystem(
+    [
+      {
+        kind: 'css',
+        text: ':root { --primary: 222 47% 11%; --background: 0 0% 100%; --brand-500: #f97316; }',
+        file: 'src/styles/tokens.css',
+      },
+    ],
+    {
+      id: 'project-kit',
+      name: 'Project kit',
+      provenance: { project: { name: 'shop', files: ['src/styles/tokens.css'] } },
+    },
+  );
+  assert.equal(imported.status, 'imported');
+  const kit = await saveDesignSystem(imported.system, {
+    mutationId: 'project-kit',
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
+  const source = 'export default () => <p style={{ color: "var(--ds-accent)" }}>Hey</p>;';
+  await saveRevision(root, { 'main.tsx': source }, kit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  // The import wrapped --primary's bare channels in hsl(), so a rewrite to it would break.
+  assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
+  assert.ok((await fileSet(destination)).includes('design-system/index.tsx'));
+  const readme = await readFile(join(destination, 'README.md'), 'utf8');
+  assert.match(readme, /## Mapping to shop/);
+  assert.match(readme, /\| `@droidex\/design-system` \| `design-system\/`, copied \|/);
+  assert.match(readme, /\| `--ds-accent` \| `--primary` \|/);
+  assert.match(readme, /\| `--ds-canvas` \| `--background` \|/);
+  assert.match(readme, /\| `--ds-brand-500` \| unmapped \|/);
+  assert.match(readme, /\| `--ds-radius-sm` \| unmapped \|/);
+  assert.doesNotMatch(readme, /\| `--ds-primary` \|/);
+});
 test('kit images travel with canvas and kit exports, one file per image', async (t) => {
   const { root, destination } = await profile(t);
   const cover = Buffer.concat([PNG, Buffer.from('cover')]);
