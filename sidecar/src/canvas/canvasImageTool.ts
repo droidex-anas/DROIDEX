@@ -47,7 +47,7 @@ export async function renderTarget(
 
 /**
  * Writes the render, an SVG sanitised first, and says what was written.
- * Nothing is published once `turnEnded` aborts, however far the write got.
+ * `turnEnded` is checked right before publish: a turn that ended by then publishes nothing.
  */
 export async function saveRender(
   target: RenderTarget,
@@ -61,10 +61,10 @@ export async function saveRender(
     return { path: target.file, format: 'svg', width, height, bytes: bytes.length };
   }
   const bytes = Buffer.from(image.base64, 'base64');
-  await writeInside(target, bytes, overwrite, turnEnded);
-  // The capture relay only passes a PNG, whose IHDR holds its pixel size.
+  // The capture relay only passes a PNG with a whole IHDR, which holds its pixel size.
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
+  await writeInside(target, bytes, overwrite, turnEnded);
   return {
     path: target.file,
     format: 'png',
@@ -128,6 +128,7 @@ async function writeInside(
   const name = segments[segments.length - 1];
   const stagedName = `.${name}.${randomUUID()}.tmp`;
   let staged: string | null = null;
+  let written: { dev: number; ino: number } | null = null;
   try {
     requireTurn(turnEnded);
     const parent = await makeFolderInside(root, segments.slice(0, -1).join('/'), file, () => {
@@ -142,17 +143,23 @@ async function writeInside(
       const found = await lstat(path.join(await folderInside(root, parent, file), stagedName));
       if (found.dev !== opened.dev || found.ino !== opened.ino) throw leavesProject(file);
       await handle.writeFile(bytes);
+      written = opened;
     } finally {
       await handle.close();
     }
-    const target = path.join(parent, name);
+    // Found again just before publishing, so a folder swapped during the write
+    // is refused. Node has no renameat, so a swap after this check still lands.
+    const publishIn = await folderInside(root, parent, file);
+    const found = await lstat(path.join(publishIn, stagedName));
+    if (found.dev !== written.dev || found.ino !== written.ino) throw leavesProject(file);
+    const target = path.join(publishIn, name);
     // The one commit point: an ended turn stops here and its staged file is removed.
     requireTurn(turnEnded);
     if (overwrite) {
-      await rename(staged, target);
+      await rename(path.join(publishIn, stagedName), target);
       staged = null;
     } else {
-      await link(staged, target);
+      await link(path.join(publishIn, stagedName), target);
     }
   } catch (error) {
     if (errorCode(error) === 'EEXIST')

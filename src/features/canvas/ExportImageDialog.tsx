@@ -10,6 +10,7 @@ import {
   CanvasImageError,
   exportCanvasImage,
   exportCanvasSvg,
+  onCanvasPreviewShown,
   readCanvasVector,
 } from './captureCanvasImage';
 import type { RevisionRef } from './protocol';
@@ -52,13 +53,21 @@ export function ExportImageDialog({
   const ended = useRef(new AbortController());
   const titleId = useId();
 
+  // The dialog can open before the preview is ready, or outlive a reload of it.
   useEffect(() => {
     let current = true;
-    void readCanvasVector(canvasId, revision).then((vector) => {
-      if (current) setIsVector(vector !== null && 'svg' in vector);
-    });
+    let latest = 0;
+    const read = () => {
+      const asked = ++latest;
+      void readCanvasVector(canvasId, revision).then((vector) => {
+        if (current && asked === latest) setIsVector(vector !== null && 'svg' in vector);
+      });
+    };
+    read();
+    const stopListening = onCanvasPreviewShown(canvasId, revision, read);
     return () => {
       current = false;
+      stopListening();
     };
   }, [canvasId, revision]);
 

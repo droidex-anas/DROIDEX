@@ -1071,7 +1071,8 @@
   }
 
   /* A raised panel that is not a floating layer, such as a Canvas dialog,
-     whose fields need the same fill: on dark, --field is the panel's own tone. */
+     takes the same field fill: on dark, a recessed well mixed halfway from
+     the raised tone toward --bg, since plain --field matches the panel. */
   .raised-fields {
     --field: var(--field-raised);
   }

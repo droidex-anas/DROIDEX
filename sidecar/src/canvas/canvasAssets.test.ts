@@ -110,6 +110,17 @@ test('an import its requester stopped wanting while it was read is never saved',
   });
   assert.equal(asked, 1);
   assert.deepEqual(await listCanvasAssets(root, canvasId), []);
+
+  let wantedChecks = 0;
+  const stoppedWantingWhileSaving = () => {
+    wantedChecks += 1;
+    return wantedChecks === 1;
+  };
+  await assert.rejects(workspace.importCanvasImage(request, stoppedWantingWhileSaving), {
+    code: 'scope_expired',
+  });
+  assert.equal(wantedChecks, 2);
+  assert.deepEqual(await listCanvasAssets(root, canvasId), []);
 });
 
 test('an SVG import keeps sanitised vectors under the hash of what it keeps', async (t) => {

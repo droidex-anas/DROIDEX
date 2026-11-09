@@ -34,13 +34,14 @@ function createGuest(id, frames = []) {
     id,
     captures,
     identity: { designId: 'dsg_01', revisionId: 'rev_01', generation: 1 },
+    displayScale: 2,
     crashes: 0,
     destroyed: false,
     windowOpenHandler: null,
     webRtcPolicy: null,
     mainFrame: { frames },
-    executeJavaScript() {
-      return Promise.resolve(this.identity);
+    executeJavaScript(script) {
+      return Promise.resolve(script === 'devicePixelRatio' ? this.displayScale : this.identity);
     },
     capturePage(rect, options) {
       return new Promise((resolve, reject) => captures.push({ rect, options, resolve, reject }));
@@ -568,9 +569,10 @@ test('a capture at a scale the display does not draw is drawn again by Chromium 
   assert.equal(guest.debugger.attached, false);
 });
 
-test('a Poster at 1x on a 2x display is drawn again, though its native image is over the caps', async () => {
+test('a Poster at 1x on a 3x display is drawn by Chromium without a native image over the caps', async () => {
   const { hosts } = createHosts();
   const guest = createGuest(41);
+  guest.displayScale = 3;
   const sent = [];
   guest.debugger = {
     attached: false,
@@ -585,13 +587,11 @@ test('a Poster at 1x on a 2x display is drawn again, though its native image is 
   hosts.attach(guest);
 
   const poster = { ...captureRequest, width: 1728, height: 2304, scaleFactor: 1 };
-  const capture = hosts.capture(poster);
-  await new Promise(setImmediate);
-  guest.captures[0].resolve(capturedImage(3456, 4608));
-  const result = await capture;
+  const result = await hosts.capture(poster);
   assert.equal(result.ok, true);
   assert.deepEqual([result.bytes.readUInt32BE(16), result.bytes.readUInt32BE(20)], [1728, 2304]);
-  assert.deepEqual(sent, [0.5]);
+  assert.equal(guest.captures.length, 0);
+  assert.deepEqual(sent, [1 / 3]);
 });
 
 test('a save reads the capture kept for its own request, not the revision’s latest picture', async () => {

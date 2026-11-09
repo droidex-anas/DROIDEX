@@ -60,7 +60,8 @@ export interface OwnedImage {
 
 /**
  * The sidecar owns the durable copy; only Electron main may call this route.
- * `isWanted` is asked once the bytes are read, just before the asset is saved.
+ * `isWanted` is asked once the bytes are read, and again just before the
+ * record that publishes the asset.
  */
 export async function importCanvasImage(
   root: string,
@@ -69,7 +70,7 @@ export async function importCanvasImage(
 ): Promise<OwnedAsset> {
   const { asset, bytes } = await readChosenImage(request);
   if (!isWanted()) throw canvasError('scope_expired', EXPIRED_TURN);
-  await saveOwnedAsset(root, request.canvasId, asset, bytes);
+  await saveOwnedAsset(root, request.canvasId, asset, bytes, isWanted);
   return asset;
 }
 
@@ -139,15 +140,21 @@ export async function saveOwnedAsset(
   canvasId: string,
   asset: OwnedAsset,
   bytes: Buffer,
+  isWanted?: () => boolean,
 ): Promise<void> {
-  await saveImageIn(join(root, canvasId), asset, bytes);
+  await saveImageIn(join(root, canvasId), asset, bytes, isWanted);
 }
 
 /**
  * Content-addressed, immutable storage in `owner`'s `assets` folder, with no
  * links below the profile root. `owner` is a canvas's directory or the kit store's.
  */
-export async function saveImageIn(owner: string, asset: OwnedAsset, bytes: Buffer): Promise<void> {
+export async function saveImageIn(
+  owner: string,
+  asset: OwnedAsset,
+  bytes: Buffer,
+  isWanted: () => boolean = () => true,
+): Promise<void> {
   const assets = join(owner, 'assets');
   const target = join(assets, asset.assetId);
   const temporary = `${target}.${randomUUID()}.tmp`;
@@ -205,7 +212,7 @@ export async function saveImageIn(owner: string, asset: OwnedAsset, bytes: Buffe
     // every path repeats both flushes: an earlier import may have failed either
     // one after its rename, so existing files are not evidence of durability.
     await syncDirectory(assets);
-    await saveAssetMetadata(assets, asset);
+    await saveAssetMetadata(assets, asset, isWanted);
     await syncDirectory(assets);
     await syncDirectory(owner);
   } catch (error) {
@@ -293,7 +300,11 @@ async function readImage(directory: string, assetId: string): Promise<OwnedImage
   }
 }
 
-async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<void> {
+async function saveAssetMetadata(
+  directory: string,
+  asset: OwnedAsset,
+  isWanted: () => boolean,
+): Promise<void> {
   const target = join(directory, `${asset.assetId}.json`);
   try {
     const existing = await readAssetMetadata(target, asset.assetId);
@@ -317,6 +328,7 @@ async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<
     } finally {
       await file.close();
     }
+    if (!isWanted()) throw canvasError('scope_expired', EXPIRED_TURN);
     await rename(temporary, target);
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);
