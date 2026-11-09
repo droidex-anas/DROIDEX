@@ -8,7 +8,7 @@ import { objectValue } from '../values.js';
 
 export interface CanvasActivity {
   toolUseId: string;
-  action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme';
+  action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme' | 'image';
   designIds: string[];
   state: 'running' | 'completed' | 'failed';
   message: string;
@@ -69,6 +69,7 @@ const ACTIONS: Record<CanvasToolName, CanvasActivity['action']> = {
   canvas_arrange: 'arrange',
   canvas_annotate: 'annotate',
   canvas_theme: 'theme',
+  canvas_image: 'image',
 };
 const VERBS = {
   create: ['Creating designs', 'Created designs', 'Could not create designs'],
@@ -77,6 +78,7 @@ const VERBS = {
   arrange: ['Arranging designs', 'Arranged designs', 'Could not arrange designs'],
   annotate: ['Annotating canvas', 'Annotated canvas', 'Could not annotate canvas'],
   theme: ['Reading design system', 'Read design system', 'Could not read design system'],
+  image: ['Saving image', 'Saved image', 'Could not save image'],
 } as const;
 const THEME_VERBS: Record<ThemeOperation, readonly [string, string, string]> = {
   list: VERBS.theme,

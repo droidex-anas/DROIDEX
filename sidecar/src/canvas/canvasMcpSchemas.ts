@@ -88,3 +88,34 @@ export const themeSchema = z.discriminatedUnion('operation', [
     })
     .strict(),
 ]);
+const projectPathSchema = z.string().min(1).max(1024);
+const scaleSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+/** canvas_image's arguments as MCP lists them; `imageSchema` holds each kind to its own. */
+export const imageShape = {
+  ...mutationScopeShape,
+  kind: z.enum(['render', 'import']),
+  designId: canvasIdentifierSchema.optional(),
+  format: z.enum(['png', 'svg']).optional(),
+  scale: scaleSchema.optional().describe('PNG pixels per CSS pixel; 1 is the frame’s own size.'),
+  to: projectPathSchema
+    .optional()
+    .describe('For render: the file to write, relative to the project folder.'),
+  overwrite: z.boolean().optional(),
+  from: projectPathSchema
+    .optional()
+    .describe('For import: the image to import, relative to the project folder.'),
+};
+export const imageSchema = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...mutationScopeShape,
+      kind: z.literal('render'),
+      designId: canvasIdentifierSchema,
+      format: z.enum(['png', 'svg']).default('png'),
+      scale: scaleSchema.default(1),
+      to: projectPathSchema,
+      overwrite: z.boolean().default(false),
+    })
+    .strict(),
+  z.object({ ...mutationScopeShape, kind: z.literal('import'), from: projectPathSchema }).strict(),
+]);

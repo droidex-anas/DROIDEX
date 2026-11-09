@@ -6,6 +6,7 @@ export const CANVAS_TOOL_NAMES = [
   'canvas_create',
   'canvas_write',
   'canvas_inspect',
+  'canvas_image',
   'canvas_arrange',
   'canvas_annotate',
   'canvas_theme',

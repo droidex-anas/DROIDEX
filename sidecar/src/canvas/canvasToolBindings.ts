@@ -18,6 +18,7 @@ const ACTIONS: CanvasToolBinding['action'][] = [
   'arrange',
   'annotate',
   'theme',
+  'image',
 ];
 
 function pathFor(appSessionId: string): string {

@@ -40,7 +40,7 @@ async function createFrame(call: Harness['call'], scopeId: string | undefined, m
   return { canvasId: created.created.canvasId, designId: first.designId };
 }
 
-test('seven Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
+test('eight Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
   const h = await harness(t);
   assert.equal(h.server.name, CANVAS_MCP_SERVER_NAME);
   assert.deepEqual(
@@ -60,6 +60,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       h.kits,
       () => 'chat-one',
       () => null,
+      () => Promise.reject(new Error('Image import unavailable')),
       purpose,
     );
     t.after(() => server.close());

@@ -9,6 +9,7 @@ import type { AgentAnnotation } from '../canvas/canvasAnnotationReport.js';
 import type { CanvasCapture } from '../canvas/canvasCaptures.js';
 import { canvasError } from '../canvas/canvasError.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import type { ImportProjectImage } from '../canvas/desktopImageChannel.js';
 import { createCanvasMcpServer } from '../canvas/canvasMcpServer.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
@@ -67,6 +68,8 @@ export async function harness(
   fs?: CanvasFileSystem,
   capture?: CanvasCapture,
   projectFolder: () => string | null = () => null,
+  importImage: ImportProjectImage = () =>
+    Promise.reject(canvasError('storage_failed', 'No desktop app imports images in this suite.')),
 ) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
@@ -110,6 +113,7 @@ export async function harness(
     kits,
     () => 'chat-one',
     projectFolder,
+    importImage,
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
     const target = server.tools.find((entry) => entry.name === name);

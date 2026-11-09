@@ -292,7 +292,7 @@ export interface TranscriptEvent {
   // but missing or untargeted snapshots cannot replace a targeted activity.
   canvasActivity?: {
     toolUseId: string;
-    action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme';
+    action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme' | 'image';
     designIds: string[];
     state: 'running' | 'completed' | 'failed';
     message: string;

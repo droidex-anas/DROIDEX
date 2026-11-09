@@ -50,6 +50,7 @@ function harness() {
     { check: () => Promise.reject(new Error('Kit builds unavailable')) },
     () => 'chat-one',
     () => null,
+    () => Promise.reject(new Error('Image import unavailable')),
   );
   const interactions = {
     requestApproval: async (approval: ProviderApprovalRequest) => {
@@ -244,6 +245,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         { check: () => Promise.reject(new Error('Kit builds unavailable')) },
         () => 'chat-one',
         () => null,
+        () => Promise.reject(new Error('Image import unavailable')),
       ),
     ],
   };

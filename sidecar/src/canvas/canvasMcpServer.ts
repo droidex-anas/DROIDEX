@@ -15,6 +15,8 @@ import {
   annotateSchema,
   arrangeSchema,
   createSchema,
+  imageSchema,
+  imageShape,
   inspectSchema,
   pageSchema,
   readSchema,
@@ -24,6 +26,7 @@ import {
   writeSchema,
 } from './canvasMcpSchemas.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { importFromProject, renderTarget, saveRender } from './canvasImageTool.js';
 import { KitBuildError, kitSaveShape, saveKit } from './canvasMcpDesignSystemSave.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
@@ -34,8 +37,9 @@ import type { SessionPurpose } from '../protocol.js';
 import type { CanvasCapture } from './canvasCaptures.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
+import type { ImportProjectImage } from './desktopImageChannel.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type { CanvasFrame, CanvasScope } from './protocol.js';
+import type { CanvasFrame, CanvasScope, CaptureImage } from './protocol.js';
 import { canvasIdentifierSchema, designSystemRefSchema, writeFilesInputSchema } from './schema.js';
 import { listDesignSystems, readDesignSystem } from './designSystems.js';
 
@@ -50,6 +54,7 @@ export function createCanvasMcpServer(
   kits: Pick<KitPreviews, 'check'>,
   getAppSessionId: () => string,
   projectFolder: (appSessionId: string) => string | null,
+  importImage: ImportProjectImage,
   purpose?: SessionPurpose,
 ) {
   const dispatch = async (
@@ -102,11 +107,26 @@ export function createCanvasMcpServer(
     };
   };
 
-  /** The live preview's PNG of the frame's current revision, never another one. */
-  const screenshot = async (
+  /** A frame this turn may use, on the canvas the chat is attached to. */
+  const scopedFrame = async (scope: CanvasScope, designId: string) => {
+    if (scope.allowedDesignIds !== 'canvas' && !scope.allowedDesignIds.includes(designId))
+      throw canvasError('scope_expired', 'That frame is outside this turn’s assigned frames.');
+    const snapshot = await board(scope);
+    const frame = snapshot?.frames.find((entry) => entry.designId === designId);
+    if (!snapshot || !frame)
+      throw canvasError(
+        'invalid_input',
+        'That design is not on this canvas. Read the canvas summary again.',
+      );
+    return { canvasId: snapshot.canvasId, frame };
+  };
+
+  /** The live preview's image of the frame's current revision, never another one. */
+  const captureFrame = async (
     canvasId: string,
     frame: CanvasFrame,
     scope: CanvasScope,
+    image: CaptureImage,
   ): Promise<string> => {
     const { designId, revisionId, build } = frame;
     if (revisionId === null)
@@ -116,10 +136,7 @@ export function createCanvasMcpServer(
         'capture_unavailable',
         'That revision has no working build to capture. Inspect its diagnostics, and capture it once it is ready.',
       );
-    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId), {
-      format: 'png',
-      scale: null,
-    });
+    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId), image);
   };
 
   const tools = [
@@ -275,21 +292,7 @@ export function createCanvasMcpServer(
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = inspectSchema.parse(raw);
-          if (
-            scope.allowedDesignIds !== 'canvas' &&
-            !scope.allowedDesignIds.includes(input.designId)
-          )
-            throw canvasError(
-              'scope_expired',
-              'That frame is outside this turn’s assigned frames.',
-            );
-          const snapshot = await board(scope);
-          const frame = snapshot?.frames.find((entry) => entry.designId === input.designId);
-          if (!snapshot || !frame)
-            throw canvasError(
-              'invalid_input',
-              'That design is not on this canvas. Read the canvas summary again.',
-            );
+          const { canvasId, frame } = await scopedFrame(scope, input.designId);
           if (input.revisionId && frame.revisionId !== input.revisionId)
             throw canvasError(
               'revision_conflict',
@@ -304,10 +307,45 @@ export function createCanvasMcpServer(
           const facts = {
             designId: frame.designId,
             revisionId: frame.revisionId,
-            build: buildReport(frame, previews.reportFor(snapshot.canvasId, frame)),
+            build: buildReport(frame, previews.reportFor(canvasId, frame)),
           };
           if (input.kind === 'diagnostics') return facts;
-          return { ...facts, png: await screenshot(snapshot.canvasId, frame, scope) };
+          const png = await captureFrame(canvasId, frame, scope, { format: 'png', scale: null });
+          return { ...facts, png };
+        }),
+    ),
+    tool(
+      'canvas_image',
+      'Save a frame as an image file in this chat’s project folder, or make an image already in that folder one of the canvas’s images, using the scopeId from this turn’s canvas_read. Use it for deliverables (posters, logos, icons, social images) and for the project’s own images. kind render captures the frame’s current revision as DROIDEX renders it, which needs a ready build and its canvas open in a DROIDEX window, and writes it to "to", a path relative to the project folder: format png (the default) at scale 1, 2 or 3 (default 1, the frame’s own CSS size), or svg when the frame’s root element is a single <svg>. It never replaces a file unless overwrite is true, and the reply shows the PNG. kind import reads "from", a PNG, JPEG, WebP or SVG under 10 MiB in the project folder, and returns its reference: canvas-asset:<assetId> places it in a design’s source.',
+      imageShape,
+      (raw) =>
+        dispatch(raw, 'mutation', async (scope) => {
+          const input = imageSchema.parse(raw);
+          const folder = projectFolder(scope.appSessionId);
+          if (input.kind === 'import') {
+            if (scope.canvasId === null)
+              throw canvasError(
+                'invalid_input',
+                'This chat has no canvas yet. Create a frame first, then import the image.',
+              );
+            const signal = turns.scopeEnded(scope.scopeId);
+            return importFromProject(folder, input.from, scope.canvasId, importImage, signal);
+          }
+          const target = await renderTarget(folder, input.to, input.format);
+          const { canvasId, frame } = await scopedFrame(scope, input.designId);
+          const image: CaptureImage =
+            input.format === 'svg' ? { format: 'svg' } : { format: 'png', scale: input.scale };
+          const captured = await captureFrame(canvasId, frame, scope, image);
+          // A render the turn outlived is not written.
+          turns.requireScope(scope.scopeId);
+          const saved = await saveRender(
+            target,
+            input.format === 'svg'
+              ? { format: 'svg', markup: captured }
+              : { format: 'png', base64: captured },
+            input.overwrite,
+          );
+          return { designId: frame.designId, revisionId: frame.revisionId, ...saved };
         }),
     ),
     tool(

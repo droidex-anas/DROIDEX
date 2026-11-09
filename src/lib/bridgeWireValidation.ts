@@ -531,7 +531,7 @@ function isCanvasActivity(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['toolUseId', 'message']) &&
-    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'].includes(
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme', 'image'].includes(
       value.action as string,
     ) &&
     ['running', 'completed', 'failed'].includes(value.state as string) &&

@@ -476,8 +476,8 @@ successfully; build publication checks the captured job at the final manifest re
 
 ### Canvas agent tools
 
-Each chat gets one local `droidex-canvas` MCP server with seven tools: read, create,
-write, inspect, arrange, annotate, and theme. Annotations are the board's own layer,
+Each chat gets one local `droidex-canvas` MCP server with eight tools: read, create,
+write, inspect, image, arrange, annotate, and theme. Annotations are the board's own layer,
 versioned apart from frames; `canvas_read` relates each one to the frames it is
 over, near or points at, and an agent may change only the annotations its chat drew. `CanvasTurns` mints a scope when a turn starts;
 call `canvas_read` with no arguments first to obtain that chat's newest live lease.
@@ -562,6 +562,16 @@ or seven seconds without an answer return `capture_unavailable`. Revoking the
 turn's lease aborts the wait, and a read revalidates its lease before delivery,
 so a capture that settles after its turn ended is dropped. Writes and turn
 settlement never wait on a capture. Element capture remains `capture_unavailable`.
+
+`canvas_image` (`canvasImageTool.ts`) works in the chat's project folder, which
+comes from the session, never from the agent. A render takes the same capture at
+the scale or format asked for, sanitises an SVG with `sanitiseSvg`, and writes it
+to a relative path inside the folder: no `..`, no absolute path, no symbolic link
+on the way, and no replacing a file unless `overwrite` is set. An import checks the
+named file the same way, then sends main a `canvas.importImage` request over the
+sidecar's IPC channel (`desktopImageChannel.ts`); main reads and decodes it with the
+importer it uses for a picked image and answers `canvas.importImageResult`, and the
+agent gets a `canvas-asset:` reference. Ending the turn aborts both waits.
 
 ### Canvas live previews
 

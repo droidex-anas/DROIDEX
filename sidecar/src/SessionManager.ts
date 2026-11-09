@@ -5,6 +5,7 @@ import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasCapture } from './canvas/canvasCaptures.js';
+import type { ImportProjectImage } from './canvas/desktopImageChannel.js';
 import { canvasError } from './canvas/canvasError.js';
 import type { KitPreviews } from './canvas/kitPreviews.js';
 import { type McpServerConfig } from '@factory/droid-sdk';
@@ -224,6 +225,8 @@ export interface SessionManagerOptions {
   canvasCapture?: CanvasCapture;
   // Compiles a kit an agent saves before it is written.
   kitPreviews?: Pick<KitPreviews, 'check'>;
+  // Asks the desktop app's main process to import an image from a chat's project.
+  importProjectImage?: ImportProjectImage;
   onUserPrompt?: (appSessionId: string) => void;
   onSessionAvailable?: (appSessionId: string) => void;
   onScheduledCapacityChanged?: () => void;
@@ -335,6 +338,7 @@ export class SessionManager {
   private readonly canvasTurns: CanvasTurns;
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly canvasCapture: CanvasCapture;
+  private readonly importProjectImage: ImportProjectImage;
   private readonly kitPreviews: Pick<KitPreviews, 'check'>;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
@@ -422,6 +426,12 @@ export class SessionManager {
     this.kitPreviews = options.kitPreviews ?? {
       check: () => Promise.reject(new Error('Design system builds are unavailable.')),
     };
+    this.importProjectImage =
+      options.importProjectImage ??
+      (() =>
+        Promise.reject(
+          canvasError('storage_failed', 'Importing project images needs the DROIDEX desktop app.'),
+        ));
     const limits = runtimeLimits(options.dependencies);
     let startWatcher: (
       options: SessionFileWatcherOptions,
@@ -1696,6 +1706,7 @@ export class SessionManager {
         if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
         return summary.cwd;
       },
+      this.importProjectImage,
       ref.purpose,
     );
     if (kind === 'codex') {

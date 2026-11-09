@@ -20,6 +20,7 @@ import {
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js';
+import { createDesktopImageChannel } from './canvas/desktopImageChannel.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
 import type { ClientCommand } from './protocol.js';
@@ -131,6 +132,7 @@ const manager = new SessionManager(
     canvasCapture: (canvasId, ref, signal, image) =>
       canvasBridge.capture(canvasId, ref, signal, image),
     kitPreviews,
+    importProjectImage: createDesktopImageChannel(),
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);
     },
