@@ -100,7 +100,7 @@ test('a selection past what a prompt carries says so, and the next press untags 
 });
 
 test('the tag row counts the frames a press changes, not the frames selected', () => {
-  const frames = Array.from({ length: 34 }, (_, index) => frame(`d${String(index)}`, 'r1'));
+  const frames = Array.from({ length: 35 }, (_, index) => frame(`d${String(index)}`, 'r1'));
   toggleFramePins('chat-c', 'cv_1', frames.slice(0, 2));
   // Two of three tagged with room to spare: the press tags the third.
   assert.equal(tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(0, 3)), 'Tag in chat');
@@ -109,8 +109,12 @@ test('the tag row counts the frames a press changes, not the frames selected', (
     'Tag 3 frames in chat',
   );
 
+  // With room for one more, the press tags one of the four.
+  toggleFramePins('chat-c', 'cv_1', frames.slice(2, 31));
+  assert.equal(tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(31, 35)), 'Tag in chat');
+
   // A full prompt untags what is tagged in the selection, and only that.
-  toggleFramePins('chat-c', 'cv_1', frames.slice(2, 32));
+  toggleFramePins('chat-c', 'cv_1', frames.slice(31, 32));
   const label = tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(29));
   assert.equal(label, 'Untag 3 frames from chat');
   toggleFramePins('chat-c', 'cv_1', frames.slice(29));
