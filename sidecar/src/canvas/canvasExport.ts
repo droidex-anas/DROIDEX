@@ -1,6 +1,16 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readdir, rename, rm, rmdir } from 'node:fs/promises';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+} from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,14 +26,19 @@ import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
-import { projectExportDirectory, projectMapping } from './canvasProjectExport.js';
-import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
+import {
+  projectExportDestination,
+  projectMapping,
+  type ProjectDestination,
+} from './canvasProjectExport.js';
+import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
 const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
 const EXPORT_FAILED = 'The export could not be written. Check the folder and try again.';
+const MOVED = 'The export folder moved while it was written. Nothing was published there.';
 const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
 
 /** The folder Electron main chose; each export also requires it to be absolute. */
@@ -77,15 +92,22 @@ async function readPinned<T>(canvasId: string, read: () => Promise<T>): Promise<
   }
 }
 
-/** Export one immutable revision. Only Electron main calls this over its private route. */
+/**
+ * Export one immutable revision into a folder main chose, or one inside a
+ * chat's project. Only Electron main calls this over its private route.
+ */
 export async function exportCanvasSource(
   canvasId: string,
   ref: RevisionRef,
-  destinationDirectory: string,
+  destination: string | ProjectDestination,
   signal?: AbortSignal,
 ): Promise<{ filesWritten: number }> {
-  const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory });
-  if (!parsed.success || !isAbsolute(destinationDirectory))
+  const { directory, projectRoot } =
+    typeof destination === 'string'
+      ? { directory: destination, projectRoot: undefined }
+      : destination;
+  const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory: directory });
+  if (!parsed.success || !isAbsolute(directory))
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
 
   signal?.throwIfAborted();
@@ -146,7 +168,7 @@ export async function exportCanvasSource(
   files.push({ path: 'package.json', content: exportPackageJson() });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
-  await writeExport(resolve(destinationDirectory), files, signal);
+  await writeExport(resolve(directory), files, signal, projectRoot);
   return { filesWritten: files.length };
 }
 
@@ -193,11 +215,17 @@ function exportPackageJson(): string {
   }
 }
 
-/** Publishes the files into an empty, unlinked folder in one rename, or leaves it untouched. */
+/**
+ * Publishes the files into an empty, unlinked folder in one rename, or leaves it
+ * untouched. A folder in a chat's project names the project's real root: the
+ * folder, its staging copy and its parent are found again before each write
+ * and before publication, and refused once moved, linked or outside it.
+ */
 export async function writeExport(
   directory: string,
   files: ExportFile[],
   signal?: AbortSignal,
+  projectRoot?: string,
 ): Promise<void> {
   assertDistinctTargets(directory, exportPaths(directory, files));
   let staging: string | null = null;
@@ -210,10 +238,14 @@ export async function writeExport(
     if (entries.some((entry) => entry.isSymbolicLink()))
       throw canvasError('invalid_source_path', UNSAFE_PATH);
     if (entries.length > 0) throw canvasError('invalid_input', COLLISION);
+    const destination = { path: directory, dev: selected.dev, ino: selected.ino };
+    await assertUnmoved(destination, projectRoot);
     staging = await mkdtemp(join(dirname(directory), `.${basename(directory)}-staging-`));
-    await writeStagingFiles(staging, files, signal);
+    const made = await lstat(staging);
+    const staged = { path: staging, dev: made.dev, ino: made.ino };
+    await writeStagingFiles(staged.path, files, signal, () => assertUnmoved(staged, projectRoot));
     signal?.throwIfAborted();
-    await publishStaging(staging, directory, signal);
+    await publishStaging(staged, destination, projectRoot, signal);
     staging = null;
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -225,20 +257,48 @@ export async function writeExport(
   }
 }
 
+/** A folder this export checked or made, as it was then. */
+interface CheckedFolder {
+  path: string;
+  dev: number;
+  ino: number;
+}
+
+/**
+ * Refuses unless the folder is still the one checked. In a project, its parent
+ * must also still be its own real path inside the project root; the time
+ * between this check and the write that follows it remains open.
+ */
+async function assertUnmoved(folder: CheckedFolder, projectRoot?: string): Promise<void> {
+  const found = await lstat(folder.path).catch(() => null);
+  if (found?.dev !== folder.dev || found.ino !== folder.ino)
+    throw canvasError('invalid_source_path', MOVED);
+  if (projectRoot === undefined) return;
+  const parent = dirname(folder.path);
+  const real = await realpath(parent).catch(() => null);
+  if (real !== parent || !(real === projectRoot || isInsideProject(projectRoot, real)))
+    throw canvasError('invalid_source_path', MOVED);
+}
+
 async function publishStaging(
-  staging: string,
-  directory: string,
+  staged: CheckedFolder,
+  destination: CheckedFolder,
+  projectRoot: string | undefined,
   signal?: AbortSignal,
 ): Promise<void> {
+  const directory = destination.path;
   const backup = await mkdtemp(join(dirname(directory), `.${basename(directory)}-backup-`));
   let originalMoved = false;
   let published = false;
   try {
+    await assertUnmoved(destination, projectRoot);
     await rename(directory, backup);
     originalMoved = true;
     if ((await readdir(backup)).length > 0) throw canvasError('invalid_input', COLLISION);
     signal?.throwIfAborted();
-    await rename(staging, directory);
+    await assertUnmoved({ ...destination, path: backup }, projectRoot);
+    await assertUnmoved(staged, projectRoot);
+    await rename(staged.path, directory);
     published = true;
     try {
       await rmdir(backup);
@@ -252,7 +312,6 @@ async function publishStaging(
     if (!originalMoved) await rmdir(backup);
   }
 }
-
 function exportPaths(directory: string, files: ExportFile[]): string[] {
   return files.map(({ path }) => {
     const parsed = sourcePathSchema.safeParse(path);
@@ -273,10 +332,12 @@ function exportPaths(directory: string, files: ExportFile[]): string[] {
 async function writeStagingFiles(
   staging: string,
   files: ExportFile[],
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  beforeEach: () => Promise<void>,
 ): Promise<void> {
   for (const { path, content } of files) {
     signal?.throwIfAborted();
+    await beforeEach();
     const target = join(staging, ...path.split('/'));
     await mkdir(dirname(target), { recursive: true });
     const file = await open(
@@ -330,12 +391,12 @@ export function serveCanvasSourceExport(
     if (!inProject.success)
       throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
     const { canvasId, ref, project } = inProject.data;
-    const directory = await projectExportDirectory(
+    const destination = await projectExportDestination(
       projectFolder(project.appSessionId),
       project.folder,
       signal,
     );
-    return exportCanvasSource(canvasId, ref, directory, signal);
+    return exportCanvasSource(canvasId, ref, destination, signal);
   });
   return true;
 }

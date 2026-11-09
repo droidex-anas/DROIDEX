@@ -12,12 +12,18 @@ import { makeFolderInside, projectRelativePath } from './projectPaths.js';
 
 const NO_FOLDER = 'This chat has no project folder. Start the chat in a project to export to it.';
 
+/** A folder inside a chat's project, and the project's real path it must stay inside. */
+export interface ProjectDestination {
+  projectRoot: string;
+  directory: string;
+}
+
 /** The export folder's real path inside the project, made with any missing parents. */
-export async function projectExportDirectory(
+export async function projectExportDestination(
   projectFolder: string | null,
   folder: string,
   signal: AbortSignal,
-): Promise<string> {
+): Promise<ProjectDestination> {
   if (projectFolder === null) throw canvasError('invalid_input', NO_FOLDER);
   const named = projectRelativePath(folder);
   if ('problem' in named) throw canvasError('invalid_input', named.problem);
@@ -27,9 +33,10 @@ export async function projectExportDirectory(
   } catch {
     throw canvasError('invalid_input', 'The project folder cannot be read.');
   }
-  return makeFolderInside(root, named.path, named.path, () => {
+  const directory = await makeFolderInside(root, named.path, named.path, () => {
     signal.throwIfAborted();
   });
+  return { projectRoot: root, directory };
 }
 
 /**

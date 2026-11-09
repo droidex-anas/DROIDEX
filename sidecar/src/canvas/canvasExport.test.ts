@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,6 +21,7 @@ import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { projectExportDestination } from './canvasProjectExport.js';
 import { kitGuidance } from './designSystemDocument.js';
 import { importDesignSystem } from './designSystemImport.js';
 import { exportDesignSystem } from './designSystemExport.js';
@@ -326,6 +337,51 @@ test('an export to project writes a new folder inside the chat project and never
   });
 });
 
+test('a project folder whose parent becomes a link mid-export writes nothing outside and publishes nothing', async (t) => {
+  const { root } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  await mkdir(join(root, 'project'));
+  const outside = join(root, 'outside');
+  await mkdir(join(outside, 'hey'), { recursive: true });
+  const destination = await projectExportDestination(
+    join(root, 'project'),
+    'design/hey',
+    new AbortController().signal,
+  );
+  const design = dirname(destination.directory);
+  const probe = await open(join(outside, 'probe'), 'w');
+  const fileHandle = Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile };
+  const originalWrite = fileHandle.writeFile;
+  await probe.close();
+  await rm(join(outside, 'probe'));
+  // The first staged write swaps the checked parent for a link out of the project.
+  let swapped = false;
+  t.mock.method(
+    fileHandle,
+    'writeFile',
+    async function (
+      this: typeof probe,
+      content: Parameters<typeof probe.writeFile>[0],
+      options?: Parameters<typeof probe.writeFile>[1],
+    ) {
+      if (!swapped) {
+        swapped = true;
+        await rename(design, `${design}-moved`);
+        await symlink(outside, design);
+      }
+      return originalWrite.call(this, content, options);
+    },
+  );
+
+  await assert.rejects(exportCanvasSource(canvasId, ref, destination), {
+    code: 'invalid_source_path',
+    message: 'The export folder moved while it was written. Nothing was published there.',
+  });
+  assert.ok(swapped);
+  assert.deepEqual(await readdir(outside), ['hey']);
+  assert.deepEqual(await readdir(join(outside, 'hey')), []);
+  assert.deepEqual(await readdir(join(`${design}-moved`, 'hey')), []);
+});
 test('refuses linked destination paths and escaping revision paths', async (t) => {
   const { root, destination } = await profile(t);
   await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);

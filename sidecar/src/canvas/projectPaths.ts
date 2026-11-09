@@ -31,8 +31,10 @@ export function isInsideProject(root: string, target: string): boolean {
 /**
  * Creates the missing folders of `folder` (a normal relative path, '' for the
  * root itself) under the real project `root`, refusing a link or a file among
- * them, and returns the folder's real path. `checkpoint` runs before each
- * folder is made and throws to stop. Refusals name `named`, the caller's path.
+ * them, and returns the folder's real path. Each step's parent is found
+ * again first, so one swapped for a link mid-walk makes nothing through it.
+ * `checkpoint` runs before each folder is made and throws to stop. Refusals
+ * name `named`, the caller's path.
  */
 export async function makeFolderInside(
   root: string,
@@ -42,7 +44,7 @@ export async function makeFolderInside(
 ): Promise<string> {
   let directory = root;
   for (const segment of folder === '' ? [] : folder.split('/')) {
-    directory = path.join(directory, segment);
+    directory = path.join(await folderInside(root, directory, named), segment);
     const entry = await lstat(directory).catch((error: unknown) => {
       if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
       throw error;
