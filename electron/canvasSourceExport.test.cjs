@@ -37,6 +37,66 @@ test('refuses malformed Canvas source export requests before opening the chooser
   assert.equal(chooserCalls, 1);
 });
 
+test('an export to project posts its folder without opening the chooser', async () => {
+  let chooserCalls = 0;
+  const posted = [];
+  const exportSource = createCanvasSourceExport({
+    chooseDirectory: async () => {
+      chooserCalls += 1;
+      return { canceled: false, filePaths: ['/tmp/export'] };
+    },
+    getBridgeInfo: async () => ({ port: 1234 }),
+    exportToken: () => 'host-token',
+    fetchRequest: async (_url, init) => {
+      posted.push(JSON.parse(init.body));
+      return new Response(JSON.stringify({ filesWritten: 3 }));
+    },
+  });
+  const project = { appSessionId: 'chat_1', folder: 'design/hey' };
+  const requestId = 'export_1';
+
+  for (const input of [
+    { ...validRequest, project: { ...project, folder: '' }, requestId },
+    { ...validRequest, project: { ...project, extra: true }, requestId },
+    { ...validRequest, project, requestId: '../escape' },
+    { ...validRequest, project, requestId, destinationDirectory: '/tmp/export' },
+  ]) {
+    assert.equal((await exportSource(input)).code, 'invalid_input');
+  }
+  assert.deepEqual(await exportSource({ ...validRequest, project, requestId }), {
+    ok: true,
+    filesWritten: 3,
+  });
+  assert.equal(chooserCalls, 0);
+  assert.deepEqual(posted, [{ ...validRequest, project }]);
+});
+
+test('cancelling an export to project aborts its request and answers cancelled', async () => {
+  const posted = Promise.withResolvers();
+  const exportSource = createCanvasSourceExport({
+    chooseDirectory: async () => assert.fail('An export to project opens no chooser.'),
+    getBridgeInfo: async () => ({ port: 1234 }),
+    exportToken: () => 'host-token',
+    fetchRequest: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init.signal.addEventListener('abort', () => reject(init.signal.reason));
+        posted.resolve();
+      }),
+  });
+  const request = {
+    ...validRequest,
+    project: { appSessionId: 'chat_1', folder: 'design/hey' },
+    requestId: 'export_1',
+  };
+
+  const running = exportSource(request);
+  await posted.promise;
+  // One request ID names one export, so a second with it is refused while the first runs.
+  assert.equal((await exportSource(request)).code, 'invalid_input');
+  exportSource.cancel('export_1');
+  assert.deepEqual(await running, { ok: false, cancelled: true });
+});
+
 test('refuses malformed sidecar replies before forwarding the export result', async () => {
   let response = new Response(JSON.stringify({ filesWritten: 'many' }), { status: 200 });
   const exportSource = createCanvasSourceExport({

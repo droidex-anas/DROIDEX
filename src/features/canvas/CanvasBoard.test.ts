@@ -31,6 +31,7 @@ const FRAME_ACTIONS: FrameActions = {
   applyVariant: () => Promise.resolve(false),
   saveToLibrary: () => undefined,
   exportImage: () => undefined,
+  exportToProject: null,
 };
 
 function frame(designId: string, rect: FrameRect): CanvasFrame {

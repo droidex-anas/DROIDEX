@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
-import { mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  symlink,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -11,11 +21,14 @@ import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { ProjectExports, type ProjectExportAdmission } from './projectExports.js';
 import { kitGuidance } from './designSystemDocument.js';
+import { importDesignSystem } from './designSystemImport.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
+import { createHarness } from '../testing/sessionLifecycleHarness.js';
 import type { DesignSystemRef } from './protocol.js';
 
 const canvasId = 'export-canvas';
@@ -135,6 +148,7 @@ test('exports the exact revision, referenced image, and complete pinned kit', as
   assert.deepEqual(await fileSet(destination), expected);
   assert.equal(result.filesWritten, expected.length);
   assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
+  assert.doesNotMatch(await readFile(join(destination, 'README.md'), 'utf8'), /## Mapping/);
   assert.deepEqual(await readFile(join(destination, 'assets', assetId)), image);
   assert.deepEqual(await readFile(join(destination, 'fonts', `${fontId}.woff2`)), font);
   assert.equal(
@@ -272,6 +286,151 @@ test('the renderer bridge token cannot invoke host-only export', async (t) => {
   });
 });
 
+/** Answers export to project requests over the host route, admitting chats as `admit` says. */
+async function projectRoute(
+  t: TestContext,
+  admit: (appSessionId: string) => ProjectExportAdmission | null,
+) {
+  const bridge = startBridgeServer({
+    requestedPort: 0,
+    token: 'renderer-token',
+    canvasExportToken: 'host-token',
+    admitProjectExport: admit,
+    onCommand: async () => undefined,
+  });
+  t.after(() => bridge.close());
+  await bridge.ready;
+  return async (appSessionId: string, folder: string) => {
+    const response = await fetch(`http://127.0.0.1:${String(bridge.port)}/canvas/source-export`, {
+      method: 'POST',
+      headers: { 'x-canvas-export-token': 'host-token' },
+      body: JSON.stringify({ canvasId, ref, project: { appSessionId, folder } }),
+    });
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+}
+
+/** Runs `act` once, just before the export's first staged file is written. */
+async function beforeFirstWrite(t: TestContext, scratch: string, act: () => Promise<void> | void) {
+  const probe = await open(join(scratch, '.probe'), 'w');
+  const fileHandle = Object.getPrototypeOf(probe) as { writeFile: typeof probe.writeFile };
+  const originalWrite = fileHandle.writeFile;
+  await probe.close();
+  await rm(join(scratch, '.probe'));
+  let acted = false;
+  t.mock.method(
+    fileHandle,
+    'writeFile',
+    async function (
+      this: typeof probe,
+      content: Parameters<typeof probe.writeFile>[0],
+      options?: Parameters<typeof probe.writeFile>[1],
+    ) {
+      if (!acted) {
+        acted = true;
+        await act();
+      }
+      return originalWrite.call(this, content, options);
+    },
+  );
+  return () => acted;
+}
+
+test('an export to project writes a new folder inside the chat project and never leaves it', async (t) => {
+  const { root } = await profile(t);
+  const project = join(root, 'project');
+  const outside = join(root, 'outside');
+  await mkdir(project);
+  await mkdir(outside);
+  const exports = new ProjectExports();
+  const exportTo = await projectRoute(t, (appSessionId) =>
+    appSessionId === 'project-chat' ? exports.admit(appSessionId, project) : null,
+  );
+
+  // A revision that cannot be read makes no folder in the project.
+  assert.equal((await exportTo('project-chat', 'design/hey')).status, 400);
+  assert.deepEqual(await readdir(project), []);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const written = await exportTo('project-chat', 'design/hey');
+  assert.equal(written.status, 200);
+  assert.ok((await fileSet(join(project, 'design/hey'))).includes('src/main.tsx'));
+  assert.deepEqual(await exportTo('project-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_input',
+      message: 'The chosen folder is not empty. Choose an empty folder.',
+    },
+  });
+
+  await symlink(outside, join(project, 'linked'));
+  for (const folder of ['../outside', 'linked/hey', '/tmp/hey']) {
+    const refused = await exportTo('project-chat', folder);
+    assert.equal(refused.status, 400, folder);
+    assert.equal(refused.body.code, 'invalid_input', folder);
+  }
+  assert.deepEqual(await fileSet(outside), []);
+  assert.deepEqual(await exportTo('folderless-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_input',
+      message: 'This chat has no project folder. Start the chat in a project to export to it.',
+    },
+  });
+});
+
+test('a project folder whose parent becomes a link mid-export writes nothing outside and publishes nothing', async (t) => {
+  const { root } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const project = join(root, 'project');
+  await mkdir(project);
+  const outside = join(root, 'outside');
+  await mkdir(join(outside, 'hey'), { recursive: true });
+  const exports = new ProjectExports();
+  const exportTo = await projectRoute(t, (appSessionId) => exports.admit(appSessionId, project));
+  const design = join(project, 'design');
+  const swapped = await beforeFirstWrite(t, root, async () => {
+    await rename(design, `${design}-moved`);
+    await symlink(outside, design);
+  });
+
+  assert.deepEqual(await exportTo('project-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'invalid_source_path',
+      message: 'The export folder moved while it was written. Nothing was published there.',
+    },
+  });
+  assert.ok(swapped());
+  assert.deepEqual(await readdir(outside), ['hey']);
+  assert.deepEqual(await readdir(join(outside, 'hey')), []);
+  assert.deepEqual(await readdir(join(`${design}-moved`, 'hey')), []);
+});
+
+test('closing the chat for good stops its export to project before anything is published', async (t) => {
+  const { root } = await profile(t);
+  await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
+  const project = join(root, 'project');
+  await mkdir(project);
+  const exports = new ProjectExports();
+  const chats = createHarness([], undefined, { projectExports: exports });
+  const exportTo = await projectRoute(t, (appSessionId) => exports.admit(appSessionId, project));
+  let closing: Promise<void> | undefined;
+  const closed = await beforeFirstWrite(t, root, () => {
+    closing = chats.lifecycle.close('project-chat');
+  });
+
+  assert.deepEqual(await exportTo('project-chat', 'design/hey'), {
+    status: 400,
+    body: {
+      code: 'scope_expired',
+      message: 'The chat closed before the export finished. Nothing was published.',
+    },
+  });
+  assert.ok(closed());
+  await closing;
+  assert.deepEqual(await readdir(join(project, 'design')), ['hey']);
+  assert.deepEqual(await readdir(join(project, 'design', 'hey')), []);
+});
 test('refuses linked destination paths and escaping revision paths', async (t) => {
   const { root, destination } = await profile(t);
   await saveRevision(root, { 'main.tsx': 'export default () => null;' }, defaultKit);
@@ -294,6 +453,46 @@ test('refuses linked destination paths and escaping revision paths', async (t) =
   assert.deepEqual(await fileSet(destination), []);
 });
 
+test('a kit imported from a project is copied, and the README names each kit token’s alias', async (t) => {
+  const { root, destination } = await profile(t);
+  const imported = importDesignSystem(
+    [
+      {
+        kind: 'css',
+        text: ':root { --primary: 222 47% 11%; --background: 0 0% 100%; --brand-500: #f97316; }',
+        file: 'src/styles/tokens.css',
+      },
+    ],
+    {
+      id: 'project-kit',
+      name: 'Project kit',
+      provenance: { project: { name: 'shop', files: ['src/styles/tokens.css'] } },
+    },
+  );
+  assert.equal(imported.status, 'imported');
+  const kit = await saveDesignSystem(imported.system, {
+    mutationId: 'project-kit',
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
+  const source = 'export default () => <p style={{ color: "var(--ds-accent)" }}>Hey</p>;';
+  await saveRevision(root, { 'main.tsx': source }, kit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  // The import wrapped --primary's bare channels in hsl(), so a rewrite to it would break.
+  assert.equal(await readFile(join(destination, 'src/main.tsx'), 'utf8'), source);
+  assert.ok((await fileSet(destination)).includes('design-system/index.tsx'));
+  const readme = await readFile(join(destination, 'README.md'), 'utf8');
+  assert.match(readme, /## Mapping to shop/);
+  assert.match(readme, /\| `@droidex\/design-system` \| `design-system\/`, copied \|/);
+  // The kit keeps only normalised names, so the README claims no original spelling.
+  assert.match(readme, /\| `--ds-accent` \| `--ds-primary` \|/);
+  assert.match(readme, /\| `--ds-canvas` \| `--ds-background` \|/);
+  assert.match(readme, /\| `--ds-brand-500` \| none \|/);
+  assert.match(readme, /\| `--ds-radius-sm` \| none \|/);
+  assert.doesNotMatch(readme, /^\| `--ds-primary` \|/m);
+  assert.doesNotMatch(readme, /imported from|\| `--primary` \|/);
+});
 test('kit images travel with canvas and kit exports, one file per image', async (t) => {
   const { root, destination } = await profile(t);
   const cover = Buffer.concat([PNG, Buffer.from('cover')]);

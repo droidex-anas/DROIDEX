@@ -57,6 +57,8 @@ export interface FrameActions {
   applyVariant: (variant: CanvasFrame, source: CanvasFrame) => Promise<boolean>;
   saveToLibrary: (frame: CanvasFrame) => void;
   exportImage: (frame: CanvasFrame) => void;
+  /** Null when this chat has no project folder to export into. */
+  exportToProject: ((frame: CanvasFrame) => void) | null;
 }
 
 export interface FrameToolbarProps {
@@ -318,33 +320,62 @@ function SelectToolbar({
           aria-label={`More for ${frame.name}`}
           className="min-h-0 overflow-y-auto p-1"
         >
-          <MenuRow
-            label="Save to library…"
-            disabled={!frame.revisionId}
-            onRun={() => {
-              close();
-              actions.saveToLibrary(frame);
-            }}
-          />
-          <MenuRow
-            label="Export image…"
-            disabled={!exportableRevision(frame)}
-            onRun={() => {
-              close();
-              actions.exportImage(frame);
-            }}
-          />
-          <MenuRow
-            label="Delete frame"
-            hint="⌫"
-            onRun={() => {
-              close();
-              onDelete();
-            }}
-          />
+          <MoreItems frame={frame} actions={actions} close={close} onDelete={onDelete} />
         </div>
       </Popover>
     </ToolbarShell>
+  );
+}
+
+function MoreItems({
+  frame,
+  actions,
+  close,
+  onDelete,
+}: {
+  frame: CanvasFrame;
+  actions: FrameActions;
+  close: () => void;
+  onDelete: () => void;
+}) {
+  const { exportToProject } = actions;
+  return (
+    <>
+      <MenuRow
+        label="Save to library…"
+        disabled={!frame.revisionId}
+        onRun={() => {
+          close();
+          actions.saveToLibrary(frame);
+        }}
+      />
+      <MenuRow
+        label="Export image…"
+        disabled={!exportableRevision(frame)}
+        onRun={() => {
+          close();
+          actions.exportImage(frame);
+        }}
+      />
+      {exportToProject && (
+        <MenuRow
+          label="Export to project…"
+          disabled={!frame.revisionId}
+          onRun={() => {
+            close();
+            exportToProject(frame);
+          }}
+        />
+      )}
+      <MenuRow
+        label="Delete frame"
+        hint="⌫"
+        onRun={() => {
+          close();
+          onDelete();
+        }}
+      />
+    </>
   );
 }
 
