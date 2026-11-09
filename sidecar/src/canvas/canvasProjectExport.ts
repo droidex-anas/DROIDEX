@@ -78,7 +78,8 @@ punctuation turned into hyphens, so \`--Brand_500\` became \`--brand-500\`. The
 kit does not keep the original spelling. A property it matched to a kit token
 stays as an alias of that token, usually with \`--ds-\` in front, so
 \`--ds-primary\` refers to \`--ds-accent\`. One it did not match is a kit token of
-its own, under its normalised name.
+its own, with \`--ds-\` in front of its normalised name, so \`--brand-500\` became
+\`--ds-brand-500\`.
 
 The source still uses the kit's names, because the import may have changed a
 value on the way in (bare HSL channels are wrapped in \`hsl()\`). Compare the
