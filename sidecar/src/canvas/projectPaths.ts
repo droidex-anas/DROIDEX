@@ -45,16 +45,29 @@ export async function makeFolderInside(
   let directory = root;
   for (const segment of folder === '' ? [] : folder.split('/')) {
     directory = path.join(await folderInside(root, directory, named), segment);
-    const entry = await lstat(directory).catch((error: unknown) => {
-      if (error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    let entry = await lstat(directory).catch((error: unknown) => {
+      if (hasCode(error, 'ENOENT')) return null;
       throw error;
     });
     checkpoint();
-    if (entry === null) await mkdir(directory);
-    else if (entry.isSymbolicLink()) throw linkedPath(named);
-    else if (!entry.isDirectory()) throw refusal(`${named} goes through a file, not a folder.`);
+    if (entry === null) {
+      try {
+        await mkdir(directory);
+        continue;
+      } catch (error) {
+        if (!hasCode(error, 'EEXIST')) throw error;
+      }
+      // Something else made it meanwhile, so it is checked like one found.
+      entry = await lstat(directory);
+    }
+    if (entry.isSymbolicLink()) throw linkedPath(named);
+    if (!entry.isDirectory()) throw refusal(`${named} goes through a file, not a folder.`);
   }
   return folderInside(root, directory, named);
+}
+
+function hasCode(error: unknown, code: string): boolean {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 }
 
 /** The folder's real path, refused unless it is the project or inside it. */
