@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import { kitSaveShape } from './canvasMcpDesignSystemSave.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
+import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import {
   arrangeFramesInputSchema,
   canvasIdentifierSchema,
@@ -88,7 +89,7 @@ export const themeSchema = z.discriminatedUnion('operation', [
     })
     .strict(),
 ]);
-const projectPathSchema = z.string().min(1).max(1024);
+const projectPathSchema = z.string().min(1).max(MAX_PROJECT_PATH_LENGTH);
 const scaleSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 /** canvas_image's arguments as MCP lists them; `imageSchema` holds each kind to its own. */
 export const imageShape = {

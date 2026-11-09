@@ -3,7 +3,7 @@
 
 import path from 'node:path';
 
-const MAX_PROJECT_PATH_LENGTH = 1024;
+export const MAX_PROJECT_PATH_LENGTH = 1024;
 
 /** The path in its normal form, or why it cannot name a file inside the folder. */
 export function projectRelativePath(raw: string): { path: string } | { problem: string } {
