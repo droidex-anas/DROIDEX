@@ -40,7 +40,7 @@ export async function renderTarget(
 
 /**
  * Writes the render, an SVG sanitised first, and says what was written.
- * Nothing is published once `turnEnded` aborts, however far the write got.
+ * `turnEnded` is checked right before publish: a turn that ended by then publishes nothing.
  */
 export async function saveRender(
   target: RenderTarget,
