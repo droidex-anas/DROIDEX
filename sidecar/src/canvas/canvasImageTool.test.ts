@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { promises as fs } from 'node:fs';
 import {
   lstat,
   mkdir,
@@ -6,10 +7,12 @@ import {
   readdir,
   readFile,
   realpath,
+  rename,
   rm,
   symlink,
   writeFile,
 } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -93,6 +96,7 @@ test('a render writes the revision’s PNG at its scale into the project, and ke
   assert.equal(again.code, 'invalid_input');
   assert.match(again.message ?? '', /already exists/);
   assert.equal((await turn.image({ ...render, overwrite: true })).ok, true);
+  assert.deepEqual(await readdir(join(turn.project, 'exports')), ['poster.png']);
 });
 
 test('a render names a file inside the project with its format’s extension, and never follows a link out', async (t) => {
@@ -117,6 +121,37 @@ test('a render names a file inside the project with its format’s extension, an
   assert.equal(linked.code, 'invalid_input');
   assert.match(linked.message ?? '', /symbolic link/);
   assert.deepEqual(await readdir(outside), []);
+});
+
+test('a render whose folder is swapped for a link after it was checked writes nothing outside', async (t) => {
+  const turn = await imageTurn(t, () => Promise.resolve(PNG));
+  const outside = await temporaryFolder(t, 'canvas-image-outside-');
+  const exports = join(turn.project, 'exports');
+  await mkdir(exports);
+  const realOpen = fs.open;
+  const swap = t.mock.method(fs, 'open', async (...args: Parameters<typeof fs.open>) => {
+    if (String(args[0]).startsWith(join(exports, '.poster.png.'))) {
+      await rename(exports, join(turn.project, 'moved'));
+      await symlink(outside, exports);
+    }
+    return realOpen(...args);
+  });
+  syncBuiltinESMExports();
+  try {
+    const reply = await turn.image({
+      kind: 'render',
+      designId: turn.designId,
+      to: 'exports/poster.png',
+      overwrite: true,
+    });
+    assert.equal(reply.code, 'invalid_input');
+    assert.match(reply.message ?? '', /leaves the project folder/);
+  } finally {
+    swap.mock.restore();
+    syncBuiltinESMExports();
+  }
+  assert.deepEqual(await readdir(outside), []);
+  assert.deepEqual(await readdir(join(turn.project, 'moved')), []);
 });
 
 test('an SVG render is sanitised before it is written, and a refused capture writes nothing', async (t) => {

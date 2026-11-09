@@ -3,8 +3,9 @@
 // canvas's assets. The folder comes from the session, never from the agent,
 // and every path the agent names stays inside it.
 
+import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, open, realpath } from 'node:fs/promises';
+import { link, lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
@@ -96,14 +97,19 @@ export async function importFromProject(
 }
 
 /**
- * Creates the folders on the way, refusing a link or a file among them, and
- * opens the file itself without following a link; an existing file is kept
- * unless the agent asked to replace it.
+ * Creates the folders on the way, refusing a link or a file among them, then
+ * writes a staged file beside the target and publishes it in one step: a
+ * rename to replace, a link to refuse an existing file. A folder can be
+ * swapped for a link once checked, so the staged file is opened under the
+ * folder's real path and written only once it is still found inside the project.
  */
 async function writeInside({ root, file }: RenderTarget, bytes: Buffer, overwrite: boolean) {
   const segments = file.split('/');
-  let directory = root;
+  const name = segments[segments.length - 1];
+  const stagedName = `.${name}.${randomUUID()}.tmp`;
+  let staged: string | null = null;
   try {
+    let directory = root;
     for (const segment of segments.slice(0, -1)) {
       directory = path.join(directory, segment);
       const entry = await lstat(directory).catch((error: unknown) => {
@@ -114,22 +120,39 @@ async function writeInside({ root, file }: RenderTarget, bytes: Buffer, overwrit
       else if (entry.isSymbolicLink()) throw symbolicLink(file);
       else if (!entry.isDirectory()) throw refusal(`${file} goes through a file, not a folder.`);
     }
-    const flags =
-      constants.O_WRONLY |
-      constants.O_CREAT |
-      constants.O_NOFOLLOW |
-      (overwrite ? constants.O_TRUNC : constants.O_EXCL);
-    const handle = await open(path.join(directory, segments[segments.length - 1]), flags, 0o644);
+    const parent = await folderInside(root, directory, file);
+    staged = path.join(parent, stagedName);
+    const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
+    const handle = await open(staged, flags, 0o644);
     try {
+      const opened = await handle.stat();
+      const found = await lstat(path.join(await folderInside(root, parent, file), stagedName));
+      if (found.dev !== opened.dev || found.ino !== opened.ino) throw leaves(file);
       await handle.writeFile(bytes);
     } finally {
       await handle.close();
+    }
+    const target = path.join(parent, name);
+    if (overwrite) {
+      await rename(staged, target);
+      staged = null;
+    } else {
+      await link(staged, target);
     }
   } catch (error) {
     if (errorCode(error) === 'EEXIST')
       throw refusal(`${file} already exists. Pass overwrite: true to replace it.`);
     throw fileProblem(error, file);
+  } finally {
+    if (staged !== null) await rm(staged, { force: true }).catch(() => undefined);
   }
+}
+
+/** The folder's real path, refused unless it is the project or inside it. */
+async function folderInside(root: string, folder: string, file: string): Promise<string> {
+  const real = await realpath(folder);
+  if (real !== root && !isInsideProject(root, real)) throw leaves(file);
+  return real;
 }
 
 function insideProject(raw: string): string {
