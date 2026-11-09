@@ -276,17 +276,37 @@ const GENERATED_FRAME_REPORTER = `(() => {
   const INHERITED_PAINT = [
     'fill',
     'fill-opacity',
+    'fill-rule',
+    'clip-rule',
     'stroke',
     'stroke-width',
     'stroke-opacity',
+    'stroke-linecap',
+    'stroke-linejoin',
+    'stroke-miterlimit',
+    'stroke-dasharray',
+    'stroke-dashoffset',
+    'paint-order',
+    'visibility',
     'color',
     'font-family',
     'font-size',
     'font-style',
+    'font-variant',
     'font-weight',
     'letter-spacing',
+    'word-spacing',
+    'text-anchor',
+    'dominant-baseline',
   ];
-  const OWN_PAINT = { 'stop-color': 'rgb(0, 0, 0)', 'flood-color': 'rgb(0, 0, 0)', opacity: '1' };
+  const OWN_PAINT = {
+    'stop-color': 'rgb(0, 0, 0)',
+    'stop-opacity': '1',
+    'flood-color': 'rgb(0, 0, 0)',
+    'flood-opacity': '1',
+    opacity: '1',
+    display: 'inline',
+  };
   const vector = () => {
     const svg = root.childElementCount === 1 ? root.firstElementChild : null;
     if (!(svg instanceof SVGSVGElement)) return { refused: 'not_vector' };
