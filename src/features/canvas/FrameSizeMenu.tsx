@@ -1,5 +1,6 @@
-// The selected frame's size, typed or picked from the screens designs are
-// usually built for. Either one is a single layout write, which the board makes.
+// The selected frame's size, typed or picked from the screens, pages, posts and
+// marks designs are usually built for. Either one is a single layout write,
+// which the board makes.
 
 import { Fragment, useState, type KeyboardEvent, type RefObject } from 'react';
 import { RotateCcw } from '@droidex/icons';
@@ -43,7 +44,7 @@ export function FrameSizeMenu({
       width={240}
     >
       <SizeFields rect={rect} onResize={resize} />
-      <div role="menu" aria-label="Screen sizes" className="min-h-0 overflow-y-auto p-1.5 pt-0">
+      <div role="menu" aria-label="Frame sizes" className="min-h-0 overflow-y-auto p-1.5 pt-0">
         {PRESET_GROUPS.map((group) => (
           <Fragment key={group}>
             <MenuHeading>{group}</MenuHeading>
