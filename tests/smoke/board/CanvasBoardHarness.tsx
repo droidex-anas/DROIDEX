@@ -242,19 +242,10 @@ const SEEDED: Annotation[] = [
   },
 ];
 const seeded = params.has('marks') ? SEEDED : [];
-// `?edit=1` maps Design A's source to two elements Edit can pick.
+// `?edit=1` maps Design A's source to two elements Edit can pick, in the
+// build's order: by file, then by start.
 const ELEMENTS: SourceElement[] = params.has('edit')
   ? [
-      {
-        elementId: 'el_title',
-        file: 'main.tsx',
-        start: 40,
-        end: 90,
-        line: 3,
-        tagName: 'h1',
-        component: 'Card',
-        editability: 'literal',
-      },
       {
         elementId: 'el_card',
         file: 'main.tsx',
@@ -264,6 +255,16 @@ const ELEMENTS: SourceElement[] = params.has('edit')
         tagName: 'section',
         component: 'Card',
         editability: 'shared',
+      },
+      {
+        elementId: 'el_title',
+        file: 'main.tsx',
+        start: 40,
+        end: 90,
+        line: 3,
+        tagName: 'h1',
+        component: 'Card',
+        editability: 'literal',
       },
     ]
   : [];
