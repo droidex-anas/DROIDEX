@@ -11,7 +11,7 @@ const capturedPng = Buffer.from(
   'base64',
 );
 
-async function boundary(t, { fs = fsp, choose } = {}) {
+async function boundary(t, { fs = fsp, choose, sidecar } = {}) {
   const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'canvas-image-save-'));
   t.after(() => fsp.rm(directory, { recursive: true, force: true }));
   const selected = path.join(directory, 'design.png');
@@ -34,6 +34,7 @@ async function boundary(t, { fs = fsp, choose } = {}) {
         : null;
     },
     getWindow: () => ({}),
+    sidecar,
   });
   return { save, dialogs, reads, directory, selected };
 }
@@ -83,6 +84,35 @@ test('PNG export writes only to the path chosen by the OS dialog', async (t) => 
   assert.notEqual(stagingPath, selected);
   assert.deepEqual(await fsp.readFile(selected), capturedPng);
   assert.deepEqual(await fsp.readdir(directory), ['design.png']);
+});
+
+test('an SVG is written only as the sidecar sanitised it, and never when it refuses', async (t) => {
+  const sanitised = '<svg xmlns="http://www.w3.org/2000/svg"/>';
+  const asked = [];
+  let answer = new Response(sanitised);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    asked.push({ url, secret: init.headers['x-canvas-secret'], body: init.body });
+    return answer;
+  };
+  t.after(() => (globalThis.fetch = realFetch));
+  const sidecar = {
+    getBridgeInfo: async () => ({ port: 4000 }),
+    canvasAssetSecret: () => 'secret',
+  };
+  const { save, dialogs, selected } = await boundary(t, { sidecar });
+  const svg = '<svg><script>alert(1)</script></svg>';
+
+  assert.deepEqual(await save({ format: 'svg', svg, suggestedName: 'Mark' }), { ok: true });
+  assert.equal(await fsp.readFile(selected, 'utf8'), sanitised);
+  assert.deepEqual(asked, [
+    { url: 'http://127.0.0.1:4000/canvas/sanitise-svg', secret: 'secret', body: svg },
+  ]);
+  assert.equal(dialogs[0].defaultPath, 'Mark.svg');
+
+  answer = new Response('{}', { status: 400 });
+  assert.equal((await save({ format: 'svg', svg })).code, 'capture_unavailable');
+  assert.equal(dialogs.length, 1);
 });
 
 test('cancellation and uncached revisions never write an image', async (t) => {

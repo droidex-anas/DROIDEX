@@ -1,7 +1,9 @@
 import {
+  type CanvasImageSaveResult,
   cancelCanvasPreviewCapture,
   captureCanvasPreview,
   saveCanvasImage,
+  saveCanvasSvg,
 } from '../../lib/desktop';
 import type { PreviewVector } from './previewDocument';
 import type {
@@ -167,10 +169,27 @@ export async function exportCanvasImage(
   signal: AbortSignal,
 ): Promise<boolean> {
   await captureCanvasImage(canvasId, ref, signal, scaleFactor);
-  const saved = await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName);
-  if (saved.ok) return true;
-  if ('cancelled' in saved) return false;
-  throw new CanvasImageError(saved.message, saved.code);
+  return saved(await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName));
+}
+
+/** Reads the root `<svg>` afresh, so the file is the revision on show; main writes only its sanitised rebuild. */
+export async function exportCanvasSvg(
+  canvasId: string,
+  ref: RevisionRef,
+  suggestedName: string,
+): Promise<boolean> {
+  const vector = await readCanvasVector(canvasId, ref);
+  if (!vector || !('svg' in vector))
+    throw new CanvasImageError(
+      'This design is no longer a single SVG. Export it as a PNG instead.',
+    );
+  return saved(await saveCanvasSvg(vector.svg, suggestedName));
+}
+
+function saved(result: CanvasImageSaveResult): boolean {
+  if (result.ok) return true;
+  if ('cancelled' in result) return false;
+  throw new CanvasImageError(result.message, result.code);
 }
 
 /**

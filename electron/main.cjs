@@ -161,6 +161,7 @@ const saveCanvasImage = createCanvasImageSave({
   fs: fsp,
   readThumbnail: canvasPreviewHosts.readThumbnail,
   getWindow: () => mainWindow,
+  sidecar: sidecarSupervisor,
 });
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via

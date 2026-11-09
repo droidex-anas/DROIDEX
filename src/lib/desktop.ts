@@ -331,6 +331,7 @@ export interface DroidexApi {
     revisionId: string,
     suggestedName: string,
   ) => Promise<CanvasImageSaveResult>;
+  canvasSvgSave: (svg: string, suggestedName: string) => Promise<CanvasImageSaveResult>;
   canvasExportSource: (canvasId: string, ref: RevisionRef) => Promise<CanvasExportResult>;
   canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
@@ -915,6 +916,16 @@ export async function saveCanvasImage(
   if (!api)
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
   return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
+}
+
+export async function saveCanvasSvg(
+  svg: string,
+  suggestedName: string,
+): Promise<CanvasImageSaveResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
+  return api.canvasSvgSave(svg, suggestedName);
 }
 
 /** Opens the host's folder chooser, then writes one kit version there. */

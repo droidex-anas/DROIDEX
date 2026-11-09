@@ -5,11 +5,13 @@ import type {
   CanvasPreviewCaptureResult,
   CanvasPreviewCaptureRequest,
 } from '../../lib/desktop';
+import type { PreviewVector } from './previewDocument';
 import {
   answerCaptureRequest,
   CanvasImageError,
   captureCanvasImage,
   exportCanvasImage,
+  exportCanvasSvg,
   onCanvasImageCaptured,
   registerCanvasPreview,
 } from './captureCanvasImage';
@@ -23,6 +25,7 @@ function desktopCapture() {
   }[] = [];
   const cancelled: string[] = [];
   const saves: [string, string, string, string][] = [];
+  const svgSaves: [string, string][] = [];
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -37,20 +40,30 @@ function desktopCapture() {
           saves.push(args);
           return Promise.resolve<CanvasImageSaveResult>({ ok: true });
         },
+        canvasSvgSave: (...args: [string, string]) => {
+          svgSaves.push(args);
+          return Promise.resolve<CanvasImageSaveResult>({ ok: true });
+        },
       },
     },
   });
-  return { pending, cancelled, saves, close: () => Reflect.deleteProperty(globalThis, 'window') };
+  return {
+    pending,
+    cancelled,
+    saves,
+    svgSaves,
+    close: () => Reflect.deleteProperty(globalThis, 'window'),
+  };
 }
 
-function mount(guestId: number) {
+function mount(guestId: number, vector: PreviewVector | null = null) {
   return registerCanvasPreview('cv_01', ref, {
     guestId,
     generation: guestId,
     width: 720,
     height: 720,
     scaleFactor: 2,
-    vector: () => Promise.resolve(null),
+    vector: () => Promise.resolve(vector),
   });
 }
 
@@ -158,6 +171,26 @@ test('export saves the revision captured at its scale without forwarding rendere
 
     assert.equal(await exported, true);
     assert.deepEqual(desktop.saves, [['cv_01', 'dsg_01', 'rev_01', 'design']]);
+  } finally {
+    release();
+    desktop.close();
+  }
+});
+
+test('an SVG export saves the live root svg, and refuses a design that is not one', async () => {
+  const desktop = desktopCapture();
+  let release = mount(41, { svg: '<svg/>' });
+  try {
+    assert.equal(await exportCanvasSvg('cv_01', ref, 'mark'), true);
+    assert.deepEqual(desktop.svgSaves, [['<svg/>', 'mark']]);
+
+    release();
+    release = mount(42, { refused: 'not_vector' });
+    await assert.rejects(
+      exportCanvasSvg('cv_01', ref, 'mark'),
+      (error: unknown) => error instanceof CanvasImageError,
+    );
+    assert.equal(desktop.svgSaves.length, 1);
   } finally {
     release();
     desktop.close();

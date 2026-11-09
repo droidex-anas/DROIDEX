@@ -130,6 +130,12 @@ const invokeContract = [
     'canvas-image-save',
     { canvasId: 'cv_01', designId: 'dsg_01', revisionId: 'rev_01', suggestedName: 'design' },
   ],
+  [
+    'canvasSvgSave',
+    ['<svg/>', 'mark'],
+    'canvas-image-save',
+    { format: 'svg', svg: '<svg/>', suggestedName: 'mark' },
+  ],
   ['setAutomaticDiagnostics', [false], 'diagnostics-preference-set', { enabled: false }],
   ['setHardwareAcceleration', [false], 'hardware-acceleration-preference-set', { enabled: false }],
   ['downloadAppUpdate', [], 'app-download-update', undefined],
