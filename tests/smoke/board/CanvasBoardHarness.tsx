@@ -19,6 +19,7 @@ import {
 import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
+import { ExportToProjectDialog } from '../../../src/features/canvas/ExportToProjectDialog';
 import {
   syncFramePins,
   toggleFramePins,
@@ -375,6 +376,8 @@ function askSwitch(input: SwitchRevisionInput): Promise<WriteReceipt> {
   return reply.promise;
 }
 const dialogs: string[] = [];
+// `?project=1` opens the real Export to project dialog too, on the page's own `window.droidex`.
+const projectExport: { open: ((frame: CanvasFrame) => void) | null } = { open: null };
 const variantCalls: BoardHarness['variantCalls'] = [];
 const elementVariantRequests: string[] = [];
 const variantReplies: PromiseWithResolvers<void>[] = [];
@@ -446,6 +449,10 @@ const frameActions: FrameActions = {
   applyVariant: (variant, source) => variantSets.apply('chat_1', 'cv_board', variant, source),
   saveToLibrary: (frame) => dialogs.push(`save:${frame.designId}`),
   exportImage: (frame) => dialogs.push(`export:${frame.designId}`),
+  exportToProject: (frame) => {
+    dialogs.push(`project:${frame.designId}`);
+    projectExport.open?.(frame);
+  },
 };
 
 function revision(revisionId: string, sequence: number, author: 'user' | 'agent'): RevisionSummary {
@@ -491,6 +498,8 @@ function Harness() {
   const [interaction, setInteraction] = useState(SELECT_MODE);
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<CanvasFrame | null>(null);
+  if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
   const picks = useElementPins('chat_1');
   const board = useRef<CanvasBoardHandle>(null);
@@ -836,6 +845,17 @@ function Harness() {
           </aside>
         )}
       </div>
+      {exporting?.revisionId && (
+        <ExportToProjectDialog
+          appSessionId="chat_1"
+          canvasId={snapshot.canvasId}
+          revision={{ designId: exporting.designId, revisionId: exporting.revisionId }}
+          frameName={exporting.name}
+          onClose={() => {
+            setExporting(null);
+          }}
+        />
+      )}
       <Toaster />
     </div>
   );

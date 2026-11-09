@@ -2,6 +2,7 @@ import type { SteeredReportDelivery } from './SessionLifecycle.js';
 import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
+import { ProjectExports, type ProjectExportAdmission } from './canvas/projectExports.js';
 import { createCanvasMcpServer } from './canvas/canvasMcpServer.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { CanvasCapture } from './canvas/canvasCaptures.js';
@@ -336,6 +337,7 @@ export class SessionManager {
   private readonly autonomyMutationTails = new Map<string, Promise<void>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
+  private readonly projectExports = new ProjectExports();
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly canvasCapture: CanvasCapture;
   private readonly importProjectImage: ImportProjectImage;
@@ -798,6 +800,7 @@ export class SessionManager {
       },
       runPrimaryTurn: (liveSession, request) => this.runPrimaryTurn(liveSession, request),
       canvasTurns: this.canvasTurns,
+      projectExports: this.projectExports,
       eventFlow: this.eventFlow,
       settleStreaming: (appSessionId, sourceSessionId) =>
         this.timeline.settleStreaming(appSessionId, sourceSessionId),
@@ -1478,6 +1481,23 @@ export class SessionManager {
     return this.registry.resolveSummary(appSessionId);
   }
 
+  /** The chat's project folder, or null for a chat started outside a project. */
+  projectFolder(appSessionId: string): string | null {
+    const summary = this.registry.resolveSummary(appSessionId);
+    if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
+    return summary.cwd;
+  }
+
+  /** Admits an export into the chat's project folder while the chat is open; null otherwise. */
+  admitProjectExport(appSessionId: string): ProjectExportAdmission | null {
+    if (this.shutdownPromise) return null;
+    // A closed chat keeps its summary, and its exports were already ended.
+    const liveSession = this.registry.getLive(appSessionId);
+    if (!liveSession || liveSession.closeMode === 'discard-pending') return null;
+    const folder = this.projectFolder(appSessionId);
+    return folder === null ? null : this.projectExports.admit(appSessionId, folder);
+  }
+
   transcriptTail(appSessionId: string, limit: number, fullText = false) {
     return this.timeline.tail(appSessionId, limit, fullText);
   }
@@ -1701,11 +1721,7 @@ export class SessionManager {
       this.canvasCapture,
       this.kitPreviews,
       () => ref.id,
-      (appSessionId) => {
-        const summary = this.registry.resolveSummary(appSessionId);
-        if (!summary || summary.workspaceKind === 'none' || summary.cwd.trim() === '') return null;
-        return summary.cwd;
-      },
+      (appSessionId) => this.projectFolder(appSessionId),
       this.importProjectImage,
       ref.purpose,
     );

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { ReasoningEffort, type McpServerConfig } from '@factory/droid-sdk';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
+import { ProjectExports } from '../canvas/projectExports.js';
 import type { HistoricalSession } from '../history.js';
 import type {
   FactoryDefaultSettings,
@@ -130,6 +131,7 @@ export function createHarness(
     releaseRuntimeForCapacity: () => Promise.resolve(false),
     provider: () => provider,
     canvasTurns,
+    projectExports: new ProjectExports(),
     registry,
     ensureConnected: () => {
       record('runtime', 'ensureConnected');

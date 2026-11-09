@@ -181,6 +181,7 @@ export function createRemoteDesktopApi(
         code: 'storage_failed',
         message: 'Exporting Canvas source is only available on your laptop.',
       }),
+    canvasExportSourceCancel: () => Promise.resolve(),
     canvasExportDesignSystem: () =>
       Promise.resolve({
         ok: false,

@@ -85,6 +85,7 @@ const server = startBridgeServer({
     importKitImage,
   },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
+  admitProjectExport: (appSessionId) => manager.admitProjectExport(appSessionId),
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.

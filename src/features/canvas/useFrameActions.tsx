@@ -1,12 +1,14 @@
 // The frame toolbar's actions bound to the chat whose pane shows the canvas,
-// and the dialogs its Save to library… and Export image… open.
+// and the dialogs its Save to library…, Export image… and Export to project… open.
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
+import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient as canvas, variantSets } from './canvasClient';
 import { exportableRevision } from './captureCanvasImage';
 import { useElementPins } from './elementPins';
 import { ExportImageDialog } from './ExportImageDialog';
+import { ExportToProjectDialog } from './ExportToProjectDialog';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
 import type { CanvasFrame, FrameRect, RevisionRef } from './protocol';
@@ -18,7 +20,8 @@ import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 /** What a dialog acts on, fixed when it opens so a later build cannot retarget it. */
 type OpenDialog =
   | { kind: 'save'; revision: RevisionRef; frameName: string }
-  | { kind: 'export'; revision: RevisionRef; frameName: string; rect: FrameRect };
+  | { kind: 'export'; revision: RevisionRef; frameName: string; rect: FrameRect }
+  | { kind: 'project'; revision: RevisionRef; frameName: string; appSessionId: string };
 
 export function useFrameActions(
   appSessionId: string,
@@ -34,6 +37,11 @@ export function useFrameActions(
   const makeVariants = useVariantRequests(appSessionId, canvasId);
   const picks = useElementPins(appSessionId);
   const agentWorking = useSessionLive(appSessionId);
+  const hasProject = useStoreSelector((state) => {
+    if (!Object.hasOwn(state.sessions, appSessionId)) return false;
+    const session = state.sessions[appSessionId];
+    return session.workspaceKind !== 'none' && session.cwd !== '';
+  });
   // Its identity is the toolbar's history owner, so it changes only with the chat or canvas.
   const history = useMemo(
     (): HistoryClient => ({
@@ -78,6 +86,17 @@ export function useFrameActions(
       const revision = exportableRevision(frame);
       if (revision) setOpen({ kind: 'export', revision, frameName: frame.name, rect: frame.rect });
     },
+    exportToProject: hasProject
+      ? (frame) => {
+          if (frame.revisionId)
+            setOpen({
+              kind: 'project',
+              revision: { designId: frame.designId, revisionId: frame.revisionId },
+              frameName: frame.name,
+              appSessionId,
+            });
+        }
+      : null,
   };
 
   return { actions, dialog: open && dialogFor(canvasId, open, close) };
@@ -87,6 +106,16 @@ function dialogFor(canvasId: string, open: OpenDialog, onClose: () => void): Rea
   if (open.kind === 'save')
     return (
       <SaveToLibraryDialog
+        canvasId={canvasId}
+        revision={open.revision}
+        frameName={open.frameName}
+        onClose={onClose}
+      />
+    );
+  if (open.kind === 'project')
+    return (
+      <ExportToProjectDialog
+        appSessionId={open.appSessionId}
         canvasId={canvasId}
         revision={open.revision}
         frameName={open.frameName}

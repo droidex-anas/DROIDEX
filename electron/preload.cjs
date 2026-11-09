@@ -172,8 +172,20 @@ contextBridge.exposeInMainWorld('droidex', {
     ipcRenderer.invoke('canvas-image-save', { requestId, suggestedName }),
   canvasSvgSave: (svg, suggestedName) =>
     ipcRenderer.invoke('canvas-image-save', { format: 'svg', svg, suggestedName }),
-  canvasExportSource: (canvasId, ref) =>
-    ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
+  canvasExportSource: (canvasId, ref, project) =>
+    ipcRenderer.invoke(
+      'canvas-export-source',
+      project === undefined
+        ? { canvasId, ref }
+        : {
+            canvasId,
+            ref,
+            project: { appSessionId: project.appSessionId, folder: project.folder },
+            requestId: project.requestId,
+          },
+    ),
+  canvasExportSourceCancel: (requestId) =>
+    ipcRenderer.invoke('canvas-export-source-cancel', { requestId }),
   canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),
   terminalSubscribe: (id) => subscribeTerminalPort(id),
 });
