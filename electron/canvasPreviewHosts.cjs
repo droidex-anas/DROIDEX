@@ -13,6 +13,7 @@ const MAX_CAPTURE_DIMENSION_PX = 4_096;
 const MAX_CAPTURE_PIXELS = 16_000_000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 const MAX_CACHED_BYTES = 32 * 1024 * 1024;
+const MAX_RETAINED_CAPTURES = 4;
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -135,6 +136,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
   const guests = new Map();
   const captures = new Map();
   const thumbnails = new Map();
+  // Captures kept for a save, by request: the thumbnail of a revision is
+  // whichever capture landed last, so a save never reads it.
+  const retained = new Map();
   let cachedBytes = 0;
 
   function captureAvailable() {
@@ -203,6 +207,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     thumbnails.delete(key);
   }
 
+  function retain(requestId, bytes) {
+    retained.set(requestId, bytes);
+    if (retained.size > MAX_RETAINED_CAPTURES) retained.delete(retained.keys().next().value);
+  }
+
   function cache(key, bytes) {
     releaseThumbnail(key);
     thumbnails.set(key, { bytes });
@@ -262,10 +271,15 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     clear() {
       for (const guestId of guests.keys()) forget(guestId);
       for (const key of [...thumbnails.keys()]) releaseThumbnail(key);
+      retained.clear();
     },
 
-    /** Caller settlement cannot release the deadline of unfinished native work. */
+    /**
+     * Releases a kept capture, or settles one in flight. Caller settlement
+     * cannot release the deadline of unfinished native work.
+     */
     cancelCapture(requestId) {
+      if (retained.delete(requestId)) return true;
       const capture = captures.get(requestId);
       if (!capture) return false;
       return capture.settle(captureFailure());
@@ -283,6 +297,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         width,
         height,
         scaleFactor,
+        retain: isRetained,
       } = request;
       const guest = guests.get(guestId);
       const isKit = isKitCapture(guest, canvasId, designId, revisionId);
@@ -291,6 +306,8 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         typeof requestId !== 'string' ||
         !IDENTIFIER.test(requestId) ||
         captures.has(requestId) ||
+        retained.has(requestId) ||
+        typeof isRetained !== 'boolean' ||
         (!isKit && !key) ||
         !guest ||
         guest.capture ||
@@ -369,12 +386,20 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 return;
               }
               if (key) cache(key, bytes);
+              if (isRetained) retain(requestId, bytes);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
           .catch(() => complete(captureFailure()))
           .finally(finish);
       });
+    },
+
+    /** The capture kept for this request, handed over once. */
+    takeCapture(requestId) {
+      const bytes = retained.get(requestId) ?? null;
+      retained.delete(requestId);
+      return bytes;
     },
 
     readThumbnail(canvasId, designId, revisionId) {

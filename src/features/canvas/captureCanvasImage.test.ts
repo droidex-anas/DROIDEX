@@ -24,7 +24,7 @@ function desktopCapture() {
     answer: (result: CanvasPreviewCaptureResult) => void;
   }[] = [];
   const cancelled: string[] = [];
-  const saves: [string, string, string, string][] = [];
+  const saves: [string, string][] = [];
   const svgSaves: [string, string][] = [];
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
@@ -36,7 +36,7 @@ function desktopCapture() {
           cancelled.push(requestId);
           return Promise.resolve(true);
         },
-        canvasImageSave: (...args: [string, string, string, string]) => {
+        canvasImageSave: (...args: [string, string]) => {
           saves.push(args);
           return Promise.resolve<CanvasImageSaveResult>({ ok: true });
         },
@@ -152,7 +152,7 @@ test('a picture main keeps reaches the listeners of that revision, a failed capt
   }
 });
 
-test('export saves the revision captured at its scale without forwarding renderer bytes', async () => {
+test('export saves the capture main kept for its request, without forwarding renderer bytes', async () => {
   const desktop = desktopCapture();
   const release = mount(41);
   try {
@@ -163,6 +163,7 @@ test('export saves the revision captured at its scale without forwarding rendere
     assert.equal(request.designId, 'dsg_01');
     assert.equal(request.revisionId, 'rev_01');
     assert.equal(request.scaleFactor, 3);
+    assert.equal(request.retain, true);
     desktop.pending[0].answer({
       ok: true,
       mediaType: 'image/png',
@@ -170,7 +171,7 @@ test('export saves the revision captured at its scale without forwarding rendere
     });
 
     assert.equal(await exported, true);
-    assert.deepEqual(desktop.saves, [['cv_01', 'dsg_01', 'rev_01', 'design']]);
+    assert.deepEqual(desktop.saves, [[request.requestId, 'design']]);
   } finally {
     release();
     desktop.close();

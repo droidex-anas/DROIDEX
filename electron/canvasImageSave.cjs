@@ -39,15 +39,15 @@ async function sanitisedSvg(sidecar, svg) {
 }
 
 /**
- * Only an OS-chosen destination receives an image: a PNG main captured, named
- * by its revision, or a design's SVG once the sidecar has sanitised it.
+ * Only an OS-chosen destination receives an image: the PNG main kept for the
+ * capture request it names, or a design's SVG once the sidecar has sanitised it.
  */
-function createCanvasImageSave({ dialog, fs, getWindow, readThumbnail, sidecar }) {
+function createCanvasImageSave({ dialog, fs, getWindow, takeCapture, sidecar }) {
   return async (request) => {
     const isSvg = request?.format === 'svg';
     const image = isSvg
       ? await sanitisedSvg(sidecar, request.svg)
-      : readThumbnail(request?.canvasId, request?.designId, request?.revisionId);
+      : takeCapture(request?.requestId);
     if (!image) return isSvg ? UNSAFE_SVG : BAD_IMAGE;
     const window = getWindow();
     if (!window) return BAD_IMAGE;

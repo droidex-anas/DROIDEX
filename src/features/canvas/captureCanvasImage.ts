@@ -100,6 +100,13 @@ export function onCanvasImageCaptured(
   };
 }
 
+interface CapturedImage {
+  /** Names the capture main kept, when it was asked to keep one for a save. */
+  requestId: string;
+  mediaType: 'image/png';
+  bytes: Uint8Array;
+}
+
 /**
  * Captures the mounted revision, independently of any source write or turn,
  * at the display's scale unless the caller names another.
@@ -109,7 +116,8 @@ export function captureCanvasImage(
   ref: RevisionRef,
   signal: AbortSignal,
   scaleFactor?: number,
-): Promise<{ mediaType: 'image/png'; bytes: Uint8Array }> {
+  retain = false,
+): Promise<CapturedImage> {
   const key = captureKey(canvasId, ref);
   const preview = livePreviews.get(key);
   if (!preview || signal.aborted || preview.ended.signal.aborted)
@@ -118,7 +126,7 @@ export function captureCanvasImage(
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (result: { mediaType: 'image/png'; bytes: Uint8Array } | CanvasImageError) => {
+    const finish = (result: CapturedImage | CanvasImageError) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -151,6 +159,7 @@ export function captureCanvasImage(
       width: preview.width,
       height: preview.height,
       scaleFactor: scaleFactor ?? preview.scaleFactor,
+      retain,
     }).then(
       (result) => {
         // Main keeps every picture it reports, even one this request no longer wants.
@@ -160,7 +169,11 @@ export function captureCanvasImage(
           cancel();
           return;
         }
-        finish(result.ok ? result : new CanvasImageError(result.error.message));
+        finish(
+          result.ok
+            ? { requestId, mediaType: result.mediaType, bytes: result.bytes }
+            : new CanvasImageError(result.error.message),
+        );
       },
       () => {
         finish(new CanvasImageError());
@@ -169,7 +182,10 @@ export function captureCanvasImage(
   });
 }
 
-/** The OS dialog chooses the destination; generated code never supplies a path. */
+/**
+ * The OS dialog chooses the destination; generated code never supplies a path.
+ * Main saves the capture it kept for this request, not the revision's latest.
+ */
 export async function exportCanvasImage(
   canvasId: string,
   ref: RevisionRef,
@@ -177,8 +193,8 @@ export async function exportCanvasImage(
   scaleFactor: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  await captureCanvasImage(canvasId, ref, signal, scaleFactor);
-  return saved(await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName));
+  const { requestId } = await captureCanvasImage(canvasId, ref, signal, scaleFactor, true);
+  return saved(await saveCanvasImage(requestId, suggestedName));
 }
 
 /** Reads the root `<svg>` afresh, so the file is the revision on show; main writes only its sanitised rebuild. */

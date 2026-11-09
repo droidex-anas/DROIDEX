@@ -166,7 +166,7 @@ const canvasPreviewHosts = createCanvasPreviewHosts({
 const saveCanvasImage = createCanvasImageSave({
   dialog,
   fs: fsp,
-  readThumbnail: canvasPreviewHosts.readThumbnail,
+  takeCapture: canvasPreviewHosts.takeCapture,
   getWindow: () => mainWindow,
   sidecar: sidecarSupervisor,
 });

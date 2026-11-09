@@ -509,6 +509,7 @@ const captureRequest = {
   width: 720,
   height: 720,
   scaleFactor: 2,
+  retain: false,
 };
 
 function capturedImage(width = 1440, height = 1440) {
@@ -591,6 +592,29 @@ test('a Poster at 1x on a 2x display is drawn again, though its native image is 
   assert.equal(result.ok, true);
   assert.deepEqual([result.bytes.readUInt32BE(16), result.bytes.readUInt32BE(20)], [1728, 2304]);
   assert.deepEqual(sent, [0.5]);
+});
+
+test('a save reads the capture kept for its own request, not the revision’s latest picture', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const captureAt = async (requestId, scaleFactor, side) => {
+    const capture = hosts.capture({ ...captureRequest, requestId, scaleFactor, retain: true });
+    await new Promise(setImmediate);
+    guest.captures.at(-1).resolve(capturedImage(side, side));
+    assert.equal((await capture).ok, true);
+  };
+  await captureAt('capture_1x', 1, 720);
+  await captureAt('capture_2x', 2, 1440);
+  await captureAt('capture_released', 2, 1440);
+
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01').readUInt32BE(16), 1440);
+  assert.equal(hosts.takeCapture('capture_1x').readUInt32BE(16), 720);
+  assert.equal(hosts.takeCapture('capture_1x'), null);
+  assert.equal((await hosts.capture({ ...captureRequest, requestId: 'capture_2x' })).ok, false);
+  assert.equal(hosts.cancelCapture('capture_released'), true);
+  assert.equal(hosts.takeCapture('capture_released'), null);
+  assert.equal(hosts.takeCapture('capture_2x').readUInt32BE(16), 1440);
 });
 
 test('a capture over the pixel caps is refused with the largest scale that fits', async () => {

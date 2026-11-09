@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 
-const imageRef = { canvasId: 'cv_01', designId: 'dsg_01', revisionId: 'rev_01' };
+const imageRef = { requestId: 'capture-1' };
 const capturedPng = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII=',
   'base64',
@@ -16,7 +16,7 @@ async function boundary(t, { fs = fsp, choose, sidecar } = {}) {
   t.after(() => fsp.rm(directory, { recursive: true, force: true }));
   const selected = path.join(directory, 'design.png');
   const dialogs = [];
-  const reads = [];
+  const takes = [];
   const save = createCanvasImageSave({
     dialog: {
       showSaveDialog: async (_window, options) => {
@@ -25,18 +25,14 @@ async function boundary(t, { fs = fsp, choose, sidecar } = {}) {
       },
     },
     fs,
-    readThumbnail: (canvasId, designId, revisionId) => {
-      reads.push([canvasId, designId, revisionId]);
-      return canvasId === imageRef.canvasId &&
-        designId === imageRef.designId &&
-        revisionId === imageRef.revisionId
-        ? capturedPng
-        : null;
+    takeCapture: (requestId) => {
+      takes.push(requestId);
+      return requestId === imageRef.requestId ? capturedPng : null;
     },
     getWindow: () => ({}),
     sidecar,
   });
-  return { save, dialogs, reads, directory, selected };
+  return { save, dialogs, takes, directory, selected };
 }
 
 test('PNG export writes only to the path chosen by the OS dialog', async (t) => {
@@ -71,7 +67,7 @@ test('PNG export writes only to the path chosen by the OS dialog', async (t) => 
       await fsp.rename(source, destination);
     },
   };
-  const { save, dialogs, reads, directory, selected } = await boundary(t, { fs });
+  const { save, dialogs, takes, directory, selected } = await boundary(t, { fs });
   await fsp.writeFile(selected, 'existing image');
 
   assert.deepEqual(
@@ -79,7 +75,7 @@ test('PNG export writes only to the path chosen by the OS dialog', async (t) => 
     { ok: true },
   );
   assert.equal(dialogs[0].defaultPath, '_Hey.png');
-  assert.deepEqual(reads, [['cv_01', 'dsg_01', 'rev_01']]);
+  assert.deepEqual(takes, ['capture-1']);
   assert.equal(path.dirname(stagingPath), directory);
   assert.notEqual(stagingPath, selected);
   assert.deepEqual(await fsp.readFile(selected), capturedPng);
@@ -115,11 +111,11 @@ test('an SVG is written only as the sidecar sanitised it, and never when it refu
   assert.equal(dialogs.length, 1);
 });
 
-test('cancellation and uncached revisions never write an image', async (t) => {
+test('cancellation and captures main did not keep never write an image', async (t) => {
   const { save, dialogs, directory } = await boundary(t, { choose: { canceled: true } });
 
   assert.equal(
-    (await save({ ...imageRef, revisionId: 'rev_02', bytes: capturedPng })).code,
+    (await save({ requestId: 'capture-2', bytes: capturedPng })).code,
     'capture_unavailable',
   );
   assert.deepEqual(await save({ ...imageRef, suggestedName: 'Hey' }), {
