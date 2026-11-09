@@ -42,11 +42,28 @@ interface LivePreview {
   ended: AbortController;
 }
 
+type Listeners = Map<string, Set<() => void>>;
+
 const livePreviews = new Map<string, LivePreview>();
-const captureListeners = new Map<string, Set<() => void>>();
+const captureListeners: Listeners = new Map();
+const shownListeners: Listeners = new Map();
 
 function captureKey(canvasId: string, ref: RevisionRef): string {
   return JSON.stringify([canvasId, ref.designId, ref.revisionId]);
+}
+
+function listen(listeners: Listeners, key: string, listener: () => void): () => void {
+  const forKey = listeners.get(key) ?? new Set();
+  forKey.add(listener);
+  listeners.set(key, forKey);
+  return () => {
+    forKey.delete(listener);
+    if (forKey.size === 0 && listeners.get(key) === forKey) listeners.delete(key);
+  };
+}
+
+function notify(listeners: Listeners, key: string): void {
+  for (const listener of listeners.get(key) ?? []) listener();
 }
 
 /** The board calls this only after that guest reports ready; release cancels its captures. */
@@ -59,6 +76,7 @@ export function registerCanvasPreview(
   livePreviews.get(key)?.ended.abort();
   const live = { ...preview, ended: new AbortController() };
   livePreviews.set(key, live);
+  notify(shownListeners, key);
   return () => {
     if (livePreviews.get(key) !== live) return;
     livePreviews.delete(key);
@@ -83,21 +101,22 @@ export function readCanvasVector(
   return preview ? preview.vector() : Promise.resolve(null);
 }
 
+/** Calls back each time a live preview of that revision becomes ready. */
+export function onCanvasPreviewShown(
+  canvasId: string,
+  ref: RevisionRef,
+  listener: () => void,
+): () => void {
+  return listen(shownListeners, captureKey(canvasId, ref), listener);
+}
+
 /** Calls back each time main keeps a new picture of that revision. */
 export function onCanvasImageCaptured(
   canvasId: string,
   ref: RevisionRef,
   listener: () => void,
 ): () => void {
-  const key = captureKey(canvasId, ref);
-  const listeners = captureListeners.get(key) ?? new Set();
-  listeners.add(listener);
-  captureListeners.set(key, listeners);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0 && captureListeners.get(key) === listeners)
-      captureListeners.delete(key);
-  };
+  return listen(captureListeners, captureKey(canvasId, ref), listener);
 }
 
 interface CapturedImage {
@@ -163,7 +182,7 @@ export function captureCanvasImage(
     }).then(
       (result) => {
         // Main keeps every picture it reports, even one this request no longer wants.
-        if (result.ok) for (const listener of captureListeners.get(key) ?? []) listener();
+        if (result.ok) notify(captureListeners, key);
         if (settled) return;
         if (livePreviews.get(key) !== preview) {
           cancel();

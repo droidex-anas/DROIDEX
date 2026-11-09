@@ -13,6 +13,8 @@ import {
   exportCanvasImage,
   exportCanvasSvg,
   onCanvasImageCaptured,
+  onCanvasPreviewShown,
+  readCanvasVector,
   registerCanvasPreview,
 } from './captureCanvasImage';
 
@@ -119,6 +121,20 @@ test('releasing the preview slot cancels a pending capture', async () => {
     assert.deepEqual(desktop.cancelled, [desktop.pending[0].request.requestId]);
   } finally {
     desktop.close();
+  }
+});
+
+test('a preview that becomes ready after the vector was first read is announced', async () => {
+  assert.equal(await readCanvasVector('cv_01', ref), null);
+  let shown = 0;
+  const stopListening = onCanvasPreviewShown('cv_01', ref, () => (shown += 1));
+  const release = mount(41, { svg: '<svg/>' });
+  try {
+    assert.equal(shown, 1);
+    assert.deepEqual(await readCanvasVector('cv_01', ref), { svg: '<svg/>' });
+  } finally {
+    stopListening();
+    release();
   }
 });
 
