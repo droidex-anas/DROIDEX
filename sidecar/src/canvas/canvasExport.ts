@@ -302,6 +302,7 @@ async function publishStaging(
     signal?.throwIfAborted();
     await assertUnmoved({ ...destination, path: backup }, projectRoot);
     await assertUnmoved(staged, projectRoot);
+    signal?.throwIfAborted();
     await rename(staged.path, directory);
     published = true;
     try {
