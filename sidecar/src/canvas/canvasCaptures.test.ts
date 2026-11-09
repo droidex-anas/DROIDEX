@@ -71,6 +71,11 @@ test('a render asks for its scale or its SVG, and relays only an answer in that 
   assert.deepEqual(askedSvg.image, { format: 'svg' });
   await report(askedSvg.captureId, { svg });
   assert.equal(await vector, svg);
+
+  const short = capture();
+  const askedShort = await captureRequest(canvas.events, 2);
+  await report(askedShort.captureId, { png: CANVAS_PNG.subarray(0, 20).toString('base64') });
+  await assert.rejects(short, { code: 'capture_unavailable', message: /wrong format/ });
 });
 
 test('a capture fails at its deadline, and ends with its turn even when the page answers later', async (t) => {

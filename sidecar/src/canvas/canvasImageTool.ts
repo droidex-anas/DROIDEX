@@ -54,10 +54,10 @@ export async function saveRender(
     return { path: target.file, format: 'svg', width, height, bytes: bytes.length };
   }
   const bytes = Buffer.from(image.base64, 'base64');
-  await writeInside(target, bytes, overwrite, turnEnded);
-  // The capture relay only passes a PNG, whose IHDR holds its pixel size.
+  // The capture relay only passes a PNG with a whole IHDR, which holds its pixel size.
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
+  await writeInside(target, bytes, overwrite, turnEnded);
   return {
     path: target.file,
     format: 'png',

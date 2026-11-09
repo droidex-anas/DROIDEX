@@ -114,7 +114,8 @@ export class CanvasCaptures {
 
 /**
  * The answer, when it is the format asked for. The bridge schema bounds both;
- * an SVG is sanitised by whoever writes it, and a PNG must carry its signature.
+ * an SVG is sanitised by whoever writes it, and a PNG must carry its signature
+ * and a whole IHDR chunk, which a render reads its pixel size from.
  */
 function imageAsked(
   answered: Exclude<CaptureReport['capture'], { ok: false }>,
@@ -122,7 +123,14 @@ function imageAsked(
 ): string | null {
   if (format === 'svg') return 'svg' in answered ? answered.svg : null;
   if (!('png' in answered)) return null;
-  // Twelve base64 characters hold the signature.
-  const signature = Buffer.from(answered.png.slice(0, 12), 'base64');
-  return imageMediaType(signature) === 'image/png' ? answered.png : null;
+  // Forty-four base64 characters hold the signature and the IHDR chunk.
+  const head = Buffer.from(answered.png.slice(0, 44), 'base64');
+  const isPng =
+    head.length === 33 &&
+    imageMediaType(head) === 'image/png' &&
+    head.readUInt32BE(8) === 13 &&
+    head.toString('ascii', 12, 16) === 'IHDR' &&
+    head.readUInt32BE(16) > 0 &&
+    head.readUInt32BE(20) > 0;
+  return isPng ? answered.png : null;
 }
