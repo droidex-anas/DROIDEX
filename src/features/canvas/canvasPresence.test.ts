@@ -4,7 +4,10 @@ import { asChunkedSequence } from '../../lib/chunkedSequence';
 import type { TranscriptEvent } from '../../types/bridge';
 import {
   canvasPresence,
+  landedWrites,
+  NO_LANDED_WRITES,
   NO_PRESENCE,
+  sameLandedWrites,
   samePresence,
   type CanvasPresence,
   type PresenceSources,
@@ -90,6 +93,66 @@ test('a running create or write puts its agent on the frames it names until its 
   assert.equal(canvasPresence(sources(settledFirst), frames).size, 0);
   // A settled chat has no one at work, whatever its transcript left open.
   assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
+});
+
+test('a call whose input is still streaming is at work once it names its frame', () => {
+  const frames = [designed('a')];
+  const started = { ...call('t1', 'write', []), transient: true as const };
+  const named = { ...call('t1', 'write', ['a']), transient: true as const };
+
+  assert.equal(canvasPresence(sources([prompt(), started]), frames).size, 0);
+  assert.deepEqual(frameAgents(canvasPresence(sources([prompt(), named]), frames)), [
+    ['a', 'chat'],
+  ]);
+  // A stream cut off before the call was stored leaves no one behind.
+  assert.equal(canvasPresence(sources([prompt(), named], { primary: false }), frames), NO_PRESENCE);
+});
+
+test("a write lands for the agent whose completed result names the frame's revision", () => {
+  const landed = (state: 'completed' | 'failed', revisionId?: string) =>
+    ev({
+      ...from('worker'),
+      kind: 'tool_result',
+      toolUseId: 't1',
+      canvasActivity: {
+        toolUseId: 't1',
+        action: 'write',
+        designIds: ['a'],
+        state,
+        message: '',
+        revisionId,
+      },
+    });
+  const live = { children: ['worker'] };
+  const writes = landedWrites(
+    sources([prompt(), call('t1', 'write', ['a'], 'worker'), landed('completed', 'rev_2')], live),
+  );
+
+  assert.deepEqual([...writes], [['a', { agentKey: 'chat/worker', revisionId: 'rev_2' }]]);
+  // A streamed token after it changes nothing the board reads.
+  const streamed = landedWrites(
+    sources(
+      [
+        prompt(),
+        call('t1', 'write', ['a'], 'worker'),
+        landed('completed', 'rev_2'),
+        ev({ text: 'Done' }),
+      ],
+      live,
+    ),
+  );
+  assert.ok(sameLandedWrites(writes, streamed));
+  // Only a completed result names a revision as an agent's, and only while an agent is live.
+  for (const events of [
+    [prompt(), call('t1', 'write', ['a'], 'worker')],
+    [prompt(), landed('failed', 'rev_2')],
+    [prompt(), landed('completed')],
+  ])
+    assert.equal(landedWrites(sources(events, live)), NO_LANDED_WRITES);
+  assert.equal(
+    landedWrites(sources([prompt(), landed('completed', 'rev_2')], {})),
+    NO_LANDED_WRITES,
+  );
 });
 
 test('a frame with no source yet belongs to the live agent whose create made it this turn', () => {

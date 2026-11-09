@@ -3,8 +3,9 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { canvasMotion } from './canvasMotion';
-import type { CanvasPresence } from './canvasPresence';
+import { NO_LANDED_WRITES, type CanvasPresence } from './canvasPresence';
 import { CanvasPresenceLayer } from './CanvasPresenceLayer';
+import { PreviewRuns } from './previewRuns';
 
 const DRAWN = ['a', 'b', 'c'].map((designId, index) => ({
   designId,
@@ -14,7 +15,16 @@ const DRAWN = ['a', 'b', 'c'].map((designId, index) => ({
 /** The frames the layer draws a cursor over. */
 function cursorFrames(presence: CanvasPresence, visible: string[]): string[] {
   const markup = renderToStaticMarkup(
-    createElement(CanvasPresenceLayer, { presence, drawn: DRAWN, visible, motion: canvasMotion }),
+    createElement(CanvasPresenceLayer, {
+      presence,
+      writes: NO_LANDED_WRITES,
+      frames: [],
+      drawn: DRAWN,
+      visible,
+      motion: canvasMotion,
+      runs: new PreviewRuns(),
+      readSource: () => Promise.reject(new Error('No tour reads a source here.')),
+    }),
   );
   return [...markup.matchAll(/class="canvas-presence" style="left:(\d+)/g)].map(
     (match) => DRAWN[Number(match[1]) / 1000].designId,

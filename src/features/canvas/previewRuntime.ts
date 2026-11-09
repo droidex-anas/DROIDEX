@@ -14,6 +14,7 @@ import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
   previewHoverScript,
+  previewLocateScript,
   previewNonce,
   previewPickScript,
   previewProbeScript,
@@ -22,6 +23,7 @@ import {
   previewStartScript,
   readPreviewFinding,
   readPreviewHover,
+  readPreviewLocations,
   readPreviewSnapshot,
   type PreviewElement,
   type PreviewEvent,
@@ -32,7 +34,7 @@ import {
   type PreviewProbe,
   type PreviewTarget,
 } from './previewDocument';
-import type { CanvasDiagnostic } from './protocol';
+import type { CanvasDiagnostic, FrameRect } from './protocol';
 
 /** How long the board waits between two polls of one guest. */
 export const PREVIEW_POLL_INTERVAL_MS = 100;
@@ -117,9 +119,9 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
- * `setTokens` reaches the same guests and is not answered. `hover` and
- * `probe` answer themselves, with null when nothing is there or this run can
- * no longer ask, and leave the selection alone.
+ * `setTokens` reaches the same guests and is not answered. `hover`, `probe`
+ * and `locate` answer themselves, with null when nothing is there or this run
+ * can no longer ask, and leave the selection alone.
  */
 export interface PreviewRun {
   stop(): void;
@@ -127,6 +129,8 @@ export interface PreviewRun {
   select(target: PreviewTarget | null, properties: readonly string[]): number;
   hover(at: { x: number; y: number }): Promise<PreviewHover | null>;
   probe(probe: PreviewProbe): Promise<PreviewFinding | null>;
+  /** Where each element is drawn, in order, null for one that is not. */
+  locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -249,6 +253,12 @@ class GuestRun implements PreviewRun {
     if (!this.canAsk()) return null;
     const answer = await this.ask(previewProbeScript(probe));
     return this.canAsk() ? readPreviewFinding(answer) : null;
+  }
+
+  async locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewLocateScript(elementIds));
+    return this.canAsk() ? readPreviewLocations(answer, elementIds.length) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

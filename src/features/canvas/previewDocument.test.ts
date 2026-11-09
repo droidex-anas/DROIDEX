@@ -3,9 +3,11 @@ import test from 'node:test';
 import {
   MAX_PREVIEW_SNAPSHOT_EVENTS,
   previewHoverScript,
+  previewLocateScript,
   previewNonce,
   previewSelectScript,
   readPreviewHover,
+  readPreviewLocations,
   readPreviewSnapshot,
   type PreviewInstance,
 } from './previewDocument';
@@ -230,6 +232,22 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
     JSON.stringify({ ...hovered, room: { above: -1, below: null } }),
   ]) {
     assert.equal(readPreviewHover(value), null, String(value));
+  }
+});
+
+test('a locate is a fixed call, answered with a box or null for each element in order', () => {
+  assert.equal(
+    previewLocateScript(['el_1', '</script>']),
+    'globalThis.__droidexCanvasPreview.locate({"elementIds":["el_1","\\u003c/script>"]})',
+  );
+  const box = { x: 4, y: -8, width: 120, height: 32 };
+
+  assert.deepEqual(readPreviewLocations(JSON.stringify([box, null]), 2), [box, null]);
+  // A box that is not one is an element not drawn, not a reason to refuse the rest.
+  const unreadable = [{ ...box, width: -1 }, box];
+  assert.deepEqual(readPreviewLocations(JSON.stringify(unreadable), 2), [null, box]);
+  for (const value of ['null', 'invalid_request', null, JSON.stringify([box])]) {
+    assert.equal(readPreviewLocations(value, 2), null, String(value));
   }
 });
 

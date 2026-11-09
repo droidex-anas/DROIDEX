@@ -12,10 +12,11 @@ import {
   type Ref,
 } from 'react';
 import type { AnnotateCanvasInput } from './annotationProtocol';
-import { AnnotationLayer, DrawSurface } from './AnnotationLayer';
+import { DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { boardCommands } from './boardCommands';
 import { BoardControls } from './BoardControls';
+import { BoardOverlays } from './BoardOverlays';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
@@ -27,19 +28,17 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import { picksElements, showsFrameTools, type BoardInteraction } from './canvasState';
-import type { CanvasPresence } from './canvasPresence';
-import { CanvasPresenceLayer } from './CanvasPresenceLayer';
+import type { CanvasPresence, LandedWrites } from './canvasPresence';
 import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
-import { ElementOutlines } from './ElementOutlines';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
+import type { ReadSource } from './useChangeTours';
 import { RubberBand } from './RubberBand';
-import { SelectionBounds } from './SelectionBounds';
 import { SnapGuides } from './SnapGuides';
 import { toolbarRoom } from './toolbarPlacement';
 import { useAnnotationEditor } from './useAnnotationEditor';
@@ -92,6 +91,9 @@ export interface CanvasBoardProps {
   interaction: BoardInteraction;
   onInteractionChange: (next: BoardInteraction) => void;
   presence: CanvasPresence;
+  writes: LandedWrites;
+  /** One revision's source, bound to `CanvasClient.source.read` for this canvas. */
+  readSource: ReadSource;
   onOpenSource?: (designId: string) => void;
   /** The frames tagged in the chat's next prompt. */
   pinnedIds?: ReadonlySet<string>;
@@ -125,6 +127,8 @@ export function CanvasBoard({
   interaction,
   onInteractionChange,
   presence,
+  writes,
+  readSource,
   onOpenSource,
   pinnedIds,
   onTagFrames,
@@ -408,28 +412,23 @@ export function CanvasBoard({
               onFocusLabel={onFocusLabel}
             />
           ))}
-          <CanvasPresenceLayer
-            presence={presence}
+          <BoardOverlays
+            frames={frames}
             drawn={drawn}
             visible={visible}
-            motion={motion}
-          />
-          <ElementOutlines
-            drawn={drawn}
             scale={scale}
+            motion={motion}
+            presence={presence}
+            writes={writes}
+            runs={previewRuns}
+            readSource={readSource}
             selection={editor.selection}
             hovered={editor.hover.hovered}
             hoveredComponent={picker.componentOf(editor.hover.hovered)}
             picks={picker.outlines}
-          />
-          <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
-          <AnnotationLayer
-            {...annotation.layer}
-            frames={frames}
-            scale={scale}
-            interactive={
-              interaction.mode === 'select' && annotation.tool === null && !gestures.spaceHeld
-            }
+            interaction={interaction}
+            marks={annotation.layer}
+            pointerTaken={annotation.tool !== null || gestures.spaceHeld}
           />
         </div>
 

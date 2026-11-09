@@ -315,6 +315,30 @@ test('a probe answer that lands as the run stops is dropped', async () => {
   assert.equal(await answer, null);
 });
 
+test('a locate asks a started guest directly and answers null before start and once stopped', async () => {
+  const session = run();
+  assert.equal(await session.preview.locate(['el_1']), null, 'nothing to ask before start');
+  assert.equal(session.calls.length, 1);
+
+  await started(session);
+  const answer = session.preview.locate(['el_1', 'el_2']);
+  const call = session.calls[2];
+  assert.equal(
+    call.code,
+    'globalThis.__droidexCanvasPreview.locate({"elementIds":["el_1","el_2"]})',
+  );
+  call.settle(JSON.stringify([picked.rect, null]));
+  assert.deepEqual(await answer, [picked.rect, null]);
+
+  // An answer that lands as the run stops is dropped.
+  const late = session.preview.locate(['el_1']);
+  session.calls[3].settle(JSON.stringify([picked.rect]));
+  await Promise.resolve();
+  session.preview.stop();
+  assert.equal(await late, null);
+  assert.equal(await session.preview.locate(['el_1']), null, 'nothing to ask once stopped');
+  assert.equal(session.calls.length, 4);
+});
 test('draft tokens reach a started guest as data and nothing after the run stops', async () => {
   const session = run();
   session.preview.setTokens({ '--ds-accent': 'red' });

@@ -339,8 +339,9 @@ export interface TranscriptEvent {
   modelSwitch?: ModelSwitch;
   errorKind?: 'usage_limit';
   resetsAt?: number;
-  // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, stopping a turn to send now). It is shown live and never stored, so
+  // A row that only says what is happening right now: a 'status' row (booting
+  // a CLI, stopping a turn to send now), or a 'tool_call' snapshot of a call
+  // whose input is still streaming. It is shown live and never stored, so
   // reopening the session does not replay stale progress.
   transient?: true;
 }

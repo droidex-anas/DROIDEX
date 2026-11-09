@@ -17,7 +17,8 @@
  * each echoing the sequence number of the command it answers, and its hover
  * command with a `hover` event naming the element under a point. Its probe
  * command selects nothing either: a `probe` event names the element at a point,
- * or the text between two points and the element that holds it. A kit preview's
+ * or the text between two points and the element that holds it, and a `locate`
+ * event gives the box of the first drawn instance of each element it names. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -320,6 +321,15 @@ const GENERATED_FRAME_REPORTER = `(() => {
       });
     } else if (command.command === 'probe') {
       post('probe', { sequence: command.sequence, element: probe(command) });
+    } else if (command.command === 'locate') {
+      const marked = Array.from(document.querySelectorAll('[' + MARKER + ']'));
+      const rects = command.elementIds.map((elementId) => {
+        const node = marked.find(
+          (each) => each.getAttribute(MARKER) === elementId && paintedBoxes(each).length > 0,
+        );
+        return node ? rectOf(node) : null;
+      });
+      post('locate', { sequence: command.sequence, rects: rects });
     } else if (command.command === 'select') {
       const target = command.target;
       const node = target ? atPath(target.instancePath) : null;
