@@ -6,9 +6,10 @@ import type { SourceElement, SourceFiles } from './protocol';
 
 /**
  * The elements of the written revision whose source the revision before held
- * nowhere word for word, in source order. Each is the innermost such: an
- * element that holds another changed one changed with it, so it is left out.
- * `elements` is in the build's order, by file and then by start.
+ * nowhere word for word, in source order, keeping only the innermost: one that
+ * holds another changed element is left out even when its own markup changed
+ * too, so a tour visits the smallest regions that changed. `elements` is in
+ * the build's order, by file and then by start.
  */
 export function changedElements(
   elements: readonly SourceElement[],
