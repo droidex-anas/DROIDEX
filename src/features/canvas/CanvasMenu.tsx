@@ -69,6 +69,18 @@ export function CanvasMenu({
     close();
     setDialog(next);
   };
+  // One list for the arrows, from the canvas's actions through its rule to the
+  // saved canvases, wrapping only at its ends.
+  const moveBetweenRows = (event: KeyboardEvent<HTMLDivElement>) => {
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>('[role^="menuitem"]:enabled'),
+    );
+    const current = rows.findIndex((row) => row === document.activeElement);
+    const next = navigationIndex(event.key, current, rows.length);
+    if (next === null) return;
+    event.preventDefault();
+    rows[next].focus();
+  };
 
   return (
     <div className="flex min-w-0">
@@ -97,7 +109,12 @@ export function CanvasMenu({
         width={MENU_WIDTH_PX}
         label="Canvas"
       >
-        <div role="menu" aria-label="Canvas" className="min-h-0 overflow-y-auto p-1">
+        <div
+          role="menu"
+          aria-label="Canvas"
+          className="min-h-0 overflow-y-auto p-1"
+          onKeyDown={moveBetweenRows}
+        >
           {canvasId !== null && (
             <CanvasActions
               appSessionId={appSessionId}
@@ -253,7 +270,7 @@ function TagFramesRow({
 
 /**
  * How the canvas holds its designs to their kit. Only an attached chat may
- * change it; the arrows move between the choices as in any radio group.
+ * change it.
  */
 function DesignSystemRuleRows({
   appSessionId,
@@ -279,18 +296,8 @@ function DesignSystemRuleRows({
         toast.error(canvasMessage(error));
       });
   };
-  const moveBetween = (event: KeyboardEvent<HTMLDivElement>) => {
-    const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>('[role="menuitemradio"]:enabled'),
-    );
-    const current = rows.findIndex((row) => row === document.activeElement);
-    const next = navigationIndex(event.key, current, rows.length);
-    if (next === null) return;
-    event.preventDefault();
-    rows[next].focus();
-  };
   return (
-    <div role="group" aria-label="Design system" onKeyDown={moveBetween}>
+    <div role="group" aria-label="Design system">
       <MenuHeading>Design system</MenuHeading>
       {!canChange && <MenuNote>Open a chat on this canvas to change this</MenuNote>}
       {canChange && board && !usesKit && <MenuNote>Checks apply once a design uses a kit</MenuNote>}
