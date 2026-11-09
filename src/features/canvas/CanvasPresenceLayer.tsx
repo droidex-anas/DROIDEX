@@ -130,8 +130,12 @@ function FramePresence({
   const cursor = useRef<HTMLDivElement>(null);
   const cloud = useRef<HTMLDivElement>(null);
   const lattice = useRef<HTMLDivElement>(null);
-  // Where each track stood when its last animation ended, so a tour sets out from there.
-  const stood = useRef<string[]>([]);
+  // Where each track stood when its last animation ended, and whether that was
+  // a tour, so a tour, or the wander after a tour cut short, sets out from there.
+  const stood = useRef<{ transforms: string[]; toured: boolean }>({
+    transforms: [],
+    toured: false,
+  });
   // Kept across the board's renders, which come with every pan, so the loop
   // never restarts while the agent stays.
   const path = useMemo(() => wanderPath(`${agent.key}\0${designId}`), [agent.key, designId]);
@@ -145,20 +149,28 @@ function FramePresence({
     const signs = [1, 1, -1] as const;
     // The lattice moves against the cloud that holds it, so its dots stay on
     // the frame's own grid while the cloud's soft edge passes over them.
-    const animations = tracks.map((track, index) => {
+    const animations = tracks.flatMap((track, index) => {
       const delay = index === 0 ? 0 : CLOUD_LAG_MS;
+      const from = stood.current.transforms.at(index);
+      const start = at(path[0], signs[index]);
       if (tour) {
-        const from = stood.current[index] ?? at(path[0], signs[index]);
-        const keyframes = tourKeyframes(from, tour, signs[index]);
+        const keyframes = tourKeyframes(from ?? start, tour, signs[index]);
         const duration = tour.length * (TOUR_TRAVEL_MS + TOUR_REST_MS);
-        return track.animate(keyframes, { duration, delay, fill: 'both' });
+        return [track.animate(keyframes, { duration, delay, fill: 'both' })];
       }
       const duration = path.reduce((total, stop) => total + stop.travelMs + stop.restMs, 0);
       const keyframes = wanderKeyframes(path, duration, signs[index]);
-      return track.animate(keyframes, { duration, delay, iterations: Infinity });
+      if (!from || !stood.current.toured)
+        return [track.animate(keyframes, { duration, delay, iterations: Infinity })];
+      const back = [{ transform: from, easing: TRAVEL_EASE }, { transform: start }];
+      return [
+        track.animate(back, { duration: TOUR_TRAVEL_MS, delay, fill: 'both' }),
+        track.animate(keyframes, { duration, delay: delay + TOUR_TRAVEL_MS, iterations: Infinity }),
+      ];
     });
     return () => {
-      stood.current = tracks.map((track) => getComputedStyle(track).transform);
+      const transforms = tracks.map((track) => getComputedStyle(track).transform);
+      stood.current = { transforms, toured: tour !== null };
       for (const animation of animations) animation.cancel();
     };
   }, [moves, path, tour]);

@@ -91,17 +91,20 @@ async function landLyrasWrite(page: Page, reducedMotion: 'reduce' | 'no-preferen
 
 const TITLE = /translate\(35(\.0*\d*)?%, 16\.66\d*%\)/;
 
-/** The transform each of Lyra's cursor animations ends on. */
-function cursorDestinations(page: Page) {
+function lyrasCursor(page: Page) {
   return presences(page)
     .filter({ hasText: 'Lyra' })
-    .locator('.canvas-presence-track:has(.canvas-presence-cursor)')
-    .evaluate((track) =>
-      track.getAnimations().map((animation) => {
-        const keyframes = (animation.effect as KeyframeEffect).getKeyframes();
-        return String(keyframes.at(-1)?.transform);
-      }),
-    );
+    .locator('.canvas-presence-track:has(.canvas-presence-cursor)');
+}
+
+/** The transform each of Lyra's cursor animations ends on. */
+function cursorDestinations(page: Page) {
+  return lyrasCursor(page).evaluate((track) =>
+    track.getAnimations().map((animation) => {
+      const keyframes = (animation.effect as KeyframeEffect).getKeyframes();
+      return String(keyframes.at(-1)?.transform);
+    }),
+  );
 }
 
 test("a landed write's cursor visits what it changed, then leaves", async ({ page }) => {
@@ -115,12 +118,23 @@ test("a landed write's cursor visits what it changed, then leaves", async ({ pag
   await expect(presences(page)).toHaveCount(0);
 });
 
-test("a new write ends the last one's tour, and its cursor wanders again", async ({ page }) => {
+test("a new write ends the last one's tour, and its cursor wanders again from there", async ({
+  page,
+}) => {
   await landLyrasWrite(page, 'no-preference');
   await expect.poll(() => cursorDestinations(page)).toEqual([expect.stringMatching(TITLE)]);
+  const cursor = lyrasCursor(page);
+  await expect
+    .poll(() => cursor.evaluate((track) => track.getAnimations()[0]?.playState))
+    .toBe('finished');
+  const stood = await cursor.evaluate((track) => getComputedStyle(track).transform);
 
   await page.evaluate(() => window.boardHarness.returnToWork());
   await expect.poll(() => cursorDestinations(page)).not.toEqual([expect.stringMatching(TITLE)]);
+  const setsOutFrom = await cursor.evaluate((track) =>
+    String((track.getAnimations()[0]?.effect as KeyframeEffect).getKeyframes()[0]?.transform),
+  );
+  expect(setsOutFrom).toBe(stood);
   await page.clock.runFor(1100);
   await expect(presences(page).getByText('Lyra', { exact: true })).toBeVisible();
   expect(await runningAnimations(page)).toBeGreaterThan(0);
