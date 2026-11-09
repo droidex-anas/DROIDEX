@@ -121,6 +121,7 @@ async function writeInside(
   const name = segments[segments.length - 1];
   const stagedName = `.${name}.${randomUUID()}.tmp`;
   let staged: string | null = null;
+  let written: { dev: number; ino: number } | null = null;
   try {
     requireTurn(turnEnded);
     let directory = root;
@@ -145,17 +146,23 @@ async function writeInside(
       const found = await lstat(path.join(await folderInside(root, parent, file), stagedName));
       if (found.dev !== opened.dev || found.ino !== opened.ino) throw leaves(file);
       await handle.writeFile(bytes);
+      written = opened;
     } finally {
       await handle.close();
     }
-    const target = path.join(parent, name);
+    // Found again just before publishing, so a folder swapped during the write
+    // is refused. Node has no renameat, so a swap after this check still lands.
+    const publishIn = await folderInside(root, parent, file);
+    const found = await lstat(path.join(publishIn, stagedName));
+    if (found.dev !== written.dev || found.ino !== written.ino) throw leaves(file);
+    const target = path.join(publishIn, name);
     // The one commit point: an ended turn stops here and its staged file is removed.
     requireTurn(turnEnded);
     if (overwrite) {
-      await rename(staged, target);
+      await rename(path.join(publishIn, stagedName), target);
       staged = null;
     } else {
-      await link(staged, target);
+      await link(path.join(publishIn, stagedName), target);
     }
   } catch (error) {
     if (errorCode(error) === 'EEXIST')
