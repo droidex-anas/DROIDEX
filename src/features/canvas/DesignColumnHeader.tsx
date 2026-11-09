@@ -1,6 +1,7 @@
 // The Design chat column's top row (spec §4). The canvas on the board names
-// it; its menu lists the chats on that canvas, sets its design-system rule, and
-// lists the other canvases and what can be done to the canvas itself. The + at the row's end starts the next chat.
+// it; its menu lists the chats on that canvas, tags the board's selected frames,
+// sets its design-system rule, and lists the other canvases and what can be
+// done to the canvas itself. The + at the row's end starts the next chat.
 
 import { useRef, useState, type MouseEvent } from 'react';
 import {
@@ -9,6 +10,7 @@ import {
   LayoutTemplate,
   MessageBubble,
   MessageCirclePlus,
+  MessageThread,
   Plus,
   Sketch,
   Trash,
@@ -20,11 +22,14 @@ import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/us
 import { chatDisplayTitle } from '../../lib/chatMetadata';
 import { opensInNewTab } from '../../lib/shortcuts';
 import { toast } from '../../lib/toast';
+import { TAG_KEY_LABEL } from './boardKeys';
+import { useBoardOnScreen } from './boardOnScreen';
 import { searchCanvases } from './canvasChats';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import { DeleteCanvasDialog } from './DeleteCanvasDialog';
 import { DESIGN_SYSTEM_RULES } from './designSystemRule';
+import { tagFramesLabel, toggleFramePins, useFramePins } from './framePins';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
 import type { CanvasSummary } from './protocol';
 import { useCanvases, type Canvases } from './useCanvases';
@@ -105,6 +110,7 @@ function CanvasNameMenu({ appSessionId, canvasId }: { appSessionId: string; canv
           canvasId={canvasId}
           attached={canvas?.attachedAppSessionIds ?? []}
         />
+        <TagFramesItem canvasId={canvasId} />
         <Menu.Divider />
         {canvas && (
           <>
@@ -203,6 +209,39 @@ function ChatsOnCanvas({
         );
       })}
     </>
+  );
+}
+
+/**
+ * Tags or untags the board's selected frames as the board's own menu does;
+ * with nothing selected, says how many are tagged.
+ */
+function TagFramesItem({ canvasId }: { canvasId: string }) {
+  const board = useBoardOnScreen(canvasId);
+  const attached = board?.attached ? board : null;
+  const pins = useFramePins(attached?.appSessionId ?? null);
+  if (!attached) return null;
+  if (attached.selected.length === 0) {
+    const tagged = pins.filter((pin) => pin.canvasId === canvasId).length;
+    if (tagged === 0) return null;
+    return (
+      <p className="px-2 py-1.5 text-caption text-muted">
+        {tagged === 1 ? '1 frame tagged in chat' : `${String(tagged)} frames tagged in chat`}
+      </p>
+    );
+  }
+  return (
+    <Menu.Item
+      icon={MessageThread}
+      onSelect={() => {
+        toggleFramePins(attached.appSessionId, canvasId, attached.selected);
+      }}
+    >
+      <span className="min-w-0 flex-1 truncate">
+        {tagFramesLabel(pins, canvasId, attached.selected)}
+      </span>
+      <Menu.Shortcut>{TAG_KEY_LABEL}</Menu.Shortcut>
+    </Menu.Item>
   );
 }
 
