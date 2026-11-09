@@ -1,7 +1,8 @@
 // Main's file-picker/drop boundary for Canvas images and kit images. It decodes
 // raster bytes before asking the sidecar to own them; an SVG is markup, which
 // the sidecar sanitises and measures itself. A digest rejects a changed path.
-// The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`.
+// The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`. The sidecar
+// asks here too, for an image an agent names in its project folder.
 
 const { createHash } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -230,4 +231,26 @@ async function canvasImageImportResult(importImage, owner, filePath) {
   }
 }
 
-module.exports = { createCanvasImageImporter, canvasImageImportResult };
+/**
+ * The sidecar's request for an image an agent named in its chat's project
+ * folder; the sidecar has already kept the path inside that folder.
+ */
+function isProjectImageRequest(message) {
+  return message?.type === 'canvas.importImage' && typeof message.id === 'string';
+}
+
+async function answerProjectImageRequest(importImage, message, reply) {
+  const owner = { kind: 'canvas', canvasId: message.canvasId };
+  reply({
+    type: 'canvas.importImageResult',
+    id: message.id,
+    result: await canvasImageImportResult(importImage, owner, message.filePath),
+  });
+}
+
+module.exports = {
+  createCanvasImageImporter,
+  canvasImageImportResult,
+  isProjectImageRequest,
+  answerProjectImageRequest,
+};

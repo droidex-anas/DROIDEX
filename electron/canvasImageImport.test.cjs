@@ -3,7 +3,11 @@ const assert = require('node:assert/strict');
 const { mkdtemp, rm, writeFile } = require('node:fs/promises');
 const { tmpdir } = require('node:os');
 const { join } = require('node:path');
-const { createCanvasImageImporter } = require('./canvasImageImport.cjs');
+const {
+  answerProjectImageRequest,
+  createCanvasImageImporter,
+  isProjectImageRequest,
+} = require('./canvasImageImport.cjs');
 
 const CANVAS = { kind: 'canvas', canvasId: 'canvas-one' };
 const PNG = Buffer.from(
@@ -159,4 +163,43 @@ test('a sidecar storage failure keeps its curated code', async (t) => {
     code: 'storage_failed',
     message: 'Free disk space and retry.',
   });
+});
+
+test('the sidecar’s request for a project image is answered under its id', async () => {
+  const request = {
+    type: 'canvas.importImage',
+    id: 'request-1',
+    canvasId: 'canvas-one',
+    filePath: '/project/logo.png',
+  };
+  assert.equal(isProjectImageRequest(request), true);
+  assert.equal(isProjectImageRequest({ type: 'browser.request', id: 'request-1' }), false);
+  const replies = [];
+  const reply = (message) => replies.push(message);
+  await answerProjectImageRequest(async (owner, filePath) => ({ owner, filePath }), request, reply);
+  await answerProjectImageRequest(
+    async () => {
+      throw new Error('EACCES /project/logo.png');
+    },
+    { ...request, id: 'request-2' },
+    reply,
+  );
+  assert.deepEqual(replies, [
+    {
+      type: 'canvas.importImageResult',
+      id: 'request-1',
+      result: { ok: true, asset: { owner: CANVAS, filePath: '/project/logo.png' } },
+    },
+    {
+      type: 'canvas.importImageResult',
+      id: 'request-2',
+      result: {
+        ok: false,
+        error: {
+          code: 'storage_failed',
+          message: 'The image could not be saved. Reopen DROIDEX and try again.',
+        },
+      },
+    },
+  ]);
 });
