@@ -8,6 +8,7 @@ import type { SourceElement, SourceFiles } from './protocol';
  * The elements of the written revision whose source the revision before held
  * nowhere word for word, in source order. Each is the innermost such: an
  * element that holds another changed one changed with it, so it is left out.
+ * `elements` is in the build's order, by file and then by start.
  */
 export function changedElements(
   elements: readonly SourceElement[],
@@ -19,14 +20,11 @@ export function changedElements(
     const written = after[element.file].slice(element.start, element.end);
     return !earlier.some((source) => source.includes(written));
   });
-  return changed.filter(
-    (outer) =>
-      !changed.some(
-        (inner) =>
-          inner !== outer &&
-          inner.file === outer.file &&
-          outer.start <= inner.start &&
-          inner.end <= outer.end,
-      ),
-  );
+  // In source order an element's descendants follow it at once, so it holds
+  // a changed one exactly when the next changed element starts inside it.
+  return changed.filter((element, index) => {
+    const next = changed.at(index + 1);
+    const holdsNext = next?.file === element.file && next.start < element.end;
+    return !holdsNext;
+  });
 }
