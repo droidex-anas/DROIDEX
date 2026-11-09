@@ -287,7 +287,6 @@ const GENERATED_FRAME_REPORTER = `(() => {
     'letter-spacing',
   ];
   const OWN_PAINT = { 'stop-color': 'rgb(0, 0, 0)', 'flood-color': 'rgb(0, 0, 0)', opacity: '1' };
-  const ABSOLUTE_LENGTH = /^[0-9]+([.][0-9]+)?(px)?$/;
   const vector = () => {
     const svg = root.childElementCount === 1 ? root.firstElementChild : null;
     if (!(svg instanceof SVGSVGElement)) return { refused: 'not_vector' };
@@ -309,11 +308,10 @@ const GENERATED_FRAME_REPORTER = `(() => {
         if (value !== initial) style.setProperty(name, value);
       }
     });
-    // A size from CSS or in percent means nothing outside the page: the file gets the drawn one.
+    // Page CSS can override even an absolute width or height, so the file gets the drawn size.
     const box = svg.getBoundingClientRect();
-    for (const [side, length] of [['width', box.width], ['height', box.height]]) {
-      if (!ABSOLUTE_LENGTH.test(copy.getAttribute(side) || '')) copy.setAttribute(side, String(Math.ceil(length)));
-    }
+    copy.setAttribute('width', String(Math.ceil(box.width)));
+    copy.setAttribute('height', String(Math.ceil(box.height)));
     const markup = new XMLSerializer().serializeToString(copy);
     return bytes(markup) <= ${String(MAX_PREVIEW_VECTOR_BYTES)} ? { svg: markup } : { refused: 'too_large' };
   };
