@@ -5,12 +5,19 @@
 
 import { randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, realpath, rename, rm } from 'node:fs/promises';
+import { link, lstat, open, realpath, rename, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
 import type { ImportProjectImage } from './desktopImageChannel.js';
-import { isInsideProject, projectRelativePath } from './projectPaths.js';
+import {
+  folderInside,
+  isInsideProject,
+  leavesProject,
+  linkedPath,
+  makeFolderInside,
+  projectRelativePath,
+} from './projectPaths.js';
 
 const MAX_IMPORT_BYTES = 10 * 1024 * 1024;
 const IMPORTABLE = ['.png', '.jpg', '.jpeg', '.webp', '.svg'];
@@ -84,11 +91,11 @@ export async function importFromProject(
   let entry;
   try {
     entry = await lstat(full);
-    if (entry.isSymbolicLink()) throw symbolicLink(file);
+    if (entry.isSymbolicLink()) throw linkedPath(file);
     if (!entry.isFile()) throw refusal(`${file} is not a regular file.`);
     if (entry.size > MAX_IMPORT_BYTES) throw refusal(`${file} is over 10 MiB.`);
     // A linked folder on the way can still lead out of the project.
-    if (!isInsideProject(root, await realpath(full))) throw leaves(file);
+    if (!isInsideProject(root, await realpath(full))) throw leavesProject(file);
   } catch (error) {
     throw fileProblem(error, file);
   }
@@ -123,19 +130,9 @@ async function writeInside(
   let staged: string | null = null;
   try {
     requireTurn(turnEnded);
-    let directory = root;
-    for (const segment of segments.slice(0, -1)) {
-      directory = path.join(directory, segment);
-      const entry = await lstat(directory).catch((error: unknown) => {
-        if (errorCode(error) === 'ENOENT') return null;
-        throw error;
-      });
+    const parent = await makeFolderInside(root, segments.slice(0, -1).join('/'), file, () => {
       requireTurn(turnEnded);
-      if (entry === null) await mkdir(directory);
-      else if (entry.isSymbolicLink()) throw symbolicLink(file);
-      else if (!entry.isDirectory()) throw refusal(`${file} goes through a file, not a folder.`);
-    }
-    const parent = await folderInside(root, directory, file);
+    });
     requireTurn(turnEnded);
     staged = path.join(parent, stagedName);
     const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW;
@@ -143,7 +140,7 @@ async function writeInside(
     try {
       const opened = await handle.stat();
       const found = await lstat(path.join(await folderInside(root, parent, file), stagedName));
-      if (found.dev !== opened.dev || found.ino !== opened.ino) throw leaves(file);
+      if (found.dev !== opened.dev || found.ino !== opened.ino) throw leavesProject(file);
       await handle.writeFile(bytes);
     } finally {
       await handle.close();
@@ -164,13 +161,6 @@ async function writeInside(
   } finally {
     if (staged !== null) await rm(staged, { force: true }).catch(() => undefined);
   }
-}
-
-/** The folder's real path, refused unless it is the project or inside it. */
-async function folderInside(root: string, folder: string, file: string): Promise<string> {
-  const real = await realpath(folder);
-  if (real !== root && !isInsideProject(root, real)) throw leaves(file);
-  return real;
 }
 
 function requireTurn(turnEnded: AbortSignal): void {
@@ -196,7 +186,7 @@ async function projectRoot(folder: string | null): Promise<string> {
 function fileProblem(error: unknown, file: string): CanvasCommandError {
   if (error instanceof CanvasCommandError) return error;
   const code = errorCode(error);
-  if (code === 'ELOOP') return symbolicLink(file);
+  if (code === 'ELOOP') return linkedPath(file);
   if (code === 'ENOENT' || code === 'ENOTDIR')
     return refusal(`${file} does not exist in the project.`);
   if (code === 'EISDIR') return refusal(`${file} is a folder. Name a file.`);
@@ -204,14 +194,6 @@ function fileProblem(error: unknown, file: string): CanvasCommandError {
     'storage_failed',
     `${file} could not be used. Check its permissions and retry.`,
   );
-}
-
-function symbolicLink(file: string): CanvasCommandError {
-  return refusal(`${file} goes through a symbolic link. Name a regular file in the project.`);
-}
-
-function leaves(file: string): CanvasCommandError {
-  return refusal(`${file} leaves the project folder. Name a file inside it.`);
 }
 
 function refusal(message: string): CanvasCommandError {
