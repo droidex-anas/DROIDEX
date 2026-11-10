@@ -1,11 +1,13 @@
-// The element panel's Effects section: a shadow from the kit's tokens, and a
+// The element panel's Effects section: shadows from the kit's tokens, and a
 // layer blur and a background blur from the kit's blur tokens or Tailwind's
-// stock steps, each applied as it is picked, then the fields the panel adds.
+// stock steps, each previewed as a list rests on it and applied as it is
+// picked, then the fields the panel adds.
 
 import type { ReactNode } from 'react';
 import { BLUR_STEPS } from './elementPanelChoices';
 import { Labelled, Section } from './ElementPanelRows';
 import { blurOf, isOpaque } from './panelValues';
+import { ShadowRows } from './ShadowRows';
 import { ValuePickerField, type ValueOption } from './ValuePickerField';
 
 interface ElementEffectsProps {
@@ -16,6 +18,8 @@ interface ElementEffectsProps {
   disabled: boolean;
   /** Previews a picked value and commits it at once. */
   onPick: (property: string) => (value: string) => void;
+  /** Previews the option a list rests on; null puts back what was there. */
+  onHover: (property: string) => (value: string | null) => void;
   /** The fields after the pickers. */
   children: ReactNode;
 }
@@ -25,10 +29,9 @@ export function ElementEffects({
   tokenOptions,
   disabled,
   onPick,
+  onHover,
   children,
 }: ElementEffectsProps) {
-  const shadows = tokenOptions('boxShadow');
-  const shadow = value('boxShadow');
   const backdrop = blurOf(value('backdropFilter'));
   // A previewed fill token is named, not a colour; its option holds the colour.
   const fill = value('backgroundColor');
@@ -40,20 +43,18 @@ export function ElementEffects({
       value={current}
       disabled={disabled}
       onPick={onPick(property)}
+      onActive={onHover(property)}
     />
   );
   return (
     <Section title="Effects">
-      <Labelled label="Shadow" note={shadows?.length === 0 && 'This kit defines no shadows.'}>
-        <ValuePickerField
-          label="Shadow"
-          options={shadows ?? []}
-          value={shadow}
-          face={shadow === 'none' ? 'None' : shadow}
-          disabled={disabled || !shadows?.length}
-          onPick={onPick('boxShadow')}
-        />
-      </Labelled>
+      <ShadowRows
+        shadow={value('boxShadow')}
+        options={tokenOptions('boxShadow')}
+        disabled={disabled}
+        onPick={onPick('boxShadow')}
+        onHover={onHover('boxShadow')}
+      />
       <Labelled label="Blur">
         {blurPicker('filter', 'Layer blur', blurOf(value('filter')))}
       </Labelled>

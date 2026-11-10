@@ -121,10 +121,13 @@ const SHADOW_LENGTHS = ['x', 'y', 'blur', 'spread'] as const;
  * em, a named colour or color() shows the computed value instead.
  */
 function sameShadow(written: ShadowLayer[], computed: string): boolean {
-  const shown = written.filter(isDrawnLayer);
   const drawn = parseShadow(computed)?.filter(isDrawnLayer);
-  if (drawn?.length !== shown.length) return false;
-  return shown.every((layer, index) => {
+  return drawn !== undefined && sameLayers(written.filter(isDrawnLayer), drawn);
+}
+
+function sameLayers(written: readonly ShadowLayer[], drawn: readonly ShadowLayer[]): boolean {
+  if (drawn.length !== written.length) return false;
+  return written.every((layer, index) => {
     const other = drawn[index];
     return (
       layer.inset === other.inset &&
@@ -135,6 +138,38 @@ function sameShadow(written: ShadowLayer[], computed: string): boolean {
       })
     );
   });
+}
+
+/**
+ * The kit shadow tokens an element's shadow is drawn from, in order: a picked
+ * list by its names, else the computed layers matched token by token. Empty
+ * for no shadow; null when a layer is no kit token's, so the shadow reads raw.
+ */
+export function shadowTokens(shadow: string, tokens: readonly ValueOption[]): string[] | null {
+  if (shadow.startsWith('--')) return shadow.split(',').map((name) => name.trim());
+  if (shadow.trim() === 'none') return [];
+  const drawn = parseShadow(shadow)?.filter(isDrawnLayer);
+  if (!drawn) return null;
+  const layered = tokens.flatMap((option) => {
+    const layers = parseShadow(option.hint ?? '')?.filter(isDrawnLayer);
+    return layers?.length ? [{ name: option.value, layers }] : [];
+  });
+  // A token may draw several layers, so a first match can strand the rest. A
+  // start that strands once always does, so each is tried once.
+  const stranded = new Set<number>();
+  const from = (start: number): string[] | null => {
+    if (start === drawn.length) return [];
+    if (stranded.has(start)) return null;
+    for (const { name, layers } of layered) {
+      const end = start + layers.length;
+      if (end > drawn.length || !sameLayers(layers, drawn.slice(start, end))) continue;
+      const rest = from(end);
+      if (rest) return [name, ...rest];
+    }
+    stranded.add(start);
+    return null;
+  };
+  return from(0);
 }
 
 function isDrawnLayer(layer: ShadowLayer): boolean {
@@ -188,7 +223,8 @@ function parseColour(value: string): Colour | null {
   const colour = channelsIn(space, parts);
   const alpha = alphaText === undefined ? 1 : amount(alphaText, 0.01);
   if (!colour || ![...colour.channels, alpha].every(Number.isFinite)) return null;
-  return { ...colour, alpha };
+  // CSS clamps an alpha to between 0 and 1, and the browser computes it so.
+  return { ...colour, alpha: Math.min(Math.max(alpha, 0), 1) };
 }
 
 function channelsIn(space: string, parts: string[]): Omit<Colour, 'alpha'> | null {
@@ -271,10 +307,9 @@ export function blurOf(filter: string): string {
   return blurs.at(0)?.[1].trim() ?? 'none';
 }
 
-/** Whether a colour paints over everything behind it; CSS clamps an alpha above 1 to 1. */
+/** Whether a colour paints over everything behind it. */
 export function isOpaque(colour: string): boolean {
-  const alpha = parseColour(colour.trim())?.alpha;
-  return alpha !== undefined && alpha >= 1;
+  return parseColour(colour.trim())?.alpha === 1;
 }
 
 /** Whether two font stacks name the same families, however each is quoted and spaced. */
