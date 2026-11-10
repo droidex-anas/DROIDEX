@@ -53,7 +53,8 @@
   color: var(--text);
 }
 
-.canvas-tool[aria-pressed='true'] {
+.canvas-tool[aria-pressed='true'],
+.canvas-tool[aria-expanded='true'] {
   background: color-mix(in srgb, var(--selection) 16%, transparent);
   color: var(--selection-label);
 }

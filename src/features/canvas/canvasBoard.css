@@ -34,8 +34,10 @@
 }
 
 /* Hover and selection draw the line the element Edit picks is drawn with,
-   1px on hover and 1.5px once selected. */
-.canvas-frame:hover > .canvas-sheet {
+   1px on hover and 1.5px once selected. A layers row under the pointer
+   lights its frame the same way. */
+.canvas-frame:hover > .canvas-sheet,
+.canvas-frame[data-layer-hover] > .canvas-sheet {
   box-shadow:
     0 0 0 calc(1px / var(--board-scale)) var(--selection),
     var(--shadow-sm);
@@ -111,6 +113,7 @@
 }
 
 .canvas-frame:hover .canvas-frame-name,
+.canvas-frame[data-layer-hover] .canvas-frame-name,
 .canvas-frame[data-selected] .canvas-frame-name {
   color: var(--selection-label);
 }
@@ -422,6 +425,18 @@
    pane's corner controls step left of it instead of covering its header. */
 .canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
   right: calc(theme('width.sidebar') + theme('spacing.2'));
+}
+
+/* The layers tree keeps the keyboard while its rows take it in turn through
+   aria-activedescendant, so the row the keyboard is on wears the ring a
+   focused control would, and the tree wears none. */
+.canvas-layers-tree:focus-visible {
+  outline: none;
+}
+
+.canvas-layers-tree:focus-visible [data-keyboard-row] {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: -1.5px;
 }
 
 /* A colour that paints nothing, as the element panel's swatch shows it. */

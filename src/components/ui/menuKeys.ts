@@ -17,6 +17,15 @@ export function navigationIndex(key: string, current: number, count: number): nu
   }
 }
 
+// A printable letter with no command modifier; Space stays the item's own key.
+export function isTypeaheadKey(
+  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>,
+): boolean {
+  return (
+    event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey
+  );
+}
+
 // The item whose label starts with what has been typed. Repeating one letter
 // cycles through the items that start with it, as native menus do; a longer
 // query keeps the current item while it still matches.

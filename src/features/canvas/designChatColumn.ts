@@ -6,8 +6,10 @@ import { animate, useMotionValue, useReducedMotion, type MotionValue } from 'fra
 const DESIGN_CHAT_COLUMN_DEFAULT = 400;
 const DESIGN_CHAT_COLUMN_MIN = 320;
 const DESIGN_CHAT_COLUMN_MAX = 720;
-// The board keeps at least this much of the row however wide the chat grows.
+// The board keeps at least this much of the row however wide the chat grows,
+// besides the columns docked beside it, each `w-sidebar` wide.
 const BOARD_RESERVE = 480;
+const SIDE_COLUMN = 280;
 const STORAGE_KEY = 'droid-design-chat-width';
 // The panel spring (feel.md). The share runs from 0 to 1, so it must come to
 // rest far finer than the default, which would end the move with a step.
@@ -23,16 +25,20 @@ function readStoredWidth(): number {
   return DESIGN_CHAT_COLUMN_DEFAULT;
 }
 
+/** The widest the chat column may grow in a row whose board has `sideColumns` docked beside it. */
+export function chatColumnMax(rowWidth: number, sideColumns: number): number {
+  if (rowWidth <= 0) return DESIGN_CHAT_COLUMN_MAX;
+  const reserve = BOARD_RESERVE + sideColumns * SIDE_COLUMN;
+  return Math.max(DESIGN_CHAT_COLUMN_MIN, Math.min(DESIGN_CHAT_COLUMN_MAX, rowWidth - reserve));
+}
+
 /**
  * The chat column's width beside the board: what the user dragged it to,
  * clamped to the row it sits in so the board never loses its reserve.
  */
-export function useDesignChatColumn(rowWidth: number) {
+export function useDesignChatColumn(rowWidth: number, sideColumns: number) {
   const [preferred, setPreferred] = useState(readStoredWidth);
-  const max =
-    rowWidth > 0
-      ? Math.max(DESIGN_CHAT_COLUMN_MIN, Math.min(DESIGN_CHAT_COLUMN_MAX, rowWidth - BOARD_RESERVE))
-      : DESIGN_CHAT_COLUMN_MAX;
+  const max = chatColumnMax(rowWidth, sideColumns);
   const width = Math.min(max, Math.max(DESIGN_CHAT_COLUMN_MIN, preferred));
   return {
     width,

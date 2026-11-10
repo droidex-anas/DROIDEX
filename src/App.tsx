@@ -88,6 +88,7 @@ import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
 import { useFinishNotifications } from './hooks/useFinishNotifications';
 import { useThreadsPaneAutoOpen } from './features/projects/useThreadsPaneAutoOpen';
+import { useSideColumns } from './features/canvas/boardOnScreen';
 import { useBoardShare, useDesignChatColumn } from './features/canvas/designChatColumn';
 import { useFirstArtifactPane } from './features/canvas/useFirstArtifactPane';
 import { useSharedStorage } from './hooks/useSharedStorage';
@@ -380,7 +381,8 @@ export default function App() {
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
   const [contentRowWidth, setContentRowWidth] = useState(0);
-  const chatBesideBoard = useDesignChatColumn(contentRowWidth);
+  const boardSideColumns = useSideColumns(activeSession?.appSessionId ?? null);
+  const chatBesideBoard = useDesignChatColumn(contentRowWidth, boardSideColumns);
   // Design's board takes the row beside its chat column, and the column keeps
   // the rest; the board's share eases that in as it opens.
   const boardShare = useBoardShare(designCanvasTab !== null);
