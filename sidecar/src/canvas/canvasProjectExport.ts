@@ -44,9 +44,10 @@ export async function projectExportDestination(
 /**
  * The README's account of what a kit read from a project became, or null for
  * any other kit. The kit keeps no original property names, only the normalised
- * aliases it made, so those are what the README names. Source is not rewritten:
- * an import can change a value on the way in (bare HSL channels gain `hsl()`),
- * and the export still builds on its own copy of the kit.
+ * aliases it made, so those are what the README names. Source is not rewritten
+ * here: an import can change a value on the way in (bare HSL channels gain
+ * `hsl()`), and the export builds on its own copy of the kit. Export to project
+ * rewrites a library kit's source instead, when it can (projectLibraryExport.ts).
  */
 export function projectMapping(kit: DesignSystem): string | null {
   const provenance = kit.provenance;
@@ -64,6 +65,11 @@ export function projectMapping(kit: DesignSystem): string | null {
     .filter((token) => !isContractAlias(token, light[token]))
     .sort()
     .map((token) => `| \`${token}\` | ${aliases.get(token)?.join(', ') ?? 'none'} |`);
+  const components = provenance.project.library
+    ? `The kit's components are copies of the project's shadcn/ui components, their
+imports pointed at the kit's own files, so the source imports the copy.`
+    : `The kit's components are DROIDEX's shared primitives styled with the project's
+tokens, not the project's own components, so the source keeps importing the copy.`;
   return `
 ## Mapping to ${name}
 
@@ -73,8 +79,7 @@ This kit was read from ${files.join(', ')} in ${name}.
 | --- | --- |
 | \`@droidex/design-system\` | \`design-system/\`, copied |
 
-The kit's components are DROIDEX's shared primitives styled with the project's
-tokens, not the project's own components, so the source keeps importing the copy.
+${components}
 
 The import normalised the project's property names: lower case, with other
 punctuation turned into hyphens, so \`--Brand_500\` became \`--brand-500\`. The
@@ -95,12 +100,12 @@ ${rows.join('\n')}
 }
 
 /** The text as one line of Markdown prose, its punctuation read literally. */
-function markdownText(text: string): string {
+export function markdownText(text: string): string {
   return text.replace(LINE_BREAK, ' ').replace(/[\\`*_[\]<>#|~]/g, '\\$&');
 }
 
 /** The text as one Markdown code span, whatever backticks or line breaks it holds. */
-function codeSpan(text: string): string {
+export function codeSpan(text: string): string {
   const line = text.replace(LINE_BREAK, ' ');
   const longestRun = Math.max(0, ...(line.match(/`+/g) ?? []).map((run) => run.length));
   const fence = '`'.repeat(longestRun + 1);
