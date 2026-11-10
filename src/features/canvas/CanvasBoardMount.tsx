@@ -4,7 +4,7 @@
 // go with the board and its viewport waits in the pane state for Back. Kits
 // belong to no canvas, so a chat without one shows a kit's document too.
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, type RefObject } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { isBoardEditor, isLayersKey } from './boardKeys';
@@ -165,6 +165,7 @@ export function CanvasBoardMount({
   useCoverCapture(canvasId, frames);
   const presence = useCanvasPresence(appSessionId, frames);
   const writes = useLandedWrites(appSessionId);
+  const boardArea = useRef<HTMLDivElement>(null);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
@@ -233,11 +234,13 @@ export function CanvasBoardMount({
             boardRef.current?.focusLabel(designId);
           }}
           onClose={() => {
+            // An empty canvas has no frame to hand the keyboard to: its invitation's first action takes it.
+            if (frames.length === 0) boardArea.current?.querySelector('button')?.focus();
             onShowLayers(false);
           }}
         />
       )}
-      <div className="min-h-0 min-w-0 flex-1">
+      <div ref={boardArea} className="min-h-0 min-w-0 flex-1">
         {snapshot.frames.length === 0 ? (
           toolsMissing ? (
             <CanvasToolsMissing canvasId={canvasId} />
