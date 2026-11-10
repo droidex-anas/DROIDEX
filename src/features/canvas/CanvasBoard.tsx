@@ -203,10 +203,7 @@ export function CanvasBoard({
     scale: view.viewport.scale,
     mode: interaction.mode,
     selectedFrameIds: interaction.selectedFrameIds,
-    onStart: () => {
-      view.markNavigated();
-      view.stopAnimating();
-    },
+    onStart: view.takeOver,
     onPan: view.panByScreen,
     onClear: () => {
       annotation.clearSelection();
@@ -326,8 +323,7 @@ export function CanvasBoard({
               gestures.holdSpace(true);
             },
             pan: (delta) => {
-              view.markNavigated();
-              view.stopAnimating();
+              view.takeOver();
               view.panByScreen(delta);
             },
             nudge: commands.nudge,

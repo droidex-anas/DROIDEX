@@ -41,12 +41,13 @@ export interface BoardViewport {
   stepZoom: (direction: 1 | -1) => void;
   /** Centers a frame the board does not wholly show, at the current zoom; one in view stays put. */
   reveal: (rect: FrameRect) => void;
-  /** Ends any running focus animation, so a hand gesture is never fought. */
-  stopAnimating: () => void;
+  /**
+   * The user's hand takes the viewport: a running focus animation ends, so the
+   * gesture is never fought, and the board's one Fit retires.
+   */
+  takeOver: () => void;
   /** True while a wheel gesture is still arriving. */
   scrolling: boolean;
-  /** Marks the viewport as the user's, which retires the board's one Fit. */
-  markNavigated: () => void;
 }
 
 export function useBoardViewport(
@@ -87,9 +88,10 @@ export function useBoardViewport(
     heading.current = null;
   }, []);
 
-  const markNavigated = useCallback(() => {
+  const takeOver = useCallback(() => {
+    stopAnimating();
     opening.current.navigated = true;
-  }, []);
+  }, [stopAnimating]);
 
   const panByScreen = useCallback((screenDelta: Point) => {
     setViewport((current) => ({
@@ -226,10 +228,9 @@ export function useBoardViewport(
       markScrolling();
       // Fit owns the rest of this wheel gesture, even after its animation ends.
       if (scroll.current.suppressed) return;
-      stopAnimating();
+      takeOver();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       const delta = boardWheelDelta(root, event);
-      opening.current.navigated = true;
       setViewport((current) => {
         // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
         // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
@@ -248,7 +249,7 @@ export function useBoardViewport(
     return () => {
       root.removeEventListener('wheel', onWheel);
     };
-  }, [board, markScrolling, stopAnimating]);
+  }, [board, markScrolling, takeOver]);
 
   useEffect(
     () => () => {
@@ -266,9 +267,8 @@ export function useBoardViewport(
     zoomTo,
     stepZoom,
     reveal,
-    stopAnimating,
+    takeOver,
     scrolling,
-    markNavigated,
   };
 }
 
