@@ -1,6 +1,6 @@
 // One frame's row in the layers panel: its build's glyph, its name with the
-// variant suffix kept whole, the name field while it is renamed, and the eye
-// and handle that hide and restack its frame.
+// variant suffix kept whole, the name field while it is renamed, the eye and
+// handle that hide and restack its frame, and the caret that opens its elements.
 
 import { useEffect, useEffectEvent, type MouseEvent, type PointerEvent } from 'react';
 import {
@@ -18,6 +18,7 @@ import { cn } from '../../../components/ui/cn';
 import { Row } from '../../../components/ui/Row';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { canvasActivity } from '../canvasMotion';
+import { FoldCaret } from './ElementRow';
 import { FrameNameField } from '../FrameNameField';
 import type { FrameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
@@ -34,6 +35,8 @@ export function LayerRow({
   top,
   selected,
   active,
+  open,
+  onToggle,
   describedBy,
   rename,
   onRenameDone,
@@ -56,6 +59,9 @@ export function LayerRow({
   selected: boolean;
   /** The keyboard is on this row. */
   active: boolean;
+  /** Whether its elements show, or null where it has no live preview to read them from. */
+  open: boolean | null;
+  onToggle: () => void;
   /** The id of what tells how to restack the row from the keyboard. */
   describedBy: string | undefined;
   /** Set while the row is renamed: what saves the new name. */
@@ -91,6 +97,7 @@ export function LayerRow({
       aria-posinset={position}
       aria-setsize={count}
       aria-selected={selected}
+      aria-expanded={open ?? undefined}
       aria-label={`${frame.name}, ${stage ? canvasActivity[stage].label : 'Empty'}${frame.hidden ? ', hidden' : ''}`}
       aria-describedby={describedBy}
       className="group absolute inset-x-0 top-0"
@@ -122,41 +129,14 @@ export function LayerRow({
         }
         trailing={
           !rename && (
-            <>
-              {onSetHidden && (
-                <Tooltip label={frame.hidden ? 'Show' : 'Hide'}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={frame.hidden ? EyeOff : Eye}
-                    aria-label="Hide"
-                    aria-pressed={frame.hidden}
-                    tabIndex={-1}
-                    className="canvas-layer-tool -my-1.5"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onToolPress();
-                      onSetHidden(frame, !frame.hidden);
-                    }}
-                    onDoubleClick={(event) => {
-                      event.stopPropagation();
-                    }}
-                  />
-                </Tooltip>
-              )}
-              {onGrab && (
-                <span
-                  aria-hidden
-                  className="canvas-layer-tool -my-1.5 -mr-2 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted transition duration-150 ease-out hover:text-secondary"
-                  onPointerDown={(event) => {
-                    onToolPress();
-                    onGrab(event, frame.designId);
-                  }}
-                >
-                  <GripVertical className={GLYPH} />
-                </span>
-              )}
-            </>
+            <FrameTools
+              frame={frame}
+              open={open}
+              onToggle={onToggle}
+              onToolPress={onToolPress}
+              onSetHidden={onSetHidden}
+              onGrab={onGrab}
+            />
           )
         }
         data-keyboard-row={active || undefined}
@@ -176,6 +156,61 @@ export function LayerRow({
         )}
       />
     </div>
+  );
+}
+
+/** The row's eye and handle, which hide and restack its frame, and the caret that opens its elements. */
+function FrameTools({
+  frame,
+  open,
+  onToggle,
+  onToolPress,
+  onSetHidden,
+  onGrab,
+}: Pick<
+  Parameters<typeof LayerRow>[0],
+  'frame' | 'open' | 'onToggle' | 'onToolPress' | 'onSetHidden' | 'onGrab'
+>) {
+  return (
+    <>
+      {onSetHidden && (
+        <Tooltip label={frame.hidden ? 'Show' : 'Hide'}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={frame.hidden ? EyeOff : Eye}
+            aria-label="Hide"
+            aria-pressed={frame.hidden}
+            tabIndex={-1}
+            className="canvas-layer-tool -my-1.5"
+            onClick={(event) => {
+              event.stopPropagation();
+              onToolPress();
+              onSetHidden(frame, !frame.hidden);
+            }}
+            onDoubleClick={(event) => {
+              event.stopPropagation();
+            }}
+          />
+        </Tooltip>
+      )}
+      {onGrab && (
+        <span
+          aria-hidden
+          className={cn(
+            'canvas-layer-tool -my-1.5 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted transition duration-150 ease-out hover:text-secondary',
+            open === null && '-mr-2',
+          )}
+          onPointerDown={(event) => {
+            onToolPress();
+            onGrab(event, frame.designId);
+          }}
+        >
+          <GripVertical className={GLYPH} />
+        </span>
+      )}
+      {open !== null && <FoldCaret open={open} onToggle={onToggle} />}
+    </>
   );
 }
 

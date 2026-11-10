@@ -8,12 +8,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PresenceContext } from 'framer-motion';
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CanvasBoard } from './CanvasBoard';
+import { CanvasBoard, type CanvasBoardProps } from './CanvasBoard';
 import { NO_PRESENCE, type CanvasPresence } from './canvasPresence';
 import { DesignPreview } from './DesignPreview';
 import type { FrameActions } from './FrameToolbar';
+import { PreviewRuns } from './previewRuns';
+import { useElementEditor } from './useElementEditor';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
 import type { Annotation } from './annotationProtocol';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
@@ -62,13 +64,27 @@ function annotated(snapshot: CanvasSnapshot, annotations: Annotation[]): CanvasS
   return { ...snapshot, annotationsVersion: annotations.length, annotations };
 }
 
+/** The board as its mount runs it, with the element editor the mount keeps beside it. */
+function EditableBoard(props: Omit<CanvasBoardProps, 'runs' | 'editor'>) {
+  const [runs] = useState(() => new PreviewRuns());
+  const editor = useElementEditor({
+    canvasId: props.snapshot.canvasId,
+    frames: props.snapshot.frames,
+    runs,
+    active: props.interaction.mode === 'edit',
+    hovering: false,
+    onEditElement: () => Promise.reject(new Error('This board makes no edits.')),
+  });
+  return createElement(CanvasBoard, { ...props, runs, editor });
+}
+
 function board(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
   presence: CanvasPresence = NO_PRESENCE,
   pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onTagFrames'> = {},
 ) {
-  return createElement(CanvasBoard, {
+  return createElement(EditableBoard, {
     ...pins,
     snapshot,
     interaction,

@@ -1,7 +1,7 @@
 // Canvas wire DTOs. Mutation inputs are defined once by the Zod parsers in
-// schema.ts and re-exported here; the renderer keeps a hand-written mirror at
-// src/features/canvas/protocol.ts, and schema.test.ts stops compiling when the
-// two drift.
+// schema.ts and frameEditSchema.ts and re-exported here; the renderer keeps a
+// hand-written mirror at src/features/canvas/protocol.ts, and schema.test.ts
+// stops compiling when the two drift.
 
 import type {
   ArrangeFramesInput,

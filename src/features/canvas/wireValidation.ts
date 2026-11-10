@@ -388,9 +388,14 @@ function isChange(value: unknown): boolean {
   );
 }
 
-/** The whole stacking order, which names each frame once. */
+/** The whole stacking order, which names each frame once and at least one. */
 function isStackingOrder(value: unknown): boolean {
-  return Array.isArray(value) && value.every(id) && new Set(value).size === value.length;
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(id) &&
+    new Set(value).size === value.length
+  );
 }
 
 function isSummary(value: unknown): boolean {

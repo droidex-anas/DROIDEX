@@ -1,7 +1,8 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the nine audited literals below.
+// element's `executeJavaScript`, with exactly the nine audited literals below
+// and the tree's one in previewDocumentTree.ts.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -129,8 +130,17 @@ export type PreviewEvent =
  */
 export type PreviewVector = { svg: string } | { refused: 'not_vector' | 'too_large' };
 
-/** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
-export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
+/** One drawn instance of an element: its source marker and its path from the document body. */
+export interface PreviewNode {
+  elementId: string;
+  instancePath: string;
+}
+
+/** A pick at a point in the design's own pixels, a keyboard step through its elements, or one instance. */
+export type PreviewPick =
+  | { x: number; y: number }
+  | { step: 'first' | 'next' | 'previous' }
+  | PreviewNode;
 
 /** An element to select by its marker and path, with the inline styles and text it previews. */
 export interface PreviewTarget {
@@ -165,8 +175,8 @@ export const PREVIEW_STARTED = 'started';
 export const PREVIEW_POLL_SCRIPT = 'globalThis.__droidexCanvasPreview.drain()';
 
 /**
- * Selects the element under a point or the next one along; a `selection` event
- * carrying `sequence` answers.
+ * Selects the element under a point, the next one along or the one named; a
+ * `selection` event carrying `sequence` answers.
  */
 export function previewPickScript(
   pick: PreviewPick,
@@ -188,9 +198,14 @@ export function previewSelectScript(
   return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
 }
 
-/** Asks which element is under a point in the design's pixels; the call itself answers. */
-export function previewHoverScript(at: { x: number; y: number }): string {
-  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument({ x: at.x, y: at.y })})`;
+/**
+ * Asks which element is under a point in the design's pixels, or where the one
+ * named is drawn; the call itself answers.
+ */
+export function previewHoverScript(at: { x: number; y: number } | PreviewNode): string {
+  const asked =
+    'x' in at ? { x: at.x, y: at.y } : { elementId: at.elementId, instancePath: at.instancePath };
+  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument(asked)})`;
 }
 
 /** Asks what is at a point or between two points in the design's pixels; the call itself answers. */
@@ -304,12 +319,12 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
   const parsed = readAnswer(value);
   if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
   const rect = readRect(parsed.rect);
-  if (!rect || typeof parsed.instancePath !== 'string' || !record(parsed.room)) return null;
+  if (!rect || !isInstancePath(parsed.instancePath) || !record(parsed.room)) return null;
   const { above, below } = parsed.room;
   if (!isRoom(above) || !isRoom(below)) return null;
   return {
     elementId: clampPreviewText(parsed.elementId),
-    instancePath: clampPreviewText(parsed.instancePath),
+    instancePath: parsed.instancePath,
     rect,
     tagName: clampPreviewText(parsed.tagName),
     room: { above, below },
@@ -319,7 +334,7 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
 /** A probe's answer, or null when nothing marked is there or the answer is not one. */
 export function readPreviewFinding(value: unknown): PreviewFinding | null {
   const parsed = readAnswer(value);
-  if (!record(parsed) || !present(parsed.elementId) || typeof parsed.instancePath !== 'string')
+  if (!record(parsed) || !present(parsed.elementId) || !isInstancePath(parsed.instancePath))
     return null;
   const rect = readRect(parsed.rect);
   if (!rect) return null;
@@ -332,7 +347,7 @@ export function readPreviewFinding(value: unknown): PreviewFinding | null {
   }
   return {
     elementId: clampPreviewText(parsed.elementId),
-    instancePath: clampPreviewText(parsed.instancePath),
+    instancePath: parsed.instancePath,
     rect,
     text,
   };
@@ -359,7 +374,7 @@ export function readPreviewVector(value: unknown): PreviewVector | null {
 }
 
 /** A direct answer's JSON, within its cap, or undefined. */
-function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
+export function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
   if (typeof value !== 'string' || utf8Bytes(value) > capBytes) return undefined;
   try {
     return JSON.parse(value);
@@ -378,7 +393,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
   if (
     !record(element) ||
     !present(element.elementId) ||
-    typeof element.instancePath !== 'string' ||
+    !isInstancePath(element.instancePath) ||
     typeof element.parentDisplay !== 'string'
   )
     return null;
@@ -396,7 +411,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
     sequence,
     element: {
       elementId: clampPreviewText(element.elementId),
-      instancePath: clampPreviewText(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       styles,
       text: whole(element.text),
@@ -413,11 +428,11 @@ function readRect(value: unknown): FrameRect | null {
   return width < 0 || height < 0 ? null : { x, y, width, height };
 }
 
-function record(value: unknown): value is Record<string, unknown> {
+export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function count(value: unknown): value is number {
+export function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
@@ -425,7 +440,15 @@ function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function present(value: unknown): value is string {
+/**
+ * Child indices from the body down, as the reporter writes an element's path.
+ * A path is an identity, not display text, so it is read whole or not at all.
+ */
+export function isInstancePath(value: unknown): value is string {
+  return typeof value === 'string' && /^\d+(?:\/\d+)*$/.test(value);
+}
+
+export function present(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
