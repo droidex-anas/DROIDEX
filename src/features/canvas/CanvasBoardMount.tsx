@@ -167,6 +167,9 @@ export function CanvasBoardMount({
   const writes = useLandedWrites(appSessionId);
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
+  // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
+  const elementPanelOpen = frames.length > 0 && interaction.mode === 'edit';
+  const sideColumns = showingDocument ? 0 : [layersOpen, elementPanelOpen].filter(Boolean).length;
   useEffect(() => {
     const byId = new Map(frames.map((frame) => [frame.designId, frame]));
     return showBoard({
@@ -178,6 +181,7 @@ export function CanvasBoardMount({
       selected: selectedFrameIds
         .map((designId) => byId.get(designId))
         .filter((frame): frame is CanvasFrame => frame !== undefined),
+      sideColumns,
       focusFrame: (designId) => {
         // A frame asked for over the document brings the board back, focused on it.
         if (showingDocument)
@@ -195,6 +199,7 @@ export function CanvasBoardMount({
     pinnable,
     selectedFrameIds,
     showingDocument,
+    sideColumns,
   ]);
 
   if (shownDocument)
