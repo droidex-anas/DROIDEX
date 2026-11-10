@@ -256,9 +256,9 @@ export function CanvasBoardMount({
             if (isShown(designId)) boardRef.current?.focusFrame(designId);
           }}
           onLeave={(designId) => {
-            // A hidden frame has no label on the board to take the keyboard.
+            // A hidden frame has no label on the board, so the board itself takes the keyboard.
             if (isShown(designId)) boardRef.current?.focusLabel(designId);
-            else boardArea.current?.querySelector('button')?.focus();
+            else boardArea.current?.querySelector<HTMLElement>('[data-board-mode]')?.focus();
           }}
           onClose={() => {
             // An empty canvas has no frame to hand the keyboard to: its invitation's first action takes it.
