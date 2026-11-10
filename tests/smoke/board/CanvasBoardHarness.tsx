@@ -21,6 +21,7 @@ import {
   SELECT_MODE,
   type BoardInteraction,
 } from '../../../src/features/canvas/canvasState';
+import { isBoardEditor, isLayersKey } from '../../../src/features/canvas/boardKeys';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { ExportToProjectDialog } from '../../../src/features/canvas/ExportToProjectDialog';
@@ -528,6 +529,7 @@ function Harness() {
       selected: snapshot.frames.filter((frame) =>
         interaction.selectedFrameIds.includes(frame.designId),
       ),
+      sideColumns: 0,
       focusFrame: (designId) => board.current?.focusFrame(designId),
     });
   }, [snapshot, interaction]);
@@ -767,12 +769,17 @@ function Harness() {
       <div
         data-canvas-board
         style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}
+        onKeyDown={(event) => {
+          if (!isLayersKey(event) || isBoardEditor(event.target)) return;
+          event.preventDefault();
+          setLayersOpen(!layersOpen);
+        }}
       >
         {layersOpen && (
           <LayersPanel
             frames={snapshot.frames}
             selectedFrameIds={interaction.selectedFrameIds}
-            agentWorking={false}
+            agentWorking={presence.size > 0}
             onRename={frameActions.rename}
             onPick={(designId, additive) => {
               setInteraction(

@@ -104,6 +104,9 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await page.keyboard.press('Alt+Digit1');
   await expect(tree).toBeHidden();
   await expect(page.locator('[data-design-frame="b"] [data-frame-header]')).toBeFocused();
+  // And from the board, ⌥1 opens it again.
+  await page.keyboard.press('Alt+Digit1');
+  await expect(tree).toBeVisible();
 });
 
 test('A rename that answers late or loses its frame leaves the next edit and the keyboard in the panel', async ({
@@ -190,4 +193,16 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await page.keyboard.press('Space');
   await expect.poll(() => selection(page)).toEqual([]);
   await keyboardOn('Design B');
+});
+
+test('Layers says a frame without a design is being written while an agent is at work on it', async ({
+  page,
+}) => {
+  await page.goto(boardUrl('font=14&layers=1&presence=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  await expect(tree.getByRole('treeitem', { name: 'Design A, Writing' })).toBeVisible();
+  await page.evaluate(() => {
+    window.boardHarness.leave();
+  });
+  await expect(tree.getByRole('treeitem', { name: 'Design A, Empty' })).toBeVisible();
 });
