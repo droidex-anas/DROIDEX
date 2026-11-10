@@ -1,6 +1,7 @@
 // What every source export carries to build itself: a package.json pinning the
-// toolchain the Canvas runtime compiles with, and a build script that bundles
-// `src/` against the copied kit with it and serves the result.
+// toolchain the Canvas runtime compiles with, a build script that bundles
+// `src/` against the copied kit with it and serves the result, and the README
+// that says how.
 
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
@@ -9,7 +10,11 @@ import { storageFailure } from './canvasError.js';
 import { ownedCanvasRuntimeDir, packageDirectory } from './canvasRuntime.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
 import { readModules } from './compiler.js';
-import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
+import {
+  DESIGN_PACKAGE_ENTRIES,
+  packageName,
+  RADIX_PRIMITIVE_SPECIFIERS,
+} from './designPackages.js';
 
 /**
  * The export's package.json. The canvas toolchain and its fixed runtime
@@ -159,4 +164,25 @@ if (process.argv.includes('--serve')) {
     console.log('Canvas preview: http://127.0.0.1:' + server.address().port);
   });
 }
+`;
+
+export const EXPORT_README = `# Canvas source export
+
+The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
+\`design-system/\`: React primitives, token CSS and font licences. The kit's
+guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
+selected light/dark values in \`canvas-export/modes.json\`, and the canvas and kit
+images the source and kit refer to in \`assets/\`.
+
+Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
+\`npm run preview\` to serve the result locally. The supported runtime imports
+are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
+and \`@droidex/design-system\`, plus these library packages, which
+\`package.json\` lists only when the source or kit imports them: \`radix-ui\`,
+\`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\`,
+\`tailwind-merge\`, and the Radix primitives \`radix-ui\` re-exports, each also
+importable as its own package: ${[...RADIX_PRIMITIVE_SPECIFIERS].map((specifier) => `\`${specifier}\``).join(', ')}.
+Direct dependency versions are exact in \`package.json\`. No lockfile is
+generated during export: npm resolves transitive dependencies when you install,
+without the export needing registry access.
 `;

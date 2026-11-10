@@ -18,8 +18,7 @@ import { canvasDir } from '../droidexPaths.js';
 import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
-import { BUILD_SCRIPT, exportPackageJson } from './canvasExportBuild.js';
-import { RADIX_PRIMITIVE_SPECIFIERS } from './designPackages.js';
+import { BUILD_SCRIPT, EXPORT_README, exportPackageJson } from './canvasExportBuild.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
@@ -171,7 +170,7 @@ async function canvasSourceFiles(
   const sources = [...saved.files.values(), ...Object.values(kit.files)];
   files.push({ path: 'package.json', content: await exportPackageJson(sources, signal) });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
-  files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
+  files.push({ path: 'README.md', content: EXPORT_README + (projectMapping(kit) ?? '') });
   return files;
 }
 
@@ -435,24 +434,3 @@ async function answerExportRequest(
     response.off('close', onClose);
   }
 }
-
-const README = `# Canvas source export
-
-The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
-\`design-system/\`: React primitives, token CSS and font licences. The kit's
-guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
-selected light/dark values in \`canvas-export/modes.json\`, and the canvas and kit
-images the source and kit refer to in \`assets/\`.
-
-Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
-\`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`, plus these library packages, which
-\`package.json\` lists only when the source or kit imports them: \`radix-ui\`,
-\`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\`,
-\`tailwind-merge\`, and the Radix primitives \`radix-ui\` re-exports, each also
-importable as its own package: ${[...RADIX_PRIMITIVE_SPECIFIERS].map((specifier) => `\`${specifier}\``).join(', ')}.
-Direct dependency versions are exact in \`package.json\`. No lockfile is
-generated during export: npm resolves transitive dependencies when you install,
-without the export needing registry access.
-`;
