@@ -41,11 +41,14 @@ import {
 } from './canvasAnnotationSchema.js';
 import {
   arrangeFramesInputSchema,
-  createFramesInputSchema,
-  editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
+  reorderFramesInputSchema,
   undoRemovalInputSchema,
+} from './frameEditSchema.js';
+import {
+  createFramesInputSchema,
+  editElementInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -171,6 +174,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -246,6 +250,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
@@ -265,6 +270,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -283,6 +289,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: {
           status: 'failed',
           generation: 2,
@@ -496,6 +503,18 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'hiddenSet', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'reordered', change: { ...wire.change, frames: [], order: ['dsg_hey'] } },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: {
         kind: 'annotated',
         change: {
@@ -572,6 +591,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     assert.ok(isRecord(serialized) && isCanvasEvent(serialized), `rejected ${event.type}`);
   }
   assert.equal(isCanvasEvent({ ...events.at(-1), image: { format: 'png', scale: 4 } }), false);
+  const reordered = (order: string[]) => ({
+    type: 'canvas.change',
+    change: { ...wire.change, order },
+  });
+  assert.ok(isCanvasEvent(reordered(['dsg_a', 'dsg_b'])));
+  assert.equal(isCanvasEvent(reordered(['dsg_a', 'dsg_a'])), false);
   // The renderer's half of the one correlation bound; canvasBridge.test.ts
   // holds the sidecar to the same length through the dispatch boundary.
   assert.ok(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(128) }));
@@ -653,6 +678,13 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   assert.deepEqual(undo, wire.undo);
   assert.deepEqual(rename, wire.rename);
   assert.deepEqual(annotate, wire.annotate);
+});
+
+test('a reorder names each frame once', () => {
+  assert.match(
+    rejection(reorderFramesInputSchema, { mutationId: 'reorder', designIds: ['dsg_a', 'dsg_a'] }),
+    /each frame once/,
+  );
 });
 
 test('annotate names each annotation once, changes at least one and refuses a stray control character', () => {

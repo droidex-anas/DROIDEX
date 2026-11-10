@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { activeRow, layerKey } from './layerKeys';
+import { activeRow, layerKey, moveRow } from './layerKeys';
 
 const press = (key: string, modifiers: Partial<KeyboardEvent> = {}) => ({
   key,
+  code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+  shiftKey: false,
   metaKey: false,
   ctrlKey: false,
   altKey: false,
@@ -22,6 +24,26 @@ test('the arrows, Home and End walk the rows in order, and the other keys act on
   // A command chord belongs to the app, such as ⌥1 closing the panel.
   assert.equal(layerKey(press('ArrowDown', { metaKey: true }), 0, 3), null);
   assert.equal(layerKey(press('1', { altKey: true }), 0, 3), null);
+});
+
+test('Ctrl+Shift+H hides or shows the row, and Alt with an arrow restacks it a row, up to the ends', () => {
+  // ⇧⌘H on the Mac; the test runs off it.
+  assert.deepEqual(layerKey(press('H', { ctrlKey: true, shiftKey: true }), 1, 3), {
+    kind: 'toggle-hidden',
+  });
+  assert.deepEqual(layerKey(press('ArrowUp', { altKey: true }), 1, 3), {
+    kind: 'restack',
+    index: 0,
+  });
+  assert.deepEqual(layerKey(press('ArrowDown', { altKey: true }), 1, 3), {
+    kind: 'restack',
+    index: 2,
+  });
+  // The front row goes no further forward, and the back row no further back, nor wraps.
+  assert.equal(layerKey(press('ArrowUp', { altKey: true }), 0, 3), null);
+  assert.equal(layerKey(press('ArrowDown', { altKey: true }), 2, 3), null);
+  assert.deepEqual(moveRow(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a']);
+  assert.deepEqual(moveRow(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
 });
 
 test('the keyboard row is where it moved to, else the first selected frame, else the first row', () => {

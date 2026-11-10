@@ -439,6 +439,23 @@
   outline-offset: -1.5px;
 }
 
+/* A row's eye and handle show under the pointer and on the keyboard's row; a
+   hidden frame's eye stays, so the panel says which frames are off the board. */
+.canvas-layer-tool {
+  opacity: 0;
+}
+
+.canvas-layers-tree [role='treeitem']:hover .canvas-layer-tool,
+.canvas-layers-tree:focus-visible [data-keyboard-row] .canvas-layer-tool,
+.canvas-layer-tool[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.canvas-layers-tree[data-dragging],
+.canvas-layers-tree[data-dragging] * {
+  cursor: grabbing;
+}
+
 /* A colour that paints nothing, as the element panel's swatch shows it. */
 .canvas-swatch-none {
   background-color: var(--surface);

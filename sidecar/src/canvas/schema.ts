@@ -53,8 +53,6 @@ const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSou
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
 const TOTAL_BYTES_MESSAGE = `The source written for one design must stay under ${String(CANVAS_LIMITS.maxDesignSourceBytes / (1024 * 1024))} MiB in total.`;
 const FRAME_COUNT_MESSAGE = `One create reserves 1 to ${String(CANVAS_LIMITS.maxFramesPerCreate)} frames.`;
-const ARRANGE_COUNT_MESSAGE = `One arrange moves 1 to ${String(CANVAS_LIMITS.maxFramesPerArrange)} frames.`;
-const ARRANGE_REPEAT_MESSAGE = 'A frame can appear only once in an arrange.';
 const STYLE_COUNT_MESSAGE = `One edit sets 1 to ${String(CANVAS_LIMITS.maxStylesPerEdit)} styles.`;
 const STYLE_REPEAT_MESSAGE = 'A style property can appear only once in an edit.';
 
@@ -86,7 +84,7 @@ export const sessionCanvasIntentSchema = z
   })
   .strict();
 
-const versionSchema = z.number().int().nonnegative();
+export const versionSchema = z.number().int().nonnegative();
 
 export const designSystemRefSchema = z
   .object({
@@ -331,57 +329,6 @@ export const switchRevisionInputSchema = z
   })
   .strict();
 
-export const arrangeFramesInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    frames: z
-      .array(
-        z
-          .object({
-            designId: canvasIdentifierSchema,
-            expectedLayoutVersion: versionSchema,
-            rect: frameRectSchema,
-          })
-          .strict(),
-      )
-      .min(1, ARRANGE_COUNT_MESSAGE)
-      .max(CANVAS_LIMITS.maxFramesPerArrange, ARRANGE_COUNT_MESSAGE)
-      // Two entries for one frame would carry contradictory expected versions.
-      .refine((frames) => !hasDuplicate(frames.map((frame) => frame.designId)), {
-        message: ARRANGE_REPEAT_MESSAGE,
-      }),
-  })
-  .strict();
-
-export const removeFramesInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    designIds: z
-      .array(canvasIdentifierSchema)
-      .min(1)
-      .max(CANVAS_LIMITS.maxFramesPerRemoval)
-      .refine((ids) => !hasDuplicate(ids), {
-        message: 'A frame can be removed only once per change.',
-      }),
-  })
-  .strict();
-
-export const undoRemovalInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    undoId: canvasIdentifierSchema,
-  })
-  .strict();
-
-export const renameFrameInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    designId: canvasIdentifierSchema,
-    name: canvasNameSchema,
-    expectedManifestVersion: versionSchema,
-  })
-  .strict();
-
 // One write is bounded by the schema above; the revision it produces carries
 // unchanged files too, so the same §5 limits are checked against the merge.
 // Returns the limit's own message, or null when the revision fits.
@@ -413,10 +360,6 @@ export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
 export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type SwitchRevisionInput = z.infer<typeof switchRevisionInputSchema>;
-export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
-export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
-export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;
-export type RenameFrameInput = z.infer<typeof renameFrameInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
 // other, so two distinct paths would address one file on disk.
@@ -447,7 +390,7 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-function hasDuplicate(values: readonly string[]): boolean {
+export function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
 

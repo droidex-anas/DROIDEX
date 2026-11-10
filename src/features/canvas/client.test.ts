@@ -36,6 +36,7 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     designSystem,
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'pending', generation: 0 },
   };
 }

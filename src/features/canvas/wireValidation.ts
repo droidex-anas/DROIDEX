@@ -64,6 +64,8 @@ const REPLY_KINDS = new Set([
   'removed',
   'undone',
   'renamed',
+  'hiddenSet',
+  'reordered',
   'annotated',
   'artifact',
   'source',
@@ -181,6 +183,8 @@ function isReply(value: unknown): boolean {
     case 'arranged':
     case 'undone':
     case 'renamed':
+    case 'hiddenSet':
+    case 'reordered':
     case 'annotated':
       return isChange(value.change);
     case 'removed':
@@ -379,8 +383,14 @@ function isChange(value: unknown): boolean {
   return (
     isFrameProjection(value) &&
     list(value.removedDesignIds, id) &&
-    (value.annotations === undefined || isAnnotationChange(value.annotations))
+    (value.annotations === undefined || isAnnotationChange(value.annotations)) &&
+    (value.order === undefined || isStackingOrder(value.order))
   );
+}
+
+/** The whole stacking order, which names each frame once. */
+function isStackingOrder(value: unknown): boolean {
+  return Array.isArray(value) && value.every(id) && new Set(value).size === value.length;
 }
 
 function isSummary(value: unknown): boolean {
@@ -430,6 +440,7 @@ function isFrame(value: unknown): boolean {
     isDesignSystem(value.designSystem) &&
     (value.variantOf === null || id(value.variantOf)) &&
     (value.seededRevisionId === null || id(value.seededRevisionId)) &&
+    typeof value.hidden === 'boolean' &&
     isBuild(value.build)
   );
 }

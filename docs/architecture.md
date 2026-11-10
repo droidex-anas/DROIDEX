@@ -491,6 +491,14 @@ IDs, so requests naming its closed era return `invalid_input`. Every mutation
 requires its explicit `scopeId`; retries keep the original scope and cannot
 borrow a later turn's authority. Named leases expire when their turn or provider ends.
 
+Frames stack in manifest order, back to front, and the board paints them in that
+order. The Layers panel's `canvas.reorderFrames` replaces the whole order and is
+refused with `revision_conflict` unless it names exactly the canvas's frames;
+`canvas.setFrameHidden` compares the frame's manifest version as a rename does.
+A hidden frame leaves the board's drawing, reading order, focus, picking and
+selection, but stays in the Layers panel and the agent's model: `canvas_read`
+marks it `hidden: true`, and every agent tool still reads and writes it.
+
 `designSessionGuidance.ts` owns the concise Design brief. Droid receives it
 through process-local `exec --append-system-prompt`, Claude through the
 `claude_code` preset's system-prompt append, and Codex through native thread

@@ -23,6 +23,7 @@ function frame(designId: string, name = `Design ${designId}`): CanvasFrame {
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'pending', generation: 1 },
   };
 }

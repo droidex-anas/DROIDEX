@@ -154,6 +154,7 @@ function frame(designId: string, name: string, y: number): CanvasFrame {
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'building', generation: 1 },
   };
 }
