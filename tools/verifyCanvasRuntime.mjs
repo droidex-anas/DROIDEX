@@ -19,7 +19,8 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { join, resolve, sep } from 'node:path';
 import process from 'node:process';
 
 /** Also read by sidecar/src/canvas/canvasRuntime.ts, which owns its contract. */
@@ -44,14 +45,23 @@ const VICTORY_VENDOR_LICENSES = [
   'internmap',
 ];
 
+// The Radix primitives a design may import, and the packages that state their
+// license only in their README; the sidecar reads the same file.
+const RUNTIME_PACKAGES = JSON.parse(
+  readFileSync(new URL('../sidecar/src/canvas/designRuntimePackages.json', import.meta.url), 'utf8'),
+);
+
+/** Staged as those packages' notices; also read by tools/stage-canvas-runtime.mjs. */
+export const README_LICENSES = new Set(RUNTIME_PACKAGES.readmeLicenses);
+
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
-// needs, so the gate resolves all declared specifiers and loads the three the compiler calls
-// into: resolving a package says nothing about whether its own dependencies are
-// there. `postcss-value-parser` arrives through Tailwind, and the React a design
-// imports is read as files by esbuild rather than required.
+// needs, so the gate resolves all declared specifiers and loads the four the
+// compiler calls into: resolving a package says nothing about whether its own
+// dependencies are there. `postcss-value-parser` arrives through Tailwind, and
+// the packages a design imports are read as files by esbuild rather than required.
 const ANCHOR_FILE = 'canvas-runtime.js';
-const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss'];
+const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss', 'tailwindcss-animate'];
 
 // Long enough for a cold load of the staged runtime, and the point at which a
 // package that never finishes loading is killed rather than waited for.
@@ -61,21 +71,31 @@ const LOAD_TIMEOUT_MS = 60_000;
 // any directory a user opens and the app's signature omits it, so the runtime
 // tolerates it as a regular file and nothing else.
 const FINDER_METADATA = '.DS_Store';
-const RUNTIME_SPECIFIERS = [
+const COMPILER_SPECIFIERS = [
   'esbuild',
   'postcss',
   'postcss-value-parser',
   'tailwindcss',
+  'tailwindcss-animate',
+];
+// DESIGN_PACKAGE_ENTRIES in sidecar/src/canvas/designPackages.ts.
+const DESIGN_ENTRIES = [
   'react',
   'react/jsx-runtime',
   'react-dom/client',
   'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
   'simple-icons/index.mjs',
+  'radix-ui/dist/index.mjs',
+  ...RUNTIME_PACKAGES.radixPrimitives.map((name) => `@radix-ui/react-${name}/dist/index.mjs`),
+  '@radix-ui/react-icons/dist/react-icons.esm.js',
+  'class-variance-authority/dist/index.mjs',
+  'clsx/dist/clsx.mjs',
+  'tailwind-merge/dist/bundle-mjs.mjs',
 ];
-// EXPORT_HIDDEN_ENTRIES in canvasRuntime.ts: `require` cannot name these, so
-// they are found at their path inside the runtime.
-const EXPORT_HIDDEN_ENTRIES = ['simple-icons/index.mjs'];
+// FILE_ENTRY in canvasRuntime.ts: an exports map may hide these from
+// `require`, so they are found at their path inside the runtime.
+const FILE_ENTRY = /\.m?js$/;
 
 /**
  * Throws on the first thing wrong with the runtime at `runtimePath`, which must
@@ -128,7 +148,7 @@ export function verifyCanvasRuntime(runtimePath, arch) {
   if (existsSync(join(modulesPath, '@esbuild', `darwin-${foreign}`)))
     fail(`the ${foreign} esbuild binary ships alongside the ${arch} one`);
 
-  proveLoadable(root, manifest.binary);
+  verifyBrowserGraph(root, proveLoadable(root, manifest.binary));
 }
 
 function isNotice(path) {
@@ -142,27 +162,18 @@ function isLicense(path) {
 function verifyNotices(manifest) {
   const files = new Set(Object.keys(manifest.files));
   const expected = [...files]
-    .filter(
-      (path) =>
-        isNotice(path) ||
-        path === 'node_modules/victory-vendor/README.md' ||
-        path === 'node_modules/dlv/README.md',
-    )
+    .filter((path) => isNotice(path) || README_LICENSES.has(path))
     .sort();
   if (JSON.stringify(manifest.notices) !== JSON.stringify(expected))
     fail('manifest.json has an incomplete license and notice inventory');
 
   const packages = [...files].filter((path) => path.endsWith('/package.json'));
   const packageSet = new Set(packages);
-  const licenses = expected.filter(isLicense);
+  const licenses = expected.filter((path) => isLicense(path) || README_LICENSES.has(path));
   for (const packagePath of packages) {
     let directory = packagePath.slice(0, -'/package.json'.length);
     if (directory.startsWith('node_modules/@esbuild/darwin-')) {
       if (!files.has('node_modules/esbuild/LICENSE.md')) fail(`${directory} has no esbuild license`);
-      continue;
-    }
-    if (directory === 'node_modules/victory-vendor' || directory === 'node_modules/dlv') {
-      if (!files.has(`${directory}/README.md`)) fail(`${directory} has no license statement`);
       continue;
     }
     const ownPackage = directory;
@@ -187,8 +198,9 @@ function verifyNotices(manifest) {
 }
 
 /**
- * Proves the pinned packages load: resolves every specifier and `require`s the
- * three the compiler calls into, in a child, so a package that throws cannot
+ * Proves the pinned packages load and returns the file each design entry
+ * resolves to: resolves every specifier and `require`s the four the compiler
+ * calls into, in a child, so a package that throws cannot
  * take the gate down, one that never finishes is killed, and the gate's own
  * module cache stays clean. It says nothing about what those packages contain —
  * the manifest sizes are the only account of that — and the resolution trace
@@ -211,7 +223,7 @@ function proveLoadable(root, binary) {
     // Nothing ambient may add a module path or a loader to this child.
     env: { PATH: '/usr/bin:/bin', ESBUILD_BINARY_PATH: join(root, binary) },
   });
-  if (probe.status === 0) return;
+  if (probe.status === 0) return JSON.parse(probe.stdout);
   if (probe.error?.code === 'ETIMEDOUT')
     fail(`its packages did not load within ${String(LOAD_TIMEOUT_MS)}ms`);
   const reason =
@@ -243,18 +255,34 @@ Module._resolveFilename = function (specifier, ...rest) {
 };
 
 const runtimeRequire = createRequire(root + '/' + ${JSON.stringify(ANCHOR_FILE)});
-const exportHidden = new Set(${JSON.stringify(EXPORT_HIDDEN_ENTRIES)});
-for (const specifier of ${JSON.stringify(RUNTIME_SPECIFIERS)}) {
-  if (exportHidden.has(specifier)) {
-    if (!existsSync(inside + specifier)) refuse(specifier + ' does not resolve');
-    continue;
+const fileEntry = ${String(FILE_ENTRY)};
+// resolveEntry in canvasRuntime.ts: a file entry is read inside the directory
+// of the package.json \`require\` would find for its package.
+const packageName = (specifier) =>
+  specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+const packageDirectory = (name) => {
+  const modules = runtimeRequire.resolve
+    .paths(name)
+    ?.find((directory) => existsSync(directory + '/' + name + '/package.json'));
+  return modules === undefined ? null : modules + '/' + name;
+};
+const resolveEntry = (specifier) => {
+  if (fileEntry.test(specifier)) {
+    const name = packageName(specifier);
+    const directory = packageDirectory(name);
+    const file = directory === null ? null : directory + specifier.slice(name.length);
+    if (file === null || !existsSync(file)) refuse(specifier + ' does not resolve');
+    if (!file.startsWith(inside)) refuse(specifier + ' resolves outside the runtime, to ' + file);
+    return file;
   }
   try {
-    runtimeRequire.resolve(specifier);
+    return runtimeRequire.resolve(specifier);
   } catch {
     refuse(specifier + ' does not resolve');
   }
-}
+};
+for (const specifier of ${JSON.stringify(COMPILER_SPECIFIERS)}) resolveEntry(specifier);
+const designFiles = ${JSON.stringify(DESIGN_ENTRIES)}.map(resolveEntry);
 for (const specifier of ${JSON.stringify(LOADED_SPECIFIERS)}) {
   try {
     runtimeRequire(specifier);
@@ -262,7 +290,49 @@ for (const specifier of ${JSON.stringify(LOADED_SPECIFIERS)}) {
     refuse(specifier + ' could not be loaded: ' + error.message);
   }
 }
+process.stdout.write(JSON.stringify(designFiles));
 `;
+
+/**
+ * Bundles every export of each design entry, as staging chose the files, and
+ * refuses any module the bundle reads from outside the runtime: a package's own
+ * imports walk on to ancestor node_modules when staging left a file out, and
+ * only a compile follows them. The sidecar's esbuild runs it, so the other
+ * architecture's binary is never run.
+ */
+function verifyBrowserGraph(root, designFiles) {
+  const esbuild = createRequire(new URL('../sidecar/package.json', import.meta.url))('esbuild');
+  const entries = 'canvas-runtime-entries.js';
+  let build;
+  try {
+    build = esbuild.buildSync({
+      stdin: {
+        contents: designFiles
+          .map((file, index) => `export * as entry${String(index)} from ${JSON.stringify(file)};`)
+          .join('\n'),
+        resolveDir: root,
+        sourcefile: entries,
+      },
+      absWorkingDir: root,
+      bundle: true,
+      platform: 'browser',
+      format: 'esm',
+      target: 'es2022',
+      define: { 'process.env.NODE_ENV': '"production"' },
+      write: false,
+      metafile: true,
+      logLevel: 'silent',
+    });
+  } catch (error) {
+    fail(`its browser entries do not bundle: ${error.errors?.[0]?.text ?? String(error)}`);
+  }
+  const inside = join(root, 'node_modules') + sep;
+  for (const input of Object.keys(build.metafile.inputs)) {
+    const file = resolve(root, input);
+    if (input !== entries && !file.startsWith(inside))
+      fail(`its browser entries import ${file}, outside the runtime`);
+  }
+}
 
 function walk(root, within, sizes, directories, found) {
   for (const entry of readdirSync(join(root, within), { withFileTypes: true })) {

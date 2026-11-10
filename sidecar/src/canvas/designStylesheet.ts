@@ -239,12 +239,15 @@ export function modeTokens(modes: ReturnType<typeof kitModes>): string {
     .join('\n');
 }
 
-/** The canvas's Tailwind setup independent of any kit: dark by data-mode, no plugins. */
+/**
+ * The canvas's Tailwind setup independent of any kit: dark by data-mode. It is
+ * data, written into every export, so the one plugin, tailwindcss-animate, is
+ * added where Tailwind runs (`tailwindConfig` and the export's build script).
+ */
 export const CANVAS_TAILWIND_OPTIONS = {
   darkMode: ['selector', "[data-mode='dark']"],
   theme: {},
-  plugins: [],
-} satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
+} satisfies Pick<Config, 'darkMode' | 'theme'>;
 
 /**
  * A frame's Tailwind: the stock setup plus the pinned kit's tokens as theme
@@ -252,7 +255,7 @@ export const CANVAS_TAILWIND_OPTIONS = {
  */
 export function canvasTailwindOptions(
   system: Pick<DesignSystem, 'sections'>,
-): Pick<Config, 'darkMode' | 'theme' | 'plugins'> {
+): Pick<Config, 'darkMode' | 'theme'> {
   return {
     ...CANVAS_TAILWIND_OPTIONS,
     theme: { extend: kitTailwindTheme(system.sections) },
@@ -268,6 +271,7 @@ function tailwindConfig(
     // source literally spells it out; no partial class names are guessed.
     content: [...rawSources(system.files), ...rawSources(files)],
     ...canvasTailwindOptions(system),
+    plugins: [canvasRuntime().tailwindcssAnimate],
   };
 }
 

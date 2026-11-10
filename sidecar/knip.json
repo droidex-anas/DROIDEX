@@ -12,15 +12,21 @@
   "project": ["src/**/*.ts", "regression/**/*.ts"],
   "ignoreBinaries": ["open"],
   "ignoreDependencies": [
+    "@radix-ui/react-icons",
+    "class-variance-authority",
+    "clsx",
     "esbuild",
     "lucide-react",
     "postcss",
     "postcss-value-parser",
+    "radix-ui",
     "react",
     "react-dom",
     "react-is",
     "recharts",
     "simple-icons",
-    "tailwindcss"
+    "tailwind-merge",
+    "tailwindcss",
+    "tailwindcss-animate"
   ]
 }

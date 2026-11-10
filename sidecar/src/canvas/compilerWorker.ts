@@ -8,7 +8,12 @@ import { createHash } from 'node:crypto';
 import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
-import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
+import {
+  DamagedRuntimeError,
+  ownedCanvasRuntimeDir,
+  startCanvasRuntime,
+  stopCanvasRuntime,
+} from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -17,6 +22,7 @@ import {
   type CompiledDesign,
   type CompilerRequest,
   type CompilerResponse,
+  type CompilerUnavailableReason,
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
@@ -27,6 +33,7 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
+import { moduleSpecifiers } from './moduleSpecifiers.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
@@ -206,6 +213,16 @@ process.on('message', (request: CompilerRequest) => {
     void shutdown(request.requestId);
     return;
   }
+  // Reading specifiers needs only the parser, never the runtime.
+  if (request.type === 'moduleSpecifiers') {
+    const specifiers = moduleSpecifiers(request.sources);
+    send({
+      requestId: request.requestId,
+      status: 'specifiers',
+      specifiers,
+    } satisfies CompilerResponse);
+    return;
+  }
   if (runtimeFault !== null) {
     send({
       requestId: request.requestId,
@@ -327,8 +344,12 @@ function outcomeOf(
 ):
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { status: 'cancelled' }
-  | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
+  | { status: 'unavailable'; reason: CompilerUnavailableReason; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
+  if (error instanceof DamagedRuntimeError) {
+    console.error('Canvas runtime is incomplete:', error.message);
+    return { status: 'unavailable', reason: 'damaged-runtime', message: RUNTIME_UNAVAILABLE };
+  }
   if (error instanceof CompileFailedError)
     return { status: 'failed', diagnostics: boundDiagnostics(error.diagnostics) };
   // A revision pinning a kit version that is not there is the revision's
