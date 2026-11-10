@@ -41,6 +41,7 @@ export function LayerRow({
   onDoubleClick,
   onLight,
   onUnlight,
+  onToolPress,
   onSetHidden,
   onGrab,
 }: {
@@ -63,15 +64,19 @@ export function LayerRow({
   onClick: (event: MouseEvent<HTMLElement>) => void;
   onDoubleClick: () => void;
   /** The pointer came onto the row: its frame lights on the board. */
-  onLight: () => void;
+  onLight: (designId: string) => void;
   /** The pointer left, or the list scrolled the row away from under it. */
-  onUnlight: () => void;
+  onUnlight: (designId: string) => void;
+  /** The pointer pressed the row's eye or handle. */
+  onToolPress: () => void;
   /** Undefined where this chat cannot change the canvas, as are `onGrab` and `rename`. */
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   /** The pointer went down on the row's handle. */
   onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
 }) {
-  const unlight = useEffectEvent(onUnlight);
+  const unlight = useEffectEvent(() => {
+    onUnlight(frame.designId);
+  });
   useEffect(
     () => () => {
       unlight();
@@ -94,8 +99,12 @@ export function LayerRow({
         if (!rename) onClick(event);
       }}
       onDoubleClick={onDoubleClick}
-      onPointerEnter={onLight}
-      onPointerLeave={onUnlight}
+      onPointerEnter={() => {
+        onLight(frame.designId);
+      }}
+      onPointerLeave={() => {
+        onUnlight(frame.designId);
+      }}
     >
       <Row
         icon={<StatusGlyph stage={stage} />}
@@ -126,6 +135,7 @@ export function LayerRow({
                     className="canvas-layer-tool -my-1.5"
                     onClick={(event) => {
                       event.stopPropagation();
+                      onToolPress();
                       onSetHidden(frame, !frame.hidden);
                     }}
                     onDoubleClick={(event) => {
@@ -139,6 +149,7 @@ export function LayerRow({
                   aria-hidden
                   className="canvas-layer-tool -my-1.5 -mr-2 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted hover:text-secondary"
                   onPointerDown={(event) => {
+                    onToolPress();
                     onGrab(event, frame.designId);
                   }}
                 >

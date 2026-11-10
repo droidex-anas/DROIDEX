@@ -280,9 +280,8 @@ test('Layers hides and shows a frame, and restacks frames from the keyboard and 
   const said = page.getByTestId('canvas-board').getByRole('status');
   await expect(said).toHaveText('Design A hidden');
 
-  // ⇧⌘H on the keyboard's row shows it again.
-  await tree.focus();
-  await page.keyboard.press('End');
+  // The eye leaves the keyboard on the tree, on A's row, so ⇧⌘H shows A again.
+  await expect(tree).toBeFocused();
   await page.keyboard.press('ControlOrMeta+Shift+KeyH');
   expect((await calls()).hide).toEqual([
     { designId: 'a', hidden: true },

@@ -223,11 +223,12 @@ export function LayersPanel({
                   onDoubleClick={() => {
                     rename(frame);
                   }}
-                  onLight={() => {
-                    boardLight.light(frame.designId);
-                  }}
-                  onUnlight={() => {
-                    boardLight.unlight(frame.designId);
+                  onLight={boardLight.light}
+                  onUnlight={boardLight.unlight}
+                  onToolPress={() => {
+                    // The keyboard stays on the tree, on this row, for a chord or Escape after the press.
+                    moveTo(frame.designId);
+                    tree.current?.focus({ preventScroll: true });
                   }}
                   onSetHidden={onSetHidden}
                   onGrab={onReorder && stack.grab}
