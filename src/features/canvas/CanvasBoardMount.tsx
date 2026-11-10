@@ -166,6 +166,12 @@ export function CanvasBoardMount({
   const presence = useCanvasPresence(appSessionId, frames);
   const writes = useLandedWrites(appSessionId);
   const boardArea = useRef<HTMLDivElement>(null);
+  // The board draws, walks and selects only the frames the user has not hidden, so a
+  // frame hidden while selected leaves the selection; Layers lists them all.
+  const shown = useMemo(
+    () => ({ ...snapshot, frames: frames.filter((frame) => !frame.hidden) }),
+    [snapshot, frames],
+  );
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
@@ -231,7 +237,10 @@ export function CanvasBoardMount({
             boardRef.current?.focusFrame(designId);
           }}
           onLeave={(designId) => {
-            boardRef.current?.focusLabel(designId);
+            // A hidden frame has no label on the board to take the keyboard.
+            if (shown.frames.some((frame) => frame.designId === designId))
+              boardRef.current?.focusLabel(designId);
+            else boardArea.current?.querySelector('button')?.focus();
           }}
           onClose={() => {
             // An empty canvas has no frame to hand the keyboard to: its invitation's first action takes it.
@@ -256,7 +265,7 @@ export function CanvasBoardMount({
                 onShowLayers(!layersOpen);
               },
             }}
-            snapshot={snapshot}
+            snapshot={shown}
             restoredViewport={restoredViewport}
             onLeave={onLeaveBoard}
             onOpenSource={onOpenSource}
