@@ -399,6 +399,36 @@ test('an entry imported by another source module is shared too', () => {
   );
 });
 
+function editabilityIn(files: SourceFiles, file: string) {
+  return instrumentSource(files, 'r1')
+    .elements.filter((element) => element.file === file)
+    .map(({ tagName, editability }) => [tagName, editability]);
+}
+
+test('a container of elements is literal, and a computed child still makes it computed', () => {
+  const files = {
+    'main.tsx':
+      'export default () => <main className="p-4"><h1>Hi</h1><img src="canvas-asset:a" /><ul>{items.map((item) => <li>{item}</li>)}</ul></main>',
+  };
+  assert.deepEqual(editabilityIn(files, 'main.tsx'), [
+    ['main', 'literal'],
+    ['h1', 'literal'],
+    ['img', 'literal'],
+    ['ul', 'computed'],
+    ['li', 'shared'],
+  ]);
+  const mapped = instrumentSource(files, 'r1');
+  const container = mapped.elements[0];
+  assert.ok(container);
+  assert.throws(
+    () =>
+      applyElementEdit(files, mapped.elements, {
+        element: reference(container),
+        change: { kind: 'text', value: 'Flattened' },
+      }),
+    (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+  );
+});
 test('fragments and conditional branches retain separate canonical source sites', () => {
   const files = { 'main.tsx': 'export default () => <>{ok ? <h1>Yes</h1> : <h1>No</h1>}</>' };
   const mapped = instrumentSource(files, 'r1');

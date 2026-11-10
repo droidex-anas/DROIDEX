@@ -272,6 +272,9 @@ function isComputed(node: ElementNode): boolean {
   return node.children.some(
     (child) =>
       !ts.isJsxText(child) &&
+      !ts.isJsxElement(child) &&
+      !ts.isJsxSelfClosingElement(child) &&
+      !ts.isJsxFragment(child) &&
       !(
         ts.isJsxExpression(child) &&
         !child.dotDotDotToken &&
