@@ -306,7 +306,8 @@ function createProjectImageRequests(importImage, sidecarSupervisor) {
 
 /** Pasted SVG markup as the data URL the attachments store saves, refused before any copy when it is not markup under the limit. */
 function pastedSvgDataUrl(svg) {
-  if (typeof svg !== 'string' || Buffer.byteLength(svg, 'utf8') > MAX_IMAGE_BYTES)
+  if (typeof svg !== 'string' || svg === '') throw invalidImage('The pasted SVG is empty.');
+  if (Buffer.byteLength(svg, 'utf8') > MAX_IMAGE_BYTES)
     throw invalidImage('Paste an SVG under 10 MiB.');
   return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
 }
