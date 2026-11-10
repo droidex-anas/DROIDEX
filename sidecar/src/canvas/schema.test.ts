@@ -591,6 +591,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     assert.ok(isRecord(serialized) && isCanvasEvent(serialized), `rejected ${event.type}`);
   }
   assert.equal(isCanvasEvent({ ...events.at(-1), image: { format: 'png', scale: 4 } }), false);
+  const reordered = (order: string[]) => ({
+    type: 'canvas.change',
+    change: { ...wire.change, order },
+  });
+  assert.ok(isCanvasEvent(reordered(['dsg_a', 'dsg_b'])));
+  assert.equal(isCanvasEvent(reordered(['dsg_a', 'dsg_a'])), false);
   // The renderer's half of the one correlation bound; canvasBridge.test.ts
   // holds the sidecar to the same length through the dispatch boundary.
   assert.ok(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(128) }));

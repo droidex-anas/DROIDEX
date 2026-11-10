@@ -384,8 +384,13 @@ function isChange(value: unknown): boolean {
     isFrameProjection(value) &&
     list(value.removedDesignIds, id) &&
     (value.annotations === undefined || isAnnotationChange(value.annotations)) &&
-    (value.order === undefined || list(value.order, id))
+    (value.order === undefined || isStackingOrder(value.order))
   );
+}
+
+/** The whole stacking order, which names each frame once. */
+function isStackingOrder(value: unknown): boolean {
+  return Array.isArray(value) && value.every(id) && new Set(value).size === value.length;
 }
 
 function isSummary(value: unknown): boolean {
