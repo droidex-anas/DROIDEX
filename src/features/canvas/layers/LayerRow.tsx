@@ -69,7 +69,7 @@ export function LayerRow({
           rename ? (
             <FrameNameField
               frame={frame}
-              className="w-full min-w-0 rounded-sm bg-field px-1 text-body text-primary focus-visible:outline-none"
+              className="w-full min-w-0 bg-transparent text-body text-primary focus-visible:outline-none"
               onRename={rename}
               onDone={onRenameDone}
             />
@@ -78,9 +78,19 @@ export function LayerRow({
           )
         }
         data-keyboard-row={active || undefined}
+        // While renamed, the row is the field's filled box, as Input draws one
+        // around its affixes: the name stays where the label was, the box rings
+        // on focus, and a press on its padding keeps the keyboard in the field.
+        onMouseDown={(event) => {
+          if (!rename || event.target instanceof HTMLInputElement) return;
+          event.preventDefault();
+          event.currentTarget.querySelector('input')?.focus();
+        }}
         className={cn(
           'cursor-default select-none transition-colors duration-150 ease-out',
-          selected ? 'bg-active' : 'group-hover:bg-elevated',
+          rename && 'field-affix cursor-text bg-field',
+          !rename && selected && 'bg-active',
+          !rename && !selected && 'group-hover:bg-elevated',
         )}
       />
     </div>

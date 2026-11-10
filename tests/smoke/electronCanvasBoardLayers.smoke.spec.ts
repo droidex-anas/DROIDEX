@@ -57,10 +57,23 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-design-frame="b"] [data-frame-header]')).toBeFocused();
 
-  // F2 renames the row's frame, and the tree takes the keyboard back once it saved.
+  // F2 renames the row's frame where its name stood, and the tree takes the keyboard back once it saved.
+  const label = await row('Design B').getByText('Design B', { exact: true }).boundingBox();
   await tree.focus();
   await page.keyboard.press('F2');
   const field = page.getByRole('textbox', { name: 'Name of Design B' });
+  await expect(field).toBeFocused();
+  const fieldTextX = await field.evaluate((input) => {
+    const style = getComputedStyle(input);
+    return (
+      input.getBoundingClientRect().left +
+      parseFloat(style.borderLeftWidth) +
+      parseFloat(style.paddingLeft)
+    );
+  });
+  expect(fieldTextX).toBe(label?.x);
+  // The whole row is the field's box: a press on its padding keeps the keyboard in the field.
+  await row('Design B').click({ position: { x: 4, y: 4 } });
   await expect(field).toBeFocused();
   await field.fill('Hero');
   await page.keyboard.press('Enter');
