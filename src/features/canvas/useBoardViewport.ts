@@ -14,6 +14,7 @@ import type { CanvasMotion } from './canvasMotion';
 import {
   fitFrames,
   interpolateViewport,
+  revealRect,
   wheelZoomScale,
   zoomAtPoint,
   zoomStep,
@@ -41,7 +42,7 @@ export interface BoardViewport {
   zoomTo: (scale: number) => void;
   /** Eases to the next zoom stop in `direction`, as + and − ask. */
   stepZoom: (direction: 1 | -1) => void;
-  /** Centers a frame the board does not wholly show, at the current zoom; one in view stays put. */
+  /** Pans a frame the board does not wholly show into view, at the current zoom; one in view stays put. */
   reveal: (rect: FrameRect) => void;
   /**
    * The user's hand takes the viewport: a running focus animation ends, so the
@@ -149,18 +150,8 @@ export function useBoardViewport(
 
   const reveal = useCallback(
     (rect: FrameRect) => {
-      const current = heading.current ?? latest.current.viewport;
-      const size = visibleBox();
-      const left = current.x + rect.x * current.scale;
-      const top = current.y + rect.y * current.scale;
-      const right = left + rect.width * current.scale;
-      const bottom = top + rect.height * current.scale;
-      if (left >= 0 && top >= 0 && right <= size.x && bottom <= size.y) return;
-      animateTo({
-        scale: current.scale,
-        x: size.x / 2 - (rect.x + rect.width / 2) * current.scale,
-        y: size.y / 2 - (rect.y + rect.height / 2) * current.scale,
-      });
+      const target = revealRect(heading.current ?? latest.current.viewport, rect, visibleBox());
+      if (target) animateTo(target);
     },
     [animateTo, visibleBox],
   );

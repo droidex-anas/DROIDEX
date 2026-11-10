@@ -24,7 +24,7 @@ export interface Viewport {
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 4;
 
-/** Screen padding Fit and focus leave around what they frame, which clears the tool rail. */
+/** Screen padding Fit and focus leave around what they frame, which clears the tool rail; reveal keeps it on the left. */
 const FIT_PADDING_PX = 72;
 
 /**
@@ -103,6 +103,29 @@ export function fitFrames(rects: readonly FrameRect[], viewportSize: Point): Vie
     y: (viewportSize.y + FRAME_CHROME_PX) / 2 - (bounds.y + bounds.height / 2) * scale,
     scale,
   };
+}
+
+/**
+ * The viewport that brings `rect` wholly into view at the same zoom with the
+ * least travel, or null when it is in view already. The rail's column and the
+ * label and toolbar above the frame count as out of view, so a revealed frame
+ * keeps its chrome clear of the rail; one larger than the board shows its top left.
+ */
+export function revealRect(viewport: Viewport, rect: FrameRect, size: Point): Viewport | null {
+  const left = viewport.x + rect.x * viewport.scale;
+  const top = viewport.y + rect.y * viewport.scale;
+  const shift = {
+    x: shiftInto(left, rect.width * viewport.scale, FIT_PADDING_PX, size.x),
+    y: shiftInto(top, rect.height * viewport.scale, FRAME_CHROME_PX, size.y),
+  };
+  if (shift.x === 0 && shift.y === 0) return null;
+  return { ...viewport, x: viewport.x + shift.x, y: viewport.y + shift.y };
+}
+
+/** How far a span starting at `start` moves to lie within `from`–`to`, or to start at `from` when it cannot. */
+function shiftInto(start: number, length: number, from: number, to: number): number {
+  if (start < from || length > to - from) return from - start;
+  return Math.min(0, to - (start + length));
 }
 
 /** The box every rect sits inside, or null when there is nothing to frame. */

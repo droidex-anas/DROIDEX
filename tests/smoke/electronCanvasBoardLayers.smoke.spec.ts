@@ -195,6 +195,30 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await keyboardOn('Design B');
 });
 
+test('A frame the keyboard leaves Layers for keeps its label and toolbar clear of the rail', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&layers=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const header = page.locator('[data-design-frame="a"] [data-frame-header]');
+  await expect(header).toBeVisible();
+  const rail = await page.getByRole('group', { name: 'Board input mode' }).boundingBox();
+  const railRight = (rail?.x ?? 0) + (rail?.width ?? 0);
+  // Once the board has fitted, Design A moves under the rail's column, still wholly on the board.
+  await page.evaluate(() => {
+    window.boardHarness.publish('a', { x: 10, y: 50, width: 400, height: 300 }, 2);
+  });
+  await expect.poll(async () => (await header.boundingBox())?.x).toBeLessThan(railRight);
+
+  await tree.getByRole('treeitem', { name: 'Design A, Ready' }).click();
+  await page.keyboard.press('Escape');
+  await expect(header).toBeFocused();
+  expect((await header.boundingBox())?.x).toBeGreaterThan(railRight);
+  const toolbar = await page.getByRole('toolbar', { name: 'Design A actions' }).boundingBox();
+  expect(toolbar?.x).toBeGreaterThan(railRight);
+});
+
 test('Layers says a frame without a design is being written while an agent is at work on it', async ({
   page,
 }) => {
