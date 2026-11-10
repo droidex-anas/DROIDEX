@@ -204,11 +204,11 @@
 
 /* A line too short to hold its distance puts it beside the line, clear of the ticks. */
 .canvas-snap-pill[data-axis='x'][data-beside] {
-  transform: translate(-50%, calc(-100% - 6px));
+  transform: translate(-50%, calc(-100% - theme('spacing[1.5]')));
 }
 
 .canvas-snap-pill[data-axis='y'][data-beside] {
-  transform: translate(6px, -50%);
+  transform: translate(theme('spacing[1.5]'), -50%);
 }
 
 /* Edit's and Design's outlines over the guest, drawn like a frame's: the element
