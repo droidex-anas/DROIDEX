@@ -25,10 +25,12 @@ import { projectMapping } from './canvasProjectExport.js';
 import { ProjectExports, type ProjectExportAdmission } from './projectExports.js';
 import { kitGuidance } from './designSystemDocument.js';
 import { importDesignSystem } from './designSystemImport.js';
+import { importProjectDesignSystem } from './designSystemProject.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
+import { LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
 import { createHarness } from '../testing/sessionLifecycleHarness.js';
 import type { DesignSystemRef } from './protocol.js';
 
@@ -493,6 +495,53 @@ test('a kit imported from a project is copied, and the README names each kit tok
   assert.match(readme, /\| `--ds-radius-sm` \| none \|/);
   assert.doesNotMatch(readme, /^\| `--ds-primary` \|/m);
   assert.doesNotMatch(readme, /imported from|\| `--primary` \|/);
+});
+
+test("an export to project of a kit made from the project's library imports its components, until one is gone", async (t) => {
+  const { root } = await profile(t);
+  const folder = await project(t, LIBRARY);
+  const imported = await importProjectDesignSystem(
+    folder,
+    [{ path: 'components.json', kind: 'shadcn' }],
+    { id: 'acme', name: 'Acme' },
+  );
+  assert.equal(imported.status, 'imported');
+  const kit = await saveDesignSystem(imported.system, {
+    mutationId: 'acme',
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
+  const image = await ownImage(canvasOwner(root), PNG);
+  const source = `import { Button } from '@droidex/design-system';
+export default () => <Button><img src="canvas-asset:${image}" /></Button>;
+`;
+  await saveRevision(root, { 'main.tsx': source }, kit);
+  const exports = new ProjectExports();
+  const exportTo = await projectRoute(t, (appSessionId) => exports.admit(appSessionId, folder));
+
+  assert.equal((await exportTo('project-chat', 'design/hey')).status, 200);
+  const rewritten = join(folder, 'design/hey');
+  assert.deepEqual(await fileSet(rewritten), [
+    'README.md',
+    `assets/${image}`,
+    'canvas-export/guidance.md',
+    'src/main.tsx',
+  ]);
+  assert.match(
+    await readFile(join(rewritten, 'src/main.tsx'), 'utf8'),
+    /^import \{ Button \} from '@\/components\/ui\/button';$/m,
+  );
+
+  await rm(join(folder, 'components/ui/button.tsx'));
+  assert.equal((await exportTo('project-chat', 'design/copied')).status, 200);
+  const copied = join(folder, 'design/copied');
+  const files = await fileSet(copied);
+  assert.ok(files.includes('design-system/index.tsx') && files.includes('package.json'));
+  assert.equal(await readFile(join(copied, 'src/main.tsx'), 'utf8'), source);
+  assert.match(
+    await readFile(join(copied, 'README.md'), 'utf8'),
+    /## Why the kit is copied\n\n[^#]*components\/ui\/button\.tsx/,
+  );
 });
 
 test('the README keeps a project name and path with backticks or line breaks on their own line', () => {
