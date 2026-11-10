@@ -587,6 +587,23 @@ export default function Hey() { return <Slot className={clsx('p-2')}><p>Hey</p><
   );
 });
 
+test('package.json lists a library package however the source names it', async (t) => {
+  const { root, destination } = await profile(t);
+  const source = `import { twMerge } from /* merge */ 'tailwind-merge';
+import { clsx } from 'cl\\u0073x';
+const { Slot } = require('@radix-ui/react-slot');
+const icons = import('@radix-ui/react-icons');
+export default function Hey() { return <Slot className={twMerge(clsx('p-2'))}>{String(icons)}</Slot>; }`;
+  await saveRevision(root, { 'main.tsx': source }, defaultKit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  const manifest = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')) as {
+    dependencies: Record<string, string>;
+  };
+  for (const name of ['tailwind-merge', 'clsx', '@radix-ui/react-slot', '@radix-ui/react-icons'])
+    assert.ok(name in manifest.dependencies, name);
+});
+
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {
   const { root, destination } = await profile(t);
   const assetId = await ownImage(canvasOwner(root), PNG);

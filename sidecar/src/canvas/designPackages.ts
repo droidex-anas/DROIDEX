@@ -1,53 +1,18 @@
 // The packages a design or kit may import, each mapped to the file it resolves
 // to: a package's ESM entry where it ships one, so esbuild can drop the exports
 // a design never uses. canvasRuntime.ts checks every entry resolves inside the
-// runtime at startup; tools/verifyCanvasRuntime.mjs mirrors this list.
+// runtime at startup; tools/verifyCanvasRuntime.mjs mirrors this list and reads
+// the Radix primitives from the same designRuntimePackages.json.
+
+import runtimePackages from './designRuntimePackages.json' with { type: 'json' };
 
 // The primitives the radix-ui umbrella re-exports. shadcn/ui components written
 // before the umbrella import them one package at a time, and both forms load
 // the same staged files. Radix's internal packages (react-primitive,
-// react-use-*) are not a public API, so they are listed out rather than matched
-// by prefix.
-const RADIX_PRIMITIVES = [
-  'accessible-icon',
-  'accordion',
-  'alert-dialog',
-  'aspect-ratio',
-  'avatar',
-  'checkbox',
-  'collapsible',
-  'context-menu',
-  'dialog',
-  'direction',
-  'dropdown-menu',
-  'form',
-  'hover-card',
-  'label',
-  'menubar',
-  'navigation-menu',
-  'one-time-password-field',
-  'password-toggle-field',
-  'popover',
-  'portal',
-  'progress',
-  'radio-group',
-  'scroll-area',
-  'select',
-  'separator',
-  'slider',
-  'slot',
-  'switch',
-  'tabs',
-  'toast',
-  'toggle',
-  'toggle-group',
-  'toolbar',
-  'tooltip',
-  'visually-hidden',
-];
-
-const RADIX_PRIMITIVE_SPECIFIERS = new Set(
-  RADIX_PRIMITIVES.map((name) => `@radix-ui/react-${name}`),
+// react-use-*) are not a public API, so the primitives are listed rather than
+// matched by prefix.
+export const RADIX_PRIMITIVE_SPECIFIERS: ReadonlySet<string> = new Set(
+  runtimePackages.radixPrimitives.map((name) => `@radix-ui/react-${name}`),
 );
 
 export const DESIGN_PACKAGE_ENTRIES: ReadonlyMap<string, string> = new Map([

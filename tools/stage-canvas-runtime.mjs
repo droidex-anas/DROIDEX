@@ -24,7 +24,11 @@ import {
 } from 'node:fs';
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { CANVAS_RUNTIME_MANIFEST, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
+import {
+  CANVAS_RUNTIME_MANIFEST,
+  README_LICENSES,
+  verifyCanvasRuntime,
+} from './verifyCanvasRuntime.mjs';
 
 const sidecarDir = 'sidecar';
 const stagingDir = join(sidecarDir, 'canvas-runtime');
@@ -70,13 +74,6 @@ const SKIPPED_NAMES = new Set([
   'CHANGELOG.md',
   '.DS_Store',
   '.gitkeep',
-]);
-// Packages that ship no license file and state their license in the README.
-// VictoryVendor's vendored libraries keep their own licenses.
-const README_LICENSES = new Set([
-  'node_modules/dlv/README.md',
-  'node_modules/react-remove-scroll-bar/README.md',
-  'node_modules/victory-vendor/README.md',
 ]);
 const SKIPPED_SUFFIXES = ['.map', '.ts', '.tsx', '.mts', '.cts', '.flow'];
 const SKIPPED_DIRECTORIES = new Set(['test', 'tests', '__tests__', 'doc', 'docs', 'skills']);

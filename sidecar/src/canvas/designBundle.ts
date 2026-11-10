@@ -5,11 +5,11 @@
 // import, so the bundled worker takes it from the directory a packaged app owns
 // (see canvasRuntime.ts).
 
-import { dirname, join } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
 import { truncateDiagnosticText } from './canvasDiagnostics.js';
-import { canvasRuntime } from './canvasRuntime.js';
+import { canvasRuntime, DamagedRuntimeError } from './canvasRuntime.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { DESIGN_PACKAGE_ENTRIES, DESIGN_PACKAGE_LIST } from './designPackages.js';
 import { KIT_ENTRY } from './designSystems.js';
@@ -223,6 +223,17 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
         );
       });
 
+      // Startup proves each allowlisted entry resolves inside an owned runtime,
+      // but a package's own imports walk on to ancestor node_modules when
+      // staging left a file out, so every file esbuild loads is checked. Its
+      // paths are real ones, and startup refuses a link inside the runtime.
+      const { ownedModules } = canvasRuntime();
+      if (ownedModules !== null)
+        build.onLoad({ filter: /.*/, namespace: 'file' }, (args) => {
+          if (args.path.startsWith(`${ownedModules}${sep}`)) return undefined;
+          throw new DamagedRuntimeError(`${args.path} is outside the Canvas runtime`);
+        });
+
       build.onLoad({ filter: /.*/, namespace: BOOT_NAMESPACE }, () => ({
         contents: BOOT_SOURCE,
         loader: 'tsx',
@@ -287,9 +298,10 @@ function diagnosticsFrom(
 function diagnosticFrom(message: esbuild.Message, severity: 'error' | 'warning'): CanvasDiagnostic {
   const detail = messageDetail(message);
   // Only this module throws inside a plugin, and only when the runtime cannot
-  // be resolved. That is the compiler failing, not the design, and the error
-  // carries an absolute path, so it is rethrown for the worker to report as an
-  // unavailable compiler rather than mapped to anything showable.
+  // be resolved or a module resolves outside it. That is the compiler failing,
+  // not the design, and the error carries an absolute path, so it is rethrown
+  // for the worker to report as an unavailable compiler rather than mapped to
+  // anything showable.
   if (detail.kind === 'failure') throw detail.error;
   const location = designLocation(message.location);
   if (detail.kind === 'diagnostic')
