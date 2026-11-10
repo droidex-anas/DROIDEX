@@ -39,9 +39,23 @@ function line(axis: Axis, a: number, b: number, at: number): SnapGap {
   return { axis, from: Math.min(a, b), to: Math.max(a, b), at };
 }
 
-/** A gap leaves the middle of the selection's facing edge, as a designer reads it. */
+/** The span two boxes share across `axis`; `low` passes `high` where they stand apart there. */
+function sharedAcross(from: FrameRect, to: FrameRect, axis: Axis) {
+  const cross = across(axis);
+  return {
+    low: Math.max(start(from, cross), start(to, cross)),
+    high: Math.min(end(from, cross), end(to, cross)),
+  };
+}
+
+/**
+ * A gap runs through the middle of the span the boxes share across it, so it
+ * meets both; where they share none, it leaves the middle of the selection's
+ * facing edge, as a designer reads it.
+ */
 function gapOn(from: FrameRect, to: FrameRect, axis: Axis): SnapGap | null {
-  const at = middle(from, across(axis));
+  const { low, high } = sharedAcross(from, to, axis);
+  const at = low < high ? (low + high) / 2 : middle(from, across(axis));
   if (end(from, axis) <= start(to, axis)) return line(axis, end(from, axis), start(to, axis), at);
   if (end(to, axis) <= start(from, axis)) return line(axis, end(to, axis), start(from, axis), at);
   return null;
@@ -53,9 +67,7 @@ function gapOn(from: FrameRect, to: FrameRect, axis: Axis): SnapGap | null {
  * middle of the span the boxes share across them, or of the space between.
  */
 function edgesOn(from: FrameRect, to: FrameRect, axis: Axis): SnapGap[] {
-  const cross = across(axis);
-  const low = Math.max(start(from, cross), start(to, cross));
-  const high = Math.min(end(from, cross), end(to, cross));
+  const { low, high } = sharedAcross(from, to, axis);
   const at = (low + high) / 2;
   const targets = [start(to, axis), end(to, axis)];
   const nested = holds(from, to, axis) || holds(to, from, axis);

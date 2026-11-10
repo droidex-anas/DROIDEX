@@ -8,15 +8,15 @@ function rect(x: number, y: number, width: number, height: number): FrameRect {
 }
 
 test('boxes side by side measure the gap from the selection and their offsets on the other axis', () => {
-  // The gap leaves the middle of the selection's facing edge; the offsets run through the space between.
+  // The gap runs through the middle of the span both share; the offsets run through the space between.
   assert.deepEqual(measureBetween(rect(0, 0, 100, 100), rect(140, 50, 100, 100)), [
-    { axis: 'x', from: 100, to: 140, at: 50 },
+    { axis: 'x', from: 100, to: 140, at: 75 },
     { axis: 'y', from: 0, to: 50, at: 120 },
     { axis: 'y', from: 100, to: 150, at: 120 },
   ]);
-  // With the hovered box on the left, the gap still leaves the selection.
+  // With the hovered box on the left, the gap still runs where the two meet it.
   assert.deepEqual(measureBetween(rect(140, 50, 100, 100), rect(0, 0, 100, 100)), [
-    { axis: 'x', from: 100, to: 140, at: 100 },
+    { axis: 'x', from: 100, to: 140, at: 75 },
     { axis: 'y', from: 0, to: 50, at: 120 },
     { axis: 'y', from: 100, to: 150, at: 120 },
   ]);
