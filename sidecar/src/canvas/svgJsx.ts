@@ -204,7 +204,7 @@ class JsxWriter {
 
   constructor(private readonly idPrefix: string) {}
 
-  /** Text content stays on one line, where JSX keeps its spaces. */
+  /** Text content stays on one line, so no indentation enters it. */
   element(element: SvgElement, indent: string, extraAttributes = ''): string {
     if (TEXT_CONTENT.has(element.name)) return indent + this.inline(element);
     const start = this.spend(
@@ -294,15 +294,8 @@ function jsxAttribute(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 }
 
-// Braces open an expression in JSX text; entities are how text says them.
-const TEXT_ESCAPES: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '{': '&#123;',
-  '}': '&#125;',
-};
-
+// JSX text would trim and collapse whitespace the SVG may keep with
+// xml:space; a string expression hands every character to the browser.
 function jsxText(text: string): string {
-  return text.replace(/\s+/g, ' ').replace(/[&<>{}]/g, (character) => TEXT_ESCAPES[character]);
+  return `{${JSON.stringify(text)}}`;
 }

@@ -40,7 +40,7 @@ test('an SVG becomes a frame whose root is the SVG, in React names, and it compi
     <svg className="block" width="120" height="80" viewBox="0 0 120 80" fill="none">
       <rect width="120" height="80" fill="url(#v1234abcd-paint0)" />
       <path d="M10 10H110V70H10Z" stroke="#1E1E1E" strokeWidth="2" style={{ mixBlendMode: "multiply", "--tone": "1" }} />
-      <text x="10" y="40" xmlSpace="preserve">Save &#123;50%&#125; &amp; more <tspan>now</tspan></text>
+      <text x="10" y="40" xmlSpace="preserve">{"Save {50%} & more\\n  "}<tspan>{"now"}</tspan></text>
       <defs>
         <linearGradient id="v1234abcd-paint0">
           <stop stopColor="#F00" />
@@ -60,6 +60,13 @@ test('an SVG becomes a frame whose root is the SVG, in React names, and it compi
     new AbortController().signal,
   );
   assert.deepEqual(design.diagnostics, []);
+});
+
+test('text keeps every space and no-break space the SVG has', () => {
+  const { mainTsx } = drawn(
+    '<svg xmlns="http://www.w3.org/2000/svg"><text xml:space="preserve">A  B&#160;C</text></svg>',
+  );
+  assert.match(mainTsx, /<text xmlSpace="preserve">\{"A {2}B\u00a0C"\}<\/text>/);
 });
 
 test('class rules are written onto their elements, and the classes go', () => {
