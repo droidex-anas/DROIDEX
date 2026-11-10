@@ -12,7 +12,7 @@ import {
 import { useMergeRefs } from '@floating-ui/react';
 import type { IconComponent } from '@droidex/icons';
 import { cn } from './cn';
-import { navigationIndex, typeaheadIndex } from './menuKeys';
+import { isTypeaheadKey, navigationIndex, typeaheadIndex } from './menuKeys';
 import { Popover, type PopoverProps } from './Popover';
 
 // How long typed letters keep adding to one type-ahead query.
@@ -116,12 +116,6 @@ function MenuRoot({
 
 function enabledItems(list: HTMLElement | null): HTMLElement[] {
   return Array.from(list?.querySelectorAll<HTMLElement>(ENABLED_ITEM) ?? []);
-}
-
-function isTypeaheadKey(event: KeyboardEvent): boolean {
-  return (
-    event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey
-  );
 }
 
 const ITEM_TONE = {
