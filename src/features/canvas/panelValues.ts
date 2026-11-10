@@ -302,9 +302,10 @@ export function blurOf(filter: string): string {
   return blurs.at(0)?.[1].trim() ?? 'none';
 }
 
-/** Whether a colour paints over everything behind it. */
+/** Whether a colour paints over everything behind it; CSS clamps an alpha above 1 to 1. */
 export function isOpaque(colour: string): boolean {
-  return parseColour(colour.trim())?.alpha === 1;
+  const alpha = parseColour(colour.trim())?.alpha;
+  return alpha !== undefined && alpha >= 1;
 }
 
 /** Whether two font stacks name the same families, however each is quoted and spaced. */

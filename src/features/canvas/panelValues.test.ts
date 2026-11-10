@@ -138,6 +138,7 @@ test('a filter reads as its blur, whatever else it composes, and a colour as opa
   assert.equal(blurOf('--ds-blur-soft'), '--ds-blur-soft');
   assert.ok(isOpaque('rgb(255, 255, 255)'));
   assert.ok(!isOpaque('rgba(255, 255, 255, 0.6)'));
+  assert.ok(isOpaque('rgba(0, 0, 0, 2)'));
   assert.ok(!isOpaque('--ds-surface'));
 });
 test('a font stack is named by its first family and matched however it is quoted', () => {

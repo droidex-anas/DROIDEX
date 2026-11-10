@@ -97,7 +97,8 @@ export function previewedStyles(draft: ElementEditDraft): Record<string, string>
  * A picked kit token, or a list of them, is named by the edit but drawn
  * through var(), as the class it saves as is. A blur's class sets one function
  * of a filter the element's other classes compose, so its preview keeps the
- * rest of what the element drew, and None takes only the blur.
+ * rest of what the element drew in order: the blur takes the drawn one's
+ * place, or leads as Tailwind composes it, and None takes only the blur.
  */
 function previewValue(property: string, value: string, drawn: string): string {
   const css = value.startsWith('--')
@@ -107,12 +108,15 @@ function previewValue(property: string, value: string, drawn: string): string {
         .join(', ')
     : value;
   if (!BLUR_PROPERTIES.has(property)) return css;
-  const functions: string[] = [];
-  if (value.startsWith('--')) functions.push(`blur(${css})`);
-  else if (value !== 'none') functions.push(value);
-  const rest = drawn.replace(BLUR_FUNCTION, ' ').trim();
-  if (rest !== '' && rest !== 'none') functions.push(rest);
-  return functions.length > 0 ? functions.join(' ') : 'none';
+  const rest = drawn.trim() === 'none' ? '' : drawn;
+  const blurs = rest.match(BLUR_FUNCTION) ?? [];
+  // Two blurs are no one step to replace, and the writer refuses them.
+  if (blurs.length > 1) return drawn;
+  let blur = '';
+  if (value.startsWith('--')) blur = `blur(${css})`;
+  else if (value !== 'none') blur = value;
+  const filter = blurs.length === 1 ? rest.replace(BLUR_FUNCTION, ` ${blur}`) : `${blur} ${rest}`;
+  return filter.replace(/\s+/g, ' ').trim() || 'none';
 }
 
 export function previewText(draft: ElementEditDraft, text: string): ElementEditDraft {
