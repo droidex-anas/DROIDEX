@@ -1,5 +1,6 @@
 // The board's viewport and everything that moves it: the measured board box,
-// pan, pointer-anchored zoom, the one Fit it may take before the user has
+// the canvas held in place on screen when the board's left edge moves, pan,
+// pointer-anchored zoom, the one Fit it may take before the user has
 // navigated, the eased programmatic focus, and the quiet window a wheel gesture
 // needs because it has no end event.
 //
@@ -7,6 +8,7 @@
 // from it. Nothing here knows about frames beyond the rects it is asked to fit.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { boardPoint, boardWheelDelta } from './boardCoordinates';
 import type { CanvasMotion } from './canvasMotion';
 import {
@@ -71,6 +73,8 @@ export function useBoardViewport(
   const heading = useRef<Viewport | null>(null);
   const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
   const measured = useRef<Point>({ x: 0, y: 0 });
+  // The board's left edge in client pixels when it was last measured.
+  const leftEdge = useRef<number | null>(null);
   const opening = useRef({ fitted: restored !== undefined, navigated: false });
   // What the listeners below need from the current render. They are registered
   // once, or run from an animation frame, so they cannot close over it. The
@@ -187,19 +191,37 @@ export function useBoardViewport(
     fitOnce();
   }, [fitOnce, frames]);
 
+  /**
+   * A column opening or closing at the board's left, or the chat column giving
+   * it room, moves the board's edge but not the canvas: the view pans by as much
+   * in the same frame, so no frame moves on screen, as in a design tool.
+   */
+  const holdCanvasInPlace = useCallback((root: HTMLElement) => {
+    const box = root.getBoundingClientRect();
+    const previous = leftEdge.current;
+    leftEdge.current = box.left;
+    if (previous === null || previous === box.left || box.width === 0) return;
+    const shift = ((box.left - previous) * root.offsetWidth) / box.width;
+    // Before the next paint, or the board would show one frame in the old place.
+    flushSync(() => {
+      setViewport((current) => ({ ...current, x: current.x - shift }));
+    });
+  }, []);
+
   useEffect(() => {
     const root = board.current;
     if (!root) return undefined;
     const observer = new ResizeObserver(() => {
       measured.current = { x: root.clientWidth, y: root.clientHeight };
       setBox(measured.current);
+      holdCanvasInPlace(root);
       fitOnce();
     });
     observer.observe(root);
     return () => {
       observer.disconnect();
     };
-  }, [board, fitOnce]);
+  }, [board, fitOnce, holdCanvasInPlace]);
 
   /**
    * Extends the wheel gesture in flight. `scroll.current` is what the wheel

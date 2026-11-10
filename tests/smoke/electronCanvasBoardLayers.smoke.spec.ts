@@ -73,14 +73,17 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await expect(row('Hero')).toBeVisible();
   await expect(tree).toBeFocused();
 
-  // The rail's Layers tool closes the panel and opens it again.
+  // The rail's Layers tool closes the panel and opens it again, and no frame moves on screen.
   const tool = page.getByRole('button', { name: 'Layers', exact: true });
   await expect(tool).toHaveAttribute('aria-pressed', 'true');
+  const opened = await frameA.boundingBox();
   await tool.click();
   await expect(tree).toBeHidden();
   await expect(tool).toHaveAttribute('aria-pressed', 'false');
+  expect(await frameA.boundingBox()).toEqual(opened);
   await tool.click();
   await expect(row('Design A')).toBeVisible();
+  expect(await frameA.boundingBox()).toEqual(opened);
 
   // ⌥1 closes it from inside, handing the keyboard to the row's frame.
   await tree.focus();
