@@ -25,7 +25,7 @@ import {
 import type { DesignSystem } from './designSystems.js';
 import type { SourceFiles } from './schema.js';
 
-const THEME_NAMESPACES = [
+export const THEME_NAMESPACES = [
   'colors',
   'fontSize',
   'lineHeight',
@@ -47,7 +47,7 @@ export type ThemeNamespace = (typeof THEME_NAMESPACES)[number];
 export const KIT_THEME_FILE = 'tailwind.theme.json';
 
 // A theme key as Tailwind flattens it (primary-foreground, 2xl, 0.5, DEFAULT).
-const themeKeySchema = z
+export const themeKeySchema = z
   .string()
   .max(64)
   .regex(/^[A-Za-z0-9][\w.-]*$/);

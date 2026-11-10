@@ -113,11 +113,15 @@ const EXPORT_LIST = /^export\s*\{([^}]*)\}/gm;
 
 /** The value names the kit entry exports: its primitives, in source order. */
 export function kitPrimitives(system: Pick<DesignSystem, 'files'>): string[] {
-  const entry = system.files[KIT_ENTRY];
+  return moduleExports(system.files[KIT_ENTRY]);
+}
+
+/** The value names a module exports, in source order. */
+export function moduleExports(source: string): string[] {
   const found: { name: string; offset: number }[] = [];
-  for (const match of entry.matchAll(EXPORTED_DECLARATION))
+  for (const match of source.matchAll(EXPORTED_DECLARATION))
     found.push({ name: match[1], offset: match.index });
-  for (const match of entry.matchAll(EXPORT_LIST)) {
+  for (const match of source.matchAll(EXPORT_LIST)) {
     for (const specifier of match[1].split(',')) {
       const parts = specifier.trim().split(/\s+/);
       // `type Props` exports nothing at run time; `Button as Primary` exports Primary.

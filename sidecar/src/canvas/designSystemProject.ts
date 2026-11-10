@@ -1,7 +1,9 @@
 // A kit made from the files of a session's project folder (design system
 // documents spec §12). DROIDEX reads each named file itself, under rules that
 // keep every read inside the folder, so the provenance names only files it
-// parsed. The folder comes from the session, never from the agent.
+// parsed. The folder comes from the session, never from the agent. A
+// shadcn/ui library's components.json names every file its kit reads
+// (designSystemLibrary.ts).
 
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
@@ -10,15 +12,17 @@ import {
   type ImportDesignSystemResult,
   type ImportSource,
 } from './designSystemImport.js';
+import { importLibraryDesignSystem } from './designSystemLibrary.js';
 import { MAX_PROJECT_FILES } from './designSystemProvenance.js';
 import { isFileSystemError, projectRelativePath, readProjectText } from './projectPaths.js';
 
 export interface ProjectSource {
   /** Relative to the project folder. */
   path: string;
-  kind: 'tailwind' | 'css' | 'tokens' | 'designMd';
+  kind: ImportSource['kind'] | 'shadcn';
 }
 
+type FileSource = ProjectSource & { kind: ImportSource['kind'] };
 type ProjectFile = ImportSource & { file: string };
 type ProjectRead =
   | { status: 'read'; sources: ProjectFile[] }
@@ -30,7 +34,13 @@ export async function importProjectDesignSystem(
   sources: readonly ProjectSource[],
   kit: { id: string; name: string },
 ): Promise<ImportDesignSystemResult> {
-  const read = await readProjectSources(projectRoot, sources);
+  const library = sources.find((source) => source.kind === 'shadcn');
+  if (library !== undefined && sources.length === 1)
+    return importLibraryDesignSystem(projectRoot, library.path, kit);
+  const read =
+    library === undefined
+      ? await readProjectSources(projectRoot, sources.filter(isFileSource))
+      : refused('Name components.json alone: it names every file a shadcn/ui kit reads.');
   if (read.status === 'refused')
     return { status: 'refused', diagnostics: [{ code: 'invalid_input', message: read.message }] };
   const files = read.sources.map((source) => source.file);
@@ -40,9 +50,13 @@ export async function importProjectDesignSystem(
   });
 }
 
+function isFileSource(source: ProjectSource): source is FileSource {
+  return source.kind !== 'shadcn';
+}
+
 async function readProjectSources(
   projectRoot: string,
-  sources: readonly ProjectSource[],
+  sources: readonly FileSource[],
 ): Promise<ProjectRead> {
   if (sources.length === 0) return refused('Name at least one project file to read.');
   if (sources.length > MAX_PROJECT_FILES)

@@ -41,7 +41,13 @@ import type { CanvasDiagnostic } from './protocol.js';
 import { readTokenModule } from './tokenModules.js';
 
 export type ImportDesignSystemResult =
-  | { status: 'imported'; system: DesignSystem; diagnostics: CanvasDiagnostic[] }
+  | {
+      status: 'imported';
+      system: DesignSystem;
+      diagnostics: CanvasDiagnostic[];
+      /** Each source token's name in the kit: the kit token that holds its value. */
+      kitNames: Record<string, string>;
+    }
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
 /** One text a kit is made from; a project's names the file it was read from. */
@@ -167,16 +173,17 @@ export function importDesignSystem(
   const unreadable = tokenRefusal(declared, diagnostics);
   if (unreadable) return unreadable;
 
+  const { modes, kitNames } = mapOntoContract(declared, diagnostics);
   const parsed = designSystemSchema.safeParse({
     id: kit.id,
     version: 1,
     name: kit.name,
-    ...starterKit(mapOntoContract(declared, diagnostics), notes),
+    ...starterKit(modes, notes),
     ...(kit.provenance ? { provenance: kit.provenance } : {}),
   });
   if (!parsed.success)
     return refused(parsed.error.issues[0]?.message ?? 'That design system is not valid.');
-  return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics) };
+  return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics), kitNames };
 }
 
 /**
@@ -285,9 +292,10 @@ function bounded(diagnostics: CanvasDiagnostic[]): CanvasDiagnostic[] {
 function mapOntoContract(
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
-): Record<Mode, Record<string, string>> {
+): { modes: Record<Mode, Record<string, string>>; kitNames: Record<string, string> } {
   const resolved = resolveValues(declared, diagnostics);
   const modes = { light: { ...CONTRACT.light }, dark: { ...CONTRACT.dark } };
+  const kitNames: Record<string, string> = {};
   const claimed = new Set<string>();
   // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
   const kitName = (name: string): string => {
@@ -302,6 +310,7 @@ function mapOntoContract(
       const value = resolved[mode].get(sourceName);
       if (value !== undefined) modes[mode][contractName] = value;
     }
+    kitNames[sourceName] = contractName;
     if (sourceName === contractName) return;
     // The source's own name stays as an alias, so a frame using the source's
     // names still resolves to the contract token.
@@ -309,6 +318,7 @@ function mapOntoContract(
     if (alias === contractName || Object.hasOwn(modes.light, alias)) return;
     modes.light[alias] = `var(${contractName})`;
     modes.dark[alias] = `var(${contractName})`;
+    kitNames[sourceName] = alias;
   };
   // A token whose value could not be used was already reported and maps nowhere.
   const usable = (name: string) => resolved.light.has(name) || resolved.dark.has(name);
@@ -337,8 +347,9 @@ function mapOntoContract(
     const kept = kitName(name);
     modes.light[kept] = light ?? either;
     modes.dark[kept] = dark ?? either;
+    kitNames[name] = kept;
   }
-  return modes;
+  return { modes, kitNames };
 }
 
 /**

@@ -1,0 +1,186 @@
+// What a shadcn/ui library's styling becomes in its kit: the Tailwind config's
+// theme as the kit's project theme (KIT_THEME_FILE), each value reading the kit
+// token its project token became, and the stylesheet's own rules without the
+// directives and tokens the canvas already supplies. The config is read for
+// its literals, never run.
+
+import postcss from 'postcss';
+import { readConfigTheme, type ConfigValue } from './configLiterals.js';
+import { tokenValueSchema } from './designSystemDocument.js';
+import { literalValue, placeIn, tokenName } from './designSystemSources.js';
+import {
+  THEME_NAMESPACES,
+  themeKeySchema,
+  type KitTheme,
+  type ThemeNamespace,
+} from './kitTailwindTheme.js';
+import type { CanvasDiagnostic } from './protocol.js';
+
+/** A project text and the project file it was read from. */
+export interface LibraryFile {
+  text: string;
+  file: string;
+}
+
+const NAMESPACES: ReadonlySet<string> = new Set(THEME_NAMESPACES);
+// A colour function around one token, as shadcn's `hsl(var(--primary) / <alpha-value>)`:
+// the kit's token already holds the whole colour, and the kit's theme adds the alpha.
+const WRAPPED_TOKEN =
+  /^(?:hsla?|rgba?|oklch|oklab|lab|lch)\(\s*(var\(--[a-z0-9-]+\))\s*(?:\/\s*<alpha-value>\s*)?\)$/i;
+const TOKEN_REFERENCE = /var\(\s*(--[\w-]+)/g;
+// The canvas stylesheet already opens with Tailwind's layers, and a kit loads no other file.
+const DROPPED_AT_RULES = new Set(['tailwind', 'import', 'config', 'plugin']);
+const MAX_LISTED = 6;
+
+/** The config's theme, as theme.extend reads it, over the kit's tokens. */
+export function libraryTheme(
+  config: LibraryFile,
+  kitNames: Readonly<Record<string, string>>,
+  diagnostics: CanvasDiagnostic[],
+): KitTheme {
+  const read = readConfigTheme(config.text);
+  const theme = read.status === 'read' ? read.theme : null;
+  if (theme?.kind !== 'object') {
+    diagnostics.push({
+      code: 'no_tokens',
+      message: 'That config has no literal theme object, so the kit keeps the canvas theme.',
+      file: config.file,
+    });
+    return {};
+  }
+  const kitTheme: KitTheme = {};
+  const skipped: string[] = [];
+  const extend = theme.entries.find((entry) => entry.key === 'extend')?.value;
+  // `theme.extend` follows `theme`, so its value wins for the same key, as Tailwind merges them.
+  for (const [scope, scopePath] of [
+    [theme, 'theme'],
+    [extend, 'theme.extend'],
+  ] as const) {
+    if (scope?.kind !== 'object') continue;
+    for (const { key, value } of scope.entries) {
+      if (key === null || key === 'extend') continue;
+      if (!NAMESPACES.has(key)) {
+        skipped.push(`${scopePath}.${key}`);
+        continue;
+      }
+      const namespace = key as ThemeNamespace;
+      flatten(value, '', `${scopePath}.${key}`, (themeKey, leaf, leafPath) => {
+        const problem = setThemeValue(kitTheme, namespace, themeKey, leaf, kitNames);
+        if (problem !== null)
+          diagnostics.push({
+            code: 'manual_interpretation_required',
+            message: `${leafPath} ${problem}, so the kit's theme leaves it out.`,
+            ...placeIn({ file: config.file, lineOffset: 0 }, leaf.line),
+          });
+      });
+    }
+  }
+  if (skipped.length > 0)
+    diagnostics.push({
+      code: 'manual_interpretation_required',
+      message: `The kit's theme does not read ${listed(skipped)}, so classes that use them do nothing.`,
+      file: config.file,
+    });
+  return kitTheme;
+}
+
+/** Visits each value of a theme namespace by its Tailwind key: `primary.DEFAULT` is `primary`. */
+function flatten(
+  value: ConfigValue,
+  key: string,
+  valuePath: string,
+  visit: (key: string, value: ConfigValue, path: string) => void,
+): void {
+  if (value.kind !== 'object') {
+    visit(key, value, valuePath);
+    return;
+  }
+  for (const entry of value.entries) {
+    if (entry.key === null) {
+      visit(key, entry.value, valuePath);
+      continue;
+    }
+    let child = `${key}-${entry.key}`;
+    if (key === '') child = entry.key;
+    else if (entry.key === 'DEFAULT') child = key;
+    flatten(entry.value, child, `${valuePath}.${entry.key}`, visit);
+  }
+}
+
+/** Sets one theme value; answers why it cannot be set. */
+function setThemeValue(
+  kitTheme: KitTheme,
+  namespace: ThemeNamespace,
+  key: string,
+  value: ConfigValue,
+  kitNames: Readonly<Record<string, string>>,
+): string | null {
+  const literal = key === '' ? null : literalValue(value, namespace);
+  if (literal === null) return 'is computed in the config';
+  const kitValue = readsKitTokens(literal, kitNames);
+  if (kitValue === null) return 'reads a token the stylesheet does not set';
+  if (!themeKeySchema.safeParse(key).success || !tokenValueSchema.safeParse(kitValue).success)
+    return 'is not a value a kit theme can hold';
+  (kitTheme[namespace] ??= {})[key] = kitValue;
+  return null;
+}
+
+/** The value with each project token read as the kit token it became; null when one is not in the kit. */
+function readsKitTokens(value: string, kitNames: Readonly<Record<string, string>>): string | null {
+  const kitName = (name: string) => {
+    const projectName = tokenName(name) ?? '';
+    return Object.hasOwn(kitNames, projectName) ? kitNames[projectName] : null;
+  };
+  if ([...value.matchAll(TOKEN_REFERENCE)].some(([, name]) => kitName(name) === null)) return null;
+  const rewritten = value.replace(
+    TOKEN_REFERENCE,
+    (reference, name: string) => `var(${kitName(name) ?? name}`,
+  );
+  return WRAPPED_TOKEN.exec(rewritten)?.[1] ?? rewritten;
+}
+
+/**
+ * The stylesheet as the kit's own CSS: without Tailwind's directives, which
+ * the canvas sheet opens with, without the custom properties that became kit
+ * tokens, and without any rule they leave empty. A loading at-rule is left out
+ * and reported, as a kit loads no other file.
+ */
+export function libraryStylesheet(
+  css: LibraryFile,
+  kitNames: Readonly<Record<string, string>>,
+  diagnostics: CanvasDiagnostic[],
+): string {
+  const root = postcss.parse(css.text, { from: undefined, map: false });
+  root.walkAtRules((rule) => {
+    if (!DROPPED_AT_RULES.has(rule.name)) return;
+    if (rule.name !== 'tailwind')
+      diagnostics.push({
+        code: 'manual_interpretation_required',
+        message: `@${rule.name} ${rule.params} was left out of the kit's CSS: a kit loads no other file.`,
+        ...placeIn({ file: css.file, lineOffset: 0 }, rule.source?.start?.line ?? 1),
+      });
+    rule.remove();
+  });
+  root.walkDecls((declaration) => {
+    if (Object.hasOwn(kitNames, tokenName(declaration.prop) ?? '') && declaration.variable)
+      declaration.remove();
+  });
+  for (let removed = true; removed; ) {
+    removed = false;
+    root.walk((node) => {
+      if ((node.type === 'rule' || node.type === 'atrule') && node.nodes?.length === 0) {
+        node.remove();
+        removed = true;
+      }
+    });
+  }
+  const text = root.toString().trim();
+  return text === '' ? '' : `${text}\n`;
+}
+
+function listed(names: readonly string[]): string {
+  const shown = names.slice(0, MAX_LISTED).join(', ');
+  return names.length > MAX_LISTED
+    ? `${shown} and ${String(names.length - MAX_LISTED)} more`
+    : shown;
+}
