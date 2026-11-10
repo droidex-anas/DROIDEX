@@ -30,6 +30,9 @@ export function ElementEffects({
   const shadows = tokenOptions('boxShadow');
   const shadow = value('boxShadow');
   const backdrop = blurOf(value('backdropFilter'));
+  // A previewed fill token is named, not a colour; its option holds the colour.
+  const fill = value('backgroundColor');
+  const fillColour = tokenOptions('backgroundColor')?.find((option) => option.value === fill)?.hint;
   const blurPicker = (property: string, label: string, current: string) => (
     <ValuePickerField
       label={label}
@@ -59,7 +62,7 @@ export function ElementEffects({
         // The fill paints over the blurred backdrop, so only a see-through one shows it.
         note={
           backdrop !== 'none' &&
-          isOpaque(value('backgroundColor')) &&
+          isOpaque(fillColour ?? fill) &&
           'The fill is opaque, so this blur does not show.'
         }
       >
