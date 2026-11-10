@@ -63,6 +63,7 @@ test('a colour reads as its token, else hex with its opacity, and nothing painte
   assert.deepEqual(colourFace('rgb(51 102 255 / 25%)'), { text: '#3366ff 25%', none: false });
   assert.deepEqual(colourFace('rgba(0, 0, 0, 0)'), { text: 'None', none: true });
   assert.deepEqual(colourFace('transparent'), { text: 'None', none: true });
+  assert.deepEqual(colourFace('none'), { text: 'None', none: true });
   // A colour space this reader does not convert is shown as written, and
   // matches a token written the same way.
   const oklch = [{ value: '--ds-accent', label: 'accent', hint: 'oklch(0.6 0.2 250)' }];
