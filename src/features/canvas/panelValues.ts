@@ -223,7 +223,8 @@ function parseColour(value: string): Colour | null {
   const colour = channelsIn(space, parts);
   const alpha = alphaText === undefined ? 1 : amount(alphaText, 0.01);
   if (!colour || ![...colour.channels, alpha].every(Number.isFinite)) return null;
-  return { ...colour, alpha };
+  // CSS clamps an alpha to between 0 and 1, and the browser computes it so.
+  return { ...colour, alpha: Math.min(Math.max(alpha, 0), 1) };
 }
 
 function channelsIn(space: string, parts: string[]): Omit<Colour, 'alpha'> | null {
@@ -306,10 +307,9 @@ export function blurOf(filter: string): string {
   return blurs.at(0)?.[1].trim() ?? 'none';
 }
 
-/** Whether a colour paints over everything behind it; CSS clamps an alpha above 1 to 1. */
+/** Whether a colour paints over everything behind it. */
 export function isOpaque(colour: string): boolean {
-  const alpha = parseColour(colour.trim())?.alpha;
-  return alpha !== undefined && alpha >= 1;
+  return parseColour(colour.trim())?.alpha === 1;
 }
 
 /** Whether two font stacks name the same families, however each is quoted and spaced. */

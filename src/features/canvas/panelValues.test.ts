@@ -124,6 +124,8 @@ test('a shadow token is the computed shadow Chromium writes colour first, in px'
     !sameValue('0 12px 32px rgb(20 20 20 / 0.12)', 'rgba(20, 20, 20, 0.12) 0px 12px 30px 0px'),
   );
   assert.ok(!sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px inset'));
+  // CSS clamps an alpha above 1, so the browser computes it opaque.
+  assert.ok(sameValue('0 1px 2px rgba(0, 0, 0, 2)', 'rgb(0, 0, 0) 0px 1px 2px 0px'));
   assert.ok(
     !sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px, rgb(0, 0, 0) 0px 1px 2px 0px'),
   );
