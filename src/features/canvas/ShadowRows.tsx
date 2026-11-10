@@ -3,7 +3,7 @@
 // as one stacked shadow; a shadow drawn other than from kit tokens shows raw,
 // in a single row.
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, Trash } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
@@ -22,6 +22,15 @@ interface ShadowRowsProps {
 }
 
 export function ShadowRows({ shadow, options, disabled, onPick, onHover }: ShadowRowsProps) {
+  const rows = useRef<(HTMLDivElement | null)[]>([]);
+  /** The row whose picker takes the focus once a removal has drawn the rows left. */
+  const focusAfterRemove = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusAfterRemove.current === null) return;
+    const row = rows.current[focusAfterRemove.current];
+    focusAfterRemove.current = null;
+    row?.querySelector<HTMLElement>('[aria-haspopup="listbox"]')?.focus();
+  });
   const tokens = options ?? [];
   const layers = shadowTokens(shadow, tokens);
   const off = disabled || tokens.length === 0;
@@ -50,7 +59,12 @@ export function ShadowRows({ shadow, options, disabled, onPick, onHover }: Shado
         const name = index === 0 ? 'Shadow' : `Shadow ${String(index + 1)}`;
         return (
           <Labelled key={index} label={index === 0 ? 'Shadow' : ''}>
-            <div className="flex items-center gap-1">
+            <div
+              ref={(node) => {
+                rows.current[index] = node;
+              }}
+              className="flex items-center gap-1"
+            >
               <div className="min-w-0 flex-1">
                 <ValuePickerField
                   label={name}
@@ -74,6 +88,8 @@ export function ShadowRows({ shadow, options, disabled, onPick, onHover }: Shado
                     aria-label={`Remove ${name}`}
                     disabled={disabled}
                     onClick={() => {
+                      // The next row moves up into this one's place; the last hands it to the one above.
+                      focusAfterRemove.current = Math.min(index, layers.length - 2);
                       onPick(written(layers.filter((_, at) => at !== index)));
                     }}
                   />
