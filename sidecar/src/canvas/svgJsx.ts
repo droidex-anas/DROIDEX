@@ -199,8 +199,7 @@ function applyClassRules(element: SvgElement, styles: ClassStyles): void {
 }
 
 class JsxWriter {
-  // Characters are at least as many bytes, so running out of room means the file is too large.
-  private room = CANVAS_LIMITS.maxFileBytes;
+  private roomBytes = CANVAS_LIMITS.maxFileBytes;
 
   constructor(private readonly idPrefix: string) {}
 
@@ -229,8 +228,8 @@ class JsxWriter {
   }
 
   private spend(written: string): string {
-    this.room -= written.length;
-    if (this.room < 0) throw new KeptAsImage('too_large');
+    this.roomBytes -= Buffer.byteLength(written, 'utf8');
+    if (this.roomBytes < 0) throw new KeptAsImage('too_large');
     return written;
   }
   private attributes(element: SvgElement): string {
