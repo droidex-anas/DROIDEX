@@ -1,4 +1,5 @@
 import { canvasToScreen, type Viewport } from './canvasGeometry';
+import { SIZE_ROOM_PX } from './ElementOutlines';
 import type { SnapGap, SnapGuide, SnapMarks } from './frameSnap';
 import { distanceLabel } from './measureDistances';
 import { useScreenSize } from './useScreenSize';
@@ -6,13 +7,26 @@ import { useScreenSize } from './useScreenSize';
 /** Screen pixels a centred distance keeps clear of the line's end ticks. */
 const TICK_CLEARANCE_PX = 4;
 
+/** What SnapGuides draws. */
+export interface GuideMarks extends SnapMarks {
+  /** For Alt's distances, the bottom edge of the box they leave, which its size chip hangs under. */
+  sizedBottom?: number;
+}
+
 /**
  * The lines a snapped drag lined up on and the spaces it measured, or the
  * distances Alt measures under the pointer, drawn in screen space above the
  * board's world layer so they stay hairlines at any zoom.
  */
-export function SnapGuides({ marks, viewport }: { marks: SnapMarks; viewport: Viewport }) {
+export function SnapGuides({ marks, viewport }: { marks: GuideMarks; viewport: Viewport }) {
   if (marks.guides.length === 0 && marks.gaps.length === 0) return null;
+  const { sizedBottom } = marks;
+  // A gap down from a sized box runs through the size chip centred under it,
+  // so its distance starts clear below the chip.
+  const chipBottom =
+    sizedBottom === undefined
+      ? null
+      : canvasToScreen(viewport, { x: 0, y: sizedBottom }).y + SIZE_ROOM_PX + TICK_CLEARANCE_PX;
   return (
     <div aria-hidden className="canvas-snap">
       {marks.guides.map((guide) => (
@@ -24,7 +38,12 @@ export function SnapGuides({ marks, viewport }: { marks: SnapMarks; viewport: Vi
       ))}
       {marks.gaps.map((gap, index) => (
         // Kept mounted while the gaps follow the pointer, so each distance is measured once.
-        <GapMark key={index} gap={gap} viewport={viewport} />
+        <GapMark
+          key={index}
+          gap={gap}
+          viewport={viewport}
+          clearBelow={gap.axis === 'y' && gap.from === sizedBottom ? chipBottom : null}
+        />
       ))}
     </div>
   );
@@ -33,12 +52,26 @@ export function SnapGuides({ marks, viewport }: { marks: SnapMarks; viewport: Vi
 /**
  * A measured space: a line with end ticks, and its distance centred on it, or
  * beside it when the line is too short to hold the distance clear of its ticks.
+ * A line that starts under a size chip holds its distance below `clearBelow`.
  */
-function GapMark({ gap, viewport }: { gap: SnapGap; viewport: Viewport }) {
+function GapMark({
+  gap,
+  viewport,
+  clearBelow,
+}: {
+  gap: SnapGap;
+  viewport: Viewport;
+  clearBelow: number | null;
+}) {
   const box = gapBox(gap, viewport);
   const [pill, pillSize] = useScreenSize();
-  const length = gap.axis === 'x' ? box.width : box.height;
-  const pillLength = gap.axis === 'x' ? pillSize.width : pillSize.height;
+  const vertical = gap.axis === 'y';
+  const start = vertical ? box.top : box.left;
+  const end = start + (vertical ? box.height : box.width);
+  const pillLength = vertical ? pillSize.height : pillSize.width;
+  const free = clearBelow === null ? start : Math.max(start, clearBelow);
+  let along = (free + end) / 2;
+  if (clearBelow !== null) along = Math.max(along, clearBelow + pillLength / 2);
   return (
     <>
       <span className="canvas-snap-gap" data-axis={gap.axis} style={box} />
@@ -46,18 +79,18 @@ function GapMark({ gap, viewport }: { gap: SnapGap; viewport: Viewport }) {
         ref={pill}
         className="canvas-snap-pill"
         data-axis={gap.axis}
-        data-beside={length < pillLength + 2 * TICK_CLEARANCE_PX || undefined}
-        style={{
-          left: box.left + box.width / 2,
-          top: box.top + box.height / 2,
-        }}
+        data-beside={end - free < pillLength + 2 * TICK_CLEARANCE_PX || undefined}
+        style={
+          vertical
+            ? { left: box.left + box.width / 2, top: along }
+            : { left: along, top: box.top + box.height / 2 }
+        }
       >
         {distanceLabel(gap.to - gap.from)}
       </span>
     </>
   );
 }
-
 /** A one-pixel line from `from` to `to` along `along`, at `at` across it, in whole screen pixels. */
 function lineBox(along: 'x' | 'y', from: number, to: number, at: number, viewport: Viewport) {
   const start = canvasToScreen(viewport, along === 'x' ? { x: from, y: at } : { x: at, y: from });

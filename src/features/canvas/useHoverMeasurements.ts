@@ -9,10 +9,10 @@ import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boardPoint } from './boardCoordinates';
 import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
-import type { SnapGap, SnapMarks } from './frameSnap';
 import { measureBetween } from './measureDistances';
 import { isDesignRoot, isDrawn } from './previewDocument';
 import type { FrameRect } from './protocol';
+import type { GuideMarks } from './SnapGuides';
 import type { ElementSelection } from './useElementEditor';
 import { isPicked, type HoveredElement } from './useElementHover';
 
@@ -24,24 +24,33 @@ interface PickedAndHovered {
 /** Asks what is under a point in a design's own pixels, as a pointer over it does. */
 type HoverAt = (designId: string, at: Point) => void;
 
+/** The boxes Alt measures between on the board: the selection's, and what is under the pointer. */
+interface Measured {
+  from: FrameRect;
+  to: FrameRect;
+}
+
 export function useHoverMeasurements(
   board: RefObject<HTMLElement | null>,
   drawn: readonly PlacedFrame[],
   interaction: BoardInteraction,
   editor: PickedAndHovered,
-): SnapMarks {
+): GuideMarks {
   const { frameId, letGo } = useAltHoveredFrame(
     board,
     interaction.mode === 'edit' ? editor.hover.move : null,
   );
-  let gaps: SnapGap[] = [];
+  let measured: Measured | null = null;
   if (frameId !== null && interaction.mode === 'select')
-    gaps = frameGaps(drawn, interaction.selectedFrameIds, frameId);
-  if (frameId !== null && interaction.mode === 'edit') gaps = elementGaps(drawn, frameId, editor);
+    measured = framesToMeasure(drawn, interaction.selectedFrameIds, frameId);
+  if (frameId !== null && interaction.mode === 'edit')
+    measured = elementsToMeasure(drawn, frameId, editor);
+  const gaps = measured ? measureBetween(measured.from, measured.to) : [];
   const measuring = gaps.length > 0;
   // Shown distances are the topmost thing Escape closes, so no layer under them swallows it.
   useEffect(() => (measuring ? pushEscapeLayer(letGo) : undefined), [measuring, letGo]);
-  return { guides: [], gaps };
+  if (!measured) return { guides: [], gaps };
+  return { guides: [], gaps, sizedBottom: measured.from.y + measured.from.height };
 }
 
 /**
@@ -130,34 +139,34 @@ function frameOf(target: EventTarget | null): string | null {
   return target.closest<HTMLElement>('[data-design-frame]')?.dataset.designFrame ?? null;
 }
 
-function frameGaps(
+function framesToMeasure(
   drawn: readonly PlacedFrame[],
   selectedFrameIds: readonly string[],
   hoveredId: string,
-): SnapGap[] {
-  if (selectedFrameIds.includes(hoveredId)) return [];
+): Measured | null {
+  if (selectedFrameIds.includes(hoveredId)) return null;
   const selected = boundsOf(
     drawn.filter(({ designId }) => selectedFrameIds.includes(designId)).map(({ rect }) => rect),
   );
   const hovered = drawn.find(({ designId }) => designId === hoveredId)?.rect;
-  return selected && hovered ? measureBetween(selected, hovered) : [];
+  return selected && hovered ? { from: selected, to: hovered } : null;
 }
 
-function elementGaps(
+function elementsToMeasure(
   drawn: readonly PlacedFrame[],
   frameId: string,
   { selection, hover }: PickedAndHovered,
-): SnapGap[] {
+): Measured | null {
   const picked = selection?.draft.element;
   const frame = drawn.find(({ designId }) => designId === frameId)?.rect;
   // A hidden element has no box to measure from; the panel says it is hidden.
   if (!selection || picked?.designId !== frameId || !frame || !isDrawn(selection.shown.rect))
-    return [];
+    return null;
   const from = inWorld(frame, selection.shown.rect);
   const { hovered } = hover;
   if (hovered?.designId === frameId && !isPicked(picked, hovered) && !isDesignRoot(hovered.element))
-    return measureBetween(from, inWorld(frame, hovered.element.rect));
-  return measureBetween(from, frame);
+    return { from, to: inWorld(frame, hovered.element.rect) };
+  return { from, to: frame };
 }
 
 /** An element's box on the board: the sheet lays the design out one pixel to a world unit. */

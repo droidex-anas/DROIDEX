@@ -17,7 +17,7 @@ import { useScreenSize } from './useScreenSize';
 
 /** On screen: the tag's line, flush on the element, and the size chip's gap and line. */
 const TAG_HEIGHT_PX = 14;
-const SIZE_ROOM_PX = 26;
+export const SIZE_ROOM_PX = 26;
 
 interface Box {
   left: number;
