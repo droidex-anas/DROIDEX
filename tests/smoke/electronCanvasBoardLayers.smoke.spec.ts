@@ -1,5 +1,5 @@
-// The layers panel against the board harness: a row per frame in the canvas's
-// order with only the visible ones mounted, picking and lighting frames from
+// The layers panel against the board harness: a row per frame, front to back,
+// with only the visible ones mounted, picking and lighting frames from
 // it, the keyboard's way to a frame and back, renaming, and the rail's toggle.
 
 import { expect, test } from '@playwright/test';
@@ -21,9 +21,14 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
 
   const tree = page.getByRole('tree', { name: 'Frames' });
   const row = (name: string) => tree.getByRole('treeitem', { name: `${name}, Ready` });
-  await expect(row('Design A')).toBeVisible();
-  // 300 frames, and only the rows in view are in the document.
+  // 300 frames, front first, and only the rows in view are in the document.
+  await expect(row('Design X297')).toBeVisible();
   expect(await tree.getByRole('treeitem').count()).toBeLessThan(60);
+  // The first frames placed are the furthest back, at the bottom.
+  await tree.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(row('Design A')).toBeVisible();
 
   // A click picks the frame; Shift adds one.
   await row('Design B').click();
@@ -43,7 +48,7 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
 
   // The arrows walk the rows without picking; Enter takes the board to the row's frame.
   await tree.focus();
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
   await expect(tree).toHaveAttribute(
     'aria-activedescendant',
     (await row('Design B').getAttribute('id')) ?? '',
@@ -96,7 +101,7 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await expect(tool).toHaveAttribute('aria-expanded', 'false');
   expect(await frameA.boundingBox()).toEqual(opened);
   await tool.click();
-  await expect(row('Design A')).toBeVisible();
+  await expect(row('Design X297')).toBeVisible();
   expect(await frameA.boundingBox()).toEqual(opened);
 
   // ⌥1 closes it from inside, handing the keyboard to the row's frame.
@@ -174,7 +179,7 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
 
   // Scrolled away, the row keeps its field, its draft and the keyboard.
   await tree.evaluate((element) => {
-    element.scrollTop = 0;
+    element.scrollTop = element.scrollHeight;
   });
   await expect(row('Design A')).toBeInViewport();
   await expect(field).toBeFocused();
@@ -186,8 +191,8 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await page.evaluate(() => {
     window.boardHarness.select([]);
   });
-  await page.keyboard.press('Home');
-  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('End');
+  await page.keyboard.press('ArrowUp');
   await page.keyboard.press('Space');
   await expect.poll(() => selection(page)).toEqual(['b']);
   await page.keyboard.press('Space');
@@ -199,7 +204,7 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await row('Design A').hover();
   await expect(frameA).toHaveAttribute('data-layer-hover', '');
   await tree.evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
+    element.scrollTop = 0;
   });
   await expect(row('Design A')).toHaveCount(0);
   await expect(frameA).not.toHaveAttribute('data-layer-hover');
@@ -239,4 +244,75 @@ test('Layers says a frame without a design is being written while an agent is at
     window.boardHarness.leave();
   });
   await expect(tree.getByRole('treeitem', { name: 'Design A, Empty' })).toBeVisible();
+});
+
+test('Layers hides and shows a frame, and restacks frames from the keyboard and by a row’s handle', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&layers=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const items = tree.getByRole('treeitem');
+  const onBoard = () =>
+    page
+      .locator('[data-design-frame]')
+      .evaluateAll((frames) => frames.map((frame) => frame.getAttribute('data-design-frame')));
+  const calls = () =>
+    page.evaluate(() => ({
+      hide: window.boardHarness.hideCalls,
+      reorder: window.boardHarness.reorderCalls,
+    }));
+  // Front first: B was placed last, so it paints over A.
+  await expect(items).toHaveText(['Design B', 'Design A']);
+
+  // The eye takes A off the board and out of the selection, and leaves its row, dimmed and saying so.
+  await page.evaluate(() => {
+    window.boardHarness.select(['a']);
+  });
+  const rowA = tree.getByRole('treeitem', { name: /^Design A/ });
+  await rowA.hover();
+  await rowA.getByRole('button', { name: 'Hide' }).click();
+  expect((await calls()).hide).toEqual([{ designId: 'a', hidden: true }]);
+  await expect(rowA).toHaveAccessibleName('Design A, Ready, hidden');
+  await expect(rowA.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(onBoard).toEqual(['b']);
+  await expect.poll(() => selection(page)).toEqual([]);
+
+  // ⇧⌘H on the keyboard's row shows it again.
+  await tree.focus();
+  await page.keyboard.press('End');
+  await page.keyboard.press('ControlOrMeta+Shift+KeyH');
+  expect((await calls()).hide).toEqual([
+    { designId: 'a', hidden: true },
+    { designId: 'a', hidden: false },
+  ]);
+  await expect.poll(onBoard).toEqual(['a', 'b']);
+
+  // ⌥↑ brings A in front of B, and the keyboard stays on A.
+  await page.keyboard.press('Alt+ArrowUp');
+  expect((await calls()).reorder).toEqual([['b', 'a']]);
+  await expect(items).toHaveText(['Design A', 'Design B']);
+  await expect.poll(onBoard).toEqual(['b', 'a']);
+  await expect(tree).toHaveAttribute(
+    'aria-activedescendant',
+    (await rowA.getAttribute('id')) ?? '',
+  );
+
+  // B's handle drags it back above A.
+  const rowB = tree.getByRole('treeitem', { name: /^Design B/ });
+  await rowB.hover();
+  const handle = await rowB.locator('.canvas-layer-tool').last().boundingBox();
+  const top = await rowA.boundingBox();
+  if (!handle || !top) throw new Error('Missing row geometry');
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x, top.y + 2, { steps: 4 });
+  await page.mouse.up();
+  expect((await calls()).reorder).toEqual([
+    ['b', 'a'],
+    ['a', 'b'],
+  ]);
+  await expect(items).toHaveText(['Design B', 'Design A']);
+  // A drag picks nothing.
+  expect(await selection(page)).toEqual([]);
 });

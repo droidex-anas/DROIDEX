@@ -7,6 +7,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { toast } from '../../lib/toast';
 import { isBoardEditor, isLayersKey } from './boardKeys';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
@@ -14,6 +15,7 @@ import { recordPlacements, revisionEntry, type HistoryStep } from './boardHistor
 import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
+import { canvasMessage } from './client';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
 import { lacksCanvasTools, reduceBoardInteraction, type BoardInteraction } from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
@@ -172,6 +174,24 @@ export function CanvasBoardMount({
     () => ({ ...snapshot, frames: frames.filter((frame) => !frame.hidden) }),
     [snapshot, frames],
   );
+  const isShown = (designId: string) => shown.frames.some((frame) => frame.designId === designId);
+  const setFrameHidden = (frame: CanvasFrame, hidden: boolean) => {
+    const input = {
+      mutationId: crypto.randomUUID(),
+      designId: frame.designId,
+      hidden,
+      expectedManifestVersion: frame.manifestVersion,
+    };
+    canvas.layers.setHidden(appSessionId, canvasId, input).catch((error: unknown) => {
+      toast.error(`Couldn’t ${hidden ? 'hide' : 'show'} ${frame.name}. ${canvasMessage(error)}`);
+    });
+  };
+  const reorderFrames = (designIds: string[]) => {
+    const input = { mutationId: crypto.randomUUID(), designIds };
+    canvas.layers.reorder(appSessionId, canvasId, input).catch((error: unknown) => {
+      toast.error(`Couldn’t restack the frames. ${canvasMessage(error)}`);
+    });
+  };
   const { selectedFrameIds } = interaction;
   const showingDocument = shownDocument !== null;
   // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
@@ -229,17 +249,20 @@ export function CanvasBoardMount({
           selectedFrameIds={selectedFrameIds}
           agentWorking={agentWorking}
           onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
+          onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
+          onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}
           onPick={(designId, additive) => {
+            // A hidden frame is off the board, so it cannot be picked or gone to.
+            if (!isShown(designId)) return;
             const next = reduceBoardInteraction(interaction, { type: 'pick', designId, additive });
             if (next !== interaction) onInteractionChange(next);
           }}
           onFocusFrame={(designId) => {
-            boardRef.current?.focusFrame(designId);
+            if (isShown(designId)) boardRef.current?.focusFrame(designId);
           }}
           onLeave={(designId) => {
             // A hidden frame has no label on the board to take the keyboard.
-            if (shown.frames.some((frame) => frame.designId === designId))
-              boardRef.current?.focusLabel(designId);
+            if (isShown(designId)) boardRef.current?.focusLabel(designId);
             else boardArea.current?.querySelector('button')?.focus();
           }}
           onClose={() => {

@@ -1,10 +1,22 @@
 // One frame's row in the layers panel: its build's glyph, its name with the
-// variant suffix kept whole, and the name field while it is renamed.
+// variant suffix kept whole, the name field while it is renamed, and the eye
+// and handle that hide and restack its frame.
 
-import { useEffect, useEffectEvent, type MouseEvent } from 'react';
-import { AlertTriangle, CirclePause, Clock, LayoutTemplate, Spinner } from '@droidex/icons';
+import { useEffect, useEffectEvent, type MouseEvent, type PointerEvent } from 'react';
+import {
+  AlertTriangle,
+  CirclePause,
+  Clock,
+  Eye,
+  EyeOff,
+  GripVertical,
+  LayoutTemplate,
+  Spinner,
+} from '@droidex/icons';
+import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Row } from '../../../components/ui/Row';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { canvasActivity } from '../canvasMotion';
 import { FrameNameField } from '../FrameNameField';
 import type { FrameStatus } from '../previewLabels';
@@ -22,12 +34,15 @@ export function LayerRow({
   top,
   selected,
   active,
+  describedBy,
   rename,
   onRenameDone,
   onClick,
   onDoubleClick,
   onLight,
   onUnlight,
+  onSetHidden,
+  onGrab,
 }: {
   id: string;
   frame: CanvasFrame;
@@ -40,6 +55,8 @@ export function LayerRow({
   selected: boolean;
   /** The keyboard is on this row. */
   active: boolean;
+  /** The id of what tells how to restack the row from the keyboard. */
+  describedBy: string | undefined;
   /** Set while the row is renamed: what saves the new name. */
   rename: ((frame: CanvasFrame, name: string) => Promise<unknown>) | undefined;
   onRenameDone: () => void;
@@ -49,6 +66,10 @@ export function LayerRow({
   onLight: () => void;
   /** The pointer left, or the list scrolled the row away from under it. */
   onUnlight: () => void;
+  /** Undefined where this chat cannot change the canvas, as are `onGrab` and `rename`. */
+  onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
+  /** The pointer went down on the row's handle. */
+  onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
 }) {
   const unlight = useEffectEvent(onUnlight);
   useEffect(
@@ -65,7 +86,8 @@ export function LayerRow({
       aria-posinset={position}
       aria-setsize={count}
       aria-selected={selected}
-      aria-label={`${frame.name}, ${stage ? canvasActivity[stage].label : 'Empty'}`}
+      aria-label={`${frame.name}, ${stage ? canvasActivity[stage].label : 'Empty'}${frame.hidden ? ', hidden' : ''}`}
+      aria-describedby={describedBy}
       className="group absolute inset-x-0 top-0"
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={(event) => {
@@ -86,7 +108,44 @@ export function LayerRow({
               onDone={onRenameDone}
             />
           ) : (
-            <FrameName name={frame.name} />
+            <FrameName name={frame.name} dimmed={frame.hidden} />
+          )
+        }
+        trailing={
+          !rename && (
+            <>
+              {onSetHidden && (
+                <Tooltip label={frame.hidden ? 'Show' : 'Hide'}>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon={frame.hidden ? EyeOff : Eye}
+                    aria-label="Hide"
+                    aria-pressed={frame.hidden}
+                    tabIndex={-1}
+                    className="canvas-layer-tool -my-1.5"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onSetHidden(frame, !frame.hidden);
+                    }}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  />
+                </Tooltip>
+              )}
+              {onGrab && (
+                <span
+                  aria-hidden
+                  className="canvas-layer-tool -my-1.5 -mr-2 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted hover:text-secondary"
+                  onPointerDown={(event) => {
+                    onGrab(event, frame.designId);
+                  }}
+                >
+                  <GripVertical className={GLYPH} />
+                </span>
+              )}
+            </>
           )
         }
         data-keyboard-row={active || undefined}
@@ -110,13 +169,15 @@ export function LayerRow({
 }
 
 /** A long variant name shortens before its suffix, so the variants of one frame still read apart. */
-function FrameName({ name }: { name: string }) {
+function FrameName({ name, dimmed }: { name: string; dimmed: boolean }) {
   const { base, suffix } = splitVariantName(name);
-  if (!suffix) return name;
+  if (!suffix) return <span className={cn(dimmed && 'text-muted')}>{name}</span>;
   return (
-    <span className="flex min-w-0">
+    <span className={cn('flex min-w-0', dimmed && 'text-muted')}>
       <span className="truncate">{base}</span>
-      <span className="shrink-0 whitespace-pre text-secondary">{suffix}</span>
+      <span className={cn('shrink-0 whitespace-pre', dimmed ? 'text-muted' : 'text-secondary')}>
+        {suffix}
+      </span>
     </span>
   );
 }

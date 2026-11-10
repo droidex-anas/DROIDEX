@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Toaster from '../../../src/components/ui/Toaster';
 import type {
@@ -133,6 +133,10 @@ interface BoardHarness {
   renameCalls: RenameFrameInput[];
   /** Renames the frame the way the sidecar does, and answers. */
   answerRename: (index: number) => void;
+  /** Layers' hides and shows, each answered as it is asked. */
+  hideCalls: { designId: string; hidden: boolean }[];
+  /** Layers' restacks, back to front, each answered as it is asked. */
+  reorderCalls: string[][];
   /** A manifest commit lands on the frame: a build's, or with `name`, a rename from elsewhere. */
   commitManifest: (designId: string, name?: string) => void;
   switchCalls: SwitchRevisionInput[];
@@ -369,6 +373,8 @@ const removals = new FrameRemovals(
 const historyReads: string[] = [];
 const historyReplies: PromiseWithResolvers<RevisionSummary[]>[] = [];
 const renameCalls: RenameFrameInput[] = [];
+const hideCalls: BoardHarness['hideCalls'] = [];
+const reorderCalls: string[][] = [];
 const renameReplies: PromiseWithResolvers<void>[] = [];
 const switchCalls: SwitchRevisionInput[] = [];
 const switchReplies: PromiseWithResolvers<WriteReceipt>[] = [];
@@ -515,6 +521,10 @@ function Harness() {
   const live = useRef(interaction);
   live.current = interaction;
   shown.current = snapshot;
+  const onBoard = useMemo(
+    () => ({ ...snapshot, frames: snapshot.frames.filter((frame) => !frame.hidden) }),
+    [snapshot],
+  );
   useEffect(() => {
     syncElementPins('chat_1', snapshot);
     return syncFramePins('chat_1', snapshot);
@@ -712,6 +722,8 @@ function Harness() {
         revision('rev_00', 1, 'agent'),
       ]),
     renameCalls,
+    hideCalls,
+    reorderCalls,
     answerRename: (index) => {
       const { designId, name } = renameCalls[index];
       const renamed = shown.current.frames
@@ -782,6 +794,16 @@ function Harness() {
             selectedFrameIds={interaction.selectedFrameIds}
             agentWorking={presence.size > 0}
             onRename={frameActions.rename}
+            onSetHidden={(frame, hidden) => {
+              hideCalls.push({ designId: frame.designId, hidden });
+              setSnapshot(applyCanvasChange(shown.current, change([{ ...frame, hidden }], [])));
+            }}
+            onReorder={(designIds) => {
+              reorderCalls.push(designIds);
+              setSnapshot(
+                applyCanvasChange(shown.current, { ...change([], []), order: designIds }),
+              );
+            }}
             onPick={(designId, additive) => {
               setInteraction(
                 reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),
@@ -807,7 +829,7 @@ function Harness() {
               : undefined
           }
           rightInset={RIGHT_INSET}
-          snapshot={snapshot}
+          snapshot={onBoard}
           interaction={interaction}
           presence={presence}
           writes={writes}
