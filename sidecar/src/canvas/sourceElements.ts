@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { functionName, renderedOnce } from './componentUses.js';
+import { resolveRelative } from './designBundle.js';
 import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';
@@ -50,12 +51,10 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   const hash = createHash('sha256').update(
     JSON.stringify([revisionId, Object.entries(files).sort(([a], [b]) => comparePaths(a, b))]),
   );
-  const sources = Object.entries(files)
-    .filter(([file]) => !file.endsWith('.css'))
-    .map(([file, text]) => parseSource(file, text));
-  const rendersOnce = renderedOnce(sources);
+  const program = parseProgram(files);
+  const rendersOnce = renderedOnce(program);
   const sites: Site[] = [];
-  for (const source of sources) {
+  for (const source of program.getSourceFiles()) {
     const file = source.fileName;
     const pending: ts.Node[] = [source];
     while (pending.length) {
@@ -107,14 +106,29 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   );
 }
 
-function parseSource(file: string, text: string): ts.SourceFile {
+/**
+ * One program over the design's sources, so the checker resolves a name by
+ * scope and an import as the bundler does. Throws on the first syntax error.
+ */
+function parseProgram(files: SourceFiles): ts.Program {
+  const sources = new Map<string, ts.SourceFile>();
+  let file = '';
   try {
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const program = ts.createProgram(
-      [file],
-      { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve },
-      {
-        getSourceFile: (name) => (name === file ? source : undefined),
+    for (const [path, text] of Object.entries(files)) {
+      if (path.endsWith('.css')) continue;
+      file = path;
+      sources.set(
+        path,
+        ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+      );
+    }
+    const program = ts.createProgram({
+      rootNames: [...sources.keys()],
+      options: { noLib: true, types: [], jsx: ts.JsxEmit.Preserve },
+      host: {
+        getSourceFile: (name) => sources.get(name),
+        resolveModuleNameLiterals: (literals, importer) =>
+          literals.map(({ text }) => ({ resolvedModule: designModule(files, importer, text) })),
         getDefaultLibFileName: () => '',
         writeFile: () => undefined,
         getCurrentDirectory: () => '',
@@ -122,12 +136,14 @@ function parseSource(file: string, text: string): ts.SourceFile {
         getCanonicalFileName: (name) => name,
         useCaseSensitiveFileNames: () => true,
         getNewLine: () => '\n',
-        fileExists: (name) => name === file,
-        readFile: (name) => (name === file ? text : undefined),
+        fileExists: (name) => sources.has(name),
+        readFile: (name) => sources.get(name)?.text,
       },
-    );
-    const diagnostic = program.getSyntacticDiagnostics(source).at(0);
-    if (diagnostic) {
+    });
+    for (const source of sources.values()) {
+      file = source.fileName;
+      const diagnostic = program.getSyntacticDiagnostics(source).at(0);
+      if (!diagnostic) continue;
       const position = source.getLineAndCharacterOfPosition(diagnostic.start);
       throw new SourceElementError(
         'invalid_source',
@@ -135,12 +151,12 @@ function parseSource(file: string, text: string): ts.SourceFile {
         file,
         position.line + 1,
         Buffer.byteLength(
-          text.slice(diagnostic.start - position.character, diagnostic.start),
+          source.text.slice(diagnostic.start - position.character, diagnostic.start),
           'utf8',
         ),
       );
     }
-    return source;
+    return program;
   } catch (error) {
     if (error instanceof SourceElementError) throw error;
     throw new SourceElementError(
@@ -151,6 +167,18 @@ function parseSource(file: string, text: string): ts.SourceFile {
   }
 }
 
+/** A relative import of another design source; anything else resolves to nothing. */
+function designModule(
+  files: SourceFiles,
+  importer: string,
+  specifier: string,
+): ts.ResolvedModuleFull | undefined {
+  if (!specifier.startsWith('.')) return undefined;
+  const resolved = resolveRelative(files, importer, specifier);
+  if (resolved.kind !== 'file' || resolved.path.endsWith('.css')) return undefined;
+  const extension = resolved.path.endsWith('.ts') ? ts.Extension.Ts : ts.Extension.Tsx;
+  return { resolvedFileName: resolved.path, extension };
+}
 function componentOf(node: ElementNode): string | null {
   for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
     if (!ts.isFunctionLike(parent)) continue;
