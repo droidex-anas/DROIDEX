@@ -7,14 +7,18 @@ function rect(x: number, y: number, width: number, height: number): FrameRect {
   return { x, y, width, height };
 }
 
-test('boxes side by side measure only the space between their facing edges', () => {
-  // Level with each other: the line runs through the span they share.
+test('boxes side by side measure the gap from the selection and their offsets on the other axis', () => {
+  // The gap leaves the middle of the selection's facing edge; the offsets run through the space between.
   assert.deepEqual(measureBetween(rect(0, 0, 100, 100), rect(140, 50, 100, 100)), [
-    { axis: 'x', from: 100, to: 140, at: 75 },
+    { axis: 'x', from: 100, to: 140, at: 50 },
+    { axis: 'y', from: 0, to: 50, at: 120 },
+    { axis: 'y', from: 100, to: 150, at: 120 },
   ]);
-  // The hovered box on the left measures the same way.
+  // With the hovered box on the left, the gap still leaves the selection.
   assert.deepEqual(measureBetween(rect(140, 50, 100, 100), rect(0, 0, 100, 100)), [
-    { axis: 'x', from: 100, to: 140, at: 75 },
+    { axis: 'x', from: 100, to: 140, at: 100 },
+    { axis: 'y', from: 0, to: 50, at: 120 },
+    { axis: 'y', from: 100, to: 150, at: 120 },
   ]);
 });
 
@@ -25,11 +29,11 @@ test('boxes apart on both axes measure both gaps from the middle of the selectio
   ]);
 });
 
-test('overlapping boxes measure each selection edge to the same edge of the hovered box', () => {
+test('overlapping boxes measure each selection edge to the nearer edge of the hovered box', () => {
   // Each line runs through the middle of the span the two share across it.
   assert.deepEqual(measureBetween(rect(0, 0, 100, 100), rect(90, 20, 60, 100)), [
     { axis: 'x', from: 0, to: 90, at: 60 },
-    { axis: 'x', from: 100, to: 150, at: 60 },
+    { axis: 'x', from: 90, to: 100, at: 60 },
     { axis: 'y', from: 0, to: 20, at: 95 },
     { axis: 'y', from: 100, to: 120, at: 95 },
   ]);
@@ -54,6 +58,11 @@ test('a distance that reads 0 is not measured', () => {
   assert.deepEqual(measureBetween(rect(0, 0, 100, 100), rect(0.125, 0, 60, 40)), [
     { axis: 'x', from: 60.125, to: 100, at: 20 },
     { axis: 'y', from: 40, to: 100, at: 30.125 },
+  ]);
+  // Touching boxes set apart across still measure that offset.
+  assert.deepEqual(measureBetween(rect(0, 0, 100, 100), rect(100, 20, 100, 100)), [
+    { axis: 'y', from: 0, to: 20, at: 100 },
+    { axis: 'y', from: 100, to: 120, at: 100 },
   ]);
 });
 

@@ -465,9 +465,9 @@ test('held Alt in Edit measures from the picked element to the one under the poi
   await expect(pills).toHaveText(['8', '152', '8', '262']);
   await pointAt(300, 260);
   await expect(pills).toHaveText(['8', '152', '8', '262']);
-  // The button below it lines up on the left, so only the space between them is measured.
+  // The button below it lines up on the left: the space between them, and how far short its right edge stops.
   await pointAt(20, 70);
-  await expect(pills).toHaveText(['22']);
+  await expect(pills).toHaveText(['120', '22']);
   // The card it sits in: its four insets.
   await pointAt(300, 150);
   await expect(pills).toHaveText(['8', '152', '8', '162']);
