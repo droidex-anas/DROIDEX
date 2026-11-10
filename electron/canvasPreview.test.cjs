@@ -463,6 +463,25 @@ test("a locate is answered only by its own reply, never a probe's that echoes it
   assert.deepEqual(JSON.parse(await located), [rect]);
 });
 
+test('a probe answer keeps its path whole, and one without a path answers nothing', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const rect = { x: 1, y: 2, width: 30, height: 40 };
+  const answer = (element) => {
+    const asked = preview.probe({ at: { x: 5, y: 5 } });
+    reply({ event: 'probe', sequence: posted.at(-1).sequence, element });
+    return asked.then(JSON.parse);
+  };
+  // A path is an identity, so one past the text cap is kept whole.
+  const instancePath = '0/'.repeat(300) + '0';
+  assert.deepEqual(await answer({ elementId: 'el_1', instancePath, rect }), {
+    elementId: 'el_1',
+    instancePath,
+    rect,
+    text: null,
+  });
+  assert.equal(await answer({ elementId: 'el_1', rect }), null);
+});
+
 test('a vector answer has its own cap and carries only markup or a known refusal', async () => {
   const { preview, posted, reply } = runIntermediate();
   const answer = (data) => {

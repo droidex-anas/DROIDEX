@@ -319,12 +319,12 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
   const parsed = readAnswer(value);
   if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
   const rect = readRect(parsed.rect);
-  if (!rect || typeof parsed.instancePath !== 'string' || !record(parsed.room)) return null;
+  if (!rect || !isInstancePath(parsed.instancePath) || !record(parsed.room)) return null;
   const { above, below } = parsed.room;
   if (!isRoom(above) || !isRoom(below)) return null;
   return {
     elementId: clampPreviewText(parsed.elementId),
-    instancePath: clampPreviewText(parsed.instancePath),
+    instancePath: parsed.instancePath,
     rect,
     tagName: clampPreviewText(parsed.tagName),
     room: { above, below },
@@ -334,7 +334,7 @@ export function readPreviewHover(value: unknown): PreviewHover | null {
 /** A probe's answer, or null when nothing marked is there or the answer is not one. */
 export function readPreviewFinding(value: unknown): PreviewFinding | null {
   const parsed = readAnswer(value);
-  if (!record(parsed) || !present(parsed.elementId) || typeof parsed.instancePath !== 'string')
+  if (!record(parsed) || !present(parsed.elementId) || !isInstancePath(parsed.instancePath))
     return null;
   const rect = readRect(parsed.rect);
   if (!rect) return null;
@@ -347,7 +347,7 @@ export function readPreviewFinding(value: unknown): PreviewFinding | null {
   }
   return {
     elementId: clampPreviewText(parsed.elementId),
-    instancePath: clampPreviewText(parsed.instancePath),
+    instancePath: parsed.instancePath,
     rect,
     text,
   };
@@ -393,7 +393,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
   if (
     !record(element) ||
     !present(element.elementId) ||
-    typeof element.instancePath !== 'string' ||
+    !isInstancePath(element.instancePath) ||
     typeof element.parentDisplay !== 'string'
   )
     return null;
@@ -411,7 +411,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
     sequence,
     element: {
       elementId: clampPreviewText(element.elementId),
-      instancePath: clampPreviewText(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       styles,
       text: whole(element.text),
@@ -438,6 +438,14 @@ export function count(value: unknown): value is number {
 
 function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
+}
+
+/**
+ * Child indices from the body down, as the reporter writes an element's path.
+ * A path is an identity, not display text, so it is read whole or not at all.
+ */
+export function isInstancePath(value: unknown): value is string {
+  return typeof value === 'string' && /^\d+(?:\/\d+)*$/.test(value);
 }
 
 export function present(value: unknown): value is string {

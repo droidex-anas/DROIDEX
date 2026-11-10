@@ -23,6 +23,18 @@ test('a tree answer names each marked element in document order, up to its cap',
   assert.ok(JSON.stringify(atCap).length > 4096);
 });
 
+test('a path is kept whole, so two instances under the same deep wrappers stay apart', () => {
+  const wrappers = '0/'.repeat(300);
+  const nodes = [0, 1].map((index) => ({
+    elementId: 'el_card',
+    instancePath: `${wrappers}${String(index)}`,
+    tagName: 'div',
+    depth: 0,
+  }));
+  const answer = { nodes, cap: MAX_PREVIEW_TREE_NODES, truncated: false };
+  assert.deepEqual(readPreviewTree(JSON.stringify(answer)), answer);
+});
+
 test('a tree answer that is not one is refused whole', () => {
   const good = { nodes: [node('0/0', 0)], cap: MAX_PREVIEW_TREE_NODES, truncated: false };
   const over = Array.from({ length: MAX_PREVIEW_TREE_NODES + 1 }, () => node('0/0', 0));
@@ -36,6 +48,7 @@ test('a tree answer that is not one is refused whole', () => {
     { ...good, nodes: [{ ...node('0/0', 0), elementId: '' }] },
     { ...good, nodes: [{ ...node('0/0', 0), depth: -1 }] },
     { ...good, nodes: [{ ...node('0/0', 0), instancePath: 3 }] },
+    { ...good, nodes: [{ ...node('0/0', 0), instancePath: '0/' }] },
     // A node sits at most one level below the one before it.
     { ...good, nodes: [node('0/0', 0), node('0/0/0/0', 2)] },
     { ...good, nodes: [node('0/0', 1)] },

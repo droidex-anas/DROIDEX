@@ -82,6 +82,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
   // past the cap there is none to offer or preview.
   const whole = (value) =>
     typeof value === 'string' && bytes(value) <= ${String(MAX_PREVIEW_TEXT_BYTES)} ? value : null;
+  // Child indices from the body down, as the reporter writes an element's path. A
+  // path is an identity, so it is never cut: one that is not a path refuses its answer.
+  const isPath = (value) => typeof value === 'string' && /^[0-9]+(?:[/][0-9]+)*$/.test(value);
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
@@ -106,7 +109,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
     const styles = {};
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
@@ -115,7 +118,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       sequence: data.sequence,
       element: {
         elementId,
-        instancePath: text(element.instancePath),
+        instancePath: element.instancePath,
         rect,
         styles,
         text: whole(element.text),
@@ -130,11 +133,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const room = element.room && typeof element.room === 'object' ? element.room : {};
     return {
       elementId,
-      instancePath: text(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       tagName: text(element.tagName),
       room: { above: gap(room.above), below: gap(room.below) },
@@ -148,12 +151,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const spanned = element.text && typeof element.text === 'object' ? element.text : null;
     const spannedRect = spanned && rectOf(spanned.rect);
     return {
       elementId,
-      instancePath: text(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       text: spannedRect ? { excerpt: text(spanned.excerpt), rect: spannedRect } : null,
     };
@@ -186,8 +189,6 @@ const INTERMEDIATE_SCRIPT = `(() => {
     value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
       ? { x: value.x, y: value.y }
       : null;
-  // Child indices from the body down, as the reporter writes an element's path.
-  const isPath = (value) => typeof value === 'string' && /^[0-9]+(?:[/][0-9]+)*$/.test(value);
   // One drawn instance of an element, by its marker and its path.
   const nodeOf = (value) =>
     isElementId(value.elementId) && isPath(value.instancePath)

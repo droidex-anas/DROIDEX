@@ -5,6 +5,7 @@
 import {
   clampPreviewText,
   count,
+  isInstancePath,
   present,
   readAnswer,
   record,
@@ -44,11 +45,11 @@ export function readPreviewTree(value: unknown): PreviewTree | null {
   const nodes: PreviewTreeNode[] = [];
   for (const node of parsed.nodes) {
     if (!record(node) || !present(node.elementId) || !present(node.tagName)) return null;
-    if (typeof node.instancePath !== 'string' || !count(node.depth)) return null;
+    if (!isInstancePath(node.instancePath) || !count(node.depth)) return null;
     if (node.depth > (nodes.at(-1)?.depth ?? -1) + 1) return null;
     nodes.push({
       elementId: clampPreviewText(node.elementId),
-      instancePath: clampPreviewText(node.instancePath),
+      instancePath: node.instancePath,
       tagName: clampPreviewText(node.tagName),
       depth: node.depth,
     });

@@ -226,6 +226,9 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
   };
 
   assert.deepEqual(readPreviewHover(JSON.stringify(hovered)), hovered);
+  // A path is an identity: past the text cap it is kept whole, never cut.
+  const deep = { ...hovered, instancePath: '0/'.repeat(300) + '2' };
+  assert.deepEqual(readPreviewHover(JSON.stringify(deep)), deep);
   for (const value of [
     'null',
     'invalid_request',
@@ -233,6 +236,7 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
     JSON.stringify({ ...hovered, tagName: '' }),
     JSON.stringify({ ...hovered, rect: { ...hovered.rect, height: -1 } }),
     JSON.stringify({ ...hovered, instancePath: 2 }),
+    JSON.stringify({ ...hovered, instancePath: '0/' }),
     JSON.stringify({ ...hovered, room: null }),
     JSON.stringify({ ...hovered, room: { above: -1, below: null } }),
   ]) {
