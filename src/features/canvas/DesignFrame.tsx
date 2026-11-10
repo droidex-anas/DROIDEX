@@ -156,18 +156,23 @@ export function DesignFrame(props: DesignFrameProps) {
       }}
     >
       {renaming ? (
-        <FrameNameField
-          frame={frame}
-          width={screenWidth}
-          onRename={props.actions.rename}
-          onDone={() => {
-            // The label has to be back before it can take the keyboard.
-            flushSync(() => {
-              setRenaming(false);
-            });
-            focusLabel();
-          }}
-        />
+        <div
+          className="canvas-frame-label canvas-chrome"
+          style={{ width: Math.max(0, screenWidth) }}
+        >
+          <FrameNameField
+            frame={frame}
+            className="canvas-frame-name canvas-frame-name-field"
+            onRename={props.actions.rename}
+            onDone={() => {
+              // The label has to be back before it can take the keyboard.
+              flushSync(() => {
+                setRenaming(false);
+              });
+              focusLabel();
+            }}
+          />
+        </div>
       ) : (
         <FrameLabel
           ref={label}

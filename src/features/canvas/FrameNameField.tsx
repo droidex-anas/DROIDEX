@@ -5,17 +5,18 @@ import type { CanvasFrame } from './protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 /**
- * The label while the frame is renamed. Enter or leaving the field saves the
- * name unless someone else renamed the frame meanwhile; Escape keeps the old one.
+ * A frame's name while it is renamed, on its board label or its layers row.
+ * Enter or leaving the field saves the name unless someone else renamed the
+ * frame meanwhile; Escape keeps the old one.
  */
 export function FrameNameField({
   frame,
-  width,
+  className,
   onRename,
   onDone,
 }: {
   frame: CanvasFrame;
-  width: number;
+  className: string;
   onRename: (frame: CanvasFrame, name: string) => Promise<unknown>;
   onDone: () => void;
 }) {
@@ -58,37 +59,35 @@ export function FrameNameField({
   };
 
   return (
-    <div className="canvas-frame-label canvas-chrome" style={{ width: Math.max(0, width) }}>
-      <input
-        ref={field}
-        aria-label={`Name of ${originalName}`}
-        value={name}
-        maxLength={MAX_FRAME_NAME_LENGTH}
-        readOnly={pending}
-        aria-busy={pending}
-        autoFocus
-        spellCheck={false}
-        className="canvas-frame-name canvas-frame-name-field"
-        onChange={(event) => {
-          setName(event.target.value);
-        }}
-        onPointerDown={(event) => {
-          event.stopPropagation();
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') {
-            event.preventDefault();
-            void save();
-          } else if (event.key === 'Escape' && !pending) {
-            event.preventDefault();
-            event.stopPropagation();
-            finish();
-          }
-        }}
-        onBlur={() => {
+    <input
+      ref={field}
+      aria-label={`Name of ${originalName}`}
+      value={name}
+      maxLength={MAX_FRAME_NAME_LENGTH}
+      readOnly={pending}
+      aria-busy={pending}
+      autoFocus
+      spellCheck={false}
+      className={className}
+      onChange={(event) => {
+        setName(event.target.value);
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
           void save();
-        }}
-      />
-    </div>
+        } else if (event.key === 'Escape' && !pending) {
+          event.preventDefault();
+          event.stopPropagation();
+          finish();
+        }
+      }}
+      onBlur={() => {
+        void save();
+      }}
+    />
   );
 }
