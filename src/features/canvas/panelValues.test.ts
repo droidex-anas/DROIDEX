@@ -132,6 +132,7 @@ test('a filter reads as its blur, whatever else it composes, and a colour as opa
   assert.equal(blurOf('blur(12px)'), '12px');
   assert.equal(blurOf('grayscale(1) blur(4px) contrast(1.2)'), '4px');
   assert.equal(blurOf('grayscale(1)'), 'none');
+  assert.equal(blurOf('blur(4px) blur(12px)'), 'blur(4px) blur(12px)');
   assert.equal(blurOf('none'), 'none');
   assert.equal(blurOf('--ds-blur-soft'), '--ds-blur-soft');
   assert.ok(isOpaque('rgb(255, 255, 255)'));

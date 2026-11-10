@@ -116,7 +116,9 @@ const SHADOW_LENGTHS = ['x', 'y', 'blur', 'spread'] as const;
 /**
  * Chromium computes a shadow's colour first and every length in px, as a kit
  * seldom writes it, and keeps the transparent ring layers Tailwind's shadow
- * classes lead with, which draw nothing.
+ * classes lead with, which draw nothing. Only what parseShadow reads matches:
+ * px and rem lengths, and hex, rgb() and hsl() colours; a token written with
+ * em, a named colour or color() shows the computed value instead.
  */
 function sameShadow(written: ShadowLayer[], computed: string): boolean {
   const shown = written.filter(isDrawnLayer);
@@ -258,12 +260,15 @@ function normalized(value: string): string {
 
 /**
  * The blur a filter applies, as the blur pickers match it: a picked token by
- * its name, else the length of the filter's blur(), whatever other functions
- * it composes with, else `none`.
+ * its name, else the length of the filter's one blur(), whatever other
+ * functions it composes with, else `none`. Two blurs are no one step, so a
+ * filter with them reads as itself.
  */
 export function blurOf(filter: string): string {
   if (filter.startsWith('--')) return filter;
-  return /(?:^|\s)blur\(([^()]*)\)/.exec(filter)?.[1].trim() ?? 'none';
+  const blurs = [...filter.matchAll(/(?:^|\s)blur\(([^()]*)\)/g)];
+  if (blurs.length > 1) return filter;
+  return blurs.at(0)?.[1].trim() ?? 'none';
 }
 
 /** Whether a colour paints over everything behind it. */
