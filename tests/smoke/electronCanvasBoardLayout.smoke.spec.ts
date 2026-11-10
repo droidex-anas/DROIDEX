@@ -130,6 +130,28 @@ test('held Alt measures from the selection to the frame under the pointer, only 
   await expect(pills).toHaveCount(0);
   await page.keyboard.up('Alt');
 });
+
+test('Escape lets go of the distances held Alt shows before it closes a menu under them', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await page.getByRole('button', { name: 'Size 400 × 300' }).click();
+  const width = page.getByRole('textbox', { name: 'Width' });
+  await expect(width).toBeFocused();
+  const sheet = await box(frame(page, 'B').locator('.canvas-sheet'));
+  await page.mouse.move(sheet.x + sheet.width / 2, sheet.y + sheet.height / 2);
+  await page.keyboard.down('Alt');
+  const pills = page.locator('.canvas-snap-pill');
+  await expect(pills).toHaveCount(3);
+
+  await page.keyboard.press('Escape');
+  await expect(pills).toHaveCount(0);
+  await expect(width).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(width).toHaveCount(0);
+  await page.keyboard.up('Alt');
+});
 test('a frame resizes from an edge or a corner, and the edges opposite stay put', async ({
   page,
 }) => {

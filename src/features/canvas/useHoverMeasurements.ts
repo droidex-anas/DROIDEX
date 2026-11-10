@@ -5,6 +5,7 @@
 // rect comes from what the board already draws, so measuring asks the guest nothing.
 
 import { useEffect, useState, type RefObject } from 'react';
+import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boundsOf, type PlacedFrame } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
 import type { SnapGap, SnapMarks } from './frameSnap';
@@ -25,66 +26,75 @@ export function useHoverMeasurements(
   interaction: BoardInteraction,
   editor: PickedAndHovered,
 ): SnapMarks {
-  const frameId = useAltHoveredFrame(board);
-  if (frameId === null) return { guides: [], gaps: [] };
+  const { frameId, letGo } = useAltHoveredFrame(board);
   let gaps: SnapGap[] = [];
-  if (interaction.mode === 'select') gaps = frameGaps(drawn, interaction.selectedFrameIds, frameId);
-  if (interaction.mode === 'edit') gaps = elementGaps(drawn, frameId, editor);
+  if (frameId !== null && interaction.mode === 'select')
+    gaps = frameGaps(drawn, interaction.selectedFrameIds, frameId);
+  if (frameId !== null && interaction.mode === 'edit') gaps = elementGaps(drawn, frameId, editor);
+  const measuring = gaps.length > 0;
+  // Shown distances are the topmost thing Escape closes, so no layer under them swallows it.
+  useEffect(() => (measuring ? pushEscapeLayer(letGo) : undefined), [measuring, letGo]);
   return { guides: [], gaps };
 }
 
 /**
- * The frame under the pointer while Alt is held, else null. The pointer is
- * followed without a render until Alt goes down, so a plain hover costs nothing.
- * Alt's release can land in another app, so losing the window lets go of it, as Escape does.
+ * The frame under the pointer while Alt is held, else null, and letting go of
+ * Alt. The pointer is followed without a render until Alt goes down, so a plain
+ * hover costs nothing. Alt's release can land in another app, so losing the
+ * window lets go of it too.
  */
-function useAltHoveredFrame(board: RefObject<HTMLElement | null>): string | null {
+function useAltHoveredFrame(board: RefObject<HTMLElement | null>) {
   const [frameId, setFrameId] = useState<string | null>(null);
+  const [alt] = useState(() => {
+    let held = false;
+    let underPointer: string | null = null;
+    const show = () => {
+      setFrameId(held ? underPointer : null);
+    };
+    return {
+      press: () => {
+        held = true;
+        show();
+      },
+      letGo: () => {
+        held = false;
+        show();
+      },
+      over: (next: string | null) => {
+        underPointer = next;
+        if (held) show();
+      },
+    };
+  });
   useEffect(() => {
     const root = board.current;
     if (!root) return undefined;
-    let underPointer: string | null = null;
-    let altHeld = false;
-    const show = () => {
-      setFrameId(altHeld ? underPointer : null);
-    };
     const onPointerOver = (event: PointerEvent) => {
-      underPointer = frameOf(event.target);
-      if (altHeld) show();
+      alt.over(frameOf(event.target));
     };
     const onPointerLeave = () => {
-      underPointer = null;
-      show();
+      alt.over(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Alt') altHeld = true;
-      else if (event.key === 'Escape') altHeld = false;
-      else return;
-      show();
+      if (event.key === 'Alt') alt.press();
     };
     const onKeyUp = (event: KeyboardEvent) => {
-      if (event.key !== 'Alt') return;
-      altHeld = false;
-      show();
-    };
-    const letGo = () => {
-      altHeld = false;
-      show();
+      if (event.key === 'Alt') alt.letGo();
     };
     root.addEventListener('pointerover', onPointerOver);
     root.addEventListener('pointerleave', onPointerLeave);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', letGo);
+    window.addEventListener('blur', alt.letGo);
     return () => {
       root.removeEventListener('pointerover', onPointerOver);
       root.removeEventListener('pointerleave', onPointerLeave);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', letGo);
+      window.removeEventListener('blur', alt.letGo);
     };
-  }, [board]);
-  return frameId;
+  }, [board, alt]);
+  return { frameId, letGo: alt.letGo };
 }
 
 function frameOf(target: EventTarget | null): string | null {
