@@ -1,7 +1,7 @@
 // One frame's row in the layers panel: its build's glyph, its name with the
 // variant suffix kept whole, and the name field while it is renamed.
 
-import type { MouseEvent } from 'react';
+import { useEffect, useEffectEvent, type MouseEvent } from 'react';
 import { AlertTriangle, CirclePause, Clock, LayoutTemplate, Spinner } from '@droidex/icons';
 import { cn } from '../../../components/ui/cn';
 import { Row } from '../../../components/ui/Row';
@@ -26,7 +26,8 @@ export function LayerRow({
   onRenameDone,
   onClick,
   onDoubleClick,
-  onHover,
+  onLight,
+  onUnlight,
 }: {
   id: string;
   frame: CanvasFrame;
@@ -44,8 +45,18 @@ export function LayerRow({
   onRenameDone: () => void;
   onClick: (event: MouseEvent<HTMLElement>) => void;
   onDoubleClick: () => void;
-  onHover: () => void;
+  /** The pointer came onto the row: its frame lights on the board. */
+  onLight: () => void;
+  /** The pointer left, or the list scrolled the row away from under it. */
+  onUnlight: () => void;
 }) {
+  const unlight = useEffectEvent(onUnlight);
+  useEffect(
+    () => () => {
+      unlight();
+    },
+    [],
+  );
   return (
     <div
       id={id}
@@ -61,7 +72,8 @@ export function LayerRow({
         if (!rename) onClick(event);
       }}
       onDoubleClick={onDoubleClick}
-      onPointerEnter={onHover}
+      onPointerEnter={onLight}
+      onPointerLeave={onUnlight}
     >
       <Row
         icon={<StatusGlyph stage={stage} />}

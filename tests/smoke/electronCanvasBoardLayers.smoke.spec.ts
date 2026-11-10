@@ -193,6 +193,16 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await page.keyboard.press('Space');
   await expect.poll(() => selection(page)).toEqual([]);
   await keyboardOn('Design B');
+
+  // A lit row scrolled away under a still pointer takes its frame's light with it.
+  const frameA = page.locator('[data-design-frame="a"]');
+  await row('Design A').hover();
+  await expect(frameA).toHaveAttribute('data-layer-hover', '');
+  await tree.evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+  await expect(row('Design A')).toHaveCount(0);
+  await expect(frameA).not.toHaveAttribute('data-layer-hover');
 });
 
 test('A frame the keyboard leaves Layers for keeps its label and toolbar clear of the rail', async ({

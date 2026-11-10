@@ -73,7 +73,7 @@ export function LayersPanel({
     setMovedTo(null);
   }
   const typeahead = useRef({ query: '', resetAt: 0 });
-  const lightFrame = useBoardLight(tree);
+  const boardLight = useBoardLight(tree);
   const activeIndex = activeRow(designIds, movedTo, selectedFrameIds);
   const active = activeIndex >= 0 ? frames[activeIndex] : undefined;
   const editingIndex = renamingId === null ? -1 : designIds.indexOf(renamingId);
@@ -195,9 +195,6 @@ export function LayersPanel({
               return;
             virtualizer.scrollToIndex(activeIndex);
           }}
-          onPointerLeave={() => {
-            lightFrame(null);
-          }}
         >
           <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map((item) => {
@@ -228,8 +225,11 @@ export function LayersPanel({
                   onDoubleClick={() => {
                     rename(frame);
                   }}
-                  onHover={() => {
-                    lightFrame(frame.designId);
+                  onLight={() => {
+                    boardLight.light(frame.designId);
+                  }}
+                  onUnlight={() => {
+                    boardLight.unlight(frame.designId);
                   }}
                 />
               );
