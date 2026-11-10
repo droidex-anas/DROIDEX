@@ -1,9 +1,11 @@
 // A field that picks one value from a list: the kit's tokens for a property,
 // or the keywords its grammar allows. Typing filters the list, arrows move
-// through it, and Enter or a click picks, applying the value at once.
+// through it, and Enter or a click picks, applying the value at once. The
+// option the pointer or the arrows rest on previews until the list is left.
 
 import {
   useEffect,
+  useEffectEvent,
   useId,
   useRef,
   useState,
@@ -35,6 +37,8 @@ interface ValuePickerProps {
   value: string;
   disabled: boolean;
   onPick: (value: string) => void;
+  /** The option the pointer or the arrows rest on, to preview; null once the list is left unpicked. */
+  onActive: (value: string | null) => void;
 }
 
 /** The option whose value, or the value its hint stands for, is the element's current value. */
@@ -56,6 +60,7 @@ export function ValuePickerField({
   face = value,
   disabled,
   onPick,
+  onActive,
 }: ValuePickerProps & { face?: string }) {
   const anchor = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
@@ -92,6 +97,7 @@ export function ValuePickerField({
           setOpen(false);
         }}
         onPick={onPick}
+        onActive={onActive}
       />
     </>
   );
@@ -138,7 +144,7 @@ export function ValuePickerButton({
   );
 }
 
-function OptionPopover({
+export function OptionPopover({
   label,
   options,
   value,
@@ -146,6 +152,7 @@ function OptionPopover({
   open,
   onClose,
   onPick,
+  onActive,
 }: ValuePickerProps & {
   anchorRef: RefObject<HTMLButtonElement | null>;
   open: boolean;
@@ -155,7 +162,14 @@ function OptionPopover({
   // fresh on the current value every time.
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} label={label} width={224}>
-      <OptionList label={label} options={options} value={value} onClose={onClose} onPick={onPick} />
+      <OptionList
+        label={label}
+        options={options}
+        value={value}
+        onClose={onClose}
+        onPick={onPick}
+        onActive={onActive}
+      />
     </Popover>
   );
 }
@@ -166,8 +180,20 @@ export function OptionList({
   value,
   onClose,
   onPick,
+  onActive,
 }: Omit<ValuePickerProps, 'disabled'> & { onClose: () => void }) {
   const listId = useId();
+  const picked = useRef(false);
+  const leave = useEffectEvent(() => {
+    if (!picked.current) onActive(null);
+  });
+  // The list unmounts as its popover closes, which without a pick puts the value back.
+  useEffect(
+    () => () => {
+      leave();
+    },
+    [],
+  );
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(() => {
     const current = currentOption(options, value);
@@ -187,6 +213,7 @@ export function OptionList({
 
   const pick = (option: ValueOption | undefined) => {
     if (!option) return;
+    picked.current = true;
     onPick(option.value);
     onClose();
   };
@@ -194,14 +221,22 @@ export function OptionList({
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key] ?? 0;
     if (step !== 0) {
       event.preventDefault();
-      setActive((clamped + step + shown.length) % Math.max(shown.length, 1));
+      const next = (clamped + step + shown.length) % Math.max(shown.length, 1);
+      setActive(next);
+      const option = shown.at(next);
+      if (option) onActive(option.value);
     } else if (event.key === 'Enter') {
       event.preventDefault();
       pick(shown[clamped]);
     }
   };
   return (
-    <div className="flex flex-col gap-1 p-1.5">
+    <div
+      className="flex flex-col gap-1 p-1.5"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onActive(null);
+      }}
+    >
       <Input
         variant="embedded"
         autoFocus
@@ -216,6 +251,7 @@ export function OptionList({
         onChange={(event) => {
           setQuery(event.target.value);
           setActive(0);
+          onActive(null);
         }}
         onKeyDown={onKeyDown}
       />
@@ -224,6 +260,9 @@ export function OptionList({
         role="listbox"
         aria-label={label}
         className="scrollbar-on-hover max-h-56 overflow-y-auto"
+        onMouseLeave={() => {
+          onActive(null);
+        }}
       >
         {shown.length === 0 && (
           <p className="px-2 py-1.5 text-caption text-muted">Nothing by that name.</p>
@@ -240,6 +279,7 @@ export function OptionList({
               aria-selected={isCurrent}
               onMouseEnter={() => {
                 setActive(index);
+                onActive(option.value);
               }}
               onClick={() => {
                 pick(option);

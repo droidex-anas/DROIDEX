@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { colourFace, firstFamily, lengthFace, sameFontStack, sameValue } from './panelValues';
+import {
+  blurOf,
+  colourFace,
+  firstFamily,
+  isOpaque,
+  lengthFace,
+  sameFontStack,
+  sameValue,
+  shadowTokens,
+} from './panelValues';
 
 const spacing = [
   { value: '--ds-space-1', label: 'space-1', hint: '4px' },
@@ -96,6 +105,44 @@ test('a token as the kit wrote it is the computed value when it is the same colo
   assert.ok(!sameValue('#2d2a26', 'rgb(45, 42, 39)'));
   assert.ok(!sameValue('0.5rem', '9px'));
 });
+
+test('a shadow token is the computed shadow Chromium writes colour first, in px', () => {
+  // As Electron 39 computes a Tailwind shadow class: its two empty ring layers first.
+  assert.ok(
+    sameValue(
+      '0 12px 32px rgb(20 20 20 / 0.12)',
+      'rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 20, 20, 0.12) 0px 12px 32px 0px',
+    ),
+  );
+  assert.ok(
+    sameValue(
+      '0 1px 0.125rem #0000000a, inset 0 0 0 1px #000',
+      'rgba(0, 0, 0, 0.04) 0px 1px 2px 0px, rgb(0, 0, 0) 0px 0px 0px 1px inset',
+    ),
+  );
+  assert.ok(
+    !sameValue('0 12px 32px rgb(20 20 20 / 0.12)', 'rgba(20, 20, 20, 0.12) 0px 12px 30px 0px'),
+  );
+  assert.ok(!sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px inset'));
+  // CSS clamps an alpha above 1, so the browser computes it opaque.
+  assert.ok(sameValue('0 1px 2px rgba(0, 0, 0, 2)', 'rgb(0, 0, 0) 0px 1px 2px 0px'));
+  assert.ok(
+    !sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px, rgb(0, 0, 0) 0px 1px 2px 0px'),
+  );
+});
+
+test('a filter reads as its blur, whatever else it composes, and a colour as opaque or not', () => {
+  assert.equal(blurOf('blur(12px)'), '12px');
+  assert.equal(blurOf('grayscale(1) blur(4px) contrast(1.2)'), '4px');
+  assert.equal(blurOf('grayscale(1)'), 'none');
+  assert.equal(blurOf('blur(4px) blur(12px)'), 'blur(4px) blur(12px)');
+  assert.equal(blurOf('none'), 'none');
+  assert.equal(blurOf('--ds-blur-soft'), '--ds-blur-soft');
+  assert.ok(isOpaque('rgb(255, 255, 255)'));
+  assert.ok(!isOpaque('rgba(255, 255, 255, 0.6)'));
+  assert.ok(isOpaque('rgba(0, 0, 0, 2)'));
+  assert.ok(!isOpaque('--ds-surface'));
+});
 test('a font stack is named by its first family and matched however it is quoted', () => {
   assert.equal(firstFamily('"Inter Variable", system-ui, sans-serif'), 'Inter Variable');
   assert.equal(
@@ -106,4 +153,43 @@ test('a font stack is named by its first family and matched however it is quoted
     true,
   );
   assert.equal(sameFontStack('Inter, sans-serif', 'Inter, serif'), false);
+});
+
+test('a shadow reads as the kit tokens it is drawn from, or as none of them', () => {
+  const tokens = [
+    { value: '--ds-shadow-sm', label: 'shadow-sm', hint: '0 1px 2px rgb(0 0 0 / 0.05)' },
+    { value: '--ds-shadow-edge', label: 'shadow-edge', hint: '0 0 0 1px #000' },
+    {
+      value: '--ds-shadow-ring',
+      label: 'shadow-ring',
+      hint: '0 0 0 1px #000, 0 4px 8px #0000001a',
+    },
+    { value: '--ds-shadow-md', label: 'shadow-md', hint: '0 12px 32px rgb(0 0 0 / 0.1)' },
+  ];
+  const empty = 'rgba(0, 0, 0, 0) 0px 0px 0px 0px';
+  const sm = 'rgba(0, 0, 0, 0.05) 0px 1px 2px 0px';
+  const md = 'rgba(0, 0, 0, 0.1) 0px 12px 32px 0px';
+  assert.deepEqual(shadowTokens(`${empty}, ${sm}, ${md}`, tokens), [
+    '--ds-shadow-sm',
+    '--ds-shadow-md',
+  ]);
+  // shadow-edge is the ring's first layer, but the ring's second is no token alone.
+  const edge = 'rgb(0, 0, 0) 0px 0px 0px 1px';
+  assert.deepEqual(shadowTokens(`${edge}, rgba(0, 0, 0, 0.1) 0px 4px 8px 0px`, tokens), [
+    '--ds-shadow-ring',
+  ]);
+  assert.deepEqual(shadowTokens('--ds-shadow-sm, --ds-shadow-md', tokens), [
+    '--ds-shadow-sm',
+    '--ds-shadow-md',
+  ]);
+  assert.deepEqual(shadowTokens('none', tokens), []);
+  assert.equal(shadowTokens(`${md}, rgba(0, 0, 0, 0.2) 0px 2px 4px 0px`, tokens), null);
+  // Tokens that overlap split a long stack many ways, and every way strands its last layer.
+  const one = 'rgb(0, 0, 0) 0px 1px 2px 0px';
+  const overlapping = [
+    { value: '--ds-shadow-one', label: 'shadow-one', hint: '0 1px 2px #000' },
+    { value: '--ds-shadow-two', label: 'shadow-two', hint: '0 1px 2px #000, 0 1px 2px #000' },
+  ];
+  const stack = [...Array<string>(30).fill(one), 'rgb(0, 0, 0) 0px 2px 4px 0px'].join(', ');
+  assert.equal(shadowTokens(stack, overlapping), null);
 });

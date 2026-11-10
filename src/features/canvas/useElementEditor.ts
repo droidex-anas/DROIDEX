@@ -13,6 +13,7 @@ import {
   commitText,
   editDraft,
   followRevision,
+  previewedStyles,
   previewStyle,
   previewText,
   revertStyle,
@@ -25,7 +26,7 @@ import { elementSite } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame, WriteReceipt } from './protocol';
+import type { CanvasFrame, ElementRef, WriteReceipt } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
 import { useEditTokens } from './useEditTokens';
 import { useElementHover } from './useElementHover';
@@ -204,11 +205,17 @@ export function useElementEditor({
     return true;
   };
 
-  /** Changes what the selected element previews. */
-  const update = (change: (draft: ElementEditDraft) => ElementEditDraft) => {
+  /** Changes what the selected element previews, from what it draws now. */
+  const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: change(current.draft) });
+    if (current) choose({ ...current, draft: change(current.draft, current.shown) });
   };
+
+  /**
+   * Whether `element` is still selected, in the revision a panel callback was
+   * drawn for; the draft keeps its element until it moves to another revision.
+   */
+  const selects = (element: ElementRef) => latest.current.selection?.draft.element === element;
 
   /** Sends the commit `make` draws from the draft, if it has one to send. */
   const send = (make: typeof commitStyles) => {
@@ -279,14 +286,18 @@ export function useElementEditor({
     mode,
     pick,
     clear,
-    preview: (property: string, value: string) => {
-      update((draft) => previewStyle(draft, property, value));
+    preview: (property: string, value: string, element: ElementRef): boolean => {
+      if (!selects(element)) return false;
+      update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
+      return true;
     },
-    revert: (property: string) => {
+    revert: (property: string, element: ElementRef): boolean => {
+      if (!selects(element)) return false;
       update((draft) => revertStyle(draft, property));
+      return true;
     },
-    commit: () => {
-      send(commitStyles);
+    commit: (element: ElementRef) => {
+      if (selects(element)) send(commitStyles);
     },
     previewText: (text: string) => {
       update((draft) => previewText(draft, text));
@@ -307,7 +318,7 @@ export type ElementEditor = ReturnType<typeof useElementEditor>;
 
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: { ...draft.values }, text: draft.text };
+  return { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
 }
 
 /** The panel's first field that takes typing, else its first working button. */

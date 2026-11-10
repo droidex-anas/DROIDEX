@@ -37,6 +37,7 @@ export function ColourField({
   onCommit,
   onLeave,
   onPick,
+  onActive,
 }: {
   /** The field's accessible name: the property as a person reads it. */
   label: string;
@@ -50,6 +51,8 @@ export function ColourField({
   onCommit: () => void;
   onLeave: () => void;
   onPick: (value: string) => void;
+  /** A token the list rests on, to preview; null once it is left unpicked. */
+  onActive: (value: string | null) => void;
 }) {
   const field = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -140,6 +143,7 @@ export function ColourField({
                 dragged.current = false;
                 onPick(token);
               }}
+              onActive={onActive}
             />
           )}
           <ColorPicker

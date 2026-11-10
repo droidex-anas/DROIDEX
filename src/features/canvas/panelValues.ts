@@ -1,10 +1,11 @@
 // How the element panel reads a computed value back to a designer: the kit
 // token it matches, a colour as hex and opacity or none at all, a length's
-// zero or keyword as a muted placeholder and its fraction rounded, and a font
-// stack by its first family.
+// zero or keyword as a muted placeholder and its fraction rounded, a shadow by
+// its layers, a filter by its blur, and a font stack by its first family.
 // Computed values arrive in CSS pixels and rgb(); token values as the kit wrote
 // them, in px, rem, hex or rgb().
 
+import { parseShadow, type ShadowLayer, type ShadowLength } from './systemDocument/shadowLayers';
 import type { ValueOption } from './ValuePickerField';
 
 /** CSS's initial root font size, which a kit's rem tokens resolve against. */
@@ -99,13 +100,86 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
 
 /**
  * Whether a token's value, as the kit wrote it, is the value the preview
- * computed: the same length in pixels, the same colour, or the same text.
+ * computed: the same length in pixels, the same shadow, the same colour, or
+ * the same text.
  */
 export function sameValue(written: string, computed: string): boolean {
   const px = pixelsOf(written);
   if (px !== null) return px === pixelsOf(computed);
+  const layers = parseShadow(written);
+  if (layers) return sameShadow(layers, computed);
   return sameColour(written, computed);
 }
+
+const SHADOW_LENGTHS = ['x', 'y', 'blur', 'spread'] as const;
+
+/**
+ * Chromium computes a shadow's colour first and every length in px, as a kit
+ * seldom writes it, and keeps the transparent ring layers Tailwind's shadow
+ * classes lead with, which draw nothing. Only what parseShadow reads matches:
+ * px and rem lengths, and hex, rgb() and hsl() colours; a token written with
+ * em, a named colour or color() shows the computed value instead.
+ */
+function sameShadow(written: ShadowLayer[], computed: string): boolean {
+  const drawn = parseShadow(computed)?.filter(isDrawnLayer);
+  return drawn !== undefined && sameLayers(written.filter(isDrawnLayer), drawn);
+}
+
+function sameLayers(written: readonly ShadowLayer[], drawn: readonly ShadowLayer[]): boolean {
+  if (drawn.length !== written.length) return false;
+  return written.every((layer, index) => {
+    const other = drawn[index];
+    return (
+      layer.inset === other.inset &&
+      sameColour(layer.color, other.color) &&
+      SHADOW_LENGTHS.every((key) => {
+        const px = shadowPixels(layer[key]);
+        return px !== null && px === shadowPixels(other[key]);
+      })
+    );
+  });
+}
+
+/**
+ * The kit shadow tokens an element's shadow is drawn from, in order: a picked
+ * list by its names, else the computed layers matched token by token. Empty
+ * for no shadow; null when a layer is no kit token's, so the shadow reads raw.
+ */
+export function shadowTokens(shadow: string, tokens: readonly ValueOption[]): string[] | null {
+  if (shadow.startsWith('--')) return shadow.split(',').map((name) => name.trim());
+  if (shadow.trim() === 'none') return [];
+  const drawn = parseShadow(shadow)?.filter(isDrawnLayer);
+  if (!drawn) return null;
+  const layered = tokens.flatMap((option) => {
+    const layers = parseShadow(option.hint ?? '')?.filter(isDrawnLayer);
+    return layers?.length ? [{ name: option.value, layers }] : [];
+  });
+  // A token may draw several layers, so a first match can strand the rest. A
+  // start that strands once always does, so each is tried once.
+  const stranded = new Set<number>();
+  const from = (start: number): string[] | null => {
+    if (start === drawn.length) return [];
+    if (stranded.has(start)) return null;
+    for (const { name, layers } of layered) {
+      const end = start + layers.length;
+      if (end > drawn.length || !sameLayers(layers, drawn.slice(start, end))) continue;
+      const rest = from(end);
+      if (rest) return [name, ...rest];
+    }
+    stranded.add(start);
+    return null;
+  };
+  return from(0);
+}
+
+function isDrawnLayer(layer: ShadowLayer): boolean {
+  return layer.alpha > 0;
+}
+
+function shadowPixels({ amount, unit }: ShadowLength): number | null {
+  return pixelsOf(`${String(amount)}${unit}`);
+}
+
 function sameColour(a: string, b: string): boolean {
   const left = parseColour(a);
   const right = parseColour(b);
@@ -149,7 +223,8 @@ function parseColour(value: string): Colour | null {
   const colour = channelsIn(space, parts);
   const alpha = alphaText === undefined ? 1 : amount(alphaText, 0.01);
   if (!colour || ![...colour.channels, alpha].every(Number.isFinite)) return null;
-  return { ...colour, alpha };
+  // CSS clamps an alpha to between 0 and 1, and the browser computes it so.
+  return { ...colour, alpha: Math.min(Math.max(alpha, 0), 1) };
 }
 
 function channelsIn(space: string, parts: string[]): Omit<Colour, 'alpha'> | null {
@@ -217,6 +292,24 @@ function channelHex(channel: number): string {
 }
 function normalized(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * The blur a filter applies, as the blur pickers match it: a picked token by
+ * its name, else the length of the filter's one blur(), whatever other
+ * functions it composes with, else `none`. Two blurs are no one step, so a
+ * filter with them reads as itself.
+ */
+export function blurOf(filter: string): string {
+  if (filter.startsWith('--')) return filter;
+  const blurs = [...filter.matchAll(/(?:^|\s)blur\(([^()]*)\)/g)];
+  if (blurs.length > 1) return filter;
+  return blurs.at(0)?.[1].trim() ?? 'none';
+}
+
+/** Whether a colour paints over everything behind it. */
+export function isOpaque(colour: string): boolean {
+  return parseColour(colour.trim())?.alpha === 1;
 }
 
 /** Whether two font stacks name the same families, however each is quoted and spaced. */
