@@ -179,6 +179,24 @@ async function readLibrary(
   };
 }
 
+/**
+ * The library's ui alias, the folder it points at and its stylesheet, as
+ * components.json and tsconfig.json say now, under the project's real `root`.
+ */
+export async function readLibraryLayout(
+  root: string,
+  componentsConfig: string,
+): Promise<{ ui: string; uiFolder: string; css: LibraryFile } | { problem: string }> {
+  const settings = await readComponentsConfig(root, componentsConfig);
+  if ('problem' in settings) return settings;
+  const base = path.posix.dirname(componentsConfig);
+  const css = await readFile(root, base, settings.tailwind.css);
+  if ('problem' in css) return css;
+  const code = await readAliasedCode(root, base, settings.aliases);
+  if ('problem' in code) return code;
+  return { ui: code.aliases.ui, uiFolder: code.uiFolder, css };
+}
+
 /** Where the library's aliases point, through tsconfig.json, and its cn() helper. */
 async function readAliasedCode(
   root: string,
