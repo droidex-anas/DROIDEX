@@ -200,7 +200,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
   const normalizeTree = (data) => {
     const given = data.nodes;
     if (!Array.isArray(given) || given.length > ${String(MAX_PREVIEW_TREE_NODES)}) return null;
-    if (typeof data.truncated !== 'boolean') return null;
+    if (data.cap !== ${String(MAX_PREVIEW_TREE_NODES)} || typeof data.truncated !== 'boolean') return null;
     const nodes = [];
     for (const entry of given) {
       const node = entry && typeof entry === 'object' ? nodeOf(entry) : null;

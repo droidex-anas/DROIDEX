@@ -528,17 +528,24 @@ test('a tree answer has its own cap, and each node is rebuilt or the answer refu
   const node = { elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 };
   // Far over the 4096 bytes any other event may measure.
   const nodes = Array.from({ length: 400 }, () => node);
-  assert.deepEqual(await answer({ nodes, truncated: true }), { nodes, cap: 400, truncated: true });
-  assert.deepEqual(await answer({ nodes: [{ ...node, style: 'x' }], truncated: false }), {
+  assert.deepEqual(await answer({ nodes, cap: 400, truncated: true }), {
+    nodes,
+    cap: 400,
+    truncated: true,
+  });
+  assert.deepEqual(await answer({ nodes: [{ ...node, style: 'x' }], cap: 400, truncated: false }), {
     nodes: [node],
     cap: 400,
     truncated: false,
   });
   for (const refused of [
-    { nodes: [...nodes, node], truncated: true },
-    { nodes: [{ ...node, instancePath: '0/x' }], truncated: false },
-    { nodes: [{ ...node, depth: -1 }], truncated: false },
-    { nodes: [node] },
+    { nodes: [...nodes, node], cap: 400, truncated: true },
+    { nodes: [{ ...node, instancePath: '0/x' }], cap: 400, truncated: false },
+    { nodes: [{ ...node, depth: -1 }], cap: 400, truncated: false },
+    { nodes: [node], cap: 400 },
+    // The cap is the reporter's to name, never the intermediate's to fill in.
+    { nodes: [node], truncated: false },
+    { nodes: [node], cap: 10, truncated: false },
   ])
     assert.equal(await answer(refused), null);
 });
