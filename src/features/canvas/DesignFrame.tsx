@@ -30,7 +30,8 @@ import type { CanvasMotion } from './canvasMotion';
 import type { PresenceAgent } from './canvasPresence';
 import type { BoardMode } from './canvasState';
 import { FrameInputOverlay } from './FrameInputOverlay';
-import { FrameLabel, FrameNameField } from './FrameLabel';
+import { FrameLabel } from './FrameLabel';
+import { FrameNameField } from './FrameNameField';
 import type { FrameSize } from './FrameSizeMenu';
 import { FrameSizing } from './FrameSizing';
 import { FrameThumbnail } from './FrameThumbnail';
@@ -155,18 +156,23 @@ export function DesignFrame(props: DesignFrameProps) {
       }}
     >
       {renaming ? (
-        <FrameNameField
-          frame={frame}
-          width={screenWidth}
-          onRename={props.actions.rename}
-          onDone={() => {
-            // The label has to be back before it can take the keyboard.
-            flushSync(() => {
-              setRenaming(false);
-            });
-            focusLabel();
-          }}
-        />
+        <div
+          className="canvas-frame-label canvas-chrome"
+          style={{ width: Math.max(0, screenWidth) }}
+        >
+          <FrameNameField
+            frame={frame}
+            className="canvas-frame-name canvas-frame-name-field"
+            onRename={props.actions.rename}
+            onDone={() => {
+              // The label has to be back before it can take the keyboard.
+              flushSync(() => {
+                setRenaming(false);
+              });
+              focusLabel();
+            }}
+          />
+        </div>
       ) : (
         <FrameLabel
           ref={label}

@@ -22,6 +22,8 @@ export type CanvasPaneState =
       snapshot: CanvasSnapshot;
       /** The frame the source drawer is open on, or null while it is closed. */
       sourceDesignId: string | null;
+      /** The layers panel beside the board is open. */
+      layersOpen: boolean;
       /** Where the board was when a document took its place, so Back returns there. */
       boardViewport?: Viewport;
     }
@@ -40,6 +42,8 @@ export type CanvasPaneEvent =
   // The toolbar's Source action (Task 5d binds it) and the drawer closing.
   | { type: 'open-source'; designId: string }
   | { type: 'close-source' }
+  // The board's Layers tool, its shortcut and the panel's own close.
+  | { type: 'show-layers'; shown: boolean }
   | { type: 'board-left'; viewport: Viewport };
 
 /** The event the toolbar's Source action dispatches for one frame. */
@@ -132,6 +136,7 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
         canvasId: snapshot.canvasId,
         snapshot,
         sourceDesignId: keptSourceDesignId(state, snapshot),
+        layersOpen: state.status === 'ready' && state.layersOpen,
         ...(boardViewport ? { boardViewport } : {}),
       };
     }
@@ -145,6 +150,9 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
       const designId = event.type === 'open-source' ? event.designId : null;
       return { ...state, sourceDesignId: designId };
     }
+    case 'show-layers':
+      if (state.status !== 'ready' || state.layersOpen === event.shown) return state;
+      return { ...state, layersOpen: event.shown };
     case 'board-left':
       if (state.status !== 'ready' || state.snapshot.frames.length === 0) return state;
       return { ...state, boardViewport: event.viewport };

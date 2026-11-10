@@ -15,6 +15,7 @@ import {
   arrowDirection,
   nudgeStep,
   reduceFrameDrag,
+  revealRect,
   screenToCanvas,
   visibleDesignIds,
   wheelZoomScale,
@@ -105,6 +106,26 @@ test('fit centres every frame and its chrome with padding and never magnifies pa
   // Nothing to frame, and a board with no measured size, are both identity.
   assert.deepEqual(fitFrames([], size), { x: 0, y: 0, scale: 1 });
   assert.deepEqual(fitFrames([rect(0, 0)], { x: 0, y: 0 }), { x: 0, y: 0, scale: 1 });
+});
+
+test('reveal pans the least way that clears the rail and the chrome above, at the same zoom', () => {
+  const size = { x: 480, y: 800 };
+  const viewport: Viewport = { x: 0, y: 0, scale: 0.5 };
+  // In view, clear of the rail and with room for its label and toolbar: no pan.
+  assert.equal(revealRect(viewport, rect(200, 400), size), null);
+
+  // Under the rail's column, it lands 72 px in, its label and toolbar 74 px below the top.
+  const underRail = revealRect(viewport, rect(40, 40), size);
+  assert.deepEqual(underRail && canvasToScreen(underRail, { x: 40, y: 40 }), { x: 72, y: 74 });
+  assert.equal(underRail?.scale, 0.5);
+
+  // Past the right and bottom edges, it stops at them.
+  const pastEnd = revealRect(viewport, rect(800, 1500), size);
+  assert.deepEqual(pastEnd && canvasToScreen(pastEnd, { x: 1200, y: 1800 }), { x: 480, y: 800 });
+
+  // Wider than the room right of the rail, it shows its left edge.
+  const wide = revealRect(viewport, rect(400, 400, 1200), size);
+  assert.equal(wide && canvasToScreen(wide, { x: 400, y: 400 }).x, 72);
 });
 
 test('fit of a very large board clamps to the minimum scale', () => {
