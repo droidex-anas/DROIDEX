@@ -251,9 +251,23 @@ Module._resolveFilename = function (specifier, ...rest) {
 
 const runtimeRequire = createRequire(root + '/' + ${JSON.stringify(ANCHOR_FILE)});
 const fileEntry = ${String(FILE_ENTRY)};
+// resolveEntry in canvasRuntime.ts: a file entry is read inside the directory
+// of the package.json \`require\` would find for its package.
+const packageName = (specifier) =>
+  specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+const packageDirectory = (name) => {
+  const modules = runtimeRequire.resolve
+    .paths(name)
+    ?.find((directory) => existsSync(directory + '/' + name + '/package.json'));
+  return modules === undefined ? null : modules + '/' + name;
+};
 for (const specifier of ${JSON.stringify(RUNTIME_SPECIFIERS)}) {
   if (fileEntry.test(specifier)) {
-    if (!existsSync(inside + specifier)) refuse(specifier + ' does not resolve');
+    const name = packageName(specifier);
+    const directory = packageDirectory(name);
+    const file = directory === null ? null : directory + specifier.slice(name.length);
+    if (file === null || !existsSync(file)) refuse(specifier + ' does not resolve');
+    if (!file.startsWith(inside)) refuse(specifier + ' resolves outside the runtime, to ' + file);
     continue;
   }
   try {

@@ -78,6 +78,17 @@ const DAMAGE: [string, (runtime: string) => void, string?][] = [
     },
   ],
   [
+    // Its entry file is still there, but startup finds a package's directory by
+    // its package.json, so the copy above the runtime is the one it would read.
+    'the package.json of a package with an ESM entry, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/radix-ui/package.json');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/radix-ui/package.json'];
+      });
+    },
+  ],
+  [
     // Removing it from both inventories leaves a consistent tree; the reviewed
     // VictoryVendor license inventory is the rule that refuses it.
     'a vendored chart license, with a manifest that agrees',
