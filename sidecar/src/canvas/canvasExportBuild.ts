@@ -176,8 +176,8 @@ images the source and kit refer to in \`assets/\`.
 
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`, plus these library packages, which
+are \`react\`, \`react-dom/client\`, \`react/jsx-runtime\`, \`lucide-react\`,
+\`recharts\`, \`simple-icons\` and \`@droidex/design-system\`, plus these library packages, which
 \`package.json\` lists only when the source or kit imports them: \`radix-ui\`,
 \`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\`,
 \`tailwind-merge\`, and the Radix primitives \`radix-ui\` re-exports, each also
