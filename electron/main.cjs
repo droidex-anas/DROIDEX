@@ -802,6 +802,21 @@ function registerIpc() {
   desktopIpc.handle('discard-image', ({ path: target }) => {
     return attachments.discard(attachmentsDir, target);
   });
+  // The importer reads a path, so pasted SVG markup passes through the
+  // attachments dir; the day-old sweep removes a file discard could not.
+  ipcMain.handle('canvas-paste-svg', (event, { canvasId, svg }) => {
+    assertMainRenderer(event);
+    const importPasted = async (owner) => {
+      const dataUrl = `data:image/svg+xml;base64,${Buffer.from(String(svg)).toString('base64')}`;
+      const filePath = await attachments.saveFile(attachmentsDir, { name: 'pasted.svg', dataUrl });
+      try {
+        return await importCanvasImage(owner, filePath);
+      } finally {
+        await attachments.discard(attachmentsDir, filePath).catch(() => {});
+      }
+    };
+    return canvasImageImportResult(importPasted, { kind: 'canvas', canvasId }, null);
+  });
   desktopIpc.handle('save-image-as', async ({ url, name }) => {
     // Node's fetch decodes data: URLs; only the session's fetch reaches droidex-img.
     const signal = AbortSignal.timeout(30_000);

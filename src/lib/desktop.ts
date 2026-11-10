@@ -300,6 +300,7 @@ export interface DroidexApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  canvasPasteSvg: (canvasId: string, svg: string) => Promise<OwnedAsset>;
   canvasPickKitImage: () => Promise<OwnedAsset | null>;
   canvasDropKitImage: (file: File) => Promise<OwnedAsset>;
   /** A kit image's bytes, or null when the store does not hold that image intact. */
@@ -618,6 +619,11 @@ export async function importCanvasImage(canvasId: string, file: File): Promise<O
     canvasId,
     file,
   );
+}
+
+// Imports pasted SVG markup into the canvas as an owned asset, rejecting like importCanvasImage.
+export async function importPastedSvg(canvasId: string, svg: string): Promise<OwnedAsset> {
+  return requireDesktopApi('Pasting SVGs needs the desktop app.').canvasPasteSvg(canvasId, svg);
 }
 
 // Kit images (design system documents spec §8) enter the kit store only through
