@@ -89,6 +89,17 @@ const DAMAGE: [string, (runtime: string) => void, string?][] = [
     },
   ],
   [
+    // The tree agrees with its manifest and startup accepts it; only a compile
+    // follows the dropped subpath, to the copy above the runtime.
+    'a subpath package.json only its browser graph reads, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/react-remove-scroll-bar/constants');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/react-remove-scroll-bar/constants/package.json'];
+      });
+    },
+  ],
+  [
     // Removing it from both inventories leaves a consistent tree; the reviewed
     // VictoryVendor license inventory is the rule that refuses it.
     'a vendored chart license, with a manifest that agrees',
@@ -566,7 +577,8 @@ process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(
 for (const [what, damage, expectedFailure] of DAMAGE) {
   const { layout, target: damaged } = copiedLayout(target, damage);
   const verifierFailure = releaseVerifierFailure(damaged.runtimeDir);
-  const run = await runWorker(damaged, damaged.runtimeDir);
+  // The component library reads the most of the browser graph.
+  const run = await runWorker(damaged, damaged.runtimeDir, compileInput(LIBRARY_DESIGN));
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime missing ${what}`);
   if (verifierFailure === null) fail(`the release verifier would ship a runtime missing ${what}`);

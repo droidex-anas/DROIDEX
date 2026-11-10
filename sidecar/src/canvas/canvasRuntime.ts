@@ -92,7 +92,12 @@ export interface CanvasCompilerRuntime {
   tailwindcssAnimate: TailwindPlugin;
   /** The absolute file one supported import resolves to, inside this runtime. */
   resolve(specifier: string): string;
+  /** The canonical node_modules every module a compile loads must sit in, or null in a checkout. */
+  ownedModules: string | null;
 }
+
+/** A compile reached a module outside the owned runtime: staging left out a file it needs. */
+export class DamagedRuntimeError extends Error {}
 
 type TailwindPlugin = NonNullable<tailwindModule.Config['plugins']>[number];
 
@@ -182,6 +187,7 @@ function load(runtimeRequire: NodeJS.Require, modules: string | null): string | 
       tailwindcss: runtimeRequire('tailwindcss') as typeof tailwindModule.default,
       tailwindcssAnimate: runtimeRequire('tailwindcss-animate') as TailwindPlugin,
       resolve: (specifier) => resolveEntry(runtimeRequire, specifier),
+      ownedModules: modules,
     };
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
