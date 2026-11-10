@@ -3,7 +3,12 @@
 // Only the compiler process loads the parser, so only it imports this module.
 
 import ts from 'typescript';
-import type { ModuleDeclarations, ModuleExport, ModuleSpecifier } from './compilerModules.js';
+import type {
+  ModuleDeclarations,
+  ModuleExport,
+  ModuleImport,
+  ModuleSpecifier,
+} from './compilerModules.js';
 
 export function moduleDeclarations(source: string): ModuleDeclarations {
   const file = ts.createSourceFile(
@@ -43,7 +48,36 @@ export function moduleDeclarations(source: string): ModuleDeclarations {
     ts.forEachChild(node, visit);
   };
   visit(file);
-  return { specifiers, exports: file.statements.flatMap(exportsOf) };
+  const imports = file.statements.flatMap((statement): ModuleImport[] => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier))
+      return [];
+    return [
+      {
+        specifier: statement.moduleSpecifier.text,
+        start: statement.getStart(file),
+        end: statement.end,
+        names: namedValues(statement.importClause),
+      },
+    ];
+  });
+  return { specifiers, imports, exports: file.statements.flatMap(exportsOf) };
+}
+
+function namedValues(clause: ts.ImportClause | undefined): ModuleImport['names'] {
+  const bindings = clause?.namedBindings;
+  if (
+    clause === undefined ||
+    clause.phaseModifier !== undefined ||
+    clause.name !== undefined ||
+    bindings === undefined ||
+    !ts.isNamedImports(bindings) ||
+    bindings.elements.some((element) => element.isTypeOnly)
+  )
+    return null;
+  return bindings.elements.map((element) => ({
+    imported: (element.propertyName ?? element.name).text,
+    local: element.name.text,
+  }));
 }
 
 function importsOnlyTypes(clause: ts.ImportClause | undefined): boolean {
