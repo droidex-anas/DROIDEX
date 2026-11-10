@@ -9,16 +9,16 @@ import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boardPoint } from './boardCoordinates';
 import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
+import type { PickedOnBoard } from './ElementOutlines';
 import { measureBetween } from './measureDistances';
-import { isDesignRoot, isDrawn } from './previewDocument';
+import { isDesignRoot } from './previewDocument';
 import type { FrameRect } from './protocol';
 import type { GuideMarks } from './SnapGuides';
-import type { ElementSelection } from './useElementEditor';
 import { isPicked, type HoveredElement } from './useElementHover';
 
-interface PickedAndHovered {
-  selection: ElementSelection | null;
-  hover: { hovered: HoveredElement | null; move: HoverAt };
+interface Hover {
+  hovered: HoveredElement | null;
+  move: HoverAt;
 }
 
 /** Asks what is under a point in a design's own pixels, as a pointer over it does. */
@@ -28,29 +28,32 @@ type HoverAt = (designId: string, at: Point) => void;
 interface Measured {
   from: FrameRect;
   to: FrameRect;
+  /** The bottom of the box `from`'s size chip hangs under, as the board draws it. */
+  sizedBottom: number;
 }
 
 export function useHoverMeasurements(
   board: RefObject<HTMLElement | null>,
   drawn: readonly PlacedFrame[],
   interaction: BoardInteraction,
-  editor: PickedAndHovered,
+  selected: PickedOnBoard | null,
+  hover: Hover,
 ): GuideMarks {
   const { frameId, letGo } = useAltHoveredFrame(
     board,
-    interaction.mode === 'edit' ? editor.hover.move : null,
+    interaction.mode === 'edit' ? hover.move : null,
   );
   let measured: Measured | null = null;
   if (frameId !== null && interaction.mode === 'select')
     measured = framesToMeasure(drawn, interaction.selectedFrameIds, frameId);
   if (frameId !== null && interaction.mode === 'edit')
-    measured = elementsToMeasure(drawn, frameId, editor);
+    measured = elementsToMeasure(frameId, selected, hover.hovered);
   const gaps = measured ? measureBetween(measured.from, measured.to) : [];
   const measuring = gaps.length > 0;
   // Shown distances are the topmost thing Escape closes, so no layer under them swallows it.
   useEffect(() => (measuring ? pushEscapeLayer(letGo) : undefined), [measuring, letGo]);
   if (!measured) return { guides: [], gaps };
-  return { guides: [], gaps, sizedBottom: measured.from.y + measured.from.height };
+  return { guides: [], gaps, sizedBottom: measured.sizedBottom };
 }
 
 /**
@@ -149,24 +152,27 @@ function framesToMeasure(
     drawn.filter(({ designId }) => selectedFrameIds.includes(designId)).map(({ rect }) => rect),
   );
   const hovered = drawn.find(({ designId }) => designId === hoveredId)?.rect;
-  return selected && hovered ? { from: selected, to: hovered } : null;
+  if (!selected || !hovered) return null;
+  return { from: selected, to: hovered, sizedBottom: selected.y + selected.height };
 }
 
 function elementsToMeasure(
-  drawn: readonly PlacedFrame[],
   frameId: string,
-  { selection, hover }: PickedAndHovered,
+  selected: PickedOnBoard | null,
+  hovered: HoveredElement | null,
 ): Measured | null {
-  const picked = selection?.draft.element;
-  const frame = drawn.find(({ designId }) => designId === frameId)?.rect;
-  // A hidden element has no box to measure from; the panel says it is hidden.
-  if (!selection || picked?.designId !== frameId || !frame || !isDrawn(selection.shown.rect))
-    return null;
+  if (selected?.selection.draft.element.designId !== frameId) return null;
+  const { selection, frame, box } = selected;
   const from = inWorld(frame, selection.shown.rect);
-  const { hovered } = hover;
-  if (hovered?.designId === frameId && !isPicked(picked, hovered) && !isDesignRoot(hovered.element))
-    return { from, to: inWorld(frame, hovered.element.rect) };
-  return { from, to: frame };
+  // The size chip hangs under the box trimmed to the frame, not under the element's own.
+  const sizedBottom = frame.y + box.top + box.height;
+  if (
+    hovered?.designId === frameId &&
+    !isPicked(selection.draft.element, hovered) &&
+    !isDesignRoot(hovered.element)
+  )
+    return { from, to: inWorld(frame, hovered.element.rect), sizedBottom };
+  return { from, to: frame, sizedBottom };
 }
 
 /** An element's box on the board: the sheet lays the design out one pixel to a world unit. */

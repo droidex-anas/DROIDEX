@@ -28,6 +28,24 @@ interface Box {
 
 type TagSide = 'above' | 'below' | 'inside';
 
+/** Where Edit's picked element shows: its frame, and its box there trimmed to the frame. */
+export interface PickedOnBoard {
+  selection: ElementSelection;
+  frame: FrameRect;
+  box: Box;
+}
+
+/** Null when the picked element is hidden, or none of it shows in its frame. */
+export function pickedOnBoard(
+  drawn: readonly PlacedFrame[],
+  selection: ElementSelection | null,
+): PickedOnBoard | null {
+  // A hidden element has no box to outline; the panel says it is hidden.
+  if (!selection || !isDrawn(selection.shown.rect)) return null;
+  const shown = onBoard(drawn, selection.draft.element.designId, selection.shown.rect);
+  return shown && { selection, ...shown };
+}
+
 /** A box Design outlines in a frame: a pick, or the text a press is dragging across. */
 export interface PickOutline {
   key: string;
@@ -39,7 +57,7 @@ export interface PickOutline {
 export function ElementOutlines({
   drawn,
   scale,
-  selection,
+  selected,
   hovered,
   hoveredComponent,
   picks,
@@ -48,7 +66,8 @@ export function ElementOutlines({
   drawn: PlacedFrame[];
   /** The board's zoom, which sizes the screen-sized chips in frame units. */
   scale: number;
-  selection: ElementSelection | null;
+  /** Where Edit's picked element shows, which its outline and size chip are drawn from. */
+  selected: PickedOnBoard | null;
   hovered: HoveredElement | null;
   /** The component the hovered element is written in, which Design names before its tag. */
   hoveredComponent: string | null;
@@ -57,20 +76,14 @@ export function ElementOutlines({
 }) {
   const [tag, tagOnScreen] = useScreenSize();
   const [size, sizeOnScreen] = useScreenSize();
-  const picked = selection?.draft.element;
-  // A hidden element has no box to outline; the panel says it is hidden.
-  const selected =
-    selection &&
-    picked &&
-    isDrawn(selection.shown.rect) &&
-    onBoard(drawn, picked.designId, selection.shown.rect);
+  const picked = selected?.selection.draft.element;
   // The picked element's own outline already says where it is.
   const hover =
     hovered &&
     !(picked && isPicked(picked, hovered)) &&
     onBoard(drawn, hovered.designId, hovered.element.rect);
   const sizeChip =
-    selected && picked.designId === hovered?.designId
+    selected && picked?.designId === hovered?.designId
       ? sizeChipOf(selected.box, sizeOnScreen.width / scale, scale)
       : null;
   return (
@@ -101,12 +114,13 @@ export function ElementOutlines({
           </div>
         </AtFrame>
       )}
-      {selection && selected && (
+      {selected && (
         <AtFrame frame={selected.frame}>
           <div aria-hidden className="canvas-element-outline" style={selected.box}>
             <div className="canvas-frame-size canvas-chrome">
               <span ref={size}>
-                {Math.round(selection.shown.rect.width)} × {Math.round(selection.shown.rect.height)}
+                {Math.round(selected.selection.shown.rect.width)} ×{' '}
+                {Math.round(selected.selection.shown.rect.height)}
               </span>
             </div>
           </div>
@@ -152,7 +166,7 @@ function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode })
 }
 
 /** The frame an element is drawn in and its visible box there, if any of it shows. */
-function onBoard(drawn: PlacedFrame[], designId: string, element: FrameRect) {
+function onBoard(drawn: readonly PlacedFrame[], designId: string, element: FrameRect) {
   const frame = drawn.find((placed) => placed.designId === designId)?.rect;
   const box = frame && inFrame(frame, element);
   return frame && box ? { frame, box } : null;

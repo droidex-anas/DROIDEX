@@ -21,12 +21,10 @@ export interface GuideMarks extends SnapMarks {
 export function SnapGuides({ marks, viewport }: { marks: GuideMarks; viewport: Viewport }) {
   if (marks.guides.length === 0 && marks.gaps.length === 0) return null;
   const { sizedBottom } = marks;
-  // A gap down from a sized box runs through the size chip centred under it,
-  // so its distance starts clear below the chip.
-  const chipBottom =
+  const chipTop =
     sizedBottom === undefined
       ? null
-      : canvasToScreen(viewport, { x: 0, y: sizedBottom }).y + SIZE_ROOM_PX + TICK_CLEARANCE_PX;
+      : Math.round(canvasToScreen(viewport, { x: 0, y: sizedBottom }).y);
   return (
     <div aria-hidden className="canvas-snap">
       {marks.guides.map((guide) => (
@@ -38,12 +36,7 @@ export function SnapGuides({ marks, viewport }: { marks: GuideMarks; viewport: V
       ))}
       {marks.gaps.map((gap, index) => (
         // Kept mounted while the gaps follow the pointer, so each distance is measured once.
-        <GapMark
-          key={index}
-          gap={gap}
-          viewport={viewport}
-          clearBelow={gap.axis === 'y' && gap.from === sizedBottom ? chipBottom : null}
-        />
+        <GapMark key={index} gap={gap} viewport={viewport} chipTop={chipTop} />
       ))}
     </div>
   );
@@ -52,20 +45,24 @@ export function SnapGuides({ marks, viewport }: { marks: GuideMarks; viewport: V
 /**
  * A measured space: a line with end ticks, and its distance centred on it, or
  * beside it when the line is too short to hold the distance clear of its ticks.
- * A line that starts under a size chip holds its distance below `clearBelow`.
  */
 function GapMark({
   gap,
   viewport,
-  clearBelow,
+  chipTop,
 }: {
   gap: SnapGap;
   viewport: Viewport;
-  clearBelow: number | null;
+  /** The screen row a size chip's gap starts on, if one shows. */
+  chipTop: number | null;
 }) {
   const box = gapBox(gap, viewport);
   const [pill, pillSize] = useScreenSize();
   const vertical = gap.axis === 'y';
+  // A line down from a sized box runs through its size chip, so its distance starts
+  // below the chip. Rows compare in whole screen pixels, as the line is drawn.
+  const clearBelow =
+    vertical && box.top === chipTop ? box.top + SIZE_ROOM_PX + TICK_CLEARANCE_PX : null;
   const start = vertical ? box.top : box.left;
   const end = start + (vertical ? box.height : box.width);
   const pillLength = vertical ? pillSize.height : pillSize.width;
