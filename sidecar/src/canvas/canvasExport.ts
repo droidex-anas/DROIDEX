@@ -11,20 +11,17 @@ import {
   rm,
   rmdir,
 } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
 import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
-import { BUILD_SCRIPT } from './canvasExportBuild.js';
+import { BUILD_SCRIPT, exportPackageJson } from './canvasExportBuild.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
-import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
 import {
   NO_PROJECT_FOLDER,
@@ -174,49 +171,6 @@ async function canvasSourceFiles(
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
   return files;
-}
-
-function exportPackageJson(): string {
-  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-  const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
-  const requireFromRuntime = createRequire(anchor);
-  const version = (name: string): string => {
-    const manifestPath = requireFromRuntime.resolve(`${name}/package.json`);
-    if (ownedCanvasRuntimeDir !== null) {
-      const fromRuntime = relative(join(ownedCanvasRuntimeDir, 'node_modules'), manifestPath);
-      if (fromRuntime === '..' || fromRuntime.startsWith(`..${sep}`) || isAbsolute(fromRuntime))
-        throw new Error('Canvas runtime package resolved outside its owned directory.');
-    }
-    const manifest = requireFromRuntime(manifestPath) as { version: string };
-    return manifest.version;
-  };
-  try {
-    return `${JSON.stringify(
-      {
-        name: 'droidex-canvas-export',
-        private: true,
-        type: 'module',
-        scripts: { build: 'node build.mjs', preview: 'node build.mjs --serve' },
-        dependencies: {
-          react: version('react'),
-          'react-dom': version('react-dom'),
-          'lucide-react': '0.460.0',
-          recharts: version('recharts'),
-          'react-is': version('react-is'),
-          'simple-icons': '16.36.0',
-        },
-        devDependencies: {
-          esbuild: version('esbuild'),
-          postcss: version('postcss'),
-          tailwindcss: version('tailwindcss'),
-        },
-      },
-      null,
-      2,
-    )}\n`;
-  } catch (error) {
-    throw storageFailure('The Canvas build toolchain is unavailable. Reopen DROIDEX.', error);
-  }
 }
 
 /**
