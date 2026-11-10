@@ -3,7 +3,7 @@
 // kit's tokens and its "use client" directive gone, and an entry that exports
 // what each exports, as the compiler process reads them (moduleDeclarations.ts).
 
-import type { ModuleDeclarations, ModuleExport } from './compiler.js';
+import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { MAX_LIBRARY_EXPORTS } from './designSystemProvenance.js';
 import { withKitTokens } from './libraryTheme.js';
@@ -100,7 +100,7 @@ export function kitComponents(
     for (const { exportedName } of exported) components[exportedName] = module.file;
     if (exported.length > 0)
       lines.push(
-        `export { ${exported.map(({ clause }) => clause).join(', ')} } from './${UI_FOLDER}/${name}';`,
+        `export { ${exported.map(({ exportedName, binding }) => bindingClause(binding, exportedName)).join(', ')} } from './${UI_FOLDER}/${name}';`,
       );
     else if (module.exports.length === 0) {
       unnamed ??= module.file;
@@ -110,7 +110,7 @@ export function kitComponents(
         file: module.file,
       });
     }
-    files.push([`${UI_FOLDER}/${name}.tsx`, module.source]);
+    files.push([kitComponentPath(name), module.source]);
   }
   if (lines.length === 0)
     return {
@@ -120,20 +120,31 @@ export function kitComponents(
 }
 
 /**
- * The exports the kit entry re-exports from one module, each once: a default
- * export by the name it declares, or else by the component's name in PascalCase.
+ * The exports the kit entry re-exports from one module, each once, with the
+ * module's own name for it: a default export by the name it declares, or else
+ * by the component's name in PascalCase.
  */
-function entryExports(
+export function entryExports(
   exports: readonly ModuleExport[],
   componentName: string,
-): { exportedName: string; clause: string }[] {
+): { exportedName: string; binding: string }[] {
   const entries = new Map<string, string>();
   for (const each of exports) {
     const exportedName = each.isDefault ? (each.name ?? pascalCase(componentName)) : each.name;
     if (!EXPORT_NAME.test(exportedName) || entries.has(exportedName)) continue;
-    entries.set(exportedName, each.isDefault ? `default as ${exportedName}` : exportedName);
+    entries.set(exportedName, each.isDefault ? 'default' : exportedName);
   }
-  return [...entries].map(([exportedName, clause]) => ({ exportedName, clause }));
+  return [...entries].map(([exportedName, binding]) => ({ exportedName, binding }));
+}
+
+/** An import or export specifier that names `binding` as `name`. */
+export function bindingClause(binding: string, name: string): string {
+  return binding === name ? name : `${binding} as ${name}`;
+}
+
+/** Where the kit keeps its copy of the library component `name`. */
+export function kitComponentPath(name: string): string {
+  return `${UI_FOLDER}/${name}.tsx`;
 }
 
 function pascalCase(name: string): string {
@@ -144,7 +155,7 @@ function pascalCase(name: string): string {
 }
 
 /** A component with its imports pointed at the kit's files, or why the canvas cannot load it. */
-function kitModule(
+export function kitModule(
   { file, text, module }: LibraryComponent,
   aliases: LibraryAliases,
   kitNames: Readonly<Record<string, string>>,

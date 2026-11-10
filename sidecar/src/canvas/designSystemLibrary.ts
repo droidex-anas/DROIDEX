@@ -179,27 +179,62 @@ async function readLibrary(
   };
 }
 
-/** Where the library's aliases point, through tsconfig.json, and its cn() helper. */
+/** Where components.json's aliases point, through the tsconfig.json beside it. */
+interface AliasLayout {
+  tsconfig: string;
+  paths: PathMapping[];
+  aliases: LibraryAliases;
+  uiFolder: string;
+}
+
+export type LibraryLayout = AliasLayout & { css: LibraryFile };
+
+/**
+ * The library's aliases, the ui folder and the stylesheet, as components.json
+ * and tsconfig.json say now, under the project's real `root`.
+ */
+export async function readLibraryLayout(
+  root: string,
+  componentsConfig: string,
+): Promise<LibraryLayout | { problem: string }> {
+  const settings = await readComponentsConfig(root, componentsConfig);
+  if ('problem' in settings) return settings;
+  const base = path.posix.dirname(componentsConfig);
+  const css = await readFile(root, base, settings.tailwind.css);
+  if ('problem' in css) return css;
+  const layout = await readAliasLayout(root, base, settings.aliases);
+  if ('problem' in layout) return layout;
+  return { ...layout, css };
+}
+
+async function readAliasLayout(
+  root: string,
+  base: string,
+  named: z.infer<typeof componentsConfigSchema>['aliases'],
+): Promise<AliasLayout | { problem: string }> {
+  const tsconfig = await readFile(root, base, 'tsconfig.json');
+  if ('problem' in tsconfig)
+    return { problem: `${tsconfig.problem} It says where components.json's aliases point.` };
+  const paths = pathMappings(base, tsconfig.text);
+  const aliases = { ui: named.ui ?? `${named.components}/ui`, utils: named.utils };
+  const uiFolder = aliasPath(aliases.ui, paths, tsconfig.file);
+  if ('problem' in uiFolder) return uiFolder;
+  return { tsconfig: tsconfig.file, paths, aliases, uiFolder: uiFolder.path };
+}
+
+/** Where the library's aliases point, and its cn() helper. */
 async function readAliasedCode(
   root: string,
   base: string,
   named: z.infer<typeof componentsConfigSchema>['aliases'],
-): Promise<
-  | { tsconfig: string; uiFolder: string; utils: LibraryFile; aliases: LibraryAliases }
-  | { problem: string }
-> {
-  const tsconfig = await readFile(root, base, 'tsconfig.json');
-  if ('problem' in tsconfig)
-    return { problem: `${tsconfig.problem} It says where components.json's aliases point.` };
-  const mappings = pathMappings(base, tsconfig.text);
-  const aliases = { ui: named.ui ?? `${named.components}/ui`, utils: named.utils };
-  const uiFolder = aliasPath(aliases.ui, mappings, tsconfig.file);
-  if ('problem' in uiFolder) return uiFolder;
-  const utilsPath = aliasPath(aliases.utils, mappings, tsconfig.file);
+): Promise<(AliasLayout & { utils: LibraryFile }) | { problem: string }> {
+  const layout = await readAliasLayout(root, base, named);
+  if ('problem' in layout) return layout;
+  const utilsPath = aliasPath(layout.aliases.utils, layout.paths, layout.tsconfig);
   if ('problem' in utilsPath) return utilsPath;
   const utils = await readFile(root, '.', `${utilsPath.path}.ts`);
   if ('problem' in utils) return utils;
-  return { tsconfig: tsconfig.file, uiFolder: uiFolder.path, utils, aliases };
+  return { ...layout, utils };
 }
 
 async function readComponentsConfig(
@@ -306,7 +341,8 @@ function pathMappings(base: string, tsconfig: string): PathMapping[] {
   });
 }
 
-function aliasPath(
+/** The project path an import specifier names through tsconfig.json's paths. */
+export function aliasPath(
   alias: string,
   mappings: readonly PathMapping[],
   tsconfig: string,

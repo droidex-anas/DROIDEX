@@ -11,10 +11,10 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { z } from 'zod';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError, storageFailure } from './canvasError.js';
+import { moduleDeclarationsSchema, type ModuleDeclarations } from './compilerModules.js';
 import type { DesignSystem } from './designSystems.js';
 import type {
   CanvasDiagnostic,
@@ -64,31 +64,6 @@ export interface CompiledDesign {
   /** Revision-scoped sites mapped to canonical source for selection and edits. */
   elements: SourceElement[];
 }
-
-const moduleSpecifierSchema = z.object({
-  text: z.string(),
-  /** Where the text between its quotes is in the source. */
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-  /** False for a type-only import or re-export, which the build erases. */
-  loads: z.boolean(),
-});
-
-/** A value a module exports; a default export by the name it declares, if any. */
-const moduleExportSchema = z.union([
-  z.object({ isDefault: z.literal(false), name: z.string() }),
-  z.object({ isDefault: z.literal(true), name: z.string().nullable() }),
-]);
-
-/** Every module specifier a source names, in source order, and what it exports. */
-const moduleDeclarationsSchema = z.object({
-  specifiers: z.array(moduleSpecifierSchema),
-  exports: z.array(moduleExportSchema),
-});
-
-export type ModuleSpecifier = z.infer<typeof moduleSpecifierSchema>;
-export type ModuleExport = z.infer<typeof moduleExportSchema>;
-export type ModuleDeclarations = z.infer<typeof moduleDeclarationsSchema>;
 
 /** The design's own source is wrong. Its diagnostics are safe to show. */
 export class CompileFailedError extends Error {

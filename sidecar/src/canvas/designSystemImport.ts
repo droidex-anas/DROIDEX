@@ -476,9 +476,11 @@ function inlineReferences(
   return { value: result };
 }
 
-// shadcn's `--primary: 222 47% 11%` is a colour only inside `hsl()`.
 function bareHsl(value: string): string {
-  return /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%(?:\s*\/\s*[\d.]+%?)?$/.test(value)
-    ? `hsl(${value})`
-    : value;
+  return isBareHsl(value) ? `hsl(${value})` : value;
+}
+
+/** Whether the value is bare HSL channels, as shadcn's `--primary: 222 47% 11%`, a colour only inside `hsl()`. */
+export function isBareHsl(value: string): boolean {
+  return /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%(?:\s*\/\s*[\d.]+%?)?$/.test(value);
 }
