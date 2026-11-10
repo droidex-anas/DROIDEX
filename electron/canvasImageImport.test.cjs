@@ -6,6 +6,7 @@ const { join } = require('node:path');
 const {
   createCanvasImageImporter,
   createProjectImageRequests,
+  pastedSvgDataUrl,
 } = require('./canvasImageImport.cjs');
 
 const CANVAS = { kind: 'canvas', canvasId: 'canvas-one' };
@@ -133,6 +134,14 @@ test('an SVG goes to the sidecar as markup, without dimensions and without decod
   assert.equal(nativeImage.createFromBuffer.mock.callCount(), 0);
 });
 
+test('pasted SVG markup must be a string under 10 MiB before main copies it', () => {
+  assert.equal(pastedSvgDataUrl('<svg/>'), `data:image/svg+xml;base64,${btoa('<svg/>')}`);
+  for (const svg of [{ length: 1 }, 'x'.repeat(10 * 1024 * 1024 + 1)])
+    assert.throws(() => pastedSvgDataUrl(svg), {
+      code: 'invalid_input',
+      message: 'Paste an SVG under 10 MiB.',
+    });
+});
 test('a missing selection returns a curated error without its private path', async () => {
   const filePath = join(tmpdir(), 'canvas-missing-private.png');
   await assert.rejects(importer()(CANVAS, filePath), (error) => {

@@ -50,6 +50,7 @@ const {
   createCanvasImageImporter,
   canvasImageImportResult,
   createProjectImageRequests,
+  pastedSvgDataUrl,
 } = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
@@ -807,7 +808,7 @@ function registerIpc() {
   ipcMain.handle('canvas-paste-svg', (event, { canvasId, svg }) => {
     assertMainRenderer(event);
     const importPasted = async (owner) => {
-      const dataUrl = `data:image/svg+xml;base64,${Buffer.from(String(svg)).toString('base64')}`;
+      const dataUrl = pastedSvgDataUrl(svg);
       const filePath = await attachments.saveFile(attachmentsDir, { name: 'pasted.svg', dataUrl });
       try {
         return await importCanvasImage(owner, filePath);
