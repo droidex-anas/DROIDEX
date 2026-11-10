@@ -549,6 +549,20 @@ test('every way a copy could render unseen keeps the element shared', () => {
       'main.tsx':
         "import { TopBar } from './TopBar'; const page = './TopBar'; import(page); export default () => <TopBar />;",
     },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; import C = require('./TopBar'); export default () => <><TopBar /><C.TopBar /></>;",
+    },
+    {
+      'TopBar.tsx': 'function TopBar() { return <header>Title</header> } export = TopBar;',
+      'main.tsx':
+        "import TopBar from './TopBar'; import Again = require('./TopBar'); export default () => <><TopBar /><Again /></>;",
+    },
+    {
+      'main.tsx':
+        "import React from 'react'; React.memo = (render) => () => <>{render()}{render()}</>; const TopBar = React.memo(() => <header>Title</header>); export default () => <TopBar />;",
+    },
   ];
   for (const files of designs) {
     const header = instrumentSource(files, 'r1').elements.find(
@@ -563,6 +577,10 @@ test('names are read by scope, so a React wrapper, a shadowing name or an entry 
     {
       'main.tsx':
         "import { memo, forwardRef } from 'react'; const TopBar = memo(forwardRef(() => <header>Title</header>)); export default () => <TopBar />;",
+    },
+    {
+      'main.tsx':
+        "import React from 'react'; const TopBar = React.memo((props: { title: React.ReactNode }) => { const [open] = React.useState(false); return <header>Title</header>; }); export default () => <TopBar />;",
     },
     {
       'main.tsx':
