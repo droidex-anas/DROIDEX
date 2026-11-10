@@ -112,5 +112,5 @@ test('an open frame says when its elements are being read, unreadable, absent or
     notes({ state: 'read', tree: { nodes: [], cap: 400, truncated: false }, revisionId: 'rev_01' }),
     ['No elements'],
   );
-  assert.deepEqual(notes(read(true)), ['Showing the first 400 elements']);
+  assert.deepEqual(notes(read(true)), ['Showing the first 5 elements']);
 });

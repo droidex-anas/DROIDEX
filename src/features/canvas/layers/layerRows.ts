@@ -82,7 +82,7 @@ function elementEntries(frame: CanvasFrame, tree: ElementTree, closed: ReadonlyS
   });
   if (tree.state === 'reading') return [note('reading', 'Reading elements…')];
   if (tree.state === 'unread') return [note('unread', 'Couldn’t read this design’s elements')];
-  const { nodes, cap, truncated } = tree.tree;
+  const { nodes, truncated } = tree.tree;
   if (nodes.length === 0) return [note('empty', 'No elements')];
 
   const places = siblingPlaces(nodes);
@@ -113,7 +113,8 @@ function elementEntries(frame: CanvasFrame, tree: ElementTree, closed: ReadonlyS
     parents.push(key);
     if (isOpen === false) closedAt = node.depth;
   });
-  if (truncated) entries.push(note('more', `Showing the first ${String(cap)} elements`));
+  // The walk can stop at its byte budget before the node cap, so the note counts what came.
+  if (truncated) entries.push(note('more', `Showing the first ${String(nodes.length)} elements`));
   return entries;
 }
 
