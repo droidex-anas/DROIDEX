@@ -147,7 +147,7 @@ export function LayerRow({
               {onGrab && (
                 <span
                   aria-hidden
-                  className="canvas-layer-tool -my-1.5 -mr-2 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted hover:text-secondary"
+                  className="canvas-layer-tool -my-1.5 -mr-2 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted transition duration-150 ease-out hover:text-secondary"
                   onPointerDown={(event) => {
                     onToolPress();
                     onGrab(event, frame.designId);
