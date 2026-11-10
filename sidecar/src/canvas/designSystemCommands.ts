@@ -20,10 +20,10 @@ import {
   setDesignSystemDeleted,
   type DesignSystem,
   type DesignSystemCover,
-  type DesignSystemProvenance,
   type DesignSystemSummary,
   type SavedBy,
 } from './designSystems.js';
+import type { DesignSystemProvenance } from './designSystemProvenance.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
 import { editTokens } from './styleEdits.js';
 import { readKitFonts } from './kitFonts.js';

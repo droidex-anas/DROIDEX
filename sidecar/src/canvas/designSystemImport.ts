@@ -12,9 +12,9 @@ import {
   DESIGN_SYSTEM_LIMITS,
   designSystemSchema,
   type DesignSystem,
-  type DesignSystemProvenance,
   type DesignSystemSource,
 } from './designSystems.js';
+import type { DesignSystemProvenance } from './designSystemProvenance.js';
 import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import {
   LICENSED_FONTS,

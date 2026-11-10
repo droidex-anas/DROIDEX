@@ -6,12 +6,12 @@
 import { constants } from 'node:fs';
 import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { DESIGN_SYSTEM_LIMITS } from './designSystems.js';
 import {
   importDesignSystem,
   type ImportDesignSystemResult,
   type ImportSource,
 } from './designSystemImport.js';
+import { MAX_PROJECT_FILES } from './designSystemProvenance.js';
 import { isInsideProject, projectRelativePath } from './projectPaths.js';
 
 const MAX_FILE_BYTES = 256 * 1024;
@@ -47,10 +47,9 @@ async function readProjectSources(
   projectRoot: string,
   sources: readonly ProjectSource[],
 ): Promise<ProjectRead> {
-  const { maxProjectFiles } = DESIGN_SYSTEM_LIMITS;
   if (sources.length === 0) return refused('Name at least one project file to read.');
-  if (sources.length > maxProjectFiles)
-    return refused(`A kit reads at most ${String(maxProjectFiles)} project files.`);
+  if (sources.length > MAX_PROJECT_FILES)
+    return refused(`A kit reads at most ${String(MAX_PROJECT_FILES)} project files.`);
   let root: string;
   try {
     root = await realpath(projectRoot);
