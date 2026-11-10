@@ -5,6 +5,11 @@
 
 import type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
+} from './frameEditSchema.js';
+import type {
   CanvasTurnContext,
   CreateCanvasResult,
   CreateFramesInput,
@@ -13,13 +18,10 @@ import type {
   DesignSystemVersionRef,
   EditElementInput,
   FrameRect,
-  RemoveFramesInput,
-  RenameFrameInput,
   SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 import type {
@@ -41,6 +43,11 @@ import type {
 
 export type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
+} from './frameEditSchema.js';
+export type {
   CanvasTurnContext,
   CreateCanvasResult,
   CreateFramesInput,
@@ -51,13 +58,10 @@ export type {
   EditElementInput,
   ElementRef,
   FrameRect,
-  RemoveFramesInput,
-  RenameFrameInput,
   SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 

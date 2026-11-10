@@ -18,12 +18,12 @@ import {
   type Placement,
 } from './canvasManifest.js';
 import { recordedArrange, recordedRemove, recordedRename, recordedUndo } from './canvasReceipts.js';
-import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
 import {
   removeFramesInputSchema,
   renameFrameInputSchema,
   undoRemovalInputSchema,
-} from './schema.js';
+} from './frameEditSchema.js';
+import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
 
 export class CanvasFrameEdits {
   constructor(

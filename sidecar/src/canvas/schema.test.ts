@@ -41,11 +41,13 @@ import {
 } from './canvasAnnotationSchema.js';
 import {
   arrangeFramesInputSchema,
-  createFramesInputSchema,
-  editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
   undoRemovalInputSchema,
+} from './frameEditSchema.js';
+import {
+  createFramesInputSchema,
+  editElementInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 

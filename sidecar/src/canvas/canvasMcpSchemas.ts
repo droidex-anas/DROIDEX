@@ -4,9 +4,9 @@
 import { z } from 'zod';
 import { kitSaveShape } from './canvasMcpDesignSystemSave.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
+import { arrangeFramesInputSchema } from './frameEditSchema.js';
 import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import {
-  arrangeFramesInputSchema,
   canvasIdentifierSchema,
   createFramesInputSchema,
   designSystemRefSchema,
