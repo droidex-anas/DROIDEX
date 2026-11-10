@@ -31,7 +31,7 @@ export interface DesignSystemBrief {
 }
 
 const PROJECT_KIT_OFFER =
-  "This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's Tailwind config, CSS tokens and design docs for the designs that follow. Build it only when the user says so.";
+  "This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's Tailwind config, CSS tokens and design docs, or its shadcn/ui library, for the designs that follow. Build it only when the user says so.";
 
 /** Where the turn starts: whether the chat has a project folder and its canvas any design. */
 export interface OpeningBoard {
