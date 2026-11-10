@@ -6,6 +6,7 @@
 // that key its own value, not as a class at all. tailwindStyles.test.ts
 // compiles every class this module can write with Tailwind itself.
 
+import { isNamedColor } from './cssColors.js';
 import type { KitTheme, ThemeNamespace } from './kitTailwindTheme.js';
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
 import {
@@ -300,14 +301,14 @@ function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope
   const [name = '', ...rest] = utility.split('-');
   const value = rest.join('-');
   const single = SINGLE_PROPERTY_UTILITIES.get(name);
-  if (single) return single.accepts(value) ? { sets: [single.sets] } : null;
+  if (single) return single.accepts(value, theme) ? { sets: [single.sets] } : null;
   switch (name) {
     case 'text':
       return textStyle(value, theme);
     case 'border':
-      return borderStyle(value);
+      return borderStyle(value, theme);
     case 'stroke':
-      return strokeStyle(value);
+      return strokeStyle(value, theme);
     case 'font':
       return fontStyle(value);
     case 'grow':
@@ -338,12 +339,12 @@ function textStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | 
     Object.hasOwn(FONT_SIZE_LINE_HEIGHT, key) ||
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
-  if (!isSize) return isColour(value) ? { sets: ['color'] } : null;
+  if (!isSize) return isColour(value, theme) ? { sets: ['color'] } : null;
   const lineHeight = modifierLineHeight(modifiers.at(0)) ?? stockLineHeight(key, theme);
   return lineHeight ? { sets: ['fontSize'], lineHeight } : { sets: ['fontSize'] };
 }
 
-function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {
+function borderStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
   const side = /^([xytrblse])(?:-|$)/.exec(value)?.[1] ?? '';
   const sides = BORDER_SIDES[side] ?? SIDES;
   const rest = side === '' ? value : value.slice(side.length + 1);
@@ -353,18 +354,19 @@ function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: sides.map((each) => `border${each}Width`) };
-  return isColour(rest) ? { sets: sides.map((each) => `border${each}Color`) } : null;
+  return isColour(rest, theme) ? { sets: sides.map((each) => `border${each}Color`) } : null;
 }
 
-function strokeStyle(value: string): Omit<ClassStyle, 'scope'> | null {
+function strokeStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
   const custom = arbitrary(value);
   const isWidth =
     Object.hasOwn(STROKE_WIDTH, value) ||
     custom?.hint === 'length' ||
     custom?.hint === 'number' ||
+    custom?.hint === 'percentage' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: ['strokeWidth'] };
-  return isColour(value) ? { sets: ['stroke'] } : null;
+  return isColour(value, theme) ? { sets: ['stroke'] } : null;
 }
 
 function fontStyle(value: string): Omit<ClassStyle, 'scope'> | null {
@@ -378,14 +380,20 @@ function fontStyle(value: string): Omit<ClassStyle, 'scope'> | null {
   return { sets: [isWeight ? 'fontWeight' : 'fontFamily'] };
 }
 
-/** A colour key, or an arbitrary colour; Tailwind reads a bare `var()` as one too. */
-function isColour(value: string): boolean {
+/**
+ * A colour key, Tailwind's or the kit's, or an arbitrary colour; Tailwind
+ * reads a bare `var()` as one too.
+ */
+function isColour(value: string, theme: KitTheme): boolean {
   const [key = ''] = splitOutside(value, '/');
-  if (COLOUR_KEY.test(key)) return true;
+  if (COLOUR_KEY.test(key) || (theme.colors !== undefined && Object.hasOwn(theme.colors, key)))
+    return true;
   const custom = arbitrary(key);
   if (!custom) return false;
   if (custom.hint) return custom.hint === 'color';
-  return custom.body.startsWith('var(') || COLOUR_LIKE.test(custom.body);
+  return (
+    custom.body.startsWith('var(') || COLOUR_LIKE.test(custom.body) || isNamedColor(custom.body)
+  );
 }
 
 function isShadow(value: string): boolean {

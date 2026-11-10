@@ -131,15 +131,29 @@ test('every class a style edit writes sets its property to the value the edit me
 });
 
 test('a stroke class sets the width or the colour its value names', () => {
-  for (const name of ['stroke-2', 'stroke-[1.5]', 'stroke-[number:var(--w)]'])
+  for (const name of [
+    'stroke-2',
+    'stroke-[1.5]',
+    'stroke-[number:var(--w)]',
+    'stroke-[percentage:var(--w)]',
+  ])
     assert.deepEqual(classStyle(name)?.sets, ['strokeWidth'], name);
   for (const name of [
     'stroke-black',
     'stroke-[#fff]',
+    'stroke-[red]',
     'stroke-[var(--ds-accent)]',
     'stroke-current',
   ])
     assert.deepEqual(classStyle(name)?.sets, ['stroke'], name);
+});
+
+test('a colour key the kit theme names is read as a colour, with its opacity and variants', () => {
+  const theme = { colors: { accent: 'var(--ds-accent)' } };
+  assert.deepEqual(classStyle('fill-accent', theme), { sets: ['fill'], scope: 'always' });
+  assert.deepEqual(classStyle('stroke-accent/50', theme), { sets: ['stroke'], scope: 'always' });
+  assert.deepEqual(classStyle('dark:fill-accent', theme), { sets: ['fill'], scope: 'frame' });
+  assert.equal(classStyle('fill-accent'), null);
 });
 
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {
