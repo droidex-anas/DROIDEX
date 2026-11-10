@@ -7,23 +7,17 @@
 // is not cut off. Each box is trimmed to its frame, where the design is
 // visible, and glides when the element's own box changes.
 
-import { useLayoutEffect, useState, type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
-import { isDrawn, type PreviewHover } from './previewDocument';
-import type { ElementRef, FrameRect } from './protocol';
-import type { HoveredElement } from './useElementHover';
-import type { ElementSelection } from './useElementEditor';
+import { onBoard, type Box, type PickedOnBoard } from './elementOnBoard';
+import type { PreviewHover } from './previewDocument';
+import type { FrameRect } from './protocol';
+import { isPicked, type HoveredElement } from './useElementHover';
+import { useScreenSize } from './useScreenSize';
 
 /** On screen: the tag's line, flush on the element, and the size chip's gap and line. */
 const TAG_HEIGHT_PX = 14;
-const SIZE_ROOM_PX = 26;
-
-interface Box {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
+export const SIZE_ROOM_PX = 26;
 
 type TagSide = 'above' | 'below' | 'inside';
 
@@ -38,7 +32,7 @@ export interface PickOutline {
 export function ElementOutlines({
   drawn,
   scale,
-  selection,
+  selected,
   hovered,
   hoveredComponent,
   picks,
@@ -47,30 +41,25 @@ export function ElementOutlines({
   drawn: PlacedFrame[];
   /** The board's zoom, which sizes the screen-sized chips in frame units. */
   scale: number;
-  selection: ElementSelection | null;
+  /** Where Edit's picked element shows, which its outline and size chip are drawn from. */
+  selected: PickedOnBoard | null;
   hovered: HoveredElement | null;
   /** The component the hovered element is written in, which Design names before its tag. */
   hoveredComponent: string | null;
   /** Design's picks, outlined where each was picked, and the text being dragged across. */
   picks: readonly PickOutline[];
 }) {
-  const [tag, tagWidth] = useScreenWidth();
-  const [size, sizeWidth] = useScreenWidth();
-  const picked = selection?.draft.element;
-  // A hidden element has no box to outline; the panel says it is hidden.
-  const selected =
-    selection &&
-    picked &&
-    isDrawn(selection.shown.rect) &&
-    onBoard(drawn, picked.designId, selection.shown.rect);
+  const [tag, tagOnScreen] = useScreenSize();
+  const [size, sizeOnScreen] = useScreenSize();
+  const picked = selected?.selection.draft.element;
   // The picked element's own outline already says where it is.
   const hover =
     hovered &&
     !(picked && isPicked(picked, hovered)) &&
     onBoard(drawn, hovered.designId, hovered.element.rect);
   const sizeChip =
-    selected && picked.designId === hovered?.designId
-      ? sizeChipOf(selected.box, sizeWidth / scale, scale)
+    selected && picked?.designId === hovered?.designId
+      ? sizeChipOf(selected.box, sizeOnScreen.width / scale, scale)
       : null;
   return (
     <>
@@ -88,7 +77,7 @@ export function ElementOutlines({
               data-side={tagSide(
                 hover.box,
                 hover.frame.height,
-                { width: tagWidth / scale, height: TAG_HEIGHT_PX / scale },
+                { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
                 hovered.element.room,
                 sizeChip,
               )}
@@ -100,12 +89,13 @@ export function ElementOutlines({
           </div>
         </AtFrame>
       )}
-      {selection && selected && (
+      {selected && (
         <AtFrame frame={selected.frame}>
           <div aria-hidden className="canvas-element-outline" style={selected.box}>
             <div className="canvas-frame-size canvas-chrome">
               <span ref={size}>
-                {Math.round(selection.shown.rect.width)} × {Math.round(selection.shown.rect.height)}
+                {Math.round(selected.selection.shown.rect.width)} ×{' '}
+                {Math.round(selected.selection.shown.rect.height)}
               </span>
             </div>
           </div>
@@ -141,14 +131,6 @@ function TagName({ tagName, component }: { tagName: string; component: string | 
   );
 }
 
-function isPicked(picked: ElementRef, hovered: HoveredElement): boolean {
-  return (
-    picked.designId === hovered.designId &&
-    picked.elementId === hovered.element.elementId &&
-    picked.instancePath === hovered.element.instancePath
-  );
-}
-
 /** The frame's corner, which a dragged frame moves without the outline's glide. */
 function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode }) {
   return (
@@ -156,47 +138,6 @@ function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode })
       {children}
     </div>
   );
-}
-
-/** The frame an element is drawn in and its visible box there, if any of it shows. */
-function onBoard(drawn: PlacedFrame[], designId: string, element: FrameRect) {
-  const frame = drawn.find((placed) => placed.designId === designId)?.rect;
-  const box = frame && inFrame(frame, element);
-  return frame && box ? { frame, box } : null;
-}
-
-/**
- * An element's box inside its frame, trimmed to it; null when none of it is
- * visible, as when it only touches the frame's edge from outside. An element
- * with no width or height of its own still shows as a line.
- */
-function inFrame(frame: FrameRect, element: FrameRect): Box | null {
-  const left = Math.max(element.x, 0);
-  const top = Math.max(element.y, 0);
-  const width = Math.min(element.x + element.width, frame.width) - left;
-  const height = Math.min(element.y + element.height, frame.height) - top;
-  const trimmedAway = (shown: number, own: number) => shown < 0 || (shown === 0 && own > 0);
-  if (trimmedAway(width, element.width) || trimmedAway(height, element.height)) return null;
-  return { left, top, width, height };
-}
-
-/** A chip's width on screen, which its text sets, so it is read once the chip is drawn. */
-function useScreenWidth() {
-  const [element, setElement] = useState<HTMLElement | null>(null);
-  const [width, setWidth] = useState(0);
-  useLayoutEffect(() => {
-    if (!element) return undefined;
-    const measure = () => {
-      setWidth(element.offsetWidth);
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-    };
-  }, [element]);
-  return [setElement, width] as const;
 }
 
 /** What a picked element's size chip covers: centred under its box, with the gap above it. */

@@ -9,12 +9,12 @@ import type { CanvasMotion } from './canvasMotion';
 import type { CanvasPresence, LandedWrites } from './canvasPresence';
 import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import type { BoardInteraction } from './canvasState';
+import type { PickedOnBoard } from './elementOnBoard';
 import { ElementOutlines, type PickOutline } from './ElementOutlines';
 import type { PreviewRuns } from './previewRuns';
 import type { CanvasFrame } from './protocol';
 import { SelectionBounds } from './SelectionBounds';
 import type { ReadSource } from './useChangeTours';
-import type { ElementSelection } from './useElementEditor';
 import type { HoveredElement } from './useElementHover';
 
 export function BoardOverlays({
@@ -27,7 +27,7 @@ export function BoardOverlays({
   writes,
   runs,
   readSource,
-  selection,
+  selected,
   hovered,
   hoveredComponent,
   picks,
@@ -46,7 +46,7 @@ export function BoardOverlays({
   writes: LandedWrites;
   runs: PreviewRuns;
   readSource: ReadSource;
-  selection: ElementSelection | null;
+  selected: PickedOnBoard | null;
   hovered: HoveredElement | null;
   hoveredComponent: string | null;
   picks: readonly PickOutline[];
@@ -71,7 +71,7 @@ export function BoardOverlays({
       <ElementOutlines
         drawn={drawn}
         scale={scale}
-        selection={selection}
+        selected={selected}
         hovered={hovered}
         hoveredComponent={hoveredComponent}
         picks={picks}

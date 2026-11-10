@@ -8,10 +8,20 @@
 import { useEffect, useState } from 'react';
 import type { Point } from './canvasGeometry';
 import type { PreviewHover } from './previewDocument';
+import type { ElementRef } from './protocol';
 
 export interface HoveredElement {
   designId: string;
   element: PreviewHover;
+}
+
+/** Whether the pointer is over the element Edit has picked. */
+export function isPicked(picked: ElementRef, hovered: HoveredElement): boolean {
+  return (
+    picked.designId === hovered.designId &&
+    picked.elementId === hovered.element.elementId &&
+    picked.instancePath === hovered.element.instancePath
+  );
 }
 
 /** Asks one design's live preview what is under a point in its pixels. */

@@ -33,6 +33,7 @@ import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
+import { pickedOnBoard } from './elementOnBoard';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';
@@ -50,6 +51,7 @@ import { useDesignPicker, type DesignPins } from './useDesignPicker';
 import { useElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
+import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
 import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
@@ -252,11 +254,10 @@ export function CanvasBoard({
     };
   }, [onLeave]);
 
-  useImperativeHandle(ref, (): CanvasBoardHandle => ({ focusFrame, focusLabel }), [
-    focusFrame,
-    focusLabel,
-  ]);
+  useImperativeHandle(ref, () => ({ focusFrame, focusLabel }), [focusFrame, focusLabel]);
 
+  const selected = pickedOnBoard(drawn, editor.selection);
+  const measured = useHoverMeasurements(board, drawn, interaction, selected, editor.hover);
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
   const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
     renderPreview(frame, revisionId, editor.selections),
@@ -422,7 +423,7 @@ export function CanvasBoard({
             writes={writes}
             runs={previewRuns}
             readSource={readSource}
-            selection={editor.selection}
+            selected={selected}
             hovered={editor.hover.hovered}
             hoveredComponent={picker.componentOf(editor.hover.hovered)}
             picks={picker.outlines}
@@ -439,7 +440,7 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
-        {gestures.snapMarks && <SnapGuides marks={gestures.snapMarks} viewport={view.viewport} />}
+        <SnapGuides marks={gestures.snapMarks ?? measured} viewport={view.viewport} />
         {picker.prompt && (
           <DesignPickPrompt
             {...picker.prompt}
