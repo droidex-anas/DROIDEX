@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { rm, writeFile } from 'node:fs/promises';
+import { rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
@@ -155,4 +155,10 @@ test('the export copies the kit and says why when the library is not as the kit 
   assert.match(await reason(), /components\.json/);
 
   assert.equal(await libraryExport(root, SAMPLE_KIT, SOURCE), null);
+});
+
+test("the export reads the library's ui folder, not the cn() helper the kit copied", async (t) => {
+  const { root, kit } = await libraryKit(t);
+  await rename(join(root, 'lib/utils.ts'), join(root, 'lib/utils.tsx'));
+  assert.equal((await libraryExport(root, kit, SOURCE))?.status, 'rewritten');
 });

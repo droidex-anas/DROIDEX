@@ -109,7 +109,7 @@ async function readProjectLibrary(
     signal?.throwIfAborted();
     if (!file.startsWith(`${layout.uiFolder}/`))
       return {
-        problem: `${file} is no longer in ${layout.uiFolder}, the folder ${layout.ui} names.`,
+        problem: `${file} is no longer in ${layout.uiFolder}, the folder ${layout.aliases.ui} names.`,
       };
     const read = await readProjectText(root, file);
     if ('problem' in read) return read;
@@ -126,7 +126,7 @@ async function readProjectLibrary(
   const modules = await readModules(texts, signal);
   return {
     projectName: path.basename(root),
-    ui: layout.ui,
+    ui: layout.aliases.ui,
     uiFolder: layout.uiFolder,
     modules: library.components,
     exports: new Map(files.map((file, index) => [file, modules[index].exports])),
