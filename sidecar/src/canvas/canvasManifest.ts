@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { ANNOTATION_LIMITS, annotationSchema } from './canvasAnnotationSchema.js';
 import { canvasError } from './canvasError.js';
 import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
+import { stackingOrderSchema } from './frameEditSchema.js';
 import type {
   CanvasBuildState,
   CanvasChange,
@@ -22,6 +23,7 @@ import {
   designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
+  hasDuplicate,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 2;
@@ -201,7 +203,7 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       scopeId: scopeIdSchema,
       fingerprint: fingerprintSchema,
       sequence: versionSchema,
-      designIds: z.array(canvasIdentifierSchema),
+      designIds: stackingOrderSchema,
     })
     .strict(),
   z
@@ -460,10 +462,6 @@ function canonicalJson(value: unknown): string {
     .sort(([left], [right]) => (left < right ? -1 : 1))
     .map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`);
   return `{${fields.join(',')}}`;
-}
-
-function hasDuplicate(values: readonly string[]): boolean {
-  return new Set(values).size !== values.length;
 }
 
 /**

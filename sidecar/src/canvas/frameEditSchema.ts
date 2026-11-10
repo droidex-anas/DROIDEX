@@ -76,13 +76,15 @@ export const setFrameHiddenInputSchema = z
 
 // The whole stacking order, back to front. Whether it names exactly the
 // canvas's frames is a question for the head it commits on, not for this shape.
+export const stackingOrderSchema = z
+  .array(canvasIdentifierSchema)
+  .min(1)
+  .refine((ids) => !hasDuplicate(ids), { message: 'A reorder names each frame once.' });
+
 export const reorderFramesInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
-    designIds: z
-      .array(canvasIdentifierSchema)
-      .min(1)
-      .refine((ids) => !hasDuplicate(ids), { message: 'A reorder names each frame once.' }),
+    designIds: stackingOrderSchema,
   })
   .strict();
 
