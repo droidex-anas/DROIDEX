@@ -169,7 +169,10 @@ async function canvasSourceFiles(
   for (const [id, bytes] of fonts) files.push({ path: `fonts/${id}.woff2`, content: bytes });
 
   const sources = [...saved.files.values(), ...Object.values(kit.files)];
-  files.push({ path: 'package.json', content: await exportPackageJson(sources) });
+  files.push({
+    path: 'package.json',
+    content: await exportPackageJson(sources, signal ?? new AbortController().signal),
+  });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
   return files;
