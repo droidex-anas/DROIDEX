@@ -28,6 +28,7 @@ export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
   const slots = new Map<Component, ts.JsxExpression | undefined>();
   const verdicts = new Map<Component, boolean>();
   let everyComponentEscapes = false;
+  let reactMayBePatched = false;
 
   const target = (symbol: ts.Symbol): ts.Symbol =>
     checker.getExportSymbolOfSymbol(
@@ -70,7 +71,11 @@ export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
     const load = wholeModuleLoad(node);
     if (load === 'unknown') everyComponentEscapes = true;
     else if (load) escapes(checker.getSymbolAtLocation(load));
-    if (ts.isIdentifier(node) && isScopeName(node)) recordReference(node);
+    if (ts.isExportDeclaration(node) && isReactModule(node)) reactMayBePatched = true;
+    if (ts.isIdentifier(node) && isScopeName(node)) {
+      recordReference(node);
+      if (mayPatchReact(node, checker)) reactMayBePatched = true;
+    }
     node.forEachChild(visit);
   };
   for (const source of sources) visit(source);
@@ -110,7 +115,7 @@ export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
     let verdict =
       !everyComponentEscapes &&
       !component.isReferenced &&
-      component.wrappers.every((call) => isReactWrapper(call, checker));
+      component.wrappers.every((call) => !reactMayBePatched && isReactWrapper(call, checker));
     if (component === root) verdict &&= uses.length === 0;
     else verdict &&= uses.length === 1 && rendersOnce(uses[0]);
     verdicts.set(component, verdict);
@@ -135,10 +140,13 @@ export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
 
 /**
  * The module a node loads as a whole, so that any of its exports may be
- * rendered through it: a namespace import or export, `import()` or `require`.
- * 'unknown' when the module cannot be told, null for any other node.
+ * rendered through it: a namespace import or export, `import()`, `require` or
+ * `import x = require()`. 'unknown' when the module cannot be told, null for
+ * any other node.
  */
 function wholeModuleLoad(node: ts.Node): ts.Expression | 'unknown' | null {
+  if (ts.isImportEqualsDeclaration(node))
+    return ts.isExternalModuleReference(node.moduleReference) ? 'unknown' : null;
   if (ts.isImportDeclaration(node)) {
     const bindings = node.importClause?.namedBindings;
     return bindings && ts.isNamespaceImport(bindings) ? node.moduleSpecifier : null;
@@ -147,10 +155,13 @@ function wholeModuleLoad(node: ts.Node): ts.Expression | 'unknown' | null {
     const clause = node.exportClause;
     return clause && ts.isNamespaceExport(clause) ? (node.moduleSpecifier ?? null) : null;
   }
-  if (!ts.isCallExpression(node)) return null;
-  if (ts.isIdentifier(node.expression) && node.expression.text === 'require') return 'unknown';
-  if (node.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
-  const specifier = node.arguments.at(0);
+  return ts.isCallExpression(node) ? loadedByCall(node) : null;
+}
+
+function loadedByCall(call: ts.CallExpression): ts.Expression | 'unknown' | null {
+  if (ts.isIdentifier(call.expression) && call.expression.text === 'require') return 'unknown';
+  if (call.expression.kind !== ts.SyntaxKind.ImportKeyword) return null;
+  const specifier = call.arguments.at(0);
   return specifier && ts.isStringLiteralLike(specifier) ? specifier : 'unknown';
 }
 
@@ -321,15 +332,49 @@ function isReactWrapper(call: ts.CallExpression, checker: ts.TypeChecker): boole
   const binding = ts.isPropertyAccessExpression(callee) ? callee.expression : callee;
   if (!ts.isIdentifier(binding)) return false;
   const declaration = checker.getSymbolAtLocation(binding)?.declarations?.at(0);
-  const statement = declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
-  if (!statement || !ts.isStringLiteral(statement.moduleSpecifier)) return false;
-  if (statement.moduleSpecifier.text !== 'react') return false;
+  if (!declaration || !isReactModule(ts.findAncestor(declaration, ts.isImportDeclaration)))
+    return false;
   if (ts.isPropertyAccessExpression(callee))
     return ts.isNamespaceImport(declaration) || ts.isImportClause(declaration);
   return (
     ts.isImportSpecifier(declaration) &&
     REACT_WRAPPERS.has((declaration.propertyName ?? declaration.name).text)
   );
+}
+
+/**
+ * Whether an identifier may replace React's exports, so its wrappers are not
+ * React's own: React's imported object used for anything but calling,
+ * rendering or reading a member, such as `React.memo = ...` or `patch(React)`.
+ * A re-export of React may too, as another file could import and patch it.
+ */
+function mayPatchReact(identifier: ts.Identifier, checker: ts.TypeChecker): boolean {
+  const declaration = checker.getSymbolAtLocation(identifier)?.declarations?.at(0);
+  if (!declaration || (!ts.isImportClause(declaration) && !ts.isNamespaceImport(declaration)))
+    return false;
+  if (ts.getNameOfDeclaration(declaration) === identifier) return false;
+  return (
+    isReactModule(ts.findAncestor(declaration, ts.isImportDeclaration)) &&
+    !readsReactMember(identifier)
+  );
+}
+
+/** React's object in a type, or with a member read to be called, rendered or read further. */
+function readsReactMember(identifier: ts.Identifier): boolean {
+  const parent = identifier.parent;
+  if (ts.isQualifiedName(parent) || ts.isTypeQueryNode(parent)) return true;
+  if (!ts.isPropertyAccessExpression(parent) || parent.expression !== identifier) return false;
+  const use = parent.parent;
+  if (ts.isCallExpression(use) || ts.isPropertyAccessExpression(use))
+    return use.expression === parent;
+  return (
+    ts.isJsxOpeningElement(use) || ts.isJsxSelfClosingElement(use) || ts.isJsxClosingElement(use)
+  );
+}
+
+function isReactModule(statement: ts.ImportDeclaration | ts.ExportDeclaration | undefined) {
+  const specifier = statement?.moduleSpecifier;
+  return specifier !== undefined && ts.isStringLiteral(specifier) && specifier.text === 'react';
 }
 
 function isComponentName(name: ts.BindingName | undefined): name is ts.Identifier {
