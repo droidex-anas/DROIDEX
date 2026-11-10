@@ -128,6 +128,23 @@ test('a previewed blur keeps the rest of the filter the element drew, and None t
   assert.equal(previewedStyles(soft).filter, 'blur(var(--ds-blur-soft)) grayscale(1)');
   assert.equal(previewedStyles(previewStyle(idle, 'filter', 'none', drawn)).filter, 'grayscale(1)');
   assert.equal(previewedStyles(previewStyle(idle, 'filter', 'none', 'blur(4px)')).filter, 'none');
+  // Filter functions apply in order, so the blur keeps its place among them.
+  const dimmed = 'brightness(0.5) blur(4px) contrast(1.2)';
+  assert.equal(
+    previewedStyles(previewStyle(idle, 'filter', 'blur(12px)', dimmed)).filter,
+    'brightness(0.5) blur(12px) contrast(1.2)',
+  );
+  assert.equal(
+    previewedStyles(previewStyle(idle, 'filter', 'none', dimmed)).filter,
+    'brightness(0.5) contrast(1.2)',
+  );
+  assert.equal(
+    previewedStyles(previewStyle(idle, 'filter', 'blur(8px)', 'grayscale(1)')).filter,
+    'blur(8px) grayscale(1)',
+  );
+  // Two blurs read as raw, so a pick previews nothing over them.
+  const twice = 'blur(4px) blur(2px)';
+  assert.equal(previewedStyles(previewStyle(idle, 'filter', 'blur(12px)', twice)).filter, twice);
   const backdrop = previewStyle(idle, 'backdropFilter', 'blur(8px)', 'none');
   assert.equal(previewedStyles(backdrop).backdropFilter, 'blur(8px)');
   const shadows = previewStyle(idle, 'boxShadow', '--ds-shadow-sm, --ds-shadow-md', 'none');
