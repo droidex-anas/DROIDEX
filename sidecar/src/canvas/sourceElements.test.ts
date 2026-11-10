@@ -488,6 +488,267 @@ test('an entry imported by another source module is shared too', () => {
   );
 });
 
+const TOP_BAR =
+  'export function TopBar() { return <header className="p-2"><h1>Title</h1></header>; }';
+
+function editabilityIn(files: SourceFiles, file: string) {
+  return instrumentSource(files, 'r1')
+    .elements.filter((element) => element.file === file)
+    .map(({ tagName, editability }) => [tagName, editability]);
+}
+
+test('a component rendered once is edited where it is written, in whichever file', () => {
+  for (const main of [
+    "import { TopBar } from './components/TopBar'; export default () => <main><TopBar /></main>",
+    "import { TopBar as Bar } from './components/TopBar.tsx'; export default function App() { return <main>{open && <Bar />}</main> }",
+    "import { TopBar } from './components/TopBar'; function Page() { return <TopBar /> } export default function App() { return <main><Page /></main> }",
+  ]) {
+    const files = { 'main.tsx': main, 'components/TopBar.tsx': TOP_BAR };
+    assert.deepEqual(
+      editabilityIn(files, 'components/TopBar.tsx'),
+      [
+        ['header', 'literal'],
+        ['h1', 'literal'],
+      ],
+      main,
+    );
+    const mapped = instrumentSource(files, 'r1');
+    const heading = mapped.elements.find((element) => element.tagName === 'h1');
+    assert.ok(heading);
+    assert.deepEqual(
+      applyElementEdit(files, mapped.elements, {
+        element: reference(heading),
+        change: { kind: 'text', value: 'Inbox' },
+      }),
+      { 'components/TopBar.tsx': TOP_BAR.replace('Title', 'Inbox') },
+    );
+  }
+  const defaultExport = {
+    'main.tsx': "import Bar from './Bar'; export default () => <Bar />",
+    'Bar.tsx': 'function Bar() { return <nav>Menu</nav> } export default Bar;',
+  };
+  assert.deepEqual(editabilityIn(defaultExport, 'Bar.tsx'), [['nav', 'literal']]);
+});
+
+test('a component that may render more than once, or by indirection, keeps its elements shared', () => {
+  const imported = "import { TopBar } from './components/TopBar';";
+  const designs: SourceFiles[] = [
+    { 'main.tsx': `${imported} export default () => <main><TopBar /><TopBar /></main>` },
+    {
+      'main.tsx': `${imported} import { TopBar as Again } from './components/TopBar'; export default () => <main><TopBar /><Again /></main>`,
+    },
+    { 'main.tsx': `${imported} export default () => <main><Frame slot={TopBar} /></main>` },
+    {
+      'main.tsx': `${imported} const Header = TopBar; export default () => <main><Header /></main>`,
+    },
+    { 'main.tsx': `${imported} export default () => <main>{createElement(TopBar)}</main>` },
+    {
+      'main.tsx': `${imported} export default () => <main>{[1, 2].map(() => <TopBar />)}</main>`,
+    },
+    {
+      'main.tsx': `${imported} function Row() { return <TopBar /> } export default () => <main><Row /><Row /></main>`,
+    },
+    { 'main.tsx': `${imported} export default () => <main><Shell top={<TopBar />} /></main>` },
+    {
+      'main.tsx':
+        "import * as parts from './components/TopBar'; export default () => <main><parts.TopBar /></main>",
+    },
+    {
+      'main.tsx': `${imported} import { TopBar as Again } from './parts'; export default () => <main><TopBar /><Again /></main>`,
+      'parts.ts': "export { TopBar } from './components/TopBar';",
+    },
+    {
+      'main.tsx': `${imported} const Lazy = lazy(() => import('./components/TopBar')); export default () => <main><TopBar /></main>`,
+    },
+  ];
+  for (const files of designs) {
+    const all = { ...files, 'components/TopBar.tsx': TOP_BAR };
+    assert.deepEqual(
+      editabilityIn(all, 'components/TopBar.tsx'),
+      [
+        ['header', 'shared'],
+        ['h1', 'shared'],
+      ],
+      files['main.tsx'],
+    );
+  }
+  for (const main of [
+    'function Tree() { return <ul><Tree /></ul> } export default () => <Tree />',
+    'function A() { return <ul><B /></ul> } function B() { return <A /> } export default () => <A />',
+  ])
+    assert.deepEqual(editabilityIn({ 'main.tsx': main }, 'main.tsx'), [['ul', 'shared']], main);
+});
+
+test('every way a copy could render unseen keeps the element shared', () => {
+  const topBar = 'export function TopBar() { return <header>Title</header> }';
+  const designs: SourceFiles[] = [
+    {
+      'TopBar.tsx': topBar,
+      'barrel.ts': "import { TopBar } from './TopBar'; export { TopBar };",
+      'main.tsx':
+        "import { TopBar } from './TopBar'; import { TopBar as Again } from './barrel'; export default () => <><TopBar /><Again /></>;",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'barrel.ts': "import { TopBar } from './TopBar'; export default TopBar;",
+      'main.tsx':
+        "import { TopBar } from './TopBar'; import Again from './barrel'; export default () => <><TopBar /><Again /></>;",
+    },
+    {
+      'main.tsx':
+        'const TopBar = function Inner({ depth = 1 }) { return <><header>Title</header>{depth > 0 && <Inner depth={depth - 1} />}</>; }; export default () => <TopBar />;',
+    },
+    {
+      'main.tsx':
+        "import { memo } from 'react'; export default memo(function Inner({ depth = 1 }) { return <><header>Title</header>{depth > 0 && <Inner depth={depth - 1} />}</>; });",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; export default function App() { let item; item = <TopBar />; return <>{item}{item}</>; }",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; export default function App() { const items = {}; items.one = <TopBar />; return <>{items.one}{items.one}</>; }",
+    },
+    {
+      'main.tsx':
+        'function memo(render) { return () => <>{render()}{render()}</>; } const TopBar = memo(() => <header>Title</header>); export default () => <TopBar />;',
+    },
+    {
+      'main.tsx':
+        'const React = { memo: (render) => () => <>{render()}{render()}</> }; const TopBar = React.memo(() => <header>Title</header>); export default () => <TopBar />;',
+    },
+    {
+      'main.tsx':
+        "function Panel({ children }) { return <>{children}{arguments[0]['children']}</>; } export default () => <Panel><header>Title</header></Panel>;",
+    },
+    {
+      'main.tsx':
+        "function Panel({ children, ['children']: again }) { return <>{children}{again}</>; } export default () => <Panel><header>Title</header></Panel>;",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; const { TopBar: Again } = require('./TopBar'); export default () => <><TopBar /><Again /></>;",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; const page = './TopBar'; import(page); export default () => <TopBar />;",
+    },
+    {
+      'TopBar.tsx': topBar,
+      'main.tsx':
+        "import { TopBar } from './TopBar'; import C = require('./TopBar'); export default () => <><TopBar /><C.TopBar /></>;",
+    },
+    {
+      'TopBar.tsx': 'function TopBar() { return <header>Title</header> } export = TopBar;',
+      'main.tsx':
+        "import TopBar from './TopBar'; import Again = require('./TopBar'); export default () => <><TopBar /><Again /></>;",
+    },
+    {
+      'main.tsx':
+        "import React from 'react'; React.memo = (render) => () => <>{render()}{render()}</>; const TopBar = React.memo(() => <header>Title</header>); export default () => <TopBar />;",
+    },
+  ];
+  for (const files of designs) {
+    const header = instrumentSource(files, 'r1').elements.find(
+      (element) => element.tagName === 'header',
+    );
+    assert.equal(header?.editability, 'shared', files['main.tsx']);
+  }
+});
+
+test('names are read by scope, so a React wrapper, a shadowing name or an entry re-export keeps an element editable', () => {
+  const designs: SourceFiles[] = [
+    {
+      'main.tsx':
+        "import { memo, forwardRef } from 'react'; const TopBar = memo(forwardRef(() => <header>Title</header>)); export default () => <TopBar />;",
+    },
+    {
+      'main.tsx':
+        "import React from 'react'; const TopBar = React.memo((props: { title: React.ReactNode }) => { const [open] = React.useState(false); return <header>Title</header>; }); export default () => <TopBar />;",
+    },
+    {
+      'main.tsx':
+        'function Panel({ children }) { const list = [1].map((children) => children); return <section>{list}{children}</section>; } export default () => <Panel><header>Title</header></Panel>;',
+    },
+    {
+      'TopBar.tsx': 'export function TopBar() { return <header>Title</header> }',
+      'main.tsx':
+        "import { TopBar } from './TopBar'; const labels = { TopBar: 'Top' }; export default TopBar;",
+    },
+  ];
+  for (const files of designs) {
+    const header = instrumentSource(files, 'r1').elements.find(
+      (element) => element.tagName === 'header',
+    );
+    assert.equal(header?.editability, 'literal', files['main.tsx']);
+  }
+});
+
+test('children given to an instance are edited in place only when its component renders them once', () => {
+  const panel = (body: string) => `function Panel({ title, children }) { return ${body} }`;
+  const cases: [string, SourceElement['editability']][] = [
+    [
+      `${panel('<section>{children}</section>')} export default () => <Panel><h2>Hi</h2></Panel>`,
+      'literal',
+    ],
+    [
+      `${panel('<section>{children}{children}</section>')} export default () => <Panel><h2>Hi</h2></Panel>`,
+      'shared',
+    ],
+    [
+      `${panel('<section>{[1, 2].map(() => children)}</section>')} export default () => <Panel><h2>Hi</h2></Panel>`,
+      'shared',
+    ],
+    [
+      `${panel('<section>{children}</section>')} export default () => <><Panel><h2>Hi</h2></Panel><Panel /></>`,
+      'shared',
+    ],
+    [
+      `${panel('<section>{title}{children}</section>')} export default () => <Panel title={<h2>Hi</h2>} />`,
+      'shared',
+    ],
+    [
+      "import { Card } from '@droidex/design-system'; export default () => <Card><h2>Hi</h2></Card>",
+      'shared',
+    ],
+  ];
+  for (const [main, scope] of cases) {
+    const heading = instrumentSource({ 'main.tsx': main }, 'r1').elements.find(
+      (element) => element.tagName === 'h2',
+    );
+    assert.equal(heading?.editability, scope, main);
+  }
+});
+
+test('a container of elements is literal, and a computed child still makes it computed', () => {
+  const files = {
+    'main.tsx':
+      'export default () => <main className="p-4"><h1>Hi</h1><img src="canvas-asset:a" /><ul>{items.map((item) => <li>{item}</li>)}</ul></main>',
+  };
+  assert.deepEqual(editabilityIn(files, 'main.tsx'), [
+    ['main', 'literal'],
+    ['h1', 'literal'],
+    ['img', 'literal'],
+    ['ul', 'computed'],
+    ['li', 'shared'],
+  ]);
+  const mapped = instrumentSource(files, 'r1');
+  const container = mapped.elements[0];
+  assert.ok(container);
+  assert.throws(
+    () =>
+      applyElementEdit(files, mapped.elements, {
+        element: reference(container),
+        change: { kind: 'text', value: 'Flattened' },
+      }),
+    (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+  );
+});
 test('fragments and conditional branches retain separate canonical source sites', () => {
   const files = { 'main.tsx': 'export default () => <>{ok ? <h1>Yes</h1> : <h1>No</h1>}</>' };
   const mapped = instrumentSource(files, 'r1');
