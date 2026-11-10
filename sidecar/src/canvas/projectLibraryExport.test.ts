@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
+import { COMPONENTS_JSON, LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
 import { kitModes } from './designSystemDocument.js';
 import { importProjectDesignSystem } from './designSystemProject.js';
 import type { DesignSystem } from './designSystems.js';
@@ -168,6 +168,20 @@ test("the export reads the library's ui folder, not the cn() helper the kit copi
   const { root, kit } = await libraryKit(t);
   await rename(join(root, 'lib/utils.ts'), join(root, 'lib/utils.tsx'));
   assert.equal((await libraryExport(root, kit, SOURCE))?.status, 'rewritten');
+});
+
+test('the export copies the kit when the ui alias does not lead to each component', async (t) => {
+  const { root, kit } = await libraryKit(t, {
+    'components.json': JSON.stringify({
+      ...COMPONENTS_JSON,
+      aliases: { ...COMPONENTS_JSON.aliases, ui: '@ui' },
+    }),
+    'tsconfig.json':
+      '{ "compilerOptions": { "paths": { "@/*": ["./*"], "@ui": ["./components/ui"] } } }',
+  });
+  const exported = await libraryExport(root, kit, SOURCE);
+  assert.equal(exported?.status, 'copied');
+  assert.match(exported.readme, /@ui\/button does not lead to components\/ui\/button\.tsx/);
 });
 
 test('the export copies the kit into another project whose components differ from its copies', async (t) => {

@@ -341,7 +341,8 @@ function pathMappings(base: string, tsconfig: string): PathMapping[] {
   });
 }
 
-function aliasPath(
+/** The project path an import specifier names through tsconfig.json's paths. */
+export function aliasPath(
   alias: string,
   mappings: readonly PathMapping[],
   tsconfig: string,

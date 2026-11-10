@@ -13,7 +13,7 @@ import type { ModuleDeclarations } from './compilerModules.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { isBareHsl } from './designSystemImport.js';
-import { readLibraryLayout } from './designSystemLibrary.js';
+import { aliasPath, readLibraryLayout } from './designSystemLibrary.js';
 import { bindingClause, entryExports, kitComponentPath, kitModule } from './libraryComponents.js';
 import type { DesignSystem } from './designSystems.js';
 import { emptyDeclared, readCss, type Declared } from './designSystemSources.js';
@@ -32,11 +32,13 @@ interface ProjectLibrary {
   projectName: string;
   /** The components.json alias that names the ui folder. */
   ui: string;
-  uiFolder: string;
   /** The module the kit recorded for each component it exports. */
   modules: Readonly<Record<string, string>>;
-  /** For each of those modules, the module's own name for each name the kit exports from it. */
-  bindings: Map<string, Map<string, string>>;
+  /**
+   * For each of those modules, the specifier the project imports it by, and
+   * the module's own name for each name the kit exports from it.
+   */
+  imports: Map<string, { specifier: string; bindings: Map<string, string> }>;
   declared: Declared;
 }
 
@@ -127,6 +129,12 @@ async function readProjectLibrary(
   const kitNames = Object.fromEntries(
     Object.entries(library.tokens).map(([kitName, projectName]) => [projectName, kitName]),
   );
+  const { ui } = layout.aliases;
+  if (ui.startsWith('.'))
+    return {
+      problem: `components.json names the ui folder by the relative path ${ui}, which would point inside the export's src/, not at ${layout.uiFolder}.`,
+    };
+  const imports: ProjectLibrary['imports'] = new Map();
   for (const [index, file] of files.entries()) {
     const name = path.posix.basename(file, '.tsx');
     const copy = kitModule(
@@ -138,6 +146,15 @@ async function readProjectLibrary(
       return {
         problem: `${file} is not the component the kit copied: it changed since the kit was made, or this is another project.`,
       };
+    const specifier = `${ui}/${name}`;
+    const target = aliasPath(specifier, layout.paths, layout.tsconfig);
+    if ('problem' in target || `${target.path}.tsx` !== file)
+      return {
+        problem: `${specifier} does not lead to ${file} through ${layout.tsconfig}'s paths, so an import of it would not find the component.`,
+      };
+    const entries = entryExports(modules[index].exports, name);
+    const bindings = new Map(entries.map(({ exportedName, binding }) => [exportedName, binding]));
+    imports.set(file, { specifier, bindings });
   }
   const declared = emptyDeclared();
   const unreadable = readCss(
@@ -149,15 +166,9 @@ async function readProjectLibrary(
   if (unreadable !== null) return { problem: `${layout.css.file}: ${unreadable.message}` };
   return {
     projectName: path.basename(root),
-    ui: layout.aliases.ui,
-    uiFolder: layout.uiFolder,
+    ui,
     modules: library.components,
-    bindings: new Map(
-      files.map((file, index) => {
-        const entries = entryExports(modules[index].exports, path.posix.basename(file, '.tsx'));
-        return [file, new Map(entries.map(({ exportedName, binding }) => [exportedName, binding]))];
-      }),
-    ),
+    imports,
     declared,
   };
 }
@@ -190,25 +201,22 @@ function withProjectImports(
           problem: `${file} imports ${imported}, which is not one of the library's components.`,
         };
       const moduleFile = found.modules[imported];
-      const binding = found.bindings.get(moduleFile)?.get(imported);
-      if (binding === undefined) return { problem: `${moduleFile} no longer exports ${imported}.` };
-      byModule.set(moduleFile, [
-        ...(byModule.get(moduleFile) ?? []),
+      const project = found.imports.get(moduleFile);
+      const binding = project?.bindings.get(imported);
+      if (project === undefined || binding === undefined)
+        return { problem: `${moduleFile} no longer exports ${imported}.` };
+      byModule.set(project.specifier, [
+        ...(byModule.get(project.specifier) ?? []),
         bindingClause(binding, local),
       ]);
-      components.set(imported, specifierOf(found, moduleFile));
+      components.set(imported, project.specifier);
     }
     const declarations = [...byModule].map(
-      ([moduleFile, clauses]) =>
-        `import { ${clauses.join(', ')} } from '${specifierOf(found, moduleFile)}';`,
+      ([specifier, clauses]) => `import { ${clauses.join(', ')} } from '${specifier}';`,
     );
     rewritten = rewritten.slice(0, start) + declarations.join('\n') + rewritten.slice(end);
   }
   return { text: rewritten };
-}
-
-function specifierOf(found: ProjectLibrary, moduleFile: string): string {
-  return `${found.ui}/${moduleFile.slice(found.uiFolder.length + 1).replace(/\.tsx$/, '')}`;
 }
 
 /**
