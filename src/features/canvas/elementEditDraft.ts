@@ -18,6 +18,11 @@ export interface ElementEditDraft {
   site: SourceElement;
   /** Previewed values by style property, as the user entered them. */
   values: Readonly<Record<string, string>>;
+  /**
+   * What the element drew for each previewed property before its first
+   * preview, which a blur's preview keeps the rest of the filter from.
+   */
+  drawn: Readonly<Record<string, string>>;
   /** The previewed text, or null while the element shows its own. */
   text: string | null;
   /**
@@ -32,7 +37,7 @@ export function editDraft(
   element: ElementRef,
   site: SourceElement,
 ): ElementEditDraft {
-  return { canvasId, element, site, values: {}, text: null, pending: null };
+  return { canvasId, element, site, values: {}, drawn: {}, text: null, pending: null };
 }
 
 /** Something typed or picked here is not saved yet. */
@@ -40,23 +45,74 @@ export function hasPreviews(draft: ElementEditDraft): boolean {
   return draft.text !== null || Object.keys(draft.values).length > 0;
 }
 
-/** A property outside the edit whitelist cannot be previewed, so it is ignored. */
+/**
+ * Previews `value` for `property`, which the element draws as `drawn` now. A
+ * property outside the edit whitelist cannot be previewed, so it is ignored.
+ */
 export function previewStyle(
   draft: ElementEditDraft,
   property: string,
   value: string,
+  drawn: string,
 ): ElementEditDraft {
   if (!STYLE_PROPERTIES.includes(property)) return draft;
-  return { ...draft, values: { ...draft.values, [property]: value } };
+  return {
+    ...draft,
+    values: { ...draft.values, [property]: value },
+    // Once previewed, the element draws the preview, which is not its own.
+    drawn: Object.hasOwn(draft.drawn, property)
+      ? draft.drawn
+      : { ...draft.drawn, [property]: drawn },
+  };
 }
 
 /** Takes one property's preview back, leaving the element as its revision draws it. */
 export function revertStyle(draft: ElementEditDraft, property: string): ElementEditDraft {
   if (!Object.hasOwn(draft.values, property)) return draft;
-  const values = Object.fromEntries(
-    Object.entries(draft.values).filter(([previewed]) => previewed !== property),
+  return {
+    ...draft,
+    values: without(draft.values, property),
+    drawn: without(draft.drawn, property),
+  };
+}
+
+function without(record: Readonly<Record<string, string>>, key: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(record).filter(([each]) => each !== key));
+}
+
+const BLUR_PROPERTIES = new Set(['filter', 'backdropFilter']);
+const BLUR_FUNCTION = /(?:^|\s)blur\([^()]*\)/g;
+
+/** The CSS the guest draws each previewed property with. */
+export function previewedStyles(draft: ElementEditDraft): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(draft.values).map(([property, value]) => [
+      property,
+      previewValue(property, value, draft.drawn[property] ?? ''),
+    ]),
   );
-  return { ...draft, values };
+}
+
+/**
+ * A picked kit token, or a list of them, is named by the edit but drawn
+ * through var(), as the class it saves as is. A blur's class sets one function
+ * of a filter the element's other classes compose, so its preview keeps the
+ * rest of what the element drew, and None takes only the blur.
+ */
+function previewValue(property: string, value: string, drawn: string): string {
+  const css = value.startsWith('--')
+    ? value
+        .split(',')
+        .map((name) => `var(${name.trim()})`)
+        .join(', ')
+    : value;
+  if (!BLUR_PROPERTIES.has(property)) return css;
+  const functions: string[] = [];
+  if (value.startsWith('--')) functions.push(`blur(${css})`);
+  else if (value !== 'none') functions.push(value);
+  const rest = drawn.replace(BLUR_FUNCTION, ' ').trim();
+  if (rest !== '' && rest !== 'none') functions.push(rest);
+  return functions.length > 0 ? functions.join(' ') : 'none';
 }
 
 export function previewText(draft: ElementEditDraft, text: string): ElementEditDraft {
@@ -155,6 +211,7 @@ export function followRevision(
       element: { ...draft.element, revisionId: build.revisionId, elementId: site.elementId },
       site,
       values: committed === 'text' ? draft.values : {},
+      drawn: committed === 'text' ? draft.drawn : {},
       text: committed === 'style' ? draft.text : null,
       pending: null,
     };

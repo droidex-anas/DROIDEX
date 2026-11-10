@@ -5,6 +5,7 @@ import {
   commitText,
   editDraft,
   followRevision,
+  previewedStyles,
   previewStyle,
   previewText,
   revertStyle,
@@ -28,7 +29,7 @@ const site: SourceElement = {
 
 function committed(entries: [property: string, value: string][], mutationId: string) {
   let draft = editDraft('canvas', element, site);
-  for (const [property, value] of entries) draft = previewStyle(draft, property, value);
+  for (const [property, value] of entries) draft = previewStyle(draft, property, value, '');
   const commit = commitStyles(draft, mutationId);
   assert.ok(commit);
   return commit;
@@ -108,13 +109,31 @@ test('every refusal drops the draft, and a reply for another mutation changes no
 
 test('one commit at a time, and only with a previewed whitelisted property', () => {
   const { draft } = committed([['gap', '4px']], 'm-gap');
-  assert.equal(commitStyles(previewStyle(draft, 'width', '1px'), 'm-width'), null);
+  assert.equal(commitStyles(previewStyle(draft, 'width', '1px', ''), 'm-width'), null);
   const idle = editDraft('canvas', element, site);
-  assert.equal(previewStyle(idle, 'backgroundImage', 'url(x)'), idle);
+  assert.equal(previewStyle(idle, 'backgroundImage', 'url(x)', ''), idle);
   assert.equal(commitStyles(idle, 'm-unset'), null);
-  const reverted = revertStyle(previewStyle(idle, 'gap', '4px'), 'gap');
+  const reverted = revertStyle(previewStyle(idle, 'gap', '4px', ''), 'gap');
   assert.deepEqual(reverted.values, {});
   assert.equal(commitStyles(reverted, 'm-reverted'), null);
+});
+
+test('a previewed blur keeps the rest of the filter the element drew, and None takes only the blur', () => {
+  const idle = editDraft('canvas', element, site);
+  const drawn = 'blur(4px) grayscale(1)';
+  const md = previewStyle(idle, 'filter', 'blur(12px)', drawn);
+  assert.equal(previewedStyles(md).filter, 'blur(12px) grayscale(1)');
+  // The element now draws the preview, which the next pick must not build on.
+  const soft = previewStyle(md, 'filter', '--ds-blur-soft', 'blur(12px) grayscale(1)');
+  assert.equal(previewedStyles(soft).filter, 'blur(var(--ds-blur-soft)) grayscale(1)');
+  assert.equal(previewedStyles(previewStyle(idle, 'filter', 'none', drawn)).filter, 'grayscale(1)');
+  assert.equal(previewedStyles(previewStyle(idle, 'filter', 'none', 'blur(4px)')).filter, 'none');
+  const backdrop = previewStyle(idle, 'backdropFilter', 'blur(8px)', 'none');
+  assert.equal(previewedStyles(backdrop).backdropFilter, 'blur(8px)');
+  const shadows = previewStyle(idle, 'boxShadow', '--ds-shadow-sm, --ds-shadow-md', 'none');
+  assert.equal(previewedStyles(shadows).boxShadow, 'var(--ds-shadow-sm), var(--ds-shadow-md)');
+  // Taken back, the next preview starts from what the element draws then.
+  assert.deepEqual(revertStyle(md, 'filter').drawn, {});
 });
 
 test('the selection follows its source site into the revision that built after it', () => {
@@ -133,6 +152,7 @@ test('the selection follows its source site into the revision that built after i
     element: { ...element, revisionId: 'r2', elementId: 'el_9' },
     site: moved,
     values: {},
+    drawn: {},
     pending: null,
   });
 });
@@ -141,7 +161,7 @@ test('text commits apart from styles, and each keeps the other’s previews into
   const idle = editDraft('canvas', element, site);
   assert.equal(commitText(idle, 'm-none'), null);
   assert.equal(revertText(previewText(idle, 'Hi')).text, null);
-  const typed = previewStyle(previewText(idle, 'Welcome & bye'), 'gap', '4px');
+  const typed = previewStyle(previewText(idle, 'Welcome & bye'), 'gap', '4px', '');
   const text = commitText(typed, 'm-text');
   assert.ok(text);
   assert.deepEqual(text.input, {
@@ -170,7 +190,7 @@ test('text commits apart from styles, and each keeps the other’s previews into
 });
 
 test('a newer revision without the site, or one that did not build, drops the selection', () => {
-  const draft = previewStyle(editDraft('canvas', element, site), 'gap', '4px');
+  const draft = previewStyle(editDraft('canvas', element, site), 'gap', '4px', '');
   const shifted = { ...site, elementId: 'el_9', start: 52 };
 
   assert.equal(followRevision(draft, frameAt('r2', ready('r2', [shifted]))), null);
