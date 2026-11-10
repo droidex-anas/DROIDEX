@@ -40,6 +40,8 @@ export interface NumberFieldProps {
   onLeave: () => void;
   /** A token pick or mode choice: previews the value and commits at once. */
   onPick: (value: string) => void;
+  /** A token the list rests on, to preview; null once it is left unpicked. */
+  onActive: (value: string | null) => void;
 }
 
 /** The value's amount and unit, or null for a keyword such as `fit-content`. */
@@ -78,6 +80,7 @@ export function NumberField({
   onCommit,
   onLeave,
   onPick,
+  onActive,
 }: NumberFieldProps) {
   const input = useRef<HTMLInputElement>(null);
   /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
@@ -183,6 +186,7 @@ export function NumberField({
                   value={value}
                   disabled={disabled}
                   onPick={onPick}
+                  onActive={onActive}
                   className={cn(
                     'absolute right-full top-1/2 -translate-y-1/2 opacity-0 transition group-hover:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100',
                     previewed ? 'bg-active' : 'bg-field group-hover:bg-active',

@@ -1,7 +1,7 @@
 // The element panel's Effects section: a shadow from the kit's tokens, and a
 // layer blur and a background blur from the kit's blur tokens or Tailwind's
-// stock steps, each applied as it is picked, then the fields the panel adds.
-
+// stock steps, each previewed as a list rests on it and applied as it is
+// picked, then the fields the panel adds.
 import type { ReactNode } from 'react';
 import { BLUR_STEPS } from './elementPanelChoices';
 import { Labelled, Section } from './ElementPanelRows';
@@ -16,6 +16,8 @@ interface ElementEffectsProps {
   disabled: boolean;
   /** Previews a picked value and commits it at once. */
   onPick: (property: string) => (value: string) => void;
+  /** Previews the option a list rests on; null puts back what was there. */
+  onHover: (property: string) => (value: string | null) => void;
   /** The fields after the pickers. */
   children: ReactNode;
 }
@@ -25,6 +27,7 @@ export function ElementEffects({
   tokenOptions,
   disabled,
   onPick,
+  onHover,
   children,
 }: ElementEffectsProps) {
   const shadows = tokenOptions('boxShadow');
@@ -40,6 +43,7 @@ export function ElementEffects({
       value={current}
       disabled={disabled}
       onPick={onPick(property)}
+      onActive={onHover(property)}
     />
   );
   return (
@@ -52,6 +56,7 @@ export function ElementEffects({
           face={shadow === 'none' ? 'None' : shadow}
           disabled={disabled || !shadows?.length}
           onPick={onPick('boxShadow')}
+          onActive={onHover('boxShadow')}
         />
       </Labelled>
       <Labelled label="Blur">

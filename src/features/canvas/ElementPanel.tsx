@@ -43,6 +43,7 @@ import type { EditToken, FrameRect, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
+import { usePickPreview } from './usePickPreview';
 import { ValuePickerField, type ValueOption } from './ValuePickerField';
 
 export interface ElementPanelProps {
@@ -85,17 +86,14 @@ export function ElementPanel({
   const editable = draft.site.editability === 'literal';
   const readOnly = !editable || draft.pending !== null;
   const text = draft.text ?? shown.text;
-  const value = (property: string): string =>
-    Object.hasOwn(draft.values, property)
-      ? (draft.values[property] ?? '')
-      : (shown.styles[property] ?? '');
-  const previewed = (property: string): boolean => Object.hasOwn(draft.values, property);
-  /** A pick from a segment, option or token: previews the value and commits at once. */
-  const pick = (property: string) => (next: string) => {
-    if (readOnly) return;
-    onPreview(property, next);
-    onCommit();
-  };
+  const { value, previewed, pick, hover } = usePickPreview({
+    draft,
+    computed: shown.styles,
+    readOnly,
+    onPreview,
+    onRevert,
+    onCommit,
+  });
   /**
    * The property's kit tokens as picker options, with the mode's value as the
    * hint; undefined until they load.
@@ -153,6 +151,7 @@ export function ElementPanel({
       onCommit={onCommit}
       onLeave={onLeave}
       onPick={pick(property)}
+      onActive={hover(property)}
     />
   );
   const segmented = (property: string, label: string, options: readonly Segment<string>[]) => (
@@ -180,6 +179,7 @@ export function ElementPanel({
       onCommit={onCommit}
       onLeave={onLeave}
       onPick={pick(property)}
+      onActive={hover(property)}
     />
   );
 
@@ -291,6 +291,7 @@ export function ElementPanel({
               value={value('overflow')}
               disabled={readOnly}
               onPick={pick('overflow')}
+              onActive={hover('overflow')}
             />
           </Labelled>
         </Section>
@@ -371,6 +372,7 @@ export function ElementPanel({
               face={firstFamily(fontFamily)}
               disabled={readOnly || fontTokens.length === 0}
               onPick={pick('fontFamily')}
+              onActive={hover('fontFamily')}
             />
           </Labelled>
           <Labelled label="Weight">
@@ -380,6 +382,7 @@ export function ElementPanel({
               value={value('fontWeight')}
               disabled={readOnly}
               onPick={pick('fontWeight')}
+              onActive={hover('fontWeight')}
             />
           </Labelled>
           <Pair>
@@ -400,6 +403,7 @@ export function ElementPanel({
               value={value('textTransform')}
               disabled={readOnly}
               onPick={pick('textTransform')}
+              onActive={hover('textTransform')}
             />
           </Labelled>
           <Labelled label="Colour">{colour('color', 'Text colour')}</Labelled>
@@ -415,7 +419,13 @@ export function ElementPanel({
             {number('borderRadius', 'Corner radius', 'Radius', { min: 0 })}
           </Pair>
         </Section>
-        <ElementEffects value={value} tokenOptions={tokenOptions} disabled={readOnly} onPick={pick}>
+        <ElementEffects
+          value={value}
+          tokenOptions={tokenOptions}
+          disabled={readOnly}
+          onPick={pick}
+          onHover={hover}
+        >
           <Pair>
             {number('opacity', 'Opacity', 'Opacity', {
               unit: null,
