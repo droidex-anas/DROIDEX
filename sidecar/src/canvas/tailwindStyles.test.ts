@@ -117,9 +117,11 @@ test('every class a style edit writes sets its property to the value the edit me
     const declarations = rules.get(name);
     assert.ok(declarations, `Tailwind generated nothing for ${name}`);
     const css = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-    const set = declarations.get(SET_THROUGH[property] ?? css) ?? '';
+    const set = declarations.get(SET_THROUGH[property] ?? css);
+    assert.ok(set !== undefined, `${name} sets no ${css}`);
     // `blur-none` sets its blur to nothing.
-    const read = set.trim() === '' && value === 'none' ? 'none' : set;
+    const isFilter = property === 'filter' || property === 'backdropFilter';
+    const read = isFilter && set.trim() === '' ? 'none' : set;
     assert.equal(canonicalCss(read), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
   }

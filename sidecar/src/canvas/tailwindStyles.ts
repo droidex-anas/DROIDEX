@@ -252,9 +252,12 @@ function boxUtility(utility: string): Omit<ClassStyle, 'scope'> | null | undefin
 
 /**
  * A blur or backdrop blur (`blur-md`, `backdrop-blur-[var(--x)]`), which sets
- * one function of its filter; grayscale and the other functions are not read.
+ * one function of its filter, or a reset of the whole filter (`filter-none`);
+ * grayscale and the other functions are not read.
  */
-function blurUtility(utility: string): Omit<ClassStyle, 'scope'> | null {
+function filterUtility(utility: string): Omit<ClassStyle, 'scope'> | null {
+  const reset = /^(backdrop-)?filter-none$/.exec(utility);
+  if (reset) return { sets: [reset[1] ? 'backdropFilter' : 'filter'] };
   const blur = /^(backdrop-)?blur(?:-(.+))?$/.exec(utility);
   if (!blur) return null;
   const [, backdrop, key = ''] = blur;
@@ -301,7 +304,7 @@ function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope
       // `grow` and `grow-0` are keywords above; this reads an arbitrary one.
       return arbitrary(value) ? { sets: ['flexGrow'] } : null;
     default:
-      return blurUtility(utility);
+      return filterUtility(utility);
   }
 }
 

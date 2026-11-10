@@ -58,7 +58,7 @@ const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight', 'fle
 const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 const FILTERS = new Set(['filter', 'backdropFilter']);
-const BLUR_CLASS = /^!?(?:backdrop-)?blur(?:-|$)/;
+const BLUR_OR_RESET_CLASS = /^!?(?:backdrop-)?(?:blur(?:-|$)|filter-none$)/;
 
 /** The replacements that set every style in `styles`, in order, on one element. */
 export function styleReplacements(
@@ -135,7 +135,8 @@ function setStyle(
 
 /**
  * A blur class sets one function of a filter that composes with the others,
- * which a blur inline, or in place of a filter set another way, would drop.
+ * which a blur inline, or in place of a filter set another way, would drop. A
+ * `filter-none` reset would win over the blur, so the blur takes its place.
  */
 function keepFilter(
   property: string,
@@ -146,7 +147,7 @@ function keepFilter(
   if (!FILTERS.has(property)) return;
   if (
     name === null ||
-    dead.some(({ entry }) => !BLUR_CLASS.test(entry.name ?? '')) ||
+    dead.some(({ entry }) => !BLUR_OR_RESET_CLASS.test(entry.name ?? '')) ||
     style.entries.some((entry) => !entry.removed && entry.name === property)
   )
     throw new SourceElementError(

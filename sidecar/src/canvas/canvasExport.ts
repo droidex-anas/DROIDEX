@@ -17,11 +17,11 @@ import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
 import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
+import type { SavedRevision } from './canvasRevisionMetadata.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
-import { BUILD_SCRIPT, exportPackageJson } from './canvasExportBuild.js';
-import { RADIX_PRIMITIVE_SPECIFIERS } from './designPackages.js';
+import { BUILD_SCRIPT, EXPORT_README, exportPackageJson } from './canvasExportBuild.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
-import { readDesignSystem } from './designSystems.js';
+import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
 import {
@@ -30,6 +30,7 @@ import {
   projectMapping,
 } from './canvasProjectExport.js';
 import type { ProjectExportAdmission } from './projectExports.js';
+import { libraryExport } from './projectLibraryExport.js';
 import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
@@ -102,17 +103,24 @@ export async function exportCanvasSource(
   const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory });
   if (!parsed.success || !isAbsolute(destinationDirectory))
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
-  const files = await canvasSourceFiles(canvasId, ref, signal);
+  const revision = await readExportedRevision(canvasId, ref, signal);
+  const files = await canvasSourceFiles(revision, signal);
   await writeExport(resolve(destinationDirectory), files, signal);
   return { filesWritten: files.length };
 }
 
-/** Everything one revision's export writes, read and checked before any folder is touched. */
-async function canvasSourceFiles(
+/** One revision as an export reads it, with its canvas images and its pinned kit. */
+interface ExportedRevision {
+  saved: SavedRevision;
+  assets: ExportFile[];
+  kit: DesignSystem;
+}
+
+async function readExportedRevision(
   canvasId: string,
   ref: RevisionRef,
   signal?: AbortSignal,
-): Promise<ExportFile[]> {
+): Promise<ExportedRevision> {
   signal?.throwIfAborted();
   // Everything this export needs from the canvas is read up front, under a
   // pin that removing the canvas waits for (10a: deletion never cancels it).
@@ -127,7 +135,19 @@ async function canvasSourceFiles(
     return { saved: revision, assets: images };
   });
   signal?.throwIfAborted();
-  const kit = await readDesignSystem(saved.designSystem);
+  return { saved, assets, kit: await readDesignSystem(saved.designSystem) };
+}
+
+/**
+ * Everything one revision's export writes, read and checked before any folder
+ * is touched; `readmeNote` ends its README.
+ */
+async function canvasSourceFiles(
+  revision: ExportedRevision,
+  signal?: AbortSignal,
+  readmeNote = '',
+): Promise<ExportFile[]> {
+  const { saved, kit } = revision;
   const files: ExportFile[] = [];
   for (const [path, content] of saved.files) files.push({ path: `src/${path}`, content });
   for (const [path, content] of Object.entries(kit.files))
@@ -148,14 +168,13 @@ async function canvasSourceFiles(
     })),
   );
 
-  // One file per hash: the same bytes can be both a canvas image and a kit image.
-  const kitImageIds = referencedKitAssetIds([
-    ...saved.files.values(),
-    ...Object.values(kit.files),
-    ...Object.values(kit.examples),
-  ]);
-  for (const assetId of referencedAssetIds(saved.files.values())) kitImageIds.delete(assetId);
-  files.push(...assets, ...(await kitImageFiles(kitImageIds, signal)));
+  files.push(
+    ...(await imageFiles(
+      revision,
+      [...saved.files.values(), ...Object.values(kit.files), ...Object.values(kit.examples)],
+      signal,
+    )),
+  );
 
   const fonts = new Map<string, Buffer>();
   for (const content of Object.values(kit.files)) {
@@ -171,8 +190,40 @@ async function canvasSourceFiles(
   const sources = [...saved.files.values(), ...Object.values(kit.files)];
   files.push({ path: 'package.json', content: await exportPackageJson(sources, signal) });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
-  files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
+  files.push({
+    path: 'README.md',
+    content: EXPORT_README + (projectMapping(kit) ?? '') + readmeNote,
+  });
   return files;
+}
+
+/** The canvas images and the kit images `sources` refer to. */
+async function imageFiles(
+  { saved, assets }: ExportedRevision,
+  sources: string[],
+  signal?: AbortSignal,
+): Promise<ExportFile[]> {
+  // One file per hash: the same bytes can be both a canvas image and a kit image.
+  const kitImageIds = referencedKitAssetIds(sources);
+  for (const assetId of referencedAssetIds(saved.files.values())) kitImageIds.delete(assetId);
+  return [...assets, ...(await kitImageFiles(kitImageIds, signal))];
+}
+
+/**
+ * Export to project's files: a kit made from the project's library imports
+ * the project's components where it can, and any other kit is copied.
+ */
+async function projectSourceFiles(
+  canvasId: string,
+  ref: RevisionRef,
+  projectFolder: string,
+  signal: AbortSignal,
+): Promise<ExportFile[]> {
+  const revision = await readExportedRevision(canvasId, ref, signal);
+  const library = await libraryExport(projectFolder, revision.kit, revision.saved.files, signal);
+  if (library?.status !== 'rewritten') return canvasSourceFiles(revision, signal, library?.readme);
+  const sources = [...revision.saved.files.values()];
+  return [...library.files, ...(await imageFiles(revision, sources, signal))];
 }
 
 /**
@@ -357,7 +408,7 @@ export function serveCanvasSourceExport(
     const running = AbortSignal.any([signal, admission.signal]);
     try {
       // The folder is made only once there is an export to put in it.
-      const files = await canvasSourceFiles(canvasId, ref, running);
+      const files = await projectSourceFiles(canvasId, ref, admission.projectFolder, running);
       const { projectRoot, directory } = await projectExportDestination(
         admission.projectFolder,
         project.folder,
@@ -435,24 +486,3 @@ async function answerExportRequest(
     response.off('close', onClose);
   }
 }
-
-const README = `# Canvas source export
-
-The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
-\`design-system/\`: React primitives, token CSS and font licences. The kit's
-guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
-selected light/dark values in \`canvas-export/modes.json\`, and the canvas and kit
-images the source and kit refer to in \`assets/\`.
-
-Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
-\`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`, plus these library packages, which
-\`package.json\` lists only when the source or kit imports them: \`radix-ui\`,
-\`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\`,
-\`tailwind-merge\`, and the Radix primitives \`radix-ui\` re-exports, each also
-importable as its own package: ${[...RADIX_PRIMITIVE_SPECIFIERS].map((specifier) => `\`${specifier}\``).join(', ')}.
-Direct dependency versions are exact in \`package.json\`. No lockfile is
-generated during export: npm resolves transitive dependencies when you install,
-without the export needing registry access.
-`;
