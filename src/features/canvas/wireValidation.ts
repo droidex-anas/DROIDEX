@@ -107,6 +107,8 @@ export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil((2 * 1024 * 1024) / 3) * 
 // `MAX_KIT_FONT_FACES` and `MAX_FONT_DESCRIPTOR_LENGTH` in the sidecar's kitFonts.ts.
 const MAX_KIT_FONT_FACES = 16;
 const MAX_FONT_DESCRIPTOR_LENGTH = 1024;
+// The sidecar's `CANVAS_LIMITS.maxFramesPerCreate`.
+const MAX_FRAMES_PER_CREATE = 4;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
@@ -176,7 +178,11 @@ function isReply(value: unknown): boolean {
       return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));
     case 'created':
       return (
-        record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame)
+        record(value.created) &&
+        id(value.created.canvasId) &&
+        list(value.created.frames, isFrame) &&
+        (value.created.svgAsImage === undefined ||
+          boundedList(value.created.svgAsImage, MAX_FRAMES_PER_CREATE, isSvgAsImage))
       );
     case 'written':
       return isReceipt(value.receipt);
@@ -412,6 +418,14 @@ function isSummary(value: unknown): boolean {
 
 function isReceipt(value: unknown): boolean {
   return record(value) && id(value.designId) && id(value.revisionId) && count(value.sequence);
+}
+
+function isSvgAsImage(value: unknown): boolean {
+  return (
+    record(value) &&
+    id(value.designId) &&
+    (value.reason === 'too_large' || value.reason === 'stylesheet')
+  );
 }
 
 // Property keys bound at the whitelisted properties; the token caps are the

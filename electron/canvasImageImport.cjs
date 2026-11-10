@@ -10,6 +10,7 @@ const { open } = require('node:fs/promises');
 const { extname, isAbsolute } = require('node:path');
 const { imageMediaType } = require('./canvasPreviewAssets.cjs');
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const EXTENSIONS = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -59,7 +60,7 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
         const info = await file.stat();
         if (project && !isSameFile(info, project.file))
           throw invalidImage('The image changed while it was being imported. Try again.');
-        if (!info.isFile() || info.size < 1 || info.size > 10 * 1024 * 1024)
+        if (!info.isFile() || info.size < 1 || info.size > MAX_IMAGE_BYTES)
           throw invalidImage('Choose an image under 10 MiB.');
         bytes = Buffer.alloc(info.size);
         let offset = 0;
@@ -303,8 +304,17 @@ function createProjectImageRequests(importImage, sidecarSupervisor) {
   };
 }
 
+/** Pasted SVG markup as the data URL the attachments store saves, refused before any copy when it is not markup under the limit. */
+function pastedSvgDataUrl(svg) {
+  if (typeof svg !== 'string' || svg === '') throw invalidImage('The pasted SVG is empty.');
+  if (Buffer.byteLength(svg, 'utf8') > MAX_IMAGE_BYTES)
+    throw invalidImage('Paste an SVG under 10 MiB.');
+  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+}
+
 module.exports = {
   createCanvasImageImporter,
   canvasImageImportResult,
   createProjectImageRequests,
+  pastedSvgDataUrl,
 };

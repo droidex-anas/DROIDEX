@@ -47,6 +47,7 @@ import type {
   SwitchRevisionInput,
 } from './protocol';
 import { useCanvasPresence, useLandedWrites } from './useCanvasPresence';
+import { useBoardPaste } from './useBoardPaste';
 import type { DesignPins } from './useDesignPicker';
 import { useElementEditor } from './useElementEditor';
 import { useFrameActions } from './useFrameActions';
@@ -214,6 +215,13 @@ export function CanvasBoardMount({
     });
   };
   const { selectedFrameIds } = interaction;
+  useBoardPaste(boardArea, {
+    appSessionId,
+    canvasId,
+    attached: pinnable,
+    beside: frames.find((frame) => frame.designId === selectedFrameIds.at(0)),
+    focusFrame: (designId) => boardRef.current?.focusFrame(designId),
+  });
   const showingDocument = shownDocument !== null;
   // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
   const elementPanelOpen = frames.length > 0 && interaction.mode === 'edit';

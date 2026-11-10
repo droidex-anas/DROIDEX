@@ -138,10 +138,14 @@ export class CanvasFrameCreation {
           if (design.revisionId !== null)
             this.builds.enqueue(canvasId, design.designId, design.revisionId);
         }
+        const svgAsImage = staged.flatMap(({ designId, svgAsImage: reason }) =>
+          reason ? [{ designId, reason }] : [],
+        );
         return {
           value: {
             canvasId,
             frames: designs.map((design) => toFrame(canvasId, design, this.builds)),
+            ...(svgAsImage.length > 0 ? { svgAsImage } : {}),
           },
           change: canvasChange(next, designs, this.builds),
         };
