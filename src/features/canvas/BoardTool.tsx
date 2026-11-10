@@ -7,6 +7,7 @@ export function Tool({
   label,
   tip,
   pressed,
+  expanded,
   disabled = false,
   onClick,
   children,
@@ -14,6 +15,8 @@ export function Tool({
   label: string;
   tip: string;
   pressed?: boolean;
+  /** For a tool that shows or hides a panel, in place of `pressed`. */
+  expanded?: boolean;
   disabled?: boolean;
   onClick: () => void;
   children: ReactNode;
@@ -23,6 +26,7 @@ export function Tool({
       type="button"
       aria-label={label}
       aria-pressed={pressed}
+      aria-expanded={expanded}
       data-tip={tip}
       disabled={disabled}
       onClick={onClick}

@@ -214,7 +214,7 @@ export function BoardControls({
             <Tool
               label="Layers"
               tip={`Layers  ${LAYERS_KEY_LABEL}`}
-              pressed={layers.open}
+              expanded={layers.open}
               onClick={layers.onToggle}
             >
               <PanelLeft className="h-4 w-4" aria-hidden />
