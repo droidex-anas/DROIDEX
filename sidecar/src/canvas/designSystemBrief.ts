@@ -6,6 +6,8 @@
 // share 4 KiB. Under Auto, before a project chat's first design, it also asks
 // the agent to offer a kit from the project.
 
+import { stat } from 'node:fs/promises';
+import path from 'node:path';
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, type TokenSectionKind } from './designSystemDocument.js';
 import {
@@ -14,6 +16,7 @@ import {
   readDesignSystem,
   type DesignSystem,
 } from './designSystems.js';
+import { isFileSystemError } from './projectPaths.js';
 import type { DesignSystemRef } from './protocol.js';
 
 /** What the name lists may cost, counting the JSON quotes, commas and keys around them. */
@@ -30,12 +33,16 @@ export interface DesignSystemBrief {
   guidance: string;
 }
 
-const PROJECT_KIT_OFFER =
-  "This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's Tailwind config, CSS tokens and design docs, or its shadcn/ui library, for the designs that follow. Build it only when the user says so.";
+function projectKitOffer(hasLibrary: boolean): string {
+  const sources = hasLibrary
+    ? 'shadcn/ui components, with their tokens and Tailwind theme,'
+    : 'Tailwind config, CSS tokens and design docs';
+  return `This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's ${sources} for the designs that follow. Build it only when the user says so.`;
+}
 
-/** Where the turn starts: whether the chat has a project folder and its canvas any design. */
+/** Where the turn starts: the chat's project folder, if any, and whether its canvas has a design. */
 export interface OpeningBoard {
-  hasProjectFolder: boolean;
+  projectFolder: string | null;
   hasDesigns: boolean;
 }
 
@@ -80,16 +87,27 @@ export async function designSystemBrief(
     if (listed.length > 0) tokens[kind] = listed;
   }
   const guidance = kitGuidance(system.name, system.sections);
-  const offersProjectKit =
-    designSystemKind(ref.id) === 'auto' && board.hasProjectFolder && !board.hasDesigns;
+  let offer: string | null = null;
+  if (designSystemKind(ref.id) === 'auto' && board.projectFolder !== null && !board.hasDesigns)
+    offer = projectKitOffer(await hasShadcnLibrary(board.projectFolder));
   return {
     ref,
     name: system.name,
     primitives,
     tokens,
     ...(omittedNames > 0 ? { omittedNames } : {}),
-    guidance: offersProjectKit ? `${guidance}\n\n${PROJECT_KIT_OFFER}` : guidance,
+    guidance: offer === null ? guidance : `${guidance}\n\n${offer}`,
   };
+}
+
+/** Whether the folder keeps a shadcn/ui library's components.json at its root. */
+async function hasShadcnLibrary(folder: string): Promise<boolean> {
+  try {
+    return (await stat(path.join(folder, 'components.json'))).isFile();
+  } catch (error) {
+    if (isFileSystemError(error)) return false;
+    throw error;
+  }
 }
 
 function tokenNamesByKind(sections: DesignSystem['sections']): [TokenSectionKind, string[]][] {

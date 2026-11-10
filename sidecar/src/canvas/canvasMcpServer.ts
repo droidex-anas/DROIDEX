@@ -149,7 +149,7 @@ export function createCanvasMcpServer(
             ? {}
             : {
                 designSystem: await designSystemBrief(scope.context.designSystem, {
-                  hasProjectFolder: projectFolder(scope.appSessionId) !== null,
+                  projectFolder: projectFolder(scope.appSessionId),
                   hasDesigns: hasDesigns(whole),
                 }),
               };

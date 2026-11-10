@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { designSystemBrief } from './designSystemBrief.js';
@@ -57,7 +60,7 @@ test('a full kit’s brief lists token names by section kind within the 4 KiB na
   );
   const brief = await designSystemBrief(
     { ...ref, mode: 'dark' },
-    { hasProjectFolder: false, hasDesigns: false },
+    { projectFolder: null, hasDesigns: false },
   );
   assert.ok(!('unavailable' in brief));
 
@@ -87,26 +90,35 @@ test('a full kit’s brief lists token names by section kind within the 4 KiB na
   assert.ok(Buffer.byteLength(JSON.stringify(brief), 'utf8') < 21 * 1024);
 });
 
-test('under Auto, the opening read before a project chat’s first design offers a kit from the project', async () => {
+test('under Auto, the opening read before a project chat’s first design offers a kit from the project', async (t) => {
   const offer =
     /offer in one sentence[^.]*build one from the project's[^.]*\. Build it only when the user says so\./;
+  const folder = await mkdtemp(join(tmpdir(), 'brief-project-'));
+  t.after(() => rm(folder, { recursive: true, force: true }));
   const guidance = async (
     ref: typeof AUTO_DESIGN_SYSTEM_REF,
-    hasProjectFolder: boolean,
+    projectFolder: string | null,
     hasDesigns: boolean,
   ) => {
-    const brief = await designSystemBrief(ref, { hasProjectFolder, hasDesigns });
+    const brief = await designSystemBrief(ref, { projectFolder, hasDesigns });
     assert.ok(!('unavailable' in brief));
     return brief.guidance;
   };
-  assert.match(await guidance(AUTO_DESIGN_SYSTEM_REF, true, false), offer);
+  assert.match(await guidance(AUTO_DESIGN_SYSTEM_REF, folder, false), offer);
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, folder, false), /shadcn/);
   // A canvas already designed has its look, and a chat with no folder has nothing to read.
-  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, true, true), offer);
-  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, false, false), offer);
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, folder, true), offer);
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, null, false), offer);
+  // A shadcn/ui library is offered as what the kit is made from.
+  await writeFile(join(folder, 'components.json'), '{}');
+  assert.match(
+    await guidance(AUTO_DESIGN_SYSTEM_REF, folder, false),
+    /build one from the project's shadcn\/ui components/,
+  );
   // A chosen kit is the system already.
   const kit = await saveDesignSystem(
     { ...SAMPLE_KIT, id: 'chosen', name: 'Chosen' },
     { mutationId: 'chosen-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
-  assert.doesNotMatch(await guidance({ ...kit, mode: 'light' }, true, false), offer);
+  assert.doesNotMatch(await guidance({ ...kit, mode: 'light' }, folder, false), offer);
 });
