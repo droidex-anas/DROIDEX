@@ -7,7 +7,7 @@
 // compiles every class this module can write with Tailwind itself.
 
 import { isNamedColor } from './cssColors.js';
-import type { KitTheme, ThemeNamespace } from './kitTailwindTheme.js';
+import { isStockClass, type KitTheme, type ThemeNamespace } from './kitTailwindTheme.js';
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
 import {
   BLUR,
@@ -40,6 +40,12 @@ export interface ClassStyle {
   scope: 'always' | 'frame' | 'state';
   /** A font-size class's own line height, which it takes along when it goes. */
   lineHeight?: string;
+  /**
+   * A kit theme colour key makes this class a second utility's too, so it sets
+   * more than one property and Tailwind may order its rules after a class
+   * written for one of them. An edit keeps it and writes inline instead.
+   */
+  shared?: true;
 }
 
 interface Utility {
@@ -185,6 +191,13 @@ const BOX_UTILITIES: Readonly<Record<string, readonly string[]>> = {
   'rounded-ee': ['borderBottomRightRadius'],
 };
 const SIGNED_UTILITIES = /^(?:m[xytrblse]?|tracking)$/;
+const COLOUR_UTILITY = /^(text|bg|fill|stroke|border(?:-[xytrblse])?)-(.+)$/;
+const COLOUR_PROPERTIES: Readonly<Record<string, string>> = {
+  text: 'color',
+  bg: 'backgroundColor',
+  fill: 'fill',
+  stroke: 'stroke',
+};
 /** Utilities that set one property, by name, when their value is of the kind it takes. */
 const SINGLE_PROPERTY_UTILITIES = new Map([
   ['bg', { sets: 'backgroundColor', accepts: isColour }],
@@ -283,12 +296,41 @@ function filterUtility(utility: string): Omit<ClassStyle, 'scope'> | null {
 export function classStyle(token: string, theme: KitTheme = {}): ClassStyle | null {
   const variants = splitOutside(token, ':');
   const utility = (variants.pop() ?? '').replace(/^!/, '');
-  const read = utilityStyle(utility, theme);
+  const read = withThemeColour(utility, utilityStyle(utility, theme), theme);
   if (!read) return null;
   let scope: ClassStyle['scope'] = 'always';
   if (variants.some((variant) => FRAME_VARIANT.test(variant))) scope = 'frame';
   else if (variants.length > 0) scope = 'state';
   return { ...read, scope };
+}
+
+/**
+ * Adds the colour a kit theme key gives a class. Where that class is also
+ * another utility's, stock or the theme's, Tailwind emits both.
+ */
+function withThemeColour(
+  utility: string,
+  read: Omit<ClassStyle, 'scope'> | null,
+  theme: KitTheme,
+): Omit<ClassStyle, 'scope'> | null {
+  const colour = themeColour(utility, theme);
+  if (colour === null) return read;
+  if (read === null)
+    return isStockClass(utility) ? { sets: colour, shared: true } : { sets: colour };
+  if (colour.every((longhand) => read.sets.includes(longhand))) return read;
+  return { ...read, sets: [...read.sets, ...colour], shared: true };
+}
+
+/** The colour longhands a kit theme colour key in this class sets, or null when it names none. */
+function themeColour(utility: string, theme: KitTheme): readonly string[] | null {
+  const match = COLOUR_UTILITY.exec(utility);
+  if (!match || theme.colors === undefined) return null;
+  const [, prefix = '', value = ''] = match;
+  const [key = ''] = splitOutside(value, '/');
+  if (!Object.hasOwn(theme.colors, key)) return null;
+  if (Object.hasOwn(COLOUR_PROPERTIES, prefix)) return [COLOUR_PROPERTIES[prefix]];
+  const sides = BORDER_SIDES[prefix.slice('border-'.length)] ?? SIDES;
+  return sides.map((side) => `border${side}Color`);
 }
 
 function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
@@ -301,14 +343,14 @@ function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope
   const [name = '', ...rest] = utility.split('-');
   const value = rest.join('-');
   const single = SINGLE_PROPERTY_UTILITIES.get(name);
-  if (single) return single.accepts(value, theme) ? { sets: [single.sets] } : null;
+  if (single) return single.accepts(value) ? { sets: [single.sets] } : null;
   switch (name) {
     case 'text':
       return textStyle(value, theme);
     case 'border':
-      return borderStyle(value, theme);
+      return borderStyle(value);
     case 'stroke':
-      return strokeStyle(value, theme);
+      return strokeStyle(value);
     case 'font':
       return fontStyle(value);
     case 'grow':
@@ -337,14 +379,15 @@ function textStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | 
   const custom = arbitrary(key);
   const isSize =
     Object.hasOwn(FONT_SIZE_LINE_HEIGHT, key) ||
+    (theme.fontSize !== undefined && Object.hasOwn(theme.fontSize, key)) ||
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
-  if (!isSize) return isColour(value, theme) ? { sets: ['color'] } : null;
+  if (!isSize) return isColour(value) ? { sets: ['color'] } : null;
   const lineHeight = modifierLineHeight(modifiers.at(0)) ?? stockLineHeight(key, theme);
   return lineHeight ? { sets: ['fontSize'], lineHeight } : { sets: ['fontSize'] };
 }
 
-function borderStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
+function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {
   const side = /^([xytrblse])(?:-|$)/.exec(value)?.[1] ?? '';
   const sides = BORDER_SIDES[side] ?? SIDES;
   const rest = side === '' ? value : value.slice(side.length + 1);
@@ -354,10 +397,10 @@ function borderStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> 
     custom?.hint === 'length' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: sides.map((each) => `border${each}Width`) };
-  return isColour(rest, theme) ? { sets: sides.map((each) => `border${each}Color`) } : null;
+  return isColour(rest) ? { sets: sides.map((each) => `border${each}Color`) } : null;
 }
 
-function strokeStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
+function strokeStyle(value: string): Omit<ClassStyle, 'scope'> | null {
   const custom = arbitrary(value);
   const isWidth =
     Object.hasOwn(STROKE_WIDTH, value) ||
@@ -366,7 +409,7 @@ function strokeStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> 
     custom?.hint === 'percentage' ||
     (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
   if (isWidth) return { sets: ['strokeWidth'] };
-  return isColour(value, theme) ? { sets: ['stroke'] } : null;
+  return isColour(value) ? { sets: ['stroke'] } : null;
 }
 
 function fontStyle(value: string): Omit<ClassStyle, 'scope'> | null {
@@ -381,13 +424,12 @@ function fontStyle(value: string): Omit<ClassStyle, 'scope'> | null {
 }
 
 /**
- * A colour key, Tailwind's or the kit's, or an arbitrary colour; Tailwind
- * reads a bare `var()` as one too.
+ * A stock colour key or an arbitrary colour; Tailwind reads a bare `var()` as
+ * one too. A kit's colour keys are read by withThemeColour.
  */
-function isColour(value: string, theme: KitTheme): boolean {
+function isColour(value: string): boolean {
   const [key = ''] = splitOutside(value, '/');
-  if (COLOUR_KEY.test(key) || (theme.colors !== undefined && Object.hasOwn(theme.colors, key)))
-    return true;
+  if (COLOUR_KEY.test(key)) return true;
   const custom = arbitrary(key);
   if (!custom) return false;
   if (custom.hint) return custom.hint === 'color';

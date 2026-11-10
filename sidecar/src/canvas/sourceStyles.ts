@@ -133,19 +133,24 @@ function setStyle(
   const own = longhands(property);
   const within = (sets: readonly string[]) => sets.every((longhand) => own.includes(longhand));
   const live = liveClasses(slots, theme);
-  // A breakpoint or colour-mode class may be what this frame shows, and only
-  // the style attribute is sure to win over it.
-  const frameScoped = live.some(
-    ({ read }) => read.scope === 'frame' && read.sets.some((longhand) => own.includes(longhand)),
+  // A class that stays may be what this frame shows: a breakpoint or
+  // colour-mode one, or one a kit theme key makes two utilities. Only the
+  // style attribute is sure to win over it.
+  const outranked = live.some(
+    ({ read }) =>
+      (read.scope === 'frame' || (read.scope === 'always' && read.shared)) &&
+      read.sets.some((longhand) => own.includes(longhand)),
   );
   // An inline shorthand that also sets this property would win over a class.
   const inlineShorthand = style.entries.some((entry) => {
     const sets = longhands(entry.name);
     return !entry.removed && !within(sets) && own.every((longhand) => sets.includes(longhand));
   });
-  const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution, theme);
+  const name = outranked || inlineShorthand ? null : styleClass(property, resolution, theme);
 
-  const dead = live.filter(({ read }) => read.scope === 'always' && within(read.sets));
+  const dead = live.filter(
+    ({ read }) => read.scope === 'always' && !read.shared && within(read.sets),
+  );
   keepFilter(property, name, dead, style);
   const first = dead.at(0)?.entry;
   // A class that applies always has no variant, so its ! leads.

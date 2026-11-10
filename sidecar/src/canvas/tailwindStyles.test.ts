@@ -156,6 +156,25 @@ test('a colour key the kit theme names is read as a colour, with its opacity and
   assert.equal(classStyle('fill-accent'), null);
 });
 
+test('a kit colour key that is also another utility of its prefix reads as both, shared', () => {
+  const theme = {
+    colors: { cover: '#f00', brand: '#f00', '2': '#f00' },
+    fontSize: { brand: '20px' },
+  };
+  assert.deepEqual(classStyle('bg-cover', theme), {
+    sets: ['backgroundColor'],
+    shared: true,
+    scope: 'always',
+  });
+  assert.deepEqual(classStyle('text-brand', theme), {
+    sets: ['fontSize', 'color'],
+    shared: true,
+    scope: 'always',
+  });
+  assert.deepEqual(classStyle('border-t-2', theme)?.sets, ['borderTopWidth', 'borderTopColor']);
+  assert.deepEqual(classStyle('bg-brand', theme), { sets: ['backgroundColor'], scope: 'always' });
+});
+
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {
   assert.equal(classStyle('md:p-4')?.scope, 'frame');
   assert.equal(classStyle('dark:hover:bg-black')?.scope, 'frame');

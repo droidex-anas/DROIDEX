@@ -109,3 +109,63 @@ test('an SVG paint attribute worked out in code is left to the agent, not droppe
     );
   }
 });
+
+test('a class a kit theme colour key makes two utilities stays, and the edited property goes inline', () => {
+  const other = token('--ds-other');
+  const cases: { markup: string; colors: string; styles: ResolvedStyle[]; changed: string }[] = [
+    {
+      markup:
+        '<div className="bg-cover" style={{ backgroundImage: "linear-gradient(red, blue)" }}>Box</div>',
+      colors: 'cover',
+      styles: [{ property: 'backgroundColor', resolution: other }],
+      changed:
+        '<div className="bg-cover" style={{ backgroundImage: "linear-gradient(red, blue)", backgroundColor: "var(--ds-other)" }}>Box</div>',
+    },
+    {
+      markup: '<p className="text-brand">Box</p>',
+      colors: 'brand',
+      styles: [{ property: 'color', resolution: other }],
+      changed: '<p className="text-brand" style={{ color: "var(--ds-other)" }}>Box</p>',
+    },
+    {
+      markup: '<p className="text-brand">Box</p>',
+      colors: 'brand',
+      styles: [{ property: 'fontSize', resolution: raw('24px') }],
+      changed: '<p className="text-brand" style={{ fontSize: 24 }}>Box</p>',
+    },
+    {
+      markup: '<p className="text-sm text-center">Box</p>',
+      colors: 'sm',
+      styles: [{ property: 'color', resolution: other }],
+      changed: '<p className="text-sm text-center" style={{ color: "var(--ds-other)" }}>Box</p>',
+    },
+    {
+      markup: '<p className="text-center">Box</p>',
+      colors: 'center',
+      styles: [{ property: 'color', resolution: other }],
+      changed: '<p className="text-center" style={{ color: "var(--ds-other)" }}>Box</p>',
+    },
+    {
+      markup: '<div className="border-2">Box</div>',
+      colors: '2',
+      styles: [{ property: 'borderColor', resolution: other }],
+      changed: '<div className="border-2" style={{ borderColor: "var(--ds-other)" }}>Box</div>',
+    },
+    {
+      markup: '<path className="stroke-2" />',
+      colors: '2',
+      styles: [{ property: 'stroke', resolution: other }],
+      changed: '<path className="stroke-2" style={{ stroke: "var(--ds-other)" }} />',
+    },
+  ];
+  for (const { markup, colors, styles, changed } of cases) {
+    const files = { 'main.tsx': `export default () => ${markup};\n` };
+    const mapped = onlyElement(files);
+    const theme = { colors: { [colors]: '#ff0000' }, fontSize: { brand: '20px' } };
+    const edited = applyElementEdit(files, mapped.elements, {
+      element: reference(mapped.element),
+      change: { kind: 'style', styles, theme },
+    });
+    assert.deepEqual(edited, { 'main.tsx': `export default () => ${changed};\n` }, markup);
+  }
+});

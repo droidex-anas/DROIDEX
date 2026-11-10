@@ -172,6 +172,11 @@ function readStockClasses(): StockClasses {
   return stockClasses;
 }
 
+/** Whether stock Tailwind generates this class, static utilities such as bg-cover included. */
+export function isStockClass(name: string): boolean {
+  return readStockClasses().names.has(name);
+}
+
 /** Whether a key is the default theme's own or would name a class stock Tailwind generates. */
 function isStockKey(entry: ThemeEntry): boolean {
   if (STOCK_KEYS[entry.namespace].has(entry.key)) return true;
