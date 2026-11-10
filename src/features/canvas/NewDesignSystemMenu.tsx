@@ -55,7 +55,7 @@ export function NewDesignSystemMenu({
             <span className="flex min-w-0 flex-1 flex-col">
               <span className="truncate">From this project: {fromProject.folderName}</span>
               <span className="text-caption text-muted">
-                Reads your Tailwind config, CSS tokens and design docs
+                Reads your Tailwind config, CSS tokens, design docs and shadcn/ui components
               </span>
             </span>
           </Menu.Item>
