@@ -57,6 +57,8 @@ interface InlineStyle {
 const UNITLESS_PROPERTIES = new Set(['opacity', 'fontWeight', 'lineHeight', 'flexGrow']);
 const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
+const FILTERS = new Set(['filter', 'backdropFilter']);
+const BLUR_OR_RESET_CLASS = /^!?(?:backdrop-)?(?:blur(?:-|$)|filter-none$)/;
 
 /** The replacements that set every style in `styles`, in order, on one element. */
 export function styleReplacements(
@@ -109,6 +111,7 @@ function setStyle(
   const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution, theme);
 
   const dead = live.filter(({ read }) => read.scope === 'always' && within(read.sets));
+  keepFilter(property, name, dead, style);
   const first = dead.at(0)?.entry;
   // A class that applies always has no variant, so its ! leads.
   const important = dead.some(({ entry }) => entry.name?.startsWith('!') === true);
@@ -121,13 +124,36 @@ function setStyle(
     if (entry.name !== property && within(longhands(entry.name))) entry.removed = true;
 
   if (name === null) {
-    setInline(style, property, inlineValue(property, styleValue(resolution)));
+    setInline(style, property, inlineValue(property, styleValue(property, resolution)));
   } else {
     for (const entry of style.entries) if (entry.name === property) entry.removed = true;
     if (first) first.name = important ? `!${name}` : name;
     else addClass(slots, name);
   }
   keepLineHeight(slots, style, lostLineHeight, theme);
+}
+
+/**
+ * A blur class sets one function of a filter that composes with the others,
+ * which a blur inline, or in place of a filter set another way, would drop. A
+ * `filter-none` reset would win over the blur, so the blur takes its place.
+ */
+function keepFilter(
+  property: string,
+  name: string | null,
+  dead: readonly { entry: ClassEntry }[],
+  style: InlineStyle,
+) {
+  if (!FILTERS.has(property)) return;
+  if (
+    name === null ||
+    dead.some(({ entry }) => !BLUR_OR_RESET_CLASS.test(entry.name ?? '')) ||
+    style.entries.some((entry) => !entry.removed && entry.name === property)
+  )
+    throw new SourceElementError(
+      'ambiguous_element',
+      `This element sets its ${property} another way too, so a blur written here would drop the rest. Ask the agent to change its blur.`,
+    );
 }
 
 /** A font-size class sets the line height too, which stays what it was when the class goes. */

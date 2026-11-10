@@ -27,6 +27,8 @@ export const STYLE_PROPERTIES: readonly string[] = [
   'backgroundColor',
   'borderColor',
   'boxShadow',
+  'filter',
+  'backdropFilter',
   'fontFamily',
   'fontSize',
   'fontWeight',

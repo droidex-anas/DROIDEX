@@ -138,6 +138,27 @@ test('a style edit writes the class that says it in place of the classes it make
       changed:
         '<div className="p-[var(--ds-space-4)] flex gap-2 bg-[color:var(--ds-surface)] -mt-4" style={{ color: "#a1b2c3" }}>Hi</div>',
     },
+    {
+      markup: '<div className="grayscale blur-sm">Hi</div>',
+      styles: [
+        { property: 'filter', resolution: raw('blur(16px)') },
+        { property: 'backdropFilter', resolution: token('--ds-blur-soft') },
+        {
+          property: 'boxShadow',
+          resolution: { kind: 'tokens', tokens: ['--ds-shadow-sm', '--ds-shadow-md'] },
+        },
+      ],
+      changed:
+        '<div className="grayscale blur-lg backdrop-blur-[var(--ds-blur-soft)] shadow-[shadow:var(--ds-shadow-sm),var(--ds-shadow-md)]">Hi</div>',
+    },
+    {
+      markup: '<div className="filter-none backdrop-filter-none">Hi</div>',
+      styles: [
+        { property: 'filter', resolution: raw('blur(16px)') },
+        { property: 'backdropFilter', resolution: raw('blur(16px)') },
+      ],
+      changed: '<div className="blur-lg backdrop-blur-lg">Hi</div>',
+    },
   ];
   for (const { markup, styles, changed } of cases) {
     const files = { 'main.tsx': `export default () => ${markup};\n` };
@@ -188,6 +209,27 @@ test('a style no class can say, or one a class would not win for, is written inl
       change: { kind: 'style', styles },
     });
     assert.deepEqual(first, { 'main.tsx': `export default () => ${changed};\n` });
+  }
+});
+
+test('a blur that would drop the rest of a filter set another way is left to the agent', () => {
+  for (const markup of [
+    '<div className="md:blur-sm">Hi</div>',
+    '<div className="md:filter-none">Hi</div>',
+    '<div className="[filter:grayscale(1)_blur(2px)]">Hi</div>',
+    '<div style={{ filter: "grayscale(1)" }}>Hi</div>',
+  ]) {
+    const files = { 'main.tsx': `export default () => ${markup};\n` };
+    const mapped = onlyElement(files);
+    assert.throws(
+      () =>
+        applyElementEdit(files, mapped.elements, {
+          element: reference(mapped.element),
+          change: { kind: 'style', styles: [{ property: 'filter', resolution: raw('blur(8px)') }] },
+        }),
+      (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+      markup,
+    );
   }
 });
 

@@ -9,6 +9,7 @@
 import type { KitTheme, ThemeNamespace } from './kitTailwindTheme.js';
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
 import {
+  BLUR,
   BORDER_WIDTH,
   FONT_FAMILIES,
   FONT_SIZE_LINE_HEIGHT,
@@ -100,6 +101,8 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   backgroundColor: { prefix: 'bg', hint: 'color' },
   borderColor: { prefix: 'border', hint: 'color' },
   boxShadow: { prefix: 'shadow', hint: 'shadow' },
+  filter: { prefix: 'blur', scale: BLUR },
+  backdropFilter: { prefix: 'backdrop-blur', scale: BLUR },
   fontFamily: { prefix: 'font', hint: 'family-name' },
   fontSize: { prefix: 'text', hint: 'length' },
   fontWeight: { prefix: 'font', hint: 'number', scale: FONT_WEIGHT },
@@ -207,10 +210,11 @@ export function styleClass(
   theme: KitTheme = {},
 ): string | null {
   const utility = Object.hasOwn(UTILITIES, property) ? UTILITIES[property] : undefined;
-  if (resolution.kind === 'token') {
+  if (resolution.kind !== 'raw') {
     if (!utility) return null;
     const hint = utility.hint ? `${utility.hint}:` : '';
-    return `${utility.prefix}-[${hint}var(${resolution.token})]`;
+    const tokens = resolution.kind === 'token' ? [resolution.token] : resolution.tokens;
+    return `${utility.prefix}-[${hint}${tokens.map((token) => `var(${token})`).join(',')}]`;
   }
   const keyword = keywordClass(property, resolution.value);
   if (keyword !== undefined) return keyword;
@@ -244,6 +248,21 @@ function boxUtility(utility: string): Omit<ClassStyle, 'scope'> | null | undefin
     return { sets: BOX_UTILITIES[prefix] ?? [] };
   }
   return negative ? null : undefined;
+}
+
+/**
+ * A blur or backdrop blur (`blur-md`, `backdrop-blur-[var(--x)]`), which sets
+ * one function of its filter, or a reset of the whole filter (`filter-none`);
+ * grayscale and the other functions are not read.
+ */
+function filterUtility(utility: string): Omit<ClassStyle, 'scope'> | null {
+  const reset = /^(backdrop-)?filter-none$/.exec(utility);
+  if (reset) return { sets: [reset[1] ? 'backdropFilter' : 'filter'] };
+  const blur = /^(backdrop-)?blur(?:-(.+))?$/.exec(utility);
+  if (!blur) return null;
+  const [, backdrop, key = ''] = blur;
+  if (!Object.hasOwn(BLUR, key) && arbitrary(key) === null) return null;
+  return { sets: [backdrop ? 'backdropFilter' : 'filter'] };
 }
 
 /**
@@ -285,7 +304,7 @@ function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope
       // `grow` and `grow-0` are keywords above; this reads an arbitrary one.
       return arbitrary(value) ? { sets: ['flexGrow'] } : null;
     default:
-      return null;
+      return filterUtility(utility);
   }
 }
 

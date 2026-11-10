@@ -15,8 +15,10 @@ import {
   canonicalCss,
   resolveStyleChange,
   STYLE_PROPERTIES,
+  styleValue,
   type StyleResolution,
 } from './styleEdits.js';
+import { BLUR } from './tailwindStock.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
 
 const TOKEN = '--ds-probe';
@@ -47,7 +49,16 @@ const RAW_VALUES = [
   'auto',
   'fit-content',
   'none',
+  ...Object.values(BLUR),
+  'blur(0.5rem)',
 ];
+// Tailwind sets a shadow through its own variable, after ring layers, and a
+// blur through its own, which the filter composes.
+const SET_THROUGH: Readonly<Record<string, string>> = {
+  boxShadow: '--tw-shadow',
+  filter: '--tw-blur',
+  backdropFilter: '--tw-backdrop-blur',
+};
 
 after(() => stopCanvasRuntime());
 
@@ -57,6 +68,7 @@ function writableClasses() {
   for (const [property, rule] of Object.entries(STYLE_PROPERTIES)) {
     const values = typeof rule.values === 'string' ? RAW_VALUES : rule.values;
     const resolutions: StyleResolution[] = [{ kind: 'token', token: TOKEN }];
+    if (rule.stacks) resolutions.push({ kind: 'tokens', tokens: [TOKEN, `${TOKEN}-2`] });
     for (const value of values) {
       try {
         resolutions.push(resolveStyleChange({ property, value }, {}));
@@ -66,8 +78,7 @@ function writableClasses() {
     }
     for (const resolution of resolutions) {
       const name = styleClass(property, resolution);
-      const value = resolution.kind === 'token' ? `var(${resolution.token})` : resolution.value;
-      if (name !== null) written.push({ property, name, value });
+      if (name !== null) written.push({ property, name, value: styleValue(property, resolution) });
     }
   }
   return written;
@@ -84,7 +95,12 @@ async function compiled(names: readonly string[]): Promise<Map<string, Map<strin
   );
   const rules = new Map<string, Map<string, string>>();
   result.root.walkRules((rule) => {
-    const name = rule.selector.slice(1).replace(/\\(.)/g, '$1');
+    // A comma is escaped by its code point, `\2c `.
+    const name = rule.selector
+      .slice(1)
+      .replace(/\\([\da-f]{1,6}) ?|\\(.)/gi, (_, code?: string, character?: string) =>
+        code === undefined ? (character ?? '') : String.fromCodePoint(parseInt(code, 16)),
+      );
     const declarations = new Map<string, string>();
     rule.walkDecls((declaration) => {
       declarations.set(declaration.prop, declaration.value);
@@ -101,9 +117,12 @@ test('every class a style edit writes sets its property to the value the edit me
     const declarations = rules.get(name);
     assert.ok(declarations, `Tailwind generated nothing for ${name}`);
     const css = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-    // Tailwind sets a shadow through its own variable, after ring layers.
-    const set = property === 'boxShadow' ? declarations.get('--tw-shadow') : declarations.get(css);
-    assert.equal(canonicalCss(set ?? ''), canonicalCss(value), `${name} for ${property}: ${value}`);
+    const set = declarations.get(SET_THROUGH[property] ?? css);
+    assert.ok(set !== undefined, `${name} sets no ${css}`);
+    // `blur-none` sets its blur to nothing.
+    const isFilter = property === 'filter' || property === 'backdropFilter';
+    const read = isFilter && set.trim() === '' ? 'none' : set;
+    assert.equal(canonicalCss(read), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
   }
 });

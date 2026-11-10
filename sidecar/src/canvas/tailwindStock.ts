@@ -83,6 +83,18 @@ export const FONT_SIZE_LINE_HEIGHT: Scale = {
 };
 export const FONT_FAMILIES = new Set(['sans', 'serif', 'mono']);
 export const SHADOWS = new Set(['', 'sm', 'md', 'lg', 'xl', '2xl', 'inner', 'none']);
+/** Each stock blur by the filter function it adds; `blur-none` adds none. Backdrop blurs share it. */
+export const BLUR: Scale = {
+  none: 'none',
+  '0': 'blur(0)',
+  sm: 'blur(4px)',
+  '': 'blur(8px)',
+  md: 'blur(12px)',
+  lg: 'blur(16px)',
+  xl: 'blur(24px)',
+  '2xl': 'blur(40px)',
+  '3xl': 'blur(64px)',
+};
 export const BORDER_WIDTH: Scale = { '': '1px', '0': '0px', '2': '2px', '4': '4px', '8': '8px' };
 
 /** Keyword properties, by the CSS value each stock class sets. */
