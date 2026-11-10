@@ -6,15 +6,27 @@ import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { storageFailure } from './canvasError.js';
-import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
+import { ownedCanvasRuntimeDir, packageDirectory } from './canvasRuntime.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
+import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
 
-export function exportPackageJson(): string {
+// Every static `import … from`, `export … from` and bare `import '…'`: the
+// only forms a design build accepts, so nothing it imports is missed.
+const IMPORTED_SPECIFIER = /\b(?:from|import)\s*['"]([^'"]+)['"]/g;
+
+/**
+ * The export's package.json. The canvas toolchain and its fixed runtime
+ * packages are always listed; a library package (Radix, cva, clsx,
+ * tailwind-merge) only when `sources` import it.
+ */
+export function exportPackageJson(sources: Iterable<string>): string {
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
   const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
   const requireFromRuntime = createRequire(anchor);
   const version = (name: string): string => {
-    const manifestPath = requireFromRuntime.resolve(`${name}/package.json`);
+    const directory = packageDirectory(requireFromRuntime, name);
+    if (directory === null) throw new Error(`${name} is not in the Canvas runtime.`);
+    const manifestPath = join(directory, 'package.json');
     if (ownedCanvasRuntimeDir !== null) {
       const fromRuntime = relative(join(ownedCanvasRuntimeDir, 'node_modules'), manifestPath);
       if (fromRuntime === '..' || fromRuntime.startsWith(`..${sep}`) || isAbsolute(fromRuntime))
@@ -24,20 +36,23 @@ export function exportPackageJson(): string {
     return manifest.version;
   };
   try {
+    const dependencies: Record<string, string> = {
+      react: version('react'),
+      'react-dom': version('react-dom'),
+      'lucide-react': '0.460.0',
+      recharts: version('recharts'),
+      'react-is': version('react-is'),
+      'simple-icons': '16.36.0',
+    };
+    for (const name of importedLibraryPackages(sources, Object.keys(dependencies)))
+      dependencies[name] = version(name);
     return `${JSON.stringify(
       {
         name: 'droidex-canvas-export',
         private: true,
         type: 'module',
         scripts: { build: 'node build.mjs', preview: 'node build.mjs --serve' },
-        dependencies: {
-          react: version('react'),
-          'react-dom': version('react-dom'),
-          'lucide-react': '0.460.0',
-          recharts: version('recharts'),
-          'react-is': version('react-is'),
-          'simple-icons': '16.36.0',
-        },
+        dependencies,
         devDependencies: {
           esbuild: version('esbuild'),
           postcss: version('postcss'),
@@ -51,6 +66,17 @@ export function exportPackageJson(): string {
   } catch (error) {
     throw storageFailure('The Canvas build toolchain is unavailable. Reopen DROIDEX.', error);
   }
+}
+
+/** The design packages `sources` import beyond those always listed, sorted. */
+function importedLibraryPackages(sources: Iterable<string>, listed: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const source of sources) {
+    for (const [, specifier] of source.matchAll(IMPORTED_SPECIFIER)) {
+      if (DESIGN_PACKAGE_ENTRIES.has(specifier)) names.add(packageName(specifier));
+    }
+  }
+  return [...names].filter((name) => !listed.includes(name)).sort();
 }
 
 export const BUILD_SCRIPT = `import { createServer } from 'node:http';

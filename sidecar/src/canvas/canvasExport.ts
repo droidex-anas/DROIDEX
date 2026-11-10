@@ -167,7 +167,8 @@ async function canvasSourceFiles(
   }
   for (const [id, bytes] of fonts) files.push({ path: `fonts/${id}.woff2`, content: bytes });
 
-  files.push({ path: 'package.json', content: exportPackageJson() });
+  const sources = [...saved.files.values(), ...Object.values(kit.files)];
+  files.push({ path: 'package.json', content: exportPackageJson(sources) });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
   return files;
@@ -445,7 +446,10 @@ images the source and kit refer to in \`assets/\`.
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
 are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`. Direct dependency versions are exact in
-\`package.json\`. No lockfile is generated during export: npm resolves transitive
-dependencies when you install, without the export needing registry access.
+and \`@droidex/design-system\`, plus \`radix-ui\` and its \`@radix-ui/react-*\`
+primitives, \`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\` and
+\`tailwind-merge\`, which \`package.json\` lists only when the source or kit
+imports them. Direct dependency versions are exact in \`package.json\`. No
+lockfile is generated during export: npm resolves transitive dependencies when
+you install, without the export needing registry access.
 `;

@@ -206,7 +206,7 @@ function resolveEntry(runtimeRequire: NodeJS.Require, specifier: string): string
  * its package.json rather than resolved, because an exports map may hide both
  * that file and the entry a design needs.
  */
-function packageDirectory(runtimeRequire: NodeJS.Require, name: string): string | null {
+export function packageDirectory(runtimeRequire: NodeJS.Require, name: string): string | null {
   const modules = runtimeRequire.resolve
     .paths(name)
     ?.find((directory) => existsSync(join(directory, name, 'package.json')));
