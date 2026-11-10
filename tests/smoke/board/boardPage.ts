@@ -10,6 +10,7 @@ declare global {
   interface Window {
     boardGuestReady: boolean;
     guestCommands: Record<string, unknown>[];
+    guestTreeHeld: boolean;
     guestAnswer: (command: string, argument: Record<string, unknown>) => object | null;
   }
 }
@@ -63,12 +64,13 @@ export async function openBoard(
  * locate directly with whatever it gives. A hover is
  * answered by `guestAnswer` directly, with nothing beside the element unless it
  * says, and not recorded; a tree is answered by `guestAnswer('tree', {})`
- * directly, and recorded.
+ * directly, or never while `guestTreeHeld` is set, and recorded.
  */
 export async function stubGuests(page: Page) {
   await page.addInitScript(() => {
     window.boardGuestReady = false;
     window.guestCommands = [];
+    window.guestTreeHeld = false;
     window.guestAnswer = () => null;
     Object.defineProperty(window, 'droidex', {
       value: {
@@ -119,6 +121,7 @@ export async function stubGuests(page: Page) {
             }
             if (call?.[1] === 'tree') {
               window.guestCommands.push({ command: 'tree' });
+              if (window.guestTreeHeld) await new Promise(() => {});
               return JSON.stringify(window.guestAnswer('tree', {}));
             }
             if (call?.[1] === 'hover') {

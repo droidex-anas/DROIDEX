@@ -512,4 +512,14 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   await page.clock.runFor(100);
   await expect(page.getByRole('region', { name: 'Styles of the selected section' })).toBeVisible();
   expect(await trees()).toBe(1);
+
+  // A frame shut and opened again reads its elements again, showing none of the last read meanwhile.
+  await page.evaluate(() => {
+    window.guestTreeHeld = true;
+  });
+  await frameRow.getByRole('button', { name: 'Collapse' }).click();
+  await frameRow.getByRole('button', { name: 'Expand' }).click();
+  await expect(tree.getByText('Reading elements…')).toBeVisible();
+  await expect(card).toHaveCount(0);
+  expect(await trees()).toBe(2);
 });
