@@ -317,6 +317,8 @@ export interface CanvasFrame {
   variantOf: string | null;
   /** The copy its seed made; while `revisionId` is this one, nobody has changed it. */
   seededRevisionId: string | null;
+  /** The user hid it from the board; an agent still reads and writes it. */
+  hidden: boolean;
   build: CanvasBuildState;
 }
 
@@ -337,6 +339,8 @@ export interface CanvasChange {
   removedDesignIds: string[];
   /** Present only on a change that touched the annotation layer. */
   annotations?: AnnotationChange;
+  /** Present only on a reorder: every frame's designId, back to front. */
+  order?: string[];
 }
 
 export interface CanvasSummary {
@@ -453,6 +457,19 @@ export interface RenameFrameInput {
   designId: string;
   name: string;
   expectedManifestVersion: number;
+}
+
+export interface SetFrameHiddenInput {
+  mutationId: string;
+  designId: string;
+  hidden: boolean;
+  expectedManifestVersion: number;
+}
+
+/** The whole stacking order, back to front, naming each frame on the canvas once. */
+export interface ReorderFramesInput {
+  mutationId: string;
+  designIds: string[];
 }
 
 // The stable codes from spec §8. Every failure carries a short recovery message
@@ -604,6 +621,20 @@ export type CanvasCommand =
       appSessionId: string;
       canvasId: string;
       input: RenameFrameInput;
+    }
+  | {
+      type: 'canvas.setFrameHidden';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: SetFrameHiddenInput;
+    }
+  | {
+      type: 'canvas.reorderFrames';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: ReorderFramesInput;
     }
   | {
       type: 'canvas.annotate';
@@ -759,6 +790,8 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'hiddenSet'; change: CanvasChange }
+  | { kind: 'reordered'; change: CanvasChange }
   | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildReport } from './canvasAgentReport.js';
+import { agentFrame, buildReport } from './canvasAgentReport.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
 import type { CanvasDiagnostic, CanvasFrame } from './protocol.js';
 
@@ -15,6 +15,7 @@ function frame(diagnostics: CanvasDiagnostic[]): CanvasFrame {
     designSystem: AUTO_DESIGN_SYSTEM_REF,
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: {
       status: 'ready',
       revisionId: 'revision-1',
@@ -115,4 +116,9 @@ test('a kit finding names the rule in effect: Guide notes it on the built frame,
     broken.next,
     'Fix main.tsx line 3 and write again with expectedRevisionId "revision-1".',
   );
+});
+
+test('an agent sees a frame the user hid marked hidden, and a shown one unmarked', () => {
+  assert.equal(agentFrame({ ...frame([]), hidden: true }, null).hidden, true);
+  assert.equal('hidden' in agentFrame(frame([]), null), false);
 });

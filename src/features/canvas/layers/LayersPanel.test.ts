@@ -20,6 +20,7 @@ function frame(designId: string, name: string, rect: FrameRect): CanvasFrame {
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'ready', revisionId: 'rev_01', generation: 1, diagnostics: [] },
   };
 }
@@ -31,6 +32,8 @@ function panel(props: Partial<LayersPanelProps>): string {
       selectedFrameIds: [],
       agentWorking: false,
       onRename: undefined,
+      onSetHidden: undefined,
+      onReorder: undefined,
       onPick: () => undefined,
       onFocusFrame: () => undefined,
       onLeave: () => undefined,
@@ -48,8 +51,8 @@ function rows(markup: string): { label: string; selected: boolean; id: string }[
   }));
 }
 
-test('rows follow the canvas order, not where the frames sit, and say what is selected', () => {
-  // The board reads Checkout before Pricing; the panel keeps the canvas's own order.
+test('rows run front to back in the canvas order, not where the frames sit, and say what is selected', () => {
+  // The board reads Checkout before Pricing; the panel keeps the canvas's stacking, front first.
   const frames = [
     frame('a', 'Pricing', { x: 600, y: 400, width: 400, height: 300 }),
     frame('b', 'Checkout', { x: 0, y: 0, width: 400, height: 300 }),
@@ -63,14 +66,32 @@ test('rows follow the canvas order, not where the frames sit, and say what is se
   assert.deepEqual(
     shown.map(({ label, selected }) => [label, selected]),
     [
-      ['Pricing, Ready', true],
-      ['Checkout, Ready', false],
       ['Checkout (Variant 2), Failed', true],
+      ['Checkout, Ready', false],
+      ['Pricing, Ready', true],
     ],
   );
   // The keyboard starts on the first frame picked.
-  assert.match(markup, new RegExp(`aria-activedescendant="${shown[2].id}"`));
+  assert.match(markup, new RegExp(`aria-activedescendant="${shown[0].id}"`));
   assert.match(markup, /role="tree"[^>]*aria-multiselectable="true"/);
+});
+
+test('a hidden frame says so, dimmed, with its eye pressed; a chat that cannot edit has no eye', () => {
+  const frames = [
+    frame('a', 'Pricing', { x: 0, y: 0, width: 400, height: 300 }),
+    { ...frame('b', 'Checkout', { x: 500, y: 0, width: 400, height: 300 }), hidden: true },
+  ];
+  const editable = panel({ frames, onSetHidden: () => undefined, onReorder: () => undefined });
+  assert.deepEqual(
+    rows(editable).map(({ label }) => label),
+    ['Checkout, Ready, hidden', 'Pricing, Ready'],
+  );
+  assert.match(editable, /<span class="text-muted">Checkout<\/span>/);
+  const eyes = [...editable.matchAll(/<button[^>]*aria-label="Hide"[^>]*>/g)].map(([tag]) =>
+    tag.includes('aria-pressed="true"'),
+  );
+  assert.deepEqual(eyes, [true, false]);
+  assert.doesNotMatch(panel({ frames }), /aria-label="Hide"/);
 });
 
 test('a canvas without frames says so instead of an empty tree', () => {

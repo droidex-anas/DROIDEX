@@ -17,6 +17,7 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     designSystem,
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'pending' },
   };
 }
@@ -110,4 +111,16 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
   });
   assert.equal(moved.annotationsVersion, 3);
   assert.equal(moved.annotations, next.annotations);
+});
+
+test('a reorder restacks the frames it names, back to front', () => {
+  const next = applyCanvasChange(
+    { ...snapshot, frames: [frame('hey'), frame('cards'), frame('cta')] },
+    { canvasId: 'cv_01', sequence: 5, frames: [], removedDesignIds: [], order: ['cta', 'hey'] },
+  );
+  // A frame the order does not name, such as one created since, keeps the front.
+  assert.deepEqual(
+    next.frames.map((entry) => entry.designId),
+    ['cta', 'hey', 'cards'],
+  );
 });

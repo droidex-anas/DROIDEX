@@ -5,6 +5,13 @@
 
 import type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  ReorderFramesInput,
+  SetFrameHiddenInput,
+  UndoRemovalInput,
+} from './frameEditSchema.js';
+import type {
   CanvasTurnContext,
   CreateCanvasResult,
   CreateFramesInput,
@@ -13,13 +20,10 @@ import type {
   DesignSystemVersionRef,
   EditElementInput,
   FrameRect,
-  RemoveFramesInput,
-  RenameFrameInput,
   SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 import type {
@@ -41,6 +45,11 @@ import type {
 
 export type {
   ArrangeFramesInput,
+  RemoveFramesInput,
+  RenameFrameInput,
+  UndoRemovalInput,
+} from './frameEditSchema.js';
+export type {
   CanvasTurnContext,
   CreateCanvasResult,
   CreateFramesInput,
@@ -51,13 +60,10 @@ export type {
   EditElementInput,
   ElementRef,
   FrameRect,
-  RemoveFramesInput,
-  RenameFrameInput,
   SwitchRevisionInput,
   RevisionPage,
   RevisionRef,
   SourceFiles,
-  UndoRemovalInput,
   WriteFilesInput,
 } from './schema.js';
 
@@ -181,6 +187,8 @@ export interface CanvasFrame {
   variantOf: string | null;
   /** The copy its seed made; while `revisionId` is this one, nobody has changed it. */
   seededRevisionId: string | null;
+  /** The user hid it from the board; an agent still reads and writes it. */
+  hidden: boolean;
   build: CanvasBuildState;
 }
 
@@ -201,6 +209,8 @@ export interface CanvasChange {
   removedDesignIds: string[];
   /** Present only on a change that touched the annotation layer. */
   annotations?: AnnotationChange;
+  /** Present only on a reorder: every frame's designId, back to front. */
+  order?: string[];
 }
 
 /** What an annotate answers: a change that always carries its annotation delta. */
@@ -452,6 +462,20 @@ export type CanvasCommand =
       input: RenameFrameInput;
     }
   | {
+      type: 'canvas.setFrameHidden';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: SetFrameHiddenInput;
+    }
+  | {
+      type: 'canvas.reorderFrames';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: ReorderFramesInput;
+    }
+  | {
       type: 'canvas.annotate';
       requestId: string;
       appSessionId: string;
@@ -619,6 +643,8 @@ export type CanvasReply =
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'hiddenSet'; change: CanvasChange }
+  | { kind: 'reordered'; change: CanvasChange }
   | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }

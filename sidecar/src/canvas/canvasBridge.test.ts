@@ -265,6 +265,31 @@ test('pane rename, remove and Undo route through one attached canvas', async (t)
   assert.equal(undone.change.frames[0]?.name, 'Better');
 });
 
+test('pane hide and reorder route through one attached canvas', async (t) => {
+  const { canvas, canvasId, designId } = await frameHarness(t);
+  await canvas.handle({
+    type: 'canvas.setFrameHidden',
+    requestId: 'req-hide',
+    appSessionId: APP,
+    canvasId,
+    input: { mutationId: 'm-hide', designId, hidden: true, expectedManifestVersion: 0 },
+  });
+  const hidden = okReply(canvas, 'req-hide');
+  assert.ok(hidden.kind === 'hiddenSet');
+  assert.equal(hidden.change.frames[0]?.hidden, true);
+
+  await canvas.handle({
+    type: 'canvas.reorderFrames',
+    requestId: 'req-reorder',
+    appSessionId: APP,
+    canvasId,
+    input: { mutationId: 'm-reorder', designIds: [designId] },
+  });
+  const reordered = okReply(canvas, 'req-reorder');
+  assert.ok(reordered.kind === 'reordered');
+  assert.deepEqual(reordered.change.order, [designId]);
+});
+
 test('an Undo layout conflict carries the current occupant rect through the bridge', async (t) => {
   const canvas = await harness(t);
   const canvasId = await createCanvas(canvas);

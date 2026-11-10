@@ -76,6 +76,8 @@ export interface AgentFrame {
   rect: CanvasFrame['rect'];
   layoutVersion: number;
   revisionId: string | null;
+  /** Only on a frame the user hid from the board; it can still be read and written. */
+  hidden?: true;
   build: BuildReport;
 }
 
@@ -86,6 +88,7 @@ export function agentFrame(frame: CanvasFrame, preview: PreviewReport | null): A
     rect: frame.rect,
     layoutVersion: frame.layoutVersion,
     revisionId: frame.revisionId,
+    ...(frame.hidden ? { hidden: true as const } : {}),
     build: buildReport(frame, preview),
   };
 }

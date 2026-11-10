@@ -1,21 +1,35 @@
-// What a key means in the layers panel. The arrows, Home and End walk the rows
-// without touching the selection, so a long canvas can be read row by row;
-// Space toggles the row's frame in the selection, Enter takes the board to it,
-// F2 renames it and Escape gives the keyboard back to the board.
+// What a key means in the layers panel, whose rows run front to back. The
+// arrows, Home and End walk the rows without touching the selection, so a long
+// canvas can be read row by row; Space toggles the row's frame in the
+// selection, Enter takes the board to it, F2 renames it, ⇧⌘H hides or shows
+// it, ⌥↑ and ⌥↓ move it a row toward the front or back, and Escape gives the
+// keyboard back to the board.
 
 import { navigationIndex } from '../../../components/ui/menuKeys';
+import { formatChord, matchesChord } from '../../../lib/shortcuts';
 
 export type LayerKey =
   | { kind: 'move'; index: number }
+  | { kind: 'restack'; index: number }
   | { kind: 'pick' }
   | { kind: 'focus' }
   | { kind: 'rename' }
+  | { kind: 'toggle-hidden' }
   | { kind: 'leave' };
 
-type KeyPress = Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey'>;
+/** ⇧⌘H, as in a design tool; Ctrl+Shift+H off the Mac. */
+const HIDE_CHORD = 'Meta+Shift+H';
+export const HIDE_KEY_LABEL = formatChord(HIDE_CHORD);
+
+type KeyPress = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>;
 
 /** `active` is the row the keyboard is on, of `count` rows. */
 export function layerKey(event: KeyPress, active: number, count: number): LayerKey | null {
+  if (matchesChord(event, HIDE_CHORD)) return { kind: 'toggle-hidden' };
+  if (matchesChord(event, 'Alt+ArrowUp'))
+    return active > 0 ? { kind: 'restack', index: active - 1 } : null;
+  if (matchesChord(event, 'Alt+ArrowDown'))
+    return active < count - 1 ? { kind: 'restack', index: active + 1 } : null;
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   const index = navigationIndex(event.key, active, count);
   if (index !== null) return { kind: 'move', index };
@@ -47,4 +61,11 @@ export function activeRow(
     if (index >= 0) return index;
   }
   return designIds.length > 0 ? 0 : -1;
+}
+
+/** `ids` with the one at `from` taken out and put back at `to`. */
+export function moveRow(ids: readonly string[], from: number, to: number): string[] {
+  const moved = ids.filter((_, index) => index !== from);
+  moved.splice(to, 0, ids[from]);
+  return moved;
 }

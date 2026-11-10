@@ -9,9 +9,16 @@ import { MAX_CAPTURE_BASE64_LENGTH, MAX_CAPTURE_SVG_BYTES } from './canvasCaptur
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
-import type { CanvasCommand } from './protocol.js';
 import {
   arrangeFramesInputSchema,
+  removeFramesInputSchema,
+  renameFrameInputSchema,
+  reorderFramesInputSchema,
+  setFrameHiddenInputSchema,
+  undoRemovalInputSchema,
+} from './frameEditSchema.js';
+import type { CanvasCommand } from './protocol.js';
+import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
   canvasNameSchema,
@@ -20,12 +27,9 @@ import {
   designSystemVersionRefSchema,
   designSystemAdherenceSchema,
   editElementInputSchema,
-  removeFramesInputSchema,
-  renameFrameInputSchema,
   switchRevisionInputSchema,
   revisionPageSchema,
   revisionRefSchema,
-  undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -212,6 +216,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...target,
       input: renameFrameInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.setFrameHidden'),
+      ...request,
+      ...target,
+      input: setFrameHiddenInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.reorderFrames'),
+      ...request,
+      ...target,
+      input: reorderFramesInputSchema,
     })
     .strict(),
   z
@@ -435,6 +455,8 @@ export type CanvasMutation = Extract<
       | 'remove'
       | 'undoRemoval'
       | 'renameFrame'
+      | 'setFrameHidden'
+      | 'reorderFrames'
       | 'annotate'}`;
   }
 >;

@@ -211,6 +211,63 @@ test('rename validates names and compares the design manifest version', async (t
   });
 });
 
+test('hide survives reopening, replays its receipt and compares the manifest version', async (t) => {
+  const { root, deps, workspace, builds, canvasId, scope } = await opened(t);
+  const original = await frame(workspace, scope, 'create-hey');
+  const hide = {
+    mutationId: 'hide-hey',
+    designId: original.designId,
+    hidden: true,
+    expectedManifestVersion: 0,
+  };
+  const hidden = await workspace.frameEdits.setHidden(scope, hide);
+  assert.equal(hidden.frames[0]?.hidden, true);
+  const sequence = workspace.snapshot(canvasId).sequence;
+  assert.deepEqual(await workspace.frameEdits.setHidden(scope, hide), hidden);
+  assert.equal(workspace.snapshot(canvasId).sequence, sequence);
+  const show = { ...hide, mutationId: 'show-hey', hidden: false };
+  await assert.rejects(workspace.frameEdits.setHidden(scope, show), { code: 'revision_conflict' });
+
+  await builds.close();
+  await workspace.close();
+  const reopenedBuilds = quietBuilds();
+  const reopened = await CanvasWorkspace.open(root, reopenedBuilds, deps);
+  t.after(async () => {
+    await reopenedBuilds.close();
+    await reopened.close();
+  });
+  assert.equal(reopened.snapshot(canvasId).frames[0]?.hidden, true);
+  await reopened.frameEdits.setHidden(scope, { ...show, expectedManifestVersion: 1 });
+  assert.equal(reopened.snapshot(canvasId).frames[0]?.hidden, false);
+});
+
+test('reorder restacks the frames, replays its receipt and needs exactly the canvas frames', async (t) => {
+  const { workspace, canvasId, scope } = await opened(t);
+  const [a, b, c] = [
+    await frame(workspace, scope, 'create-a'),
+    await frame(workspace, scope, 'create-b'),
+    await frame(workspace, scope, 'create-c'),
+  ];
+  const stack = () => workspace.snapshot(canvasId).frames.map((entry) => entry.designId);
+  const order = [c.designId, a.designId, b.designId];
+  const reorder = { mutationId: 'reorder', designIds: order };
+  const change = await workspace.frameEdits.reorder(scope, reorder);
+  assert.deepEqual(change.order, order);
+  assert.deepEqual(stack(), order);
+  const sequence = workspace.snapshot(canvasId).sequence;
+  assert.deepEqual(await workspace.frameEdits.reorder(scope, reorder), change);
+  assert.equal(workspace.snapshot(canvasId).sequence, sequence);
+  for (const designIds of [
+    [a.designId, b.designId],
+    [...order, 'dsg_gone'],
+  ]) {
+    await assert.rejects(workspace.frameEdits.reorder(scope, { mutationId: 'stale', designIds }), {
+      code: 'revision_conflict',
+    });
+  }
+  assert.deepEqual(stack(), order);
+});
+
 test('removing a frame aborts its running build and keeps it off the board', async (t) => {
   const fleet = new CompilerFleet();
   const deadlines = fakeDeadlines();
