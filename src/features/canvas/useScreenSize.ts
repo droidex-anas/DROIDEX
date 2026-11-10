@@ -24,7 +24,7 @@ export function useScreenSize() {
     };
     measure();
     const observer = new ResizeObserver(measure);
-    observer.observe(element);
+    observer.observe(element, { box: 'border-box' });
     return () => {
       observer.disconnect();
     };
