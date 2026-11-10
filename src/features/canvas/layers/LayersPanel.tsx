@@ -5,15 +5,7 @@
 // whose rows the keyboard walks through aria-activedescendant, so a canvas of
 // any size mounts only its visible rows.
 
-import {
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type RefObject,
-} from 'react';
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { flushSync } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { X } from '@droidex/icons';
@@ -24,12 +16,12 @@ import { frameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
 import { LayerRow } from './LayerRow';
 import { activeRow, layerKey, type LayerKey } from './layerKeys';
+import { useBoardLight } from './useBoardLight';
 
 // Row's padding around one body line.
 const ROW_PX = 34;
 // How long typed letters keep adding to one type-ahead query, as in a menu.
 const TYPEAHEAD_RESET_MS = 500;
-const LAYER_HOVER = 'data-layer-hover';
 
 export interface LayersPanelProps {
   frames: readonly CanvasFrame[];
@@ -215,29 +207,4 @@ export function LayersPanel({
       )}
     </aside>
   );
-}
-
-/**
- * Lights the frame a row names on the board beside the panel, as the pointer
- * over the frame itself would. The attribute is the board stylesheet's, and
- * the frame keeps it no longer than the panel is up.
- */
-function useBoardLight(tree: RefObject<HTMLElement | null>) {
-  const lit = useRef<Element | null>(null);
-  useEffect(() => {
-    const held = lit;
-    return () => {
-      held.current?.removeAttribute(LAYER_HOVER);
-    };
-  }, []);
-  return (designId: string | null) => {
-    lit.current?.removeAttribute(LAYER_HOVER);
-    lit.current =
-      designId === null
-        ? null
-        : (tree.current
-            ?.closest('[data-canvas-board]')
-            ?.querySelector(`[data-design-frame="${CSS.escape(designId)}"]`) ?? null);
-    lit.current?.setAttribute(LAYER_HOVER, '');
-  };
 }
