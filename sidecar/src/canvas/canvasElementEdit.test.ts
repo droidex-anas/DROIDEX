@@ -159,3 +159,37 @@ test('a style edit sets every style it names in one revision, and its retry answ
   await canvas.handle(command('req-style-stale', 'm-style-raw', '13px'));
   assert.equal(errorOf(canvas, 'req-style-stale').code, 'stale_revision');
 });
+
+test('an element of a component rendered once is edited in the file it is written in', async (t) => {
+  const main =
+    "import { TopBar } from './components/TopBar'; export default function App(){return <TopBar />}";
+  const topBar =
+    'export function TopBar(){return <header style={{color:"var(--ds-fg)"}}>Inbox</header>}';
+  const { canvas, canvasId, element } = await editableElement(t, {
+    'main.tsx': main,
+    'components/TopBar.tsx': topBar,
+  });
+  await canvas.handle({
+    type: 'canvas.editElement',
+    requestId: 'req-top-bar',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-top-bar',
+      edit: {
+        element,
+        change: { kind: 'style', styles: [{ property: 'color', value: '--ds-accent' }] },
+      },
+    },
+  });
+  const changed = okReply(canvas, 'req-top-bar');
+  assert.ok(changed.kind === 'written');
+  assert.deepEqual(
+    { ...(await canvas.workspace.readFiles(canvasId, changed.receipt)) },
+    {
+      'main.tsx': main,
+      'components/TopBar.tsx':
+        'export function TopBar(){return <header className="text-[color:var(--ds-accent)]">Inbox</header>}',
+    },
+  );
+});

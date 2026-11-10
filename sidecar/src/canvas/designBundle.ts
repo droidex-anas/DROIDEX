@@ -265,7 +265,7 @@ type RelativeResolution =
   | { kind: 'escapes' };
 
 /** Walks a relative specifier inside `tree`, refusing to climb above its root. */
-function resolveRelative(
+export function resolveRelative(
   tree: SourceFiles,
   importer: string,
   specifier: string,
