@@ -151,8 +151,8 @@ function answeringBuilds(): CanvasBuilds {
     const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
     if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
     const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
-    const elements = elementsOf(input);
-    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements };
+    const { elements, outline } = instrumented(input);
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements, outline };
   };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
@@ -160,10 +160,10 @@ function answeringBuilds(): CanvasBuilds {
   });
 }
 
-/** The element map, or the syntax failure the real compiler reports for unparsable source. */
-function elementsOf(input: DesignCompileInput) {
+/** The element map and outline, or the syntax failure the real compiler reports for unparsable source. */
+function instrumented(input: DesignCompileInput) {
   try {
-    return instrumentSource(input.files, input.revisionId).elements;
+    return instrumentSource(input.files, input.revisionId);
   } catch (error) {
     if (!(error instanceof SourceElementError) || error.code === 'selection_limit') throw error;
     const { message, file, line, column } = error;
@@ -185,6 +185,7 @@ function answeringKits(): KitPreviews {
       html: '<html></html>',
       diagnostics: [],
       elements: [],
+      outline: { nodes: [], truncated: false },
     });
   };
   return new KitPreviews({

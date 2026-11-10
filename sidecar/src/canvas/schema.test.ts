@@ -256,6 +256,7 @@ const wire: SidecarWire = {
           revisionId: 'rev_02',
           artifactId: 'art_02',
           elements: [],
+          outline: { nodes: [], truncated: false },
           diagnostics: [],
           generation: 1,
         },
@@ -604,11 +605,14 @@ test('every serialized event the sidecar emits passes the renderer validator', (
 });
 
 test('the renderer accepts a ready element map and rejects incomplete or unbounded maps', () => {
+  const node = { nodeId: '0123456789abcdef', parentId: null, kind: 'element', name: 'h1' };
+  const row = { ...node, text: 'Hey', elementId: null, lock: null, free: false };
   const ready = {
     status: 'ready',
     revisionId: 'rev_02',
     artifactId: 'art_02',
     elements: [wire.element],
+    outline: { nodes: [row], truncated: false },
     diagnostics: [{ code: 'selection_unavailable', message: 'Reselect after rebuilding.' }],
     generation: 1,
   };
@@ -644,6 +648,12 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
     false,
   );
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+  assert.equal(isCanvasEvent(event({ ...ready, outline: undefined })), false);
+  const bad = { ...row, nodeId: 'not-hex' };
+  assert.equal(
+    isCanvasEvent(event({ ...ready, outline: { nodes: [bad], truncated: false } })),
+    false,
+  );
 });
 
 test('the renderer refuses history replies without a version counted from 1', () => {

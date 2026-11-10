@@ -207,6 +207,31 @@ export const sourceElementSchema = z
   .strict()
   .refine((element) => element.end > element.start);
 
+const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
+
+export const sourceOutlineSchema = z
+  .object({
+    nodes: z
+      .array(
+        z
+          .object({
+            nodeId: outlineNodeIdSchema,
+            parentId: outlineNodeIdSchema.nullable(),
+            kind: z.enum(['element', 'instance', 'repeat', 'condition']),
+            name: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
+            // 64 code points, each at most two UTF-16 units.
+            text: z.string().min(1).max(128).nullable(),
+            elementId: canvasIdentifierSchema.nullable(),
+            lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
+            free: z.boolean(),
+          })
+          .strict(),
+      )
+      .max(CANVAS_LIMITS.maxSourceElements),
+    truncated: z.boolean(),
+  })
+  .strict();
+
 const sourceFileSchema = z
   .string()
   .refine((content) => Buffer.byteLength(content, 'utf8') <= CANVAS_LIMITS.maxFileBytes, {

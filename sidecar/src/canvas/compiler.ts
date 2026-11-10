@@ -22,11 +22,13 @@ import type {
   DesignSystemRef,
   ElementEdit,
   SourceElement,
+  SourceOutline,
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
   sourceElementSchema,
   sourceFilesSchema,
+  sourceOutlineSchema,
   type SourceFiles,
 } from './schema.js';
 
@@ -63,6 +65,8 @@ export interface CompiledDesign {
   diagnostics: CanvasDiagnostic[];
   /** Revision-scoped sites mapped to canonical source for selection and edits. */
   elements: SourceElement[];
+  /** What the design's root renders, as written, for the layers panel. */
+  outline: SourceOutline;
 }
 
 /** The design's own source is wrong. Its diagnostics are safe to show. */
@@ -431,14 +435,15 @@ function modulesResponse(
 
 function isCompiledDesign(design: unknown): design is CompiledDesign {
   if (typeof design !== 'object' || design === null) return false;
-  const { artifactId, html, diagnostics, elements } = design as Record<string, unknown>;
+  const { artifactId, html, diagnostics, elements, outline } = design as Record<string, unknown>;
   return (
     typeof artifactId === 'string' &&
     typeof html === 'string' &&
     Array.isArray(diagnostics) &&
     Array.isArray(elements) &&
     elements.length <= CANVAS_LIMITS.maxSourceElements &&
-    elements.every((element) => sourceElementSchema.safeParse(element).success)
+    elements.every((element) => sourceElementSchema.safeParse(element).success) &&
+    sourceOutlineSchema.safeParse(outline).success
   );
 }
 

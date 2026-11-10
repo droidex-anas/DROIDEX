@@ -65,7 +65,15 @@ export function readyState(
   artifactId: string,
   generation: number,
 ): CanvasBuildState {
-  return { status: 'ready', revisionId, artifactId, elements: [], diagnostics: [], generation };
+  return {
+    status: 'ready',
+    revisionId,
+    artifactId,
+    elements: [],
+    outline: { nodes: [], truncated: false },
+    diagnostics: [],
+    generation,
+  };
 }
 
 /** The fixture owns recovery of its accepted revision independently of renderer watches. */

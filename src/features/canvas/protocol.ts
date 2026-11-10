@@ -278,6 +278,31 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
+/** One row of a design's source outline: something written in its source, nested as written. */
+export interface OutlineNode {
+  /** Unique within its outline: an element opened through two instances is two rows. */
+  nodeId: string;
+  /** Null for a row the root component renders directly. */
+  parentId: string | null;
+  kind: 'element' | 'instance' | 'repeat' | 'condition';
+  /** The tag, the component's name, 'Repeat' or 'Condition'. */
+  name: string;
+  /** An element's own literal text, on one line, 64 code points at most. */
+  text: string | null;
+  /** The element's marker; null for the other kinds. */
+  elementId: string | null;
+  /** Why it cannot be edited directly: in a repeat, rendered several times, worked out in code, or the kit's. */
+  lock: 'repeated' | 'shared' | 'computed' | 'kit' | null;
+  /** A direct JSX child, so it can be moved, removed or copied as a whole. */
+  free: boolean;
+}
+
+/** What a design's root renders, in reading order, and whether it stopped at a cap. */
+export interface SourceOutline {
+  nodes: OutlineNode[];
+  truncated: boolean;
+}
+
 /** What one design's build is doing, on its own. */
 export type CanvasBuildOutcome =
   | { status: 'pending' }
@@ -287,6 +312,7 @@ export type CanvasBuildOutcome =
       revisionId: string;
       artifactId: string;
       elements: SourceElement[];
+      outline: SourceOutline;
       diagnostics: CanvasDiagnostic[];
     }
   | {

@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-import { functionName, renderedOnce } from './componentUses.js';
+import { componentUses, functionName, type ComponentUses } from './componentUses.js';
 import { resolveRelative } from './designBundle.js';
-import type { SourceElement, SourceFiles } from './protocol.js';
+import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';
+import { sourceOutline } from './sourceOutline.js';
 
 export type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
 export interface Site {
@@ -19,8 +20,10 @@ const MARKER = 'data-droidex-element';
 export function instrumentSource(
   files: SourceFiles,
   revisionId: string,
-): { files: SourceFiles; elements: SourceElement[] } {
-  const sites = sourceSites(files, revisionId);
+): { files: SourceFiles; elements: SourceElement[]; outline: SourceOutline } {
+  const program = parseProgram(files);
+  const uses = componentUses(program);
+  const sites = programSites(program, uses, files, revisionId);
   const derived: SourceFiles = { ...files };
   const byFile = new Map<ts.SourceFile, Site[]>();
   for (const site of sites) {
@@ -44,15 +47,27 @@ export function instrumentSource(
     text += source.text.slice(offset);
     derived[source.fileName] = text + inlineSourceMap(source, inserts);
   }
-  return { files: derived, elements: sites.map((site) => site.element) };
+  return {
+    files: derived,
+    elements: sites.map((site) => site.element),
+    outline: sourceOutline(program, uses, sites),
+  };
 }
 
 export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
+  const program = parseProgram(files);
+  return programSites(program, componentUses(program), files, revisionId);
+}
+
+function programSites(
+  program: ts.Program,
+  { rendersOnce }: ComponentUses,
+  files: SourceFiles,
+  revisionId: string,
+): Site[] {
   const hash = createHash('sha256').update(
     JSON.stringify([revisionId, Object.entries(files).sort(([a], [b]) => comparePaths(a, b))]),
   );
-  const program = parseProgram(files);
-  const rendersOnce = renderedOnce(program);
   const sites: Site[] = [];
   for (const source of program.getSourceFiles()) {
     const file = source.fileName;

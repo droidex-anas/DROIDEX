@@ -145,6 +145,7 @@ class FakeCompiler implements DesignCompiler {
             html: `<html>${input.revisionId}</html>`,
             diagnostics,
             elements,
+            outline: { nodes: [], truncated: false },
           });
         },
         failed: (code, details = { message: COMPILE_FAILED }) => {

@@ -229,6 +229,7 @@ for (const owner of [
       revisionId: before.revisionId,
       artifactId: 'artifact-rebuilt',
       elements: [],
+      outline: { nodes: [], truncated: false },
       diagnostics: [],
       generation: before.generation + 1,
     });

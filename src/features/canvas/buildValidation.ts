@@ -16,12 +16,7 @@ export function isBuild(value: unknown): boolean {
     case 'building':
       return id(value.revisionId);
     case 'ready':
-      return (
-        id(value.revisionId) &&
-        id(value.artifactId) &&
-        boundedList(value.elements, MAX_SOURCE_ELEMENTS, isSourceElement) &&
-        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
-      );
+      return isReadyBuild(value);
     case 'failed':
       return (
         id(value.revisionId) &&
@@ -33,6 +28,16 @@ export function isBuild(value: unknown): boolean {
     default:
       return false;
   }
+}
+
+function isReadyBuild(value: Record<string, unknown>): boolean {
+  return (
+    id(value.revisionId) &&
+    id(value.artifactId) &&
+    boundedList(value.elements, MAX_SOURCE_ELEMENTS, isSourceElement) &&
+    isOutline(value.outline) &&
+    boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
+  );
 }
 
 function isSourceElement(value: unknown): boolean {
@@ -47,6 +52,35 @@ function isSourceElement(value: unknown): boolean {
       value.editability === 'computed' ||
       value.editability === 'shared')
   );
+}
+
+const OUTLINE_KINDS = new Set(['element', 'instance', 'repeat', 'condition']);
+const OUTLINE_LOCKS = new Set(['repeated', 'shared', 'computed', 'kit']);
+
+function isOutline(value: unknown): boolean {
+  return (
+    record(value) &&
+    typeof value.truncated === 'boolean' &&
+    boundedList(value.nodes, MAX_SOURCE_ELEMENTS, isOutlineNode)
+  );
+}
+
+function isOutlineNode(value: unknown): boolean {
+  return (
+    record(value) &&
+    isOutlineNodeId(value.nodeId) &&
+    (value.parentId === null || isOutlineNodeId(value.parentId)) &&
+    OUTLINE_KINDS.has(value.kind as string) &&
+    boundedText(value.name, MAX_SOURCE_FILE_BYTES) &&
+    (value.text === null || boundedText(value.text, 128)) &&
+    (value.elementId === null || id(value.elementId)) &&
+    (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
+    typeof value.free === 'boolean'
+  );
+}
+
+function isOutlineNodeId(value: unknown): boolean {
+  return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
 }
 
 /** An element's offsets and the 1-based line it starts on, all within one source file. */

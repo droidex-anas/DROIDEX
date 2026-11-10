@@ -68,7 +68,7 @@ export async function compileDesign(
   } catch (error) {
     if (!(error instanceof SourceElementError)) throw error;
     if (error.code === 'selection_limit') {
-      instrumented = { files: input.files, elements: [] };
+      instrumented = { files: input.files, elements: [], outline: { nodes: [], truncated: false } };
       selectionDiagnostics.push({ code: 'selection_unavailable', message: error.message });
     } else {
       throw new CompileFailedError([
@@ -115,6 +115,7 @@ export async function compileDesign(
       ...codeQuality,
     ]),
     elements: instrumented.elements,
+    outline: instrumented.outline,
   };
 }
 
@@ -142,6 +143,7 @@ async function compileKitPreview(
     html,
     diagnostics: boundDiagnostics(bundle.warnings),
     elements: [],
+    outline: { nodes: [], truncated: false },
   };
 }
 
