@@ -13,6 +13,7 @@ import {
   attribute,
   attributeValue,
   classLiterals,
+  isLiteral,
   propertyName,
 } from './sourceElements.js';
 import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
@@ -60,7 +61,12 @@ const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 const FILTERS = new Set(['filter', 'backdropFilter']);
 const BLUR_OR_RESET_CLASS = /^!?(?:backdrop-)?(?:blur(?:-|$)|filter-none$)/;
-const PRESENTATION_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth']);
+// An SVG paint's presentation attributes, in each spelling JSX passes through.
+const PRESENTATION_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
+  fill: ['fill'],
+  stroke: ['stroke'],
+  strokeWidth: ['strokeWidth', 'stroke-width'],
+};
 
 /** The replacements that set every style in `styles`, in order, on one element. */
 export function styleReplacements(
@@ -87,15 +93,29 @@ export function styleReplacements(
   ];
 }
 
-/** Removes the presentation attribute, such as `fill="#000"`, of each SVG paint the edit sets. */
+/**
+ * Removes the presentation attribute, such as `fill="#000"`, of each SVG paint
+ * the edit sets. One worked out in code is the user's logic, which the edit
+ * leaves to the agent rather than drop.
+ */
 function removePresentation(
   opening: Opening,
   styles: readonly ResolvedStyle[],
 ): SourceReplacement[] {
-  const names = new Set(styles.map(({ property }) => property));
-  return [...names].flatMap((name) => {
-    const dead = PRESENTATION_ATTRIBUTES.has(name) ? attribute(opening, name) : undefined;
-    return dead ? [{ start: dead.getFullStart(), end: dead.end, replacement: '' }] : [];
+  const spellings = new Set(
+    styles.flatMap(({ property }) =>
+      Object.hasOwn(PRESENTATION_ATTRIBUTES, property) ? PRESENTATION_ATTRIBUTES[property] : [],
+    ),
+  );
+  return opening.attributes.properties.flatMap((dead) => {
+    if (!ts.isJsxAttribute(dead) || !spellings.has(dead.name.getText())) return [];
+    const value = attributeValue(dead);
+    if (!value || !(isLiteral(value) || ts.isNumericLiteral(value)))
+      throw new SourceElementError(
+        'ambiguous_element',
+        `This shape's ${dead.name.getText()} is worked out in code. Ask the agent to change it.`,
+      );
+    return [{ start: dead.getFullStart(), end: dead.end, replacement: '' }];
   });
 }
 
