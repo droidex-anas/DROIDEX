@@ -1,0 +1,330 @@
+// Export to project for a kit made from that project's shadcn/ui library: the
+// source imports the project's own components and reads its own tokens, so
+// the export carries no copy of the kit and no build of its own. When the
+// library is no longer as the kit found it, the export copies the kit as any
+// other does, and its README says why.
+
+import { realpath } from 'node:fs/promises';
+import path from 'node:path';
+import { codeSpan, markdownText } from './canvasProjectExport.js';
+import type { ExportFile } from './canvasExport.js';
+import { readModules } from './compiler.js';
+import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
+import { KIT_SPECIFIER } from './designBundle.js';
+import { kitGuidance, kitModes } from './designSystemDocument.js';
+import { isBareHsl } from './designSystemImport.js';
+import { readLibraryLayout } from './designSystemLibrary.js';
+import type { DesignSystem } from './designSystems.js';
+import { emptyDeclared, readCss, type Declared } from './designSystemSources.js';
+import { isFileSystemError, readProjectText } from './projectPaths.js';
+
+export type LibraryExport =
+  | { status: 'rewritten'; files: ExportFile[] }
+  /** The README section that says why the kit is copied. */
+  | { status: 'copied'; readme: string };
+
+type Library = NonNullable<
+  Extract<DesignSystem['provenance'], { project: unknown }>['project']['library']
+>;
+
+/** The library as the project has it now. */
+interface ProjectLibrary {
+  projectName: string;
+  /** The components.json alias that names the ui folder. */
+  ui: string;
+  uiFolder: string;
+  /** The module the kit recorded for each component it exports. */
+  modules: Readonly<Record<string, string>>;
+  /** What each of those modules exports now. */
+  exports: Map<string, ModuleExport[]>;
+  declared: Declared;
+}
+
+const SCRIPT = /\.[jt]sx?$/;
+// A reference closes, or goes on to its fallback.
+const TOKEN_REFERENCE = /var\(\s*(--[\w-]+)\s*([),])/g;
+const SINGLE_REFERENCE = /^var\(\s*(--[\w-]+)\s*\)$/;
+const MAX_REFERENCE_HOPS = 8;
+
+/**
+ * The export of `source` into the project at `projectFolder`, or null for a
+ * kit not read from a library. It imports the project's components only when
+ * every module the kit recorded is still a file in the library's ui folder.
+ */
+export async function libraryExport(
+  projectFolder: string,
+  kit: DesignSystem,
+  source: ReadonlyMap<string, string>,
+  signal?: AbortSignal,
+): Promise<LibraryExport | null> {
+  const project = kit.provenance && 'project' in kit.provenance ? kit.provenance.project : null;
+  if (!project?.library) return null;
+  const found = await readProjectLibrary(projectFolder, project.files[0], project.library, signal);
+  if ('problem' in found) return copied(found.problem);
+
+  const scripts = [...source].filter(([file]) => SCRIPT.test(file));
+  const modules = await readModules(
+    scripts.map(([, text]) => text),
+    signal,
+  );
+  const scriptModules = new Map(scripts.map(([file], index) => [file, modules[index]]));
+  const tokens = new ProjectTokens(kit, project.library.tokens, found.declared);
+  const components = new Map<string, string>();
+  const files: ExportFile[] = [];
+  for (const [file, text] of source) {
+    const module = scriptModules.get(file);
+    const imported =
+      module === undefined
+        ? { text }
+        : withProjectImports(`src/${file}`, text, module, found, components);
+    if ('problem' in imported) return copied(imported.problem);
+    files.push({ path: `src/${file}`, content: tokens.rewrite(imported.text) });
+  }
+
+  const css = tokens.unmappedCss();
+  if (css !== '') files.push({ path: 'canvas-export/tokens.css', content: css });
+  files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
+  files.push({ path: 'README.md', content: rewrittenReadme(found, components, tokens) });
+  return { status: 'rewritten', files };
+}
+
+async function readProjectLibrary(
+  projectFolder: string,
+  componentsConfig: string,
+  library: Library,
+  signal?: AbortSignal,
+): Promise<ProjectLibrary | { problem: string }> {
+  let root: string;
+  try {
+    root = await realpath(projectFolder);
+  } catch (error) {
+    if (!isFileSystemError(error)) throw error;
+    return { problem: 'The project folder cannot be read.' };
+  }
+  const layout = await readLibraryLayout(root, componentsConfig);
+  if ('problem' in layout) return layout;
+  const files = [...new Set(Object.values(library.components))];
+  const texts: string[] = [];
+  for (const file of files) {
+    signal?.throwIfAborted();
+    if (!file.startsWith(`${layout.uiFolder}/`))
+      return {
+        problem: `${file} is no longer in ${layout.uiFolder}, the folder ${layout.ui} names.`,
+      };
+    const read = await readProjectText(root, file);
+    if ('problem' in read) return read;
+    texts.push(read.text);
+  }
+  const declared = emptyDeclared();
+  const unreadable = readCss(
+    layout.css.text,
+    { file: layout.css.file, lineOffset: 0 },
+    declared,
+    [],
+  );
+  if (unreadable !== null) return { problem: `${layout.css.file}: ${unreadable.message}` };
+  const modules = await readModules(texts, signal);
+  return {
+    projectName: path.basename(root),
+    ui: layout.ui,
+    uiFolder: layout.uiFolder,
+    modules: library.components,
+    exports: new Map(files.map((file, index) => [file, modules[index].exports])),
+    declared,
+  };
+}
+
+/**
+ * The script with each kit import replaced by imports of the project modules
+ * its names come from, each recorded in `components`.
+ */
+function withProjectImports(
+  file: string,
+  text: string,
+  module: ModuleDeclarations,
+  found: ProjectLibrary,
+  components: Map<string, string>,
+): { text: string } | { problem: string } {
+  const kitImports = module.imports.filter((each) => each.specifier === KIT_SPECIFIER);
+  const references = module.specifiers.filter((each) => each.text === KIT_SPECIFIER);
+  if (references.length !== kitImports.length)
+    return { problem: `${file} uses ${KIT_SPECIFIER} other than in an import.` };
+  let rewritten = text;
+  // From the last, so the earlier offsets still hold.
+  for (const { start, end, names } of kitImports.reverse()) {
+    if (names === null)
+      return { problem: `${file} imports from ${KIT_SPECIFIER} other than values by name.` };
+    const byModule = new Map<string, { defaultLocal: string | null; named: string[] }>();
+    for (const { imported, local } of names) {
+      if (!Object.hasOwn(found.modules, imported))
+        return {
+          problem: `${file} imports ${imported}, which is not one of the library's components.`,
+        };
+      const moduleFile = found.modules[imported];
+      const exports = found.exports.get(moduleFile) ?? [];
+      const bindings = byModule.get(moduleFile) ?? { defaultLocal: null, named: [] };
+      if (exports.some((each) => !each.isDefault && each.name === imported))
+        bindings.named.push(imported === local ? local : `${imported} as ${local}`);
+      else if (exports.some((each) => each.isDefault)) bindings.defaultLocal = local;
+      else return { problem: `${moduleFile} no longer exports ${imported}.` };
+      byModule.set(moduleFile, bindings);
+      components.set(imported, specifierOf(found, moduleFile));
+    }
+    const declarations = [...byModule].map(([moduleFile, { defaultLocal, named }]) => {
+      const clauses = [defaultLocal, named.length > 0 ? `{ ${named.join(', ')} }` : null];
+      return `import ${clauses.filter((each) => each !== null).join(', ')} from '${specifierOf(found, moduleFile)}';`;
+    });
+    rewritten = rewritten.slice(0, start) + declarations.join('\n') + rewritten.slice(end);
+  }
+  return { text: rewritten };
+}
+
+function specifierOf(found: ProjectLibrary, moduleFile: string): string {
+  return `${found.ui}/${moduleFile.slice(found.uiFolder.length + 1).replace(/\.tsx$/, '')}`;
+}
+
+/**
+ * The project token each kit token reads, and what the export's text read of
+ * them: the kit token it was imported from, or, for a kit token that only
+ * aliases another in both modes, the other's.
+ */
+class ProjectTokens {
+  /** Each kit token the text read, and the reference to the project's that replaced it. */
+  readonly used = new Map<string, string>();
+  /** Kit tokens the text reads that keep their kit values, in tokens.css. */
+  readonly unmapped = new Set<string>();
+  private readonly modes: { light: Record<string, string>; dark: Record<string, string> };
+  private readonly project = new Map<string, { name: string; isChannels: boolean }>();
+
+  constructor(kit: DesignSystem, imported: Readonly<Record<string, string>>, declared: Declared) {
+    this.modes = kitModes(kit.sections);
+    const names = new Map(Object.entries(imported));
+    for (const [kitToken, projectName] of Object.entries(imported)) {
+      if (!Object.hasOwn(this.modes.light, kitToken)) continue;
+      const value = this.modes.light[kitToken];
+      const aliased = SINGLE_REFERENCE.exec(value)?.[1];
+      if (aliased !== undefined && this.modes.dark[kitToken] === value && !names.has(aliased))
+        names.set(aliased, projectName);
+    }
+    for (const [kitToken, name] of names) {
+      const projectValue = lightValue(declared, name);
+      // shadcn's bare channels are a colour only inside hsl().
+      if (projectValue !== undefined)
+        this.project.set(kitToken, { name, isChannels: isBareHsl(projectValue) });
+    }
+  }
+
+  /** The text with each kit token it reads replaced by the project's; one with none is kept. */
+  rewrite(text: string): string {
+    return text.replace(TOKEN_REFERENCE, (reference: string, name: string, close: string) => {
+      const token = this.project.get(name);
+      const isKitToken =
+        Object.hasOwn(this.modes.light, name) || Object.hasOwn(this.modes.dark, name);
+      if (token === undefined || (close === ',' && token.isChannels)) {
+        if (isKitToken) this.unmapped.add(name);
+        return reference;
+      }
+      if (close === ',') {
+        this.used.set(name, `var(${token.name})`);
+        return `var(${token.name},`;
+      }
+      const replacement = token.isChannels ? `hsl(var(${token.name}))` : `var(${token.name})`;
+      this.used.set(name, replacement);
+      return replacement;
+    });
+  }
+
+  /** The kit's values for the unmapped tokens, light on :root and dark on .dark as shadcn/ui sets them. */
+  unmappedCss(): string {
+    const values = { light: new Map<string, string>(), dark: new Map<string, string>() };
+    // A kit value can read further kit tokens, which the loop then reaches too.
+    for (const name of this.unmapped) {
+      for (const mode of ['light', 'dark'] as const) {
+        if (Object.hasOwn(this.modes[mode], name))
+          values[mode].set(name, this.rewrite(this.modes[mode][name]));
+      }
+    }
+    const rules = [
+      [':root', values.light],
+      ['.dark', values.dark],
+    ] as const;
+    return rules
+      .filter(([, declarations]) => declarations.size > 0)
+      .map(
+        ([selector, declarations]) =>
+          `${selector} {\n${[...declarations]
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([name, value]) => `  ${name}: ${value};\n`)
+            .join('')}}\n`,
+      )
+      .join('\n');
+  }
+}
+
+/** The value the project's light mode reads for a token, through plain references to others. */
+function lightValue(declared: Declared, name: string): string | undefined {
+  const { light, shared } = declared.scopes;
+  let current = name;
+  for (let hop = 0; hop < MAX_REFERENCE_HOPS; hop += 1) {
+    const scope = Object.hasOwn(light, current) ? light : shared;
+    if (!Object.hasOwn(scope, current)) return undefined;
+    const next = SINGLE_REFERENCE.exec(scope[current])?.[1];
+    if (next === undefined) return scope[current];
+    current = next;
+  }
+  return undefined;
+}
+
+function rewrittenReadme(
+  found: ProjectLibrary,
+  components: ReadonlyMap<string, string>,
+  tokens: ProjectTokens,
+): string {
+  const table = (header: string, rows: ReadonlyMap<string, string>) =>
+    `${header}\n| --- | --- |\n${[...rows]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([from, to]) => `| \`${from}\` | ${codeSpan(to)} |`)
+      .join('\n')}`;
+  const sections = [
+    `# Canvas source export
+
+This revision was exported into ${markdownText(found.projectName)} to build with
+the project's own shadcn/ui components, so it carries no copy of the kit and no
+build of its own: the project's build and Tailwind config take it. It starts
+at \`src/main.tsx\`. Its classes are left as written: one the kit's theme adds
+for a token of its own, such as \`bg-surface\`, needs that key in the project's
+Tailwind config.`,
+  ];
+  if (components.size > 0)
+    sections.push(`Its \`${KIT_SPECIFIER}\` imports name the components the kit was made from,
+through the ${codeSpan(found.ui)} alias in \`components.json\`:
+
+${table('| Component | Import |', components)}`);
+  if (tokens.used.size > 0)
+    sections.push(`Its kit tokens read the project's own:
+
+${table('| Kit token | Project token |', tokens.used)}`);
+  if (tokens.unmapped.size > 0)
+    sections.push(`These kit tokens have no project token, so \`canvas-export/tokens.css\` sets
+their kit values, light on \`:root\` and dark on \`.dark\`: ${[...tokens.unmapped]
+      .sort()
+      .map((name) => `\`${name}\``)
+      .join(', ')}.
+Import it into the project's stylesheet, or replace them with the project's own tokens.`);
+  sections.push(`The kit's guidance is in \`canvas-export/guidance.md\`. The images the source
+refers to are in \`assets/\`, named by their hash: serve them from the app and
+point the source's \`canvas-asset:\` and \`kit-asset:\` references at them.`);
+  return `${sections.join('\n\n')}\n`;
+}
+
+function copied(reason: string): LibraryExport {
+  return {
+    status: 'copied',
+    readme: `
+## Why the kit is copied
+
+The kit was made from this project's shadcn/ui components, but the export
+copies it into \`design-system/\` instead of importing them. ${reason}
+`,
+  };
+}
