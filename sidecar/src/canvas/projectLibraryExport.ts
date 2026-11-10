@@ -9,12 +9,12 @@ import path from 'node:path';
 import { codeSpan, markdownText } from './canvasProjectExport.js';
 import type { ExportFile } from './canvasExport.js';
 import { readModules } from './compiler.js';
-import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
+import type { ModuleDeclarations } from './compilerModules.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { isBareHsl } from './designSystemImport.js';
 import { readLibraryLayout } from './designSystemLibrary.js';
-import { kitComponentPath, kitModule } from './libraryComponents.js';
+import { bindingClause, entryExports, kitComponentPath, kitModule } from './libraryComponents.js';
 import type { DesignSystem } from './designSystems.js';
 import { emptyDeclared, readCss, type Declared } from './designSystemSources.js';
 import { isFileSystemError, readProjectText } from './projectPaths.js';
@@ -35,8 +35,8 @@ interface ProjectLibrary {
   uiFolder: string;
   /** The module the kit recorded for each component it exports. */
   modules: Readonly<Record<string, string>>;
-  /** What each of those modules exports now. */
-  exports: Map<string, ModuleExport[]>;
+  /** For each of those modules, the module's own name for each name the kit exports from it. */
+  bindings: Map<string, Map<string, string>>;
   declared: Declared;
 }
 
@@ -152,7 +152,12 @@ async function readProjectLibrary(
     ui: layout.aliases.ui,
     uiFolder: layout.uiFolder,
     modules: library.components,
-    exports: new Map(files.map((file, index) => [file, modules[index].exports])),
+    bindings: new Map(
+      files.map((file, index) => {
+        const entries = entryExports(modules[index].exports, path.posix.basename(file, '.tsx'));
+        return [file, new Map(entries.map(({ exportedName, binding }) => [exportedName, binding]))];
+      }),
+    ),
     declared,
   };
 }
@@ -177,26 +182,26 @@ function withProjectImports(
   for (const { start, end, names } of kitImports.reverse()) {
     if (names === null)
       return { problem: `${file} imports from ${KIT_SPECIFIER} other than values by name.` };
-    const byModule = new Map<string, { defaultLocal: string | null; named: string[] }>();
+    // Every local name keeps its own clause, so `{ Card as A, Card as B }` binds both.
+    const byModule = new Map<string, string[]>();
     for (const { imported, local } of names) {
       if (!Object.hasOwn(found.modules, imported))
         return {
           problem: `${file} imports ${imported}, which is not one of the library's components.`,
         };
       const moduleFile = found.modules[imported];
-      const exports = found.exports.get(moduleFile) ?? [];
-      const bindings = byModule.get(moduleFile) ?? { defaultLocal: null, named: [] };
-      if (exports.some((each) => !each.isDefault && each.name === imported))
-        bindings.named.push(imported === local ? local : `${imported} as ${local}`);
-      else if (exports.some((each) => each.isDefault)) bindings.defaultLocal = local;
-      else return { problem: `${moduleFile} no longer exports ${imported}.` };
-      byModule.set(moduleFile, bindings);
+      const binding = found.bindings.get(moduleFile)?.get(imported);
+      if (binding === undefined) return { problem: `${moduleFile} no longer exports ${imported}.` };
+      byModule.set(moduleFile, [
+        ...(byModule.get(moduleFile) ?? []),
+        bindingClause(binding, local),
+      ]);
       components.set(imported, specifierOf(found, moduleFile));
     }
-    const declarations = [...byModule].map(([moduleFile, { defaultLocal, named }]) => {
-      const clauses = [defaultLocal, named.length > 0 ? `{ ${named.join(', ')} }` : null];
-      return `import ${clauses.filter((each) => each !== null).join(', ')} from '${specifierOf(found, moduleFile)}';`;
-    });
+    const declarations = [...byModule].map(
+      ([moduleFile, clauses]) =>
+        `import { ${clauses.join(', ')} } from '${specifierOf(found, moduleFile)}';`,
+    );
     rewritten = rewritten.slice(0, start) + declarations.join('\n') + rewritten.slice(end);
   }
   return { text: rewritten };

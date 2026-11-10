@@ -9,8 +9,11 @@ import type { DesignSystem } from './designSystems.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 import { libraryExport } from './projectLibraryExport.js';
 
-async function libraryKit(t: TestContext): Promise<{ root: string; kit: DesignSystem }> {
-  const root = await project(t, LIBRARY);
+async function libraryKit(
+  t: TestContext,
+  changed: Record<string, string> = {},
+): Promise<{ root: string; kit: DesignSystem }> {
+  const root = await project(t, { ...LIBRARY, ...changed });
   const imported = await importProjectDesignSystem(
     root,
     [{ path: 'components.json', kind: 'shadcn' }],
@@ -130,6 +133,9 @@ test('the export copies the kit and says why when the library is not as the kit 
     await reason(whole),
     /src\/main\.tsx imports from @droidex\/design-system other than values by name\./,
   );
+  // An empty import still runs the kit, so it has nothing to name instead.
+  const empty = new Map([...SOURCE, ['main.tsx', `import {} from '@droidex/design-system';\n`]]);
+  assert.match(await reason(empty), /other than values by name\./);
   const reexported = new Map([
     ...SOURCE,
     ['main.tsx', `export { Button } from '@droidex/design-system';\n`],
@@ -173,5 +179,22 @@ test('the export copies the kit into another project whose components differ fro
   assert.match(
     exported.readme,
     /components\/ui\/card\.tsx is not the component the kit copied: it changed since the kit was made, or this is another project\./,
+  );
+});
+
+test('an export keeps every local name a source gives a default export', async (t) => {
+  const { root, kit } = await libraryKit(t, {
+    'components/ui/card.tsx': 'export default function Card() {\n  return null;\n}\n',
+  });
+  const main = `import { Card as A, Card as B } from '@droidex/design-system';
+export default () => <A><B /></A>;
+`;
+  const exported = await libraryExport(root, kit, new Map([['main.tsx', main]]));
+  assert.equal(exported?.status, 'rewritten');
+  assert.equal(
+    String(exported.files[0].content),
+    `import { default as A, default as B } from '@/components/ui/card';
+export default () => <A><B /></A>;
+`,
   );
 });

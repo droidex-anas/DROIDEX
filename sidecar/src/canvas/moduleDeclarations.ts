@@ -71,6 +71,7 @@ function namedValues(clause: ts.ImportClause | undefined): ModuleImport['names']
     clause.name !== undefined ||
     bindings === undefined ||
     !ts.isNamedImports(bindings) ||
+    bindings.elements.length === 0 ||
     bindings.elements.some((element) => element.isTypeOnly)
   )
     return null;
