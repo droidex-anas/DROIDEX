@@ -8,6 +8,7 @@ import {
   lengthFace,
   sameFontStack,
   sameValue,
+  shadowTokens,
 } from './panelValues';
 
 const spacing = [
@@ -149,4 +150,35 @@ test('a font stack is named by its first family and matched however it is quoted
     true,
   );
   assert.equal(sameFontStack('Inter, sans-serif', 'Inter, serif'), false);
+});
+
+test('a shadow reads as the kit tokens it is drawn from, or as none of them', () => {
+  const tokens = [
+    { value: '--ds-shadow-sm', label: 'shadow-sm', hint: '0 1px 2px rgb(0 0 0 / 0.05)' },
+    { value: '--ds-shadow-edge', label: 'shadow-edge', hint: '0 0 0 1px #000' },
+    {
+      value: '--ds-shadow-ring',
+      label: 'shadow-ring',
+      hint: '0 0 0 1px #000, 0 4px 8px #0000001a',
+    },
+    { value: '--ds-shadow-md', label: 'shadow-md', hint: '0 12px 32px rgb(0 0 0 / 0.1)' },
+  ];
+  const empty = 'rgba(0, 0, 0, 0) 0px 0px 0px 0px';
+  const sm = 'rgba(0, 0, 0, 0.05) 0px 1px 2px 0px';
+  const md = 'rgba(0, 0, 0, 0.1) 0px 12px 32px 0px';
+  assert.deepEqual(shadowTokens(`${empty}, ${sm}, ${md}`, tokens), [
+    '--ds-shadow-sm',
+    '--ds-shadow-md',
+  ]);
+  // shadow-edge is the ring's first layer, but the ring's second is no token alone.
+  const edge = 'rgb(0, 0, 0) 0px 0px 0px 1px';
+  assert.deepEqual(shadowTokens(`${edge}, rgba(0, 0, 0, 0.1) 0px 4px 8px 0px`, tokens), [
+    '--ds-shadow-ring',
+  ]);
+  assert.deepEqual(shadowTokens('--ds-shadow-sm, --ds-shadow-md', tokens), [
+    '--ds-shadow-sm',
+    '--ds-shadow-md',
+  ]);
+  assert.deepEqual(shadowTokens('none', tokens), []);
+  assert.equal(shadowTokens(`${md}, rgba(0, 0, 0, 0.2) 0px 2px 4px 0px`, tokens), null);
 });
