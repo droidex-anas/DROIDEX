@@ -25,8 +25,14 @@ export function FrameNameField({
   const [pending, setPending] = useState(false);
   const field = useRef<HTMLInputElement>(null);
   const finished = useRef(false);
+  // A field that is gone hands nothing back: its host may be renaming another frame by now.
+  const gone = useRef(false);
   useEffect(() => {
+    gone.current = false;
     field.current?.select();
+    return () => {
+      gone.current = true;
+    };
   }, []);
 
   const finish = () => {
@@ -50,9 +56,10 @@ export function FrameNameField({
       // The live frame: writes and builds move its manifest version too, and
       // only another rename should stop this one.
       await onRename(frame, trimmed);
-      finish();
+      if (!gone.current) finish();
     } catch (error) {
       toast.error(canvasMessage(error));
+      if (gone.current) return;
       setPending(false);
       field.current?.focus();
     }

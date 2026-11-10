@@ -104,3 +104,41 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await expect(tree).toBeHidden();
   await expect(page.locator('[data-design-frame="b"] [data-frame-header]')).toBeFocused();
 });
+
+test('A rename that answers late or loses its frame leaves the next edit and the keyboard in the panel', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&frames=4&layers=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const row = (name: string) => tree.getByRole('treeitem', { name: `${name}, Ready` });
+  const nameField = (name: string) => page.getByRole('textbox', { name: `Name of ${name}` });
+
+  // A's rename is still out when B's starts, and A's answer leaves B's field and draft alone.
+  await row('Design A').dblclick();
+  await nameField('Design A').fill('Hero');
+  await page.keyboard.press('Enter');
+  await row('Design B').dblclick();
+  await nameField('Design B').fill('Unsaved B');
+  await page.evaluate(() => {
+    window.boardHarness.answerRename(0);
+  });
+  await expect(row('Hero')).toBeVisible();
+  await expect(nameField('Design B')).toBeFocused();
+  await expect(nameField('Design B')).toHaveValue('Unsaved B');
+
+  // A frame that leaves while renamed ends its rename: the keyboard stays on the tree, and
+  // the frame comes back without its field.
+  await page.evaluate(() => {
+    window.boardHarness.takeOff('b');
+  });
+  await expect(row('Design B')).toBeHidden();
+  await expect(tree).toBeFocused();
+  await page.evaluate(() => {
+    window.boardHarness.putBack('b');
+  });
+  await expect(row('Design B')).toBeVisible();
+  await expect(nameField('Design B')).toHaveCount(0);
+  expect(await page.evaluate(() => window.boardHarness.renameCalls.length)).toBe(1);
+});

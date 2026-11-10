@@ -5,7 +5,15 @@
 // whose rows the keyboard walks through aria-activedescendant, so a canvas of
 // any size mounts only its visible rows.
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { X } from '@droidex/icons';
@@ -48,6 +56,7 @@ export function LayersPanel({
   onClose,
 }: LayersPanelProps) {
   const tree = useRef<HTMLDivElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const treeId = useId();
   const [movedTo, setMovedTo] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -73,6 +82,17 @@ export function LayersPanel({
   });
   const selected = new Set(selectedFrameIds);
   const rowId = (designId: string) => `${treeId}-${designId}`;
+
+  // A frame that leaves the canvas ends its rename, so it does not reopen if the frame comes
+  // back; the keyboard stays in the panel instead of falling to the page with the field.
+  const renamedFrameGone = renamingId !== null && !designIds.includes(renamingId);
+  useLayoutEffect(() => {
+    if (!renamedFrameGone) return;
+    setRenamingId(null);
+    if (document.activeElement === document.body) {
+      (tree.current ?? closeButton.current)?.focus({ preventScroll: true });
+    }
+  }, [renamedFrameGone]);
 
   const moveTo = (index: number) => {
     setMovedTo(frames[index].designId);
@@ -130,6 +150,7 @@ export function LayersPanel({
       <div className="flex shrink-0 items-center justify-between gap-2 py-2 pl-5 pr-2">
         <h2 className="text-body-strong text-primary">Layers</h2>
         <Button
+          ref={closeButton}
           variant="ghost"
           size="sm"
           icon={X}
