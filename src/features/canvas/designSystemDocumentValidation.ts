@@ -22,10 +22,13 @@ export const MAX_KIT_NAME_LENGTH = 120;
 // a kit holds as many examples as a design holds files.
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_EXAMPLES = 64;
-// `DESIGN_SYSTEM_LIMITS`' project fields: the files a kit was read from.
+// The project fields of the sidecar's designSystemProvenance.ts: the files a
+// kit was read from, and a library kit's exports and token names.
 const MAX_PROJECT_NAME_LENGTH = 255;
 const MAX_PROJECT_FILES = 8;
 const MAX_PROJECT_PATH_LENGTH = 1024;
+const MAX_LIBRARY_EXPORTS = 1024;
+const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([
   'colors',
   'typography',
@@ -267,9 +270,8 @@ function isKitProvenance(value: unknown): boolean {
       boundedText(value.project.name, MAX_PROJECT_NAME_LENGTH) &&
       Array.isArray(value.project.files) &&
       value.project.files.length > 0 &&
-      boundedList(value.project.files, MAX_PROJECT_FILES, (file) =>
-        boundedText(file, MAX_PROJECT_PATH_LENGTH),
-      )
+      boundedList(value.project.files, MAX_PROJECT_FILES, isProjectPath) &&
+      (value.project.library === undefined || isLibraryProvenance(value.project.library))
     );
   return (
     id(value.sourceCanvasId) &&
@@ -277,6 +279,34 @@ function isKitProvenance(value: unknown): boolean {
     id(value.revision.designId) &&
     id(value.revision.revisionId)
   );
+}
+
+function isLibraryProvenance(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, ['kind', 'components', 'tokens']) &&
+    value.kind === 'shadcn' &&
+    isNameMap(value.components, MAX_LIBRARY_EXPORTS, isExportName, isProjectPath) &&
+    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName)
+  );
+}
+
+function isNameMap(
+  value: unknown,
+  max: number,
+  isKey: (key: string) => boolean,
+  isValue: (value: unknown) => boolean,
+): boolean {
+  if (!record(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= max && entries.every(([key, name]) => isKey(key) && isValue(name));
+}
+
+function isExportName(value: string): boolean {
+  return EXPORT_NAME.test(value);
+}
+
+function isProjectPath(value: unknown): boolean {
+  return boundedText(value, MAX_PROJECT_PATH_LENGTH);
 }
 
 function isSavedBy(value: unknown): boolean {

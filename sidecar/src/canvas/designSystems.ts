@@ -37,15 +37,10 @@ import {
   versionPath,
   writeVersion,
 } from './designSystemStorage.js';
+import { designSystemProvenanceSchema } from './designSystemProvenance.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
-import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
-import {
-  canvasIdentifierSchema,
-  designSystemVersionRefSchema,
-  sourceFilesSchema,
-  sourcePathSchema,
-} from './schema.js';
+import { canvasIdentifierSchema, sourceFilesSchema, sourcePathSchema } from './schema.js';
 
 /** The file a kit exports its primitives from, and the only entry it may have. */
 export const KIT_ENTRY = 'index.tsx';
@@ -53,7 +48,6 @@ export const KIT_ENTRY = 'index.tsx';
 export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
-  maxProjectFiles: 8,
 } as const;
 
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -81,34 +75,7 @@ export const designSystemObjectSchema = z
     sections: documentSectionsSchema,
     files: kitFilesSchema,
     examples: sourceFilesSchema,
-    // Extracted from a canvas revision, saved as a copy of another kit version,
-    // or read from a project folder's files.
-    provenance: z
-      .union([
-        z
-          .object({
-            sourceCanvasId: canvasIdentifierSchema,
-            revision: z
-              .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
-              .strict(),
-          })
-          .strict(),
-        z.object({ copiedFrom: designSystemVersionRefSchema }).strict(),
-        z
-          .object({
-            project: z
-              .object({
-                name: z.string().min(1).max(255),
-                files: z
-                  .array(z.string().min(1).max(MAX_PROJECT_PATH_LENGTH))
-                  .min(1)
-                  .max(DESIGN_SYSTEM_LIMITS.maxProjectFiles),
-              })
-              .strict(),
-          })
-          .strict(),
-      ])
-      .optional(),
+    provenance: designSystemProvenanceSchema.optional(),
   })
   .strict();
 
@@ -118,7 +85,6 @@ export const designSystemSchema = designSystemObjectSchema.superRefine((system, 
 });
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
-type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
 export type DesignSystemCover = DesignSystem['cover'];
 
 // The rules that span the document and its files.
@@ -189,8 +155,6 @@ export interface DesignSystemSource {
   kind: 'designMd' | 'cssOrTailwind';
   text: string;
 }
-
-export type { DesignSystemProvenance };
 
 const savedVersionSchema = z
   .object({

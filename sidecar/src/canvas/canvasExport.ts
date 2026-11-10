@@ -11,20 +11,18 @@ import {
   rm,
   rmdir,
 } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
 import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
-import { BUILD_SCRIPT } from './canvasExportBuild.js';
+import { BUILD_SCRIPT, exportPackageJson } from './canvasExportBuild.js';
+import { RADIX_PRIMITIVE_SPECIFIERS } from './designPackages.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
-import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
 import { canvasTailwindOptions } from './designStylesheet.js';
 import {
   NO_PROJECT_FOLDER,
@@ -170,53 +168,11 @@ async function canvasSourceFiles(
   }
   for (const [id, bytes] of fonts) files.push({ path: `fonts/${id}.woff2`, content: bytes });
 
-  files.push({ path: 'package.json', content: exportPackageJson() });
+  const sources = [...saved.files.values(), ...Object.values(kit.files)];
+  files.push({ path: 'package.json', content: await exportPackageJson(sources, signal) });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
   files.push({ path: 'README.md', content: README + (projectMapping(kit) ?? '') });
   return files;
-}
-
-function exportPackageJson(): string {
-  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-  const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
-  const requireFromRuntime = createRequire(anchor);
-  const version = (name: string): string => {
-    const manifestPath = requireFromRuntime.resolve(`${name}/package.json`);
-    if (ownedCanvasRuntimeDir !== null) {
-      const fromRuntime = relative(join(ownedCanvasRuntimeDir, 'node_modules'), manifestPath);
-      if (fromRuntime === '..' || fromRuntime.startsWith(`..${sep}`) || isAbsolute(fromRuntime))
-        throw new Error('Canvas runtime package resolved outside its owned directory.');
-    }
-    const manifest = requireFromRuntime(manifestPath) as { version: string };
-    return manifest.version;
-  };
-  try {
-    return `${JSON.stringify(
-      {
-        name: 'droidex-canvas-export',
-        private: true,
-        type: 'module',
-        scripts: { build: 'node build.mjs', preview: 'node build.mjs --serve' },
-        dependencies: {
-          react: version('react'),
-          'react-dom': version('react-dom'),
-          'lucide-react': '0.460.0',
-          recharts: version('recharts'),
-          'react-is': version('react-is'),
-          'simple-icons': '16.36.0',
-        },
-        devDependencies: {
-          esbuild: version('esbuild'),
-          postcss: version('postcss'),
-          tailwindcss: version('tailwindcss'),
-        },
-      },
-      null,
-      2,
-    )}\n`;
-  } catch (error) {
-    throw storageFailure('The Canvas build toolchain is unavailable. Reopen DROIDEX.', error);
-  }
 }
 
 /**
@@ -491,7 +447,12 @@ images the source and kit refer to in \`assets/\`.
 Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
 \`npm run preview\` to serve the result locally. The supported runtime imports
 are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`. Direct dependency versions are exact in
-\`package.json\`. No lockfile is generated during export: npm resolves transitive
-dependencies when you install, without the export needing registry access.
+and \`@droidex/design-system\`, plus these library packages, which
+\`package.json\` lists only when the source or kit imports them: \`radix-ui\`,
+\`@radix-ui/react-icons\`, \`class-variance-authority\`, \`clsx\`,
+\`tailwind-merge\`, and the Radix primitives \`radix-ui\` re-exports, each also
+importable as its own package: ${[...RADIX_PRIMITIVE_SPECIFIERS].map((specifier) => `\`${specifier}\``).join(', ')}.
+Direct dependency versions are exact in \`package.json\`. No lockfile is
+generated during export: npm resolves transitive dependencies when you install,
+without the export needing registry access.
 `;

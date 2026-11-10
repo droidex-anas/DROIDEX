@@ -11,9 +11,10 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
-import { canvasError } from './canvasError.js';
+import { canvasError, storageFailure } from './canvasError.js';
 import type { DesignSystem } from './designSystems.js';
 import type {
   CanvasDiagnostic,
@@ -64,6 +65,31 @@ export interface CompiledDesign {
   elements: SourceElement[];
 }
 
+const moduleSpecifierSchema = z.object({
+  text: z.string(),
+  /** Where the text between its quotes is in the source. */
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  /** False for a type-only import or re-export, which the build erases. */
+  loads: z.boolean(),
+});
+
+/** A value a module exports; a default export by the name it declares, if any. */
+const moduleExportSchema = z.union([
+  z.object({ isDefault: z.literal(false), name: z.string() }),
+  z.object({ isDefault: z.literal(true), name: z.string().nullable() }),
+]);
+
+/** Every module specifier a source names, in source order, and what it exports. */
+const moduleDeclarationsSchema = z.object({
+  specifiers: z.array(moduleSpecifierSchema),
+  exports: z.array(moduleExportSchema),
+});
+
+export type ModuleSpecifier = z.infer<typeof moduleSpecifierSchema>;
+export type ModuleExport = z.infer<typeof moduleExportSchema>;
+export type ModuleDeclarations = z.infer<typeof moduleDeclarationsSchema>;
+
 /** The design's own source is wrong. Its diagnostics are safe to show. */
 export class CompileFailedError extends Error {
   constructor(readonly diagnostics: CanvasDiagnostic[]) {
@@ -108,6 +134,7 @@ export type CompilerRequest =
       edit: ElementEdit;
       designSystem: DesignSystemRef;
     }
+  | { type: 'readModules'; requestId: number; sources: string[] }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
@@ -122,6 +149,7 @@ export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
   | { requestId: number; status: 'edited'; files: SourceFiles }
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
+  | { requestId: number; status: 'modules'; modules: ModuleDeclarations[] }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
   | {
@@ -132,17 +160,15 @@ export type CompilerResponse =
     }
   | { requestId: number; status: 'stopped' };
 
-interface PendingCompile {
-  resolve(design: CompiledDesign): void;
+interface PendingRequest {
+  /** Answers the caller from the compiler's reply to this request. */
+  answer(response: CompilerResponse): void;
   reject(error: Error): void;
   release(): void;
 }
 
-interface PendingEdit {
-  resolve(files: SourceFiles): void;
-  reject(error: Error): void;
-  release(): void;
-}
+/** A request's own answer from a reply, or undefined for one every request shares. */
+type ReadReply<T> = (response: CompilerResponse) => T | Error | undefined;
 
 // The only two things a user can do about a compiler that cannot answer, and
 // the only text safe to show: a worker's own failure carries module paths.
@@ -153,8 +179,7 @@ export const RUNTIME_UNAVAILABLE =
 
 export class CompilerWorker {
   private compiler: ChildProcess | null = null;
-  private readonly pending = new Map<number, PendingCompile>();
-  private readonly pendingEdits = new Map<number, PendingEdit>();
+  private readonly pending = new Map<number, PendingRequest>();
   private retiring: Promise<void> | null = null;
   private termination: Promise<void> | null = null;
   private nextRequestId = 1;
@@ -165,32 +190,15 @@ export class CompilerWorker {
    * `CompilerUnavailableError` when the worker dies under the call.
    */
   compile(input: CompileInput, signal: AbortSignal): Promise<CompiledDesign> {
-    if (this.termination !== null)
-      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-    if (signal.aborted) return Promise.reject(new CompileCancelledError());
-    if (this.retiring !== null) return this.retiring.then(() => this.compile(input, signal));
-
-    const requestId = this.nextRequestId++;
-    const compiler = this.liveCompiler();
-    return new Promise<CompiledDesign>((resolve, reject) => {
-      const onAbort = (): void => {
-        // The compiler checks its own signal between stages, but the caller is
-        // answered now rather than waiting for a compile it no longer wants.
-        this.settle(requestId, () => {
-          reject(new CompileCancelledError());
-        });
-        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
-      this.pending.set(requestId, {
-        resolve,
-        reject,
-        release: () => {
-          signal.removeEventListener('abort', onAbort);
-        },
-      });
-      compiler.send({ type: 'compile', requestId, input } satisfies CompilerRequest);
-    });
+    return this.request<CompiledDesign>(
+      signal,
+      (requestId) => ({ type: 'compile', requestId, input }),
+      (response) => {
+        if (response.status === 'ready') return response.design;
+        if (response.status === 'failed') return new CompileFailedError(response.diagnostics);
+        return undefined;
+      },
+    );
   }
 
   /** Applies one literal edit in the parser-owning process. */
@@ -201,40 +209,27 @@ export class CompilerWorker {
     designSystem: DesignSystemRef,
     signal: AbortSignal,
   ): Promise<SourceFiles> {
-    if (this.termination !== null)
-      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-    if (signal.aborted) return Promise.reject(new CompileCancelledError());
-    if (this.retiring !== null)
-      return this.retiring.then(() => this.edit(files, elements, edit, designSystem, signal));
-    const requestId = this.nextRequestId++;
-    const compiler = this.liveCompiler();
-    return new Promise<SourceFiles>((resolve, reject) => {
-      const onAbort = (): void => {
-        this.settleEdit(requestId, () => {
-          reject(new CompileCancelledError());
-        });
-        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
-      };
-      signal.addEventListener('abort', onAbort, { once: true });
-      this.pendingEdits.set(requestId, {
-        resolve,
-        reject,
-        release: () => {
-          signal.removeEventListener('abort', onAbort);
-        },
-      });
-      compiler.send({
-        type: 'edit',
-        requestId,
-        files,
-        elements,
-        edit,
-        designSystem,
-      } satisfies CompilerRequest);
-    });
+    return this.request<SourceFiles>(
+      signal,
+      (requestId) => ({ type: 'edit', requestId, files, elements, edit, designSystem }),
+      (response) => {
+        if (response.status === 'edited') return response.files;
+        if (response.status === 'edit_failed') return canvasError(response.code, response.message);
+        return undefined;
+      },
+    );
   }
 
-  /** Final: rejects all compiles, refuses new ones, and awaits the owned child's exit. */
+  /** What each of `sources` imports and exports, read by the parser-owning process. */
+  readModules(sources: string[], signal: AbortSignal): Promise<ModuleDeclarations[]> {
+    return this.request(
+      signal,
+      (requestId) => ({ type: 'readModules', requestId, sources }),
+      (response) => (response.status === 'modules' ? response.modules : undefined),
+    );
+  }
+
+  /** Final: rejects all requests, refuses new ones, and awaits the owned child's exit. */
   terminate(): Promise<void> {
     if (this.termination !== null) return this.termination;
     const compiler = this.compiler;
@@ -246,6 +241,45 @@ export class CompilerWorker {
         : terminateCompilerProcess(compiler, this.nextRequestId++));
     this.failAll(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
     return this.termination;
+  }
+
+  private request<T>(
+    signal: AbortSignal,
+    message: (requestId: number) => CompilerRequest,
+    read: ReadReply<T>,
+  ): Promise<T> {
+    if (this.termination !== null)
+      return Promise.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
+    if (signal.aborted) return Promise.reject(new CompileCancelledError());
+    if (this.retiring !== null)
+      return this.retiring.then(() => this.request(signal, message, read));
+
+    const requestId = this.nextRequestId++;
+    const compiler = this.liveCompiler();
+    return new Promise<T>((resolve, reject) => {
+      const onAbort = (): void => {
+        // The compiler checks its own signal between stages, but the caller is
+        // answered now rather than waiting for work it no longer wants.
+        this.settle(requestId, () => {
+          reject(new CompileCancelledError());
+        });
+        compiler.send({ type: 'cancel', requestId } satisfies CompilerRequest);
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      this.pending.set(requestId, {
+        answer: (response) => {
+          const answer = read(response);
+          if (answer === undefined) reject(sharedOutcome(response));
+          else if (answer instanceof Error) reject(answer);
+          else resolve(answer);
+        },
+        reject,
+        release: () => {
+          signal.removeEventListener('abort', onAbort);
+        },
+      });
+      compiler.send(message(requestId));
+    });
   }
 
   /**
@@ -271,7 +305,10 @@ export class CompilerWorker {
         this.loseCompiler(compiler, new Error('The compiler sent a reply it does not define.'));
         return;
       }
-      this.receive(response);
+      if (response.status === 'stopped') return;
+      this.settle(response.requestId, (call) => {
+        call.answer(response);
+      });
     });
     compiler.on('error', (error: Error) => {
       this.loseCompiler(compiler, error);
@@ -287,51 +324,6 @@ export class CompilerWorker {
     });
     this.compiler = compiler;
     return compiler;
-  }
-
-  private receive(response: CompilerResponse): void {
-    if (response.status === 'stopped') return;
-    if (this.pendingEdits.has(response.requestId)) {
-      this.settleEdit(response.requestId, (call) => {
-        switch (response.status) {
-          case 'edited':
-            call.resolve(response.files);
-            return;
-          case 'edit_failed':
-            call.reject(canvasError(response.code, response.message));
-            return;
-          case 'cancelled':
-            call.reject(new CompileCancelledError());
-            return;
-          case 'unavailable':
-            call.reject(new CompilerUnavailableError(response.reason, response.message));
-            return;
-          default:
-            call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-        }
-      });
-      return;
-    }
-    this.settle(response.requestId, (call) => {
-      switch (response.status) {
-        case 'ready':
-          call.resolve(response.design);
-          return;
-        case 'failed':
-          call.reject(new CompileFailedError(response.diagnostics));
-          return;
-        case 'cancelled':
-          call.reject(new CompileCancelledError());
-          return;
-        case 'unavailable':
-          // Already a curated recovery message from the sidecar's own storage
-          // boundary, which never carries a path (spec §8).
-          call.reject(new CompilerUnavailableError(response.reason, response.message));
-          return;
-        default:
-          call.reject(new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE));
-      }
-    });
   }
 
   /** The cause goes to the sidecar log; the caller learns only what to do. */
@@ -353,28 +345,43 @@ export class CompilerWorker {
         call.reject(error);
       });
     }
-    for (const requestId of [...this.pendingEdits.keys()])
-      this.settleEdit(requestId, (call) => {
-        call.reject(error);
-      });
   }
 
   /** Settles a request exactly once; a later answer for it is dropped. */
-  private settle(requestId: number, finish: (call: PendingCompile) => void): void {
+  private settle(requestId: number, finish: (call: PendingRequest) => void): void {
     const call = this.pending.get(requestId);
     if (!call) return;
     this.pending.delete(requestId);
     call.release();
     finish(call);
   }
+}
 
-  private settleEdit(requestId: number, finish: (call: PendingEdit) => void): void {
-    const call = this.pendingEdits.get(requestId);
-    if (!call) return;
-    this.pendingEdits.delete(requestId);
-    call.release();
-    finish(call);
+/** What each of `sources` imports and exports, read in a compiler process that ends with the read. */
+export async function readModules(
+  sources: string[],
+  signal?: AbortSignal,
+): Promise<ModuleDeclarations[]> {
+  const compiler = new CompilerWorker();
+  try {
+    return await compiler.readModules(sources, signal ?? new AbortController().signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
+    throw error;
+  } finally {
+    await compiler.terminate();
   }
+}
+
+/** What a cancelled or unavailable reply means to any request, and any other reply to this one. */
+function sharedOutcome(response: CompilerResponse): Error {
+  if (response.status === 'cancelled') return new CompileCancelledError();
+  // Already a curated recovery message from the sidecar's own storage
+  // boundary, which never carries a path (spec §8).
+  if (response.status === 'unavailable')
+    return new CompilerUnavailableError(response.reason, response.message);
+  return new CompilerUnavailableError('lost-compiler', COMPILER_UNAVAILABLE);
 }
 
 const UNAVAILABLE_REASONS: readonly CompilerUnavailableReason[] = [
@@ -404,6 +411,7 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
   if (typeof requestId !== 'number') return null;
   const edit = editResponse(requestId, fields);
   if (edit !== undefined) return edit;
+  if (status === 'modules') return modulesResponse(requestId, fields.modules);
   switch (status) {
     case 'cancelled':
     case 'stopped':
@@ -436,6 +444,14 @@ function editResponse(
       ? { requestId, status, code: code as EditFailureCode, message }
       : null;
   return undefined;
+}
+
+function modulesResponse(
+  requestId: number,
+  modules: unknown,
+): Extract<CompilerResponse, { status: 'modules' }> | null {
+  const parsed = moduleDeclarationsSchema.array().safeParse(modules);
+  return parsed.success ? { requestId, status: 'modules', modules: parsed.data } : null;
 }
 
 function isCompiledDesign(design: unknown): design is CompiledDesign {

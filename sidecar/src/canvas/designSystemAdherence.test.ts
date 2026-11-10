@@ -222,6 +222,51 @@ export default function Report() {
   );
 });
 
+test('a stock class whose key the kit carries in its project theme is the kit’s own', () => {
+  const library = {
+    ...KIT,
+    files: {
+      ...KIT.files,
+      'tailwind.theme.json': JSON.stringify({
+        borderRadius: { md: 'calc(var(--ds-radius-lg) - 2px)' },
+        fontFamily: { sans: 'var(--ds-font-sans)' },
+      }),
+    },
+  };
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => <Card className="rounded-md rounded-t-md font-sans rounded-xl">Hey</Card>;
+`,
+  };
+  const result = checkDesignSystemAdherence(files, library, 'strict');
+  // rounded-xl stays Tailwind's: the theme names md, not xl, on a scale the kit defines.
+  assert.deepEqual(places(result.diagnostics), ['design_system_radius main.tsx:2']);
+  assert.match(
+    result.diagnostics[0].message,
+    /^rounded-xl .*The kit's classes for it: .*rounded-md/,
+  );
+});
+
+test('a palette class whose colour key the kit carries in its project theme is the kit’s own', () => {
+  const library = {
+    ...KIT,
+    files: {
+      ...KIT.files,
+      'tailwind.theme.json': JSON.stringify({
+        colors: { white: 'hsl(var(--primary))', 'red-500': 'hsl(var(--destructive))' },
+      }),
+    },
+  };
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => <Card className="bg-white hover:text-white/50 border-t-red-500 bg-slate-900">Hey</Card>;
+`,
+  };
+  const result = checkDesignSystemAdherence(files, library, 'strict');
+  assert.deepEqual(places(result.diagnostics), ['design_system_color main.tsx:2']);
+  assert.match(result.diagnostics[0].message, /^bg-slate-900 is a hard-coded colour/);
+});
+
 test('a default-theme class passes where the kit has no scale of its kind', () => {
   const noRadius = {
     ...KIT,

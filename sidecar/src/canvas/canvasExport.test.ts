@@ -21,6 +21,7 @@ import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { projectMapping } from './canvasProjectExport.js';
 import { ProjectExports, type ProjectExportAdmission } from './projectExports.js';
 import { kitGuidance } from './designSystemDocument.js';
 import { importDesignSystem } from './designSystemImport.js';
@@ -493,6 +494,21 @@ test('a kit imported from a project is copied, and the README names each kit tok
   assert.doesNotMatch(readme, /^\| `--ds-primary` \|/m);
   assert.doesNotMatch(readme, /imported from|\| `--primary` \|/);
 });
+
+test('the README keeps a project name and path with backticks or line breaks on their own line', () => {
+  const imported = importDesignSystem(
+    [{ kind: 'css', text: ':root { --primary: 222 47% 11%; }', file: 'a`b.css' }],
+    {
+      id: 'odd-kit',
+      name: 'Odd kit',
+      provenance: { project: { name: 'shop\n## Owned', files: ['a`b.css'] } },
+    },
+  );
+  assert.equal(imported.status, 'imported');
+  const mapping = projectMapping(imported.system) ?? '';
+  assert.match(mapping, /^## Mapping to shop \\#\\# Owned$/m);
+  assert.match(mapping, /^This kit was read from ``a`b\.css`` in shop \\#\\# Owned\.$/m);
+});
 test('kit images travel with canvas and kit exports, one file per image', async (t) => {
   const { root, destination } = await profile(t);
   const cover = Buffer.concat([PNG, Buffer.from('cover')]);
@@ -539,6 +555,69 @@ test('kit images travel with canvas and kit exports, one file per image', async 
   const example = await readFile(join(kitDestination, 'examples', 'hero', 'cover.tsx'), 'utf8');
   assert.ok(example.includes(`src="../../assets/${textureId}"`));
   assert.doesNotMatch(tokens + example, /kit-asset:/);
+});
+
+test('package.json lists a library package only when the source or kit imports it', async (t) => {
+  const { root, destination } = await profile(t);
+  const kit = await saveDesignSystem(
+    {
+      ...SAMPLE_KIT,
+      id: 'library-kit',
+      name: 'Library kit',
+      files: {
+        ...SAMPLE_KIT.files,
+        'ui/dialog.tsx': `import { Dialog } from 'radix-ui';
+import { cva } from 'class-variance-authority';
+export const Root = Dialog.Root;
+export const variants = cva('rounded-md');
+`,
+      },
+    },
+    { mutationId: 'library-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  const source = `import { clsx } from 'clsx';
+import { Slot } from '@radix-ui/react-slot';
+export default function Hey() { return <Slot className={clsx('p-2')}><p>Hey</p></Slot>; }`;
+  await saveRevision(root, { 'main.tsx': source }, kit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  const manifest = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')) as {
+    dependencies: Record<string, string>;
+    devDependencies: Record<string, string>;
+  };
+  const sidecarModules = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'node_modules');
+  const installed = async (name: string): Promise<string> => {
+    const installedManifest = await readFile(join(sidecarModules, name, 'package.json'), 'utf8');
+    return (JSON.parse(installedManifest) as { version: string }).version;
+  };
+  // Imported, and only these: tailwind-merge and @radix-ui/react-icons are not.
+  const imported = ['@radix-ui/react-slot', 'class-variance-authority', 'clsx', 'radix-ui'];
+  assert.deepEqual(Object.keys(manifest.dependencies), [
+    ...['react', 'react-dom', 'lucide-react', 'recharts', 'react-is', 'simple-icons'],
+    ...imported,
+  ]);
+  for (const name of imported) assert.equal(manifest.dependencies[name], await installed(name));
+  assert.equal(
+    manifest.devDependencies['tailwindcss-animate'],
+    await installed('tailwindcss-animate'),
+  );
+});
+
+test('package.json lists a library package however the source names it', async (t) => {
+  const { root, destination } = await profile(t);
+  const source = `import { twMerge } from /* merge */ 'tailwind-merge';
+import { clsx } from 'cl\\u0073x';
+const { Slot } = require('@radix-ui/react-slot');
+const icons = import('@radix-ui/react-icons');
+export default function Hey() { return <Slot className={twMerge(clsx('p-2'))}>{String(icons)}</Slot>; }`;
+  await saveRevision(root, { 'main.tsx': source }, defaultKit);
+
+  await exportCanvasSource(canvasId, ref, destination);
+  const manifest = JSON.parse(await readFile(join(destination, 'package.json'), 'utf8')) as {
+    dependencies: Record<string, string>;
+  };
+  for (const name of ['tailwind-merge', 'clsx', '@radix-ui/react-slot', '@radix-ui/react-icons'])
+    assert.ok(name in manifest.dependencies, name);
 });
 
 test('the exported Hey starter builds and serves outside the checkout without a download', async (t) => {

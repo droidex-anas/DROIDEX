@@ -1,7 +1,80 @@
-// The build script every source export carries: it bundles `src/` against the
-// copied kit with the exact toolchain package.json pins, and serves the result.
+// What every source export carries to build itself: a package.json pinning the
+// toolchain the Canvas runtime compiles with, and a build script that bundles
+// `src/` against the copied kit with it and serves the result.
 
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { storageFailure } from './canvasError.js';
+import { ownedCanvasRuntimeDir, packageDirectory } from './canvasRuntime.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
+import { readModules } from './compiler.js';
+import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
+
+/**
+ * The export's package.json. The canvas toolchain and its fixed runtime
+ * packages are always listed; a library package (Radix, cva, clsx,
+ * tailwind-merge) only when `sources` import it, as the compiler process reads them.
+ */
+export async function exportPackageJson(sources: string[], signal?: AbortSignal): Promise<string> {
+  const imported = (await readModules(sources, signal)).flatMap((module) =>
+    module.specifiers.map((specifier) => specifier.text),
+  );
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
+  const requireFromRuntime = createRequire(anchor);
+  const version = (name: string): string => {
+    const directory = packageDirectory(requireFromRuntime, name);
+    if (directory === null) throw new Error(`${name} is not in the Canvas runtime.`);
+    const manifestPath = join(directory, 'package.json');
+    if (ownedCanvasRuntimeDir !== null) {
+      const fromRuntime = relative(join(ownedCanvasRuntimeDir, 'node_modules'), manifestPath);
+      if (fromRuntime === '..' || fromRuntime.startsWith(`..${sep}`) || isAbsolute(fromRuntime))
+        throw new Error('Canvas runtime package resolved outside its owned directory.');
+    }
+    const manifest = requireFromRuntime(manifestPath) as { version: string };
+    return manifest.version;
+  };
+  try {
+    const dependencies: Record<string, string> = {
+      react: version('react'),
+      'react-dom': version('react-dom'),
+      'lucide-react': '0.460.0',
+      recharts: version('recharts'),
+      'react-is': version('react-is'),
+      'simple-icons': '16.36.0',
+    };
+    for (const name of libraryPackages(imported, Object.keys(dependencies)))
+      dependencies[name] = version(name);
+    return `${JSON.stringify(
+      {
+        name: 'droidex-canvas-export',
+        private: true,
+        type: 'module',
+        scripts: { build: 'node build.mjs', preview: 'node build.mjs --serve' },
+        dependencies,
+        devDependencies: {
+          esbuild: version('esbuild'),
+          postcss: version('postcss'),
+          tailwindcss: version('tailwindcss'),
+          'tailwindcss-animate': version('tailwindcss-animate'),
+        },
+      },
+      null,
+      2,
+    )}\n`;
+  } catch (error) {
+    throw storageFailure('The Canvas build toolchain is unavailable. Reopen DROIDEX.', error);
+  }
+}
+
+/** The design packages `imported` names beyond those always listed, sorted. */
+function libraryPackages(imported: readonly string[], listed: readonly string[]): string[] {
+  const names = new Set<string>();
+  for (const specifier of imported)
+    if (DESIGN_PACKAGE_ENTRIES.has(specifier)) names.add(packageName(specifier));
+  return [...names].filter((name) => !listed.includes(name)).sort();
+}
 
 export const BUILD_SCRIPT = `import { createServer } from 'node:http';
 import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -9,6 +82,7 @@ import { join } from 'node:path';
 import esbuild from 'esbuild';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
+import tailwindcssAnimate from 'tailwindcss-animate';
 
 async function filesIn(directory) {
   const files = [];
@@ -33,7 +107,7 @@ let css = '@tailwind base;\\n@tailwind components;\\n' + tokens + '\\n';
 for (const path of cssFiles) css += await readFile(path, 'utf8') + '\\n';
 css += '@tailwind utilities;\\n';
 const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));
-const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
+const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, plugins: [tailwindcssAnimate], content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
 await mkdir('dist', { recursive: true });
 const assetUrl = (text) => text.replace(/(?:canvas|kit)-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
 await writeFile('dist/style.css', assetUrl(stylesheet.css));

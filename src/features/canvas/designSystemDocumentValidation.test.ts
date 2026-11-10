@@ -3,12 +3,13 @@ import test from 'node:test';
 
 import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
+import { designSystemProvenanceSchema } from '../../../sidecar/src/canvas/designSystemProvenance.js';
 import { STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
 import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
 import type { DocumentSection } from './designSystemDocumentProtocol';
-import { isDocumentSections } from './designSystemDocumentValidation';
+import { isDocumentSections, isKitDocument } from './designSystemDocumentValidation';
 import { isCanvasEvent } from './wireValidation';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,4 +253,41 @@ test('the renderer accepts every design system reply and event the sidecar sends
     isCanvasEvent({ type: 'canvas.result', requestId: 'req_05', ok: true, reply }),
     false,
   );
+});
+
+test('both boundaries accept a library kit provenance and refuse the same malformed ones', () => {
+  const view: DesignSystemDocumentView = {
+    id: 'acme',
+    version: 1,
+    latestVersion: 1,
+    name: 'Acme',
+    kind: 'user',
+    cover: null,
+    sections: DROIDEX_DOCUMENT_SECTIONS,
+    examples: [],
+    unmapped: [],
+    provenance: null,
+    savedAt: null,
+    savedBy: null,
+    proposal: null,
+  };
+  const library = {
+    kind: 'shadcn',
+    components: { Button: 'components/ui/button.tsx', buttonVariants: 'components/ui/button.tsx' },
+    tokens: { '--ds-accent': '--primary' },
+  };
+  const cases: [string, unknown, boolean][] = [
+    ['a shadcn library', library, true],
+    ['another library kind', { ...library, kind: 'mui' }, false],
+    ['an export that is not an identifier', { ...library, components: { 'a-b': 'a.tsx' } }, false],
+    ['a project token that is not a token name', { ...library, tokens: { '--ds-a': 'a' } }, false],
+    ['an extra key', { ...library, version: '4' }, false],
+  ];
+  for (const [name, value, accepted] of cases) {
+    const project = { name: 'acme', files: ['components.json'], library: value };
+    const provenance: unknown = JSON.parse(JSON.stringify({ project }));
+    const sidecar = designSystemProvenanceSchema.safeParse(provenance).success;
+    const renderer = isKitDocument({ ...view, provenance });
+    assert.deepEqual({ sidecar, renderer }, { sidecar: accepted, renderer: accepted }, name);
+  }
 });

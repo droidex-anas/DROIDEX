@@ -64,7 +64,16 @@ export interface DesignSystemVersionEntry {
 export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
   | { copiedFrom: { id: string; version: number } }
-  | { project: { name: string; files: string[] } };
+  | { project: { name: string; files: string[]; library?: LibraryProvenance } };
+
+/** A kit read from a component library in the project, and the project names it kept. */
+export interface LibraryProvenance {
+  kind: 'shadcn';
+  /** Each primitive the kit exports, and the project module it came from. */
+  components: Record<string, string>;
+  /** Each kit token, and the project token it was read from. */
+  tokens: Record<string, string>;
+}
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {

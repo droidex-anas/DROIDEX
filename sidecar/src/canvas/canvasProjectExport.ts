@@ -10,6 +10,8 @@ import { kitModes } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
 import { makeFolderInside, projectRelativePath } from './projectPaths.js';
 
+const LINE_BREAK = /\s*[\r\n]+\s*/g;
+
 export const NO_PROJECT_FOLDER =
   'This chat has no project folder. Start the chat in a project to export to it.';
 
@@ -49,7 +51,8 @@ export async function projectExportDestination(
 export function projectMapping(kit: DesignSystem): string | null {
   const provenance = kit.provenance;
   if (!provenance || !('project' in provenance)) return null;
-  const { name, files } = provenance.project;
+  const name = markdownText(provenance.project.name);
+  const files = provenance.project.files.map(codeSpan);
   const { light, dark } = kitModes(kit.sections);
   const aliases = new Map<string, string[]>();
   for (const token of Object.keys(light)) {
@@ -64,7 +67,7 @@ export function projectMapping(kit: DesignSystem): string | null {
   return `
 ## Mapping to ${name}
 
-This kit was read from ${files.map((file) => `\`${file}\``).join(', ')} in ${name}.
+This kit was read from ${files.join(', ')} in ${name}.
 
 | Kit import | Became |
 | --- | --- |
@@ -89,4 +92,18 @@ values in \`canvas-export/modes.json\` before replacing a name with the project'
 | --- | --- |
 ${rows.join('\n')}
 `;
+}
+
+/** The text as one line of Markdown prose, its punctuation read literally. */
+function markdownText(text: string): string {
+  return text.replace(LINE_BREAK, ' ').replace(/[\\`*_[\]<>#|~]/g, '\\$&');
+}
+
+/** The text as one Markdown code span, whatever backticks or line breaks it holds. */
+function codeSpan(text: string): string {
+  const line = text.replace(LINE_BREAK, ' ');
+  const longestRun = Math.max(0, ...(line.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longestRun + 1);
+  const padding = line.startsWith('`') || line.endsWith('`') ? ' ' : '';
+  return `${fence}${padding}${line}${padding}${fence}`;
 }

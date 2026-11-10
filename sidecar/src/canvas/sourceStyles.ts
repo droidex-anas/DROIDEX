@@ -4,6 +4,7 @@
 // style attribute only where no class says it or a class would not win.
 
 import ts from 'typescript';
+import type { KitTheme } from './kitTailwindTheme.js';
 import type { SourceReplacement } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import {
@@ -62,6 +63,7 @@ export function styleReplacements(
   opening: Opening,
   source: ts.SourceFile,
   styles: readonly ResolvedStyle[],
+  theme: KitTheme = {},
 ): SourceReplacement[] {
   // A property becomes source text, so only a whitelisted name may reach it.
   for (const { property } of styles)
@@ -72,7 +74,7 @@ export function styleReplacements(
       );
   const slots = readClasses(opening, source);
   const style = readStyle(opening);
-  for (const change of styles) setStyle(slots, style, change);
+  for (const change of styles) setStyle(slots, style, change, theme);
   const styleKept = style.entries.some((entry) => !entry.removed);
   return [
     ...writeClasses(opening, source, slots, styleKept ? style.attribute : undefined),
@@ -85,10 +87,15 @@ export function styleReplacements(
  * class says the value when one can and would apply in every frame, and the
  * style attribute says it otherwise.
  */
-function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution }: ResolvedStyle) {
+function setStyle(
+  slots: ClassSlot[],
+  style: InlineStyle,
+  { property, resolution }: ResolvedStyle,
+  theme: KitTheme,
+) {
   const own = longhands(property);
   const within = (sets: readonly string[]) => sets.every((longhand) => own.includes(longhand));
-  const live = liveClasses(slots);
+  const live = liveClasses(slots, theme);
   // A breakpoint or colour-mode class may be what this frame shows, and only
   // the style attribute is sure to win over it.
   const frameScoped = live.some(
@@ -99,7 +106,7 @@ function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution
     const sets = longhands(entry.name);
     return !entry.removed && !within(sets) && own.every((longhand) => sets.includes(longhand));
   });
-  const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution);
+  const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution, theme);
 
   const dead = live.filter(({ read }) => read.scope === 'always' && within(read.sets));
   const first = dead.at(0)?.entry;
@@ -120,7 +127,7 @@ function setStyle(slots: ClassSlot[], style: InlineStyle, { property, resolution
     if (first) first.name = important ? `!${name}` : name;
     else addClass(slots, name);
   }
-  keepLineHeight(slots, style, lostLineHeight);
+  keepLineHeight(slots, style, lostLineHeight, theme);
 }
 
 /** A font-size class sets the line height too, which stays what it was when the class goes. */
@@ -128,25 +135,26 @@ function keepLineHeight(
   slots: ClassSlot[],
   style: InlineStyle,
   lostLineHeight: string | undefined,
+  theme: KitTheme,
 ) {
-  if (lostLineHeight === undefined || setsLineHeight(slots, style)) return;
-  const leading = styleClass('lineHeight', { kind: 'raw', value: lostLineHeight });
+  if (lostLineHeight === undefined || setsLineHeight(slots, style, theme)) return;
+  const leading = styleClass('lineHeight', { kind: 'raw', value: lostLineHeight }, theme);
   if (leading) addClass(slots, leading);
   else setInline(style, 'lineHeight', inlineValue('lineHeight', lostLineHeight));
 }
 
-function liveClasses(slots: ClassSlot[]) {
+function liveClasses(slots: ClassSlot[], theme: KitTheme) {
   return slots.flatMap(({ entries }) =>
     entries.flatMap((entry) => {
-      const read = entry.name === null ? null : classStyle(entry.name);
+      const read = entry.name === null ? null : classStyle(entry.name, theme);
       return read ? [{ entry, read }] : [];
     }),
   );
 }
 
-function setsLineHeight(slots: ClassSlot[], style: InlineStyle): boolean {
+function setsLineHeight(slots: ClassSlot[], style: InlineStyle, theme: KitTheme): boolean {
   return (
-    liveClasses(slots).some(
+    liveClasses(slots, theme).some(
       ({ read }) => read.scope === 'always' && read.sets.includes('lineHeight'),
     ) || style.entries.some((entry) => !entry.removed && entry.name === 'lineHeight')
   );
