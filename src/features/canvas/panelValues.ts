@@ -154,15 +154,19 @@ export function shadowTokens(shadow: string, tokens: readonly ValueOption[]): st
     const layers = parseShadow(option.hint ?? '')?.filter(isDrawnLayer);
     return layers?.length ? [{ name: option.value, layers }] : [];
   });
-  // A token may draw several layers, so a first match can strand the rest.
+  // A token may draw several layers, so a first match can strand the rest. A
+  // start that strands once always does, so each is tried once.
+  const stranded = new Set<number>();
   const from = (start: number): string[] | null => {
     if (start === drawn.length) return [];
+    if (stranded.has(start)) return null;
     for (const { name, layers } of layered) {
       const end = start + layers.length;
       if (end > drawn.length || !sameLayers(layers, drawn.slice(start, end))) continue;
       const rest = from(end);
       if (rest) return [name, ...rest];
     }
+    stranded.add(start);
     return null;
   };
   return from(0);

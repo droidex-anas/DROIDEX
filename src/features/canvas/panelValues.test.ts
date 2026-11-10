@@ -182,4 +182,12 @@ test('a shadow reads as the kit tokens it is drawn from, or as none of them', ()
   ]);
   assert.deepEqual(shadowTokens('none', tokens), []);
   assert.equal(shadowTokens(`${md}, rgba(0, 0, 0, 0.2) 0px 2px 4px 0px`, tokens), null);
+  // Tokens that overlap split a long stack many ways, and every way strands its last layer.
+  const one = 'rgb(0, 0, 0) 0px 1px 2px 0px';
+  const overlapping = [
+    { value: '--ds-shadow-one', label: 'shadow-one', hint: '0 1px 2px #000' },
+    { value: '--ds-shadow-two', label: 'shadow-two', hint: '0 1px 2px #000, 0 1px 2px #000' },
+  ];
+  const stack = [...Array<string>(30).fill(one), 'rgb(0, 0, 0) 0px 2px 4px 0px'].join(', ');
+  assert.equal(shadowTokens(stack, overlapping), null);
 });
