@@ -6,7 +6,7 @@
 // share 4 KiB. Under Auto, before a project chat's first design, it also asks
 // the agent to offer a kit from the project.
 
-import { stat } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import path from 'node:path';
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, type TokenSectionKind } from './designSystemDocument.js';
@@ -100,10 +100,10 @@ export async function designSystemBrief(
   };
 }
 
-/** Whether the folder keeps a shadcn/ui library's components.json at its root. */
+/** Whether the folder keeps a shadcn/ui library's components.json at its root, as the import reads it: no link. */
 async function hasShadcnLibrary(folder: string): Promise<boolean> {
   try {
-    return (await stat(path.join(folder, 'components.json'))).isFile();
+    return (await lstat(path.join(folder, 'components.json'))).isFile();
   } catch (error) {
     if (isFileSystemError(error)) return false;
     throw error;

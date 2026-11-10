@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -109,6 +109,11 @@ test('under Auto, the opening read before a project chat’s first design offers
   // A canvas already designed has its look, and a chat with no folder has nothing to read.
   assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, folder, true), offer);
   assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, null, false), offer);
+  // The import refuses a linked components.json, so it is not offered.
+  await writeFile(join(folder, 'elsewhere.json'), '{}');
+  await symlink(join(folder, 'elsewhere.json'), join(folder, 'components.json'));
+  assert.doesNotMatch(await guidance(AUTO_DESIGN_SYSTEM_REF, folder, false), /shadcn/);
+  await rm(join(folder, 'components.json'));
   // A shadcn/ui library is offered as what the kit is made from.
   await writeFile(join(folder, 'components.json'), '{}');
   assert.match(

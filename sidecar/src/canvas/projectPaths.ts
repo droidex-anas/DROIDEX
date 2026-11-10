@@ -70,9 +70,19 @@ async function readInside(
       if (opened.dev !== entry.dev || opened.ino !== entry.ino)
         return { problem: `${file} changed while it was being read. Try again.` };
       if (opened.size > MAX_FILE_BYTES) return { problem: tooLarge(file) };
-      const bytes = await handle.readFile();
-      if (bytes.length > MAX_FILE_BYTES) return { problem: tooLarge(file) };
-      return { bytes, identity: `${String(opened.dev)}:${String(opened.ino)}` };
+      // The file can grow after the stat, so the read stops one byte past the cap.
+      const bytes = Buffer.alloc(MAX_FILE_BYTES + 1);
+      let length = 0;
+      while (length < bytes.length) {
+        const { bytesRead } = await handle.read(bytes, length, bytes.length - length, length);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+      }
+      if (length > MAX_FILE_BYTES) return { problem: tooLarge(file) };
+      return {
+        bytes: bytes.subarray(0, length),
+        identity: `${String(opened.dev)}:${String(opened.ino)}`,
+      };
     } finally {
       await handle.close();
     }
