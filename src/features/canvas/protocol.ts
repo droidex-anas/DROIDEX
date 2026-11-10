@@ -181,7 +181,8 @@ export interface RevisionRef {
 
 export type CanvasSeed =
   | { kind: 'revision'; canvasId: string; revision: RevisionRef }
-  | { kind: 'library'; itemId: string };
+  | { kind: 'library'; itemId: string }
+  | { kind: 'svg'; assetId: string };
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
@@ -358,6 +359,7 @@ export interface CanvasSummary {
 export interface CreateFramesResult {
   canvasId: string;
   frames: CanvasFrame[];
+  svgAsImage?: { designId: string; reason: 'too_large' | 'stylesheet' }[];
 }
 
 export interface WriteReceipt {

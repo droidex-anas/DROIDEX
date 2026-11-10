@@ -231,7 +231,12 @@ export interface CanvasSummary {
 export interface CreateFramesResult {
   canvasId: string;
   frames: CanvasFrame[];
+  // Told once, by the create that drew them; a retry's recorded answer lacks it.
+  svgAsImage?: { designId: string; reason: SvgImageReason }[];
 }
+
+/** Why a frame seeded from an SVG draws it as an `<img>` instead of inline JSX. */
+export type SvgImageReason = 'too_large' | 'stylesheet';
 
 export interface WriteReceipt {
   designId: string;

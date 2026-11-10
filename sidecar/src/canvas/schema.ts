@@ -163,6 +163,7 @@ const revisionSeedSchema = z
 export const canvasSeedSchema = z.discriminatedUnion('kind', [
   revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
+  z.object({ kind: z.literal('svg'), assetId: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
 ]);
 
 const coordinateSchema = z
