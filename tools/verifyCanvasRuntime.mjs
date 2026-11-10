@@ -44,6 +44,13 @@ const VICTORY_VENDOR_LICENSES = [
   'internmap',
 ];
 
+// README_LICENSES in tools/stage-canvas-runtime.mjs and canvasRuntime.ts.
+const README_LICENSES = new Set([
+  'node_modules/dlv/README.md',
+  'node_modules/react-remove-scroll-bar/README.md',
+  'node_modules/victory-vendor/README.md',
+]);
+
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
 // needs, so the gate resolves all declared specifiers and loads the three the compiler calls
@@ -142,27 +149,18 @@ function isLicense(path) {
 function verifyNotices(manifest) {
   const files = new Set(Object.keys(manifest.files));
   const expected = [...files]
-    .filter(
-      (path) =>
-        isNotice(path) ||
-        path === 'node_modules/victory-vendor/README.md' ||
-        path === 'node_modules/dlv/README.md',
-    )
+    .filter((path) => isNotice(path) || README_LICENSES.has(path))
     .sort();
   if (JSON.stringify(manifest.notices) !== JSON.stringify(expected))
     fail('manifest.json has an incomplete license and notice inventory');
 
   const packages = [...files].filter((path) => path.endsWith('/package.json'));
   const packageSet = new Set(packages);
-  const licenses = expected.filter(isLicense);
+  const licenses = expected.filter((path) => isLicense(path) || README_LICENSES.has(path));
   for (const packagePath of packages) {
     let directory = packagePath.slice(0, -'/package.json'.length);
     if (directory.startsWith('node_modules/@esbuild/darwin-')) {
       if (!files.has('node_modules/esbuild/LICENSE.md')) fail(`${directory} has no esbuild license`);
-      continue;
-    }
-    if (directory === 'node_modules/victory-vendor' || directory === 'node_modules/dlv') {
-      if (!files.has(`${directory}/README.md`)) fail(`${directory} has no license statement`);
       continue;
     }
     const ownPackage = directory;

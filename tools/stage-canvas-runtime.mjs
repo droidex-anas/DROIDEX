@@ -1,8 +1,8 @@
 // Stages the Canvas compiler runtime that electron-builder ships as
 // resources/sidecar/canvas-runtime (spec §6). Node-loaded compiler packages
 // retain their dependency closure; browser packages come from esbuild's resolved
-// module graph, plus package metadata and notices. VictoryVendor's README
-// carries its top-level license statement; its vendored libraries have licenses.
+// module graph, plus package metadata and notices. A few packages state their
+// license only in their README, which is then staged as their notice.
 //
 // One complete tree per architecture, because DROIDEX_CANVAS_RUNTIME_DIR names
 // a single directory a packaged compile may resolve from.
@@ -22,7 +22,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
 import { CANVAS_RUNTIME_MANIFEST, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
@@ -57,6 +57,13 @@ const SKIPPED_NAMES = new Set([
   'CHANGELOG.md',
   '.DS_Store',
   '.gitkeep',
+]);
+// Packages that ship no license file and state their license in the README.
+// VictoryVendor's vendored libraries keep their own licenses.
+const README_LICENSES = new Set([
+  'node_modules/dlv/README.md',
+  'node_modules/react-remove-scroll-bar/README.md',
+  'node_modules/victory-vendor/README.md',
 ]);
 const SKIPPED_SUFFIXES = ['.map', '.ts', '.tsx', '.mts', '.cts', '.flow'];
 const SKIPPED_DIRECTORIES = new Set(['test', 'tests', '__tests__', 'doc', 'docs', 'skills']);
@@ -149,6 +156,11 @@ function isNotice(path) {
   return /^(?:LICEN[CS]E|NOTICE)(?:$|[.-])/i.test(name);
 }
 
+/** A sidecar file's path inside the staged runtime, with forward slashes. */
+function stagedPath(file) {
+  return relative(sidecarDir, file).split(sep).join('/');
+}
+
 function copyFile(file, archDir) {
   const destination = join(archDir, relative(sidecarDir, file));
   mkdirSync(dirname(destination), { recursive: true });
@@ -159,7 +171,7 @@ function copyPackage({ dir, name }, archDir) {
   const prune = PRUNED[name];
   for (const file of packageFiles(dir)) {
     const packagePath = relative(dir, file).split(sep).join('/');
-    if (isSkipped(packagePath) && !(name === 'dlv' && packagePath === 'README.md')) continue;
+    if (isSkipped(packagePath) && !README_LICENSES.has(stagedPath(file))) continue;
     if (prune?.(packagePath)) continue;
     copyFile(file, archDir);
   }
@@ -201,18 +213,15 @@ function browserModuleFiles() {
     if (packageRoot === null) fail(`${input} has no installed package.`);
     const files = packages.get(packageRoot) ?? new Set();
     files.add(file);
-    for (let ancestor = dirname(file); ancestor !== packageRoot; ancestor = dirname(ancestor)) {
-      const manifest = join(ancestor, 'package.json');
-      if (existsSync(manifest)) files.add(manifest);
-    }
     packages.set(packageRoot, files);
   }
+  // Every manifest, not only those above a bundled file: a subpath such as
+  // `react-remove-scroll-bar/constants` resolves through its own package.json.
   for (const [dir, files] of packages) {
-    files.add(join(dir, 'package.json'));
     for (const file of packageFiles(dir)) {
-      const path = relative(dir, file).split(sep).join('/');
-      if (isNotice(path) || (dir.endsWith('victory-vendor') && path === 'README.md'))
-        files.add(file);
+      const packagePath = relative(dir, file).split(sep).join('/');
+      const isManifest = basename(file) === 'package.json' && !isSkipped(packagePath);
+      if (isManifest || isNotice(file) || README_LICENSES.has(stagedPath(file))) files.add(file);
     }
   }
   return packages;
@@ -323,12 +332,7 @@ function writeManifest(archDir, binaryPath) {
   }
   const paths = Object.keys(files);
   const notices = paths
-    .filter(
-      (path) =>
-        isNotice(path) ||
-        path === 'node_modules/victory-vendor/README.md' ||
-        path === 'node_modules/dlv/README.md',
-    )
+    .filter((path) => isNotice(path) || README_LICENSES.has(path))
     .sort();
   const packagePaths = paths.filter((path) => path.endsWith('/package.json'));
   const manifestPath = join(archDir, CANVAS_RUNTIME_MANIFEST);

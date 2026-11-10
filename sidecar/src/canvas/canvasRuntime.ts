@@ -65,6 +65,13 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
 // name it. It is read at its path inside the package `require` would find.
 const EXPORT_HIDDEN_ENTRIES = new Set(['simple-icons/index.mjs']);
 
+// Packages that ship no license file and state their license in the README.
+const README_LICENSES = new Set([
+  'node_modules/dlv/README.md',
+  'node_modules/react-remove-scroll-bar/README.md',
+  'node_modules/victory-vendor/README.md',
+]);
+
 // victory-vendor embeds these distributions without their package manifests.
 const VICTORY_VENDOR_LICENSES = [
   'd3-array',
@@ -275,29 +282,18 @@ function isLicense(path: string): boolean {
 
 function missingNotice(manifest: RuntimeManifest): string | null {
   const files = new Set(Object.keys(manifest.files));
-  const expected = [...files]
-    .filter(
-      (path) =>
-        isNotice(path) ||
-        path === 'node_modules/victory-vendor/README.md' ||
-        path === 'node_modules/dlv/README.md',
-    )
-    .sort();
+  const expected = [...files].filter((path) => isNotice(path) || README_LICENSES.has(path)).sort();
   if (JSON.stringify(manifest.notices) !== JSON.stringify(expected))
     return 'manifest.json has an incomplete license and notice inventory';
 
   const packages = [...files].filter((path) => path.endsWith('/package.json'));
   const packageSet = new Set(packages);
-  const licenses = expected.filter(isLicense);
+  const licenses = expected.filter((path) => isLicense(path) || README_LICENSES.has(path));
   for (const packagePath of packages) {
     let directory = packagePath.slice(0, -'/package.json'.length);
     if (directory.startsWith('node_modules/@esbuild/darwin-')) {
       if (!files.has('node_modules/esbuild/LICENSE.md'))
         return `${directory} has no esbuild license`;
-      continue;
-    }
-    if (directory === 'node_modules/victory-vendor' || directory === 'node_modules/dlv') {
-      if (!files.has(`${directory}/README.md`)) return `${directory} has no license statement`;
       continue;
     }
     const ownPackage = directory;
