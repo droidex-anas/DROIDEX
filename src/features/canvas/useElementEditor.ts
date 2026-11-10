@@ -305,7 +305,28 @@ export function useElementEditor({
 
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: { ...draft.values }, text: draft.text };
+  const styles = Object.fromEntries(
+    Object.entries(draft.values).map(([property, value]) => [
+      property,
+      previewValue(property, value),
+    ]),
+  );
+  return { elementId, instancePath, styles, text: draft.text };
+}
+
+const BLUR_PROPERTIES = new Set(['filter', 'backdropFilter']);
+
+/**
+ * The CSS a previewed value sets: a picked kit token, or a list of them, is
+ * named by the edit but drawn through var(), as the class it saves as is.
+ */
+function previewValue(property: string, value: string): string {
+  if (!value.startsWith('--')) return value;
+  const tokens = value
+    .split(',')
+    .map((name) => `var(${name.trim()})`)
+    .join(', ');
+  return BLUR_PROPERTIES.has(property) ? `blur(${tokens})` : tokens;
 }
 
 /** The panel's first field that takes typing, else its first working button. */
