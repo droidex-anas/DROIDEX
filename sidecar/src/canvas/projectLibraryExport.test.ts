@@ -164,6 +164,57 @@ test('the export copies the kit and says why when the library is not as the kit 
   assert.equal(await libraryExport(root, SAMPLE_KIT, SOURCE), null);
 });
 
+test("an export reads a project token by the stylesheet's own spelling, as both modes set it", async (t) => {
+  const css = LIBRARY['app/globals.css'];
+  const { root, kit } = await libraryKit(t, {
+    'app/globals.css': css.replace(
+      '--radius: 0.5rem;',
+      '--radius: 0.5rem;\n    --Brand_500: #123456;',
+    ),
+  });
+  const note = new Map([
+    ['note.css', '.note { color: var(--ds-brand-500); background: var(--ds-primary); }\n'],
+  ]);
+  const read = async () => {
+    const exported = await libraryExport(root, kit, note);
+    assert.equal(exported?.status, 'rewritten');
+    return String(exported.files[0].content);
+  };
+  assert.equal(
+    await read(),
+    '.note { color: var(--Brand_500); background: hsl(var(--primary)); }\n',
+  );
+
+  // A full colour in light and channels in dark have no single reference, and
+  // neither has a property spelled two ways.
+  await writeFile(
+    join(root, 'app/globals.css'),
+    css
+      .replace('--primary: 0 0% 9%;', '--primary: #171717;\n    --Brand_500: #123456;')
+      .replace('.dark {', '.dark {\n    --brand-500: #654321;'),
+  );
+  assert.equal(
+    await read(),
+    '.note { color: var(--ds-brand-500); background: var(--ds-primary); }\n',
+  );
+});
+
+test("an export keeps the source's own hsl() around a project's channels", async (t) => {
+  const { root, kit } = await libraryKit(t);
+  const note = new Map([
+    [
+      'note.css',
+      '.note { color: hsl(var(--ds-primary) / 50%); border-color: hsl(var(--ds-border)); }\n',
+    ],
+  ]);
+  const exported = await libraryExport(root, kit, note);
+  assert.equal(exported?.status, 'rewritten');
+  assert.equal(
+    String(exported.files[0].content),
+    '.note { color: hsl(var(--primary) / 50%); border-color: hsl(var(--border)); }\n',
+  );
+});
+
 test("the export reads the library's ui folder, not the cn() helper the kit copied", async (t) => {
   const { root, kit } = await libraryKit(t);
   await rename(join(root, 'lib/utils.ts'), join(root, 'lib/utils.tsx'));

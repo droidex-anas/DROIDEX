@@ -6,6 +6,7 @@
 
 import { realpath } from 'node:fs/promises';
 import path from 'node:path';
+import postcss from 'postcss';
 import { codeSpan, markdownText } from './canvasProjectExport.js';
 import type { ExportFile } from './canvasExport.js';
 import { readModules } from './compiler.js';
@@ -16,7 +17,13 @@ import { isBareHsl } from './designSystemImport.js';
 import { aliasPath, readLibraryLayout } from './designSystemLibrary.js';
 import { bindingClause, entryExports, kitComponentPath, kitModule } from './libraryComponents.js';
 import type { DesignSystem } from './designSystems.js';
-import { emptyDeclared, readCss, type Declared } from './designSystemSources.js';
+import {
+  emptyDeclared,
+  readCss,
+  tokenName,
+  type Declared,
+  type Mode,
+} from './designSystemSources.js';
 import { isFileSystemError, readProjectText } from './projectPaths.js';
 
 export type LibraryExport =
@@ -40,11 +47,13 @@ interface ProjectLibrary {
    */
   imports: Map<string, { specifier: string; bindings: Map<string, string> }>;
   declared: Declared;
+  /** The stylesheet's spelling of each custom property it declares, by its kit spelling. */
+  spellings: ReadonlyMap<string, string>;
 }
 
 const SCRIPT = /\.[jt]sx?$/;
-// A reference closes, or goes on to its fallback.
-const TOKEN_REFERENCE = /var\(\s*(--[\w-]+)\s*([),])/g;
+// A reference, in the source's own hsl() or not, closes or goes on to its fallback.
+const TOKEN_REFERENCE = /(\bhsla?\(\s*)?var\(\s*(--[\w-]+)\s*([),])/g;
 const SINGLE_REFERENCE = /^var\(\s*(--[\w-]+)\s*\)$/;
 const MAX_REFERENCE_HOPS = 8;
 
@@ -75,7 +84,7 @@ export async function libraryExport(
     signal,
   );
   const scriptModules = new Map(scripts.map(([file], index) => [file, modules[index]]));
-  const tokens = new ProjectTokens(kit, project.library.tokens, found.declared);
+  const tokens = new ProjectTokens(kit, project.library.tokens, found);
   const components = new Map<string, string>();
   const files: ExportFile[] = [];
   for (const [file, text] of source) {
@@ -170,7 +179,25 @@ async function readProjectLibrary(
     modules: library.components,
     imports,
     declared,
+    spellings: declaredSpellings(layout.css.text),
   };
+}
+
+/** Custom properties the stylesheet spells one way, by their kit spelling. */
+function declaredSpellings(css: string): Map<string, string> {
+  const spellings = new Map<string, string | null>();
+  postcss.parse(css, { from: undefined, map: false }).walkDecls((declaration) => {
+    const name = declaration.variable ? tokenName(declaration.prop) : null;
+    if (name === null) return;
+    const known = spellings.get(name);
+    spellings.set(
+      name,
+      known === undefined || known === declaration.prop ? declaration.prop : null,
+    );
+  });
+  return new Map(
+    [...spellings].flatMap(([name, spelling]) => (spelling === null ? [] : [[name, spelling]])),
+  );
 }
 
 /**
@@ -232,7 +259,11 @@ class ProjectTokens {
   private readonly modes: { light: Record<string, string>; dark: Record<string, string> };
   private readonly project = new Map<string, { name: string; isChannels: boolean }>();
 
-  constructor(kit: DesignSystem, imported: Readonly<Record<string, string>>, declared: Declared) {
+  constructor(
+    kit: DesignSystem,
+    imported: Readonly<Record<string, string>>,
+    { declared, spellings }: Pick<ProjectLibrary, 'declared' | 'spellings'>,
+  ) {
     this.modes = kitModes(kit.sections);
     const names = new Map(Object.entries(imported));
     for (const [kitToken, projectName] of Object.entries(imported)) {
@@ -243,31 +274,35 @@ class ProjectTokens {
         names.set(aliased, projectName);
     }
     for (const [kitToken, name] of names) {
-      const projectValue = lightValue(declared, name);
-      // shadcn's bare channels are a colour only inside hsl().
-      if (projectValue !== undefined)
-        this.project.set(kitToken, { name, isChannels: isBareHsl(projectValue) });
+      // A custom property's name is case-sensitive, so the reference needs the stylesheet's own spelling.
+      const spelling = spellings.get(name);
+      const light = modeValue(declared, name, 'light');
+      const dark = modeValue(declared, name, 'dark');
+      if (spelling === undefined || light === undefined || dark === undefined) continue;
+      // shadcn's bare channels are a colour only inside hsl(), and one reference reads both modes.
+      const isChannels = isBareHsl(light);
+      if (isBareHsl(dark) === isChannels)
+        this.project.set(kitToken, { name: spelling, isChannels });
     }
   }
 
   /** The text with each kit token it reads replaced by the project's; one with none is kept. */
   rewrite(text: string): string {
-    return text.replace(TOKEN_REFERENCE, (reference: string, name: string, close: string) => {
-      const token = this.project.get(name);
-      const isKitToken =
-        Object.hasOwn(this.modes.light, name) || Object.hasOwn(this.modes.dark, name);
-      if (token === undefined || (close === ',' && token.isChannels)) {
-        if (isKitToken) this.unmapped.add(name);
-        return reference;
-      }
-      if (close === ',') {
-        this.used.set(name, `var(${token.name})`);
-        return `var(${token.name},`;
-      }
-      const replacement = token.isChannels ? `hsl(var(${token.name}))` : `var(${token.name})`;
-      this.used.set(name, replacement);
-      return replacement;
-    });
+    return text.replace(
+      TOKEN_REFERENCE,
+      (reference: string, hsl: string | undefined, name: string, close: string) => {
+        const token = this.project.get(name);
+        const needsHsl = token?.isChannels === true && hsl === undefined;
+        if (token === undefined || (close === ',' && needsHsl)) {
+          if (Object.hasOwn(this.modes.light, name) || Object.hasOwn(this.modes.dark, name))
+            this.unmapped.add(name);
+          return reference;
+        }
+        const read = `var(${token.name}${close}`;
+        this.used.set(name, token.isChannels ? `hsl(var(${token.name}))` : `var(${token.name})`);
+        return needsHsl ? `hsl(${read})` : `${hsl ?? ''}${read}`;
+      },
+    );
   }
 
   /** The kit's values for the unmapped tokens, light on :root and dark on .dark as shadcn/ui sets them. */
@@ -297,16 +332,17 @@ class ProjectTokens {
   }
 }
 
-/** The value the project's light mode reads for a token, through plain references to others. */
-function lightValue(declared: Declared, name: string): string | undefined {
-  const { light, shared } = declared.scopes;
-  let current = name;
-  for (let hop = 0; hop < MAX_REFERENCE_HOPS; hop += 1) {
-    const scope = Object.hasOwn(light, current) ? light : shared;
+/** The value a mode of the project reads for a token, through plain references to others. */
+function modeValue(declared: Declared, name: string, mode: Mode): string | undefined {
+  const { shared } = declared.scopes;
+  const own = declared.scopes[mode];
+  let current: string | null = name;
+  for (let hop = 0; hop < MAX_REFERENCE_HOPS && current !== null; hop += 1) {
+    const scope = Object.hasOwn(own, current) ? own : shared;
     if (!Object.hasOwn(scope, current)) return undefined;
     const next = SINGLE_REFERENCE.exec(scope[current])?.[1];
     if (next === undefined) return scope[current];
-    current = next;
+    current = tokenName(next);
   }
   return undefined;
 }
