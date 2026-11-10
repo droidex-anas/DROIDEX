@@ -26,6 +26,7 @@ import type * as esbuild from 'esbuild';
 import type * as postcssModule from 'postcss';
 import type * as tailwindModule from 'tailwindcss';
 import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
+import runtimePackages from './designRuntimePackages.json' with { type: 'json' };
 
 /** The runtime the app owns, or null when a checkout resolves its own. */
 export const ownedCanvasRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR ?? null;
@@ -63,11 +64,7 @@ const RUNTIME_SPECIFIERS: readonly string[] = [
 const FILE_ENTRY = /\.m?js$/;
 
 // Packages that ship no license file and state their license in the README.
-const README_LICENSES = new Set([
-  'node_modules/dlv/README.md',
-  'node_modules/react-remove-scroll-bar/README.md',
-  'node_modules/victory-vendor/README.md',
-]);
+const README_LICENSES: ReadonlySet<string> = new Set(runtimePackages.readmeLicenses);
 
 // victory-vendor embeds these distributions without their package manifests.
 const VICTORY_VENDOR_LICENSES = [

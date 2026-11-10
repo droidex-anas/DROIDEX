@@ -44,12 +44,14 @@ const VICTORY_VENDOR_LICENSES = [
   'internmap',
 ];
 
-// README_LICENSES in tools/stage-canvas-runtime.mjs and canvasRuntime.ts.
-const README_LICENSES = new Set([
-  'node_modules/dlv/README.md',
-  'node_modules/react-remove-scroll-bar/README.md',
-  'node_modules/victory-vendor/README.md',
-]);
+// The Radix primitives a design may import, and the packages that state their
+// license only in their README; the sidecar reads the same file.
+const RUNTIME_PACKAGES = JSON.parse(
+  readFileSync(new URL('../sidecar/src/canvas/designRuntimePackages.json', import.meta.url), 'utf8'),
+);
+
+/** Staged as those packages' notices; also read by tools/stage-canvas-runtime.mjs. */
+export const README_LICENSES = new Set(RUNTIME_PACKAGES.readmeLicenses);
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
@@ -68,44 +70,6 @@ const LOAD_TIMEOUT_MS = 60_000;
 // any directory a user opens and the app's signature omits it, so the runtime
 // tolerates it as a regular file and nothing else.
 const FINDER_METADATA = '.DS_Store';
-// RADIX_PRIMITIVES in sidecar/src/canvas/designPackages.ts.
-const RADIX_PRIMITIVES = [
-  'accessible-icon',
-  'accordion',
-  'alert-dialog',
-  'aspect-ratio',
-  'avatar',
-  'checkbox',
-  'collapsible',
-  'context-menu',
-  'dialog',
-  'direction',
-  'dropdown-menu',
-  'form',
-  'hover-card',
-  'label',
-  'menubar',
-  'navigation-menu',
-  'one-time-password-field',
-  'password-toggle-field',
-  'popover',
-  'portal',
-  'progress',
-  'radio-group',
-  'scroll-area',
-  'select',
-  'separator',
-  'slider',
-  'slot',
-  'switch',
-  'tabs',
-  'toast',
-  'toggle',
-  'toggle-group',
-  'toolbar',
-  'tooltip',
-  'visually-hidden',
-];
 const RUNTIME_SPECIFIERS = [
   'esbuild',
   'postcss',
@@ -119,7 +83,7 @@ const RUNTIME_SPECIFIERS = [
   'recharts/es6/index.js',
   'simple-icons/index.mjs',
   'radix-ui/dist/index.mjs',
-  ...RADIX_PRIMITIVES.map((name) => `@radix-ui/react-${name}/dist/index.mjs`),
+  ...RUNTIME_PACKAGES.radixPrimitives.map((name) => `@radix-ui/react-${name}/dist/index.mjs`),
   '@radix-ui/react-icons/dist/react-icons.esm.js',
   'class-variance-authority/dist/index.mjs',
   'clsx/dist/clsx.mjs',
