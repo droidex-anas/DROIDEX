@@ -16,7 +16,11 @@ import {
   type CanvasPresence,
   type LandedWrites,
 } from '../../../src/features/canvas/canvasPresence';
-import { SELECT_MODE, type BoardInteraction } from '../../../src/features/canvas/canvasState';
+import {
+  reduceBoardInteraction,
+  SELECT_MODE,
+  type BoardInteraction,
+} from '../../../src/features/canvas/canvasState';
 import { CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { ExportToProjectDialog } from '../../../src/features/canvas/ExportToProjectDialog';
@@ -26,6 +30,7 @@ import {
   useFramePins,
 } from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
+import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import {
   elementVariantPrompt,
@@ -172,6 +177,7 @@ const RIGHT_INSET = Number(params.get('inset') ?? 0);
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
 // `?navigator=1` puts the chat column's Components tab beside the board.
+// `?layers=1` gives the board its Layers tool, with the panel open at its left.
 const PLACED: { designId: string; name: string; rect: FrameRect }[] = [
   { designId: 'a', name: 'Design A', rect: { x: 100, y: 50, width: 400, height: 300 } },
   { designId: 'b', name: 'Design B', rect: { x: 650, y: 300, width: 400, height: 300 } },
@@ -499,6 +505,7 @@ function Harness() {
   const [width, setWidth] = useState(1000);
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
   const [exporting, setExporting] = useState<CanvasFrame | null>(null);
+  const [layersOpen, setLayersOpen] = useState(params.has('layers'));
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
   const picks = useElementPins('chat_1');
@@ -757,9 +764,40 @@ function Harness() {
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
         Outside board
       </button>
-      <div style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}>
+      <div
+        data-canvas-board
+        style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}
+      >
+        {layersOpen && (
+          <LayersPanel
+            frames={snapshot.frames}
+            selectedFrameIds={interaction.selectedFrameIds}
+            agentWorking={false}
+            onRename={frameActions.rename}
+            onPick={(designId, additive) => {
+              setInteraction(
+                reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),
+              );
+            }}
+            onFocusFrame={(designId) => board.current?.focusFrame(designId)}
+            onLeave={(designId) => board.current?.focusLabel(designId)}
+            onClose={() => {
+              setLayersOpen(false);
+            }}
+          />
+        )}
         <CanvasBoard
           ref={board}
+          layers={
+            params.has('layers')
+              ? {
+                  open: layersOpen,
+                  onToggle: () => {
+                    setLayersOpen(!layersOpen);
+                  },
+                }
+              : undefined
+          }
           rightInset={RIGHT_INSET}
           snapshot={snapshot}
           interaction={interaction}

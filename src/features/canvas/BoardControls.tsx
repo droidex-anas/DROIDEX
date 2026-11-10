@@ -1,5 +1,5 @@
 // The board's own tools, floating on it the way a design tool's do: Select,
-// Interact, Edit element, Design, the annotation tools and Fit in a raised rail at the top left, the
+// Interact, Edit element, Design, the annotation tools, Fit and Layers in a raised rail at the top left, the
 // zoom bar at the bottom left, and align and distribute centred at the bottom
 // while a multiple selection gives them work (spec §4). Every control works on
 // the board behind it, and each names its keyboard shortcut.
@@ -9,10 +9,12 @@ import {
   Maximize,
   MousePointer,
   MousePointerSquareDashed,
+  PanelLeft,
   Play,
   SlidersHorizontal,
 } from '@droidex/icons';
 import { ALT_MODIFIER_LABEL } from '../../lib/shortcuts';
+import { LAYERS_KEY_LABEL } from './boardKeys';
 import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
@@ -89,6 +91,12 @@ const DISTRIBUTE_ACTIONS: { axis: DistributeAxis; label: string; glyph: ReactNod
   },
 ];
 
+/** The layers panel beside the board: whether it is open, and the rail's way to flip it. */
+export interface LayersToggle {
+  open: boolean;
+  onToggle: () => void;
+}
+
 export interface BoardControlsProps {
   scale: number;
   /** Spec §11's timings; the selection bar reveals on the popover token. */
@@ -111,6 +119,8 @@ export interface BoardControlsProps {
   onDistribute: (axis: DistributeAxis) => void;
   /** The rail's annotation group, which the board owns. */
   annotationTools: ReactNode;
+  /** Absent where the board has no layers panel beside it. */
+  layers?: LayersToggle;
 }
 
 export function BoardControls({
@@ -128,6 +138,7 @@ export function BoardControls({
   onAlign,
   onDistribute,
   annotationTools,
+  layers,
 }: BoardControlsProps) {
   return (
     <div
@@ -197,6 +208,19 @@ export function BoardControls({
         >
           <Maximize className="h-4 w-4" aria-hidden />
         </Tool>
+        {layers && (
+          <>
+            <span aria-hidden className="canvas-rail-divider" />
+            <Tool
+              label="Layers"
+              tip={`Layers  ${LAYERS_KEY_LABEL}`}
+              pressed={layers.open}
+              onClick={layers.onToggle}
+            >
+              <PanelLeft className="h-4 w-4" aria-hidden />
+            </Tool>
+          </>
+        )}
       </div>
 
       <ZoomControl

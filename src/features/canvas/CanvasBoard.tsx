@@ -15,7 +15,7 @@ import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { boardCommands } from './boardCommands';
-import { BoardControls } from './BoardControls';
+import { BoardControls, type LayersToggle } from './BoardControls';
 import { BoardOverlays } from './BoardOverlays';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
@@ -115,6 +115,8 @@ export interface CanvasBoardProps {
    * laid out beside the board needs none, since the board measures without it.
    */
   rightInset?: number;
+  /** The Layers tool on the rail; absent where the board has no layers panel beside it. */
+  layers?: LayersToggle;
 }
 
 export function CanvasBoard({
@@ -139,6 +141,7 @@ export function CanvasBoard({
   restoredViewport,
   onLeave,
   rightInset = 0,
+  layers,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -463,6 +466,7 @@ export function CanvasBoard({
           onAlign={commands.align}
           onDistribute={commands.distribute}
           annotationTools={<AnnotationTools {...annotation.rail} />}
+          layers={layers}
         />
 
         <p role="status" className="sr-only">

@@ -286,6 +286,9 @@ export function CanvasWorkspace({
             onOpenSource={(designId) => {
               dispatch(openSourcePanel(designId));
             }}
+            onShowLayers={(shown) => {
+              dispatch({ type: 'show-layers', shown });
+            }}
           />
         </div>
       </div>
@@ -325,6 +328,7 @@ function CanvasBody({
   onChoose,
   onRetry,
   onOpenSource,
+  onShowLayers,
 }: {
   state: CanvasPaneState;
   appSessionId: string;
@@ -338,6 +342,7 @@ function CanvasBody({
   onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
   onOpenSource: (designId: string) => void;
+  onShowLayers: (shown: boolean) => void;
 }) {
   const toolsMissing = useStoreSelector((current) =>
     lacksCanvasTools(current.sessions[appSessionId]),
@@ -388,6 +393,8 @@ function CanvasBody({
           onInteractionChange={onInteractionChange}
           boardRef={boardRef}
           onOpenSource={onOpenSource}
+          layersOpen={state.layersOpen}
+          onShowLayers={onShowLayers}
         />
       );
   }

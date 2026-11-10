@@ -7,6 +7,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, type RefObject } from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
+import { isBoardEditor, isLayersKey } from './boardKeys';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
 import { recordPlacements, revisionEntry, type HistoryStep } from './boardHistory';
@@ -14,12 +15,13 @@ import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } fr
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
-import { lacksCanvasTools, type BoardInteraction } from './canvasState';
+import { lacksCanvasTools, reduceBoardInteraction, type BoardInteraction } from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
+import { LayersPanel } from './layers/LayersPanel';
 import type {
   ArrangeFramesInput,
   CanvasFrame,
@@ -57,6 +59,8 @@ export function CanvasBoardMount({
   onInteractionChange,
   boardRef,
   onOpenSource,
+  layersOpen,
+  onShowLayers,
 }: {
   appSessionId: string;
   snapshot: CanvasSnapshot;
@@ -69,6 +73,9 @@ export function CanvasBoardMount({
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
   onOpenSource: (designId: string) => void;
+  /** The layers panel stands at the board's left. */
+  layersOpen: boolean;
+  onShowLayers: (shown: boolean) => void;
 }) {
   const { canvasId, frames } = snapshot;
   const dispatch = useStoreDispatch();
@@ -194,55 +201,93 @@ export function CanvasBoardMount({
     return <DocumentMount appSessionId={appSessionId} canvasId={canvasId} shown={shownDocument} />;
 
   return (
-    <div data-canvas-board className="min-h-0 flex-1">
-      {snapshot.frames.length === 0 ? (
-        toolsMissing ? (
-          <CanvasToolsMissing canvasId={canvasId} />
-        ) : (
-          <CanvasInvitation />
-        )
-      ) : (
-        <CanvasBoard
-          ref={boardRef}
-          snapshot={snapshot}
-          restoredViewport={restoredViewport}
-          onLeave={onLeaveBoard}
-          onOpenSource={onOpenSource}
-          onArrangeFrames={arrangeFrames}
-          onAnnotate={annotate}
-          onEditElement={editElement}
-          onRemoveFrames={removeFrames}
-          onHistory={stepHistory}
-          interaction={interaction}
-          onInteractionChange={onInteractionChange}
-          presence={presence}
-          writes={writes}
-          readSource={readSource}
-          pinnedIds={pinnedIds}
-          design={design}
-          frameActions={frameActions.actions}
-          onTagFrames={
-            pinnable
-              ? (designIds) => {
-                  const tagging = designIds.flatMap((designId) =>
-                    frames.filter((frame) => frame.designId === designId),
-                  );
-                  toggleFramePins(appSessionId, canvasId, tagging);
-                }
-              : undefined
-          }
-          renderPreview={(frame, revisionId, selections) => (
-            <DesignPreview
-              canvasId={canvasId}
-              frame={frame}
-              revisionId={revisionId}
-              readArtifact={readArtifact}
-              reportPreview={reportPreview}
-              selections={selections}
-            />
-          )}
+    <div
+      data-canvas-board
+      className="flex min-h-0 flex-1"
+      onKeyDown={(event) => {
+        // A field takes ⌥1 as the character it types.
+        if (!isLayersKey(event) || isBoardEditor(event.target)) return;
+        event.preventDefault();
+        onShowLayers(!layersOpen);
+      }}
+    >
+      {layersOpen && (
+        <LayersPanel
+          frames={frames}
+          selectedFrameIds={selectedFrameIds}
+          agentWorking={agentWorking}
+          onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
+          onPick={(designId, additive) => {
+            const next = reduceBoardInteraction(interaction, { type: 'pick', designId, additive });
+            if (next !== interaction) onInteractionChange(next);
+          }}
+          onFocusFrame={(designId) => {
+            boardRef.current?.focusFrame(designId);
+          }}
+          onLeave={(designId) => {
+            boardRef.current?.focusLabel(designId);
+          }}
+          onClose={() => {
+            onShowLayers(false);
+          }}
         />
       )}
+      <div className="min-h-0 min-w-0 flex-1">
+        {snapshot.frames.length === 0 ? (
+          toolsMissing ? (
+            <CanvasToolsMissing canvasId={canvasId} />
+          ) : (
+            <CanvasInvitation />
+          )
+        ) : (
+          <CanvasBoard
+            ref={boardRef}
+            layers={{
+              open: layersOpen,
+              onToggle: () => {
+                onShowLayers(!layersOpen);
+              },
+            }}
+            snapshot={snapshot}
+            restoredViewport={restoredViewport}
+            onLeave={onLeaveBoard}
+            onOpenSource={onOpenSource}
+            onArrangeFrames={arrangeFrames}
+            onAnnotate={annotate}
+            onEditElement={editElement}
+            onRemoveFrames={removeFrames}
+            onHistory={stepHistory}
+            interaction={interaction}
+            onInteractionChange={onInteractionChange}
+            presence={presence}
+            writes={writes}
+            readSource={readSource}
+            pinnedIds={pinnedIds}
+            design={design}
+            frameActions={frameActions.actions}
+            onTagFrames={
+              pinnable
+                ? (designIds) => {
+                    const tagging = designIds.flatMap((designId) =>
+                      frames.filter((frame) => frame.designId === designId),
+                    );
+                    toggleFramePins(appSessionId, canvasId, tagging);
+                  }
+                : undefined
+            }
+            renderPreview={(frame, revisionId, selections) => (
+              <DesignPreview
+                canvasId={canvasId}
+                frame={frame}
+                revisionId={revisionId}
+                readArtifact={readArtifact}
+                reportPreview={reportPreview}
+                selections={selections}
+              />
+            )}
+          />
+        )}
+      </div>
       {frameActions.dialog}
     </div>
   );
