@@ -23,11 +23,14 @@ export interface LibraryFile {
 }
 
 const NAMESPACES: ReadonlySet<string> = new Set(THEME_NAMESPACES);
-// A colour function around one token, as shadcn's `hsl(var(--primary) / <alpha-value>)`:
-// the kit's token already holds the whole colour, and the kit's theme adds the alpha.
-const WRAPPED_TOKEN =
-  /^(?:hsla?|rgba?|oklch|oklab|lab|lch)\(\s*(var\(--[a-z0-9-]+\))\s*(?:\/\s*<alpha-value>\s*)?\)$/i;
+// A colour function around one token, as shadcn's `hsl(var(--primary) / 0.5)` (groups 1
+// and 2), or any other reference to a token (group 3). A Tailwind arbitrary value spells
+// its spaces `_`.
+const TOKEN_CONSUMER =
+  /\b(?:hsla?|rgba?|oklch|oklab|lab|lch)\([\s_]*var\([\s_]*(--[\w-]+)[\s_]*\)[\s_]*(?:\/[\s_]*(var\([^()]*\)|[^()\s_]+)[\s_]*)?\)|var\([\s_]*(--[\w-]+)/gi;
 const TOKEN_REFERENCE = /var\(\s*(--[\w-]+)/g;
+// Text before an offset that is still inside a Tailwind arbitrary value's brackets.
+const IN_ARBITRARY_VALUE = /\[[^\s"'`\]]*$/;
 // The canvas stylesheet already opens with Tailwind's layers, and a kit loads no other file.
 const DROPPED_AT_RULES = new Set(['tailwind', 'import', 'config', 'plugin']);
 const MAX_LISTED = 6;
@@ -127,23 +130,55 @@ function setThemeValue(
 
 /** The value with each project token read as the kit token it became; null when one is not in the kit. */
 function readsKitTokens(value: string, kitNames: Readonly<Record<string, string>>): string | null {
-  const kitName = (name: string) => {
-    const projectName = tokenName(name) ?? '';
-    return Object.hasOwn(kitNames, projectName) ? kitNames[projectName] : null;
-  };
-  if ([...value.matchAll(TOKEN_REFERENCE)].some(([, name]) => kitName(name) === null)) return null;
-  const rewritten = value.replace(
-    TOKEN_REFERENCE,
-    (reference, name: string) => `var(${kitName(name) ?? name}`,
+  if ([...value.matchAll(TOKEN_REFERENCE)].some(([, name]) => kitName(name, kitNames) === null))
+    return null;
+  return withKitTokens(value, kitNames);
+}
+
+/**
+ * The CSS or source text with each reference to a project token read as the
+ * kit token it became. The kit token holds the whole colour, so a colour
+ * function around one is dropped, and its alpha becomes a color-mix().
+ */
+export function withKitTokens(text: string, kitNames: Readonly<Record<string, string>>): string {
+  return text.replace(
+    TOKEN_CONSUMER,
+    (
+      consumer: string,
+      wrapped: string | undefined,
+      alpha: string | undefined,
+      referenced: string | undefined,
+      offset: number,
+    ) => {
+      const kitToken = kitName(wrapped ?? referenced ?? '', kitNames);
+      if (kitToken === null) return consumer;
+      if (referenced !== undefined) return `var(${kitToken}`;
+      // Tailwind fills <alpha-value> in, and the kit's theme adds a colour's alpha itself.
+      if (alpha === undefined || alpha === '<alpha-value>') return `var(${kitToken})`;
+      const before = text.slice(Math.max(0, offset - 200), offset);
+      const space = consumer.includes('_') || IN_ARBITRARY_VALUE.test(before) ? '_' : ' ';
+      return `color-mix(in${space}srgb,${space}var(${kitToken})${space}${alphaPercentage(alpha, space)},${space}transparent)`;
+    },
   );
-  return WRAPPED_TOKEN.exec(rewritten)?.[1] ?? rewritten;
+}
+
+function kitName(name: string, kitNames: Readonly<Record<string, string>>): string | null {
+  const projectName = tokenName(name) ?? '';
+  return Object.hasOwn(kitNames, projectName) ? kitNames[projectName] : null;
+}
+
+function alphaPercentage(alpha: string, space: string): string {
+  if (alpha.endsWith('%')) return alpha;
+  const fraction = Number(alpha);
+  if (Number.isFinite(fraction)) return `${String(Math.round(fraction * 10_000) / 100)}%`;
+  return `calc(${alpha}${space}*${space}100%)`;
 }
 
 /**
  * The stylesheet as the kit's own CSS: without Tailwind's directives, which
  * the canvas sheet opens with, without the custom properties that became kit
- * tokens, and without any rule they leave empty. A loading at-rule is left out
- * and reported, as a kit loads no other file.
+ * tokens, and without any rule they leave empty; the rest read the kit tokens.
+ * A loading at-rule is left out and reported, as a kit loads no other file.
  */
 export function libraryStylesheet(
   css: LibraryFile,
@@ -164,6 +199,10 @@ export function libraryStylesheet(
   root.walkDecls((declaration) => {
     if (Object.hasOwn(kitNames, tokenName(declaration.prop) ?? '') && declaration.variable)
       declaration.remove();
+    else declaration.value = withKitTokens(declaration.value, kitNames);
+  });
+  root.walkAtRules('apply', (rule) => {
+    rule.params = withKitTokens(rule.params, kitNames);
   });
   for (let removed = true; removed; ) {
     removed = false;

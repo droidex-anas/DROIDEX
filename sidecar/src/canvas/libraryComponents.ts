@@ -6,6 +6,7 @@
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { moduleExports } from './designSystemBrief.js';
 import { MAX_LIBRARY_EXPORTS } from './designSystemProvenance.js';
+import { withKitTokens } from './libraryTheme.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
 /** Where the kit keeps the library's cn() helper. */
@@ -47,11 +48,12 @@ interface KitModule {
 export function kitComponents(
   library: readonly LibraryComponent[],
   aliases: LibraryAliases,
+  kitNames: Readonly<Record<string, string>>,
   diagnostics: CanvasDiagnostic[],
 ): { entry: string; files: [string, string][]; components: Record<string, string> } {
   const modules = new Map<string, KitModule>();
   for (const component of library) {
-    const module = kitModule(component, aliases);
+    const module = kitModule(component, aliases, kitNames);
     if ('problem' in module)
       diagnostics.push({
         code: 'unsupported_import',
@@ -100,6 +102,7 @@ export function kitComponents(
 function kitModule(
   component: LibraryComponent,
   aliases: LibraryAliases,
+  kitNames: Readonly<Record<string, string>>,
 ): KitModule | { problem: string } {
   const needs: string[] = [];
   for (const specifier of importSpecifiers(component.text)) {
@@ -110,7 +113,7 @@ function kitModule(
       };
     if (kitSpecifier.startsWith('./')) needs.push(kitSpecifier.slice('./'.length));
   }
-  const source = component.text
+  const source = withKitTokens(component.text, kitNames)
     .replace(USE_CLIENT, '')
     .replace(IMPORT_SPECIFIER, (statement, quote: string, specifier: string) => {
       const kitSpecifier = componentSpecifier(specifier, aliases) ?? specifier;

@@ -76,7 +76,7 @@ export async function importLibraryDesignSystem(
   const diagnostics = [...read.diagnostics, ...imported.diagnostics];
   const theme = libraryTheme(read.config, kitNames, diagnostics);
   const stylesheet = libraryStylesheet(read.css, kitNames, diagnostics);
-  const library = kitComponents(read.components, read.aliases, diagnostics);
+  const library = kitComponents(read.components, read.aliases, kitNames, diagnostics);
   if (library.files.length === 0)
     return refused(`No component in ${read.aliases.ui} could be copied.`, diagnostics);
   const parsed = designSystemSchema.safeParse({

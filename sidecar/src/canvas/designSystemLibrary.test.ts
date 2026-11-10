@@ -291,6 +291,37 @@ test('a shadcn/ui library becomes a kit of its own components, tokens and theme 
   assert.match(built.css, /\.rounded-md\s*\{[^}]*calc\(var\(--ds-radius\) - 2px\)/);
 });
 
+test('copied rules and components read the kit tokens, even where --border and --ds-border both exist', async (t) => {
+  const files = {
+    ...LIBRARY,
+    'app/globals.css':
+      LIBRARY['app/globals.css'].replace(
+        '--radius: 0.5rem;',
+        `--radius: 0.5rem;
+    --ds-border: 0 0% 50%;`,
+      ) + '.sample { color: hsl(var(--primary) / 0.5); border-color: hsl(var(--border)); }\n',
+    'components/ui/badge.tsx': `export function Badge() {
+  return <span className="bg-[hsl(var(--primary)/0.5)]" style={{ outlineColor: "hsl(var(--ds-border))" }} />
+}
+`,
+  };
+  const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
+  assert.equal(imported.status, 'imported');
+  const { system } = imported;
+  assert.equal(imported.kitNames['--border'], '--border');
+  assert.equal(imported.kitNames['--ds-border'], '--ds-border');
+  assert.match(
+    system.files['styles.css'],
+    /\.sample \{ color: color-mix\(in srgb, var\(--ds-primary\) 50%, transparent\); border-color: var\(--border\); \}/,
+  );
+  const badge = system.files['components/ui/badge.tsx'];
+  assert.match(badge, /"bg-\[color-mix\(in_srgb,_var\(--ds-primary\)_50%,_transparent\)\]"/);
+  assert.match(badge, /outlineColor: "var\(--ds-border\)"/);
+  const built = await buildDesignStylesheet({}, system);
+  assert.ok(built.ok);
+  assert.match(built.css, /color-mix\(in srgb, var\(--ds-primary\) 50%, transparent\)/);
+});
+
 test('a library past the component bound keeps the first by name and names the rest', async (t) => {
   // Without the two components left out, every one past the bound is a part.
   const files = Object.fromEntries(
