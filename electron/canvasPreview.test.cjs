@@ -476,6 +476,53 @@ test('a vector answer has its own cap and carries only markup or a known refusal
   assert.equal(await answer({ refused: 'anything' }), null);
 });
 
+test('a pick or hover by path is passed on only for an element id and a path of child indices', () => {
+  const { preview, posted } = runIntermediate();
+  const properties = ['color'];
+  for (const named of [
+    { elementId: '', instancePath: '0/1' },
+    { elementId: 'el_1', instancePath: '0/../1' },
+    { elementId: 'el_1', instancePath: 4 },
+  ]) {
+    assert.equal(preview.pick({ ...named, properties, sequence: 1 }), 'invalid_request');
+    assert.equal(preview.hover(named), 'invalid_request');
+  }
+  assert.deepEqual(posted, []);
+  preview.pick({ elementId: 'el_1', instancePath: '0/1', properties, sequence: 2 });
+  void preview.hover({ elementId: 'el_1', instancePath: '0/1', x: 4, y: 4 });
+  assert.deepEqual(
+    posted.map(({ command, elementId, instancePath, x }) => [command, elementId, instancePath, x]),
+    [
+      ['pick', 'el_1', '0/1', undefined],
+      ['hover', 'el_1', '0/1', undefined],
+    ],
+  );
+});
+
+test('a tree answer has its own cap, and each node is rebuilt or the answer refused', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const answer = (data) => {
+    const asked = preview.tree();
+    reply({ event: 'tree', sequence: posted.at(-1).sequence, ...data });
+    return asked.then(JSON.parse);
+  };
+  const node = { elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 };
+  // Far over the 4096 bytes any other event may measure.
+  const nodes = Array.from({ length: 400 }, () => node);
+  assert.deepEqual(await answer({ nodes, truncated: true }), { nodes, cap: 400, truncated: true });
+  assert.deepEqual(await answer({ nodes: [{ ...node, style: 'x' }], truncated: false }), {
+    nodes: [node],
+    cap: 400,
+    truncated: false,
+  });
+  for (const refused of [
+    { nodes: [...nodes, node], truncated: true },
+    { nodes: [{ ...node, instancePath: '0/x' }], truncated: false },
+    { nodes: [{ ...node, depth: -1 }], truncated: false },
+    { nodes: [node] },
+  ])
+    assert.equal(await answer(refused), null);
+});
 test('a guest is not attachable until the preview session is configured', async () => {
   // The module that configures the session is what reports readiness, so main
   // has no second flag to forget: an unconfigured session routes DIRECT, and a

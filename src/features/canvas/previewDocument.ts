@@ -1,7 +1,8 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the nine audited literals below.
+// element's `executeJavaScript`, with exactly the nine audited literals below
+// and the tree's one in previewDocumentTree.ts.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -373,7 +374,7 @@ export function readPreviewVector(value: unknown): PreviewVector | null {
 }
 
 /** A direct answer's JSON, within its cap, or undefined. */
-function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
+export function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
   if (typeof value !== 'string' || utf8Bytes(value) > capBytes) return undefined;
   try {
     return JSON.parse(value);
@@ -427,11 +428,11 @@ function readRect(value: unknown): FrameRect | null {
   return width < 0 || height < 0 ? null : { x, y, width, height };
 }
 
-function record(value: unknown): value is Record<string, unknown> {
+export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function count(value: unknown): value is number {
+export function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
@@ -439,7 +440,7 @@ function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function present(value: unknown): value is string {
+export function present(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 

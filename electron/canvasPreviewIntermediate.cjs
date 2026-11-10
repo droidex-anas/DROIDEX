@@ -5,6 +5,8 @@
 
 const {
   MAX_PREVIEW_SELECTION_BYTES,
+  MAX_PREVIEW_TREE_BYTES,
+  MAX_PREVIEW_TREE_NODES,
   MAX_PREVIEW_VECTOR_BYTES,
 } = require('./canvasPreviewReporter.cjs');
 
@@ -52,8 +54,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
- * `vector` with the design's root `<svg>` or why it has none; each of those
- * waits for its own answer.
+ * `vector` with the design's root `<svg>` or why it has none, and `tree` with
+ * the design's marked elements in document order; each of those waits for
+ * its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -191,6 +194,21 @@ const INTERMEDIATE_SCRIPT = `(() => {
       ? { elementId: value.elementId, instancePath: value.instancePath }
       : null;
 
+  // The design's marked elements as the reporter walked them; one node that is
+  // not one refuses the whole answer.
+  const normalizeTree = (data) => {
+    const given = data.nodes;
+    if (!Array.isArray(given) || given.length > ${String(MAX_PREVIEW_TREE_NODES)}) return null;
+    if (typeof data.truncated !== 'boolean') return null;
+    const nodes = [];
+    for (const entry of given) {
+      const node = entry && typeof entry === 'object' ? nodeOf(entry) : null;
+      if (!node || !Number.isSafeInteger(entry.depth) || entry.depth < 0) return null;
+      nodes.push(Object.assign(node, { tagName: text(entry.tagName), depth: entry.depth }));
+    }
+    return { nodes, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: data.truncated };
+  };
+
   // Only these shapes leave the intermediate, rebuilt field by field so no
   // getter, prototype or extra property from generated code ever travels.
   const normalize = (data) => {
@@ -253,7 +271,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
         ? bytes(encoded) > ${String(MAX_PREVIEW_SELECTION_BYTES)}
         : data.event === 'vector'
           ? bytes(encoded) > ${String(MAX_PREVIEW_VECTOR_EVENT_BYTES)}
-          : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+          : data.event === 'tree'
+            ? bytes(encoded) > ${String(MAX_PREVIEW_TREE_BYTES)}
+            : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -262,7 +282,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (data.event === 'probe' || data.event === 'locate' || data.event === 'vector') {
+    if (['probe', 'locate', 'vector', 'tree'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -416,6 +436,10 @@ const INTERMEDIATE_SCRIPT = `(() => {
           : null;
       };
       return askFrame({ command: 'vector' }, read, ${String(PREVIEW_VECTOR_DEADLINE_MS)});
+    },
+    tree() {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      return askFrame({ command: 'tree' }, normalizeTree);
     },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
