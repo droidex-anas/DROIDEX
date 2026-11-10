@@ -13,6 +13,7 @@ import {
   commitText,
   editDraft,
   followRevision,
+  previewedStyles,
   previewStyle,
   previewText,
   revertStyle,
@@ -204,10 +205,10 @@ export function useElementEditor({
     return true;
   };
 
-  /** Changes what the selected element previews. */
-  const update = (change: (draft: ElementEditDraft) => ElementEditDraft) => {
+  /** Changes what the selected element previews, from what it draws now. */
+  const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: change(current.draft) });
+    if (current) choose({ ...current, draft: change(current.draft, current.shown) });
   };
 
   /** Sends the commit `make` draws from the draft, if it has one to send. */
@@ -280,7 +281,7 @@ export function useElementEditor({
     pick,
     clear,
     preview: (property: string, value: string) => {
-      update((draft) => previewStyle(draft, property, value));
+      update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
     },
     revert: (property: string) => {
       update((draft) => revertStyle(draft, property));
@@ -305,7 +306,7 @@ export function useElementEditor({
 
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: { ...draft.values }, text: draft.text };
+  return { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
 }
 
 /** The panel's first field that takes typing, else its first working button. */

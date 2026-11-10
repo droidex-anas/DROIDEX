@@ -1,6 +1,6 @@
 // The fixed choices the element panel offers: the segments for layout, flex
 // alignment, text alignment and border style, and the options for keyword
-// properties. Flex and grid keep whether their element sits inline; the
+// properties and Tailwind's stock blurs. Flex and grid keep whether their element sits inline; the
 // displays that are no layout wait in the Display row's ⋯ menu.
 
 import {
@@ -143,3 +143,21 @@ export const WEIGHTS: ValueOption[] = Object.entries(WEIGHT_NAMES).map(([value, 
   label: `${value} ${name}`,
   hint: value,
 }));
+/** Tailwind's blur steps by their class's step (`blur-md`); a background blur takes the same. */
+const BLUR_PX: Record<string, number> = {
+  sm: 4,
+  default: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  '2xl': 40,
+  '3xl': 64,
+};
+export const BLUR_STEPS: ValueOption[] = [
+  { value: 'none', label: 'None' },
+  ...Object.entries(BLUR_PX).map(([label, px]) => ({
+    value: `blur(${String(px)}px)`,
+    label,
+    hint: `${String(px)}px`,
+  })),
+];
