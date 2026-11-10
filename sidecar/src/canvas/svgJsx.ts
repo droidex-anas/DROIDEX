@@ -18,10 +18,12 @@ interface SvgElement {
   children: (SvgElement | string)[];
 }
 
-interface ClassRule {
-  classes: Set<string>;
-  declarations: [property: string, value: string][];
+interface ClassDeclaration {
+  rule: number;
+  value: string;
 }
+
+type ClassStyles = Map<string, Map<string, ClassDeclaration>>;
 
 const TOKEN = /<\/[\w:.-]+>|<([\w:.-]+)((?: [\w:.-]+="[^"]*")*)(\/?)>|([^<]+)/gy;
 const ATTRIBUTE = / ([\w:.-]+)="([^"]*)"/g;
@@ -66,22 +68,33 @@ export function svgFrameSource(
   sanitised: Buffer,
   designId: string,
 ): SvgFrameSource {
-  const root = readSanitised(sanitised.toString('utf8'));
-  const rules = classRules(takeStylesheets(root));
-  if (rules === null) return imageFrame(asset, 'stylesheet');
-  applyClassRules(root, rules);
+  try {
+    return { mainTsx: vectorSource(asset, sanitised.toString('utf8'), designId), svgAsImage: null };
+  } catch (error) {
+    if (error instanceof KeptAsImage) return imageFrame(asset, error.reason);
+    throw error;
+  }
+}
+
+/** Thrown as soon as the conversion meets what keeps the SVG an image, so no more work is spent on it. */
+class KeptAsImage extends Error {
+  constructor(readonly reason: SvgImageReason) {
+    super(reason);
+  }
+}
+
+function vectorSource(asset: OwnedAsset, sanitised: string, designId: string): string {
+  const root = readSanitised(sanitised);
+  applyClassRules(root, classStyles(takeStylesheets(root)));
   root.attributes.set('width', String(asset.width));
   root.attributes.set('height', String(asset.height));
 
   const writer = new JsxWriter(`v${designId.slice(0, 8)}-`);
   const markup = writer.element(root, '    ', ' className="block"');
   const mainTsx = `export default function Vector() {\n  return (\n${markup}\n  );\n}\n`;
-  if (
-    writer.elements > CANVAS_LIMITS.maxSourceElements ||
-    Buffer.byteLength(mainTsx, 'utf8') > CANVAS_LIMITS.maxFileBytes
-  )
-    return imageFrame(asset, 'too_large');
-  return { mainTsx, svgAsImage: null };
+  if (Buffer.byteLength(mainTsx, 'utf8') > CANVAS_LIMITS.maxFileBytes)
+    throw new KeptAsImage('too_large');
+  return mainTsx;
 }
 
 function imageFrame(asset: OwnedAsset, reason: SvgImageReason): SvgFrameSource {
@@ -95,6 +108,7 @@ function imageFrame(asset: OwnedAsset, reason: SvgImageReason): SvgFrameSource {
 function readSanitised(markup: string): SvgElement {
   const document: SvgElement = { name: '', attributes: new Map(), children: [] };
   const open = [document];
+  let elements = 0;
   for (const token of markup.matchAll(TOKEN)) {
     const parent = open[open.length - 1];
     const name = token.at(1);
@@ -102,6 +116,8 @@ function readSanitised(markup: string): SvgElement {
     if (characters !== undefined) parent.children.push(decode(characters));
     else if (name === undefined) open.pop();
     else {
+      elements += 1;
+      if (elements > CANVAS_LIMITS.maxSourceElements) throw new KeptAsImage('too_large');
       const element: SvgElement = { name, attributes: new Map(), children: [] };
       for (const [, attribute, value] of token[2].matchAll(ATTRIBUTE))
         element.attributes.set(attribute, decode(value));
@@ -133,9 +149,13 @@ function takeStylesheets(element: SvgElement): string[] {
   return stylesheets;
 }
 
-/** The rules as `.class { presentation }` lists, or null when one is anything more. */
-function classRules(stylesheets: string[]): ClassRule[] | null {
-  const rules: ClassRule[] = [];
+/**
+ * What each class sets: its properties' last declarations and the number of
+ * the rule they are in, from rules that are all `.class { presentation }`.
+ */
+function classStyles(stylesheets: string[]): ClassStyles {
+  const styles: ClassStyles = new Map();
+  let rule = 0;
   for (const css of stylesheets) {
     for (const node of postcss.parse(css).nodes) {
       if (node.type === 'comment') continue;
@@ -143,67 +163,75 @@ function classRules(stylesheets: string[]): ClassRule[] | null {
         node.type !== 'rule' ||
         !node.selectors.every((selector) => CLASS_SELECTOR.test(selector))
       )
-        return null;
-      const rule: ClassRule = {
-        classes: new Set(node.selectors.map((selector) => selector.slice(1))),
-        declarations: [],
-      };
+        throw new KeptAsImage('stylesheet');
+      rule += 1;
       for (const declaration of node.nodes) {
         if (declaration.type === 'comment') continue;
         const property = declaration.type === 'decl' ? declaration.prop.toLowerCase() : '';
         if (declaration.type !== 'decl' || declaration.important || !PRESENTATION.has(property))
-          return null;
-        rule.declarations.push([property, declaration.value]);
+          throw new KeptAsImage('stylesheet');
+        for (const selector of node.selectors) {
+          const name = selector.slice(1);
+          const declared = styles.get(name) ?? new Map<string, ClassDeclaration>();
+          declared.set(property, { rule, value: declaration.value });
+          styles.set(name, declared);
+        }
       }
-      rules.push(rule);
     }
   }
-  return rules;
+  return styles;
 }
 
 // A class rule beats a presentation attribute and loses to `style`, so writing
-// it over the attribute keeps the cascade. The class goes either way: it meant
-// nothing outside the SVG's own stylesheet, and in a frame it is Tailwind's.
-function applyClassRules(element: SvgElement, rules: ClassRule[]): void {
-  const classes = (element.attributes.get('class') ?? '').split(/\s+/);
+// it over the attribute keeps the cascade; of two rules, the later one wins. The
+// class goes either way: it meant nothing outside the SVG's own stylesheet, and
+// in a frame it is Tailwind's.
+function applyClassRules(element: SvgElement, styles: ClassStyles): void {
+  const winners = new Map<string, ClassDeclaration>();
+  for (const name of new Set((element.attributes.get('class') ?? '').split(/\s+/)))
+    for (const [property, declared] of styles.get(name) ?? [])
+      if ((winners.get(property)?.rule ?? 0) < declared.rule) winners.set(property, declared);
   element.attributes.delete('class');
-  for (const rule of rules) {
-    if (!classes.some((name) => rule.classes.has(name))) continue;
-    for (const [property, value] of rule.declarations) element.attributes.set(property, value);
-  }
+  for (const [property, { value }] of winners) element.attributes.set(property, value);
   for (const child of element.children)
-    if (typeof child !== 'string') applyClassRules(child, rules);
+    if (typeof child !== 'string') applyClassRules(child, styles);
 }
 
 class JsxWriter {
-  elements = 0;
+  // Characters are at least as many bytes, so running out of room means the file is too large.
+  private room = CANVAS_LIMITS.maxFileBytes;
 
   constructor(private readonly idPrefix: string) {}
 
   /** Text content stays on one line, where JSX keeps its spaces. */
   element(element: SvgElement, indent: string, extraAttributes = ''): string {
     if (TEXT_CONTENT.has(element.name)) return indent + this.inline(element);
-    this.elements += 1;
-    const start = `<${element.name}${extraAttributes}${this.attributes(element)}`;
+    const start = this.spend(
+      `${indent}<${element.name}${extraAttributes}${this.attributes(element)}`,
+    );
     // Characters outside text content draw nothing.
     const children = element.children.filter((child) => typeof child !== 'string');
-    if (children.length === 0) return `${indent}${start} />`;
+    if (children.length === 0) return `${start} />`;
     return [
-      `${indent}${start}>`,
+      `${start}>`,
       ...children.map((child) => this.element(child, `${indent}  `)),
       `${indent}</${element.name}>`,
     ].join('\n');
   }
 
   private inline(element: SvgElement): string {
-    this.elements += 1;
-    const start = `<${element.name}${this.attributes(element)}`;
+    const start = this.spend(`<${element.name}${this.attributes(element)}`);
     const content = element.children
-      .map((child) => (typeof child === 'string' ? jsxText(child) : this.inline(child)))
+      .map((child) => (typeof child === 'string' ? this.spend(jsxText(child)) : this.inline(child)))
       .join('');
     return content === '' ? `${start} />` : `${start}>${content}</${element.name}>`;
   }
 
+  private spend(written: string): string {
+    this.room -= written.length;
+    if (this.room < 0) throw new KeptAsImage('too_large');
+    return written;
+  }
   private attributes(element: SvgElement): string {
     let written = '';
     for (const [name, value] of element.attributes) {

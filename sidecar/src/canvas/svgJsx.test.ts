@@ -74,6 +74,12 @@ test('class rules are written onto their elements, and the classes go', () => {
   );
   assert.match(mainTsx, /<rect width="5" height="5" stroke="#fff" strokeWidth="2px" \/>/);
   assert.doesNotMatch(mainTsx, / class=|<style/);
+
+  // Of two rules, the later one wins, whatever order the classes are named in.
+  const later = drawn(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 50 50"><style>.a{fill:red}.b{fill:blue}</style><rect class="b a" width="5" height="5"/></svg>`,
+  );
+  assert.match(later.mainTsx, /<rect width="5" height="5" fill="blue" \/>/);
 });
 
 test('an SVG the frame cannot draw as JSX is drawn as its owned image', () => {
