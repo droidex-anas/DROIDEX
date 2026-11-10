@@ -3,7 +3,7 @@
 // it, the keyboard's way to a frame and back, renaming, and the rail's toggle.
 
 import { expect, test } from '@playwright/test';
-import { boardUrl, serveBoard, stubGuests } from './board/boardPage';
+import { box, boardUrl, serveBoard, stubGuests } from './board/boardPage';
 
 serveBoard();
 
@@ -460,8 +460,9 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
 
   const tree = page.getByRole('tree', { name: 'Frames' });
   const frameRow = tree.getByRole('treeitem', { name: 'Design A, Ready' });
-  const card = tree.getByRole('treeitem', { name: 'Card, section' });
-  const title = tree.getByRole('treeitem', { name: 'Card, h1' });
+  const instance = tree.getByRole('treeitem', { name: 'Card, Instance' });
+  const card = tree.getByRole('treeitem', { name: 'section, Container, locked', exact: true });
+  const title = tree.getByRole('treeitem', { name: 'Pricing, Text', exact: true });
   const trees = () =>
     page.evaluate(() => window.guestCommands.filter(({ command }) => command === 'tree').length);
   // A frame's tree is asked for as it opens, and not before.
@@ -469,14 +470,15 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   await frameRow.hover();
   expect(await trees()).toBe(0);
   await frameRow.getByRole('button', { name: 'Expand' }).click();
-  await expect(title).toHaveAttribute('aria-level', '3');
+  // The rows are the source's: the Card instance opens onto the section it renders.
+  await expect(title).toHaveAttribute('aria-level', '4');
   await expect(card).toHaveAttribute('aria-expanded', 'true');
   expect(await trees()).toBe(1);
   // The caret leaves the keyboard on the tree, on its row, for an arrow or Escape straight after.
   await page.keyboard.press('ArrowDown');
   await expect(tree).toHaveAttribute(
     'aria-activedescendant',
-    (await card.getAttribute('id')) ?? '',
+    (await instance.getAttribute('id')) ?? '',
   );
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-design-frame="a"] [data-frame-header]')).toBeFocused();
@@ -513,13 +515,35 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   await expect(page.getByRole('region', { name: 'Styles of the selected section' })).toBeVisible();
   expect(await trees()).toBe(1);
 
-  // A frame shut and opened again reads its elements again, showing none of the last read meanwhile.
+  // The element under the board's pointer lights its row.
+  const drawn = await box(page.locator('[data-design-frame="a"] .canvas-sheet'));
+  await page.mouse.move(drawn.x + 40, drawn.y + 20);
+  await page.clock.runFor(100);
+  await expect(title.locator('.bg-elevated')).toHaveCount(1);
+  await expect(card.locator('.bg-elevated')).toHaveCount(0);
+
+  // An element picked on the board opens its shut frame, and its row takes the keyboard and the selection.
+  await frameRow.getByRole('button', { name: 'Collapse' }).click();
+  await expect(title).toHaveCount(0);
+  await page.mouse.click(drawn.x + 40, drawn.y + 20);
+  await page.clock.runFor(100);
+  await expect(page.getByRole('region', { name: 'Styles of the selected h1' })).toBeVisible();
+  await expect(title).toHaveAttribute('aria-selected', 'true');
+  await expect(tree).toHaveAttribute(
+    'aria-activedescendant',
+    (await title.getAttribute('id')) ?? '',
+  );
+  expect(await trees()).toBe(2);
+
+  // A frame shut and opened again reads where its elements are drawn again; its rows show
+  // meanwhile, from the source, but none of the last read's, so none can be picked.
   await page.evaluate(() => {
     window.guestTreeHeld = true;
   });
   await frameRow.getByRole('button', { name: 'Collapse' }).click();
   await frameRow.getByRole('button', { name: 'Expand' }).click();
-  await expect(tree.getByText('Reading elements…')).toBeVisible();
-  await expect(card).toHaveCount(0);
-  expect(await trees()).toBe(2);
+  await expect(
+    tree.getByRole('treeitem', { name: 'Pricing, Text, not drawn', exact: true }),
+  ).toBeVisible();
+  expect(await trees()).toBe(3);
 });

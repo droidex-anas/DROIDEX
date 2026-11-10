@@ -1,10 +1,10 @@
-// One row of the layers tree, as its kind draws it: a frame, an element under
-// an open frame, or a note saying what an open frame's elements cannot show.
+// One row of the layers tree, as its kind draws it: a frame, a layer under an
+// open frame, or a note saying what an open frame's layers cannot show.
 
 import type { MouseEvent, PointerEvent } from 'react';
 import type { PreviewNode } from '../previewDocument';
 import type { FrameStatus } from '../previewLabels';
-import type { CanvasFrame, ElementRef } from '../protocol';
+import type { CanvasFrame } from '../protocol';
 import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
 import { LayerRow } from './LayerRow';
 import type { LayerEntry } from './layerRows';
@@ -18,7 +18,7 @@ export function LayerListRow({
   selected,
   describedBy,
   rename,
-  picked,
+  lit,
   onToggle,
   onFrameClick,
   onRenameStart,
@@ -38,12 +38,13 @@ export function LayerListRow({
   active: boolean;
   /** A frame row's build stage. */
   stage: FrameStatus['stage'];
-  /** A frame row's frame is selected on the board. */
+  /** A frame row's frame is selected on the board, or an element row's element is picked. */
   selected: boolean;
+  /** An element row's element is under the board's pointer. */
+  lit: boolean;
   describedBy: string | undefined;
   /** Set while this frame row is being renamed. */
   rename: ((frame: CanvasFrame, name: string) => Promise<unknown>) | undefined;
-  picked: ElementRef | null;
   onToggle: (row: Exclude<LayerEntry, { kind: 'note' }>) => void;
   onFrameClick: (designId: string, event: MouseEvent<HTMLElement>) => void;
   onRenameStart: (designId: string) => void;
@@ -63,7 +64,8 @@ export function LayerListRow({
         top={top}
         active={active}
         entry={row}
-        picked={picked}
+        selected={selected}
+        lit={lit}
         onPick={onPickElement}
         onToggle={onToggle}
         onLight={onLight}

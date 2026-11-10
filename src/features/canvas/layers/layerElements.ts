@@ -3,6 +3,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { PreviewRuns } from '../previewRuns';
 import type { ElementRef } from '../protocol';
 import type { ElementEditor } from '../useElementEditor';
+import type { HoveredElement } from '../useElementHover';
 
 /** The board's elements, as the layers panel reads and picks them. */
 export interface LayerElements {
@@ -10,6 +11,8 @@ export interface LayerElements {
   runs: PreviewRuns;
   /** The element Edit has picked, whose row shows as selected. */
   picked: ElementRef | null;
+  /** The element under the board's pointer, whose row lights. */
+  hovered: HoveredElement | null;
   /** Picks the element in Edit, entering Edit from any other mode. */
   pick: (designId: string, node: PreviewNode) => void;
   /** Outlines the element on the board as the pointer over it would; null puts that out. */
@@ -26,6 +29,7 @@ export function layerElements(
   return {
     runs,
     picked: editor.selection?.draft.element ?? null,
+    hovered: editor.hover.hovered,
     pick: (designId, node) => {
       if (interaction.mode !== 'edit')
         onInteractionChange(reduceBoardInteraction(interaction, { type: 'edit' }));

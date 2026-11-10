@@ -1,21 +1,22 @@
 // The layers panel at the board's left: a row per frame, front to back, saying how its
 // build stands. A click picks the frame (Shift or ⌘ adds it), a double-click renames it,
 // a row under the pointer lights its frame, and its eye and handle hide and restack it.
-// A frame with a live preview opens on its elements, which a click picks in Edit and
-// the pointer outlines on the board. The tree is one tab stop whose rows the keyboard
+// A frame that has built opens on its layers as its source writes them; a click picks a
+// layer's element in Edit and the pointer outlines it on the board, and the board's own
+// pick and hover find their layer's row. The tree is one tab stop whose rows the keyboard
 // walks through aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
 import { useId, useRef, type KeyboardEvent } from 'react';
 import { isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
-import type { ElementEntry } from './ElementRow';
 import { LayerListRow } from './LayerListRow';
 import { LayersHeader } from './LayersHeader';
 import { HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import type { LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
+import { useElementRows } from './useElementRows';
 import { useKeyboardRow } from './useKeyboardRow';
 import { useLayerList } from './useLayerList';
 import { useLayerRows } from './useLayerRows';
@@ -63,9 +64,10 @@ export function LayersPanel({
   const list = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const treeId = useId();
-  const { rows, fold } = useLayerRows(frames, elements.runs);
+  const { rows, fold, rowOf, reveal } = useLayerRows(frames, elements.runs);
   const keys = rows.map((row) => row.key);
   const { movedTo, activeIndex, moveTo, typeTo } = useKeyboardRow(rows, selectedFrameIds);
+  const elementRows = useElementRows(elements, rowOf, reveal, moveTo);
   const boardLight = useBoardLight(tree, elements.hover);
   const stack = useRestack(
     list,
@@ -91,10 +93,6 @@ export function LayersPanel({
     moveTo(row.key);
     fold(row, shown);
     tree.current?.focus({ preventScroll: true });
-  };
-  const pickElement = (row: ElementEntry) => {
-    moveTo(row.key);
-    elements.pick(row.frame.designId, row.node);
   };
   /** Right opens a closed row, then goes to its first child; Left closes an open row, then goes to its parent. */
   const openOrClose = (opening: boolean, row: LayerEntry) => {
@@ -122,7 +120,7 @@ export function LayersPanel({
     else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
     else if (row.kind === 'frame') runOnFrame(key, row);
     else if (row.kind === 'element' && (key.kind === 'pick' || key.kind === 'focus'))
-      pickElement(row);
+      elementRows.pick(row);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
@@ -187,12 +185,16 @@ export function LayersPanel({
                   top={item.start}
                   active={item.index === activeIndex}
                   stage={frameStatus(row.frame, agentWorking).stage}
-                  selected={selected.has(designId)}
+                  selected={
+                    row.kind === 'frame'
+                      ? selected.has(designId)
+                      : row.key === elementRows.pickedKey
+                  }
+                  lit={row.key === elementRows.litKey}
                   describedBy={onReorder && helpId}
                   rename={
                     row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
                   }
-                  picked={elements.picked}
                   onToggle={(folded) => {
                     toggle(folded, !folded.open);
                   }}
@@ -209,7 +211,7 @@ export function LayersPanel({
                   }}
                   onSetHidden={onSetHidden}
                   onGrab={onReorder && stack.grab}
-                  onPickElement={pickElement}
+                  onPickElement={elementRows.pick}
                   onLight={boardLight.light}
                   onUnlight={boardLight.unlight}
                 />

@@ -6,9 +6,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { PreviewRun } from '../previewRuntime';
 import { PreviewRuns } from '../previewRuns';
-import type { CanvasFrame, FrameRect } from '../protocol';
+import type { CanvasFrame, FrameRect, OutlineNode } from '../protocol';
 import { LayersPanel, type LayersPanelProps } from './LayersPanel';
 
 function frame(designId: string, name: string, rect: FrameRect): CanvasFrame {
@@ -23,7 +22,15 @@ function frame(designId: string, name: string, rect: FrameRect): CanvasFrame {
     variantOf: null,
     seededRevisionId: null,
     hidden: false,
-    build: { status: 'ready', revisionId: 'rev_01', generation: 1, diagnostics: [] },
+    build: {
+      status: 'ready',
+      revisionId: 'rev_01',
+      artifactId: 'art_01',
+      elements: [],
+      outline: { nodes: [], truncated: false },
+      generation: 1,
+      diagnostics: [],
+    },
   };
 }
 
@@ -36,6 +43,7 @@ function panel(props: Partial<LayersPanelProps>): string {
       elements: {
         runs: new PreviewRuns(),
         picked: null,
+        hovered: null,
         pick: () => undefined,
         hover: () => undefined,
       },
@@ -108,22 +116,80 @@ test('a canvas without frames says so instead of an empty tree', () => {
   assert.doesNotMatch(markup, /role="tree"/);
 });
 
-test('a frame with a live preview opens on its elements; one without has no caret', () => {
-  const runs = new PreviewRuns();
-  // A static render runs no effects, so the run is never asked for its tree.
-  runs.set('a', 'rev_01', {} as PreviewRun);
+test('a frame that has built opens on its layers; one that never has has no caret', () => {
   const frames = [
     frame('a', 'Pricing', { x: 0, y: 0, width: 400, height: 300 }),
-    frame('b', 'Checkout', { x: 500, y: 0, width: 400, height: 300 }),
+    {
+      ...frame('b', 'Checkout', { x: 500, y: 0, width: 400, height: 300 }),
+      build: { status: 'building', revisionId: 'rev_01', generation: 1 },
+    } satisfies CanvasFrame,
   ];
-  const markup = panel({
-    frames,
-    elements: { runs, picked: null, pick: () => undefined, hover: () => undefined },
-  });
+  const markup = panel({ frames });
   const tags = [...markup.matchAll(/<div id="[^"]+" role="treeitem"[^>]*>/g)].map(([tag]) => tag);
   assert.deepEqual(
     tags.map((tag) => /aria-expanded="(\w+)"/.exec(tag)?.[1] ?? null),
     [null, 'false'],
   );
   assert.equal([...markup.matchAll(/aria-label="Expand"/g)].length, 1);
+});
+
+test('an element picked on the board opens its frame, takes the keyboard to its row and selects it', () => {
+  const layer = (nodeId: string, parentId: string | null, row: Partial<OutlineNode>) =>
+    ({
+      nodeId,
+      parentId,
+      kind: 'element',
+      name: 'div',
+      text: null,
+      elementId: null,
+      lock: null,
+      free: true,
+      ...row,
+    }) satisfies OutlineNode;
+  const pricing = frame('a', 'Pricing', { x: 0, y: 0, width: 400, height: 300 });
+  const outline = {
+    nodes: [
+      layer('n1', null, { name: 'section', elementId: 'el_section' }),
+      layer('n2', 'n1', { name: 'h1', text: 'Simple plans', elementId: 'el_title' }),
+      layer('n3', 'n1', { kind: 'repeat', name: 'Repeat', lock: 'repeated' }),
+    ],
+    truncated: false,
+  };
+  const markup = panel({
+    frames: [{ ...pricing, build: { ...pricing.build, outline } } as CanvasFrame],
+    elements: {
+      runs: new PreviewRuns(),
+      picked: { designId: 'a', revisionId: 'rev_01', elementId: 'el_title', instancePath: '0/0' },
+      hovered: {
+        designId: 'a',
+        element: {
+          elementId: 'el_section',
+          instancePath: '0',
+          rect: { x: 0, y: 0, width: 400, height: 300 },
+          tagName: 'section',
+          room: { above: null, below: null },
+        },
+      },
+      pick: () => undefined,
+      hover: () => undefined,
+    },
+  });
+  const shown = rows(markup);
+  assert.deepEqual(
+    shown.map(({ label, selected }) => [label, selected]),
+    [
+      ['Pricing, Ready', false],
+      // No live preview has drawn this frame yet, so its elements cannot be picked from here.
+      ['section, Container, not drawn', false],
+      ['Simple plans, Text, not drawn', true],
+      ['Repeat, locked', false],
+    ],
+  );
+  assert.match(markup, new RegExp(`aria-activedescendant="${shown[2].id}"`));
+  // The element under the board's pointer lights its row.
+  const lit = markup
+    .split('role="treeitem"')
+    .slice(1)
+    .map((row) => / bg-elevated/.test(row));
+  assert.deepEqual(lit, [false, true, false, false]);
 });

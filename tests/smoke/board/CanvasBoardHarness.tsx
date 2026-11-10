@@ -61,6 +61,7 @@ import type {
   SwitchRevisionInput,
   RevisionSummary,
   SourceElement,
+  SourceOutline,
   UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
@@ -284,6 +285,44 @@ const ELEMENTS: SourceElement[] = params.has('edit')
       },
     ]
   : [];
+// Its source outline: an instance of Card, which renders the section holding the title.
+const OUTLINE: SourceOutline = {
+  nodes: params.has('edit')
+    ? [
+        {
+          nodeId: '0000000000000001',
+          parentId: null,
+          kind: 'instance',
+          name: 'Card',
+          text: null,
+          elementId: null,
+          lock: null,
+          free: false,
+        },
+        {
+          nodeId: '0000000000000002',
+          parentId: '0000000000000001',
+          kind: 'element',
+          name: 'section',
+          text: null,
+          elementId: 'el_card',
+          lock: 'shared',
+          free: false,
+        },
+        {
+          nodeId: '0000000000000003',
+          parentId: '0000000000000002',
+          kind: 'element',
+          name: 'h1',
+          text: 'Pricing',
+          elementId: 'el_title',
+          lock: null,
+          free: true,
+        },
+      ]
+    : [],
+  truncated: false,
+};
 
 function built(revisionId: string): CanvasFrame['build'] {
   return {
@@ -292,6 +331,7 @@ function built(revisionId: string): CanvasFrame['build'] {
     revisionId,
     artifactId: 'a'.repeat(64),
     elements: ELEMENTS,
+    outline: OUTLINE,
     diagnostics: [],
   };
 }
