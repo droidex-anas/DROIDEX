@@ -122,7 +122,7 @@ const LENGTH_UNITS = new Set(['px', 'rem', 'em', '%']);
 // Designs render at the browser's 16px root size, which is how Tailwind's rem
 // scale reads in pixels too.
 const PX_PER_REM = 16;
-// As long as an edit's value may be (schema.ts), so stacked tokens read back as one.
+// A stack's CSS stays within the length one edit value may have (schema.ts).
 const MAX_STACKED_VALUE = 128;
 
 /**
