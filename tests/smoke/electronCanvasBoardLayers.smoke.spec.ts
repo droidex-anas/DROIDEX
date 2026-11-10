@@ -210,6 +210,56 @@ test('Layers keeps the keyboard on its row through board picks, scrolling and Sp
   await expect(frameA).not.toHaveAttribute('data-layer-hover');
 });
 
+test('The keyboard stays on a frame that leaves the selection, and goes with a frame it restacks', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&frames=300'));
+  const board = page.getByTestId('canvas-board');
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const row = (name: string) => tree.getByRole('treeitem', { name: `${name}, Ready` });
+  const keyboardOn = async (name: string) =>
+    expect(tree).toHaveAttribute(
+      'aria-activedescendant',
+      (await row(name).getAttribute('id')) ?? '',
+    );
+
+  // Opened on a selection, the panel's keyboard starts on it, and stays there as it is taken out.
+  await page.evaluate(() => {
+    window.boardHarness.select(['x250']);
+  });
+  await board.focus();
+  await page.keyboard.press('Alt+Digit1');
+  await keyboardOn('Design X250');
+  await page.evaluate(() => {
+    window.boardHarness.select([]);
+  });
+  await keyboardOn('Design X250');
+
+  // With the row at the foot of the list, ⌥↓ moves its frame back a layer, and the
+  // keyboard and the list follow it below the edge.
+  const placed = await row('Design X250').boundingBox();
+  const shown = await tree.boundingBox();
+  if (!placed || !shown) throw new Error('Missing row geometry');
+  await tree.evaluate(
+    (element, by) => {
+      element.scrollTop += by;
+    },
+    placed.y + placed.height - (shown.y + shown.height) + 8,
+  );
+  await tree.focus();
+  await page.keyboard.press('Alt+ArrowDown');
+  await expect(
+    tree
+      .getByRole('treeitem')
+      .filter({ hasText: /^Design X24\d$/ })
+      .first(),
+  ).toBeVisible();
+  await keyboardOn('Design X250');
+  await expect(row('Design X250')).toBeInViewport({ ratio: 1 });
+  expect(await selection(page)).toEqual([]);
+});
 test('A frame the keyboard leaves Layers for keeps its label and toolbar clear of the rail', async ({
   page,
 }) => {

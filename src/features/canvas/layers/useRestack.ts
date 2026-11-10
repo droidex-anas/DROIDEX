@@ -45,7 +45,13 @@ export function useRestack(
   const listY = (event: PointerEvent<HTMLElement>) =>
     list.current ? boardPoint(list.current, { x: event.clientX, y: event.clientY }).y : 0;
   return {
-    restack,
+    /** Moves a frame `by` frames toward the back (+1) or front (-1); false when it is already at that end. */
+    step: (designId: string, by: number): boolean => {
+      const at = frameIds.indexOf(designId) + by;
+      if (at < 0 || at >= frameIds.length) return false;
+      restack(designId, at);
+      return true;
+    },
     dragging: gap !== null,
     /** The row boundary the dragged frame would drop at, as a row index. */
     dropGap,

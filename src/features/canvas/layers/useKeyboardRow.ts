@@ -23,7 +23,13 @@ export function useKeyboardRow(
     setSeenSelection(selectedFrameIds);
     const picked = selectedFrameIds.filter((designId) => !seenSelection.includes(designId));
     const last = picked.at(-1);
-    if (last !== undefined && !picked.some((designId) => designId === movedTo)) setMovedTo(last);
+    if (last !== undefined) {
+      if (!picked.some((designId) => designId === movedTo)) setMovedTo(last);
+    } else if (movedTo === null) {
+      // The keyboard stood on a selected frame; it stays there as that frame leaves the selection.
+      const was = activeRow(keys, null, seenSelection);
+      if (was >= 0) setMovedTo(keys[was]);
+    }
   } else if (movedTo !== null && !keys.includes(movedTo)) {
     setMovedTo(null);
   }

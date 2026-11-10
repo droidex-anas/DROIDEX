@@ -1,11 +1,12 @@
-import { useEffect, useEffectEvent, type RefObject } from 'react';
+import { useEffect, useEffectEvent, useRef, type RefObject } from 'react';
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 
 /**
  * The tree's virtual list of `keys`, each `rowPx` tall. The `kept` rows stay
  * mounted wherever the list scrolls, as aria-activedescendant names the
  * keyboard's row and a field holds its draft, and the row the keyboard moved
- * to is brought into view when it moves, and only then.
+ * to is brought into view when it moves, and only then. A row restacked from
+ * the keyboard is brought into view once the canvas's new order puts it elsewhere.
  */
 export function useLayerList(
   tree: RefObject<HTMLDivElement | null>,
@@ -35,5 +36,19 @@ export function useLayerList(
   useEffect(() => {
     if (movedTo !== null) revealRow(movedTo);
   }, [movedTo]);
-  return virtualizer;
+
+  /** The restacked row, and where it stood when its frame was restacked. */
+  const restacked = useRef<{ key: string; index: number } | null>(null);
+  useEffect(() => {
+    const pending = restacked.current;
+    if (!pending || keys.indexOf(pending.key) === pending.index) return;
+    restacked.current = null;
+    revealRow(pending.key);
+  }, [keys]);
+  return {
+    virtualizer,
+    revealRestacked: (key: string) => {
+      restacked.current = { key, index: keys.indexOf(key) };
+    },
+  };
 }

@@ -75,7 +75,8 @@ export function LayersPanel({
   );
   const active = activeIndex >= 0 ? rows[activeIndex] : undefined;
   const renaming = useRenaming(keys, onRename, tree, closeButton);
-  const virtualizer = useLayerList(tree, keys, ROW_PX, [activeIndex, renaming.index], movedTo);
+  const kept = [activeIndex, renaming.index];
+  const { virtualizer, revealRestacked } = useLayerList(tree, keys, ROW_PX, kept, movedTo);
   const selected = new Set(selectedFrameIds);
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
@@ -105,8 +106,10 @@ export function LayersPanel({
     const { designId } = row.frame;
     if (key.kind === 'restack') {
       // The keys count rows; a frame moves past the next frame, whatever opens under it.
-      const at = row.position - 1 + Math.sign(key.index - activeIndex);
-      if (at >= 0 && at < row.count) stack.restack(designId, at);
+      if (!stack.step(designId, Math.sign(key.index - activeIndex))) return;
+      // The keyboard goes with the frame, as it does with a dragged one.
+      moveTo(designId);
+      revealRestacked(designId);
     } else if (key.kind === 'pick') onPick(designId, true);
     else if (key.kind === 'focus') onFocusFrame(designId);
     else if (key.kind === 'rename') renaming.start(designId);
