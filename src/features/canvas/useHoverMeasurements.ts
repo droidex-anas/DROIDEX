@@ -28,7 +28,7 @@ type HoverAt = (designId: string, at: Point) => void;
 interface Measured {
   from: FrameRect;
   to: FrameRect;
-  /** The bottom of the box `from`'s size chip hangs under, as the board draws it. */
+  /** The bottom of `from` trimmed to its frame, which is the box the size chip hangs under. */
   sizedBottom: number;
 }
 
