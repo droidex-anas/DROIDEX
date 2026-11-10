@@ -246,11 +246,14 @@ function boxUtility(utility: string): Omit<ClassStyle, 'scope'> | null | undefin
   return negative ? null : undefined;
 }
 
-/** What one class token sets, or null for a class no style edit concerns. */
-export function classStyle(token: string): ClassStyle | null {
+/**
+ * What one class token sets, or null for a class no style edit concerns.
+ * `theme` is the pinned kit's Tailwind theme, as for styleClass.
+ */
+export function classStyle(token: string, theme: KitTheme = {}): ClassStyle | null {
   const variants = splitOutside(token, ':');
   const utility = (variants.pop() ?? '').replace(/^!/, '');
-  const read = utilityStyle(utility);
+  const read = utilityStyle(utility, theme);
   if (!read) return null;
   let scope: ClassStyle['scope'] = 'always';
   if (variants.some((variant) => FRAME_VARIANT.test(variant))) scope = 'frame';
@@ -258,7 +261,7 @@ export function classStyle(token: string): ClassStyle | null {
   return { ...read, scope };
 }
 
-function utilityStyle(utility: string): Omit<ClassStyle, 'scope'> | null {
+function utilityStyle(utility: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
   const property = /^\[([a-z-]+):.+\]$/.exec(utility)?.[1];
   if (property) return { sets: longhands(camelCase(property)) };
   const keyword = KEYWORD_PROPERTIES.get(utility);
@@ -269,7 +272,7 @@ function utilityStyle(utility: string): Omit<ClassStyle, 'scope'> | null {
   const value = rest.join('-');
   switch (name) {
     case 'text':
-      return textStyle(value);
+      return textStyle(value, theme);
     case 'bg':
       return isColour(value) ? { sets: ['backgroundColor'] } : null;
     case 'border':
@@ -292,16 +295,23 @@ function modifierLineHeight(modifier: string | undefined): string | undefined {
   return arbitrary(modifier)?.body ?? LINE_HEIGHT[modifier];
 }
 
-function textStyle(value: string): Omit<ClassStyle, 'scope'> | null {
+/** A stock font size's own line height; none where the kit's theme redefines that size. */
+function stockLineHeight(key: string, theme: KitTheme): string | undefined {
+  if (!Object.hasOwn(FONT_SIZE_LINE_HEIGHT, key)) return undefined;
+  if (theme.fontSize !== undefined && Object.hasOwn(theme.fontSize, key)) return undefined;
+  return FONT_SIZE_LINE_HEIGHT[key];
+}
+
+function textStyle(value: string, theme: KitTheme): Omit<ClassStyle, 'scope'> | null {
   const [key = '', ...modifiers] = splitOutside(value, '/');
-  const lineHeight = modifierLineHeight(modifiers.at(0));
-  if (Object.hasOwn(FONT_SIZE_LINE_HEIGHT, key))
-    return { sets: ['fontSize'], lineHeight: lineHeight ?? FONT_SIZE_LINE_HEIGHT[key] };
   const custom = arbitrary(key);
   const isSize =
-    custom?.hint === 'length' || (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
-  if (isSize) return lineHeight ? { sets: ['fontSize'], lineHeight } : { sets: ['fontSize'] };
-  return isColour(value) ? { sets: ['color'] } : null;
+    Object.hasOwn(FONT_SIZE_LINE_HEIGHT, key) ||
+    custom?.hint === 'length' ||
+    (!custom?.hint && LENGTH_LIKE.test(custom?.body ?? ''));
+  if (!isSize) return isColour(value) ? { sets: ['color'] } : null;
+  const lineHeight = modifierLineHeight(modifiers.at(0)) ?? stockLineHeight(key, theme);
+  return lineHeight ? { sets: ['fontSize'], lineHeight } : { sets: ['fontSize'] };
 }
 
 function borderStyle(value: string): Omit<ClassStyle, 'scope'> | null {

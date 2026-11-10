@@ -95,7 +95,7 @@ function setStyle(
 ) {
   const own = longhands(property);
   const within = (sets: readonly string[]) => sets.every((longhand) => own.includes(longhand));
-  const live = liveClasses(slots);
+  const live = liveClasses(slots, theme);
   // A breakpoint or colour-mode class may be what this frame shows, and only
   // the style attribute is sure to win over it.
   const frameScoped = live.some(
@@ -137,24 +137,24 @@ function keepLineHeight(
   lostLineHeight: string | undefined,
   theme: KitTheme,
 ) {
-  if (lostLineHeight === undefined || setsLineHeight(slots, style)) return;
+  if (lostLineHeight === undefined || setsLineHeight(slots, style, theme)) return;
   const leading = styleClass('lineHeight', { kind: 'raw', value: lostLineHeight }, theme);
   if (leading) addClass(slots, leading);
   else setInline(style, 'lineHeight', inlineValue('lineHeight', lostLineHeight));
 }
 
-function liveClasses(slots: ClassSlot[]) {
+function liveClasses(slots: ClassSlot[], theme: KitTheme) {
   return slots.flatMap(({ entries }) =>
     entries.flatMap((entry) => {
-      const read = entry.name === null ? null : classStyle(entry.name);
+      const read = entry.name === null ? null : classStyle(entry.name, theme);
       return read ? [{ entry, read }] : [];
     }),
   );
 }
 
-function setsLineHeight(slots: ClassSlot[], style: InlineStyle): boolean {
+function setsLineHeight(slots: ClassSlot[], style: InlineStyle, theme: KitTheme): boolean {
   return (
-    liveClasses(slots).some(
+    liveClasses(slots, theme).some(
       ({ read }) => read.scope === 'always' && read.sets.includes('lineHeight'),
     ) || style.entries.some((entry) => !entry.removed && entry.name === 'lineHeight')
   );

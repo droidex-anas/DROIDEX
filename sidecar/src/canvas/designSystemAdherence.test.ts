@@ -247,6 +247,26 @@ export default () => <Card className="rounded-md rounded-t-md font-sans rounded-
   );
 });
 
+test('a palette class whose colour key the kit carries in its project theme is the kit’s own', () => {
+  const library = {
+    ...KIT,
+    files: {
+      ...KIT.files,
+      'tailwind.theme.json': JSON.stringify({
+        colors: { white: 'hsl(var(--primary))', 'red-500': 'hsl(var(--destructive))' },
+      }),
+    },
+  };
+  const files = {
+    'main.tsx': `import { Card } from '@droidex/design-system';
+export default () => <Card className="bg-white hover:text-white/50 border-t-red-500 bg-slate-900">Hey</Card>;
+`,
+  };
+  const result = checkDesignSystemAdherence(files, library, 'strict');
+  assert.deepEqual(places(result.diagnostics), ['design_system_color main.tsx:2']);
+  assert.match(result.diagnostics[0].message, /^bg-slate-900 is a hard-coded colour/);
+});
+
 test('a default-theme class passes where the kit has no scale of its kind', () => {
   const noRadius = {
     ...KIT,

@@ -207,6 +207,20 @@ test('a raw value whose stock class the kit theme gives its own value is written
   });
 });
 
+test('a font size the kit theme gives its own value takes no stock line height with it', () => {
+  const files = { 'main.tsx': 'export default () => <h1 className="text-lg font-bold">Hi</h1>;\n' };
+  const mapped = onlyElement(files);
+  const styles: ResolvedStyle[] = [{ property: 'fontSize', resolution: token('--ds-text-lg') }];
+  const changed = applyElementEdit(files, mapped.elements, {
+    element: reference(mapped.element),
+    change: { kind: 'style', styles, theme: { fontSize: { lg: '20px' } } },
+  });
+  assert.deepEqual(changed, {
+    'main.tsx':
+      'export default () => <h1 className="text-[length:var(--ds-text-lg)] font-bold">Hi</h1>;\n',
+  });
+});
+
 test('revision, source changes and forged ranges cannot retarget a selection', () => {
   const files = { 'main.tsx': 'export default () => <h1>Hello</h1>' };
   const mapped = onlyElement(files);

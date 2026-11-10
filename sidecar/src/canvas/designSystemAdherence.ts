@@ -41,7 +41,7 @@ const SCRIPT_FILE = /\.(tsx|ts|jsx|js)$/;
 const COLOR_PROPERTY =
   /(?:^|-)(?:color|background|border|outline|shadow|fill|stroke|caret|accent|decoration)(?:-|$)/;
 const PALETTE_CLASS =
-  /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
+  /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-((?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
 // The default theme's own scale classes; where the kit defines that scale,
 // they sidestep its tokens. rounded-none, rounded-full and shadow-none are
@@ -201,14 +201,14 @@ class DesignCheck {
     for (const token of text.split(/\s+/)) {
       const utility = withoutVariants(token);
       if (this.kit.classes.has(utility)) this.usesKit = true;
+      // A stock class whose key the kit's theme names reads the kit's value.
       const palette = PALETTE_CLASS.exec(utility);
       if (palette) {
-        if (!this.kit.checksColors) continue;
+        if (!this.kit.checksColors || this.kit.themeColors.has(palette[2])) continue;
         const message = this.colorMessage(utility, palette[1], palette[1]);
         this.add(ADHERENCE_CODES.color, place, utility, message);
         continue;
       }
-      // A stock class whose key the kit's theme names reads the kit's value.
       if (TAILWIND_FONT_CLASS.test(utility)) {
         if (this.kit.fonts && !this.kit.themeClasses.font.includes(utility))
           this.stockFontClass(place, utility);
