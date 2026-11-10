@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
 import ts from 'typescript';
+import { functionName, renderedOnce } from './componentUses.js';
 import type { SourceElement, SourceFiles } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';
@@ -53,20 +53,10 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   const sources = Object.entries(files)
     .filter(([file]) => !file.endsWith('.css'))
     .map(([file, text]) => parseSource(file, text));
-  const importsEntry = sources.some((source) =>
-    source.statements.some((statement) => {
-      if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) return false;
-      const specifier = statement.moduleSpecifier;
-      if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith('.'))
-        return false;
-      const target = posix.normalize(posix.join(posix.dirname(source.fileName), specifier.text));
-      return target === 'main' || target === 'main.tsx' || target === 'main.ts';
-    }),
-  );
+  const rendersOnce = renderedOnce(sources);
   const sites: Site[] = [];
   for (const source of sources) {
     const file = source.fileName;
-    const root = file === 'main.tsx' && !importsEntry ? defaultComponent(source) : undefined;
     const pending: ts.Node[] = [source];
     while (pending.length) {
       const node = pending.pop();
@@ -91,7 +81,7 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
         );
       const start = node.getStart(source);
       let editability: SourceElement['editability'] = 'literal';
-      if (isShared(node, root)) editability = 'shared';
+      if (!rendersOnce(node)) editability = 'shared';
       else if (isComputed(node)) editability = 'computed';
       sites.push({
         node,
@@ -161,49 +151,6 @@ function parseSource(file: string, text: string): ts.SourceFile {
   }
 }
 
-function defaultComponent(source: ts.SourceFile): ts.Node | undefined {
-  for (const statement of source.statements) {
-    if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
-    )
-      return referencedElsewhere(source, statement.name) ? undefined : statement;
-    if (
-      ts.isExportAssignment(statement) &&
-      !statement.isExportEquals &&
-      (ts.isArrowFunction(statement.expression) || ts.isFunctionExpression(statement.expression))
-    )
-      return statement.expression;
-  }
-  return undefined;
-}
-
-function referencedElsewhere(source: ts.SourceFile, name: ts.Identifier | undefined): boolean {
-  if (!name) return false;
-  const pending: ts.Node[] = [source];
-  while (pending.length) {
-    const node = pending.pop();
-    if (!node) break;
-    if (ts.isIdentifier(node) && node !== name && node.text === name.text) return true;
-    node.forEachChild((child) => {
-      pending.push(child);
-    });
-  }
-  return false;
-}
-
-function isShared(node: ElementNode, root: ts.Node | undefined): boolean {
-  for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
-    if (parent === root) return false;
-    if (canReuseJsx(parent)) return true;
-    if (ts.isJsxElement(parent) || ts.isJsxSelfClosingElement(parent)) {
-      const tag = ts.isJsxElement(parent) ? parent.openingElement.tagName : parent.tagName;
-      if (!ts.isIdentifier(tag) || !/^[a-z]/.test(tag.text)) return true;
-    }
-  }
-  return true;
-}
-
 function componentOf(node: ElementNode): string | null {
   for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
     if (!ts.isFunctionLike(parent)) continue;
@@ -211,51 +158,6 @@ function componentOf(node: ElementNode): string | null {
     if (name && /^[A-Z]/.test(name)) return name;
   }
   return null;
-}
-
-/**
- * A function's name, or the variable holding it, directly or through wrappers
- * such as `memo(forwardRef(...))`.
- */
-function functionName(fn: ts.SignatureDeclaration): string | undefined {
-  if (fn.name && ts.isIdentifier(fn.name)) return fn.name.text;
-  let held: ts.Node = fn;
-  while (isWrapping(held.parent, held)) held = held.parent;
-  const holder = held.parent;
-  return ts.isVariableDeclaration(holder) && ts.isIdentifier(holder.name)
-    ? holder.name.text
-    : undefined;
-}
-
-const COMPONENT_WRAPPERS = new Set(['memo', 'forwardRef']);
-
-function isWrapping(parent: ts.Node, child: ts.Node): boolean {
-  if (ts.isParenthesizedExpression(parent)) return true;
-  if (!ts.isCallExpression(parent) || !parent.arguments.includes(child as ts.Expression))
-    return false;
-  const callee = parent.expression;
-  if (ts.isIdentifier(callee)) return COMPONENT_WRAPPERS.has(callee.text);
-  return (
-    ts.isPropertyAccessExpression(callee) &&
-    ts.isIdentifier(callee.expression) &&
-    callee.expression.text === 'React' &&
-    COMPONENT_WRAPPERS.has(callee.name.text)
-  );
-}
-
-function canReuseJsx(node: ts.Node): boolean {
-  return (
-    ts.isFunctionLike(node) ||
-    ts.isVariableDeclaration(node) ||
-    ts.isCallExpression(node) ||
-    ts.isArrayLiteralExpression(node) ||
-    ts.isPropertyAssignment(node) ||
-    ts.isForStatement(node) ||
-    ts.isForOfStatement(node) ||
-    ts.isForInStatement(node) ||
-    ts.isWhileStatement(node) ||
-    ts.isDoStatement(node)
-  );
 }
 
 function isComputed(node: ElementNode): boolean {

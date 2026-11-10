@@ -261,8 +261,10 @@ export function turnScope(canvasId: string, scopeId: string): CanvasScope {
   };
 }
 
+/** The first element of `files`, once its frame has built, in path order. */
 export async function editableElement(
   t: TestContext,
+  files: Record<string, string> = { 'main.tsx': EDITABLE },
 ): Promise<{ canvas: Harness; canvasId: string; element: ElementRef }> {
   const builds = new CanvasBuilds({ deadline: fakeDeadlines().deadline });
   t.after(() => builds.close());
@@ -281,7 +283,7 @@ export async function editableElement(
     requestId: 'req-edit-source',
     appSessionId: APP,
     canvasId,
-    input: writeInput('m-edit-source', designId, null, { 'main.tsx': EDITABLE }),
+    input: writeInput('m-edit-source', designId, null, files),
   });
   const written = okReply(canvas, 'req-edit-source');
   assert.ok(written.kind === 'written');
