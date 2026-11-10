@@ -39,7 +39,7 @@ import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
 import { isDrawn } from './previewDocument';
 import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
-import type { EditToken, FrameRect, SourceElement } from './protocol';
+import type { EditToken, ElementRef, FrameRect, SourceElement } from './protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
@@ -55,9 +55,10 @@ export interface ElementPanelProps {
   tokens: Record<string, EditToken[]> | null;
   /** The mode the selected design previews its kit in. */
   mode: 'light' | 'dark';
-  onPreview: (property: string, value: string) => void;
-  onRevert: (property: string) => void;
-  onCommit: () => void;
+  /** Each names the element it was drawn for, and edits nothing once that is no longer selected. */
+  onPreview: (property: string, value: string, element: ElementRef) => boolean;
+  onRevert: (property: string, element: ElementRef) => boolean;
+  onCommit: (element: ElementRef) => void;
   onPreviewText: (text: string) => void;
   onRevertText: () => void;
   onCommitText: () => void;
@@ -86,7 +87,7 @@ export function ElementPanel({
   const editable = draft.site.editability === 'literal';
   const readOnly = !editable || draft.pending !== null;
   const text = draft.text ?? shown.text;
-  const { value, previewed, pick, hover } = usePickPreview({
+  const { value, previewed, preview, revert, commit, pick, hover } = usePickPreview({
     draft,
     computed: shown.styles,
     readOnly,
@@ -142,13 +143,9 @@ export function ElementPanel({
       max={options.max}
       tokens={tokenOptions(property)}
       trailing={options.trailing}
-      onPreview={(next) => {
-        onPreview(property, next);
-      }}
-      onRevert={() => {
-        onRevert(property);
-      }}
-      onCommit={onCommit}
+      onPreview={preview(property)}
+      onRevert={revert(property)}
+      onCommit={commit}
       onLeave={onLeave}
       onPick={pick(property)}
       onActive={hover(property)}
@@ -170,13 +167,9 @@ export function ElementPanel({
       previewed={previewed(property)}
       disabled={readOnly}
       tokens={tokenOptions(property, true) ?? []}
-      onPreview={(next) => {
-        onPreview(property, next);
-      }}
-      onRevert={() => {
-        onRevert(property);
-      }}
-      onCommit={onCommit}
+      onPreview={preview(property)}
+      onRevert={revert(property)}
+      onCommit={commit}
       onLeave={onLeave}
       onPick={pick(property)}
       onActive={hover(property)}

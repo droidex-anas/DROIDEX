@@ -31,9 +31,12 @@ function panelOn(computed: Record<string, string>) {
   let draft: ElementEditDraft = editDraft('canvas', element, site);
   let hover: PickerHover | null = null;
   const commits: unknown[] = [];
-  const preview = (property: string, value: string) => {
+  // As the editor does, an edit for an element no longer selected changes nothing.
+  const preview = (property: string, value: string, on = draft.element) => {
+    if (on !== draft.element) return false;
     draft = previewStyle(draft, property, value, computed[property] ?? '');
     Object.assign(computed, previewedStyles(draft));
+    return true;
   };
   const panel = () =>
     pickPreview(
@@ -46,15 +49,26 @@ function panelOn(computed: Record<string, string>) {
         computed,
         readOnly: false,
         onPreview: preview,
-        onRevert: (property) => {
+        onRevert: (property, on) => {
+          if (on !== draft.element) return false;
           draft = revertStyle(draft, property);
+          return true;
         },
-        onCommit: () => {
-          commits.push(commitStyles(draft, 'm')?.input.edit.change);
+        onCommit: (on) => {
+          if (on === draft.element) commits.push(commitStyles(draft, 'm')?.input.edit.change);
         },
       },
     );
-  return { panel, preview, commits, draft: () => draft };
+  /** The draft moved onto revision r2, keeping only the previews `keep` names. */
+  const nextRevision = (keep: boolean) => {
+    draft = {
+      ...draft,
+      element: { ...draft.element, revisionId: 'r2' },
+      values: keep ? draft.values : {},
+      drawn: keep ? draft.drawn : {},
+    };
+  };
+  return { panel, preview, commits, draft: () => draft, nextRevision };
 }
 
 test('a hovered option previews while the field keeps its face, and leaving takes it back', () => {
@@ -100,4 +114,41 @@ test('hovering blur after blur over a composed filter never piles up its functio
   assert.deepEqual(commits, [
     { kind: 'style', styles: [{ property: 'filter', value: 'blur(24px)' }] },
   ]);
+});
+
+test('a commit while a list previews an option commits what was there before it', () => {
+  const { panel, draft, commits } = panelOn({ color: 'rgb(0, 0, 0)' });
+  // A custom colour, then a token the arrows rest on, then Escape, which commits the custom one.
+  panel().preview('color')('#123456');
+  panel().hover('color')('--ds-blue');
+  panel().commit();
+  assert.deepEqual(commits, [{ kind: 'style', styles: [{ property: 'color', value: '#123456' }] }]);
+  panel().hover('color')(null);
+  assert.equal(draft().values.color, '#123456');
+  // A custom colour after a token preview takes its place, so leaving keeps it.
+  panel().hover('color')('--ds-blue');
+  panel().preview('color')('#654321');
+  panel().hover('color')(null);
+  assert.equal(draft().values.color, '#654321');
+});
+
+test('a callback drawn for a replaced revision edits nothing, and a hover goes along with its preview', () => {
+  const { panel, draft, commits, nextRevision } = panelOn({ overflow: 'visible' });
+  panel().hover('overflow')('clip');
+  const stale = panel();
+  nextRevision(false);
+  stale.hover('overflow')('hidden');
+  stale.hover('overflow')(null);
+  stale.pick('overflow')('hidden');
+  stale.commit();
+  assert.deepEqual(draft().values, {});
+  assert.deepEqual(commits, []);
+  // The revision dropped the hover's preview, so a new hover starts from it.
+  panel().hover('overflow')('hidden');
+  assert.deepEqual(draft().values, { overflow: 'hidden' });
+  // A text commit's revision keeps the style previews, and the hover with them.
+  nextRevision(true);
+  assert.equal(panel().previewed('overflow'), false);
+  panel().hover('overflow')(null);
+  assert.deepEqual(draft().values, {});
 });
