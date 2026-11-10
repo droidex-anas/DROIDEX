@@ -47,8 +47,6 @@ export type {
   ArrangeFramesInput,
   RemoveFramesInput,
   RenameFrameInput,
-  ReorderFramesInput,
-  SetFrameHiddenInput,
   UndoRemovalInput,
 } from './frameEditSchema.js';
 export type {
