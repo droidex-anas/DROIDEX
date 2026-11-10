@@ -351,6 +351,8 @@ const CHANGES_SUMMARIES = new Set<CanvasCommand['type']>([
   'canvas.remove',
   'canvas.undoRemoval',
   'canvas.renameFrame',
+  'canvas.setFrameHidden',
+  'canvas.reorderFrames',
   'canvas.removeCanvas',
 ]);
 
