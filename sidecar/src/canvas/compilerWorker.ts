@@ -27,6 +27,7 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
+import { kitTailwindTheme } from './kitTailwindTheme.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
@@ -274,13 +275,15 @@ async function sourceChange(
   designSystem: DesignSystemRef,
 ): Promise<SourceChange> {
   if (change.kind !== 'style') return change;
-  const tokens = kitTokens(await readDesignSystem(designSystem), designSystem.mode);
+  const system = await readDesignSystem(designSystem);
+  const tokens = kitTokens(system, designSystem.mode);
   return {
     kind: 'style',
     styles: change.styles.map((style) => ({
       property: style.property,
       resolution: resolveStyleChange(style, tokens),
     })),
+    theme: kitTailwindTheme(system),
   };
 }
 

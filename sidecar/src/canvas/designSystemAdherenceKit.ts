@@ -7,7 +7,7 @@ import valueParser from 'postcss-value-parser';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitPrimitives } from './designSystemBrief.js';
 import { kitModes, type DocumentSection, type TokenSectionKind } from './designSystemDocument.js';
-import { themeEntries, type ThemeNamespace } from './kitTailwindTheme.js';
+import { kitTailwindTheme, type ThemeNamespace } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
@@ -126,20 +126,22 @@ export function readKit(
       fonts: typography.length > 0 ? { families, tokens: fontTokens } : null,
       scales,
       classes,
-      themeClasses: kitThemeClasses(system.sections),
+      themeClasses: kitThemeClasses(system),
       primitives: kitPrimitives(system),
     },
   };
 }
 
-/** The kit's own utility classes per rule kind, from the tokens that map to a theme key. */
-function kitThemeClasses(sections: DocumentSection[]): Kit['themeClasses'] {
+/** The kit's own utility classes per rule kind: every key its Tailwind theme names. */
+function kitThemeClasses(system: DesignSystem): Kit['themeClasses'] {
   const themeClasses: Kit['themeClasses'] = { type: [], radius: [], shadow: [], font: [] };
-  for (const entry of themeEntries(sections)) {
-    const themeClass = THEME_CLASS[entry.namespace];
+  for (const [namespace, values] of Object.entries(kitTailwindTheme(system))) {
+    const themeClass = THEME_CLASS[namespace as ThemeNamespace];
     if (!themeClass) continue;
-    const name = entry.key === 'DEFAULT' ? themeClass.prefix : `${themeClass.prefix}-${entry.key}`;
-    themeClasses[themeClass.kind].push(name);
+    for (const key of Object.keys(values))
+      themeClasses[themeClass.kind].push(
+        key === 'DEFAULT' ? themeClass.prefix : `${themeClass.prefix}-${key}`,
+      );
   }
   return themeClasses;
 }

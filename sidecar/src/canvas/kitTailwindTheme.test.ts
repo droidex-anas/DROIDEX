@@ -42,7 +42,7 @@ test('a kit token becomes a theme entry unless the default theme owns its name',
     tokenSection('motion', ['--ds-duration-exit', '--ds-duration', '--ds-ease-in']),
     tokenSection('tokens', ['--ds-sidebar-width', '--ds-z-overlay']),
   ];
-  assert.deepEqual(kitTailwindTheme(sections), {
+  assert.deepEqual(kitTailwindTheme({ sections, files: {} }), {
     colors: {
       accent: 'color-mix(in srgb, var(--ds-accent) calc(<alpha-value> * 100%), transparent)',
       'fg-muted': 'color-mix(in srgb, var(--ds-fg-muted) calc(<alpha-value> * 100%), transparent)',
@@ -109,6 +109,44 @@ export default function Panel() {
   css(/\.shadow-md\s*\{[^}]*0 4px 6px/, 'stock shadow-md');
   css(/\.font-sans\s*\{[^}]*font-family:\s*ui-sans-serif/, 'stock font-sans');
   css(/\.text-lg\s*\{[^}]*font-size:\s*1\.125rem/, 'stock text-lg');
+});
+
+test('a project theme the kit carries overrides the stock keys it names, as theme.extend does', async () => {
+  assert.equal(startCanvasRuntime(ownedCanvasRuntimeDir), null);
+  const files = {
+    'main.tsx':
+      'export default () => <p className="rounded-md rounded-lg bg-primary/50 rounded-pill" />;\n',
+  };
+  const sections = [tokenSection('radius', ['--ds-radius-md', '--ds-radius-pill'])];
+  const theme = {
+    borderRadius: { md: 'calc(var(--ds-radius) - 2px)' },
+    colors: { primary: 'var(--ds-primary)' },
+  };
+  const built = await buildDesignStylesheet(files, {
+    sections,
+    files: { 'tailwind.theme.json': JSON.stringify(theme) },
+  });
+  assert.ok(built.ok);
+  const css = (pattern: RegExp, name: string) =>
+    assert.ok(pattern.test(built.css), `${name} missing from the compiled CSS`);
+  css(
+    /\.rounded-md\s*\{[^}]*border-radius:\s*calc\(var\(--ds-radius\) - 2px\)/,
+    'theme rounded-md',
+  );
+  // A key the theme does not name keeps its stock value; a token class is still added.
+  css(/\.rounded-lg\s*\{[^}]*border-radius:\s*0\.5rem/, 'stock rounded-lg');
+  css(/\.rounded-pill\s*\{[^}]*var\(--ds-radius-pill\)/, 'token rounded-pill');
+  css(
+    /\.bg-primary\\\/50\s*\{[^}]*color-mix\(in srgb, var\(--ds-primary\) calc\(0\.5 \* 100%\)/,
+    'bg-primary/50',
+  );
+
+  const broken = await buildDesignStylesheet(files, {
+    sections,
+    files: { 'tailwind.theme.json': JSON.stringify({ animation: { spin: 'none' } }) },
+  });
+  assert.ok(!broken.ok);
+  assert.equal(broken.diagnostics[0].file, '@droidex/design-system/tailwind.theme.json');
 });
 
 test('a kit key that names a stock class of another namespace leaves that class stock', async () => {

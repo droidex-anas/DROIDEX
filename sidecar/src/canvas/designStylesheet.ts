@@ -20,7 +20,7 @@ import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
 import { hostKitFonts } from './canvasFontAssets.js';
 import { kitModes } from './designSystemDocument.js';
-import { kitTailwindTheme } from './kitTailwindTheme.js';
+import { KIT_THEME_FILE, kitTailwindTheme, readProjectTheme } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -55,6 +55,18 @@ export async function buildDesignStylesheet(
 
   const refusals = sources.flatMap(([file, css]) => reviewCss(file, css));
   if (refusals.length > 0) return { ok: false, diagnostics: refusals };
+  const projectTheme = readProjectTheme(system.files);
+  if ('problem' in projectTheme)
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          code: 'invalid_input',
+          message: projectTheme.problem,
+          file: `${KIT_SPECIFIER}/${KIT_THEME_FILE}`,
+        },
+      ],
+    };
 
   try {
     for (const source of sources) {
@@ -251,14 +263,15 @@ export const CANVAS_TAILWIND_OPTIONS = {
 
 /**
  * A frame's Tailwind: the stock setup plus the pinned kit's tokens as theme
- * classes (bg-surface, rounded-pill, text-display).
+ * classes (bg-surface, rounded-pill, text-display) and the project theme a
+ * library kit carries.
  */
 export function canvasTailwindOptions(
-  system: Pick<DesignSystem, 'sections'>,
+  system: Pick<DesignSystem, 'sections' | 'files'>,
 ): Pick<Config, 'darkMode' | 'theme'> {
   return {
     ...CANVAS_TAILWIND_OPTIONS,
-    theme: { extend: kitTailwindTheme(system.sections) },
+    theme: { extend: kitTailwindTheme(system) },
   };
 }
 

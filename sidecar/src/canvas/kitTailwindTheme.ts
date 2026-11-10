@@ -5,6 +5,9 @@
 // already generates (rounded-md, text-lg, or text-base for a colour named
 // base) is skipped, so every stock class keeps the value a model expects, and
 // the kit token of that name is reached as rounded-[var(--ds-radius-md)].
+// A kit imported from a project's component library also carries that
+// project's Tailwind theme (KIT_THEME_FILE), and applies it as the library
+// does, as theme.extend: a key it names, rounded-md included, takes its value.
 // Colour values wrap the token in a color-mix with Tailwind's <alpha-value>
 // placeholder so an opacity modifier (bg-surface/50) keeps working.
 
@@ -12,11 +15,15 @@ import defaultTheme from 'tailwindcss/defaultTheme';
 import setupContextUtils from 'tailwindcss/lib/lib/setupContextUtils';
 import nameClass from 'tailwindcss/lib/util/nameClass';
 import resolveConfig from 'tailwindcss/resolveConfig';
+import { z } from 'zod';
 import {
   TOKEN_KINDS,
+  tokenValueSchema,
   type DocumentSection,
   type TokenSectionKind,
 } from './designSystemDocument.js';
+import type { DesignSystem } from './designSystems.js';
+import type { SourceFiles } from './schema.js';
 
 const THEME_NAMESPACES = [
   'colors',
@@ -36,8 +43,25 @@ const THEME_NAMESPACES = [
 /** A theme.extend namespace a kit's tokens can land in. */
 export type ThemeNamespace = (typeof THEME_NAMESPACES)[number];
 
+/** The kit file holding a library kit's project theme, read as data and never run. */
+export const KIT_THEME_FILE = 'tailwind.theme.json';
+
+// A theme key as Tailwind flattens it (primary-foreground, 2xl, 0.5, DEFAULT).
+const themeKeySchema = z
+  .string()
+  .max(64)
+  .regex(/^[A-Za-z0-9][\w.-]*$/);
+
+const projectThemeSchema = z.record(
+  z.enum(THEME_NAMESPACES),
+  z.record(themeKeySchema, tokenValueSchema),
+);
+
+/** A kit's Tailwind theme: values by key, per namespace. */
+export type KitTheme = Partial<Record<ThemeNamespace, Record<string, string>>>;
+
 /** One token's place in the theme. A 'DEFAULT' key is the bare utility. */
-export interface ThemeEntry {
+interface ThemeEntry {
   namespace: ThemeNamespace;
   key: string;
   token: string;
@@ -180,7 +204,7 @@ function entryFor(kind: TokenSectionKind, token: string): ThemeEntry | null {
  * and tokens whose name maps to no namespace. The first section to claim a
  * namespace key wins.
  */
-export function themeEntries(sections: DocumentSection[]): ThemeEntry[] {
+function themeEntries(sections: DocumentSection[]): ThemeEntry[] {
   const entries: ThemeEntry[] = [];
   const seen = new Set<string>();
   for (const section of sections) {
@@ -200,17 +224,40 @@ export function themeEntries(sections: DocumentSection[]): ThemeEntry[] {
   return entries;
 }
 
-/** The kit's theme.extend: every mapped token as a var() the mode switch owns. */
-export function kitTailwindTheme(
-  sections: DocumentSection[],
-): Partial<Record<ThemeNamespace, Record<string, string>>> {
-  const theme: Partial<Record<ThemeNamespace, Record<string, string>>> = {};
-  for (const entry of themeEntries(sections)) {
-    const values = (theme[entry.namespace] ??= {});
-    values[entry.key] =
-      entry.namespace === 'colors'
-        ? `color-mix(in srgb, var(${entry.token}) calc(<alpha-value> * 100%), transparent)`
-        : `var(${entry.token})`;
-  }
+/**
+ * The kit's theme.extend: every mapped token as a var() the mode switch owns,
+ * then the project theme the kit carries, whose keys win.
+ */
+export function kitTailwindTheme(system: Pick<DesignSystem, 'sections' | 'files'>): KitTheme {
+  const theme: KitTheme = {};
+  const set = (namespace: ThemeNamespace, key: string, value: string) => {
+    (theme[namespace] ??= {})[key] =
+      namespace === 'colors'
+        ? `color-mix(in srgb, ${value} calc(<alpha-value> * 100%), transparent)`
+        : value;
+  };
+  for (const entry of themeEntries(system.sections))
+    set(entry.namespace, entry.key, `var(${entry.token})`);
+  const project = readProjectTheme(system.files);
+  if ('theme' in project)
+    for (const namespace of THEME_NAMESPACES)
+      for (const [key, value] of Object.entries(project.theme[namespace] ?? {}))
+        set(namespace, key, value);
   return theme;
+}
+
+/** The project theme a kit carries, none when it has no theme file, or why the file is unusable. */
+export function readProjectTheme(files: SourceFiles): { theme: KitTheme } | { problem: string } {
+  if (!Object.hasOwn(files, KIT_THEME_FILE)) return { theme: {} };
+  let json: unknown;
+  try {
+    json = JSON.parse(files[KIT_THEME_FILE]);
+  } catch {
+    return { problem: `${KIT_THEME_FILE} is not JSON.` };
+  }
+  const parsed = projectThemeSchema.safeParse(json);
+  if (parsed.success) return { theme: parsed.data };
+  const [issue] = parsed.error.issues;
+  const at = issue.path.length > 0 ? ` at ${issue.path.join('.')}` : '';
+  return { problem: `${KIT_THEME_FILE} is not a theme${at}: ${issue.message}.` };
 }

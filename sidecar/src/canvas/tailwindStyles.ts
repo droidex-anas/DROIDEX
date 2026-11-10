@@ -1,11 +1,12 @@
 // The Tailwind classes a direct style edit reads and writes. Designs compile
-// against stock Tailwind 3 plus the pinned kit's add-only theme
-// (canvasTailwindOptions), whose stock classes keep their values, so a kit token
-// is written in the arbitrary-value form kits use (`p-[var(--ds-space-4)]`), and
-// a raw value as the stock class whose value equals it (`p-4` for 16px) or,
-// without one, not as a class at all. tailwindStyles.test.ts compiles every
-// class this module can write with Tailwind itself.
+// against stock Tailwind 3 plus the pinned kit's theme (canvasTailwindOptions),
+// so a kit token is written in the arbitrary-value form kits use
+// (`p-[var(--ds-space-4)]`), and a raw value as the stock class whose value
+// equals it (`p-4` for 16px) or, without one or where the kit's theme gives
+// that key its own value, not as a class at all. tailwindStyles.test.ts
+// compiles every class this module can write with Tailwind itself.
 
+import type { KitTheme, ThemeNamespace } from './kitTailwindTheme.js';
 import { canonicalCss, type StyleResolution } from './styleEdits.js';
 import {
   BORDER_WIDTH,
@@ -108,6 +109,18 @@ const UTILITIES: Readonly<Record<string, Utility>> = {
   borderWidth: { prefix: 'border', hint: 'length', scale: BORDER_WIDTH },
 };
 
+/** The theme namespace each stock scale's keys come from, where a kit's theme can give one its own value. */
+const SCALE_NAMESPACES = new Map<Scale, ThemeNamespace>([
+  [SPACING, 'spacing'],
+  [SIZE, 'spacing'],
+  [MIN_SIZE, 'spacing'],
+  [MAX_SIZE, 'spacing'],
+  [RADIUS, 'borderRadius'],
+  [FONT_WEIGHT, 'fontWeight'],
+  [LINE_HEIGHT, 'lineHeight'],
+  [TRACKING, 'letterSpacing'],
+]);
+
 const KEYWORD_PROPERTIES = new Map(
   Object.entries(KEYWORD_CLASSES).flatMap(([property, classes]) =>
     Object.values(classes).map((name) => [name, property] as const),
@@ -185,9 +198,14 @@ export function longhands(property: string): readonly string[] {
 
 /**
  * The class that writes `resolution` to `property`, or null when no class
- * says exactly that and the value has to stay inline.
+ * says exactly that and the value has to stay inline. `theme` is the pinned
+ * kit's Tailwind theme: a stock key it names no longer sets the stock value.
  */
-export function styleClass(property: string, resolution: StyleResolution): string | null {
+export function styleClass(
+  property: string,
+  resolution: StyleResolution,
+  theme: KitTheme = {},
+): string | null {
   const utility = Object.hasOwn(UTILITIES, property) ? UTILITIES[property] : undefined;
   if (resolution.kind === 'token') {
     if (!utility) return null;
@@ -196,11 +214,19 @@ export function styleClass(property: string, resolution: StyleResolution): strin
   }
   const keyword = keywordClass(property, resolution.value);
   if (keyword !== undefined) return keyword;
-  if (!utility?.scale) return null;
-  const direct = scaleKey(utility.scale, resolution.value);
+  const scale = utility?.scale;
+  if (!scale) return null;
+  const namespace = SCALE_NAMESPACES.get(scale);
+  const kitValues = namespace ? theme[namespace] : undefined;
+  // Tailwind's bare `rounded` is the theme's DEFAULT key.
+  const stockKey = (value: string) => {
+    const key = scaleKey(scale, value);
+    return key !== null && kitValues && Object.hasOwn(kitValues, key || 'DEFAULT') ? null : key;
+  };
+  const direct = stockKey(resolution.value);
   if (direct !== null) return stockClass(utility.prefix, direct);
   if (!utility.signed || !resolution.value.startsWith('-')) return null;
-  const negated = scaleKey(utility.scale, resolution.value.slice(1));
+  const negated = stockKey(resolution.value.slice(1));
   return negated === null ? null : `-${stockClass(utility.prefix, negated)}`;
 }
 

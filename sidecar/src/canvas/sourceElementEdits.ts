@@ -2,6 +2,7 @@
 // canonical source range an element is, and an edit replaces only bytes within it.
 
 import ts from 'typescript';
+import type { KitTheme } from './kitTailwindTheme.js';
 import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import {
@@ -14,10 +15,13 @@ import {
 } from './sourceElements.js';
 import { styleReplacements, type ResolvedStyle } from './sourceStyles.js';
 
-/** One edit as source sees it: a style edit arrives with each style resolved against the kit. */
+/**
+ * One edit as source sees it: a style edit arrives with each style resolved
+ * against the kit, and the kit's Tailwind theme its classes compile with.
+ */
 export type SourceChange =
   | Extract<ElementEdit['change'], { kind: 'text' | 'image' }>
-  | { kind: 'style'; styles: ResolvedStyle[] };
+  | { kind: 'style'; styles: ResolvedStyle[]; theme?: KitTheme };
 
 export interface SourceEdit {
   element: ElementRef;
@@ -63,7 +67,7 @@ export function applyElementEdit(
       replacements = [replaceImage(opening, source, edit.change.assetId)];
       break;
     case 'style':
-      replacements = styleReplacements(opening, source, edit.change.styles);
+      replacements = styleReplacements(opening, source, edit.change.styles, edit.change.theme);
       break;
   }
   return { [source.fileName]: replace(source.text, replacements) };
