@@ -394,7 +394,47 @@ test('a library past the component bound keeps the first by name and names the r
   );
 });
 
-test('a Tailwind 4 library, an alias tsconfig does not map, and a mixed source are refused', async (t) => {
+test('aliases map as TypeScript reads them, and theme values the kit cannot keep whole are reported', async (t) => {
+  const files: Record<string, string> = {
+    ...LIBRARY,
+    'tsconfig.json':
+      '{ "compilerOptions": { "paths": { "@/*": ["./*"], "@/components/*": ["./custom/*"] } } }',
+    'custom/ui/card.tsx': LIBRARY['components/ui/card.tsx'],
+    // A Tailwind 3 project may still name Tailwind 4's at-rules in a comment.
+    'package.json': JSON.stringify({ devDependencies: { tailwindcss: '^3.4.17' } }),
+    'app/globals.css': `/* Tailwind 4 moves these into @theme. */\n${LIBRARY['app/globals.css']}`,
+    'tailwind.config.ts': LIBRARY['tailwind.config.ts'].replace(
+      'extend: {',
+      'fontSize: { sm: ["0.8rem", { lineHeight: "1.8rem" }] },\n    extend: {',
+    ),
+  };
+  const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
+  assert.equal(imported.status, 'imported');
+  assert.deepEqual(kitPrimitives(imported.system), ['Card', 'CardTitle']);
+  const theme = JSON.parse(imported.system.files['tailwind.theme.json']) as Record<
+    string,
+    Record<string, string>
+  >;
+  assert.equal(theme.fontSize.sm, '0.8rem');
+  assert.ok(
+    imported.diagnostics.some(
+      ({ message, line }) =>
+        line === 8 && message.startsWith('theme.fontSize.sm keeps only its first value'),
+    ),
+  );
+
+  const computed = {
+    ...LIBRARY,
+    'tailwind.config.ts': 'export default { theme: { extend: shared } }\n',
+  };
+  const unread = await importProjectDesignSystem(await project(t, computed), SHADCN, KIT);
+  assert.equal(unread.status, 'imported');
+  assert.ok(
+    unread.diagnostics.some(({ message }) => message.startsWith('theme.extend is computed')),
+  );
+});
+
+test('a library the canvas cannot build a kit from is refused, saying why', async (t) => {
   const tailwind4 = {
     ...LIBRARY,
     'components.json': JSON.stringify({
@@ -404,12 +444,49 @@ test('a Tailwind 4 library, an alias tsconfig does not map, and a mixed source a
     'app/globals.css': '@import "tailwindcss";\n',
   };
   const unmapped = { ...LIBRARY, 'tsconfig.json': '{ "compilerOptions": {} }' };
+  const tailwind = (options: object) => ({
+    ...LIBRARY,
+    'components.json': JSON.stringify({
+      ...COMPONENTS_JSON,
+      tailwind: { ...COMPONENTS_JSON.tailwind, ...options },
+    }),
+  });
+  const nested = `${'{ a: '.repeat(40)}"x"${' }'.repeat(40)}`;
   const refusals: [
     Record<string, string>,
     typeof SHADCN | { path: string; kind: 'css' | 'shadcn' }[],
     string,
   ][] = [
     [tailwind4, SHADCN, TAILWIND_4_REFUSAL],
+    [{ ...LIBRARY, 'app/globals.css': '@import "tailwindcss";\n' }, SHADCN, TAILWIND_4_REFUSAL],
+    [
+      {
+        ...LIBRARY,
+        'package.json': JSON.stringify({ devDependencies: { tailwindcss: '^4.1.0' } }),
+      },
+      SHADCN,
+      TAILWIND_4_REFUSAL,
+    ],
+    [
+      tailwind({ prefix: 'tw-' }),
+      SHADCN,
+      'components.json sets tailwind.prefix to "tw-", and a kit\'s classes take no prefix. Import a library that sets none.',
+    ],
+    [
+      tailwind({ cssVariables: false }),
+      SHADCN,
+      "components.json sets tailwind.cssVariables to false, and a kit's tokens are the stylesheet's CSS variables. Import a library that keeps them.",
+    ],
+    [
+      { ...LIBRARY, 'tailwind.config.ts': `export default { theme: { colors: ${nested} } }\n` },
+      SHADCN,
+      'tailwind.config.ts nests its theme deeper than the canvas reads. Flatten its theme to import the library.',
+    ],
+    [
+      { ...LIBRARY, 'app/globals.css': ':root {\n  --primary: 0 0% 9%;\n' },
+      SHADCN,
+      'Fix this stylesheet at line 1: Unclosed block.',
+    ],
     [unmapped, SHADCN, "tsconfig.json's paths do not say where @/components/ui points."],
     [
       LIBRARY,

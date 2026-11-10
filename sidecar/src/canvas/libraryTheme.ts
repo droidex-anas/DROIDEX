@@ -35,25 +35,36 @@ const IN_ARBITRARY_VALUE = /\[[^\s"'`\]]*$/;
 const DROPPED_AT_RULES = new Set(['tailwind', 'import', 'config', 'plugin']);
 const MAX_LISTED = 6;
 
-/** The config's theme, as theme.extend reads it, over the kit's tokens. */
+/** The config's theme, as theme.extend reads it, over the kit's tokens; or why it cannot be read. */
 export function libraryTheme(
   config: LibraryFile,
   kitNames: Readonly<Record<string, string>>,
   diagnostics: CanvasDiagnostic[],
-): KitTheme {
+): { theme: KitTheme } | { problem: string } {
   const read = readConfigTheme(config.text);
-  const theme = read.status === 'read' ? read.theme : null;
+  if (read.status === 'tooDeep')
+    return {
+      problem: `${config.file} nests its theme deeper than the canvas reads. Flatten its theme to import the library.`,
+    };
+  const { theme } = read;
   if (theme?.kind !== 'object') {
     diagnostics.push({
       code: 'no_tokens',
       message: 'That config has no literal theme object, so the kit keeps the canvas theme.',
       file: config.file,
     });
-    return {};
+    return { theme: {} };
   }
   const kitTheme: KitTheme = {};
   const skipped: string[] = [];
+  const place = (line: number) => placeIn({ file: config.file, lineOffset: 0 }, line);
   const extend = theme.entries.find((entry) => entry.key === 'extend')?.value;
+  if (extend?.kind === 'computed')
+    diagnostics.push({
+      code: 'manual_interpretation_required',
+      message: "theme.extend is computed in the config, so the kit's theme leaves it out.",
+      ...place(extend.line),
+    });
   // `theme.extend` follows `theme`, so its value wins for the same key, as Tailwind merges them.
   for (const [scope, scopePath] of [
     [theme, 'theme'],
@@ -73,7 +84,14 @@ export function libraryTheme(
           diagnostics.push({
             code: 'manual_interpretation_required',
             message: `${leafPath} ${problem}, so the kit's theme leaves it out.`,
-            ...placeIn({ file: config.file, lineOffset: 0 }, leaf.line),
+            ...place(leaf.line),
+          });
+        // fontSize's `[size, { lineHeight }]` keeps its size; a family list was joined whole.
+        else if (leaf.kind === 'list' && leaf.items.length > 1 && namespace !== 'fontFamily')
+          diagnostics.push({
+            code: 'manual_interpretation_required',
+            message: `${leafPath} keeps only its first value: a kit's theme holds one value per key.`,
+            ...place(leaf.line),
           });
       });
     }
@@ -84,7 +102,7 @@ export function libraryTheme(
       message: `The kit's theme does not read ${listed(skipped)}, so classes that use them do nothing.`,
       file: config.file,
     });
-  return kitTheme;
+  return { theme: kitTheme };
 }
 
 /** Visits each value of a theme namespace by its Tailwind key: `primary.DEFAULT` is `primary`. */

@@ -9,6 +9,7 @@
 
 import { readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
+import postcss from 'postcss';
 import { z } from 'zod';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { readModules } from './compiler.js';
@@ -39,16 +40,27 @@ export const MAX_LIBRARY_COMPONENTS = 48;
 export const TAILWIND_4_REFUSAL =
   'This project uses Tailwind 4. The canvas builds with Tailwind 3.4, so its kit cannot be imported yet.';
 
-const TAILWIND_4_CSS = /@import\s+["']tailwindcss["']|@theme\b/;
+const TAILWIND_4_VERSION = /^[\s^~>=v]*4(?:\.|$)/;
 
 const componentsConfigSchema = z.object({
   tsx: z.boolean().optional(),
-  tailwind: z.object({ config: z.string().optional(), css: z.string().min(1) }),
+  tailwind: z.object({
+    config: z.string().optional(),
+    css: z.string().min(1),
+    prefix: z.string().optional(),
+    cssVariables: z.boolean().optional(),
+  }),
   aliases: z.object({
     components: z.string().min(1),
     utils: z.string().min(1),
     ui: z.string().min(1).optional(),
   }),
+});
+
+const tailwindDependency = z.object({ tailwindcss: z.string().optional() }).optional();
+const packageJsonSchema = z.object({
+  dependencies: tailwindDependency,
+  devDependencies: tailwindDependency,
 });
 
 interface LibraryRead {
@@ -75,6 +87,7 @@ export async function importLibraryDesignSystem(
   const { kitNames } = imported;
   const diagnostics = [...read.diagnostics, ...imported.diagnostics];
   const theme = libraryTheme(read.config, kitNames, diagnostics);
+  if ('problem' in theme) return refused(theme.problem, diagnostics);
   const stylesheet = libraryStylesheet(read.css, kitNames, diagnostics);
   const library = kitComponents(read.components, read.aliases, kitNames, diagnostics);
   if ('problem' in library) return refused(library.problem, diagnostics);
@@ -87,7 +100,7 @@ export async function importLibraryDesignSystem(
       'fonts.css': inter.css,
       'fonts/Inter-OFL.txt': inter.license,
       ...(stylesheet === '' ? {} : { 'styles.css': stylesheet }),
-      [KIT_THEME_FILE]: `${JSON.stringify(theme, null, 2)}\n`,
+      [KIT_THEME_FILE]: `${JSON.stringify(theme.theme, null, 2)}\n`,
       [KIT_UTILS_FILE]: read.utils,
       ...Object.fromEntries(library.files),
     },
@@ -136,7 +149,7 @@ async function readLibrary(
   const base = path.posix.dirname(configFile);
   const css = await readFile(root, base, settings.tailwind.css);
   if ('problem' in css) return css;
-  if (!settings.tailwind.config || TAILWIND_4_CSS.test(css.text))
+  if (!settings.tailwind.config || (await usesTailwind4(root, base, css.text)))
     return { problem: TAILWIND_4_REFUSAL };
   const config = await readFile(root, base, settings.tailwind.config);
   if ('problem' in config) return config;
@@ -206,11 +219,58 @@ async function readComponentsConfig(
     return {
       problem: `${file} is not a shadcn/ui components.json: it needs tailwind.css, aliases.components and aliases.utils.`,
     };
-  if (parsed.data.tsx === false)
+  const { tsx, tailwind } = parsed.data;
+  if (tsx === false)
     return {
       problem: `${file} describes a JavaScript library; a kit copies TypeScript components.`,
     };
+  if (tailwind.prefix)
+    return {
+      problem: `${file} sets tailwind.prefix to "${tailwind.prefix}", and a kit's classes take no prefix. Import a library that sets none.`,
+    };
+  if (tailwind.cssVariables === false)
+    return {
+      problem: `${file} sets tailwind.cssVariables to false, and a kit's tokens are the stylesheet's CSS variables. Import a library that keeps them.`,
+    };
   return parsed.data;
+}
+
+/** Whether the library's stylesheet or the package.json beside components.json says it uses Tailwind 4. */
+async function usesTailwind4(root: string, base: string, css: string): Promise<boolean> {
+  if (hasTailwind4AtRules(css)) return true;
+  const manifest = await readFile(root, base, 'package.json');
+  if ('problem' in manifest) return false;
+  let json: unknown;
+  try {
+    json = JSON.parse(manifest.text);
+  } catch {
+    return false;
+  }
+  const parsed = packageJsonSchema.safeParse(json);
+  if (!parsed.success) return false;
+  const { dependencies, devDependencies } = parsed.data;
+  const version = dependencies?.tailwindcss ?? devDependencies?.tailwindcss;
+  return version !== undefined && TAILWIND_4_VERSION.test(version);
+}
+
+// A stylesheet PostCSS cannot read is refused later, at its line.
+function hasTailwind4AtRules(css: string): boolean {
+  let root: postcss.Root;
+  try {
+    root = postcss.parse(css, { from: undefined, map: false });
+  } catch (error) {
+    if (!(error instanceof postcss.CssSyntaxError)) throw error;
+    return false;
+  }
+  let found = false;
+  root.walkAtRules((rule) => {
+    if (
+      rule.name === 'theme' ||
+      (rule.name === 'import' && /^["']tailwindcss["']/.test(rule.params))
+    )
+      found = true;
+  });
+  return found;
 }
 
 /** A file components.json names, relative to `base`, the folder it is in. */
@@ -251,11 +311,17 @@ function aliasPath(
   mappings: readonly PathMapping[],
   tsconfig: string,
 ): { path: string } | { problem: string } {
-  for (const { pattern, target } of mappings) {
-    if (pattern === alias) return projectRelativePath(target);
-    if (pattern.endsWith('*') && alias.startsWith(pattern.slice(0, -1)))
-      return projectRelativePath(target.replace('*', alias.slice(pattern.length - 1)));
-  }
+  const exact = mappings.find(({ pattern }) => pattern === alias);
+  if (exact !== undefined) return projectRelativePath(exact.target);
+  // As TypeScript resolves it: the longest matching prefix, whatever order paths lists them in.
+  const wildcard = mappings
+    .filter(({ pattern }) => pattern.endsWith('*') && alias.startsWith(pattern.slice(0, -1)))
+    .sort((a, b) => b.pattern.length - a.pattern.length)
+    .at(0);
+  if (wildcard !== undefined)
+    return projectRelativePath(
+      wildcard.target.replace('*', alias.slice(wildcard.pattern.length - 1)),
+    );
   return { problem: `${tsconfig}'s paths do not say where ${alias} points.` };
 }
 
