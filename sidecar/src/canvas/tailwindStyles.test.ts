@@ -49,7 +49,7 @@ const RAW_VALUES = [
   'auto',
   'fit-content',
   'none',
-  'currentColor',
+  'currentcolor',
   ...Object.values(BLUR),
   'blur(0.5rem)',
 ];

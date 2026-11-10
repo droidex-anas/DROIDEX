@@ -234,7 +234,7 @@ test('an SVG paint edit drops the presentation attribute its class or inline sty
     },
     {
       markup: '<svg className="block" fill="#000" stroke="currentColor" />',
-      styles: [{ property: 'fill', resolution: raw('currentColor') }],
+      styles: [{ property: 'fill', resolution: raw('currentcolor') }],
       changed: '<svg className="block fill-current" stroke="currentColor" />',
     },
   ];

@@ -111,8 +111,8 @@ export const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, st
     none: 'hidden',
   },
   flexWrap: { nowrap: 'flex-nowrap', wrap: 'flex-wrap', 'wrap-reverse': 'flex-wrap-reverse' },
-  fill: { none: 'fill-none', currentColor: 'fill-current' },
-  stroke: { none: 'stroke-none', currentColor: 'stroke-current' },
+  fill: { none: 'fill-none', currentcolor: 'fill-current' },
+  stroke: { none: 'stroke-none', currentcolor: 'stroke-current' },
   flexGrow: { '1': 'grow', '0': 'grow-0' },
   alignSelf: {
     auto: 'self-auto',

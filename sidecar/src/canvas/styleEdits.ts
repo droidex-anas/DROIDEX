@@ -51,7 +51,8 @@ const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
 const MIN_SIZE = { tokens: '--ds-size-', values: 'length' } as const;
 const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
-// An SVG paint also takes none, and currentColor to follow the text colour.
+// An SVG paint also takes none, and currentcolor to follow the text colour; the
+// panel sends keywords lowercased.
 const PAINT = { tokens: 'colour', values: 'paint' } as const;
 // A blur is the one filter function an edit writes, so the others a class adds stay.
 const BLUR_FILTER = { tokens: '--ds-blur-', values: 'blur' } as const;
@@ -292,7 +293,7 @@ function acceptsValue(form: ValueForm, value: string): boolean {
     case 'colour':
       return COLOUR_VALUE.test(value);
     case 'paint':
-      return COLOUR_VALUE.test(value) || value === 'none' || value === 'currentColor';
+      return COLOUR_VALUE.test(value) || value === 'none' || value === 'currentcolor';
     case 'weight':
       return WEIGHT.test(value);
     case 'line-height':
