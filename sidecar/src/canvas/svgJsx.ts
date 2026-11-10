@@ -46,12 +46,13 @@ const REACT_CAMEL_CASE = new Set(
   writing-mode`.split(/\s+/),
 );
 
-// CSS properties that mean the same as the presentation attribute of that name.
+// CSS properties that mean the same as the presentation attribute of that name;
+// one with no such attribute, like mix-blend-mode, keeps the SVG an image.
 const PRESENTATION = new Set(
   `fill fill-opacity fill-rule stroke stroke-width stroke-linecap stroke-linejoin
   stroke-miterlimit stroke-dasharray stroke-dashoffset stroke-opacity opacity color display
   visibility overflow paint-order vector-effect shape-rendering text-rendering image-rendering
-  color-rendering color-interpolation color-interpolation-filters mix-blend-mode isolation
+  color-rendering color-interpolation color-interpolation-filters
   font-family font-size font-size-adjust font-stretch font-style font-variant font-weight
   letter-spacing word-spacing text-anchor text-decoration dominant-baseline alignment-baseline
   baseline-shift writing-mode direction unicode-bidi white-space clip-path clip-rule mask filter

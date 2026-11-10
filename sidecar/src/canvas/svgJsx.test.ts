@@ -87,6 +87,7 @@ test('an SVG the frame cannot draw as JSX is drawn as its owned image', () => {
     'svg path{fill:red}',
     '.a{transform:rotate(4deg)}',
     '.a{fill:red!important}',
+    '.a{mix-blend-mode:multiply}',
   ]) {
     const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><style>${css}</style><path class="a" d="M0 0"/></svg>`;
     assert.deepEqual(drawn(markup), {
