@@ -213,6 +213,10 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
     previewHoverScript({ x: 12.5, y: -3 }),
     'globalThis.__droidexCanvasPreview.hover({"x":12.5,"y":-3})',
   );
+  assert.equal(
+    previewHoverScript({ elementId: 'el_1', instancePath: '0/2' }),
+    'globalThis.__droidexCanvasPreview.hover({"elementId":"el_1","instancePath":"0/2"})',
+  );
   const hovered = {
     elementId: 'el_1',
     instancePath: '0/2',

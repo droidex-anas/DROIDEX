@@ -129,8 +129,17 @@ export type PreviewEvent =
  */
 export type PreviewVector = { svg: string } | { refused: 'not_vector' | 'too_large' };
 
-/** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
-export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
+/** One drawn instance of an element: its source marker and its path from the document body. */
+export interface PreviewNode {
+  elementId: string;
+  instancePath: string;
+}
+
+/** A pick at a point in the design's own pixels, a keyboard step through its elements, or one instance. */
+export type PreviewPick =
+  | { x: number; y: number }
+  | { step: 'first' | 'next' | 'previous' }
+  | PreviewNode;
 
 /** An element to select by its marker and path, with the inline styles and text it previews. */
 export interface PreviewTarget {
@@ -165,8 +174,8 @@ export const PREVIEW_STARTED = 'started';
 export const PREVIEW_POLL_SCRIPT = 'globalThis.__droidexCanvasPreview.drain()';
 
 /**
- * Selects the element under a point or the next one along; a `selection` event
- * carrying `sequence` answers.
+ * Selects the element under a point, the next one along or the one named; a
+ * `selection` event carrying `sequence` answers.
  */
 export function previewPickScript(
   pick: PreviewPick,
@@ -188,9 +197,14 @@ export function previewSelectScript(
   return `globalThis.__droidexCanvasPreview.select(${jsonArgument({ target, properties, sequence })})`;
 }
 
-/** Asks which element is under a point in the design's pixels; the call itself answers. */
-export function previewHoverScript(at: { x: number; y: number }): string {
-  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument({ x: at.x, y: at.y })})`;
+/**
+ * Asks which element is under a point in the design's pixels, or where the one
+ * named is drawn; the call itself answers.
+ */
+export function previewHoverScript(at: { x: number; y: number } | PreviewNode): string {
+  const asked =
+    'x' in at ? { x: at.x, y: at.y } : { elementId: at.elementId, instancePath: at.instancePath };
+  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument(asked)})`;
 }
 
 /** Asks what is at a point or between two points in the design's pixels; the call itself answers. */

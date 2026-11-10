@@ -32,6 +32,7 @@ import {
   type PreviewFinding,
   type PreviewHover,
   type PreviewInstance,
+  type PreviewNode,
   type PreviewPick,
   type PreviewProbe,
   type PreviewTarget,
@@ -130,7 +131,8 @@ export interface PreviewRun {
   stop(): void;
   pick(pick: PreviewPick, properties: readonly string[]): number;
   select(target: PreviewTarget | null, properties: readonly string[]): number;
-  hover(at: { x: number; y: number }): Promise<PreviewHover | null>;
+  /** The element under a point, or the one named where it is drawn now. */
+  hover(at: { x: number; y: number } | PreviewNode): Promise<PreviewHover | null>;
   probe(probe: PreviewProbe): Promise<PreviewFinding | null>;
   /** Where each element is drawn, in order, null for one that is not. */
   locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null>;
@@ -247,7 +249,7 @@ class GuestRun implements PreviewRun {
     if (this.canAsk()) void this.ask(previewSetTokensScript(tokens));
   }
 
-  async hover(at: { x: number; y: number }): Promise<PreviewHover | null> {
+  async hover(at: { x: number; y: number } | PreviewNode): Promise<PreviewHover | null> {
     if (!this.canAsk()) return null;
     const answer = await this.ask(previewHoverScript(at));
     // An answer can land just before the run stops; a stopped run answers null.

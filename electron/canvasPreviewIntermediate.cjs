@@ -47,7 +47,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * renderer reads as a guest it no longer owns. `pick` and `select` pass a
  * bounded selection command on to the generated frame, and `setTokens` a kit's
  * draft custom properties, which the reporter sets on the design's root.
- * `hover` asks which element is under a point and answers with it directly,
+ * `hover` asks which element is under a point, or where the one a path names
+ * is drawn, and answers with it directly,
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
@@ -181,6 +182,13 @@ const INTERMEDIATE_SCRIPT = `(() => {
   const pointOf = (value) =>
     value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
       ? { x: value.x, y: value.y }
+      : null;
+  // Child indices from the body down, as the reporter writes an element's path.
+  const isPath = (value) => typeof value === 'string' && /^[0-9]+(?:[/][0-9]+)*$/.test(value);
+  // One drawn instance of an element, by its marker and its path.
+  const nodeOf = (value) =>
+    isElementId(value.elementId) && isPath(value.instancePath)
+      ? { elementId: value.elementId, instancePath: value.instancePath }
       : null;
 
   // Only these shapes leave the intermediate, rebuilt field by field so no
@@ -316,6 +324,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
       const { sequence } = request;
       if (PICK_STEPS.includes(request.step))
         return command({ command: 'pick', sequence, step: request.step, properties });
+      if (request.instancePath !== undefined) {
+        const node = nodeOf(request);
+        if (!node) return 'invalid_request';
+        return command(Object.assign({ command: 'pick', sequence, properties }, node));
+      }
       if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
       return command({ command: 'pick', sequence, x: request.x, y: request.y, properties });
     },
@@ -329,8 +342,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         !target ||
         typeof target !== 'object' ||
         typeof target.elementId !== 'string' ||
-        typeof target.instancePath !== 'string' ||
-        !/^[0-9]+(?:[/][0-9]+)*$/.test(target.instancePath) ||
+        !isPath(target.instancePath) ||
         !target.styles ||
         typeof target.styles !== 'object'
       )
@@ -353,7 +365,8 @@ const INTERMEDIATE_SCRIPT = `(() => {
     hover(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       if (!request || typeof request !== 'object') return 'invalid_request';
-      if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
+      const asked = request.instancePath === undefined ? pointOf(request) : nodeOf(request);
+      if (!asked) return 'invalid_request';
       if (hovering) hovering.settle(null);
       hoverSequence += 1;
       const sequence = hoverSequence;
@@ -367,7 +380,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         hovering = { sequence, settle };
         deadline = setTimeout(() => settle(null), ${String(PREVIEW_HOVER_DEADLINE_MS)});
         frame.contentWindow.postMessage(
-          { canvasPreviewCommand: instance.nonce, command: 'hover', sequence, x: request.x, y: request.y },
+          Object.assign({ canvasPreviewCommand: instance.nonce, command: 'hover', sequence }, asked),
           '*',
         );
       });

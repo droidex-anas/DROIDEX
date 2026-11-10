@@ -15,7 +15,8 @@
  * It also answers the board's selection commands with a `selection` event for
  * the element picked or named, and again whenever that element's box moves,
  * each echoing the sequence number of the command it answers, and its hover
- * command with a `hover` event naming the element under a point. Its probe
+ * command with a `hover` event naming the element under a point, or the one a
+ * path names. Its probe
  * command selects nothing either: a `probe` event names the element at a point,
  * or the text between two points and the element that holds it, and a `locate`
  * event gives the box of the first drawn instance of each element it names; a
@@ -99,6 +100,11 @@ const GENERATED_FRAME_REPORTER = `(() => {
     let at = document.body;
     for (const step of path.split('/')) at = at && at.children[Number(step)];
     return at || null;
+  };
+  // The element a path names, while it is still the one with that marker.
+  const markedAt = (elementId, instancePath) => {
+    const node = atPath(instancePath);
+    return node && node.getAttribute(MARKER) === elementId ? node : null;
   };
   let selected = null;
   // The command that made the current selection; every report of it echoes
@@ -356,6 +362,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
         node = command.step === 'first' || at < 0
           ? marked[0]
           : marked[Math.min(Math.max(at + step, 0), marked.length - 1)];
+      } else if (command.instancePath !== undefined) {
+        node = markedAt(command.elementId, command.instancePath);
       } else {
         const hit = document.elementFromPoint(command.x, command.y);
         node = hit && hit.closest('[' + MARKER + ']');
@@ -372,8 +380,13 @@ const GENERATED_FRAME_REPORTER = `(() => {
         select(node || null, command.properties, {}, null, command.sequence);
       }
     } else if (command.command === 'hover') {
-      const hit = document.elementFromPoint(command.x, command.y);
-      const node = hit && hit.closest('[' + MARKER + ']');
+      let node = null;
+      if (command.instancePath !== undefined) {
+        node = markedAt(command.elementId, command.instancePath);
+      } else {
+        const hit = document.elementFromPoint(command.x, command.y);
+        node = hit && hit.closest('[' + MARKER + ']');
+      }
       const instancePath = node ? pathOf(node) : null;
       post('hover', {
         sequence: command.sequence,
@@ -403,10 +416,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
       post('vector', Object.assign({ sequence: command.sequence }, vector()));
     } else if (command.command === 'select') {
       const target = command.target;
-      const node = target ? atPath(target.instancePath) : null;
-      const found = node && node.getAttribute(MARKER) === target.elementId ? node : null;
       select(
-        found,
+        target ? markedAt(target.elementId, target.instancePath) : null,
         command.properties,
         target ? target.styles : {},
         target ? target.text : null,
