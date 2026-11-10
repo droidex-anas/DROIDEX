@@ -1,5 +1,5 @@
-// Where the design compiler's own packages come from: esbuild, Tailwind,
-// PostCSS and the React a design imports.
+// Where the design compiler's own packages come from: esbuild, Tailwind and its
+// animation plugin, PostCSS and the packages a design imports.
 //
 // A checkout resolves them from this module's own directory, which is
 // `sidecar/src/canvas` under tsx and `sidecar/dist` once built, so development
@@ -25,6 +25,7 @@ import { fileURLToPath } from 'node:url';
 import type * as esbuild from 'esbuild';
 import type * as postcssModule from 'postcss';
 import type * as tailwindModule from 'tailwindcss';
+import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
 
 /** The runtime the app owns, or null when a checkout resolves its own. */
 export const ownedCanvasRuntimeDir = process.env.DROIDEX_CANVAS_RUNTIME_DIR ?? null;
@@ -43,27 +44,23 @@ const ANCHOR_FILE = 'canvas-runtime.js';
 const FINDER_METADATA = '.DS_Store';
 
 /**
- * Every specifier a compile resolves: the three packages the compiler itself
- * calls into, the value parser Tailwind shares with it, and the packages a design
- * may import. `designBundle.ts` owns the design-facing allowlist, which also
- * carries the virtual design-system specifier and so cannot be this list.
+ * Every specifier a compile resolves: the packages the compiler itself calls
+ * into, the value parser Tailwind shares with it, and the entry of each package
+ * a design may import (`designPackages.ts`).
  */
 const RUNTIME_SPECIFIERS: readonly string[] = [
   'esbuild',
   'postcss',
   'postcss-value-parser',
   'tailwindcss',
-  'react',
-  'react/jsx-runtime',
-  'react-dom/client',
-  'lucide-react/dist/esm/lucide-react.js',
-  'recharts/es6/index.js',
-  'simple-icons/index.mjs',
+  'tailwindcss-animate',
+  ...DESIGN_PACKAGE_ENTRIES.values(),
 ];
 
-// Simple Icons exports its ESM barrel to `import` only, so `require` cannot
-// name it. It is read at its path inside the package `require` would find.
-const EXPORT_HIDDEN_ENTRIES = new Set(['simple-icons/index.mjs']);
+// An entry naming a file is read at its path inside the package `require`
+// would find: most packages export their ESM entry to `import` only, so
+// `require` cannot name it.
+const FILE_ENTRY = /\.m?js$/;
 
 // Packages that ship no license file and state their license in the README.
 const README_LICENSES = new Set([
@@ -94,9 +91,13 @@ export interface CanvasCompilerRuntime {
   esbuild: typeof esbuild;
   postcss: typeof postcssModule.default;
   tailwindcss: typeof tailwindModule.default;
+  /** The Tailwind plugin behind `animate-in`, `fade-in-0` and the other enter and exit classes. */
+  tailwindcssAnimate: TailwindPlugin;
   /** The absolute file one supported import resolves to, inside this runtime. */
   resolve(specifier: string): string;
 }
+
+type TailwindPlugin = NonNullable<tailwindModule.Config['plugins']>[number];
 
 let started: CanvasCompilerRuntime | null = null;
 
@@ -182,6 +183,7 @@ function load(runtimeRequire: NodeJS.Require, modules: string | null): string | 
       esbuild: runtimeRequire('esbuild') as typeof esbuild,
       postcss: runtimeRequire('postcss') as typeof postcssModule.default,
       tailwindcss: runtimeRequire('tailwindcss') as typeof tailwindModule.default,
+      tailwindcssAnimate: runtimeRequire('tailwindcss-animate') as TailwindPlugin,
       resolve: (specifier) => resolveEntry(runtimeRequire, specifier),
     };
   } catch (error) {
@@ -191,14 +193,24 @@ function load(runtimeRequire: NodeJS.Require, modules: string | null): string | 
 }
 
 function resolveEntry(runtimeRequire: NodeJS.Require, specifier: string): string {
-  if (!EXPORT_HIDDEN_ENTRIES.has(specifier)) return runtimeRequire.resolve(specifier);
-  const name = specifier.slice(0, specifier.indexOf('/'));
+  if (!FILE_ENTRY.test(specifier)) return runtimeRequire.resolve(specifier);
+  const name = packageName(specifier);
+  const directory = packageDirectory(runtimeRequire, name);
+  const file = directory === null ? null : join(directory, specifier.slice(name.length + 1));
+  if (file === null || !existsSync(file)) throw new Error(`${specifier} does not resolve`);
+  return file;
+}
+
+/**
+ * The directory `require` would load package `name` from, or null. Found by
+ * its package.json rather than resolved, because an exports map may hide both
+ * that file and the entry a design needs.
+ */
+function packageDirectory(runtimeRequire: NodeJS.Require, name: string): string | null {
   const modules = runtimeRequire.resolve
     .paths(name)
     ?.find((directory) => existsSync(join(directory, name, 'package.json')));
-  const file = modules === undefined ? undefined : join(modules, specifier);
-  if (file === undefined || !existsSync(file)) throw new Error(`${specifier} does not resolve`);
-  return file;
+  return modules === undefined ? null : join(modules, name);
 }
 
 /**

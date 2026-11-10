@@ -18,6 +18,7 @@ import {
 import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
 import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
+import { LIBRARY_DESIGN } from './fixtures/library.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
@@ -214,12 +215,19 @@ test('a named Lucide icon or Simple Icons brand mark adds only its own code', as
   }
 });
 
-test('an allowed chart import compiles into a self-contained document', async () => {
-  const design = await compile(CHART_DESIGN);
+test('allowed chart and component library imports compile into a self-contained document', async () => {
+  const chart = await compile(CHART_DESIGN);
+  const library = await compile(LIBRARY_DESIGN);
 
-  assert.deepEqual(design.diagnostics, []);
-  assert.match(design.html, /Weekly visits/);
-  assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+  for (const [design, content] of [
+    [chart, /Weekly visits/],
+    [library, /Invite teammates/],
+  ] as const) {
+    assert.deepEqual(design.diagnostics, []);
+    assert.match(design.html, content);
+    assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+  }
+  assert.match(library.html, /@keyframes enter/, 'tailwindcss-animate writes the enter classes');
 });
 
 test('identical input names one artifact and a change names another', async () => {
@@ -283,6 +291,8 @@ test('an import that leaves the design is refused', async () => {
     ['fs', 'unsupported_import'],
     ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
     ['recharts/es6/index.js', 'unsupported_import'],
+    ['radix-ui/dist/index.mjs', 'unsupported_import'],
+    ['@radix-ui/react-primitive', 'unsupported_import'],
     ['simple-icons/icons/github.svg', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];

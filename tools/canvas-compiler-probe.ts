@@ -33,6 +33,7 @@ import {
 import { listDesignSystems, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
 import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
+import { LIBRARY_DESIGN } from '../sidecar/src/canvas/fixtures/library.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
@@ -523,14 +524,27 @@ process.stdout.write(
     `artifact delta ${String(chartArtifact.bytes - kitBytes)} bytes versus the kit example.\n`,
 );
 
+const library = await runWorker(target, target.runtimeDir, compileInput(LIBRARY_DESIGN));
+assertClean(library, `${target.label} component library`);
+const libraryArtifact = artifactOf(library.compiled, 'Invite teammates');
+process.stdout.write(
+  `Compiled the Radix, cva and cn design offline from the ${target.label}: ${libraryArtifact.label}\n`,
+);
+
 const isolated = copiedLayout(target, null);
 drop(isolated.layout, 'node_modules');
 const isolatedChart = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(CHART_DESIGN));
+const isolatedLibrary = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(LIBRARY_DESIGN));
 rmSync(isolated.layout, { recursive: true, force: true });
 assertClean(isolatedChart, 'an isolated chart runtime');
+assertClean(isolatedLibrary, 'an isolated component library runtime');
 if (artifactOf(isolatedChart.compiled, 'Weekly visits').label !== chartArtifact.label)
   fail('the isolated chart compiled a different artifact');
-process.stdout.write(`An isolated runtime compiled the same chart: ${chartArtifact.label}\n`);
+if (artifactOf(isolatedLibrary.compiled, 'Invite teammates').label !== libraryArtifact.label)
+  fail('the isolated component library compiled a different artifact');
+process.stdout.write(
+  `An isolated runtime compiled the same chart and component library: ${chartArtifact.label}, ${libraryArtifact.label}\n`,
+);
 
 const copied = copiedLayout(target, null);
 const intact = await runWorker(copied.target, copied.target.runtimeDir);

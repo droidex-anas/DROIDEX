@@ -34,7 +34,13 @@ const PLATFORM = 'darwin';
 const ARCHITECTURES = ['arm64', 'x64'];
 
 /** Loaded by the worker through Node; keep their complete dependency closure. */
-const NODE_RUNTIME_ROOTS = ['esbuild', 'tailwindcss', 'postcss', 'postcss-value-parser'];
+const NODE_RUNTIME_ROOTS = [
+  'esbuild',
+  'tailwindcss',
+  'tailwindcss-animate',
+  'postcss',
+  'postcss-value-parser',
+];
 
 /** Browser entries esbuild may bundle from a design. Add future allowlisted entries here. */
 const BUNDLED_SPECIFIERS = [
@@ -45,6 +51,13 @@ const BUNDLED_SPECIFIERS = [
   'recharts/es6/index.js',
   // Its exports map gives esbuild the ESM barrel, index.mjs.
   'simple-icons',
+  // Re-exports every @radix-ui/react-* primitive a design may import, so their
+  // ESM entries are staged with it.
+  'radix-ui',
+  '@radix-ui/react-icons',
+  'class-variance-authority',
+  'clsx',
+  'tailwind-merge',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.

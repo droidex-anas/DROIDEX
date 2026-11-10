@@ -53,12 +53,12 @@ const README_LICENSES = new Set([
 
 // RUNTIME_SPECIFIERS and ANCHOR_FILE in sidecar/src/canvas/canvasRuntime.ts. A
 // tree can agree with its own manifest and still be short of what a compile
-// needs, so the gate resolves all declared specifiers and loads the three the compiler calls
-// into: resolving a package says nothing about whether its own dependencies are
-// there. `postcss-value-parser` arrives through Tailwind, and the React a design
-// imports is read as files by esbuild rather than required.
+// needs, so the gate resolves all declared specifiers and loads the four the
+// compiler calls into: resolving a package says nothing about whether its own
+// dependencies are there. `postcss-value-parser` arrives through Tailwind, and
+// the packages a design imports are read as files by esbuild rather than required.
 const ANCHOR_FILE = 'canvas-runtime.js';
-const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss'];
+const LOADED_SPECIFIERS = ['esbuild', 'postcss', 'tailwindcss', 'tailwindcss-animate'];
 
 // Long enough for a cold load of the staged runtime, and the point at which a
 // package that never finishes loading is killed rather than waited for.
@@ -68,21 +68,66 @@ const LOAD_TIMEOUT_MS = 60_000;
 // any directory a user opens and the app's signature omits it, so the runtime
 // tolerates it as a regular file and nothing else.
 const FINDER_METADATA = '.DS_Store';
+// RADIX_PRIMITIVES in sidecar/src/canvas/designPackages.ts.
+const RADIX_PRIMITIVES = [
+  'accessible-icon',
+  'accordion',
+  'alert-dialog',
+  'aspect-ratio',
+  'avatar',
+  'checkbox',
+  'collapsible',
+  'context-menu',
+  'dialog',
+  'direction',
+  'dropdown-menu',
+  'form',
+  'hover-card',
+  'label',
+  'menubar',
+  'navigation-menu',
+  'one-time-password-field',
+  'password-toggle-field',
+  'popover',
+  'portal',
+  'progress',
+  'radio-group',
+  'scroll-area',
+  'select',
+  'separator',
+  'slider',
+  'slot',
+  'switch',
+  'tabs',
+  'toast',
+  'toggle',
+  'toggle-group',
+  'toolbar',
+  'tooltip',
+  'visually-hidden',
+];
 const RUNTIME_SPECIFIERS = [
   'esbuild',
   'postcss',
   'postcss-value-parser',
   'tailwindcss',
+  'tailwindcss-animate',
   'react',
   'react/jsx-runtime',
   'react-dom/client',
   'lucide-react/dist/esm/lucide-react.js',
   'recharts/es6/index.js',
   'simple-icons/index.mjs',
+  'radix-ui/dist/index.mjs',
+  ...RADIX_PRIMITIVES.map((name) => `@radix-ui/react-${name}/dist/index.mjs`),
+  '@radix-ui/react-icons/dist/react-icons.esm.js',
+  'class-variance-authority/dist/index.mjs',
+  'clsx/dist/clsx.mjs',
+  'tailwind-merge/dist/bundle-mjs.mjs',
 ];
-// EXPORT_HIDDEN_ENTRIES in canvasRuntime.ts: `require` cannot name these, so
-// they are found at their path inside the runtime.
-const EXPORT_HIDDEN_ENTRIES = ['simple-icons/index.mjs'];
+// FILE_ENTRY in canvasRuntime.ts: an exports map may hide these from
+// `require`, so they are found at their path inside the runtime.
+const FILE_ENTRY = /\.m?js$/;
 
 /**
  * Throws on the first thing wrong with the runtime at `runtimePath`, which must
@@ -241,9 +286,9 @@ Module._resolveFilename = function (specifier, ...rest) {
 };
 
 const runtimeRequire = createRequire(root + '/' + ${JSON.stringify(ANCHOR_FILE)});
-const exportHidden = new Set(${JSON.stringify(EXPORT_HIDDEN_ENTRIES)});
+const fileEntry = ${String(FILE_ENTRY)};
 for (const specifier of ${JSON.stringify(RUNTIME_SPECIFIERS)}) {
-  if (exportHidden.has(specifier)) {
+  if (fileEntry.test(specifier)) {
     if (!existsSync(inside + specifier)) refuse(specifier + ' does not resolve');
     continue;
   }

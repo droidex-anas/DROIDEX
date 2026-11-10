@@ -42,6 +42,7 @@ export function exportPackageJson(): string {
           esbuild: version('esbuild'),
           postcss: version('postcss'),
           tailwindcss: version('tailwindcss'),
+          'tailwindcss-animate': version('tailwindcss-animate'),
         },
       },
       null,
@@ -58,6 +59,7 @@ import { join } from 'node:path';
 import esbuild from 'esbuild';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
+import tailwindcssAnimate from 'tailwindcss-animate';
 
 async function filesIn(directory) {
   const files = [];
@@ -82,7 +84,7 @@ let css = '@tailwind base;\\n@tailwind components;\\n' + tokens + '\\n';
 for (const path of cssFiles) css += await readFile(path, 'utf8') + '\\n';
 css += '@tailwind utilities;\\n';
 const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));
-const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
+const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, plugins: [tailwindcssAnimate], content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
 await mkdir('dist', { recursive: true });
 const assetUrl = (text) => text.replace(/(?:canvas|kit)-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
 await writeFile('dist/style.css', assetUrl(stylesheet.css));

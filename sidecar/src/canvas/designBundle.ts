@@ -11,6 +11,7 @@ import type * as esbuild from 'esbuild';
 import { truncateDiagnosticText } from './canvasDiagnostics.js';
 import { canvasRuntime } from './canvasRuntime.js';
 import { DESIGN_ENTRY } from './designEntry.js';
+import { DESIGN_PACKAGE_ENTRIES, DESIGN_PACKAGE_LIST } from './designPackages.js';
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -20,25 +21,6 @@ export const KIT_SPECIFIER = '@droidex/design-system';
 
 /** The element `main.tsx`'s default export is mounted into. */
 export const ROOT_ELEMENT_ID = 'canvas-root';
-
-// Only explicitly supported packages resolve.
-const SUPPORTED_IMPORTS: readonly string[] = [
-  'react',
-  'react/jsx-runtime',
-  'react-dom/client',
-  'lucide-react',
-  'recharts',
-  'simple-icons',
-  KIT_SPECIFIER,
-];
-
-// Node's resolver picks each package's CommonJS barrel, which retains every
-// export. Their pinned ESM entries let esbuild drop what a design never uses.
-const ESM_ENTRIES = new Map([
-  ['lucide-react', 'lucide-react/dist/esm/lucide-react.js'],
-  ['recharts', 'recharts/es6/index.js'],
-  ['simple-icons', 'simple-icons/index.mjs'],
-]);
 
 export interface DesignSources {
   /** The revision's own files, already validated by `sourceFilesSchema`. */
@@ -104,7 +86,7 @@ export const EARLY_FAILURE_SCRIPT = `addEventListener('error', (event) => {
   dispatchEvent(new Event('droidex-canvas-render-state'));
 });`;
 
-const SUPPORTED_LIST = SUPPORTED_IMPORTS.join(', ');
+const SUPPORTED_LIST = `${DESIGN_PACKAGE_LIST}, ${KIT_SPECIFIER}`;
 const ESCAPE_MESSAGE = 'A relative import must stay inside the design.';
 const LOADER_MESSAGE =
   'A module can only be loaded by a static import of a literal path, so this allowlist can be applied before the design runs.';
@@ -230,7 +212,11 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
             );
           return { path: resolved.path, namespace: args.namespace };
         }
-        if (SUPPORTED_IMPORTS.includes(args.path)) return { path: runtimePath(args.path) };
+        // Resolved here rather than by esbuild from the importer, so node
+        // resolution never starts from a virtual file; past this point esbuild
+        // is reading a real package from a real directory.
+        const entry = DESIGN_PACKAGE_ENTRIES.get(args.path);
+        if (entry !== undefined) return { path: canvasRuntime().resolve(entry) };
         return refuse(
           'unsupported_import',
           `"${truncateDiagnosticText(args.path, 512)}" is not available in a design. Supported imports: ${SUPPORTED_LIST}, and relative files in the design; copy project code in as a relative file.`,
@@ -247,16 +233,6 @@ function virtualTreePlugin(sources: DesignSources): esbuild.Plugin {
       }
     },
   };
-}
-
-/**
- * The absolute file one supported package resolves to. Resolving here rather
- * than letting esbuild resolve from the importer keeps node resolution away
- * from a virtual file entirely; past this point esbuild is reading a real
- * package from a real directory, which is its own business.
- */
-function runtimePath(specifier: string): string {
-  return canvasRuntime().resolve(ESM_ENTRIES.get(specifier) ?? specifier);
 }
 
 function refuse(code: string, message: string): esbuild.OnResolveResult {
