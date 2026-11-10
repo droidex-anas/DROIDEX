@@ -143,8 +143,13 @@ test('a style edit writes the class that says it in place of the classes it make
       styles: [
         { property: 'filter', resolution: raw('blur(16px)') },
         { property: 'backdropFilter', resolution: token('--ds-blur-soft') },
+        {
+          property: 'boxShadow',
+          resolution: { kind: 'tokens', tokens: ['--ds-shadow-sm', '--ds-shadow-md'] },
+        },
       ],
-      changed: '<div className="grayscale blur-lg backdrop-blur-[var(--ds-blur-soft)]">Hi</div>',
+      changed:
+        '<div className="grayscale blur-lg backdrop-blur-[var(--ds-blur-soft)] shadow-[shadow:var(--ds-shadow-sm),var(--ds-shadow-md)]">Hi</div>',
     },
   ];
   for (const { markup, styles, changed } of cases) {

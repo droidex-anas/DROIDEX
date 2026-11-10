@@ -68,6 +68,7 @@ function writableClasses() {
   for (const [property, rule] of Object.entries(STYLE_PROPERTIES)) {
     const values = typeof rule.values === 'string' ? RAW_VALUES : rule.values;
     const resolutions: StyleResolution[] = [{ kind: 'token', token: TOKEN }];
+    if (rule.stacks) resolutions.push({ kind: 'tokens', tokens: [TOKEN, `${TOKEN}-2`] });
     for (const value of values) {
       try {
         resolutions.push(resolveStyleChange({ property, value }, {}));
@@ -94,7 +95,12 @@ async function compiled(names: readonly string[]): Promise<Map<string, Map<strin
   );
   const rules = new Map<string, Map<string, string>>();
   result.root.walkRules((rule) => {
-    const name = rule.selector.slice(1).replace(/\\(.)/g, '$1');
+    // A comma is escaped by its code point, `\2c `.
+    const name = rule.selector
+      .slice(1)
+      .replace(/\\([\da-f]{1,6}) ?|\\(.)/gi, (_, code?: string, character?: string) =>
+        code === undefined ? (character ?? '') : String.fromCodePoint(parseInt(code, 16)),
+      );
     const declarations = new Map<string, string>();
     rule.walkDecls((declaration) => {
       declarations.set(declaration.prop, declaration.value);

@@ -210,10 +210,11 @@ export function styleClass(
   theme: KitTheme = {},
 ): string | null {
   const utility = Object.hasOwn(UTILITIES, property) ? UTILITIES[property] : undefined;
-  if (resolution.kind === 'token') {
+  if (resolution.kind !== 'raw') {
     if (!utility) return null;
     const hint = utility.hint ? `${utility.hint}:` : '';
-    return `${utility.prefix}-[${hint}var(${resolution.token})]`;
+    const tokens = resolution.kind === 'token' ? [resolution.token] : resolution.tokens;
+    return `${utility.prefix}-[${hint}${tokens.map((token) => `var(${token})`).join(',')}]`;
   }
   const keyword = keywordClass(property, resolution.value);
   if (keyword !== undefined) return keyword;

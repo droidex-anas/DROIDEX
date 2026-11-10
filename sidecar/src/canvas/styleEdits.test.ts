@@ -44,7 +44,7 @@ test('a style writes the kit token with its value, and the raw value only when t
   }
 });
 
-test('a blur takes none, a stock step or a kit blur token', () => {
+test('a blur takes none, a stock step or a kit blur token, and shadow tokens stack within one value', () => {
   const kit = { ...KIT, '--ds-blur-soft': '12px' };
   assert.deepEqual(resolveStyleChange({ property: 'filter', value: 'blur(0.75rem)' }, kit), {
     kind: 'token',
@@ -59,6 +59,26 @@ test('a blur takes none, a stock step or a kit blur token', () => {
     });
   for (const value of ['blur(5px)', '8px', 'grayscale(1)', 'blur(4px) grayscale(1)'])
     assert.equal(refusal({ property: 'filter', value }).code, 'invalid_edit', value);
+
+  const stacked = resolveStyleChange(
+    { property: 'boxShadow', value: '--ds-shadow-sm, --ds-shadow-md' },
+    KIT,
+  );
+  assert.deepEqual(stacked, { kind: 'tokens', tokens: ['--ds-shadow-sm', '--ds-shadow-md'] });
+  assert.equal(styleValue('boxShadow', stacked), 'var(--ds-shadow-sm),var(--ds-shadow-md)');
+  assert.match(
+    refusal({ property: 'boxShadow', value: '--ds-shadow-sm,--ds-accent' }).message,
+    /^--ds-accent is not a boxShadow token/,
+  );
+  const seven = Array.from({ length: 7 }, () => '--ds-shadow-md').join(',');
+  assert.match(
+    refusal({ property: 'boxShadow', value: seven }).message,
+    /^7 boxShadow tokens are too many to stack/,
+  );
+  assert.equal(
+    refusal({ property: 'padding', value: '--ds-space-2,--ds-space-4' }).code,
+    'invalid_edit',
+  );
 });
 
 test('editTokens lists, per property, the kit tokens its rule accepts', () => {

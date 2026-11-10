@@ -9,8 +9,14 @@ import { BLUR } from './tailwindStock.js';
 
 export type StyleEdit = Extract<ElementEdit['change'], { kind: 'style' }>['styles'][number];
 
-/** What one style edit writes: a kit token, or the raw value the kit had no token for. */
-export type StyleResolution = { kind: 'token'; token: string } | { kind: 'raw'; value: string };
+/**
+ * What one style edit writes: a kit token, kit tokens stacked as the layers of
+ * one value, or the raw value the kit had no token for.
+ */
+export type StyleResolution =
+  | { kind: 'token'; token: string }
+  | { kind: 'tokens'; tokens: readonly string[] }
+  | { kind: 'raw'; value: string };
 
 /**
  * Which kit tokens a property resolves to: those whose names start with a
@@ -34,6 +40,8 @@ type ValueForm =
 interface StyleRule {
   tokens: TokenFamily;
   values: ValueForm;
+  /** Its tokens may be listed, comma-separated, to stack as the layers of one value. */
+  stacks?: true;
 }
 
 const SPACING = { tokens: '--ds-space-', values: 'length' } as const;
@@ -70,7 +78,7 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   backgroundColor: COLOUR,
   borderColor: COLOUR,
   // Shadows are kit-owned surface effects, so only the kit's tokens are offered.
-  boxShadow: { tokens: '--ds-shadow-', values: [] },
+  boxShadow: { tokens: '--ds-shadow-', values: [], stacks: true },
   filter: BLUR_FILTER,
   backdropFilter: BLUR_FILTER,
   fontFamily: { tokens: '--ds-font-', values: [] },
@@ -114,6 +122,8 @@ const LENGTH_UNITS = new Set(['px', 'rem', 'em', '%']);
 // Designs render at the browser's 16px root size, which is how Tailwind's rem
 // scale reads in pixels too.
 const PX_PER_REM = 16;
+// As long as an edit's value may be (schema.ts), so stacked tokens read back as one.
+const MAX_STACKED_VALUE = 128;
 
 /**
  * The value one style edit writes. A token name must be one of the pinned kit's
@@ -135,12 +145,21 @@ export function resolveStyleChange(
   const inFamily = (name: string) =>
     Object.hasOwn(tokens, name) && isFamilyToken(rule, name, tokens);
   if (change.value.startsWith('--')) {
-    if (!inFamily(change.value))
+    const names = rule.stacks ? change.value.split(',').map((name) => name.trim()) : [change.value];
+    const outside = names.find((name) => !inFamily(name));
+    if (outside !== undefined)
       throw new SourceElementError(
         'invalid_edit',
-        `${change.value} is not a ${change.property} token in this design’s pinned kit.`,
+        `${outside} is not a ${change.property} token in this design’s pinned kit.`,
       );
-    return { kind: 'token', token: change.value };
+    if (names.length === 1) return { kind: 'token', token: change.value.trim() };
+    const stacked = { kind: 'tokens', tokens: names } as const;
+    if (styleValue(change.property, stacked).length > MAX_STACKED_VALUE)
+      throw new SourceElementError(
+        'invalid_edit',
+        `${String(names.length)} ${change.property} tokens are too many to stack in one value. Stack fewer, or give the kit one token that holds them all.`,
+      );
+    return stacked;
   }
   if (!acceptsValue(rule.values, change.value))
     throw new SourceElementError(
@@ -189,7 +208,8 @@ export function editTokens(
 /** The CSS a resolution sets `property` to in the element's style. */
 export function styleValue(property: string, resolution: StyleResolution): string {
   if (resolution.kind === 'raw') return resolution.value;
-  const css = `var(${resolution.token})`;
+  const tokens = resolution.kind === 'token' ? [resolution.token] : resolution.tokens;
+  const css = tokens.map((token) => `var(${token})`).join(',');
   const isBlur =
     Object.hasOwn(STYLE_PROPERTIES, property) && STYLE_PROPERTIES[property].values === 'blur';
   return isBlur ? `blur(${css})` : css;
