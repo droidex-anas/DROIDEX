@@ -11,7 +11,7 @@ import runtimePackages from './designRuntimePackages.json' with { type: 'json' }
 // the same staged files. Radix's internal packages (react-primitive,
 // react-use-*) are not a public API, so the primitives are listed rather than
 // matched by prefix.
-const RADIX_PRIMITIVE_SPECIFIERS = new Set(
+export const RADIX_PRIMITIVE_SPECIFIERS: ReadonlySet<string> = new Set(
   runtimePackages.radixPrimitives.map((name) => `@radix-ui/react-${name}`),
 );
 
