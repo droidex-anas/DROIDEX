@@ -212,6 +212,43 @@ test('a style no class can say, or one a class would not win for, is written inl
   }
 });
 
+test('an SVG paint edit drops the presentation attribute its class or inline style outranks', () => {
+  const cases: { markup: string; styles: ResolvedStyle[]; changed: string }[] = [
+    {
+      markup: '<path d="M0 0h4" fill="#0D99FF" stroke="#000" strokeWidth="2" />',
+      styles: [
+        { property: 'fill', resolution: token('--ds-accent') },
+        { property: 'strokeWidth', resolution: raw('1px') },
+      ],
+      changed:
+        '<path d="M0 0h4" stroke="#000" className="fill-[color:var(--ds-accent)] stroke-1" />',
+    },
+    {
+      markup: '<circle fill="none" stroke="red" strokeWidth={3} />',
+      styles: [
+        { property: 'stroke', resolution: raw('none') },
+        { property: 'fill', resolution: raw('#a1b2c3') },
+        { property: 'strokeWidth', resolution: raw('3px') },
+      ],
+      changed: '<circle className="stroke-none" style={{ fill: "#a1b2c3", strokeWidth: 3 }} />',
+    },
+    {
+      markup: '<svg className="block" fill="#000" stroke="currentColor" />',
+      styles: [{ property: 'fill', resolution: raw('currentColor') }],
+      changed: '<svg className="block fill-current" stroke="currentColor" />',
+    },
+  ];
+  for (const { markup, styles, changed } of cases) {
+    const files = { 'main.tsx': `export default () => ${markup};\n` };
+    const mapped = onlyElement(files);
+    const edited = applyElementEdit(files, mapped.elements, {
+      element: reference(mapped.element),
+      change: { kind: 'style', styles },
+    });
+    assert.deepEqual(edited, { 'main.tsx': `export default () => ${changed};\n` });
+  }
+});
+
 test('a blur that would drop the rest of a filter set another way is left to the agent', () => {
   for (const markup of [
     '<div className="md:blur-sm">Hi</div>',

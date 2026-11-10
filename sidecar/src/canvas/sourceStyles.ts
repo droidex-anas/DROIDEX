@@ -1,7 +1,8 @@
 // Writes a style edit into one element's own attributes the way a person
 // writing Tailwind would: each property becomes the class that says it
 // (tailwindStyles.ts) in place of the classes it makes dead, and goes into the
-// style attribute only where no class says it or a class would not win.
+// style attribute only where no class says it or a class would not win. An SVG
+// presentation attribute the edit sets goes too, as any class or style beats it.
 
 import ts from 'typescript';
 import type { KitTheme } from './kitTailwindTheme.js';
@@ -59,6 +60,7 @@ const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 const FILTERS = new Set(['filter', 'backdropFilter']);
 const BLUR_OR_RESET_CLASS = /^!?(?:backdrop-)?(?:blur(?:-|$)|filter-none$)/;
+const PRESENTATION_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth']);
 
 /** The replacements that set every style in `styles`, in order, on one element. */
 export function styleReplacements(
@@ -81,7 +83,20 @@ export function styleReplacements(
   return [
     ...writeClasses(opening, source, slots, styleKept ? style.attribute : undefined),
     ...writeStyle(opening, source, style),
+    ...removePresentation(opening, styles),
   ];
+}
+
+/** Removes the presentation attribute, such as `fill="#000"`, of each SVG paint the edit sets. */
+function removePresentation(
+  opening: Opening,
+  styles: readonly ResolvedStyle[],
+): SourceReplacement[] {
+  const names = new Set(styles.map(({ property }) => property));
+  return [...names].flatMap((name) => {
+    const dead = PRESENTATION_ATTRIBUTES.has(name) ? attribute(opening, name) : undefined;
+    return dead ? [{ start: dead.getFullStart(), end: dead.end, replacement: '' }] : [];
+  });
 }
 
 /**

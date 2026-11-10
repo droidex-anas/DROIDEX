@@ -49,6 +49,7 @@ const RAW_VALUES = [
   'auto',
   'fit-content',
   'none',
+  'currentColor',
   ...Object.values(BLUR),
   'blur(0.5rem)',
 ];
@@ -122,9 +123,23 @@ test('every class a style edit writes sets its property to the value the edit me
     // `blur-none` sets its blur to nothing.
     const isFilter = property === 'filter' || property === 'backdropFilter';
     const read = isFilter && set.trim() === '' ? 'none' : set;
-    assert.equal(canonicalCss(read), canonicalCss(value), `${name} for ${property}: ${value}`);
+    // SVG reads a bare stroke width in pixels.
+    const sets = property === 'strokeWidth' && /^\d+$/.test(read) ? `${read}px` : read;
+    assert.equal(canonicalCss(sets), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
   }
+});
+
+test('a stroke class sets the width or the colour its value names', () => {
+  for (const name of ['stroke-2', 'stroke-[1.5]', 'stroke-[number:var(--w)]'])
+    assert.deepEqual(classStyle(name)?.sets, ['strokeWidth'], name);
+  for (const name of [
+    'stroke-black',
+    'stroke-[#fff]',
+    'stroke-[var(--ds-accent)]',
+    'stroke-current',
+  ])
+    assert.deepEqual(classStyle(name)?.sets, ['stroke'], name);
 });
 
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {

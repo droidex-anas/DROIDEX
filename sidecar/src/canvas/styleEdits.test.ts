@@ -144,6 +144,33 @@ test('editTokens lists each scale smallest first, pixels before em and percentag
   ]);
   assert.deepEqual(names('color'), ['--ds-gray-2', '--ds-gray-10']);
 });
+test('an SVG paint takes a colour token, none or currentColor, and a stroke width a length or stroke token', () => {
+  const kit = { ...KIT, '--ds-stroke-thin': '1.5px' };
+  assert.deepEqual(resolveStyleChange({ property: 'fill', value: '#8A5A1F' }, kit), {
+    kind: 'token',
+    token: '--ds-accent',
+  });
+  for (const value of ['none', 'currentColor'])
+    assert.deepEqual(resolveStyleChange({ property: 'stroke', value }, kit), {
+      kind: 'raw',
+      value,
+    });
+  assert.deepEqual(resolveStyleChange({ property: 'strokeWidth', value: '1.5px' }, kit), {
+    kind: 'token',
+    token: '--ds-stroke-thin',
+  });
+  assert.deepEqual(editTokens(kit, kit).strokeWidth, [
+    { name: '--ds-stroke-thin', value: '1.5px' },
+  ]);
+  for (const change of [
+    { property: 'color', value: 'none' },
+    { property: 'fill', value: 'url(#gradient)' },
+    { property: 'strokeWidth', value: '-1px' },
+    { property: 'strokeWidth', value: '--ds-space-2' },
+  ] satisfies Change[])
+    assert.equal(refusal(change, kit).code, 'invalid_edit', `${change.property}: ${change.value}`);
+});
+
 test('a raw value resolves to the same token whatever order the kit lists its tokens in', () => {
   const change: Change = { property: 'padding', value: '4px' };
   const tokens = { '--ds-space-b': '4px', '--ds-space-a': '4px' };
