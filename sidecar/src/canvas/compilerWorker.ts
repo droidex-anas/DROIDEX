@@ -33,6 +33,7 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
+import { moduleSpecifiers } from './moduleSpecifiers.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
@@ -210,6 +211,16 @@ process.on('message', (request: CompilerRequest) => {
   }
   if (request.type === 'shutdown') {
     void shutdown(request.requestId);
+    return;
+  }
+  // Reading specifiers needs only the parser, never the runtime.
+  if (request.type === 'moduleSpecifiers') {
+    const specifiers = moduleSpecifiers(request.sources);
+    send({
+      requestId: request.requestId,
+      status: 'specifiers',
+      specifiers,
+    } satisfies CompilerResponse);
     return;
   }
   if (runtimeFault !== null) {

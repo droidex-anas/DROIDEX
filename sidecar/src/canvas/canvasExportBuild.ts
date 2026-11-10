@@ -5,19 +5,29 @@
 import { createRequire } from 'node:module';
 import { dirname, isAbsolute, join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Node } from 'typescript';
 import { storageFailure } from './canvasError.js';
 import { ownedCanvasRuntimeDir, packageDirectory } from './canvasRuntime.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
+import { CompilerUnavailableError, CompilerWorker } from './compiler.js';
 import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
 
 /**
  * The export's package.json. The canvas toolchain and its fixed runtime
  * packages are always listed; a library package (Radix, cva, clsx,
- * tailwind-merge) only when `sources` import it.
+ * tailwind-merge) only when `sources` import it, as the compiler process reads them.
  */
-export async function exportPackageJson(sources: Iterable<string>): Promise<string> {
-  const imported = await importedSpecifiers(sources);
+export async function exportPackageJson(sources: string[], signal: AbortSignal): Promise<string> {
+  const compiler = new CompilerWorker();
+  let imported: string[];
+  try {
+    imported = await compiler.moduleSpecifiers(sources, signal);
+  } catch (error) {
+    signal.throwIfAborted();
+    if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
+    throw error;
+  } finally {
+    await compiler.terminate();
+  }
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
   const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
   const requireFromRuntime = createRequire(anchor);
@@ -66,42 +76,8 @@ export async function exportPackageJson(sources: Iterable<string>): Promise<stri
   }
 }
 
-/**
- * Every literal module specifier `sources` name, decoded: imports, re-exports,
- * `import()` and `require()`, the forms a design build resolves. TypeScript
- * is loaded on the first export rather than with the sidecar.
- */
-async function importedSpecifiers(sources: Iterable<string>): Promise<Set<string>> {
-  const { default: ts } = await import('typescript');
-  const specifiers = new Set<string>();
-  const visit = (node: Node): void => {
-    if (
-      (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
-      node.moduleSpecifier !== undefined &&
-      ts.isStringLiteral(node.moduleSpecifier)
-    )
-      specifiers.add(node.moduleSpecifier.text);
-    if (ts.isExternalModuleReference(node) && ts.isStringLiteral(node.expression))
-      specifiers.add(node.expression.text);
-    if (
-      ts.isCallExpression(node) &&
-      (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
-        (ts.isIdentifier(node.expression) && node.expression.text === 'require')) &&
-      node.arguments.length > 0 &&
-      ts.isStringLiteralLike(node.arguments[0])
-    )
-      specifiers.add(node.arguments[0].text);
-    ts.forEachChild(node, visit);
-  };
-  for (const source of sources)
-    visit(
-      ts.createSourceFile('source.tsx', source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX),
-    );
-  return specifiers;
-}
-
 /** The design packages `imported` names beyond those always listed, sorted. */
-function libraryPackages(imported: ReadonlySet<string>, listed: readonly string[]): string[] {
+function libraryPackages(imported: readonly string[], listed: readonly string[]): string[] {
   const names = new Set<string>();
   for (const specifier of imported)
     if (DESIGN_PACKAGE_ENTRIES.has(specifier)) names.add(packageName(specifier));
