@@ -3,8 +3,7 @@
 // keep every read inside the folder, so the provenance names only files it
 // parsed. The folder comes from the session, never from the agent.
 
-import { constants } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
+import { realpath } from 'node:fs/promises';
 import path from 'node:path';
 import {
   importDesignSystem,
@@ -12,9 +11,7 @@ import {
   type ImportSource,
 } from './designSystemImport.js';
 import { MAX_PROJECT_FILES } from './designSystemProvenance.js';
-import { isInsideProject, projectRelativePath } from './projectPaths.js';
-
-const MAX_FILE_BYTES = 256 * 1024;
+import { isFileSystemError, projectRelativePath, readProjectText } from './projectPaths.js';
 
 export interface ProjectSource {
   /** Relative to the project folder. */
@@ -63,69 +60,17 @@ async function readProjectSources(
   for (const source of sources) {
     const file = projectRelativePath(source.path);
     if ('problem' in file) return refused(file.problem);
-    const opened = await readInside(root, file.path);
+    const opened = await readProjectText(root, file.path);
     if ('problem' in opened) return refused(opened.problem);
     const earlier = named.get(opened.identity);
     if (earlier !== undefined)
       return refused(`${file.path} is named twice, as ${earlier}. Name each file once.`);
     named.set(opened.identity, file.path);
-    let text: string;
-    try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(opened.bytes);
-    } catch {
-      return refused(`${file.path} is not UTF-8 text.`);
-    }
-    read.push({ kind: source.kind, text, file: file.path });
+    read.push({ kind: source.kind, text: opened.text, file: file.path });
   }
   return { status: 'read', sources: read };
 }
 
-/** The bytes of the file the checks passed, read through the handle that opened it. */
-async function readInside(
-  root: string,
-  file: string,
-): Promise<{ bytes: Buffer; identity: string } | { problem: string }> {
-  const full = path.join(root, ...file.split('/'));
-  try {
-    const entry = await lstat(full);
-    if (entry.isSymbolicLink())
-      return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
-    if (!entry.isFile()) return { problem: `${file} is not a regular file.` };
-    // A linked folder on the way can still lead out of the project.
-    if (!isInsideProject(root, await realpath(full)))
-      return { problem: `${file} leaves the project folder. Name a file inside it.` };
-    // The path may change once checked: no-follow refuses a link swapped in for
-    // the file, and the identity check a folder on the way swapped for a link.
-    const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
-    try {
-      const opened = await handle.stat();
-      if (opened.dev !== entry.dev || opened.ino !== entry.ino)
-        return { problem: `${file} changed while it was being read. Try again.` };
-      if (opened.size > MAX_FILE_BYTES) return { problem: tooLarge(file) };
-      const bytes = await handle.readFile();
-      if (bytes.length > MAX_FILE_BYTES) return { problem: tooLarge(file) };
-      return { bytes, identity: `${String(opened.dev)}:${String(opened.ino)}` };
-    } finally {
-      await handle.close();
-    }
-  } catch (error) {
-    if (!isFileSystemError(error)) throw error;
-    if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
-      return { problem: `${file} does not exist in the project.` };
-    if (error.code === 'ELOOP')
-      return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
-    return { problem: `${file} cannot be read.` };
-  }
-}
-
-function tooLarge(file: string): string {
-  return `${file} is over ${String(MAX_FILE_BYTES / 1024)} KiB, more than a kit reads.`;
-}
-
 function refused(message: string): ProjectRead {
   return { status: 'refused', message };
-}
-
-function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === 'string';
 }

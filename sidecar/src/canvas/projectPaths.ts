@@ -1,11 +1,13 @@
 // The rules for a path named in a chat's project folder: relative, normalised,
 // and never leaving the folder, whichever separator it uses or link it meets.
 
-import { lstat, mkdir, realpath } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { canvasError, type CanvasCommandError } from './canvasError.js';
 
 export const MAX_PROJECT_PATH_LENGTH = 1024;
+const MAX_FILE_BYTES = 256 * 1024;
 
 /** The path in its normal form, or why it cannot name a file inside the folder. */
 export function projectRelativePath(raw: string): { path: string } | { problem: string } {
@@ -26,6 +28,70 @@ export function projectRelativePath(raw: string): { path: string } | { problem: 
 export function isInsideProject(root: string, target: string): boolean {
   const relative = path.relative(root, target);
   return relative !== '' && !path.isAbsolute(relative) && relative.split(path.sep)[0] !== '..';
+}
+
+/**
+ * The UTF-8 text of `file` (a normal relative path) under the real project
+ * `root`, read through the handle that passed the checks, and the file's
+ * identity, so two spellings of one file on a case-insensitive disk are one.
+ */
+export async function readProjectText(
+  root: string,
+  file: string,
+): Promise<{ text: string; identity: string } | { problem: string }> {
+  const opened = await readInside(root, file);
+  if ('problem' in opened) return opened;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(opened.bytes);
+    return { text, identity: opened.identity };
+  } catch {
+    return { problem: `${file} is not UTF-8 text.` };
+  }
+}
+
+async function readInside(
+  root: string,
+  file: string,
+): Promise<{ bytes: Buffer; identity: string } | { problem: string }> {
+  const full = path.join(root, ...file.split('/'));
+  try {
+    const entry = await lstat(full);
+    if (entry.isSymbolicLink())
+      return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
+    if (!entry.isFile()) return { problem: `${file} is not a regular file.` };
+    // A linked folder on the way can still lead out of the project.
+    if (!isInsideProject(root, await realpath(full)))
+      return { problem: `${file} leaves the project folder. Name a file inside it.` };
+    // The path may change once checked: no-follow refuses a link swapped in for
+    // the file, and the identity check a folder on the way swapped for a link.
+    const handle = await open(full, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const opened = await handle.stat();
+      if (opened.dev !== entry.dev || opened.ino !== entry.ino)
+        return { problem: `${file} changed while it was being read. Try again.` };
+      if (opened.size > MAX_FILE_BYTES) return { problem: tooLarge(file) };
+      const bytes = await handle.readFile();
+      if (bytes.length > MAX_FILE_BYTES) return { problem: tooLarge(file) };
+      return { bytes, identity: `${String(opened.dev)}:${String(opened.ino)}` };
+    } finally {
+      await handle.close();
+    }
+  } catch (error) {
+    if (!isFileSystemError(error)) throw error;
+    if (error.code === 'ENOENT' || error.code === 'ENOTDIR')
+      return { problem: `${file} does not exist in the project.` };
+    if (error.code === 'ELOOP')
+      return { problem: `${file} is a symbolic link. Name a regular file in the project.` };
+    return { problem: `${file} cannot be read.` };
+  }
+}
+
+function tooLarge(file: string): string {
+  return `${file} is over ${String(MAX_FILE_BYTES / 1024)} KiB, more than a kit reads.`;
+}
+
+export function isFileSystemError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && typeof (error as NodeJS.ErrnoException).code === 'string';
 }
 
 /**
