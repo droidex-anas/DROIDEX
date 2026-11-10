@@ -90,7 +90,7 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
   const trimmed = value.trim();
   const colour = parseColour(trimmed);
   // An SVG paint of none draws nothing, as a see-through colour does.
-  if (trimmed === 'none' || colour?.alpha === 0) return { text: 'None', none: true };
+  if (trimmed.toLowerCase() === 'none' || colour?.alpha === 0) return { text: 'None', none: true };
   const token = tokens.find((option) => sameColour(option.hint ?? '', trimmed));
   if (token) return { text: token.label, none: false };
   if (colour?.space !== 'rgb') return { text: trimmed, none: false };

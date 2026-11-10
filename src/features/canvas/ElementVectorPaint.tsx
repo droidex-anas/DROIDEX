@@ -28,7 +28,7 @@ export function ElementVectorPaint({
   strokeWidth,
 }: ElementVectorPaintProps) {
   const paint = (property: 'fill' | 'stroke', label: string) => {
-    const none = value(property).trim() === 'none';
+    const none = isNone(value(property));
     const name = label.toLowerCase();
     return (
       <Labelled label={label}>
@@ -53,7 +53,11 @@ export function ElementVectorPaint({
     <Section title="Vector">
       {paint('fill', 'Fill')}
       {paint('stroke', 'Stroke')}
-      {value('stroke').trim() !== 'none' && <Pair>{strokeWidth}</Pair>}
+      {!isNone(value('stroke')) && <Pair>{strokeWidth}</Pair>}
     </Section>
   );
+}
+
+function isNone(paint: string): boolean {
+  return paint.trim().toLowerCase() === 'none';
 }
