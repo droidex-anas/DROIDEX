@@ -35,7 +35,7 @@ import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { pickedOnBoard } from './elementOnBoard';
-import { ElementPanel, EmptyElementPanel } from './ElementPanel';
+import { ElementColumn } from './ElementColumn';
 import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
@@ -474,27 +474,13 @@ export function CanvasBoard({
           {announcement}
         </p>
       </div>
-      {interaction.mode === 'edit' && !editor.selection && <EmptyElementPanel />}
-      {editor.selection && (
-        <ElementPanel
-          ref={editor.panel}
-          selection={editor.selection}
-          frameName={
-            frames.find((frame) => frame.designId === editor.selection?.draft.element.designId)
-              ?.name ?? ''
-          }
-          tokens={editor.tokens}
-          mode={editor.mode}
-          onPreview={editor.preview}
-          onRevert={editor.revert}
-          onCommit={editor.commit}
-          onPreviewText={editor.previewText}
-          onRevertText={editor.revertText}
-          onCommitText={editor.commitText}
-          onHistory={onHistory}
-          onLeave={focusBoard}
-        />
-      )}
+      <ElementColumn
+        editor={editor}
+        frames={frames}
+        editing={interaction.mode === 'edit'}
+        onHistory={onHistory}
+        onLeave={focusBoard}
+      />
     </div>
   );
 }
