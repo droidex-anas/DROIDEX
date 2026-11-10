@@ -96,6 +96,30 @@ test('a token as the kit wrote it is the computed value when it is the same colo
   assert.ok(!sameValue('#2d2a26', 'rgb(45, 42, 39)'));
   assert.ok(!sameValue('0.5rem', '9px'));
 });
+
+test('a shadow token is the computed shadow Chromium writes colour first, in px', () => {
+  // As Electron 39 computes a Tailwind shadow class: its two empty ring layers first.
+  assert.ok(
+    sameValue(
+      '0 12px 32px rgb(20 20 20 / 0.12)',
+      'rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(0, 0, 0, 0) 0px 0px 0px 0px, rgba(20, 20, 20, 0.12) 0px 12px 32px 0px',
+    ),
+  );
+  assert.ok(
+    sameValue(
+      '0 1px 0.125rem #0000000a, inset 0 0 0 1px #000',
+      'rgba(0, 0, 0, 0.04) 0px 1px 2px 0px, rgb(0, 0, 0) 0px 0px 0px 1px inset',
+    ),
+  );
+  assert.ok(
+    !sameValue('0 12px 32px rgb(20 20 20 / 0.12)', 'rgba(20, 20, 20, 0.12) 0px 12px 30px 0px'),
+  );
+  assert.ok(!sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px inset'));
+  assert.ok(
+    !sameValue('0 1px 2px #000', 'rgb(0, 0, 0) 0px 1px 2px 0px, rgb(0, 0, 0) 0px 1px 2px 0px'),
+  );
+});
+
 test('a font stack is named by its first family and matched however it is quoted', () => {
   assert.equal(firstFamily('"Inter Variable", system-ui, sans-serif'), 'Inter Variable');
   assert.equal(

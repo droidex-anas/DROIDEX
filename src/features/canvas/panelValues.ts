@@ -1,10 +1,11 @@
 // How the element panel reads a computed value back to a designer: the kit
 // token it matches, a colour as hex and opacity or none at all, a length's
-// zero or keyword as a muted placeholder and its fraction rounded, and a font
-// stack by its first family.
+// zero or keyword as a muted placeholder and its fraction rounded, a shadow by
+// its layers, and a font stack by its first family.
 // Computed values arrive in CSS pixels and rgb(); token values as the kit wrote
 // them, in px, rem, hex or rgb().
 
+import { parseShadow, type ShadowLayer, type ShadowLength } from './systemDocument/shadowLayers';
 import type { ValueOption } from './ValuePickerField';
 
 /** CSS's initial root font size, which a kit's rem tokens resolve against. */
@@ -99,13 +100,49 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
 
 /**
  * Whether a token's value, as the kit wrote it, is the value the preview
- * computed: the same length in pixels, the same colour, or the same text.
+ * computed: the same length in pixels, the same shadow, the same colour, or
+ * the same text.
  */
 export function sameValue(written: string, computed: string): boolean {
   const px = pixelsOf(written);
   if (px !== null) return px === pixelsOf(computed);
+  const layers = parseShadow(written);
+  if (layers) return sameShadow(layers, computed);
   return sameColour(written, computed);
 }
+
+const SHADOW_LENGTHS = ['x', 'y', 'blur', 'spread'] as const;
+
+/**
+ * Chromium computes a shadow's colour first and every length in px, as a kit
+ * seldom writes it, and keeps the transparent ring layers Tailwind's shadow
+ * classes lead with, which draw nothing.
+ */
+function sameShadow(written: ShadowLayer[], computed: string): boolean {
+  const shown = written.filter(isDrawnLayer);
+  const drawn = parseShadow(computed)?.filter(isDrawnLayer);
+  if (drawn?.length !== shown.length) return false;
+  return shown.every((layer, index) => {
+    const other = drawn[index];
+    return (
+      layer.inset === other.inset &&
+      sameColour(layer.color, other.color) &&
+      SHADOW_LENGTHS.every((key) => {
+        const px = shadowPixels(layer[key]);
+        return px !== null && px === shadowPixels(other[key]);
+      })
+    );
+  });
+}
+
+function isDrawnLayer(layer: ShadowLayer): boolean {
+  return layer.alpha > 0;
+}
+
+function shadowPixels({ amount, unit }: ShadowLength): number | null {
+  return pixelsOf(`${String(amount)}${unit}`);
+}
+
 function sameColour(a: string, b: string): boolean {
   const left = parseColour(a);
   const right = parseColour(b);
