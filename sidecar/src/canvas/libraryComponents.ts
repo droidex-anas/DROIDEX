@@ -3,7 +3,7 @@
 // kit's tokens and its "use client" directive gone, and an entry that exports
 // what each exports, as the compiler process reads them (moduleDeclarations.ts).
 
-import type { ModuleDeclarations, ModuleExport } from './compiler.js';
+import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { MAX_LIBRARY_EXPORTS } from './designSystemProvenance.js';
 import { withKitTokens } from './libraryTheme.js';

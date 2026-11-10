@@ -3,7 +3,7 @@
 // Only the compiler process loads the parser, so only it imports this module.
 
 import ts from 'typescript';
-import type { ModuleDeclarations, ModuleExport, ModuleSpecifier } from './compiler.js';
+import type { ModuleDeclarations, ModuleExport, ModuleSpecifier } from './compilerModules.js';
 
 export function moduleDeclarations(source: string): ModuleDeclarations {
   const file = ts.createSourceFile(
