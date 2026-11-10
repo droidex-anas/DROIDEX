@@ -6,7 +6,8 @@
 
 import { useEffect, useState, type RefObject } from 'react';
 import { pushEscapeLayer } from '../../components/ui/escapeStack';
-import { boundsOf, type PlacedFrame } from './canvasGeometry';
+import { boardPoint } from './boardCoordinates';
+import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
 import type { SnapGap, SnapMarks } from './frameSnap';
 import { measureBetween } from './measureDistances';
@@ -17,8 +18,11 @@ import { isPicked, type HoveredElement } from './useElementHover';
 
 interface PickedAndHovered {
   selection: ElementSelection | null;
-  hover: { hovered: HoveredElement | null };
+  hover: { hovered: HoveredElement | null; move: HoverAt };
 }
+
+/** Asks what is under a point in a design's own pixels, as a pointer over it does. */
+type HoverAt = (designId: string, at: Point) => void;
 
 export function useHoverMeasurements(
   board: RefObject<HTMLElement | null>,
@@ -26,7 +30,10 @@ export function useHoverMeasurements(
   interaction: BoardInteraction,
   editor: PickedAndHovered,
 ): SnapMarks {
-  const { frameId, letGo } = useAltHoveredFrame(board);
+  const { frameId, letGo } = useAltHoveredFrame(
+    board,
+    interaction.mode === 'edit' ? editor.hover.move : null,
+  );
   let gaps: SnapGap[] = [];
   if (frameId !== null && interaction.mode === 'select')
     gaps = frameGaps(drawn, interaction.selectedFrameIds, frameId);
@@ -43,16 +50,28 @@ export function useHoverMeasurements(
  * hover costs nothing. Alt's release can land in another app, so losing the
  * window lets go of it too.
  */
-function useAltHoveredFrame(board: RefObject<HTMLElement | null>) {
+function useAltHoveredFrame(board: RefObject<HTMLElement | null>, hoverAt: HoverAt | null) {
   const [frameId, setFrameId] = useState<string | null>(null);
   const [alt] = useState(() => {
     let held = false;
     let underPointer: string | null = null;
+    let askHover: HoverAt | null = null;
     const show = () => {
       setFrameId(held ? underPointer : null);
     };
+    // What is under a resting pointer may have moved there since it last moved.
+    const lookUnder = (root: HTMLElement, pointer: Point) => {
+      const hit = document.elementFromPoint(pointer.x, pointer.y);
+      underPointer = hit && root.contains(hit) ? frameOf(hit) : null;
+      const overlay = hit?.closest<HTMLElement>('[data-canvas-input-overlay]');
+      if (overlay && underPointer !== null) askHover?.(underPointer, boardPoint(overlay, pointer));
+    };
     return {
-      press: () => {
+      setHoverAt: (next: HoverAt | null) => {
+        askHover = next;
+      },
+      press: (root: HTMLElement, pointer: Point | null) => {
+        if (pointer) lookUnder(root, pointer);
         held = true;
         show();
       },
@@ -66,27 +85,36 @@ function useAltHoveredFrame(board: RefObject<HTMLElement | null>) {
       },
     };
   });
+  alt.setHoverAt(hoverAt);
   useEffect(() => {
     const root = board.current;
     if (!root) return undefined;
+    let pointer: Point | null = null;
+    const onPointerMove = (event: PointerEvent) => {
+      pointer = { x: event.clientX, y: event.clientY };
+    };
     const onPointerOver = (event: PointerEvent) => {
+      onPointerMove(event);
       alt.over(frameOf(event.target));
     };
     const onPointerLeave = () => {
+      pointer = null;
       alt.over(null);
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Alt') alt.press();
+      if (event.key === 'Alt' && !event.repeat) alt.press(root, pointer);
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === 'Alt') alt.letGo();
     };
+    root.addEventListener('pointermove', onPointerMove);
     root.addEventListener('pointerover', onPointerOver);
     root.addEventListener('pointerleave', onPointerLeave);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', alt.letGo);
     return () => {
+      root.removeEventListener('pointermove', onPointerMove);
       root.removeEventListener('pointerover', onPointerOver);
       root.removeEventListener('pointerleave', onPointerLeave);
       window.removeEventListener('keydown', onKeyDown);
