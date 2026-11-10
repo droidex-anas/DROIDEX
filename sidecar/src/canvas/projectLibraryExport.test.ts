@@ -139,12 +139,13 @@ test('the export copies the kit and says why when the library is not as the kit 
     /src\/main\.tsx uses @droidex\/design-system other than in an import\./,
   );
 
+  // A default export in place of the named ones is not the kit's Card or CardTitle.
   const card = LIBRARY['components/ui/card.tsx'];
   await writeFile(
     join(root, 'components/ui/card.tsx'),
-    card.replace('export { Card, CardTitle }', 'export { Card }'),
+    'export default function Unrelated() {\n  return null;\n}\n',
   );
-  assert.match(await reason(), /components\/ui\/card\.tsx no longer exports CardTitle\./);
+  assert.match(await reason(), /components\/ui\/card\.tsx is not the component the kit copied/);
   await rm(join(root, 'components/ui/card.tsx'));
   assert.match(await reason(), /components\/ui\/card\.tsx/);
   await writeFile(join(root, 'components/ui/card.tsx'), card);
@@ -161,4 +162,16 @@ test("the export reads the library's ui folder, not the cn() helper the kit copi
   const { root, kit } = await libraryKit(t);
   await rename(join(root, 'lib/utils.ts'), join(root, 'lib/utils.tsx'));
   assert.equal((await libraryExport(root, kit, SOURCE))?.status, 'rewritten');
+});
+
+test('the export copies the kit into another project whose components differ from its copies', async (t) => {
+  const { kit } = await libraryKit(t);
+  const card = LIBRARY['components/ui/card.tsx'].replace('rounded-xl', 'rounded-lg');
+  const other = await project(t, { ...LIBRARY, 'components/ui/card.tsx': card });
+  const exported = await libraryExport(other, kit, SOURCE);
+  assert.equal(exported?.status, 'copied');
+  assert.match(
+    exported.readme,
+    /components\/ui\/card\.tsx is not the component the kit copied: it changed since the kit was made, or this is another project\./,
+  );
 });

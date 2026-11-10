@@ -14,6 +14,7 @@ import { KIT_SPECIFIER } from './designBundle.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { isBareHsl } from './designSystemImport.js';
 import { readLibraryLayout } from './designSystemLibrary.js';
+import { kitComponentPath, kitModule } from './libraryComponents.js';
 import type { DesignSystem } from './designSystems.js';
 import { emptyDeclared, readCss, type Declared } from './designSystemSources.js';
 import { isFileSystemError, readProjectText } from './projectPaths.js';
@@ -23,9 +24,8 @@ export type LibraryExport =
   /** The README section that says why the kit is copied. */
   | { status: 'copied'; readme: string };
 
-type Library = NonNullable<
-  Extract<DesignSystem['provenance'], { project: unknown }>['project']['library']
->;
+type KitProject = Extract<DesignSystem['provenance'], { project: unknown }>['project'];
+type LibraryProject = KitProject & { library: NonNullable<KitProject['library']> };
 
 /** The library as the project has it now. */
 interface ProjectLibrary {
@@ -59,7 +59,12 @@ export async function libraryExport(
 ): Promise<LibraryExport | null> {
   const project = kit.provenance && 'project' in kit.provenance ? kit.provenance.project : null;
   if (!project?.library) return null;
-  const found = await readProjectLibrary(projectFolder, project.files[0], project.library, signal);
+  const found = await readProjectLibrary(
+    projectFolder,
+    { ...project, library: project.library },
+    kit.files,
+    signal,
+  );
   if ('problem' in found) return copied(found.problem);
 
   const scripts = [...source].filter(([file]) => SCRIPT.test(file));
@@ -90,10 +95,11 @@ export async function libraryExport(
 
 async function readProjectLibrary(
   projectFolder: string,
-  componentsConfig: string,
-  library: Library,
+  project: LibraryProject,
+  kitFiles: Readonly<Record<string, string>>,
   signal?: AbortSignal,
 ): Promise<ProjectLibrary | { problem: string }> {
+  const { library } = project;
   let root: string;
   try {
     root = await realpath(projectFolder);
@@ -101,19 +107,37 @@ async function readProjectLibrary(
     if (!isFileSystemError(error)) throw error;
     return { problem: 'The project folder cannot be read.' };
   }
-  const layout = await readLibraryLayout(root, componentsConfig);
+  const layout = await readLibraryLayout(root, project.files[0]);
   if ('problem' in layout) return layout;
   const files = [...new Set(Object.values(library.components))];
   const texts: string[] = [];
   for (const file of files) {
     signal?.throwIfAborted();
-    if (!file.startsWith(`${layout.uiFolder}/`))
+    if (file !== `${layout.uiFolder}/${path.posix.basename(file)}`)
       return {
         problem: `${file} is no longer in ${layout.uiFolder}, the folder ${layout.aliases.ui} names.`,
       };
     const read = await readProjectText(root, file);
     if ('problem' in read) return read;
     texts.push(read.text);
+  }
+  const modules = await readModules(texts, signal);
+  // The kit's copy of a component is the project's file as the import copied
+  // it, so copying the file again proves it is the same component.
+  const kitNames = Object.fromEntries(
+    Object.entries(library.tokens).map(([kitName, projectName]) => [projectName, kitName]),
+  );
+  for (const [index, file] of files.entries()) {
+    const name = path.posix.basename(file, '.tsx');
+    const copy = kitModule(
+      { name, file, text: texts[index], module: modules[index] },
+      layout.aliases,
+      kitNames,
+    );
+    if ('problem' in copy || copy.source !== kitFiles[kitComponentPath(name)])
+      return {
+        problem: `${file} is not the component the kit copied: it changed since the kit was made, or this is another project.`,
+      };
   }
   const declared = emptyDeclared();
   const unreadable = readCss(
@@ -123,7 +147,6 @@ async function readProjectLibrary(
     [],
   );
   if (unreadable !== null) return { problem: `${layout.css.file}: ${unreadable.message}` };
-  const modules = await readModules(texts, signal);
   return {
     projectName: path.basename(root),
     ui: layout.aliases.ui,

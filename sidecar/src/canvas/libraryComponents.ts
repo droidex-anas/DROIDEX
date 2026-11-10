@@ -110,7 +110,7 @@ export function kitComponents(
         file: module.file,
       });
     }
-    files.push([`${UI_FOLDER}/${name}.tsx`, module.source]);
+    files.push([kitComponentPath(name), module.source]);
   }
   if (lines.length === 0)
     return {
@@ -136,6 +136,11 @@ function entryExports(
   return [...entries].map(([exportedName, clause]) => ({ exportedName, clause }));
 }
 
+/** Where the kit keeps its copy of the library component `name`. */
+export function kitComponentPath(name: string): string {
+  return `${UI_FOLDER}/${name}.tsx`;
+}
+
 function pascalCase(name: string): string {
   return name
     .split('-')
@@ -144,7 +149,7 @@ function pascalCase(name: string): string {
 }
 
 /** A component with its imports pointed at the kit's files, or why the canvas cannot load it. */
-function kitModule(
+export function kitModule(
   { file, text, module }: LibraryComponent,
   aliases: LibraryAliases,
   kitNames: Readonly<Record<string, string>>,
