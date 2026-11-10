@@ -28,6 +28,7 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   // A click picks the frame; Shift adds one.
   await row('Design B').click();
   expect(await selection(page)).toEqual(['b']);
+  await expect(tree).toBeFocused();
   await row('Design A').click({ modifiers: ['Shift'] });
   expect(await selection(page)).toEqual(['b', 'a']);
   await expect(row('Design A')).toHaveAttribute('aria-selected', 'true');
@@ -141,4 +142,52 @@ test('A rename that answers late or loses its frame leaves the next edit and the
   await expect(row('Design B')).toBeVisible();
   await expect(nameField('Design B')).toHaveCount(0);
   expect(await page.evaluate(() => window.boardHarness.renameCalls.length)).toBe(1);
+});
+
+test('Layers keeps the keyboard on its row through board picks, scrolling and Space', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&frames=300&layers=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const row = (name: string) => tree.getByRole('treeitem', { name: `${name}, Ready` });
+  const keyboardOn = async (name: string) =>
+    expect(tree).toHaveAttribute(
+      'aria-activedescendant',
+      (await row(name).getAttribute('id')) ?? '',
+    );
+
+  // A frame picked on the board far down the list brings its row into view, and F2 renames it.
+  await page.evaluate(() => {
+    window.boardHarness.select(['x250']);
+  });
+  await expect(row('Design X250')).toBeInViewport();
+  await tree.focus();
+  await keyboardOn('Design X250');
+  await page.keyboard.press('F2');
+  const field = page.getByRole('textbox', { name: 'Name of Design X250' });
+  await field.fill('Draft');
+
+  // Scrolled away, the row keeps its field, its draft and the keyboard.
+  await tree.evaluate((element) => {
+    element.scrollTop = 0;
+  });
+  await expect(row('Design A')).toBeInViewport();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('Draft');
+  await page.keyboard.press('Escape');
+  await expect(tree).toBeFocused();
+
+  // Space picks the row's frame and takes it out again, and the keyboard stays on that row.
+  await page.evaluate(() => {
+    window.boardHarness.select([]);
+  });
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('Space');
+  await expect.poll(() => selection(page)).toEqual(['b']);
+  await page.keyboard.press('Space');
+  await expect.poll(() => selection(page)).toEqual([]);
+  await keyboardOn('Design B');
 });

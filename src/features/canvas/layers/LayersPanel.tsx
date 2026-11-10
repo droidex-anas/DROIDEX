@@ -5,9 +5,17 @@
 // whose rows the keyboard walks through aria-activedescendant, so a canvas of
 // any size mounts only its visible rows.
 
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react';
 import { flushSync } from 'react-dom';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual';
 import { X } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { isTypeaheadKey, typeaheadIndex } from '../../../components/ui/menuKeys';
@@ -52,17 +60,23 @@ export function LayersPanel({
   const treeId = useId();
   const [movedTo, setMovedTo] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
-  // A selection made on the board takes the keyboard's row to it.
+  const designIds = frames.map((frame) => frame.designId);
+  // A frame picked on the board takes the keyboard's row to it. A pick made here is where
+  // the row already is, and taking a frame out of the selection moves nothing.
   const [seenSelection, setSeenSelection] = useState(selectedFrameIds);
   if (seenSelection !== selectedFrameIds) {
     setSeenSelection(selectedFrameIds);
-    if (movedTo !== null && !selectedFrameIds.includes(movedTo)) setMovedTo(null);
+    const picked = selectedFrameIds.filter((designId) => !seenSelection.includes(designId));
+    const last = picked.at(-1);
+    if (last !== undefined && !picked.some((designId) => designId === movedTo)) setMovedTo(last);
+  } else if (movedTo !== null && !designIds.includes(movedTo)) {
+    setMovedTo(null);
   }
   const typeahead = useRef({ query: '', resetAt: 0 });
   const lightFrame = useBoardLight(tree);
-  const designIds = frames.map((frame) => frame.designId);
   const activeIndex = activeRow(designIds, movedTo, selectedFrameIds);
   const active = activeIndex >= 0 ? frames[activeIndex] : undefined;
+  const editingIndex = renamingId === null ? -1 : designIds.indexOf(renamingId);
   const virtualizer = useVirtualizer({
     count: frames.length,
     getScrollElement: () => tree.current,
@@ -71,6 +85,13 @@ export function LayersPanel({
     overscan: 8,
     // Rows paint on the first frame, before the tree has been measured.
     initialRect: { width: 0, height: ROW_PX * 24 },
+    // aria-activedescendant names the keyboard's row and a field holds its draft, so
+    // neither unmounts when the list scrolls away from it.
+    rangeExtractor: (range) => {
+      const indexes = new Set(defaultRangeExtractor(range));
+      for (const kept of [activeIndex, editingIndex]) if (kept >= 0) indexes.add(kept);
+      return [...indexes].sort((a, b) => a - b);
+    },
   });
   const selected = new Set(selectedFrameIds);
   const rowId = (designId: string) => `${treeId}-${designId}`;
@@ -86,10 +107,15 @@ export function LayersPanel({
     }
   }, [renamedFrameGone]);
 
-  const moveTo = (index: number) => {
-    setMovedTo(frames[index].designId);
-    virtualizer.scrollToIndex(index);
-  };
+  // The list brings the keyboard's row into view wherever it moves to, and only then.
+  const revealRow = useEffectEvent((designId: string) => {
+    const index = designIds.indexOf(designId);
+    if (index >= 0) virtualizer.scrollToIndex(index);
+  });
+  useEffect(() => {
+    if (movedTo !== null) revealRow(movedTo);
+  }, [movedTo]);
+
   // Closed from inside, the panel hands the keyboard to the board first, so focus is not lost with it.
   const close = () => {
     if (active) onLeave(active.designId);
@@ -99,7 +125,7 @@ export function LayersPanel({
     if (onRename) setRenamingId(frame.designId);
   };
   const run = (key: LayerKey, frame: CanvasFrame) => {
-    if (key.kind === 'move') moveTo(key.index);
+    if (key.kind === 'move') setMovedTo(frames[key.index].designId);
     else if (key.kind === 'pick') onPick(frame.designId, true);
     else if (key.kind === 'focus') onFocusFrame(frame.designId);
     else if (key.kind === 'rename') rename(frame);
@@ -125,7 +151,7 @@ export function LayersPanel({
     );
     if (match < 0) return;
     event.preventDefault();
-    moveTo(match);
+    setMovedTo(frames[match].designId);
   };
 
   return (
@@ -163,6 +189,12 @@ export function LayersPanel({
           tabIndex={0}
           className="canvas-layers-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2"
           onKeyDown={onKeyDown}
+          onFocus={(event) => {
+            // A click's focus would scroll the row being clicked out from under the pointer.
+            if (event.target !== event.currentTarget || !event.target.matches(':focus-visible'))
+              return;
+            virtualizer.scrollToIndex(activeIndex);
+          }}
           onPointerLeave={() => {
             lightFrame(null);
           }}
