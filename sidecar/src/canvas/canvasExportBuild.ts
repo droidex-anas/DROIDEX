@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { storageFailure } from './canvasError.js';
 import { ownedCanvasRuntimeDir, packageDirectory } from './canvasRuntime.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
-import { CompilerUnavailableError, CompilerWorker } from './compiler.js';
+import { readModules } from './compiler.js';
 import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
 
 /**
@@ -16,18 +16,10 @@ import { DESIGN_PACKAGE_ENTRIES, packageName } from './designPackages.js';
  * packages are always listed; a library package (Radix, cva, clsx,
  * tailwind-merge) only when `sources` import it, as the compiler process reads them.
  */
-export async function exportPackageJson(sources: string[], signal: AbortSignal): Promise<string> {
-  const compiler = new CompilerWorker();
-  let imported: string[];
-  try {
-    imported = await compiler.moduleSpecifiers(sources, signal);
-  } catch (error) {
-    signal.throwIfAborted();
-    if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
-    throw error;
-  } finally {
-    await compiler.terminate();
-  }
+export async function exportPackageJson(sources: string[], signal?: AbortSignal): Promise<string> {
+  const imported = (await readModules(sources, signal)).flatMap((module) =>
+    module.specifiers.map((specifier) => specifier.text),
+  );
   const moduleDirectory = dirname(fileURLToPath(import.meta.url));
   const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
   const requireFromRuntime = createRequire(anchor);

@@ -7,7 +7,7 @@ import valueParser from 'postcss-value-parser';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitPrimitives } from './designSystemBrief.js';
 import { kitModes, type DocumentSection, type TokenSectionKind } from './designSystemDocument.js';
-import { themeEntries, type ThemeNamespace } from './kitTailwindTheme.js';
+import { kitTailwindTheme, type KitTheme, type ThemeNamespace } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
@@ -55,6 +55,8 @@ export interface Kit {
   classes: Set<string>;
   /** The kit's own Tailwind classes per rule kind, where its token names map to one. */
   themeClasses: Record<'type' | 'radius' | 'shadow' | 'font', string[]>;
+  /** The colour keys its Tailwind theme names, palette names such as white included. */
+  themeColors: Set<string>;
   primitives: string[];
 }
 
@@ -118,6 +120,7 @@ export function readKit(
       for (const match of rule.selector.matchAll(/\.(-?[_a-zA-Z][\w-]*)/g)) classes.add(match[1]);
     });
   }
+  const theme = kitTailwindTheme(system);
   return {
     ok: true,
     kit: {
@@ -126,20 +129,23 @@ export function readKit(
       fonts: typography.length > 0 ? { families, tokens: fontTokens } : null,
       scales,
       classes,
-      themeClasses: kitThemeClasses(system.sections),
+      themeClasses: kitThemeClasses(theme),
+      themeColors: new Set(Object.keys(theme.colors ?? {})),
       primitives: kitPrimitives(system),
     },
   };
 }
 
-/** The kit's own utility classes per rule kind, from the tokens that map to a theme key. */
-function kitThemeClasses(sections: DocumentSection[]): Kit['themeClasses'] {
+/** The kit's own utility classes per rule kind: every key its Tailwind theme names. */
+function kitThemeClasses(theme: KitTheme): Kit['themeClasses'] {
   const themeClasses: Kit['themeClasses'] = { type: [], radius: [], shadow: [], font: [] };
-  for (const entry of themeEntries(sections)) {
-    const themeClass = THEME_CLASS[entry.namespace];
+  for (const [namespace, values] of Object.entries(theme)) {
+    const themeClass = THEME_CLASS[namespace as ThemeNamespace];
     if (!themeClass) continue;
-    const name = entry.key === 'DEFAULT' ? themeClass.prefix : `${themeClass.prefix}-${entry.key}`;
-    themeClasses[themeClass.kind].push(name);
+    for (const key of Object.keys(values))
+      themeClasses[themeClass.kind].push(
+        key === 'DEFAULT' ? themeClass.prefix : `${themeClass.prefix}-${key}`,
+      );
   }
   return themeClasses;
 }

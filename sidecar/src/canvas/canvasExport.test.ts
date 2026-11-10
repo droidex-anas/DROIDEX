@@ -21,6 +21,7 @@ import { saveImageIn } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasCommandError } from './canvasError.js';
 import { exportCanvasSource } from './canvasExport.js';
+import { projectMapping } from './canvasProjectExport.js';
 import { ProjectExports, type ProjectExportAdmission } from './projectExports.js';
 import { kitGuidance } from './designSystemDocument.js';
 import { importDesignSystem } from './designSystemImport.js';
@@ -492,6 +493,21 @@ test('a kit imported from a project is copied, and the README names each kit tok
   assert.match(readme, /\| `--ds-radius-sm` \| none \|/);
   assert.doesNotMatch(readme, /^\| `--ds-primary` \|/m);
   assert.doesNotMatch(readme, /imported from|\| `--primary` \|/);
+});
+
+test('the README keeps a project name and path with backticks or line breaks on their own line', () => {
+  const imported = importDesignSystem(
+    [{ kind: 'css', text: ':root { --primary: 222 47% 11%; }', file: 'a`b.css' }],
+    {
+      id: 'odd-kit',
+      name: 'Odd kit',
+      provenance: { project: { name: 'shop\n## Owned', files: ['a`b.css'] } },
+    },
+  );
+  assert.equal(imported.status, 'imported');
+  const mapping = projectMapping(imported.system) ?? '';
+  assert.match(mapping, /^## Mapping to shop \\#\\# Owned$/m);
+  assert.match(mapping, /^This kit was read from ``a`b\.css`` in shop \\#\\# Owned\.$/m);
 });
 test('kit images travel with canvas and kit exports, one file per image', async (t) => {
   const { root, destination } = await profile(t);

@@ -3,9 +3,9 @@
 // and takes its rules from the kit's token sections: a hard-coded colour
 // (colors), a font family or a font size outside the kit (typography), a corner
 // radius, spacing or shadow literal no token holds (radius, spacing, shadows),
-// a default-theme class where the kit defines that scale (rounded-md, text-lg),
-// and a design that uses none of the kit's primitives. A kit without a section
-// gets no check for it. A --ds-* token set in source is a deliberate override,
+// a default-theme class the kit's theme does not name where the kit defines
+// that scale (rounded-md, text-lg), and a design that uses none of the kit's
+// primitives. A kit without a section gets no check for it. A --ds-* token set in source is a deliberate override,
 // noted once and never flagged.
 //
 // Values are read where they style something: CSS declarations and Tailwind
@@ -41,12 +41,12 @@ const SCRIPT_FILE = /\.(tsx|ts|jsx|js)$/;
 const COLOR_PROPERTY =
   /(?:^|-)(?:color|background|border|outline|shadow|fill|stroke|caret|accent|decoration)(?:-|$)/;
 const PALETTE_CLASS =
-  /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-(?:(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
+  /^-?(bg|text|border(?:-[xytrblse])?|ring(?:-offset)?|outline|fill|stroke|from|via|to|divide|placeholder|caret|accent|decoration|shadow)-((?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-(?:50|[1-9]00|950)|black|white)(?:\/\S+)?$/;
 const TAILWIND_FONT_CLASS = /^font-(?:sans|serif|mono)$/;
 // The default theme's own scale classes; where the kit defines that scale,
 // they sidestep its tokens. rounded-none, rounded-full and shadow-none are
 // resets rather than scale steps, as 0 and none are for a literal.
-const STOCK_RADIUS_CLASS = /^-?rounded(?:-[a-z]{1,2})?-(?:sm|md|lg|xl|2xl|3xl)$/;
+const STOCK_RADIUS_CLASS = /^-?rounded(?:-[a-z]{1,2})?-(sm|md|lg|xl|2xl|3xl)$/;
 const STOCK_TYPE_CLASS = /^-?text-(?:xs|sm|base|lg|[2-9]xl)$/;
 const STOCK_SHADOW_CLASS = /^-?shadow-(?:sm|md|lg|xl|2xl|inner)$/;
 const SPACING_PROPERTY = /^(?:padding|margin)(?:-|$)|^(?:row-|column-)?gap$/;
@@ -62,10 +62,17 @@ const SCALE_WORDING: Record<ScaleKind, { code: string; noun: string }> = {
 
 const CLASS_PREFIX = { type: 'text', radius: 'rounded', shadow: 'shadow' } as const;
 
-function stockScaleClass(utility: string): 'type' | 'radius' | 'shadow' | null {
-  if (utility === 'rounded' || STOCK_RADIUS_CLASS.test(utility)) return 'radius';
-  if (STOCK_TYPE_CLASS.test(utility)) return 'type';
-  if (utility === 'shadow' || STOCK_SHADOW_CLASS.test(utility)) return 'shadow';
+/** A default-theme scale class, and the class of the theme key it reads (rounded-t-md reads rounded-md). */
+function stockScaleClass(
+  utility: string,
+): { kind: 'type' | 'radius' | 'shadow'; themeClass: string } | null {
+  const positive = utility.replace(/^-/, '');
+  if (utility === 'rounded') return { kind: 'radius', themeClass: utility };
+  const radius = STOCK_RADIUS_CLASS.exec(utility);
+  if (radius) return { kind: 'radius', themeClass: `rounded-${radius[1]}` };
+  if (STOCK_TYPE_CLASS.test(utility)) return { kind: 'type', themeClass: positive };
+  if (utility === 'shadow' || STOCK_SHADOW_CLASS.test(utility))
+    return { kind: 'shadow', themeClass: positive };
   return null;
 }
 
@@ -194,21 +201,23 @@ class DesignCheck {
     for (const token of text.split(/\s+/)) {
       const utility = withoutVariants(token);
       if (this.kit.classes.has(utility)) this.usesKit = true;
+      // A stock class whose key the kit's theme names reads the kit's value.
       const palette = PALETTE_CLASS.exec(utility);
       if (palette) {
-        if (!this.kit.checksColors) continue;
+        if (!this.kit.checksColors || this.kit.themeColors.has(palette[2])) continue;
         const message = this.colorMessage(utility, palette[1], palette[1]);
         this.add(ADHERENCE_CODES.color, place, utility, message);
         continue;
       }
       if (TAILWIND_FONT_CLASS.test(utility)) {
-        if (!this.kit.fonts) continue;
-        this.stockFontClass(place, utility);
+        if (this.kit.fonts && !this.kit.themeClasses.font.includes(utility))
+          this.stockFontClass(place, utility);
         continue;
       }
       const stockScale = stockScaleClass(utility);
       if (stockScale !== null) {
-        this.stockScaleFinding(place, utility, stockScale);
+        if (!this.kit.themeClasses[stockScale.kind].includes(stockScale.themeClass))
+          this.stockScaleFinding(place, utility, stockScale.kind);
         continue;
       }
       const arbitrary = arbitraryUtility(utility);
