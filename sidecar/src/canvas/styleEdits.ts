@@ -5,6 +5,7 @@
 
 import type { ElementEdit } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
+import { BLUR } from './tailwindStock.js';
 
 export type StyleEdit = Extract<ElementEdit['change'], { kind: 'style' }>['styles'][number];
 
@@ -27,6 +28,7 @@ type ValueForm =
   | 'border-width'
   | 'size'
   | 'max-size'
+  | 'blur'
   | readonly string[];
 
 interface StyleRule {
@@ -40,6 +42,8 @@ const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
 const MIN_SIZE = { tokens: '--ds-size-', values: 'length' } as const;
 const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
+// A blur is the one filter function an edit writes, so the others a class adds stay.
+const BLUR_FILTER = { tokens: '--ds-blur-', values: 'blur' } as const;
 
 export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   padding: SPACING,
@@ -67,6 +71,8 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   borderColor: COLOUR,
   // Shadows are kit-owned surface effects, so only the kit's tokens are offered.
   boxShadow: { tokens: '--ds-shadow-', values: [] },
+  filter: BLUR_FILTER,
+  backdropFilter: BLUR_FILTER,
   fontFamily: { tokens: '--ds-font-', values: [] },
   fontSize: { tokens: '--ds-text-', values: 'length' },
   fontWeight: { tokens: '--ds-weight-', values: 'weight' },
@@ -142,9 +148,11 @@ export function resolveStyleChange(
       `${change.value} is not a ${change.property} value Canvas can write.`,
     );
   const wanted = canonicalCss(change.value);
+  // A blur token holds the blur's length.
+  const tokenCss = (value: string) => (rule.values === 'blur' ? `blur(${value})` : value);
   const token = Object.keys(tokens)
     .sort((a, b) => NAME_ORDER.compare(a, b))
-    .find((name) => inFamily(name) && canonicalCss(tokens[name] ?? '') === wanted);
+    .find((name) => inFamily(name) && canonicalCss(tokenCss(tokens[name] ?? '')) === wanted);
   return token ? { kind: 'token', token } : { kind: 'raw', value: change.value };
 }
 
@@ -178,18 +186,27 @@ export function editTokens(
   return byProperty;
 }
 
-/** The CSS a resolution writes into the element's style. */
-export function styleValue(resolution: StyleResolution): string {
-  return resolution.kind === 'token' ? `var(${resolution.token})` : resolution.value;
+/** The CSS a resolution sets `property` to in the element's style. */
+export function styleValue(property: string, resolution: StyleResolution): string {
+  if (resolution.kind === 'raw') return resolution.value;
+  const css = `var(${resolution.token})`;
+  const isBlur =
+    Object.hasOwn(STYLE_PROPERTIES, property) && STYLE_PROPERTIES[property].values === 'blur';
+  return isBlur ? `blur(${css})` : css;
 }
 
 /**
  * A CSS value in the one spelling two equal values share: lowercase and
  * single-spaced, a number without redundant digits, a rem length in pixels,
- * and any zero length as `0`.
+ * and any zero length as `0`, also as a blur's length.
  */
 export function canonicalCss(value: string): string {
   const text = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const blur = /^blur\((.*)\)$/.exec(text);
+  if (blur) {
+    const [, length = ''] = blur;
+    return `blur(${canonicalCss(length)})`;
+  }
   const parts = NUMBER_WITH_UNIT.exec(text);
   if (!parts) return text;
   const [, number = '', unit = ''] = parts;
@@ -262,5 +279,7 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return LENGTH.test(value) || value === 'none';
     case 'fraction':
       return FRACTION.test(value);
+    case 'blur':
+      return Object.values(BLUR).some((stock) => canonicalCss(stock) === canonicalCss(value));
   }
 }

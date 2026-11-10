@@ -39,9 +39,26 @@ test('a style writes the kit token with its value, and the raw value only when t
   ];
   for (const [change, css] of cases) {
     const resolution = resolveStyleChange(change, KIT);
-    assert.equal(styleValue(resolution), css, change.property);
+    assert.equal(styleValue(change.property, resolution), css, change.property);
     assert.equal(resolution.kind, css.startsWith('var(') ? 'token' : 'raw', change.property);
   }
+});
+
+test('a blur takes none, a stock step or a kit blur token', () => {
+  const kit = { ...KIT, '--ds-blur-soft': '12px' };
+  assert.deepEqual(resolveStyleChange({ property: 'filter', value: 'blur(0.75rem)' }, kit), {
+    kind: 'token',
+    token: '--ds-blur-soft',
+  });
+  const token = resolveStyleChange({ property: 'backdropFilter', value: '--ds-blur-soft' }, kit);
+  assert.equal(styleValue('backdropFilter', token), 'blur(var(--ds-blur-soft))');
+  for (const value of ['none', 'blur(0)', 'blur(4px)'])
+    assert.deepEqual(resolveStyleChange({ property: 'filter', value }, kit), {
+      kind: 'raw',
+      value,
+    });
+  for (const value of ['blur(5px)', '8px', 'grayscale(1)', 'blur(4px) grayscale(1)'])
+    assert.equal(refusal({ property: 'filter', value }).code, 'invalid_edit', value);
 });
 
 test('editTokens lists, per property, the kit tokens its rule accepts', () => {

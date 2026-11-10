@@ -15,8 +15,10 @@ import {
   canonicalCss,
   resolveStyleChange,
   STYLE_PROPERTIES,
+  styleValue,
   type StyleResolution,
 } from './styleEdits.js';
+import { BLUR } from './tailwindStock.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
 
 const TOKEN = '--ds-probe';
@@ -47,7 +49,16 @@ const RAW_VALUES = [
   'auto',
   'fit-content',
   'none',
+  ...Object.values(BLUR),
+  'blur(0.5rem)',
 ];
+// Tailwind sets a shadow through its own variable, after ring layers, and a
+// blur through its own, which the filter composes.
+const SET_THROUGH: Readonly<Record<string, string>> = {
+  boxShadow: '--tw-shadow',
+  filter: '--tw-blur',
+  backdropFilter: '--tw-backdrop-blur',
+};
 
 after(() => stopCanvasRuntime());
 
@@ -66,8 +77,7 @@ function writableClasses() {
     }
     for (const resolution of resolutions) {
       const name = styleClass(property, resolution);
-      const value = resolution.kind === 'token' ? `var(${resolution.token})` : resolution.value;
-      if (name !== null) written.push({ property, name, value });
+      if (name !== null) written.push({ property, name, value: styleValue(property, resolution) });
     }
   }
   return written;
@@ -101,9 +111,10 @@ test('every class a style edit writes sets its property to the value the edit me
     const declarations = rules.get(name);
     assert.ok(declarations, `Tailwind generated nothing for ${name}`);
     const css = property.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
-    // Tailwind sets a shadow through its own variable, after ring layers.
-    const set = property === 'boxShadow' ? declarations.get('--tw-shadow') : declarations.get(css);
-    assert.equal(canonicalCss(set ?? ''), canonicalCss(value), `${name} for ${property}: ${value}`);
+    const set = declarations.get(SET_THROUGH[property] ?? css) ?? '';
+    // `blur-none` sets its blur to nothing.
+    const read = set.trim() === '' && value === 'none' ? 'none' : set;
+    assert.equal(canonicalCss(read), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
   }
 });
