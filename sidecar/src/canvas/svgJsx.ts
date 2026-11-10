@@ -263,10 +263,12 @@ class JsxWriter {
     return value.replace(FRAGMENT_URL, (_, _quote, id: string) => `url(#${this.idPrefix}${id})`);
   }
 
-  // React sets a style object property by property and cannot say `!important`.
+  // React sets a style object property by property and cannot say `!important`,
+  // so a declaration that needs it to win keeps the SVG an image.
   private styleObject(style: string): string {
     const entries: string[] = [];
     postcss.parse(style).walkDecls((declaration) => {
+      if (declaration.important) throw new KeptAsImage('stylesheet');
       const value = JSON.stringify(this.withPrefixedUrls(declaration.value));
       entries.push(`${styleKey(declaration.prop)}: ${value}`);
     });

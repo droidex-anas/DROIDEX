@@ -107,6 +107,8 @@ test('an SVG the frame cannot draw as JSX is drawn as its owned image', () => {
       svgAsImage: 'stylesheet',
     });
   }
+  const important = `<svg xmlns="http://www.w3.org/2000/svg"><path style="fill:red!important;fill:blue" d="M0 0"/></svg>`;
+  assert.equal(drawn(important).svgAsImage, 'stylesheet');
   const crowded = `<svg xmlns="http://www.w3.org/2000/svg">${'<g/>'.repeat(CANVAS_LIMITS.maxSourceElements)}</svg>`;
   assert.equal(drawn(crowded).svgAsImage, 'too_large');
   const long = `<svg xmlns="http://www.w3.org/2000/svg"><path d="${'M0 0'.repeat(CANVAS_LIMITS.maxFileBytes / 4)}"/></svg>`;
