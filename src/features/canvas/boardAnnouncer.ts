@@ -65,7 +65,7 @@ export function removalAnnouncement(
   return `${String(removed.length)} frames deleted`;
 }
 
-/** Frames hidden from the board or shown again, by name. */
+/** Frames hidden from the board or shown again, by name for one or two and counted beyond. */
 export function visibilityAnnouncement(
   previous: readonly CanvasFrame[],
   next: readonly CanvasFrame[],
@@ -76,7 +76,13 @@ export function visibilityAnnouncement(
     return wasHidden !== undefined && wasHidden !== frame.hidden;
   });
   if (changed.length === 0) return null;
-  return changed.map((frame) => `${frame.name} ${frame.hidden ? 'hidden' : 'shown'}`).join('; ');
+  if (changed.length <= NAMED_CHANGES)
+    return changed.map((frame) => `${frame.name} ${frame.hidden ? 'hidden' : 'shown'}`).join('; ');
+  const hidden = changed.filter((frame) => frame.hidden).length;
+  const shown = changed.length - hidden;
+  if (shown === 0) return `${String(hidden)} frames hidden`;
+  if (hidden === 0) return `${String(shown)} frames shown`;
+  return `${String(changed.length)} frames changed: ${String(hidden)} hidden, ${String(shown)} shown`;
 }
 
 /**

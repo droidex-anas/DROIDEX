@@ -92,13 +92,19 @@ test('deleted frames are named, and counted beyond two', () => {
   assert.equal(removalAnnouncement(frames, frames), null);
 });
 
-test('a hidden frame is said hidden, not deleted, and shown when it comes back', () => {
-  const frames = ['a', 'b'].map((id) => frame(id, READY));
-  const hidden = [{ ...frames[0], hidden: true }, frames[1]];
+test('a hidden frame is said hidden, not deleted, and shown when it comes back, and many are counted', () => {
+  const frames = ['a', 'b', 'c'].map((id) => frame(id, READY));
+  const hidden = [{ ...frames[0], hidden: true }, frames[1], frames[2]];
   assert.equal(removalAnnouncement(frames, hidden), null);
   assert.equal(visibilityAnnouncement(frames, hidden), 'Design a hidden');
   assert.equal(visibilityAnnouncement(hidden, frames), 'Design a shown');
   assert.equal(visibilityAnnouncement(frames, frames), null);
+  const allHidden = frames.map((entry) => ({ ...entry, hidden: true }));
+  assert.equal(visibilityAnnouncement(frames, allHidden), '3 frames hidden');
+  assert.equal(
+    visibilityAnnouncement(hidden, [frames[0], ...allHidden.slice(1)]),
+    '3 frames changed: 2 hidden, 1 shown',
+  );
 });
 
 test('a selection is said unless the focused label already says it', () => {
