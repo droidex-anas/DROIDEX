@@ -308,3 +308,51 @@ export const NoWrap = createIcon(
     <path d="M19 7v10" />
   </>,
 );
+
+export const Type = createIcon(
+  'type',
+  <>
+    <path d="M5 7V5h14v2" />
+    <path d="M12 5v14" />
+    <path d="M9.5 19h5" />
+  </>,
+);
+
+export const Picture = createIcon(
+  'picture',
+  <>
+    <rect x="3.5" y="4.5" width="17" height="15" rx="3" />
+    <circle cx="9" cy="9.5" r="1.5" />
+    <path d="m3.5 17 4.5-4.5a1 1 0 0 1 1.4 0l2.1 2.1" />
+    <path d="m11.5 14.6 2.6-2.6a1 1 0 0 1 1.4 0l5 5" />
+  </>,
+);
+
+export const Vector = createIcon(
+  'vector',
+  <>
+    <path d="M7.5 18.5c6.5 0 11-4.5 11-11" />
+    <rect x="3.5" y="16.5" width="4" height="4" rx="1" />
+    <rect x="16.5" y="3.5" width="4" height="4" rx="1" />
+  </>,
+);
+
+export const Component = createIcon(
+  'component',
+  <>
+    <path d="M12 3.5 14.5 6 12 8.5 9.5 6Z" />
+    <path d="M12 15.5 14.5 18 12 20.5 9.5 18Z" />
+    <path d="M6 9.5 8.5 12 6 14.5 3.5 12Z" />
+    <path d="M18 9.5 20.5 12 18 14.5 15.5 12Z" />
+  </>,
+);
+
+export const Repeat = createIcon(
+  'repeat',
+  <>
+    <path d="m17 3.5 2.5 2.5L17 8.5" />
+    <path d="M4.5 11.5V10a4 4 0 0 1 4-4h11" />
+    <path d="M7 20.5 4.5 18 7 15.5" />
+    <path d="M19.5 12.5V14a4 4 0 0 1-4 4h-11" />
+  </>,
+);
