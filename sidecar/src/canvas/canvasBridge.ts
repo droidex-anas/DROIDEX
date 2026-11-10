@@ -319,6 +319,16 @@ class CanvasDispatch {
               command.input.expectedManifestVersion,
             ),
           };
+        case 'canvas.setFrameHidden':
+          return {
+            kind: 'hiddenSet',
+            change: await workspace.frameEdits.setHidden(scope, command.input),
+          };
+        case 'canvas.reorderFrames':
+          return {
+            kind: 'reordered',
+            change: await workspace.frameEdits.reorder(scope, command.input),
+          };
         case 'canvas.annotate':
           return {
             kind: 'annotated',

@@ -67,7 +67,7 @@ export class CanvasWorkspace {
   private readonly commits = new CanvasCommits(this.changes);
   private readonly attachments: CanvasAttachments;
   private readonly leases: CanvasLeases;
-  private readonly frameEdits: CanvasFrameEdits;
+  readonly frameEdits: CanvasFrameEdits;
   private readonly creation: CanvasFrameCreation;
   private readonly removal: CanvasRemoval;
   readonly history: CanvasRevisionHistory;

@@ -1,11 +1,12 @@
-import type { CanvasChange, CanvasSnapshot } from './protocol';
+import type { CanvasChange, CanvasFrame, CanvasSnapshot } from './protocol';
 
 /**
  * The projection a change produces from the one it extends. Changed frames
  * replace their current entry in place, removed frames leave, and frames a
  * create added follow the ones the canvas already held, which is the order the
- * sidecar places them in. Annotations follow the same rule, and only a change
- * that carries them moves the annotation layer.
+ * sidecar places them in. A reorder's `order` then restacks the frames.
+ * Annotations follow the same rule, and only a change that carries them moves
+ * the annotation layer.
  *
  * The caller owns ordering: only a change whose sequence is exactly the
  * snapshot's plus one belongs here.
@@ -15,11 +16,9 @@ export function applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange
   return {
     canvasId: snapshot.canvasId,
     sequence: change.sequence,
-    frames: merged(
-      snapshot.frames,
-      change.frames,
-      change.removedDesignIds,
-      (frame) => frame.designId,
+    frames: stacked(
+      merged(snapshot.frames, change.frames, change.removedDesignIds, (frame) => frame.designId),
+      change.order,
     ),
     annotationsVersion: layer ? layer.version : snapshot.annotationsVersion,
     annotations: layer
@@ -54,4 +53,12 @@ function merged<Entry>(
   }
   entries.push(...pending.values());
   return entries;
+}
+
+// A frame the order does not name keeps the front, after the ones it does.
+function stacked(frames: CanvasFrame[], order: readonly string[] | undefined): CanvasFrame[] {
+  if (!order) return frames;
+  const rank = new Map(order.map((designId, index) => [designId, index]));
+  const rankOf = (frame: CanvasFrame) => rank.get(frame.designId) ?? order.length;
+  return frames.sort((left, right) => rankOf(left) - rankOf(right));
 }

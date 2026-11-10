@@ -13,6 +13,8 @@ import {
   arrangeFramesInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
+  reorderFramesInputSchema,
+  setFrameHiddenInputSchema,
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
 import type { CanvasCommand } from './protocol.js';
@@ -214,6 +216,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       ...request,
       ...target,
       input: renameFrameInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.setFrameHidden'),
+      ...request,
+      ...target,
+      input: setFrameHiddenInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.reorderFrames'),
+      ...request,
+      ...target,
+      input: reorderFramesInputSchema,
     })
     .strict(),
   z
@@ -437,6 +455,8 @@ export type CanvasMutation = Extract<
       | 'remove'
       | 'undoRemoval'
       | 'renameFrame'
+      | 'setFrameHidden'
+      | 'reorderFrames'
       | 'annotate'}`;
   }
 >;

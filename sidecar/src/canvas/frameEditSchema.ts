@@ -1,5 +1,6 @@
 // The inputs of the edits the board makes to frames themselves, rather than to
-// their source: placing, removing, restoring and naming. CanvasFrameEdits applies them.
+// their source: placing, removing, restoring, naming, hiding and stacking.
+// CanvasFrameEdits applies them.
 
 import { z } from 'zod';
 import {
@@ -64,7 +65,30 @@ export const renameFrameInputSchema = z
   })
   .strict();
 
+export const setFrameHiddenInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designId: canvasIdentifierSchema,
+    hidden: z.boolean(),
+    expectedManifestVersion: versionSchema,
+  })
+  .strict();
+
+// The whole stacking order, back to front. Whether it names exactly the
+// canvas's frames is a question for the head it commits on, not for this shape.
+export const reorderFramesInputSchema = z
+  .object({
+    mutationId: canvasIdentifierSchema,
+    designIds: z
+      .array(canvasIdentifierSchema)
+      .min(1)
+      .refine((ids) => !hasDuplicate(ids), { message: 'A reorder names each frame once.' }),
+  })
+  .strict();
+
 export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
 export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
 export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;
 export type RenameFrameInput = z.infer<typeof renameFrameInputSchema>;
+export type SetFrameHiddenInput = z.infer<typeof setFrameHiddenInputSchema>;
+export type ReorderFramesInput = z.infer<typeof reorderFramesInputSchema>;

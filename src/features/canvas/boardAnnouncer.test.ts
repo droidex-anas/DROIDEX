@@ -29,6 +29,7 @@ function frame(designId: string, build: CanvasBuildState, name = `Design ${desig
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build,
   } satisfies CanvasFrame;
 }

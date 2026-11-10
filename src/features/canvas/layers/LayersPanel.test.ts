@@ -20,6 +20,7 @@ function frame(designId: string, name: string, rect: FrameRect): CanvasFrame {
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf: null,
     seededRevisionId: null,
+    hidden: false,
     build: { status: 'ready', revisionId: 'rev_01', generation: 1, diagnostics: [] },
   };
 }

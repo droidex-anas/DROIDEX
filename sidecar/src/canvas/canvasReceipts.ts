@@ -84,19 +84,39 @@ export function recordedUndo(
   };
 }
 
-export function recordedRename(
+export function recordedFrameEdit(
   manifest: CanvasManifest,
   mutationId: string,
+  kind: 'rename' | 'hide',
   fingerprint: string,
   builds: BuildStates,
 ): CanvasChange | null {
-  const record = findMutation(manifest, mutationId, 'rename', fingerprint);
-  if (record?.kind !== 'rename') return null;
+  const record = findMutation(manifest, mutationId, kind, fingerprint);
+  if (record?.kind !== 'rename' && record?.kind !== 'hide') return null;
   return {
     canvasId: manifest.canvasId,
     sequence: record.sequence,
     frames: [toFrame(manifest.canvasId, record.design, builds)],
     removedDesignIds: [],
+  };
+}
+
+export function recordedReorder(
+  manifest: CanvasManifest,
+  mutationId: string,
+  fingerprint: string,
+): CanvasChange | null {
+  const record = findMutation(manifest, mutationId, 'reorder', fingerprint);
+  if (record?.kind !== 'reorder') return null;
+  return {
+    canvasId: manifest.canvasId,
+    sequence: record.sequence,
+    frames: [],
+    removedDesignIds: [],
+    // Like an arrange's frames: one a later commit removed is no longer in the answer.
+    order: record.designIds.filter((id) =>
+      manifest.designs.some((design) => design.designId === id),
+    ),
   };
 }
 

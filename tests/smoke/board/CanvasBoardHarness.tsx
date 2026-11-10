@@ -314,6 +314,7 @@ const initial: CanvasSnapshot = {
       designSystem: { id: 'droidex', version: 1, mode: scheme },
       variantOf: isVariant ? 'a' : null,
       seededRevisionId: isVariant ? 'rev_00' : null,
+      hidden: false,
       build: params.has('building') ? { status: 'building', generation: 1 } : built('rev_01'),
     };
     if (!working || frame.designId !== 'a') return placed;

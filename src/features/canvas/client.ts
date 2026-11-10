@@ -6,6 +6,7 @@ import type { AnnotateCanvasInput } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
 import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
+import { LayerRequests } from './layerRequests';
 import { LibraryRequests } from './libraryRequests';
 import { RemovalRequests } from './removalRequests';
 import { RevisionRequests } from './revisionRequests';
@@ -94,6 +95,7 @@ export class CanvasClient {
   constructor(private readonly transport: CanvasTransport) {}
 
   readonly designSystems = new DesignSystemRequests((command) => this.request(command));
+  readonly layers = new LayerRequests((command) => this.request(command));
   readonly library = new LibraryRequests((command) => this.request(command));
   readonly removal = new RemovalRequests((command) => this.request(command));
   readonly revisions = new RevisionRequests((command) => this.request(command));

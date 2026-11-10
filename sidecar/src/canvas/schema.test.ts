@@ -43,6 +43,7 @@ import {
   arrangeFramesInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
+  reorderFramesInputSchema,
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
 import {
@@ -173,6 +174,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -248,6 +250,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
@@ -267,6 +270,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -285,6 +289,7 @@ const wire: SidecarWire = {
         designSystem,
         variantOf: null,
         seededRevisionId: null,
+        hidden: false,
         build: {
           status: 'failed',
           generation: 2,
@@ -498,6 +503,18 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'hiddenSet', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'reordered', change: { ...wire.change, frames: [], order: ['dsg_hey'] } },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: {
         kind: 'annotated',
         change: {
@@ -655,6 +672,13 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   assert.deepEqual(undo, wire.undo);
   assert.deepEqual(rename, wire.rename);
   assert.deepEqual(annotate, wire.annotate);
+});
+
+test('a reorder names each frame once', () => {
+  assert.match(
+    rejection(reorderFramesInputSchema, { mutationId: 'reorder', designIds: ['dsg_a', 'dsg_a'] }),
+    /each frame once/,
+  );
 });
 
 test('annotate names each annotation once, changes at least one and refuses a stray control character', () => {

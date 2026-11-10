@@ -24,6 +24,7 @@ function frame(designId: string, variantOf: string | null = null): CanvasFrame {
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
     variantOf,
     seededRevisionId: variantOf === null ? null : `${designId}0`,
+    hidden: false,
     build: {
       status: 'ready',
       generation: 1,

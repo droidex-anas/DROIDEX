@@ -59,6 +59,8 @@ const persistedDesignSchema = z
     variantOf: canvasIdentifierSchema.optional(),
     // The revision the seed made, so a reader can tell that copy from later work.
     seededRevisionId: canvasIdentifierSchema.optional(),
+    // The user hid it from the board; absent while it shows.
+    hidden: z.literal(true).optional(),
   })
   .strict();
 
@@ -180,6 +182,26 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       fingerprint: fingerprintSchema,
       sequence: versionSchema,
       design: persistedDesignSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('hide'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      design: persistedDesignSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('reorder'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      designIds: z.array(canvasIdentifierSchema),
     })
     .strict(),
   z
@@ -314,6 +336,7 @@ export function toFrame(
     designSystem: { ...design.designSystem },
     variantOf: design.variantOf ?? null,
     seededRevisionId: design.seededRevisionId ?? null,
+    hidden: design.hidden === true,
     build: builds.stateOf(canvasId, design.designId),
   };
 }
