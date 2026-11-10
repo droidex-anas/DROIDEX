@@ -82,6 +82,14 @@ export interface PreviewHover {
   room: { above: number | null; below: number | null };
 }
 
+/**
+ * Whether the element is the design's own top, mounted straight into the
+ * preview's root container: the reporter's path to it from the body is two steps.
+ */
+export function isDesignRoot(element: { instancePath: string }): boolean {
+  return element.instancePath.split('/').length <= 2;
+}
+
 /** The text between two points in the design's pixels, from where a press went down. */
 export interface PreviewTextRange {
   from: { x: number; y: number };

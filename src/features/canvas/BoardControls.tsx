@@ -12,6 +12,7 @@ import {
   Play,
   SlidersHorizontal,
 } from '@droidex/icons';
+import { ALT_MODIFIER_LABEL } from '../../lib/shortcuts';
 import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
@@ -140,7 +141,7 @@ export function BoardControls({
       <div role="group" aria-label="Board input mode" className="canvas-rail">
         <Tool
           label="Select"
-          tip="Select  V"
+          tip={`Select  V · Hold ${ALT_MODIFIER_LABEL} to measure`}
           pressed={mode === 'select'}
           onClick={() => {
             onMode('select');
@@ -161,7 +162,7 @@ export function BoardControls({
         </Tool>
         <Tool
           label="Edit element"
-          tip="Edit element  E"
+          tip={`Edit element  E · Hold ${ALT_MODIFIER_LABEL} to measure`}
           pressed={mode === 'edit'}
           disabled={!hasFrames}
           onClick={() => {

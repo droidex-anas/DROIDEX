@@ -416,6 +416,74 @@ test('the hover tag keeps off other content and off the picked size chip', async
   expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });
 
+test('held Alt in Edit measures from the picked element to the one under the pointer, or to its frame', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    // Paths run from the body, as the reporter's do: the design's root sits in the preview's.
+    const root = { elementId: 'el_page', instancePath: '0/0', tagName: 'main' };
+    const card = { elementId: 'el_card', instancePath: '0/0/0', tagName: 'section' };
+    const title = { elementId: 'el_title', instancePath: '0/0/0/0', tagName: 'h1' };
+    const button = { elementId: 'el_button', instancePath: '0/0/0/1', tagName: 'button' };
+    const rects = new Map([
+      [title, { x: 8, y: 8, width: 240, height: 30 }],
+      [button, { x: 8, y: 60, width: 120, height: 32 }],
+      [card, { x: 0, y: 0, width: 400, height: 200 }],
+      [root, { x: 0, y: 0, width: 400, height: 280 }],
+    ]);
+    const under = (y: number) => {
+      if (y < 40) return title;
+      if (y < 100) return button;
+      if (y < 200) return card;
+      return y < 280 ? root : null;
+    };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const element =
+        command === 'select' ? title : under(typeof argument.y === 'number' ? argument.y : 0);
+      if (!element) return null;
+      const rect = rects.get(element);
+      return command === 'hover' ? { ...element, rect } : { ...element, rect, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const pointAt = async (x: number, y: number) => {
+    await page.mouse.move(drawn.x + (x * drawn.width) / 400, drawn.y + (y * drawn.width) / 400);
+    await page.clock.runFor(32);
+  };
+  await pointAt(20, 20);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.clock.runFor(100);
+  await expect(page.locator('.canvas-element-outline')).toBeVisible();
+
+  const pills = page.locator('.canvas-snap-pill');
+  await page.keyboard.down('Alt');
+  // Over the picked title itself, and over the frame's empty space: its frame's edges.
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  await pointAt(300, 290);
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  // The design's root is the frame's own space too, not a parent to measure insets in.
+  await pointAt(300, 240);
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  // The button below it lines up on the left: the space between them, and how far short its right edge stops.
+  await pointAt(20, 70);
+  await expect(pills).toHaveText(['120', '22']);
+  // The card it sits in: its four insets.
+  await pointAt(300, 150);
+  await expect(pills).toHaveText(['8', '152', '8', '162']);
+  await page.keyboard.up('Alt');
+  await expect(pills).toHaveCount(0);
+});
 test('The Display row’s ⋯ menu sets a display its segments leave out, and a hidden element keeps its panel but no outline', async ({
   page,
 }) => {

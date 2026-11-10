@@ -93,6 +93,65 @@ test('⌘A selects every frame, and a multiple selection is measured by its own 
   await expect(bounds).toHaveCount(0);
 });
 
+test('held Alt measures from the selection to the frame under the pointer, only while it is held', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  const pills = page.locator('.canvas-snap-pill');
+  const overFrame = async (name: string) => {
+    const sheet = await box(frame(page, name).locator('.canvas-sheet'));
+    await page.mouse.move(sheet.x + sheet.width / 2, sheet.y + sheet.height / 2);
+  };
+  await overFrame('B');
+  await expect(pills).toHaveCount(0);
+
+  // A ends at x 500 and B starts at 650. Across, A's top is 250 above B's and its bottom 50 below B's top.
+  await page.keyboard.down('Alt');
+  await expect(pills).toHaveText(['150', '250', '50']);
+  // Over the selection itself there is nothing to measure.
+  await overFrame('A');
+  await expect(pills).toHaveCount(0);
+  // B over A's lower right: each of A's edges to the nearer edge of B.
+  await page.evaluate(() => {
+    window.boardHarness.publish('b', { x: 450, y: 300, width: 300, height: 200 }, 4);
+  });
+  await page.clock.runFor(32);
+  await page.mouse.move(1100, 900);
+  await overFrame('B');
+  await expect(pills).toHaveText(['350', '50', '250', '50']);
+  await page.keyboard.up('Alt');
+  await expect(pills).toHaveCount(0);
+
+  // An Alt let go in another app sends no keyup, so leaving the window lets go of it.
+  await page.keyboard.down('Alt');
+  await expect(pills).toHaveCount(4);
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(pills).toHaveCount(0);
+  await page.keyboard.up('Alt');
+});
+
+test('Escape lets go of the distances held Alt shows before it closes a menu under them', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await page.getByRole('button', { name: 'Size 400 × 300' }).click();
+  const width = page.getByRole('textbox', { name: 'Width' });
+  await expect(width).toBeFocused();
+  const sheet = await box(frame(page, 'B').locator('.canvas-sheet'));
+  await page.mouse.move(sheet.x + sheet.width / 2, sheet.y + sheet.height / 2);
+  await page.keyboard.down('Alt');
+  const pills = page.locator('.canvas-snap-pill');
+  await expect(pills).toHaveCount(3);
+
+  await page.keyboard.press('Escape');
+  await expect(pills).toHaveCount(0);
+  await expect(width).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(width).toHaveCount(0);
+  await page.keyboard.up('Alt');
+});
 test('a frame resizes from an edge or a corner, and the edges opposite stay put', async ({
   page,
 }) => {
