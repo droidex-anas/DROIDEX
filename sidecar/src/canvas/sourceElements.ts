@@ -214,6 +214,9 @@ function isComputed(node: ElementNode): boolean {
   );
 }
 
+// SVG paint attributes, which a paint edit replaces and so must be able to read.
+const PAINT_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth', 'stroke-width']);
+
 function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
   const names = new Set<string>();
   for (const attr of attributes.properties) {
@@ -231,6 +234,8 @@ function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
     if (name === 'className' && value && classLiterals(value) === null) return true;
     if (name === 'src' && value && !isLiteral(value)) return true;
     if (name === 'style' && hasComputedStyle(value)) return true;
+    if (PAINT_ATTRIBUTES.has(name) && !(value && (isLiteral(value) || ts.isNumericLiteral(value))))
+      return true;
   }
   return false;
 }
