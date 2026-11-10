@@ -133,6 +133,7 @@ export function LayersPanel({
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
+    if (key?.kind === 'leave') stack.cancel();
     if (key) run(key, active);
     if (key || typeTo(event)) event.preventDefault();
   };

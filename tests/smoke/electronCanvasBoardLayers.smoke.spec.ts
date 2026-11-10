@@ -318,4 +318,52 @@ test('Layers hides and shows a frame, and restacks frames from the keyboard and 
   await expect(items).toHaveText(['Design B', 'Design A']);
   // A drag picks nothing.
   expect(await selection(page)).toEqual([]);
+
+  // Escape mid-drag hands the keyboard to the board and lets the frame go where it was.
+  await rowB.hover();
+  const grip = await rowB.locator('.canvas-layer-tool').last().boundingBox();
+  const bottom = await rowA.boundingBox();
+  if (!grip || !bottom) throw new Error('Missing row geometry');
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x, bottom.y + bottom.height - 2, { steps: 4 });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-design-frame="b"] [data-frame-header]')).toBeFocused();
+  await page.mouse.up();
+  expect((await calls()).reorder).toHaveLength(2);
+  await expect(items).toHaveText(['Design B', 'Design A']);
+});
+
+test('A row’s handle restacks under the pointer at a larger UI size, and only once dragged', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=16&frames=20&layers=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const row = (name: string) => tree.getByRole('treeitem', { name: `${name}, Ready` });
+  const reorders = () => page.evaluate(() => window.boardHarness.reorderCalls);
+  const handleOf = async (name: string) => {
+    await row(name).hover();
+    const box = await row(name).locator('.canvas-layer-tool').last().boundingBox();
+    if (!box) throw new Error(`No handle on ${name}`);
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+
+  // A press on the handle that does not move restacks nothing.
+  const grip = await handleOf('Design X7');
+  await page.mouse.move(grip.x, grip.y);
+  await page.mouse.down();
+  await page.mouse.up();
+  expect(await reorders()).toEqual([]);
+
+  // Dragged to the top of X12's row, X7 lands in front of X12.
+  const target = await row('Design X12').boundingBox();
+  if (!target) throw new Error('Missing row geometry');
+  await page.mouse.down();
+  await page.mouse.move(grip.x, target.y + 2, { steps: 6 });
+  await page.mouse.up();
+  const extras = (indexes: number[]) => indexes.map((index) => `x${String(index)}`);
+  expect(await reorders()).toEqual([
+    ['a', 'b', ...extras([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 7, 13, 14, 15, 16, 17])],
+  ]);
 });

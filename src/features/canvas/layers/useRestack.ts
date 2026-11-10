@@ -1,5 +1,19 @@
 import { useState, type PointerEvent, type RefObject } from 'react';
+import { boardPoint } from '../boardCoordinates';
 import { moveRow } from './layerKeys';
+
+// The design system's distance a press travels before it becomes a drag.
+const DRAG_THRESHOLD_PX = 4;
+
+interface Drag {
+  designId: string;
+  /** The pointer that pressed the handle; any other one is ignored until it lets go. */
+  pointerId: number;
+  /** Where the press started, in list pixels. */
+  startY: number;
+  /** The boundary between rows the pointer is nearest, 0 to rowIds.length; null until it passes the threshold. */
+  gap: number | null;
+}
 
 /**
  * Restacks the frames whose rows, front to back, are `rowIds`, each `rowPx`
@@ -15,43 +29,51 @@ export function useRestack(
   /** Every frame's designId, back to front. */
   onReorder: ((designIds: string[]) => void) | undefined,
 ) {
-  // `gap` is the boundary between rows the pointer is nearest, 0 to rowIds.length.
-  const [drag, setDrag] = useState<{ designId: string; gap: number } | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
   const from = drag ? rowIds.indexOf(drag.designId) : -1;
+  const gap = drag?.gap ?? null;
   // Dropping on either side of the row itself moves nothing, so it marks nothing.
-  const dropGap = drag && from >= 0 && drag.gap !== from && drag.gap !== from + 1 ? drag.gap : null;
+  const dropGap = gap !== null && from >= 0 && gap !== from && gap !== from + 1 ? gap : null;
 
   const restack = (designId: string, to: number) => {
     onReorder?.(moveRow(rowIds, rowIds.indexOf(designId), to).reverse());
   };
-  const gapAt = (clientY: number) => {
-    const top = list.current?.getBoundingClientRect().top ?? 0;
-    return Math.min(rowIds.length, Math.max(0, Math.round((clientY - top) / rowPx)));
-  };
+  // The pointer's height in the list's own pixels, which the app's UI zoom does not scale.
+  const listY = (event: PointerEvent<HTMLElement>) =>
+    list.current ? boardPoint(list.current, { x: event.clientX, y: event.clientY }).y : 0;
   return {
     restack,
-    dragging: drag !== null,
+    dragging: gap !== null,
     dropGap,
+    /** Ends a drag without moving its frame. */
+    cancel: () => {
+      if (!drag) return;
+      if (list.current?.hasPointerCapture(drag.pointerId))
+        list.current.releasePointerCapture(drag.pointerId);
+      setDrag(null);
+    },
     grab: (event: PointerEvent<HTMLElement>, designId: string) => {
-      if (event.button !== 0 || !list.current) return;
+      if (event.button !== 0 || drag || !list.current) return;
       event.preventDefault();
       event.stopPropagation();
       list.current.setPointerCapture(event.pointerId);
-      setDrag({ designId, gap: gapAt(event.clientY) });
+      setDrag({ designId, pointerId: event.pointerId, startY: listY(event), gap: null });
     },
     listHandlers: {
       onPointerMove: (event: PointerEvent<HTMLElement>) => {
-        if (!drag) return;
-        const gap = gapAt(event.clientY);
-        if (gap !== drag.gap) setDrag({ designId: drag.designId, gap });
+        if (drag?.pointerId !== event.pointerId) return;
+        const y = listY(event);
+        if (drag.gap === null && Math.abs(y - drag.startY) < DRAG_THRESHOLD_PX) return;
+        const next = Math.min(rowIds.length, Math.max(0, Math.round(y / rowPx)));
+        if (next !== drag.gap) setDrag({ ...drag, gap: next });
       },
-      onPointerUp: () => {
+      onPointerUp: (event: PointerEvent<HTMLElement>) => {
+        if (drag?.pointerId !== event.pointerId) return;
         setDrag(null);
-        if (drag && dropGap !== null)
-          restack(drag.designId, dropGap > from ? dropGap - 1 : dropGap);
+        if (dropGap !== null) restack(drag.designId, dropGap > from ? dropGap - 1 : dropGap);
       },
-      onLostPointerCapture: () => {
-        setDrag(null);
+      onLostPointerCapture: (event: PointerEvent<HTMLElement>) => {
+        if (drag?.pointerId === event.pointerId) setDrag(null);
       },
     },
   };
