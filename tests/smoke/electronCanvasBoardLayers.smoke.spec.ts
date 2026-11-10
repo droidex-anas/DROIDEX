@@ -472,6 +472,14 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   await expect(title).toHaveAttribute('aria-level', '3');
   await expect(card).toHaveAttribute('aria-expanded', 'true');
   expect(await trees()).toBe(1);
+  // The caret leaves the keyboard on the tree, on its row, for an arrow or Escape straight after.
+  await page.keyboard.press('ArrowDown');
+  await expect(tree).toHaveAttribute(
+    'aria-activedescendant',
+    (await card.getAttribute('id')) ?? '',
+  );
+  await page.keyboard.press('Escape');
+  await expect(page.locator('[data-design-frame="a"] [data-frame-header]')).toBeFocused();
 
   // A click on an element's row picks it in Edit.
   const board = page.getByTestId('canvas-board');

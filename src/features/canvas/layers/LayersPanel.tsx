@@ -86,10 +86,11 @@ export function LayersPanel({
     if (active) onLeave(active.frame.designId);
     onClose();
   };
-  /** Shows or hides a row's children; the keyboard stays on that row. */
+  /** Shows or hides a row's children; the keyboard stays on the tree, on that row, after a caret's click too. */
   const toggle = (row: LayerEntry, shown: boolean) => {
     moveTo(row.key);
     fold(row, shown);
+    tree.current?.focus({ preventScroll: true });
   };
   const pickElement = (row: ElementEntry) => {
     moveTo(row.key);
