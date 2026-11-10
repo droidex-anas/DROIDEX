@@ -6,6 +6,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { PreviewRun } from '../previewRuntime';
+import { PreviewRuns } from '../previewRuns';
 import type { CanvasFrame, FrameRect } from '../protocol';
 import { LayersPanel, type LayersPanelProps } from './LayersPanel';
 
@@ -31,6 +33,12 @@ function panel(props: Partial<LayersPanelProps>): string {
       frames: [],
       selectedFrameIds: [],
       agentWorking: false,
+      elements: {
+        runs: new PreviewRuns(),
+        picked: null,
+        pick: () => undefined,
+        hover: () => undefined,
+      },
       onRename: undefined,
       onSetHidden: undefined,
       onReorder: undefined,
@@ -98,4 +106,24 @@ test('a canvas without frames says so instead of an empty tree', () => {
   const markup = panel({ frames: [] });
   assert.match(markup, /No frames yet/);
   assert.doesNotMatch(markup, /role="tree"/);
+});
+
+test('a frame with a live preview opens on its elements; one without has no caret', () => {
+  const runs = new PreviewRuns();
+  // A static render runs no effects, so the run is never asked for its tree.
+  runs.set('a', 'rev_01', {} as PreviewRun);
+  const frames = [
+    frame('a', 'Pricing', { x: 0, y: 0, width: 400, height: 300 }),
+    frame('b', 'Checkout', { x: 500, y: 0, width: 400, height: 300 }),
+  ];
+  const markup = panel({
+    frames,
+    elements: { runs, picked: null, pick: () => undefined, hover: () => undefined },
+  });
+  const tags = [...markup.matchAll(/<div id="[^"]+" role="treeitem"[^>]*>/g)].map(([tag]) => tag);
+  assert.deepEqual(
+    tags.map((tag) => /aria-expanded="(\w+)"/.exec(tag)?.[1] ?? null),
+    [null, 'false'],
+  );
+  assert.equal([...markup.matchAll(/aria-label="Expand"/g)].length, 1);
 });

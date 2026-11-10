@@ -11,32 +11,35 @@ interface Drag {
   pointerId: number;
   /** Where the press started, in list pixels. */
   startY: number;
-  /** The boundary between rows the pointer is nearest, 0 to rowIds.length; null until it passes the threshold. */
+  /** The boundary between rows a frame can drop at that the pointer is nearest; null until it passes the threshold. */
   gap: number | null;
 }
 
 /**
- * Restacks the frames whose rows, front to back, are `rowIds`, each `rowPx`
- * tall: from the keyboard by row index, or by dragging a row's handle. The
- * list holds the pointer through a drag, so the dragged row may scroll out of
- * the mounted range; the drag follows its frame, not its index, in case the
- * rows change under it.
+ * Restacks the frames of a list whose rows, front to back, are `rows`, each
+ * `rowPx` tall and each a frame's designId or null for a row inside an open
+ * frame: from the keyboard by frame index, or by dragging a frame row's handle
+ * to a boundary before another frame's row or at the end. The list holds the
+ * pointer through a drag, so the dragged row may scroll out of the mounted
+ * range; the drag follows its frame, not its index, in case the rows change under it.
  */
 export function useRestack(
   list: RefObject<HTMLElement | null>,
-  rowIds: readonly string[],
+  rows: readonly (string | null)[],
   rowPx: number,
   /** Every frame's designId, back to front. */
   onReorder: ((designIds: string[]) => void) | undefined,
 ) {
   const [drag, setDrag] = useState<Drag | null>(null);
-  const from = drag ? rowIds.indexOf(drag.designId) : -1;
+  const frameIds = rows.filter((row): row is string => row !== null);
+  const from = drag ? frameIds.indexOf(drag.designId) : -1;
   const gap = drag?.gap ?? null;
-  // Dropping on either side of the row itself moves nothing, so it marks nothing.
-  const dropGap = gap !== null && from >= 0 && gap !== from && gap !== from + 1 ? gap : null;
+  const to = gap === null ? -1 : framesBefore(rows, gap);
+  // Dropping on either side of the frame itself moves nothing, so it marks nothing.
+  const dropGap = gap !== null && from >= 0 && to !== from && to !== from + 1 ? gap : null;
 
-  const restack = (designId: string, to: number) => {
-    onReorder?.(moveRow(rowIds, rowIds.indexOf(designId), to).reverse());
+  const restack = (designId: string, at: number) => {
+    onReorder?.(moveRow(frameIds, frameIds.indexOf(designId), at).reverse());
   };
   // The pointer's height in the list's own pixels, which the app's UI zoom does not scale.
   const listY = (event: PointerEvent<HTMLElement>) =>
@@ -44,6 +47,7 @@ export function useRestack(
   return {
     restack,
     dragging: gap !== null,
+    /** The row boundary the dragged frame would drop at, as a row index. */
     dropGap,
     /** Ends a drag without moving its frame. */
     cancel: () => {
@@ -64,17 +68,31 @@ export function useRestack(
         if (drag?.pointerId !== event.pointerId) return;
         const y = listY(event);
         if (drag.gap === null && Math.abs(y - drag.startY) < DRAG_THRESHOLD_PX) return;
-        const next = Math.min(rowIds.length, Math.max(0, Math.round(y / rowPx)));
+        const next = nearestGap(rows, y / rowPx);
         if (next !== drag.gap) setDrag({ ...drag, gap: next });
       },
       onPointerUp: (event: PointerEvent<HTMLElement>) => {
         if (drag?.pointerId !== event.pointerId) return;
         setDrag(null);
-        if (dropGap !== null) restack(drag.designId, dropGap > from ? dropGap - 1 : dropGap);
+        if (dropGap !== null) restack(drag.designId, to > from ? to - 1 : to);
       },
       onLostPointerCapture: (event: PointerEvent<HTMLElement>) => {
         if (drag?.pointerId === event.pointerId) setDrag(null);
       },
     },
   };
+}
+
+/** How many frames' rows come before the row boundary `gap`. */
+function framesBefore(rows: readonly (string | null)[], gap: number): number {
+  return rows.slice(0, gap).filter((row) => row !== null).length;
+}
+
+/** The boundary nearest `at`, in rows, among those before a frame's row and the end. */
+function nearestGap(rows: readonly (string | null)[], at: number): number {
+  let nearest = rows.length;
+  rows.forEach((row, index) => {
+    if (row !== null && Math.abs(index - at) < Math.abs(nearest - at)) nearest = index;
+  });
+  return nearest;
 }

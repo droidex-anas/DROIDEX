@@ -1,15 +1,17 @@
 // What a key means in the layers panel, whose rows run front to back. The
 // arrows, Home and End walk the rows without touching the selection, so a long
-// canvas can be read row by row; Space toggles the row's frame in the
-// selection, Enter takes the board to it, F2 renames it, ⇧⌘H hides or shows
-// it, ⌥↑ and ⌥↓ move it a row toward the front or back, and Escape gives the
-// keyboard back to the board.
+// canvas can be read row by row; Right opens a row's children and Left closes
+// them. Space toggles the row's frame in the selection, Enter takes the board
+// to it, F2 renames it, ⇧⌘H hides or shows it, ⌥↑ and ⌥↓ move it a row toward
+// the front or back, and Escape gives the keyboard back to the board.
 
 import { navigationIndex } from '../../../components/ui/menuKeys';
 import { formatChord, matchesChord } from '../../../lib/shortcuts';
 
 export type LayerKey =
   | { kind: 'move'; index: number }
+  | { kind: 'open' }
+  | { kind: 'close' }
   | { kind: 'restack'; index: number }
   | { kind: 'pick' }
   | { kind: 'focus' }
@@ -20,6 +22,15 @@ export type LayerKey =
 /** ⇧⌘H, as in a design tool; Ctrl+Shift+H off the Mac. */
 const HIDE_CHORD = 'Meta+Shift+H';
 export const HIDE_KEY_LABEL = formatChord(HIDE_CHORD);
+
+const PLAIN_KEYS = new Map<string, LayerKey>([
+  ['ArrowRight', { kind: 'open' }],
+  ['ArrowLeft', { kind: 'close' }],
+  [' ', { kind: 'pick' }],
+  ['Enter', { kind: 'focus' }],
+  ['F2', { kind: 'rename' }],
+  ['Escape', { kind: 'leave' }],
+]);
 
 type KeyPress = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>;
 
@@ -33,18 +44,7 @@ export function layerKey(event: KeyPress, active: number, count: number): LayerK
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   const index = navigationIndex(event.key, active, count);
   if (index !== null) return { kind: 'move', index };
-  switch (event.key) {
-    case ' ':
-      return { kind: 'pick' };
-    case 'Enter':
-      return { kind: 'focus' };
-    case 'F2':
-      return { kind: 'rename' };
-    case 'Escape':
-      return { kind: 'leave' };
-    default:
-      return null;
-  }
+  return PLAIN_KEYS.get(event.key) ?? null;
 }
 
 /**

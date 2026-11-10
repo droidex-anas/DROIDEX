@@ -3,7 +3,7 @@
 // it, the keyboard's way to a frame and back, renaming, and the rail's toggle.
 
 import { expect, test } from '@playwright/test';
-import { boardUrl, serveBoard } from './board/boardPage';
+import { boardUrl, serveBoard, stubGuests } from './board/boardPage';
 
 serveBoard();
 
@@ -365,4 +365,93 @@ test('A row’s handle restacks under the pointer at a larger UI size, and only 
   expect(await reorders()).toEqual([
     ['a', 'b', ...extras([0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 7, 13, 14, 15, 16, 17])],
   ]);
+});
+
+test('Layers opens a frame on its elements, picks one in Edit and outlines one under the pointer', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  // The guest's design: a card holding a title.
+  await page.addInitScript(() => {
+    const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'tree')
+        return {
+          nodes: [
+            { ...card, depth: 0 },
+            { ...title, depth: 1 },
+          ],
+          cap: 400,
+          truncated: false,
+        };
+      const target = (argument.target ?? argument) as { instancePath?: string };
+      const element = target.instancePath === '0' ? card : title;
+      return {
+        ...element,
+        rect:
+          element === title
+            ? { x: 8, y: 8, width: 240, height: 30 }
+            : { x: 0, y: 0, width: 400, height: 300 },
+        styles: { fontSize: '24px', color: 'rgb(20, 20, 20)' },
+      };
+    };
+  });
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.clock.install({ time: new Date('2026-10-07T12:00:00Z') });
+  await page.clock.pauseAt(new Date('2026-10-07T12:01:00Z'));
+  await page.goto(boardUrl('font=14&preview=guest&edit=1&layers=1'));
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const frameRow = tree.getByRole('treeitem', { name: 'Design A, Ready' });
+  const card = tree.getByRole('treeitem', { name: 'Card, section' });
+  const title = tree.getByRole('treeitem', { name: 'Card, h1' });
+  const trees = () =>
+    page.evaluate(() => window.guestCommands.filter(({ command }) => command === 'tree').length);
+  // A frame's tree is asked for as it opens, and not before.
+  await expect(frameRow).toHaveAttribute('aria-expanded', 'false');
+  await frameRow.hover();
+  expect(await trees()).toBe(0);
+  await frameRow.getByRole('button', { name: 'Expand' }).click();
+  await expect(title).toHaveAttribute('aria-level', '3');
+  await expect(card).toHaveAttribute('aria-expanded', 'true');
+  expect(await trees()).toBe(1);
+
+  // A click on an element's row picks it in Edit.
+  const board = page.getByTestId('canvas-board');
+  await title.click();
+  await page.clock.runFor(100);
+  await expect(board).toHaveAttribute('data-board-mode', 'edit');
+  await expect(page.getByRole('region', { name: 'Styles of the selected h1' })).toBeVisible();
+  await expect(title).toHaveAttribute('aria-selected', 'true');
+
+  // The pointer over another element's row outlines it on the board, and leaving puts it out.
+  await card.hover();
+  await page.clock.runFor(100);
+  await expect(page.locator('.canvas-element-hover')).toBeVisible();
+  await page.getByRole('heading', { name: 'Layers' }).hover();
+  await page.clock.runFor(100);
+  await expect(page.locator('.canvas-element-hover')).toHaveCount(0);
+
+  // Left goes to the parent and then closes it; Right opens it again. Enter picks.
+  await tree.focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(tree).toHaveAttribute(
+    'aria-activedescendant',
+    (await card.getAttribute('id')) ?? '',
+  );
+  await page.keyboard.press('ArrowLeft');
+  await expect(title).toHaveCount(0);
+  await page.keyboard.press('ArrowRight');
+  await expect(title).toBeVisible();
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(100);
+  await expect(page.getByRole('region', { name: 'Styles of the selected section' })).toBeVisible();
+  expect(await trees()).toBe(1);
 });

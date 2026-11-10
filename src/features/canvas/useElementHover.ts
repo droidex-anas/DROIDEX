@@ -3,11 +3,12 @@
 // the outline keeps up with the pointer without queueing behind it; leaving
 // the frame, or the mode, clears it, and a late answer from before then is dropped.
 // A design whose preview run changes is asked again where the pointer was, so
-// no outline outlives the run that drew it.
+// no outline outlives the run that drew it. The layers panel asks the same way
+// for the element under its pointer, by that element's path instead of a point.
 
 import { useEffect, useState } from 'react';
 import type { Point } from './canvasGeometry';
-import type { PreviewHover } from './previewDocument';
+import type { PreviewHover, PreviewNode } from './previewDocument';
 import type { ElementRef } from './protocol';
 
 export interface HoveredElement {
@@ -24,15 +25,18 @@ export function isPicked(picked: ElementRef, hovered: HoveredElement): boolean {
   );
 }
 
-/** Asks one design's live preview what is under a point in its pixels. */
-export type HoverQuestion = (designId: string, at: Point) => Promise<PreviewHover | null>;
+/** A point in a design's pixels, or one element in it named by its path. */
+type HoverTarget = Point | PreviewNode;
+
+/** Asks one design's live preview what is under a point in its pixels, or where a named element is. */
+export type HoverQuestion = (designId: string, at: HoverTarget) => Promise<PreviewHover | null>;
 
 export function useElementHover(active: boolean, ask: HoverQuestion) {
   const [hovered, setHovered] = useState<HoveredElement | null>(null);
   const [hover] = useState(() => {
     let question = ask;
-    let wanted: { designId: string; at: Point } | null = null;
-    let asked: { designId: string; at: Point } | null = null;
+    let wanted: { designId: string; at: HoverTarget } | null = null;
+    let asked: { designId: string; at: HoverTarget } | null = null;
     let asking = false;
     let frame: number | null = null;
     // Bumped by every clear and changed run, so an answer from before it is dropped.
@@ -51,7 +55,7 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
         askNext();
       });
     };
-    const move = (designId: string, at: Point) => {
+    const move = (designId: string, at: HoverTarget) => {
       wanted = { designId, at };
       frame ??= requestAnimationFrame(() => {
         frame = null;

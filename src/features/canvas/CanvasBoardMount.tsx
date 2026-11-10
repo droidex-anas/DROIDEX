@@ -37,6 +37,7 @@ import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
+import { layerElements } from './layers/layerElements';
 import { LayersPanel } from './layers/LayersPanel';
 import { PreviewRuns } from './previewRuns';
 import type {
@@ -268,6 +269,7 @@ export function CanvasBoardMount({
           frames={frames}
           selectedFrameIds={selectedFrameIds}
           agentWorking={agentWorking}
+          elements={layerElements(runs, editor, interaction, onInteractionChange)}
           onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
           onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
           onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}

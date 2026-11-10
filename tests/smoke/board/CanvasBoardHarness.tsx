@@ -32,6 +32,7 @@ import {
   useFramePins,
 } from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
+import { layerElements } from '../../../src/features/canvas/layers/layerElements';
 import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
 import { PreviewRuns } from '../../../src/features/canvas/previewRuns';
 import { useElementEditor } from '../../../src/features/canvas/useElementEditor';
@@ -805,6 +806,7 @@ function Harness() {
             frames={snapshot.frames}
             selectedFrameIds={interaction.selectedFrameIds}
             agentWorking={presence.size > 0}
+            elements={layerElements(runs, editor, interaction, setInteraction)}
             onRename={frameActions.rename}
             onSetHidden={(frame, hidden) => {
               hideCalls.push({ designId: frame.designId, hidden });

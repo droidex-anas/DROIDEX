@@ -26,6 +26,12 @@ test('the arrows, Home and End walk the rows in order, and the other keys act on
   assert.equal(layerKey(press('1', { altKey: true }), 0, 3), null);
 });
 
+test('Right opens the row and Left closes it, unless a chord holds them', () => {
+  assert.deepEqual(layerKey(press('ArrowRight'), 1, 3), { kind: 'open' });
+  assert.deepEqual(layerKey(press('ArrowLeft'), 1, 3), { kind: 'close' });
+  assert.equal(layerKey(press('ArrowRight', { metaKey: true }), 1, 3), null);
+});
+
 test('Ctrl+Shift+H hides or shows the row, and Alt with an arrow restacks it a row, up to the ends', () => {
   // ⇧⌘H on the Mac; the test runs off it.
   assert.deepEqual(layerKey(press('H', { ctrlKey: true, shiftKey: true }), 1, 3), {
