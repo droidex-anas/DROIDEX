@@ -1,5 +1,5 @@
 // What the board says to a screen reader, through one polite live region:
-// a frame that starts building, becomes ready or fails, frames deleted, a
+// a frame that starts building, becomes ready or fails, frames deleted, hidden or shown, a
 // selection the focus does not already speak, and the zoom once it settles.
 // Spec §11 asks for concise status, never animation ticks, so each change is
 // one short line.
@@ -65,6 +65,20 @@ export function removalAnnouncement(
   return `${String(removed.length)} frames deleted`;
 }
 
+/** Frames hidden from the board or shown again, by name. */
+export function visibilityAnnouncement(
+  previous: readonly CanvasFrame[],
+  next: readonly CanvasFrame[],
+): string | null {
+  const before = new Map(previous.map((frame) => [frame.designId, frame.hidden]));
+  const changed = next.filter((frame) => {
+    const wasHidden = before.get(frame.designId);
+    return wasHidden !== undefined && wasHidden !== frame.hidden;
+  });
+  if (changed.length === 0) return null;
+  return changed.map((frame) => `${frame.name} ${frame.hidden ? 'hidden' : 'shown'}`).join('; ');
+}
+
 /**
  * The selection news. A single frame chosen from its focused label is already
  * spoken by that label, so only other changes are said.
@@ -86,7 +100,7 @@ export function zoomAnnouncement(scale: number): string {
   return `Zoom ${String(Math.round(scale * 100))}%`;
 }
 
-/** The line the board's live region carries, updated as the board changes. */
+/** The live region's line, as the frames (hidden ones too), selection and zoom change. */
 export function useBoardAnnouncer({
   frames,
   shown,
@@ -111,6 +125,7 @@ export function useBoardAnnouncer({
   useEffect(() => {
     const said = [
       removalAnnouncement(heard.current.frames, frames),
+      visibilityAnnouncement(heard.current.frames, frames),
       buildAnnouncement(heard.current.frames, frames, now.current.shown),
     ].filter((line) => line !== null);
     heard.current.frames = frames;
@@ -118,8 +133,9 @@ export function useBoardAnnouncer({
   }, [frames]);
 
   useEffect(() => {
-    const names = new Map(now.current.frames.map((frame) => [frame.designId, frame.name]));
-    // A selection that only lost deleted frames is told by the deletion.
+    const onBoard = now.current.frames.filter((frame) => !frame.hidden);
+    const names = new Map(onBoard.map((frame) => [frame.designId, frame.name]));
+    // A selection that only lost frames deleted or hidden is told by that news.
     const previous = heard.current.selectedFrameIds;
     const pruned =
       selectedFrameIds.every((designId) => previous.includes(designId)) &&

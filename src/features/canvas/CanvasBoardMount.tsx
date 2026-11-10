@@ -168,13 +168,8 @@ export function CanvasBoardMount({
   const presence = useCanvasPresence(appSessionId, frames);
   const writes = useLandedWrites(appSessionId);
   const boardArea = useRef<HTMLDivElement>(null);
-  // The board draws, walks and selects only the frames the user has not hidden, so a
-  // frame hidden while selected leaves the selection; Layers lists them all.
-  const shown = useMemo(
-    () => ({ ...snapshot, frames: frames.filter((frame) => !frame.hidden) }),
-    [snapshot, frames],
-  );
-  const isShown = (designId: string) => shown.frames.some((frame) => frame.designId === designId);
+  const isShown = (designId: string) =>
+    frames.some((frame) => frame.designId === designId && !frame.hidden);
   const setFrameHidden = (frame: CanvasFrame, hidden: boolean) => {
     const input = {
       mutationId: crypto.randomUUID(),
@@ -288,7 +283,7 @@ export function CanvasBoardMount({
                 onShowLayers(!layersOpen);
               },
             }}
-            snapshot={shown}
+            snapshot={snapshot}
             restoredViewport={restoredViewport}
             onLeave={onLeaveBoard}
             onOpenSource={onOpenSource}

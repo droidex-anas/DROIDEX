@@ -277,6 +277,8 @@ test('Layers hides and shows a frame, and restacks frames from the keyboard and 
   await expect(rowA.getByRole('button', { name: 'Hide' })).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(onBoard).toEqual(['b']);
   await expect.poll(() => selection(page)).toEqual([]);
+  const said = page.getByTestId('canvas-board').getByRole('status');
+  await expect(said).toHaveText('Design A hidden');
 
   // ⇧⌘H on the keyboard's row shows it again.
   await tree.focus();
@@ -287,6 +289,7 @@ test('Layers hides and shows a frame, and restacks frames from the keyboard and 
     { designId: 'a', hidden: false },
   ]);
   await expect.poll(onBoard).toEqual(['a', 'b']);
+  await expect(said).toHaveText('Design A shown');
 
   // ⌥↑ brings A in front of B, and the keyboard stays on A.
   await page.keyboard.press('Alt+ArrowUp');

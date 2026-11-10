@@ -521,10 +521,6 @@ function Harness() {
   const live = useRef(interaction);
   live.current = interaction;
   shown.current = snapshot;
-  const onBoard = useMemo(
-    () => ({ ...snapshot, frames: snapshot.frames.filter((frame) => !frame.hidden) }),
-    [snapshot],
-  );
   useEffect(() => {
     syncElementPins('chat_1', snapshot);
     return syncFramePins('chat_1', snapshot);
@@ -829,7 +825,7 @@ function Harness() {
               : undefined
           }
           rightInset={RIGHT_INSET}
-          snapshot={onBoard}
+          snapshot={snapshot}
           interaction={interaction}
           presence={presence}
           writes={writes}

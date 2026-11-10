@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -145,7 +146,7 @@ export function CanvasBoard({
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
-  const { frames } = snapshot;
+  const frames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot.frames]);
   // The frames the board opened with are simply there; later ones arrive.
   const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
@@ -263,7 +264,7 @@ export function CanvasBoard({
     renderPreview(frame, revisionId, editor.selections),
   );
   const announcement = useBoardAnnouncer({
-    frames,
+    frames: snapshot.frames,
     shown: previews.shown,
     selectedFrameIds: interaction.selectedFrameIds,
     focusedId,
