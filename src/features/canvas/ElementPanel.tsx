@@ -13,6 +13,7 @@ import type { HistoryStep } from './boardHistory';
 import { historyStep, isBoardEditor } from './boardKeys';
 import { ColourField } from './ColourField';
 import { hasPreviews } from './elementEditDraft';
+import { ElementEffects } from './ElementEffects';
 import {
   ALIGN,
   ALIGN_COLUMN,
@@ -95,17 +96,22 @@ export function ElementPanel({
     onPreview(property, next);
     onCommit();
   };
-  /** The property's kit tokens as picker options, with the mode's value as the hint. */
+  /**
+   * The property's kit tokens as picker options, with the mode's value as the
+   * hint; undefined until they load.
+   */
   const tokenOptions = (property: string, colour = false): ValueOption[] | undefined =>
-    tokens?.[property]?.map((token) => {
-      const hint = 'value' in token ? token.value : token[mode];
-      return {
-        value: token.name,
-        label: bareTokenName(token.name),
-        hint,
-        ...(colour ? { swatch: hint } : {}),
-      };
-    });
+    tokens === null
+      ? undefined
+      : (tokens[property] ?? []).map((token) => {
+          const hint = 'value' in token ? token.value : token[mode];
+          return {
+            value: token.name,
+            label: bareTokenName(token.name),
+            hint,
+            ...(colour ? { swatch: hint } : {}),
+          };
+        });
   /** Why a token-only picker is off once the kit's tokens have loaded without any. */
   const noTokens = (options: ValueOption[], kind: string) =>
     tokens !== null && options.length === 0 && `This kit defines no ${kind}.`;
@@ -181,7 +187,6 @@ export function ElementPanel({
   const layout = layoutOf(display);
   const column = value('flexDirection').startsWith('column');
   const parent = layoutOf(shown.parentDisplay);
-  const shadowTokens = tokenOptions('boxShadow') ?? [];
   const fontTokens = tokenOptions('fontFamily') ?? [];
   const fontFamily = value('fontFamily');
   const fontToken = fontTokens.find((option) => sameFontStack(option.hint ?? '', fontFamily));
@@ -410,17 +415,7 @@ export function ElementPanel({
             {number('borderRadius', 'Corner radius', 'Radius', { min: 0 })}
           </Pair>
         </Section>
-        <Section title="Effects">
-          <Labelled label="Shadow" note={noTokens(shadowTokens, 'shadows')}>
-            <ValuePickerField
-              label="Shadow"
-              options={shadowTokens}
-              value={value('boxShadow')}
-              face={value('boxShadow') === 'none' ? 'None' : value('boxShadow')}
-              disabled={readOnly || shadowTokens.length === 0}
-              onPick={pick('boxShadow')}
-            />
-          </Labelled>
+        <ElementEffects value={value} tokenOptions={tokenOptions} disabled={readOnly} onPick={pick}>
           <Pair>
             {number('opacity', 'Opacity', 'Opacity', {
               unit: null,
@@ -430,7 +425,7 @@ export function ElementPanel({
               max: 1,
             })}
           </Pair>
-        </Section>
+        </ElementEffects>
       </div>
       <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-secondary">
         {status(draft, editable)}

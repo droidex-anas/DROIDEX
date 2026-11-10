@@ -1,7 +1,7 @@
 // How the element panel reads a computed value back to a designer: the kit
 // token it matches, a colour as hex and opacity or none at all, a length's
 // zero or keyword as a muted placeholder and its fraction rounded, a shadow by
-// its layers, and a font stack by its first family.
+// its layers, a filter by its blur, and a font stack by its first family.
 // Computed values arrive in CSS pixels and rgb(); token values as the kit wrote
 // them, in px, rem, hex or rgb().
 
@@ -254,6 +254,21 @@ function channelHex(channel: number): string {
 }
 function normalized(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * The blur a filter applies, as the blur pickers match it: a picked token by
+ * its name, else the length of the filter's blur(), whatever other functions
+ * it composes with, else `none`.
+ */
+export function blurOf(filter: string): string {
+  if (filter.startsWith('--')) return filter;
+  return /(?:^|\s)blur\(([^()]*)\)/.exec(filter)?.[1].trim() ?? 'none';
+}
+
+/** Whether a colour paints over everything behind it. */
+export function isOpaque(colour: string): boolean {
+  return parseColour(colour.trim())?.alpha === 1;
 }
 
 /** Whether two font stacks name the same families, however each is quoted and spaced. */

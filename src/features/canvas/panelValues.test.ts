@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { colourFace, firstFamily, lengthFace, sameFontStack, sameValue } from './panelValues';
+import {
+  blurOf,
+  colourFace,
+  firstFamily,
+  isOpaque,
+  lengthFace,
+  sameFontStack,
+  sameValue,
+} from './panelValues';
 
 const spacing = [
   { value: '--ds-space-1', label: 'space-1', hint: '4px' },
@@ -120,6 +128,16 @@ test('a shadow token is the computed shadow Chromium writes colour first, in px'
   );
 });
 
+test('a filter reads as its blur, whatever else it composes, and a colour as opaque or not', () => {
+  assert.equal(blurOf('blur(12px)'), '12px');
+  assert.equal(blurOf('grayscale(1) blur(4px) contrast(1.2)'), '4px');
+  assert.equal(blurOf('grayscale(1)'), 'none');
+  assert.equal(blurOf('none'), 'none');
+  assert.equal(blurOf('--ds-blur-soft'), '--ds-blur-soft');
+  assert.ok(isOpaque('rgb(255, 255, 255)'));
+  assert.ok(!isOpaque('rgba(255, 255, 255, 0.6)'));
+  assert.ok(!isOpaque('--ds-surface'));
+});
 test('a font stack is named by its first family and matched however it is quoted', () => {
   assert.equal(firstFamily('"Inter Variable", system-ui, sans-serif'), 'Inter Variable');
   assert.equal(
