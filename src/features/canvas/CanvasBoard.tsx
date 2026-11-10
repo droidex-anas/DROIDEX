@@ -33,7 +33,7 @@ import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
-import { pickedOnBoard } from './ElementOutlines';
+import { pickedOnBoard } from './elementOnBoard';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';

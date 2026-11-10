@@ -9,7 +9,7 @@ import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boardPoint } from './boardCoordinates';
 import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
-import type { PickedOnBoard } from './ElementOutlines';
+import type { PickedOnBoard } from './elementOnBoard';
 import { measureBetween } from './measureDistances';
 import { isDesignRoot } from './previewDocument';
 import type { FrameRect } from './protocol';
