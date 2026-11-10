@@ -11,6 +11,7 @@ import { readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { z } from 'zod';
 import { boundDiagnostics } from './canvasDiagnostics.js';
+import { readModules } from './compiler.js';
 import { readConfigBindings, type ConfigValue } from './configLiterals.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
@@ -18,7 +19,6 @@ import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
 import {
   COMPONENT_NAME,
-  importSpecifiers,
   KIT_UTILS_FILE,
   kitComponents,
   type LibraryAliases,
@@ -77,8 +77,7 @@ export async function importLibraryDesignSystem(
   const theme = libraryTheme(read.config, kitNames, diagnostics);
   const stylesheet = libraryStylesheet(read.css, kitNames, diagnostics);
   const library = kitComponents(read.components, read.aliases, kitNames, diagnostics);
-  if (library.files.length === 0)
-    return refused(`No component in ${read.aliases.ui} could be copied.`, diagnostics);
+  if ('problem' in library) return refused(library.problem, diagnostics);
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.
@@ -144,8 +143,18 @@ async function readLibrary(
   const code = await readAliasedCode(root, base, settings.aliases);
   if ('problem' in code) return code;
   const diagnostics: CanvasDiagnostic[] = [];
-  const components = await readComponents(root, code.uiFolder, diagnostics);
-  if ('problem' in components) return components;
+  const texts = await readComponents(root, code.uiFolder, diagnostics);
+  if ('problem' in texts) return texts;
+  const [utilsModule, ...modules] = await readModules([
+    code.utils.text,
+    ...texts.map((component) => component.text),
+  ]);
+  const unknown = utilsModule.specifiers.find(
+    (specifier) => specifier.loads && !DESIGN_PACKAGE_ENTRIES.has(specifier.text),
+  );
+  if (unknown !== undefined)
+    return { problem: `${code.utils.file} imports ${unknown.text}, which the canvas cannot load.` };
+  const components = texts.map((component, index) => ({ ...component, module: modules[index] }));
   return {
     files: [configFile, css.file, config.file, code.tsconfig, code.utils.file],
     css,
@@ -177,11 +186,6 @@ async function readAliasedCode(
   if ('problem' in utilsPath) return utilsPath;
   const utils = await readFile(root, '.', `${utilsPath.path}.ts`);
   if ('problem' in utils) return utils;
-  const unknown = importSpecifiers(utils.text).find(
-    (specifier) => !DESIGN_PACKAGE_ENTRIES.has(specifier),
-  );
-  if (unknown !== undefined)
-    return { problem: `${utils.file} imports ${unknown}, which the canvas cannot load.` };
   return { tsconfig: tsconfig.file, uiFolder: uiFolder.path, utils, aliases };
 }
 
@@ -265,7 +269,7 @@ async function readComponents(
   root: string,
   folder: string,
   diagnostics: CanvasDiagnostic[],
-): Promise<LibraryComponent[] | { problem: string }> {
+): Promise<Omit<LibraryComponent, 'module'>[] | { problem: string }> {
   let names: string[];
   try {
     const real = await realpath(path.join(root, ...folder.split('/')));
@@ -287,7 +291,7 @@ async function readComponents(
       code: 'invalid_input',
       message: `${folder} has ${String(names.length)} components; a kit copies the first ${String(MAX_LIBRARY_COMPONENTS)} by name and leaves out ${names.slice(MAX_LIBRARY_COMPONENTS).join(', ')}.`,
     });
-  const components: LibraryComponent[] = [];
+  const components: Omit<LibraryComponent, 'module'>[] = [];
   for (const name of names.slice(0, MAX_LIBRARY_COMPONENTS)) {
     const file = `${folder}/${name}.tsx`;
     const read = await readProjectText(root, file);

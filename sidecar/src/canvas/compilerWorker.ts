@@ -34,7 +34,7 @@ import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
-import { moduleSpecifiers } from './moduleSpecifiers.js';
+import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
@@ -214,14 +214,10 @@ process.on('message', (request: CompilerRequest) => {
     void shutdown(request.requestId);
     return;
   }
-  // Reading specifiers needs only the parser, never the runtime.
-  if (request.type === 'moduleSpecifiers') {
-    const specifiers = moduleSpecifiers(request.sources);
-    send({
-      requestId: request.requestId,
-      status: 'specifiers',
-      specifiers,
-    } satisfies CompilerResponse);
+  // Reading modules needs only the parser, never the runtime.
+  if (request.type === 'readModules') {
+    const modules = request.sources.map(moduleDeclarations);
+    send({ requestId: request.requestId, status: 'modules', modules } satisfies CompilerResponse);
     return;
   }
   if (runtimeFault !== null) {

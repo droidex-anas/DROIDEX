@@ -11,9 +11,10 @@
 
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import { terminateCompilerProcess } from './canvasCompilerExit.js';
 import { ownedEsbuildBinary } from './canvasRuntime.js';
-import { canvasError } from './canvasError.js';
+import { canvasError, storageFailure } from './canvasError.js';
 import type { DesignSystem } from './designSystems.js';
 import type {
   CanvasDiagnostic,
@@ -64,6 +65,31 @@ export interface CompiledDesign {
   elements: SourceElement[];
 }
 
+const moduleSpecifierSchema = z.object({
+  text: z.string(),
+  /** Where the text between its quotes is in the source. */
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+  /** False for a type-only import or re-export, which the build erases. */
+  loads: z.boolean(),
+});
+
+/** A value a module exports; a default export by the name it declares, if any. */
+const moduleExportSchema = z.union([
+  z.object({ isDefault: z.literal(false), name: z.string() }),
+  z.object({ isDefault: z.literal(true), name: z.string().nullable() }),
+]);
+
+/** Every module specifier a source names, in source order, and what it exports. */
+const moduleDeclarationsSchema = z.object({
+  specifiers: z.array(moduleSpecifierSchema),
+  exports: z.array(moduleExportSchema),
+});
+
+export type ModuleSpecifier = z.infer<typeof moduleSpecifierSchema>;
+export type ModuleExport = z.infer<typeof moduleExportSchema>;
+export type ModuleDeclarations = z.infer<typeof moduleDeclarationsSchema>;
+
 /** The design's own source is wrong. Its diagnostics are safe to show. */
 export class CompileFailedError extends Error {
   constructor(readonly diagnostics: CanvasDiagnostic[]) {
@@ -108,7 +134,7 @@ export type CompilerRequest =
       edit: ElementEdit;
       designSystem: DesignSystemRef;
     }
-  | { type: 'moduleSpecifiers'; requestId: number; sources: string[] }
+  | { type: 'readModules'; requestId: number; sources: string[] }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
@@ -123,7 +149,7 @@ export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
   | { requestId: number; status: 'edited'; files: SourceFiles }
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
-  | { requestId: number; status: 'specifiers'; specifiers: string[] }
+  | { requestId: number; status: 'modules'; modules: ModuleDeclarations[] }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
   | {
@@ -194,12 +220,12 @@ export class CompilerWorker {
     );
   }
 
-  /** Every literal module specifier `sources` name, read by the parser-owning process. */
-  moduleSpecifiers(sources: string[], signal: AbortSignal): Promise<string[]> {
+  /** What each of `sources` imports and exports, read by the parser-owning process. */
+  readModules(sources: string[], signal: AbortSignal): Promise<ModuleDeclarations[]> {
     return this.request(
       signal,
-      (requestId) => ({ type: 'moduleSpecifiers', requestId, sources }),
-      (response) => (response.status === 'specifiers' ? response.specifiers : undefined),
+      (requestId) => ({ type: 'readModules', requestId, sources }),
+      (response) => (response.status === 'modules' ? response.modules : undefined),
     );
   }
 
@@ -331,6 +357,23 @@ export class CompilerWorker {
   }
 }
 
+/** What each of `sources` imports and exports, read in a compiler process that ends with the read. */
+export async function readModules(
+  sources: string[],
+  signal?: AbortSignal,
+): Promise<ModuleDeclarations[]> {
+  const compiler = new CompilerWorker();
+  try {
+    return await compiler.readModules(sources, signal ?? new AbortController().signal);
+  } catch (error) {
+    signal?.throwIfAborted();
+    if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
+    throw error;
+  } finally {
+    await compiler.terminate();
+  }
+}
+
 /** What a cancelled or unavailable reply means to any request, and any other reply to this one. */
 function sharedOutcome(response: CompilerResponse): Error {
   if (response.status === 'cancelled') return new CompileCancelledError();
@@ -368,7 +411,7 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
   if (typeof requestId !== 'number') return null;
   const edit = editResponse(requestId, fields);
   if (edit !== undefined) return edit;
-  if (status === 'specifiers') return specifiersResponse(requestId, fields.specifiers);
+  if (status === 'modules') return modulesResponse(requestId, fields.modules);
   switch (status) {
     case 'cancelled':
     case 'stopped':
@@ -403,13 +446,12 @@ function editResponse(
   return undefined;
 }
 
-function specifiersResponse(
+function modulesResponse(
   requestId: number,
-  specifiers: unknown,
-): Extract<CompilerResponse, { status: 'specifiers' }> | null {
-  if (!Array.isArray(specifiers) || !specifiers.every((each) => typeof each === 'string'))
-    return null;
-  return { requestId, status: 'specifiers', specifiers };
+  modules: unknown,
+): Extract<CompilerResponse, { status: 'modules' }> | null {
+  const parsed = moduleDeclarationsSchema.array().safeParse(modules);
+  return parsed.success ? { requestId, status: 'modules', modules: parsed.data } : null;
 }
 
 function isCompiledDesign(design: unknown): design is CompiledDesign {

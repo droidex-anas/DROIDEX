@@ -322,6 +322,55 @@ test('copied rules and components read the kit tokens, even where --border and -
   assert.match(built.css, /color-mix\(in srgb, var\(--ds-primary\) 50%, transparent\)/);
 });
 
+test('components are read by the parser, not their comments, strings or types, in every export form', async (t) => {
+  const files = {
+    ...LIBRARY,
+    'components/ui/badge.tsx': `// Example: import { Foo } from 'outside-package'
+import type { Theme } from "next-themes"
+const label = "import x from 'elsewhere'"
+
+  export function Badge({ theme }: { theme?: Theme }) {
+    return <span>{label}{theme}</span>
+  }
+`,
+    'components/ui/alert-dialog.tsx': `export default function () {
+  return <div role="alertdialog" />
+}
+`,
+    'components/ui/toggle.tsx': `export {
+  default as AlertDialogRoot,
+  type Missing,
+} from "@/components/ui/alert-dialog"
+`,
+  };
+  const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
+  assert.equal(imported.status, 'imported');
+  const { system, diagnostics } = imported;
+  const primitives = kitPrimitives(system);
+  for (const name of ['AlertDialog', 'AlertDialogRoot', 'Badge'])
+    assert.ok(primitives.includes(name), name);
+  assert.match(
+    system.files['index.tsx'],
+    /^export \{ default as AlertDialog \} from '\.\/components\/ui\/alert-dialog';$/m,
+  );
+  assert.match(system.files['components/ui/toggle.tsx'], /from "\.\/alert-dialog"/);
+  assert.ok(!diagnostics.some((diagnostic) => diagnostic.file === 'components/ui/badge.tsx'));
+  const previews = new KitPreviews();
+  t.after(() => previews.close());
+  assert.deepEqual(await previews.check(system), []);
+
+  const unnamed = Object.fromEntries(
+    Object.entries(LIBRARY).filter(([path]) => !path.startsWith('components/')),
+  );
+  unnamed['components/ui/hidden.tsx'] = 'const Hidden = () => <div />\n';
+  const refused = await importProjectDesignSystem(await project(t, unnamed), SHADCN, KIT);
+  assert.equal(refused.status, 'refused');
+  assert.equal(
+    refused.diagnostics[0].message,
+    'No component in @/components/ui exports anything the kit recognises, starting with components/ui/hidden.tsx.',
+  );
+});
+
 test('a library past the component bound keeps the first by name and names the rest', async (t) => {
   // Without the two components left out, every one past the bound is a part.
   const files = Object.fromEntries(
