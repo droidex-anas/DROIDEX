@@ -1,15 +1,15 @@
 // What Alt measures under the pointer, as a design tool does: in Select, from
 // the selected frames to the frame under the pointer; in Edit, from the picked
 // element to the element under the pointer, or to its frame's edges over the
-// frame's empty space or the picked element itself. Every rect comes from what
-// the board already draws, so measuring asks the guest nothing.
+// frame's empty space, the design's root or the picked element itself. Every
+// rect comes from what the board already draws, so measuring asks the guest nothing.
 
 import { useEffect, useState, type RefObject } from 'react';
 import { boundsOf, type PlacedFrame } from './canvasGeometry';
 import type { BoardInteraction } from './canvasState';
 import type { SnapGap, SnapMarks } from './frameSnap';
 import { measureBetween } from './measureDistances';
-import { isDrawn } from './previewDocument';
+import { isDesignRoot, isDrawn } from './previewDocument';
 import type { FrameRect } from './protocol';
 import type { ElementSelection } from './useElementEditor';
 import { isPicked, type HoveredElement } from './useElementHover';
@@ -117,7 +117,7 @@ function elementGaps(
     return [];
   const from = inWorld(frame, selection.shown.rect);
   const { hovered } = hover;
-  if (hovered?.designId === frameId && !isPicked(picked, hovered))
+  if (hovered?.designId === frameId && !isPicked(picked, hovered) && !isDesignRoot(hovered.element))
     return measureBetween(from, inWorld(frame, hovered.element.rect));
   return measureBetween(from, frame);
 }

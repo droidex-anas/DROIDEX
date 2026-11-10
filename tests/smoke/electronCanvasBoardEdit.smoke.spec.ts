@@ -421,20 +421,27 @@ test('held Alt in Edit measures from the picked element to the one under the poi
 }) => {
   await stubGuests(page);
   await page.addInitScript(() => {
-    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
-    const button = { elementId: 'el_button', instancePath: '0/1', tagName: 'button' };
-    const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
+    // Paths run from the body, as the reporter's do: the design's root sits in the preview's.
+    const root = { elementId: 'el_page', instancePath: '0/0', tagName: 'main' };
+    const card = { elementId: 'el_card', instancePath: '0/0/0', tagName: 'section' };
+    const title = { elementId: 'el_title', instancePath: '0/0/0/0', tagName: 'h1' };
+    const button = { elementId: 'el_button', instancePath: '0/0/0/1', tagName: 'button' };
     const rects = new Map([
       [title, { x: 8, y: 8, width: 240, height: 30 }],
       [button, { x: 8, y: 60, width: 120, height: 32 }],
       [card, { x: 0, y: 0, width: 400, height: 200 }],
+      [root, { x: 0, y: 0, width: 400, height: 280 }],
     ]);
+    const under = (y: number) => {
+      if (y < 40) return title;
+      if (y < 100) return button;
+      if (y < 200) return card;
+      return y < 280 ? root : null;
+    };
     window.guestAnswer = (command, argument) => {
       if (command === 'select' && !argument.target) return null;
-      const y = typeof argument.y === 'number' ? argument.y : 0;
-      let element: typeof title | null = y < 40 ? title : y < 100 ? button : card;
-      if (command === 'select') element = title;
-      if (y > 200) element = null;
+      const element =
+        command === 'select' ? title : under(typeof argument.y === 'number' ? argument.y : 0);
       if (!element) return null;
       const rect = rects.get(element);
       return command === 'hover' ? { ...element, rect } : { ...element, rect, styles: {} };
@@ -463,7 +470,10 @@ test('held Alt in Edit measures from the picked element to the one under the poi
   await page.keyboard.down('Alt');
   // Over the picked title itself, and over the frame's empty space: its frame's edges.
   await expect(pills).toHaveText(['8', '152', '8', '262']);
-  await pointAt(300, 260);
+  await pointAt(300, 290);
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  // The design's root is the frame's own space too, not a parent to measure insets in.
+  await pointAt(300, 240);
   await expect(pills).toHaveText(['8', '152', '8', '262']);
   // The button below it lines up on the left: the space between them, and how far short its right edge stops.
   await pointAt(20, 70);
