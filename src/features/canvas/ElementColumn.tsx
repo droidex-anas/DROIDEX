@@ -4,7 +4,7 @@
 import type { HistoryStep } from './boardHistory';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
 import type { CanvasFrame } from './protocol';
-import type { useElementEditor } from './useElementEditor';
+import type { ElementEditor } from './useElementEditor';
 
 export function ElementColumn({
   editor,
@@ -13,7 +13,7 @@ export function ElementColumn({
   onHistory,
   onLeave,
 }: {
-  editor: ReturnType<typeof useElementEditor>;
+  editor: ElementEditor;
   frames: readonly CanvasFrame[];
   /** The board is in Edit, so the column stands even with nothing picked. */
   editing: boolean;

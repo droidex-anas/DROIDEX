@@ -28,16 +28,15 @@ import {
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import { picksElements, showsFrameTools, type BoardInteraction } from './canvasState';
+import { showsFrameTools, type BoardInteraction } from './canvasState';
 import type { CanvasPresence, LandedWrites } from './canvasPresence';
 import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput } from './elementEditProtocol';
 import { pickedOnBoard } from './elementOnBoard';
 import { ElementColumn } from './ElementColumn';
 import type { FrameActions } from './FrameToolbar';
-import { PreviewRuns } from './previewRuns';
+import type { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
 import type { ReadSource } from './useChangeTours';
 import { RubberBand } from './RubberBand';
@@ -49,13 +48,13 @@ import { useBoardPreviews } from './useBoardPreviews';
 import { useBoardToastPlacement } from './useBoardToastPlacement';
 import { useBoardViewport } from './useBoardViewport';
 import { useDesignPicker, type DesignPins } from './useDesignPicker';
-import { useElementEditor } from './useElementEditor';
+import type { ElementEditor } from './useElementEditor';
 import { useFrameFocus } from './useFrameFocus';
 import { useFrameRemoval } from './useFrameRemoval';
 import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, WriteReceipt } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -75,8 +74,13 @@ export interface CanvasBoardProps {
   onArrangeFrames: (input: ArrangeFramesInput) => Promise<unknown>;
   /** The one annotation write, bound to `CanvasClient.annotate` for this canvas. */
   onAnnotate: (input: AnnotateCanvasInput) => Promise<unknown>;
-  /** The one direct element edit, bound to `CanvasClient.source.editElement` for this canvas. */
-  onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
+  /** The preview each shown frame is running, which every tool that asks a guest reaches. */
+  runs: PreviewRuns;
+  /**
+   * Edit's element editor over `runs`, kept beside the board so the layers
+   * panel picks and outlines the same elements the board does.
+   */
+  editor: ElementEditor;
   /** Deletes frames from this canvas (`FrameRemovals.remove`); true once they are gone. */
   onRemoveFrames: (frames: CanvasFrame[]) => Promise<boolean>;
   /** ⌘Z and its kin on the board or the element panel; false when there is no step. */
@@ -125,7 +129,8 @@ export function CanvasBoard({
   snapshot,
   onArrangeFrames,
   onAnnotate,
-  onEditElement,
+  runs,
+  editor,
   onRemoveFrames,
   onHistory,
   renderPreview,
@@ -185,18 +190,9 @@ export function CanvasBoard({
     reveal: view.reveal,
   });
 
-  const [previewRuns] = useState(() => new PreviewRuns());
-  const editor = useElementEditor({
-    canvasId: snapshot.canvasId,
-    frames,
-    runs: previewRuns,
-    active: interaction.mode === 'edit',
-    hovering: picksElements(interaction.mode),
-    onEditElement,
-  });
   const picker = useDesignPicker({
     frames,
-    runs: previewRuns,
+    runs,
     active: interaction.mode === 'design',
     design,
   });
@@ -421,7 +417,7 @@ export function CanvasBoard({
             motion={motion}
             presence={presence}
             writes={writes}
-            runs={previewRuns}
+            runs={runs}
             readSource={readSource}
             selected={selected}
             hovered={editor.hover.hovered}

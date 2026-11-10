@@ -17,6 +17,7 @@ import {
   type LandedWrites,
 } from '../../../src/features/canvas/canvasPresence';
 import {
+  picksElements,
   reduceBoardInteraction,
   SELECT_MODE,
   type BoardInteraction,
@@ -32,6 +33,8 @@ import {
 } from '../../../src/features/canvas/framePins';
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
+import { PreviewRuns } from '../../../src/features/canvas/previewRuns';
+import { useElementEditor } from '../../../src/features/canvas/useElementEditor';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
 import {
   elementVariantPrompt,
@@ -514,6 +517,19 @@ function Harness() {
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
   const [exporting, setExporting] = useState<CanvasFrame | null>(null);
   const [layersOpen, setLayersOpen] = useState(params.has('layers'));
+  const [runs] = useState(() => new PreviewRuns());
+  const shownFrames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot]);
+  const editor = useElementEditor({
+    canvasId: snapshot.canvasId,
+    frames: shownFrames,
+    runs,
+    active: interaction.mode === 'edit',
+    hovering: picksElements(interaction.mode),
+    onEditElement: (input) => {
+      editCalls.push(input);
+      return new Promise<WriteReceipt>((resolve, reject) => editReplies.push({ resolve, reject }));
+    },
+  });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
   const picks = useElementPins('chat_1');
@@ -859,12 +875,8 @@ function Harness() {
               annotateReplies.push({ resolve, reject }),
             );
           }}
-          onEditElement={(input) => {
-            editCalls.push(input);
-            return new Promise<WriteReceipt>((resolve, reject) =>
-              editReplies.push({ resolve, reject }),
-            );
-          }}
+          runs={runs}
+          editor={editor}
           onOpenSource={setSourceOpen}
           onRemoveFrames={(frames) => removals.remove('chat_1', snapshot.canvasId, frames)}
           onHistory={(step) =>
