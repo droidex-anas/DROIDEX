@@ -138,7 +138,6 @@ function MenuItem({
   onSelect,
   onClick,
   onPointerMove,
-  onPointerLeave,
   className,
   children,
   ...rest
@@ -180,10 +179,6 @@ function MenuItem({
         const item = itemRef.current;
         if (disabled || selectingRef.current || item === document.activeElement) return;
         item?.focus({ preventScroll: true });
-      }}
-      onPointerLeave={(event) => {
-        onPointerLeave?.(event);
-        if (!selectingRef.current) listRef.current?.focus({ preventScroll: true });
       }}
       className={cn(
         'flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body outline-none',

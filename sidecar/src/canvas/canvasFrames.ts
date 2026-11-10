@@ -11,7 +11,7 @@ import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMet
 import { stageSeed } from './canvasSeeds.js';
 import { designEntryDiagnostic } from './designEntry.js';
 import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
-import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
+import type { CreateFramesInput, SvgImageReason, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation, type FrameRect } from './schema.js';
 
 export interface SourceWriteOptions {
@@ -23,6 +23,7 @@ export interface SourceWriteOptions {
 export interface StagedFrame {
   designId: string;
   revisionId: string | null;
+  svgAsImage?: SvgImageReason;
   frame: CreateFramesInput['frames'][number];
 }
 
@@ -35,8 +36,8 @@ export async function stageFrames(
   const staged: StagedFrame[] = [];
   for (const frame of input.frames) {
     const designId = randomUUID();
-    const revisionId = await stageSeed(files, root, canvasId, designId, frame);
-    staged.push({ designId, revisionId, frame });
+    const seeded = await stageSeed(files, root, canvasId, designId, frame);
+    staged.push({ designId, revisionId: null, ...seeded, frame });
   }
   return staged;
 }

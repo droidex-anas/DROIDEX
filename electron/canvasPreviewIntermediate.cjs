@@ -5,6 +5,8 @@
 
 const {
   MAX_PREVIEW_SELECTION_BYTES,
+  MAX_PREVIEW_TREE_BYTES,
+  MAX_PREVIEW_TREE_NODES,
   MAX_PREVIEW_VECTOR_BYTES,
 } = require('./canvasPreviewReporter.cjs');
 
@@ -47,12 +49,14 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * renderer reads as a guest it no longer owns. `pick` and `select` pass a
  * bounded selection command on to the generated frame, and `setTokens` a kit's
  * draft custom properties, which the reporter sets on the design's root.
- * `hover` asks which element is under a point and answers with it directly,
+ * `hover` asks which element is under a point, or where the one a path names
+ * is drawn, and answers with it directly,
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
- * `vector` with the design's root `<svg>` or why it has none; each of those
- * waits for its own answer.
+ * `vector` with the design's root `<svg>` or why it has none, and `tree` with
+ * the design's marked elements in document order; each of those waits for
+ * its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -78,6 +82,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
   // past the cap there is none to offer or preview.
   const whole = (value) =>
     typeof value === 'string' && bytes(value) <= ${String(MAX_PREVIEW_TEXT_BYTES)} ? value : null;
+  // Child indices from the body down, as the reporter writes an element's path. A
+  // path is an identity, so it is never cut: one that is not a path refuses its answer.
+  const isPath = (value) => typeof value === 'string' && /^[0-9]+(?:[/][0-9]+)*$/.test(value);
   const size = (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.ceil(value) : null;
 
@@ -102,7 +109,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const given = element.styles && typeof element.styles === 'object' ? element.styles : {};
     const styles = {};
     for (const name of asked) if (typeof given[name] === 'string') styles[name] = text(given[name]);
@@ -111,7 +118,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       sequence: data.sequence,
       element: {
         elementId,
-        instancePath: text(element.instancePath),
+        instancePath: element.instancePath,
         rect,
         styles,
         text: whole(element.text),
@@ -126,11 +133,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const room = element.room && typeof element.room === 'object' ? element.room : {};
     return {
       elementId,
-      instancePath: text(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       tagName: text(element.tagName),
       room: { above: gap(room.above), below: gap(room.below) },
@@ -144,12 +151,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
     if (!element || typeof element !== 'object') return null;
     const rect = rectOf(element.rect);
     const elementId = text(element.elementId);
-    if (!rect || !elementId) return null;
+    if (!rect || !elementId || !isPath(element.instancePath)) return null;
     const spanned = element.text && typeof element.text === 'object' ? element.text : null;
     const spannedRect = spanned && rectOf(spanned.rect);
     return {
       elementId,
-      instancePath: text(element.instancePath),
+      instancePath: element.instancePath,
       rect,
       text: spannedRect ? { excerpt: text(spanned.excerpt), rect: spannedRect } : null,
     };
@@ -182,6 +189,26 @@ const INTERMEDIATE_SCRIPT = `(() => {
     value && typeof value === 'object' && Number.isFinite(value.x) && Number.isFinite(value.y)
       ? { x: value.x, y: value.y }
       : null;
+  // One drawn instance of an element, by its marker and its path.
+  const nodeOf = (value) =>
+    isElementId(value.elementId) && isPath(value.instancePath)
+      ? { elementId: value.elementId, instancePath: value.instancePath }
+      : null;
+
+  // The design's marked elements as the reporter walked them; one node that is
+  // not one refuses the whole answer.
+  const normalizeTree = (data) => {
+    const given = data.nodes;
+    if (!Array.isArray(given) || given.length > ${String(MAX_PREVIEW_TREE_NODES)}) return null;
+    if (data.cap !== ${String(MAX_PREVIEW_TREE_NODES)} || typeof data.truncated !== 'boolean') return null;
+    const nodes = [];
+    for (const entry of given) {
+      const node = entry && typeof entry === 'object' ? nodeOf(entry) : null;
+      if (!node || !Number.isSafeInteger(entry.depth) || entry.depth < 0) return null;
+      nodes.push(Object.assign(node, { tagName: text(entry.tagName), depth: entry.depth }));
+    }
+    return { nodes, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: data.truncated };
+  };
 
   // Only these shapes leave the intermediate, rebuilt field by field so no
   // getter, prototype or extra property from generated code ever travels.
@@ -245,7 +272,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
         ? bytes(encoded) > ${String(MAX_PREVIEW_SELECTION_BYTES)}
         : data.event === 'vector'
           ? bytes(encoded) > ${String(MAX_PREVIEW_VECTOR_EVENT_BYTES)}
-          : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+          : data.event === 'tree'
+            ? bytes(encoded) > ${String(MAX_PREVIEW_TREE_BYTES)}
+            : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -254,7 +283,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (data.event === 'probe' || data.event === 'locate' || data.event === 'vector') {
+    if (['probe', 'locate', 'vector', 'tree'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -316,6 +345,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
       const { sequence } = request;
       if (PICK_STEPS.includes(request.step))
         return command({ command: 'pick', sequence, step: request.step, properties });
+      if (request.instancePath !== undefined) {
+        const node = nodeOf(request);
+        if (!node) return 'invalid_request';
+        return command(Object.assign({ command: 'pick', sequence, properties }, node));
+      }
       if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
       return command({ command: 'pick', sequence, x: request.x, y: request.y, properties });
     },
@@ -329,8 +363,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         !target ||
         typeof target !== 'object' ||
         typeof target.elementId !== 'string' ||
-        typeof target.instancePath !== 'string' ||
-        !/^[0-9]+(?:[/][0-9]+)*$/.test(target.instancePath) ||
+        !isPath(target.instancePath) ||
         !target.styles ||
         typeof target.styles !== 'object'
       )
@@ -353,7 +386,8 @@ const INTERMEDIATE_SCRIPT = `(() => {
     hover(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       if (!request || typeof request !== 'object') return 'invalid_request';
-      if (!Number.isFinite(request.x) || !Number.isFinite(request.y)) return 'invalid_request';
+      const asked = request.instancePath === undefined ? pointOf(request) : nodeOf(request);
+      if (!asked) return 'invalid_request';
       if (hovering) hovering.settle(null);
       hoverSequence += 1;
       const sequence = hoverSequence;
@@ -367,7 +401,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
         hovering = { sequence, settle };
         deadline = setTimeout(() => settle(null), ${String(PREVIEW_HOVER_DEADLINE_MS)});
         frame.contentWindow.postMessage(
-          { canvasPreviewCommand: instance.nonce, command: 'hover', sequence, x: request.x, y: request.y },
+          Object.assign({ canvasPreviewCommand: instance.nonce, command: 'hover', sequence }, asked),
           '*',
         );
       });
@@ -403,6 +437,10 @@ const INTERMEDIATE_SCRIPT = `(() => {
           : null;
       };
       return askFrame({ command: 'vector' }, read, ${String(PREVIEW_VECTOR_DEADLINE_MS)});
+    },
+    tree() {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      return askFrame({ command: 'tree' }, normalizeTree);
     },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');

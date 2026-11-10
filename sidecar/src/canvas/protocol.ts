@@ -1,7 +1,7 @@
 // Canvas wire DTOs. Mutation inputs are defined once by the Zod parsers in
-// schema.ts and re-exported here; the renderer keeps a hand-written mirror at
-// src/features/canvas/protocol.ts, and schema.test.ts stops compiling when the
-// two drift.
+// schema.ts and frameEditSchema.ts and re-exported here; the renderer keeps a
+// hand-written mirror at src/features/canvas/protocol.ts, and schema.test.ts
+// stops compiling when the two drift.
 
 import type {
   ArrangeFramesInput,
@@ -231,7 +231,12 @@ export interface CanvasSummary {
 export interface CreateFramesResult {
   canvasId: string;
   frames: CanvasFrame[];
+  // Told once, by the create that drew them; a retry's recorded answer lacks it.
+  svgAsImage?: { designId: string; reason: SvgImageReason }[];
 }
+
+/** Why a frame seeded from an SVG draws it as an `<img>` instead of inline JSX. */
+export type SvgImageReason = 'too_large' | 'stylesheet';
 
 export interface WriteReceipt {
   designId: string;

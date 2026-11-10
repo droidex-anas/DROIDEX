@@ -147,6 +147,8 @@ contextBridge.exposeInMainWorld('droidex', {
     const filePath = canvasDroppedFilePath(file);
     return canvasImageReply(await ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath }));
   },
+  canvasPasteSvg: async (canvasId, svg) =>
+    canvasImageReply(await ipcRenderer.invoke('canvas-paste-svg', { canvasId, svg })),
   canvasPickKitImage: async () => {
     const reply = await ipcRenderer.invoke('canvas-pick-kit-image');
     return reply === null ? null : canvasImageReply(reply);

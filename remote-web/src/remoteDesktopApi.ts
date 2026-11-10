@@ -172,6 +172,7 @@ export function createRemoteDesktopApi(
       }),
     canvasPickImage: laptopOnly('Adding Canvas images'),
     canvasDropImage: laptopOnly('Adding Canvas images'),
+    canvasPasteSvg: laptopOnly('Pasting SVGs'),
     canvasPickKitImage: laptopOnly('Adding design system images'),
     canvasDropKitImage: laptopOnly('Adding design system images'),
     canvasReadKitImage: laptopOnly('Showing design system images'),

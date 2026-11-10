@@ -314,6 +314,8 @@ export function useElementEditor({
   };
 }
 
+export type ElementEditor = ReturnType<typeof useElementEditor>;
+
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
   return { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };

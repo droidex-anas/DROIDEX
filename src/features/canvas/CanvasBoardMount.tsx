@@ -4,7 +4,16 @@
 // go with the board and its viewport waits in the pane state for Back. Kits
 // belong to no canvas, so a chat without one shows a kit's document too.
 
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, type RefObject } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { toast } from '../../lib/toast';
@@ -17,13 +26,20 @@ import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
 import { canvasMessage } from './client';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
-import { lacksCanvasTools, reduceBoardInteraction, type BoardInteraction } from './canvasState';
+import {
+  lacksCanvasTools,
+  picksElements,
+  reduceBoardInteraction,
+  type BoardInteraction,
+} from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DesignPreview } from './DesignPreview';
 import type { EditElementInput } from './elementEditProtocol';
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
+import { layerElements } from './layers/layerElements';
 import { LayersPanel } from './layers/LayersPanel';
+import { PreviewRuns } from './previewRuns';
 import type {
   ArrangeFramesInput,
   CanvasFrame,
@@ -31,7 +47,9 @@ import type {
   SwitchRevisionInput,
 } from './protocol';
 import { useCanvasPresence, useLandedWrites } from './useCanvasPresence';
+import { useBoardPaste } from './useBoardPaste';
 import type { DesignPins } from './useDesignPicker';
+import { useElementEditor } from './useElementEditor';
 import { useFrameActions } from './useFrameActions';
 
 const LazyDesignSystemDocument = lazy(async () => ({
@@ -168,8 +186,17 @@ export function CanvasBoardMount({
   const presence = useCanvasPresence(appSessionId, frames);
   const writes = useLandedWrites(appSessionId);
   const boardArea = useRef<HTMLDivElement>(null);
-  const isShown = (designId: string) =>
-    frames.some((frame) => frame.designId === designId && !frame.hidden);
+  const shownFrames = useMemo(() => frames.filter((frame) => !frame.hidden), [frames]);
+  const isShown = (designId: string) => shownFrames.some((frame) => frame.designId === designId);
+  const [runs] = useState(() => new PreviewRuns());
+  const editor = useElementEditor({
+    canvasId,
+    frames: shownFrames,
+    runs,
+    active: interaction.mode === 'edit',
+    hovering: picksElements(interaction.mode),
+    onEditElement: editElement,
+  });
   const setFrameHidden = (frame: CanvasFrame, hidden: boolean) => {
     const input = {
       mutationId: crypto.randomUUID(),
@@ -188,6 +215,13 @@ export function CanvasBoardMount({
     });
   };
   const { selectedFrameIds } = interaction;
+  useBoardPaste(boardArea, {
+    appSessionId,
+    canvasId,
+    attached: pinnable,
+    beside: frames.find((frame) => frame.designId === selectedFrameIds.at(0)),
+    focusFrame: (designId) => boardRef.current?.focusFrame(designId),
+  });
   const showingDocument = shownDocument !== null;
   // Layers stands beside the board or its invitation; Edit's element panel only beside a board.
   const elementPanelOpen = frames.length > 0 && interaction.mode === 'edit';
@@ -243,6 +277,7 @@ export function CanvasBoardMount({
           frames={frames}
           selectedFrameIds={selectedFrameIds}
           agentWorking={agentWorking}
+          elements={layerElements(runs, editor, interaction, onInteractionChange)}
           onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
           onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
           onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}
@@ -289,7 +324,8 @@ export function CanvasBoardMount({
             onOpenSource={onOpenSource}
             onArrangeFrames={arrangeFrames}
             onAnnotate={annotate}
-            onEditElement={editElement}
+            runs={runs}
+            editor={editor}
             onRemoveFrames={removeFrames}
             onHistory={stepHistory}
             interaction={interaction}

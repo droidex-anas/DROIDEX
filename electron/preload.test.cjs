@@ -184,6 +184,22 @@ test('invoke methods send closed payloads and return the main-process result unc
   }
 });
 
+test('a pasted SVG is sent as markup and answers the owned asset or the curated error', async () => {
+  const asset = { assetId: 'a'.repeat(64), mediaType: 'image/svg+xml', width: 24, height: 24 };
+  const imported = loadApi({ ok: true, asset });
+  assert.equal(await imported.api.canvasPasteSvg('canvas_1', '<svg/>'), asset);
+  assert.deepEqual(structuredClone(imported.calls), [
+    { channel: 'canvas-paste-svg', payload: { canvasId: 'canvas_1', svg: '<svg/>' } },
+  ]);
+
+  const error = { code: 'invalid_input', message: 'Choose a valid SVG file.' };
+  const refused = loadApi({ ok: false, error });
+  await assert.rejects(refused.api.canvasPasteSvg('canvas_1', '<p/>'), (thrown) => {
+    assert.deepEqual(structuredClone(thrown), error);
+    return true;
+  });
+});
+
 test('GitHub device codes use a removable trusted event subscription', () => {
   const received = [];
   const { api, listeners, removedListeners } = loadApi();

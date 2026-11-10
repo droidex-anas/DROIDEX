@@ -213,6 +213,10 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
     previewHoverScript({ x: 12.5, y: -3 }),
     'globalThis.__droidexCanvasPreview.hover({"x":12.5,"y":-3})',
   );
+  assert.equal(
+    previewHoverScript({ elementId: 'el_1', instancePath: '0/2' }),
+    'globalThis.__droidexCanvasPreview.hover({"elementId":"el_1","instancePath":"0/2"})',
+  );
   const hovered = {
     elementId: 'el_1',
     instancePath: '0/2',
@@ -222,6 +226,9 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
   };
 
   assert.deepEqual(readPreviewHover(JSON.stringify(hovered)), hovered);
+  // A path is an identity: past the text cap it is kept whole, never cut.
+  const deep = { ...hovered, instancePath: '0/'.repeat(300) + '2' };
+  assert.deepEqual(readPreviewHover(JSON.stringify(deep)), deep);
   for (const value of [
     'null',
     'invalid_request',
@@ -229,6 +236,7 @@ test('a hover is a fixed call, and only a well-formed answer names an element', 
     JSON.stringify({ ...hovered, tagName: '' }),
     JSON.stringify({ ...hovered, rect: { ...hovered.rect, height: -1 } }),
     JSON.stringify({ ...hovered, instancePath: 2 }),
+    JSON.stringify({ ...hovered, instancePath: '0/' }),
     JSON.stringify({ ...hovered, room: null }),
     JSON.stringify({ ...hovered, room: { above: -1, below: null } }),
   ]) {
