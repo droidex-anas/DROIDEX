@@ -1,5 +1,5 @@
 // Under the cover (spec §5): where the kit came from, how many of its source's
-// tokens did not map to the document, and what a library import left out.
+// tokens did not map to the document, and the review of a library import.
 
 import { useEffect, useState } from 'react';
 import { canvasClient } from '../canvasClient';

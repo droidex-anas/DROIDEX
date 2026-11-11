@@ -44,13 +44,17 @@ interface KitModule {
 }
 
 /**
- * The components as kit files and the entry that exports them, and what was
- * left out. One that imports what the canvas cannot load is left out, and so is
- * one that needs a component left out, until none does. A library none of
- * whose components export anything the kit can name is refused.
+ * The components as kit files and the entry that exports them, and a review
+ * record for each file left out or kept with exports the entry does not take.
+ * One that imports what the canvas cannot load, a sibling the ui folder lacks
+ * included, is left out, and so is one that needs a component left out, until
+ * none does. A library none of whose components export anything the kit can
+ * name is refused.
  */
 export function kitComponents(
   library: readonly LibraryComponent[],
+  /** Every file of the ui folder, read or not. */
+  folderFiles: ReadonlySet<string>,
   aliases: LibraryAliases,
   kitNames: Readonly<Record<string, string>>,
   diagnostics: CanvasDiagnostic[],
@@ -79,31 +83,14 @@ export function kitComponents(
       });
     } else modules.set(component.name, module);
   }
-  for (let removed = true; removed; ) {
-    removed = false;
-    for (const [name, module] of modules) {
-      const missing = module.needs.find((need) => !modules.has(need));
-      if (missing === undefined) continue;
-      diagnostics.push({
-        code: 'unsupported_import',
-        message: `${module.file} was left out: it imports ${missing}, which was left out.`,
-        file: module.file,
-      });
-      skipped.push({
-        file: module.file,
-        reason: 'needs_left_out',
-        detail: path.posix.join(path.posix.dirname(module.file), `${missing}.tsx`),
-      });
-      modules.delete(name);
-      removed = true;
-    }
-  }
+  skipped.push(...leaveOutUnmetNeeds(modules, folderFiles, diagnostics));
   if (modules.size === 0) return { problem: `No component in ${aliases.ui} could be copied.` };
   const components: Record<string, string> = {};
   const lines: string[] = [];
   const files: [string, string][] = [];
   let unnamed: string | null = null;
   for (const [name, module] of modules) {
+    const duplicates: string[] = [];
     const exported = entryExports(module.exports, name).filter(({ exportedName }) => {
       if (Object.keys(components).length >= MAX_LIBRARY_EXPORTS) return false;
       if (!Object.hasOwn(components, exportedName)) return true;
@@ -112,7 +99,7 @@ export function kitComponents(
         message: `${module.file} exports ${exportedName}, as ${components[exportedName]} does; the kit exports the first.`,
         file: module.file,
       });
-      skipped.push({ file: module.file, reason: 'duplicate_export', detail: exportedName });
+      duplicates.push(exportedName);
       return false;
     });
     for (const { exportedName } of exported) components[exportedName] = module.file;
@@ -120,7 +107,13 @@ export function kitComponents(
       lines.push(
         `export { ${exported.map(({ exportedName, binding }) => bindingClause(binding, exportedName)).join(', ')} } from './${UI_FOLDER}/${name}';`,
       );
-    else if (module.exports.length === 0) {
+    if (duplicates.length > 0)
+      skipped.push({
+        file: module.file,
+        reason: 'duplicate_export',
+        detail: duplicates.join(', '),
+      });
+    else if (exported.length === 0) {
       unnamed ??= module.file;
       diagnostics.push({
         code: 'manual_interpretation_required',
@@ -136,6 +129,41 @@ export function kitComponents(
       problem: `No component in ${aliases.ui} exports anything the kit recognises${unnamed === null ? '' : `, starting with ${unnamed}`}.`,
     };
   return { entry: `${lines.join('\n')}\n`, files, components, skipped };
+}
+
+/**
+ * Removes each module that imports a sibling not among `modules`, until none
+ * does, and returns why each was left out: the sibling was left out itself, or
+ * the ui folder does not have it.
+ */
+function leaveOutUnmetNeeds(
+  modules: Map<string, KitModule>,
+  folderFiles: ReadonlySet<string>,
+  diagnostics: CanvasDiagnostic[],
+): LibrarySkip[] {
+  const skipped: LibrarySkip[] = [];
+  for (let removed = true; removed; ) {
+    removed = false;
+    for (const [name, module] of modules) {
+      const missing = module.needs.find((need) => !modules.has(need));
+      if (missing === undefined) continue;
+      const sibling = path.posix.join(path.posix.dirname(module.file), missing);
+      const leftOut = folderFiles.has(`${sibling}.tsx`);
+      diagnostics.push({
+        code: 'unsupported_import',
+        message: `${module.file} was left out: it imports ${missing}, which ${leftOut ? 'was left out' : 'the ui folder does not have'}.`,
+        file: module.file,
+      });
+      skipped.push(
+        leftOut
+          ? { file: module.file, reason: 'needs_left_out', detail: `${sibling}.tsx` }
+          : { file: module.file, reason: 'unsupported_import', detail: sibling },
+      );
+      modules.delete(name);
+      removed = true;
+    }
+  }
+  return skipped;
 }
 
 /**

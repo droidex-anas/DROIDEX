@@ -285,8 +285,10 @@ test('both boundaries accept a library kit provenance and refuse the same malfor
         detail: 'react-day-picker',
       },
       { file: 'components/ui/use-toast.ts', reason: 'not_a_component', detail: null },
+      { file: 'components/ui/big-button.tsx', reason: 'duplicate_export', detail: 'Button, Bar' },
     ],
     skippedCount: 3,
+    partialCount: 1,
   };
   const skip = (each: object) => ({ ...library, skipped: [each] });
   const cases: [string, unknown, boolean][] = [
@@ -296,7 +298,25 @@ test('both boundaries accept a library kit provenance and refuse the same malfor
     ['a project token that is not a token name', { ...library, tokens: { '--ds-a': 'a' } }, false],
     ['an extra key', { ...library, version: '4' }, false],
     ['no left-out files', { ...library, skipped: undefined }, false],
+    ['no count of files kept in part', { ...library, partialCount: undefined }, false],
     ['more left-out files than counted', { ...library, skippedCount: 1 }, false],
+    ['more files kept in part than counted', { ...library, partialCount: 0 }, false],
+    [
+      'an absolute import',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: '/Users/someone/a' }),
+      false,
+    ],
+    [
+      'a drive path',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: 'C:\\Users\\a' }),
+      false,
+    ],
+    [
+      'a file URL',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: 'file:///a.tsx' }),
+      false,
+    ],
+    ['an absolute file', skip({ file: '/srv/a.tsx', reason: 'unreadable', detail: null }), false],
     ['an unknown reason', skip({ file: 'a.tsx', reason: 'too_big', detail: null }), false],
     [
       'a reason without its detail',
