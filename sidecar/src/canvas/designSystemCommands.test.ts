@@ -87,6 +87,26 @@ async function readKit(
   return { ...reply.system, modes: kitModes(reply.system.sections) };
 }
 
+// The answers that build are kitPreviews.test.ts's; these are refused before any compile.
+test('a kit preview names a preview by id or a saved catalog entry by name, and nothing else', async (t) => {
+  const canvas = await harness(t);
+  const ref = { id: 'droidex', version: 1, mode: 'light' } as const;
+  const proposal = { id: 'droidex', proposalId: 'proposal-one', mode: 'light' } as const;
+  const cases: [string, object, RegExp][] = [
+    ['no-preview', { kind: 'preview', ref, item: 'no-such-preview' }, /That preview is not/],
+    ['no-entry', { kind: 'catalog', ref, entry: 'No such entry' }, /That component is not/],
+    ['both', { kind: 'catalog', ref, entry: 'Icon button', item: 'cover' }, /Unrecognized key/],
+    ['proposed-entry', { kind: 'catalog', ref: proposal, entry: 'Icon button' }, /Required/],
+    ['bare', { ref, item: 'cover' }, /./],
+  ];
+  for (const [requestId, target, message] of cases) {
+    await canvas.handle({ type: 'canvas.readKitPreview', requestId, target });
+    const error = errorOf(canvas, requestId);
+    assert.equal(error.code, 'invalid_input', requestId);
+    assert.match(error.message, message, requestId);
+  }
+});
+
 test('a kit answers the tokens each editable style property accepts', async (t) => {
   const canvas = await harness(t);
   await canvas.handle({

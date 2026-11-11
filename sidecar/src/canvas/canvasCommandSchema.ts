@@ -9,6 +9,7 @@ import { MAX_CAPTURE_BASE64_LENGTH, MAX_CAPTURE_SVG_BYTES } from './canvasCaptur
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
+import { catalogNameSchema } from './kitCatalog.js';
 import {
   arrangeFramesInputSchema,
   removeFramesInputSchema,
@@ -335,8 +336,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('canvas.readKitPreview'),
       ...request,
-      ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
-      item: documentIdSchema,
+      target: z.discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('preview'),
+            ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
+            item: documentIdSchema,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('catalog'),
+            ref: designSystemRefSchema,
+            entry: catalogNameSchema,
+          })
+          .strict(),
+      ]),
     })
     .strict(),
   z
