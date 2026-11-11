@@ -27,6 +27,7 @@ type ValueForm =
   | 'length'
   | 'signed-length'
   | 'colour'
+  | 'paint'
   | 'weight'
   | 'line-height'
   | 'unitless'
@@ -50,6 +51,9 @@ const SIZE = { tokens: '--ds-size-', values: 'size' } as const;
 const MIN_SIZE = { tokens: '--ds-size-', values: 'length' } as const;
 const MAX_SIZE = { tokens: '--ds-size-', values: 'max-size' } as const;
 const COLOUR = { tokens: 'colour', values: 'colour' } as const;
+// An SVG paint also takes none, and currentcolor to follow the text colour; the
+// panel sends keywords lowercased.
+const PAINT = { tokens: 'colour', values: 'paint' } as const;
 // A blur is the one filter function an edit writes, so the others a class adds stay.
 const BLUR_FILTER = { tokens: '--ds-blur-', values: 'blur' } as const;
 
@@ -77,6 +81,9 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   color: COLOUR,
   backgroundColor: COLOUR,
   borderColor: COLOUR,
+  fill: PAINT,
+  stroke: PAINT,
+  strokeWidth: { tokens: '--ds-stroke-', values: 'length' },
   // Shadows are kit-owned surface effects, so only the kit's tokens are offered.
   boxShadow: { tokens: '--ds-shadow-', values: [], stacks: true },
   filter: BLUR_FILTER,
@@ -285,6 +292,8 @@ function acceptsValue(form: ValueForm, value: string): boolean {
       return SIGNED_LENGTH.test(value);
     case 'colour':
       return COLOUR_VALUE.test(value);
+    case 'paint':
+      return COLOUR_VALUE.test(value) || value === 'none' || value === 'currentcolor';
     case 'weight':
       return WEIGHT.test(value);
     case 'line-height':

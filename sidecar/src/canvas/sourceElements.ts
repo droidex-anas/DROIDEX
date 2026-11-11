@@ -214,24 +214,28 @@ function isComputed(node: ElementNode): boolean {
   );
 }
 
+// SVG paint attributes, which a paint edit replaces and so must be able to read.
+const PAINT_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth', 'stroke-width']);
+
 function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
   const names = new Set<string>();
   for (const attr of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attr)) return true;
     const name = attr.name.getText();
-    if (names.has(name)) return true;
+    if (names.has(name) || isComputedAttribute(name, attributeValue(attr))) return true;
     names.add(name);
-    if (
-      name === 'children' ||
-      name === 'dangerouslySetInnerHTML' ||
-      name.toLowerCase() === 'srcset'
-    )
-      return true;
-    const value = attributeValue(attr);
-    if (name === 'className' && value && classLiterals(value) === null) return true;
-    if (name === 'src' && value && !isLiteral(value)) return true;
-    if (name === 'style' && hasComputedStyle(value)) return true;
   }
+  return false;
+}
+
+function isComputedAttribute(name: string, value: ts.Expression | undefined): boolean {
+  if (name === 'children' || name === 'dangerouslySetInnerHTML' || name.toLowerCase() === 'srcset')
+    return true;
+  if (name === 'className') return value !== undefined && classLiterals(value) === null;
+  if (name === 'src') return value !== undefined && !isLiteral(value);
+  if (name === 'style') return hasComputedStyle(value);
+  if (PAINT_ATTRIBUTES.has(name))
+    return value === undefined || !(isLiteral(value) || ts.isNumericLiteral(value));
   return false;
 }
 

@@ -1,7 +1,8 @@
 // Writes a style edit into one element's own attributes the way a person
 // writing Tailwind would: each property becomes the class that says it
 // (tailwindStyles.ts) in place of the classes it makes dead, and goes into the
-// style attribute only where no class says it or a class would not win.
+// style attribute only where no class says it or a class would not win. An SVG
+// presentation attribute the edit sets goes too, as any class or style beats it.
 
 import ts from 'typescript';
 import type { KitTheme } from './kitTailwindTheme.js';
@@ -12,6 +13,7 @@ import {
   attribute,
   attributeValue,
   classLiterals,
+  isLiteral,
   propertyName,
 } from './sourceElements.js';
 import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
@@ -59,6 +61,12 @@ const BARE_NUMBER = /^(-?(?:\d+|\d*\.\d+))$/;
 const PIXELS = /^(-?(?:\d+|\d*\.\d+))px$|^(0)$/;
 const FILTERS = new Set(['filter', 'backdropFilter']);
 const BLUR_OR_RESET_CLASS = /^!?(?:backdrop-)?(?:blur(?:-|$)|filter-none$)/;
+// An SVG paint's presentation attributes, in each spelling JSX passes through.
+const PRESENTATION_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
+  fill: ['fill'],
+  stroke: ['stroke'],
+  strokeWidth: ['strokeWidth', 'stroke-width'],
+};
 
 /** The replacements that set every style in `styles`, in order, on one element. */
 export function styleReplacements(
@@ -81,7 +89,34 @@ export function styleReplacements(
   return [
     ...writeClasses(opening, source, slots, styleKept ? style.attribute : undefined),
     ...writeStyle(opening, source, style),
+    ...removePresentation(opening, styles),
   ];
+}
+
+/**
+ * Removes the presentation attribute, such as `fill="#000"`, of each SVG paint
+ * the edit sets. One worked out in code is the user's logic, which the edit
+ * leaves to the agent rather than drop.
+ */
+function removePresentation(
+  opening: Opening,
+  styles: readonly ResolvedStyle[],
+): SourceReplacement[] {
+  const spellings = new Set(
+    styles.flatMap(({ property }) =>
+      Object.hasOwn(PRESENTATION_ATTRIBUTES, property) ? PRESENTATION_ATTRIBUTES[property] : [],
+    ),
+  );
+  return opening.attributes.properties.flatMap((dead) => {
+    if (!ts.isJsxAttribute(dead) || !spellings.has(dead.name.getText())) return [];
+    const value = attributeValue(dead);
+    if (!value || !(isLiteral(value) || ts.isNumericLiteral(value)))
+      throw new SourceElementError(
+        'ambiguous_element',
+        `This shape's ${dead.name.getText()} is worked out in code. Ask the agent to change it.`,
+      );
+    return [{ start: dead.getFullStart(), end: dead.end, replacement: '' }];
+  });
 }
 
 /**
@@ -98,23 +133,33 @@ function setStyle(
   const own = longhands(property);
   const within = (sets: readonly string[]) => sets.every((longhand) => own.includes(longhand));
   const live = liveClasses(slots, theme);
-  // A breakpoint or colour-mode class may be what this frame shows, and only
-  // the style attribute is sure to win over it.
-  const frameScoped = live.some(
-    ({ read }) => read.scope === 'frame' && read.sets.some((longhand) => own.includes(longhand)),
+  // A class that stays may be what this frame shows: a breakpoint or
+  // colour-mode one, or one a kit theme key makes two utilities. Only the
+  // style attribute is sure to win over it.
+  const outranking = live.filter(
+    ({ read }) =>
+      (read.scope === 'frame' || (read.scope === 'always' && read.shared)) &&
+      read.sets.some((longhand) => own.includes(longhand)),
   );
+  if (outranking.some(({ read }) => read.important))
+    throw new SourceElementError(
+      'ambiguous_element',
+      `A class marked important sets this element's ${property}, so a value written here would not show. Ask the agent to change it.`,
+    );
+  const outranked = outranking.length > 0;
   // An inline shorthand that also sets this property would win over a class.
   const inlineShorthand = style.entries.some((entry) => {
     const sets = longhands(entry.name);
     return !entry.removed && !within(sets) && own.every((longhand) => sets.includes(longhand));
   });
-  const name = frameScoped || inlineShorthand ? null : styleClass(property, resolution, theme);
+  const name = outranked || inlineShorthand ? null : styleClass(property, resolution, theme);
 
-  const dead = live.filter(({ read }) => read.scope === 'always' && within(read.sets));
+  const dead = live.filter(
+    ({ read }) => read.scope === 'always' && !read.shared && within(read.sets),
+  );
   keepFilter(property, name, dead, style);
   const first = dead.at(0)?.entry;
-  // A class that applies always has no variant, so its ! leads.
-  const important = dead.some(({ entry }) => entry.name?.startsWith('!') === true);
+  const important = dead.some(({ read }) => read.important);
   let lostLineHeight: string | undefined;
   for (const { entry, read } of dead) {
     lostLineHeight = read.lineHeight ?? lostLineHeight;
