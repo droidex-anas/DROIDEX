@@ -23,6 +23,8 @@ export function CatalogSection({
 }) {
   const [openName, setOpenName] = useState<string | null>(null);
   const listId = useId();
+  // An entry searched away closes, as it does when search hides its whole section.
+  if (openName !== null && !entries.some((entry) => entry.name === openName)) setOpenName(null);
   if (entries.length === 0) return null;
   return (
     <div className="-mx-3 flex flex-col">
