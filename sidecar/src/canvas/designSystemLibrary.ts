@@ -18,7 +18,9 @@ import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
 import { MAX_LIBRARY_SKIPS, type LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
+import { KIT_CATALOG_FILE } from './kitCatalog.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
+import { seedLibraryCatalog } from './libraryCatalog.js';
 import {
   COMPONENT_NAME,
   KIT_UTILS_FILE,
@@ -35,6 +37,7 @@ import {
   readProjectText,
 } from './projectPaths.js';
 import type { CanvasDiagnostic } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 /**
  * Of a kit's files, these many are the library's components, and the rest its
@@ -100,19 +103,22 @@ export async function importLibraryDesignSystem(
   const skipped = [...read.skipped, ...library.skipped].sort((left, right) =>
     left.file.localeCompare(right.file),
   );
+  const files: SourceFiles = {
+    [KIT_ENTRY]: library.entry,
+    'fonts.css': inter.css,
+    'fonts/Inter-OFL.txt': inter.license,
+    ...(stylesheet === '' ? {} : { 'styles.css': stylesheet }),
+    [KIT_THEME_FILE]: `${JSON.stringify(theme.theme, null, 2)}\n`,
+    [KIT_UTILS_FILE]: read.utils,
+    ...Object.fromEntries(library.files),
+  };
+  const catalog = seedLibraryCatalog(files);
+  if (catalog !== null) files[KIT_CATALOG_FILE] = catalog;
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.
     sections: imported.system.sections.filter((section) => section.kind !== 'components'),
-    files: {
-      [KIT_ENTRY]: library.entry,
-      'fonts.css': inter.css,
-      'fonts/Inter-OFL.txt': inter.license,
-      ...(stylesheet === '' ? {} : { 'styles.css': stylesheet }),
-      [KIT_THEME_FILE]: `${JSON.stringify(theme.theme, null, 2)}\n`,
-      [KIT_UTILS_FILE]: read.utils,
-      ...Object.fromEntries(library.files),
-    },
+    files,
     examples: {},
     provenance: {
       project: {

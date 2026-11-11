@@ -6,6 +6,7 @@
 // a kit serves many canvases and a silent change would restyle all of them.
 
 import { z } from 'zod';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { CanvasCommandError, canvasError } from './canvasError.js';
 import { applyDocumentChanges, documentChangesSchema } from './designSystemEdits.js';
 import { starterKit } from './designSystemImport.js';
@@ -20,6 +21,7 @@ import {
   type DesignSystem,
 } from './designSystems.js';
 import type { KitPreviews } from './kitPreviews.js';
+import { keepBuildingSeeds } from './libraryCatalog.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import {
   canvasIdentifierSchema,
@@ -86,7 +88,7 @@ export class KitBuildError extends CanvasCommandError {
 
 export interface KitSaveContext {
   appSessionId: string;
-  kits: Pick<KitPreviews, 'check'>;
+  kits: Pick<KitPreviews, 'check' | 'checkCatalog'>;
   /** The chat's project folder, or null for a chat without one. */
   projectFolder: () => string | null;
   /** Throws once the turn has ended, so nothing it started publishes after it. */
@@ -184,7 +186,15 @@ async function kitBase(
   });
   if (imported.status === 'refused')
     throw canvasError('invalid_input', imported.diagnostics[0].message);
-  return { base: imported.system, baseVersion: null, diagnostics: imported.diagnostics };
+  const { provenance } = imported.system;
+  if (!provenance || !('project' in provenance) || provenance.project.library === undefined)
+    return { base: imported.system, baseVersion: null, diagnostics: imported.diagnostics };
+  const seeded = await keepBuildingSeeds(imported.system, context.kits);
+  return {
+    base: seeded.kit,
+    baseVersion: null,
+    diagnostics: boundDiagnostics([...imported.diagnostics, ...seeded.diagnostics]),
+  };
 }
 
 function coverOf(cover: KitSave['cover'], current: DesignSystem['cover']): DesignSystem['cover'] {

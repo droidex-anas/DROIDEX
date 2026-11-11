@@ -15,6 +15,8 @@ import { CodexEventMapper } from './codexEvents.js';
 import { CodexSession } from './codexSession.js';
 import { CodexToolBridge } from './codexTools.js';
 
+const kitBuildsUnavailable = () => Promise.reject(new Error('Kit builds unavailable'));
+
 function harness() {
   let calls = 0;
   let outcome: PermissionOutcome = 'proceed_once';
@@ -47,7 +49,7 @@ function harness() {
     () => Promise.reject(new Error('Canvas storage unavailable')),
     new CanvasTurns(new CanvasScopes(), () => null),
     () => Promise.reject(new Error('Canvas capture unavailable')),
-    { check: () => Promise.reject(new Error('Kit builds unavailable')) },
+    { check: kitBuildsUnavailable, checkCatalog: kitBuildsUnavailable },
     () => 'chat-one',
     () => null,
     () => Promise.reject(new Error('Image import unavailable')),
@@ -242,7 +244,7 @@ test('a new Codex thread declares its tools and a resumed thread keeps its store
         () => Promise.reject(new Error('Canvas storage unavailable')),
         new CanvasTurns(new CanvasScopes(), () => null),
         () => Promise.reject(new Error('Canvas capture unavailable')),
-        { check: () => Promise.reject(new Error('Kit builds unavailable')) },
+        { check: kitBuildsUnavailable, checkCatalog: kitBuildsUnavailable },
         () => 'chat-one',
         () => null,
         () => Promise.reject(new Error('Image import unavailable')),

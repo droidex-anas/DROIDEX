@@ -51,7 +51,7 @@ export function createCanvasMcpServer(
   workspace: () => Promise<CanvasWorkspace>,
   turns: Pick<CanvasTurns, 'activeScope' | 'requireScope' | 'scopeEnded'>,
   capture: CanvasCapture,
-  kits: Pick<KitPreviews, 'check'>,
+  kits: Pick<KitPreviews, 'check' | 'checkCatalog'>,
   getAppSessionId: () => string,
   projectFolder: (appSessionId: string) => string | null,
   importImage: ImportProjectImage,

@@ -1,0 +1,431 @@
+{
+  "source": "https://github.com/shadcn-ui/ui",
+  "commit": "8ab27715521cbd4f87ae6886cd989cbb678f6de7",
+  "path": "apps/v4/registry/new-york-v4/examples",
+  "license": "MIT",
+  "entries": [
+    {
+      "name": "Accordion",
+      "module": "accordion",
+      "uses": ["Accordion", "AccordionContent", "AccordionItem", "AccordionTrigger"],
+      "icons": [],
+      "jsx": "<Accordion\n  type=\"single\"\n  collapsible\n  className=\"w-full\"\n  defaultValue=\"item-1\"\n>\n  <AccordionItem value=\"item-1\">\n    <AccordionTrigger>Product Information</AccordionTrigger>\n    <AccordionContent className=\"flex flex-col gap-4 text-balance\">\n      <p>\n        Our flagship product combines cutting-edge technology with sleek\n        design. Built with premium materials, it offers unparalleled\n        performance and reliability.\n      </p>\n      <p>\n        Key features include advanced processing capabilities, and an\n        intuitive user interface designed for both beginners and experts.\n      </p>\n    </AccordionContent>\n  </AccordionItem>\n  <AccordionItem value=\"item-2\">\n    <AccordionTrigger>Shipping Details</AccordionTrigger>\n    <AccordionContent className=\"flex flex-col gap-4 text-balance\">\n      <p>\n        We offer worldwide shipping through trusted courier partners.\n        Standard delivery takes 3-5 business days, while express shipping\n        ensures delivery within 1-2 business days.\n      </p>\n      <p>\n        All orders are carefully packaged and fully insured. Track your\n        shipment in real-time through our dedicated tracking portal.\n      </p>\n    </AccordionContent>\n  </AccordionItem>\n  <AccordionItem value=\"item-3\">\n    <AccordionTrigger>Return Policy</AccordionTrigger>\n    <AccordionContent className=\"flex flex-col gap-4 text-balance\">\n      <p>\n        We stand behind our products with a comprehensive 30-day return\n        policy. If you&apos;re not completely satisfied, simply return the\n        item in its original condition.\n      </p>\n      <p>\n        Our hassle-free return process includes free return shipping and\n        full refunds processed within 48 hours of receiving the returned\n        item.\n      </p>\n    </AccordionContent>\n  </AccordionItem>\n</Accordion>",
+      "note": null
+    },
+    {
+      "name": "Alert",
+      "module": "alert",
+      "uses": ["Alert", "AlertDescription", "AlertTitle"],
+      "icons": ["AlertCircleIcon", "CheckCircle2Icon", "PopcornIcon"],
+      "jsx": "<div className=\"grid w-full max-w-xl items-start gap-4\">\n  <Alert>\n    <CheckCircle2Icon />\n    <AlertTitle>Success! Your changes have been saved</AlertTitle>\n    <AlertDescription>\n      This is an alert with icon, title and description.\n    </AlertDescription>\n  </Alert>\n  <Alert>\n    <PopcornIcon />\n    <AlertTitle>\n      This Alert has a title and an icon. No description.\n    </AlertTitle>\n  </Alert>\n  <Alert variant=\"destructive\">\n    <AlertCircleIcon />\n    <AlertTitle>Unable to process your payment.</AlertTitle>\n    <AlertDescription>\n      <p>Please verify your billing information and try again.</p>\n      <ul className=\"list-inside list-disc text-sm\">\n        <li>Check your card details</li>\n        <li>Ensure sufficient funds</li>\n        <li>Verify billing address</li>\n      </ul>\n    </AlertDescription>\n  </Alert>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Alert dialog",
+      "module": "alert-dialog",
+      "uses": [
+        "AlertDialog",
+        "AlertDialogAction",
+        "AlertDialogCancel",
+        "AlertDialogContent",
+        "AlertDialogDescription",
+        "AlertDialogFooter",
+        "AlertDialogHeader",
+        "AlertDialogTitle",
+        "AlertDialogTrigger",
+        "Button"
+      ],
+      "icons": [],
+      "jsx": "<AlertDialog>\n  <AlertDialogTrigger asChild>\n    <Button variant=\"outline\">Show Dialog</Button>\n  </AlertDialogTrigger>\n  <AlertDialogContent>\n    <AlertDialogHeader>\n      <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>\n      <AlertDialogDescription>\n        This action cannot be undone. This will permanently delete your\n        account and remove your data from our servers.\n      </AlertDialogDescription>\n    </AlertDialogHeader>\n    <AlertDialogFooter>\n      <AlertDialogCancel>Cancel</AlertDialogCancel>\n      <AlertDialogAction>Continue</AlertDialogAction>\n    </AlertDialogFooter>\n  </AlertDialogContent>\n</AlertDialog>",
+      "note": null
+    },
+    {
+      "name": "Avatar",
+      "module": "avatar",
+      "uses": ["Avatar", "AvatarFallback", "AvatarImage"],
+      "icons": [],
+      "jsx": "<div className=\"flex flex-row flex-wrap items-center gap-12\">\n  <Avatar>\n    <AvatarImage src=\"https://github.com/shadcn.png\" alt=\"@shadcn\" />\n    <AvatarFallback>CN</AvatarFallback>\n  </Avatar>\n  <Avatar className=\"rounded-lg\">\n    <AvatarImage\n      src=\"https://github.com/evilrabbit.png\"\n      alt=\"@evilrabbit\"\n    />\n    <AvatarFallback>ER</AvatarFallback>\n  </Avatar>\n  <div className=\"flex -space-x-2 *:data-[slot=avatar]:ring-2 *:data-[slot=avatar]:ring-background *:data-[slot=avatar]:grayscale\">\n    <Avatar>\n      <AvatarImage src=\"https://github.com/shadcn.png\" alt=\"@shadcn\" />\n      <AvatarFallback>CN</AvatarFallback>\n    </Avatar>\n    <Avatar>\n      <AvatarImage\n        src=\"https://github.com/maxleiter.png\"\n        alt=\"@maxleiter\"\n      />\n      <AvatarFallback>LR</AvatarFallback>\n    </Avatar>\n    <Avatar>\n      <AvatarImage\n        src=\"https://github.com/evilrabbit.png\"\n        alt=\"@evilrabbit\"\n      />\n      <AvatarFallback>ER</AvatarFallback>\n    </Avatar>\n  </div>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Badge",
+      "module": "badge",
+      "uses": ["Badge"],
+      "icons": ["AlertCircleIcon", "BadgeCheckIcon", "CheckIcon"],
+      "jsx": "<div className=\"flex flex-col items-center gap-2\">\n  <div className=\"flex w-full flex-wrap gap-2\">\n    <Badge>Badge</Badge>\n    <Badge variant=\"secondary\">Secondary</Badge>\n    <Badge variant=\"destructive\">Destructive</Badge>\n    <Badge variant=\"outline\">Outline</Badge>\n  </div>\n  <div className=\"flex w-full flex-wrap gap-2\">\n    <Badge\n      variant=\"secondary\"\n      className=\"bg-blue-500 text-white dark:bg-blue-600\"\n    >\n      <BadgeCheckIcon />\n      Verified\n    </Badge>\n    <Badge className=\"h-5 min-w-5 rounded-full px-1 font-mono tabular-nums\">\n      8\n    </Badge>\n    <Badge\n      className=\"h-5 min-w-5 rounded-full px-1 font-mono tabular-nums\"\n      variant=\"destructive\"\n    >\n      99\n    </Badge>\n    <Badge\n      className=\"h-5 min-w-5 rounded-full px-1 font-mono tabular-nums\"\n      variant=\"outline\"\n    >\n      20+\n    </Badge>\n  </div>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Button",
+      "module": "button",
+      "uses": ["Button"],
+      "icons": ["ArrowUpIcon"],
+      "jsx": "<div className=\"flex flex-wrap items-center gap-2 md:flex-row\">\n  <Button variant=\"outline\">Button</Button>\n  <Button variant=\"outline\" size=\"icon\" aria-label=\"Submit\">\n    <ArrowUpIcon />\n  </Button>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Card",
+      "module": "card",
+      "uses": [
+        "Button",
+        "Card",
+        "CardAction",
+        "CardContent",
+        "CardDescription",
+        "CardFooter",
+        "CardHeader",
+        "CardTitle",
+        "Input",
+        "Label"
+      ],
+      "icons": [],
+      "jsx": "<Card className=\"w-full max-w-sm\">\n  <CardHeader>\n    <CardTitle>Login to your account</CardTitle>\n    <CardDescription>\n      Enter your email below to login to your account\n    </CardDescription>\n    <CardAction>\n      <Button variant=\"link\">Sign Up</Button>\n    </CardAction>\n  </CardHeader>\n  <CardContent>\n    <form>\n      <div className=\"flex flex-col gap-6\">\n        <div className=\"grid gap-2\">\n          <Label htmlFor=\"email\">Email</Label>\n          <Input\n            id=\"email\"\n            type=\"email\"\n            placeholder=\"m@example.com\"\n            required\n          />\n        </div>\n        <div className=\"grid gap-2\">\n          <div className=\"flex items-center\">\n            <Label htmlFor=\"password\">Password</Label>\n            <a\n              href=\"#\"\n              className=\"ml-auto inline-block text-sm underline-offset-4 hover:underline\"\n            >\n              Forgot your password?\n            </a>\n          </div>\n          <Input id=\"password\" type=\"password\" required />\n        </div>\n      </div>\n    </form>\n  </CardContent>\n  <CardFooter className=\"flex-col gap-2\">\n    <Button type=\"submit\" className=\"w-full\">\n      Login\n    </Button>\n    <Button variant=\"outline\" className=\"w-full\">\n      Login with Google\n    </Button>\n  </CardFooter>\n</Card>",
+      "note": null
+    },
+    {
+      "name": "Checkbox",
+      "module": "checkbox",
+      "uses": ["Checkbox", "Label"],
+      "icons": [],
+      "jsx": "<div className=\"flex flex-col gap-6\">\n  <div className=\"flex items-center gap-3\">\n    <Checkbox id=\"terms\" />\n    <Label htmlFor=\"terms\">Accept terms and conditions</Label>\n  </div>\n  <div className=\"flex items-start gap-3\">\n    <Checkbox id=\"terms-2\" defaultChecked />\n    <div className=\"grid gap-2\">\n      <Label htmlFor=\"terms-2\">Accept terms and conditions</Label>\n      <p className=\"text-sm text-muted-foreground\">\n        By clicking this checkbox, you agree to the terms and conditions.\n      </p>\n    </div>\n  </div>\n  <div className=\"flex items-start gap-3\">\n    <Checkbox id=\"toggle\" disabled />\n    <Label htmlFor=\"toggle\">Enable notifications</Label>\n  </div>\n  <Label className=\"flex items-start gap-3 rounded-lg border p-3 hover:bg-accent/50 has-[[aria-checked=true]]:border-blue-600 has-[[aria-checked=true]]:bg-blue-50 dark:has-[[aria-checked=true]]:border-blue-900 dark:has-[[aria-checked=true]]:bg-blue-950\">\n    <Checkbox\n      id=\"toggle-2\"\n      defaultChecked\n      className=\"data-[state=checked]:border-blue-600 data-[state=checked]:bg-blue-600 data-[state=checked]:text-white dark:data-[state=checked]:border-blue-700 dark:data-[state=checked]:bg-blue-700\"\n    />\n    <div className=\"grid gap-1.5 font-normal\">\n      <p className=\"text-sm leading-none font-medium\">\n        Enable notifications\n      </p>\n      <p className=\"text-sm text-muted-foreground\">\n        You can enable or disable notifications at any time.\n      </p>\n    </div>\n  </Label>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Command",
+      "module": "command",
+      "uses": [
+        "Command",
+        "CommandEmpty",
+        "CommandGroup",
+        "CommandInput",
+        "CommandItem",
+        "CommandList",
+        "CommandSeparator",
+        "CommandShortcut"
+      ],
+      "icons": ["Calculator", "Calendar", "CreditCard", "Settings", "Smile", "User"],
+      "jsx": "<Command className=\"rounded-lg border shadow-md md:min-w-[450px]\">\n  <CommandInput placeholder=\"Type a command or search...\" />\n  <CommandList>\n    <CommandEmpty>No results found.</CommandEmpty>\n    <CommandGroup heading=\"Suggestions\">\n      <CommandItem>\n        <Calendar />\n        <span>Calendar</span>\n      </CommandItem>\n      <CommandItem>\n        <Smile />\n        <span>Search Emoji</span>\n      </CommandItem>\n      <CommandItem disabled>\n        <Calculator />\n        <span>Calculator</span>\n      </CommandItem>\n    </CommandGroup>\n    <CommandSeparator />\n    <CommandGroup heading=\"Settings\">\n      <CommandItem>\n        <User />\n        <span>Profile</span>\n        <CommandShortcut>⌘P</CommandShortcut>\n      </CommandItem>\n      <CommandItem>\n        <CreditCard />\n        <span>Billing</span>\n        <CommandShortcut>⌘B</CommandShortcut>\n      </CommandItem>\n      <CommandItem>\n        <Settings />\n        <span>Settings</span>\n        <CommandShortcut>⌘S</CommandShortcut>\n      </CommandItem>\n    </CommandGroup>\n  </CommandList>\n</Command>",
+      "note": null
+    },
+    {
+      "name": "Context menu",
+      "module": "context-menu",
+      "uses": [
+        "ContextMenu",
+        "ContextMenuCheckboxItem",
+        "ContextMenuContent",
+        "ContextMenuItem",
+        "ContextMenuLabel",
+        "ContextMenuRadioGroup",
+        "ContextMenuRadioItem",
+        "ContextMenuSeparator",
+        "ContextMenuShortcut",
+        "ContextMenuSub",
+        "ContextMenuSubContent",
+        "ContextMenuSubTrigger",
+        "ContextMenuTrigger"
+      ],
+      "icons": [],
+      "jsx": "<ContextMenu>\n  <ContextMenuTrigger className=\"flex h-[150px] w-[300px] items-center justify-center rounded-md border border-dashed text-sm\">\n    Right click here\n  </ContextMenuTrigger>\n  <ContextMenuContent className=\"w-52\">\n    <ContextMenuItem inset>\n      Back\n      <ContextMenuShortcut>⌘[</ContextMenuShortcut>\n    </ContextMenuItem>\n    <ContextMenuItem inset disabled>\n      Forward\n      <ContextMenuShortcut>⌘]</ContextMenuShortcut>\n    </ContextMenuItem>\n    <ContextMenuItem inset>\n      Reload\n      <ContextMenuShortcut>⌘R</ContextMenuShortcut>\n    </ContextMenuItem>\n    <ContextMenuSub>\n      <ContextMenuSubTrigger inset>More Tools</ContextMenuSubTrigger>\n      <ContextMenuSubContent className=\"w-44\">\n        <ContextMenuItem>Save Page...</ContextMenuItem>\n        <ContextMenuItem>Create Shortcut...</ContextMenuItem>\n        <ContextMenuItem>Name Window...</ContextMenuItem>\n        <ContextMenuSeparator />\n        <ContextMenuItem>Developer Tools</ContextMenuItem>\n        <ContextMenuSeparator />\n        <ContextMenuItem variant=\"destructive\">Delete</ContextMenuItem>\n      </ContextMenuSubContent>\n    </ContextMenuSub>\n    <ContextMenuSeparator />\n    <ContextMenuCheckboxItem checked>\n      Show Bookmarks\n    </ContextMenuCheckboxItem>\n    <ContextMenuCheckboxItem>Show Full URLs</ContextMenuCheckboxItem>\n    <ContextMenuSeparator />\n    <ContextMenuRadioGroup value=\"pedro\">\n      <ContextMenuLabel inset>People</ContextMenuLabel>\n      <ContextMenuRadioItem value=\"pedro\">\n        Pedro Duarte\n      </ContextMenuRadioItem>\n      <ContextMenuRadioItem value=\"colm\">Colm Tuite</ContextMenuRadioItem>\n    </ContextMenuRadioGroup>\n  </ContextMenuContent>\n</ContextMenu>",
+      "note": null
+    },
+    {
+      "name": "Dialog",
+      "module": "dialog",
+      "uses": [
+        "Button",
+        "Dialog",
+        "DialogClose",
+        "DialogContent",
+        "DialogDescription",
+        "DialogFooter",
+        "DialogHeader",
+        "DialogTitle",
+        "DialogTrigger",
+        "Input",
+        "Label"
+      ],
+      "icons": [],
+      "jsx": "<Dialog>\n  <form>\n    <DialogTrigger asChild>\n      <Button variant=\"outline\">Open Dialog</Button>\n    </DialogTrigger>\n    <DialogContent className=\"sm:max-w-[425px]\">\n      <DialogHeader>\n        <DialogTitle>Edit profile</DialogTitle>\n        <DialogDescription>\n          Make changes to your profile here. Click save when you&apos;re\n          done.\n        </DialogDescription>\n      </DialogHeader>\n      <div className=\"grid gap-4\">\n        <div className=\"grid gap-3\">\n          <Label htmlFor=\"name-1\">Name</Label>\n          <Input id=\"name-1\" name=\"name\" defaultValue=\"Pedro Duarte\" />\n        </div>\n        <div className=\"grid gap-3\">\n          <Label htmlFor=\"username-1\">Username</Label>\n          <Input id=\"username-1\" name=\"username\" defaultValue=\"@peduarte\" />\n        </div>\n      </div>\n      <DialogFooter>\n        <DialogClose asChild>\n          <Button variant=\"outline\">Cancel</Button>\n        </DialogClose>\n        <Button type=\"submit\">Save changes</Button>\n      </DialogFooter>\n    </DialogContent>\n  </form>\n</Dialog>",
+      "note": null
+    },
+    {
+      "name": "Dropdown menu",
+      "module": "dropdown-menu",
+      "uses": [
+        "Button",
+        "DropdownMenu",
+        "DropdownMenuContent",
+        "DropdownMenuGroup",
+        "DropdownMenuItem",
+        "DropdownMenuLabel",
+        "DropdownMenuPortal",
+        "DropdownMenuSeparator",
+        "DropdownMenuShortcut",
+        "DropdownMenuSub",
+        "DropdownMenuSubContent",
+        "DropdownMenuSubTrigger",
+        "DropdownMenuTrigger"
+      ],
+      "icons": [],
+      "jsx": "<DropdownMenu>\n  <DropdownMenuTrigger asChild>\n    <Button variant=\"outline\">Open</Button>\n  </DropdownMenuTrigger>\n  <DropdownMenuContent className=\"w-56\" align=\"start\">\n    <DropdownMenuLabel>My Account</DropdownMenuLabel>\n    <DropdownMenuGroup>\n      <DropdownMenuItem>\n        Profile\n        <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>\n      </DropdownMenuItem>\n      <DropdownMenuItem>\n        Billing\n        <DropdownMenuShortcut>⌘B</DropdownMenuShortcut>\n      </DropdownMenuItem>\n      <DropdownMenuItem>\n        Settings\n        <DropdownMenuShortcut>⌘S</DropdownMenuShortcut>\n      </DropdownMenuItem>\n      <DropdownMenuItem>\n        Keyboard shortcuts\n        <DropdownMenuShortcut>⌘K</DropdownMenuShortcut>\n      </DropdownMenuItem>\n    </DropdownMenuGroup>\n    <DropdownMenuSeparator />\n    <DropdownMenuGroup>\n      <DropdownMenuItem>Team</DropdownMenuItem>\n      <DropdownMenuSub>\n        <DropdownMenuSubTrigger>Invite users</DropdownMenuSubTrigger>\n        <DropdownMenuPortal>\n          <DropdownMenuSubContent>\n            <DropdownMenuItem>Email</DropdownMenuItem>\n            <DropdownMenuItem>Message</DropdownMenuItem>\n            <DropdownMenuSeparator />\n            <DropdownMenuItem>More...</DropdownMenuItem>\n          </DropdownMenuSubContent>\n        </DropdownMenuPortal>\n      </DropdownMenuSub>\n      <DropdownMenuItem>\n        New Team\n        <DropdownMenuShortcut>⌘+T</DropdownMenuShortcut>\n      </DropdownMenuItem>\n    </DropdownMenuGroup>\n    <DropdownMenuSeparator />\n    <DropdownMenuItem>GitHub</DropdownMenuItem>\n    <DropdownMenuItem>Support</DropdownMenuItem>\n    <DropdownMenuItem disabled>API</DropdownMenuItem>\n    <DropdownMenuSeparator />\n    <DropdownMenuItem>\n      Log out\n      <DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>\n    </DropdownMenuItem>\n  </DropdownMenuContent>\n</DropdownMenu>",
+      "note": null
+    },
+    {
+      "name": "Hover card",
+      "module": "hover-card",
+      "uses": [
+        "Avatar",
+        "AvatarFallback",
+        "AvatarImage",
+        "Button",
+        "HoverCard",
+        "HoverCardContent",
+        "HoverCardTrigger"
+      ],
+      "icons": ["CalendarIcon"],
+      "jsx": "<HoverCard>\n  <HoverCardTrigger asChild>\n    <Button variant=\"link\">@nextjs</Button>\n  </HoverCardTrigger>\n  <HoverCardContent className=\"w-80\">\n    <div className=\"flex justify-between gap-4\">\n      <Avatar>\n        <AvatarImage src=\"https://github.com/vercel.png\" />\n        <AvatarFallback>VC</AvatarFallback>\n      </Avatar>\n      <div className=\"space-y-1\">\n        <h4 className=\"text-sm font-semibold\">@nextjs</h4>\n        <p className=\"text-sm\">\n          The React Framework – created and maintained by @vercel.\n        </p>\n        <div className=\"text-xs text-muted-foreground\">\n          Joined December 2021\n        </div>\n      </div>\n    </div>\n  </HoverCardContent>\n</HoverCard>",
+      "note": null
+    },
+    {
+      "name": "Input",
+      "module": "input",
+      "uses": ["Input"],
+      "icons": [],
+      "jsx": "<Input type=\"email\" placeholder=\"Email\" />",
+      "note": null
+    },
+    {
+      "name": "Input otp",
+      "module": "input-otp",
+      "uses": ["InputOTP", "InputOTPGroup", "InputOTPSeparator", "InputOTPSlot"],
+      "icons": [],
+      "jsx": "<InputOTP maxLength={6}>\n  <InputOTPGroup>\n    <InputOTPSlot index={0} />\n    <InputOTPSlot index={1} />\n    <InputOTPSlot index={2} />\n  </InputOTPGroup>\n  <InputOTPSeparator />\n  <InputOTPGroup>\n    <InputOTPSlot index={3} />\n    <InputOTPSlot index={4} />\n    <InputOTPSlot index={5} />\n  </InputOTPGroup>\n</InputOTP>",
+      "note": null
+    },
+    {
+      "name": "Item",
+      "module": "item",
+      "uses": [
+        "Button",
+        "Item",
+        "ItemActions",
+        "ItemContent",
+        "ItemDescription",
+        "ItemMedia",
+        "ItemTitle"
+      ],
+      "icons": ["BadgeCheckIcon", "ChevronRightIcon"],
+      "jsx": "<div className=\"flex w-full max-w-md flex-col gap-6\">\n  <Item variant=\"outline\">\n    <ItemContent>\n      <ItemTitle>Basic Item</ItemTitle>\n      <ItemDescription>\n        A simple item with title and description.\n      </ItemDescription>\n    </ItemContent>\n    <ItemActions>\n      <Button variant=\"outline\" size=\"sm\">\n        Action\n      </Button>\n    </ItemActions>\n  </Item>\n  <Item variant=\"outline\" size=\"sm\" asChild>\n    <a href=\"#\">\n      <ItemMedia>\n        <BadgeCheckIcon className=\"size-5\" />\n      </ItemMedia>\n      <ItemContent>\n        <ItemTitle>Your profile has been verified.</ItemTitle>\n      </ItemContent>\n      <ItemActions>\n        <ChevronRightIcon className=\"size-4\" />\n      </ItemActions>\n    </a>\n  </Item>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Kbd",
+      "module": "kbd",
+      "uses": ["Kbd", "KbdGroup"],
+      "icons": [],
+      "jsx": "<div className=\"flex flex-col items-center gap-4\">\n  <KbdGroup>\n    <Kbd>⌘</Kbd>\n    <Kbd>⇧</Kbd>\n    <Kbd>⌥</Kbd>\n    <Kbd>⌃</Kbd>\n  </KbdGroup>\n  <KbdGroup>\n    <Kbd>Ctrl</Kbd>\n    <span>+</span>\n    <Kbd>B</Kbd>\n  </KbdGroup>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Label",
+      "module": "label",
+      "uses": ["Checkbox", "Label"],
+      "icons": [],
+      "jsx": "<div>\n  <div className=\"flex items-center space-x-2\">\n    <Checkbox id=\"terms\" />\n    <Label htmlFor=\"terms\">Accept terms and conditions</Label>\n  </div>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Menubar",
+      "module": "menubar",
+      "uses": [
+        "Menubar",
+        "MenubarCheckboxItem",
+        "MenubarContent",
+        "MenubarItem",
+        "MenubarMenu",
+        "MenubarRadioGroup",
+        "MenubarRadioItem",
+        "MenubarSeparator",
+        "MenubarShortcut",
+        "MenubarSub",
+        "MenubarSubContent",
+        "MenubarSubTrigger",
+        "MenubarTrigger"
+      ],
+      "icons": [],
+      "jsx": "<Menubar>\n  <MenubarMenu>\n    <MenubarTrigger>File</MenubarTrigger>\n    <MenubarContent>\n      <MenubarItem>\n        New Tab <MenubarShortcut>⌘T</MenubarShortcut>\n      </MenubarItem>\n      <MenubarItem>\n        New Window <MenubarShortcut>⌘N</MenubarShortcut>\n      </MenubarItem>\n      <MenubarItem disabled>New Incognito Window</MenubarItem>\n      <MenubarSeparator />\n      <MenubarSub>\n        <MenubarSubTrigger>Share</MenubarSubTrigger>\n        <MenubarSubContent>\n          <MenubarItem>Email link</MenubarItem>\n          <MenubarItem>Messages</MenubarItem>\n          <MenubarItem>Notes</MenubarItem>\n        </MenubarSubContent>\n      </MenubarSub>\n      <MenubarSeparator />\n      <MenubarItem>\n        Print... <MenubarShortcut>⌘P</MenubarShortcut>\n      </MenubarItem>\n    </MenubarContent>\n  </MenubarMenu>\n  <MenubarMenu>\n    <MenubarTrigger>Edit</MenubarTrigger>\n    <MenubarContent>\n      <MenubarItem>\n        Undo <MenubarShortcut>⌘Z</MenubarShortcut>\n      </MenubarItem>\n      <MenubarItem>\n        Redo <MenubarShortcut>⇧⌘Z</MenubarShortcut>\n      </MenubarItem>\n      <MenubarSeparator />\n      <MenubarSub>\n        <MenubarSubTrigger>Find</MenubarSubTrigger>\n        <MenubarSubContent>\n          <MenubarItem>Search the web</MenubarItem>\n          <MenubarSeparator />\n          <MenubarItem>Find...</MenubarItem>\n          <MenubarItem>Find Next</MenubarItem>\n          <MenubarItem>Find Previous</MenubarItem>\n        </MenubarSubContent>\n      </MenubarSub>\n      <MenubarSeparator />\n      <MenubarItem>Cut</MenubarItem>\n      <MenubarItem>Copy</MenubarItem>\n      <MenubarItem>Paste</MenubarItem>\n    </MenubarContent>\n  </MenubarMenu>\n  <MenubarMenu>\n    <MenubarTrigger>View</MenubarTrigger>\n    <MenubarContent>\n      <MenubarCheckboxItem>Always Show Bookmarks Bar</MenubarCheckboxItem>\n      <MenubarCheckboxItem checked>\n        Always Show Full URLs\n      </MenubarCheckboxItem>\n      <MenubarSeparator />\n      <MenubarItem inset>\n        Reload <MenubarShortcut>⌘R</MenubarShortcut>\n      </MenubarItem>\n      <MenubarItem disabled inset>\n        Force Reload <MenubarShortcut>⇧⌘R</MenubarShortcut>\n      </MenubarItem>\n      <MenubarSeparator />\n      <MenubarItem inset>Toggle Fullscreen</MenubarItem>\n      <MenubarSeparator />\n      <MenubarItem inset>Hide Sidebar</MenubarItem>\n    </MenubarContent>\n  </MenubarMenu>\n  <MenubarMenu>\n    <MenubarTrigger>Profiles</MenubarTrigger>\n    <MenubarContent>\n      <MenubarRadioGroup value=\"benoit\">\n        <MenubarRadioItem value=\"andy\">Andy</MenubarRadioItem>\n        <MenubarRadioItem value=\"benoit\">Benoit</MenubarRadioItem>\n        <MenubarRadioItem value=\"Luis\">Luis</MenubarRadioItem>\n      </MenubarRadioGroup>\n      <MenubarSeparator />\n      <MenubarItem inset>Edit...</MenubarItem>\n      <MenubarSeparator />\n      <MenubarItem inset>Add Profile...</MenubarItem>\n    </MenubarContent>\n  </MenubarMenu>\n</Menubar>",
+      "note": null
+    },
+    {
+      "name": "Native select",
+      "module": "native-select",
+      "uses": ["NativeSelect", "NativeSelectOption"],
+      "icons": [],
+      "jsx": "<NativeSelect>\n  <NativeSelectOption value=\"\">Select status</NativeSelectOption>\n  <NativeSelectOption value=\"todo\">Todo</NativeSelectOption>\n  <NativeSelectOption value=\"in-progress\">In Progress</NativeSelectOption>\n  <NativeSelectOption value=\"done\">Done</NativeSelectOption>\n  <NativeSelectOption value=\"cancelled\">Cancelled</NativeSelectOption>\n</NativeSelect>",
+      "note": null
+    },
+    {
+      "name": "Pagination",
+      "module": "pagination",
+      "uses": [
+        "Pagination",
+        "PaginationContent",
+        "PaginationEllipsis",
+        "PaginationItem",
+        "PaginationLink",
+        "PaginationNext",
+        "PaginationPrevious"
+      ],
+      "icons": [],
+      "jsx": "<Pagination>\n  <PaginationContent>\n    <PaginationItem>\n      <PaginationPrevious href=\"#\" />\n    </PaginationItem>\n    <PaginationItem>\n      <PaginationLink href=\"#\">1</PaginationLink>\n    </PaginationItem>\n    <PaginationItem>\n      <PaginationLink href=\"#\" isActive>\n        2\n      </PaginationLink>\n    </PaginationItem>\n    <PaginationItem>\n      <PaginationLink href=\"#\">3</PaginationLink>\n    </PaginationItem>\n    <PaginationItem>\n      <PaginationEllipsis />\n    </PaginationItem>\n    <PaginationItem>\n      <PaginationNext href=\"#\" />\n    </PaginationItem>\n  </PaginationContent>\n</Pagination>",
+      "note": null
+    },
+    {
+      "name": "Popover",
+      "module": "popover",
+      "uses": ["Button", "Input", "Label", "Popover", "PopoverContent", "PopoverTrigger"],
+      "icons": [],
+      "jsx": "<Popover>\n  <PopoverTrigger asChild>\n    <Button variant=\"outline\">Open popover</Button>\n  </PopoverTrigger>\n  <PopoverContent className=\"w-80\">\n    <div className=\"grid gap-4\">\n      <div className=\"space-y-2\">\n        <h4 className=\"leading-none font-medium\">Dimensions</h4>\n        <p className=\"text-sm text-muted-foreground\">\n          Set the dimensions for the layer.\n        </p>\n      </div>\n      <div className=\"grid gap-2\">\n        <div className=\"grid grid-cols-3 items-center gap-4\">\n          <Label htmlFor=\"width\">Width</Label>\n          <Input\n            id=\"width\"\n            defaultValue=\"100%\"\n            className=\"col-span-2 h-8\"\n          />\n        </div>\n        <div className=\"grid grid-cols-3 items-center gap-4\">\n          <Label htmlFor=\"maxWidth\">Max. width</Label>\n          <Input\n            id=\"maxWidth\"\n            defaultValue=\"300px\"\n            className=\"col-span-2 h-8\"\n          />\n        </div>\n        <div className=\"grid grid-cols-3 items-center gap-4\">\n          <Label htmlFor=\"height\">Height</Label>\n          <Input\n            id=\"height\"\n            defaultValue=\"25px\"\n            className=\"col-span-2 h-8\"\n          />\n        </div>\n        <div className=\"grid grid-cols-3 items-center gap-4\">\n          <Label htmlFor=\"maxHeight\">Max. height</Label>\n          <Input\n            id=\"maxHeight\"\n            defaultValue=\"none\"\n            className=\"col-span-2 h-8\"\n          />\n        </div>\n      </div>\n    </div>\n  </PopoverContent>\n</Popover>",
+      "note": null
+    },
+    {
+      "name": "Radio group",
+      "module": "radio-group",
+      "uses": ["Label", "RadioGroup", "RadioGroupItem"],
+      "icons": [],
+      "jsx": "<RadioGroup defaultValue=\"comfortable\">\n  <div className=\"flex items-center gap-3\">\n    <RadioGroupItem value=\"default\" id=\"r1\" />\n    <Label htmlFor=\"r1\">Default</Label>\n  </div>\n  <div className=\"flex items-center gap-3\">\n    <RadioGroupItem value=\"comfortable\" id=\"r2\" />\n    <Label htmlFor=\"r2\">Comfortable</Label>\n  </div>\n  <div className=\"flex items-center gap-3\">\n    <RadioGroupItem value=\"compact\" id=\"r3\" />\n    <Label htmlFor=\"r3\">Compact</Label>\n  </div>\n</RadioGroup>",
+      "note": null
+    },
+    {
+      "name": "Resizable",
+      "module": "resizable",
+      "uses": ["ResizableHandle", "ResizablePanel", "ResizablePanelGroup"],
+      "icons": [],
+      "jsx": "<ResizablePanelGroup\n  orientation=\"horizontal\"\n  className=\"max-w-md rounded-lg border md:min-w-[450px]\"\n>\n  <ResizablePanel defaultSize=\"50%\">\n    <div className=\"flex h-[200px] items-center justify-center p-6\">\n      <span className=\"font-semibold\">One</span>\n    </div>\n  </ResizablePanel>\n  <ResizableHandle />\n  <ResizablePanel defaultSize=\"50%\">\n    <ResizablePanelGroup orientation=\"vertical\">\n      <ResizablePanel defaultSize=\"25%\">\n        <div className=\"flex h-full items-center justify-center p-6\">\n          <span className=\"font-semibold\">Two</span>\n        </div>\n      </ResizablePanel>\n      <ResizableHandle />\n      <ResizablePanel defaultSize=\"75%\">\n        <div className=\"flex h-full items-center justify-center p-6\">\n          <span className=\"font-semibold\">Three</span>\n        </div>\n      </ResizablePanel>\n    </ResizablePanelGroup>\n  </ResizablePanel>\n</ResizablePanelGroup>",
+      "note": null
+    },
+    {
+      "name": "Select",
+      "module": "select",
+      "uses": [
+        "Select",
+        "SelectContent",
+        "SelectGroup",
+        "SelectItem",
+        "SelectLabel",
+        "SelectTrigger",
+        "SelectValue"
+      ],
+      "icons": [],
+      "jsx": "<Select>\n  <SelectTrigger className=\"w-[180px]\">\n    <SelectValue placeholder=\"Select a fruit\" />\n  </SelectTrigger>\n  <SelectContent>\n    <SelectGroup>\n      <SelectLabel>Fruits</SelectLabel>\n      <SelectItem value=\"apple\">Apple</SelectItem>\n      <SelectItem value=\"banana\">Banana</SelectItem>\n      <SelectItem value=\"blueberry\">Blueberry</SelectItem>\n      <SelectItem value=\"grapes\">Grapes</SelectItem>\n      <SelectItem value=\"pineapple\">Pineapple</SelectItem>\n    </SelectGroup>\n  </SelectContent>\n</Select>",
+      "note": null
+    },
+    {
+      "name": "Separator",
+      "module": "separator",
+      "uses": ["Separator"],
+      "icons": [],
+      "jsx": "<div>\n  <div className=\"space-y-1\">\n    <h4 className=\"text-sm leading-none font-medium\">Radix Primitives</h4>\n    <p className=\"text-sm text-muted-foreground\">\n      An open-source UI component library.\n    </p>\n  </div>\n  <Separator className=\"my-4\" />\n  <div className=\"flex h-5 items-center space-x-4 text-sm\">\n    <div>Blog</div>\n    <Separator orientation=\"vertical\" />\n    <div>Docs</div>\n    <Separator orientation=\"vertical\" />\n    <div>Source</div>\n  </div>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Sheet",
+      "module": "sheet",
+      "uses": [
+        "Button",
+        "Input",
+        "Label",
+        "Sheet",
+        "SheetClose",
+        "SheetContent",
+        "SheetDescription",
+        "SheetFooter",
+        "SheetHeader",
+        "SheetTitle",
+        "SheetTrigger"
+      ],
+      "icons": [],
+      "jsx": "<Sheet>\n  <SheetTrigger asChild>\n    <Button variant=\"outline\">Open</Button>\n  </SheetTrigger>\n  <SheetContent>\n    <SheetHeader>\n      <SheetTitle>Edit profile</SheetTitle>\n      <SheetDescription>\n        Make changes to your profile here. Click save when you&apos;re done.\n      </SheetDescription>\n    </SheetHeader>\n    <div className=\"grid flex-1 auto-rows-min gap-6 px-4\">\n      <div className=\"grid gap-3\">\n        <Label htmlFor=\"sheet-demo-name\">Name</Label>\n        <Input id=\"sheet-demo-name\" defaultValue=\"Pedro Duarte\" />\n      </div>\n      <div className=\"grid gap-3\">\n        <Label htmlFor=\"sheet-demo-username\">Username</Label>\n        <Input id=\"sheet-demo-username\" defaultValue=\"@peduarte\" />\n      </div>\n    </div>\n    <SheetFooter>\n      <Button type=\"submit\">Save changes</Button>\n      <SheetClose asChild>\n        <Button variant=\"outline\">Close</Button>\n      </SheetClose>\n    </SheetFooter>\n  </SheetContent>\n</Sheet>",
+      "note": null
+    },
+    {
+      "name": "Skeleton",
+      "module": "skeleton",
+      "uses": ["Skeleton"],
+      "icons": [],
+      "jsx": "<div className=\"flex items-center space-x-4\">\n  <Skeleton className=\"h-12 w-12 rounded-full\" />\n  <div className=\"space-y-2\">\n    <Skeleton className=\"h-4 w-[250px]\" />\n    <Skeleton className=\"h-4 w-[200px]\" />\n  </div>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Spinner",
+      "module": "spinner",
+      "uses": ["Item", "ItemContent", "ItemMedia", "ItemTitle", "Spinner"],
+      "icons": [],
+      "jsx": "<div className=\"flex w-full max-w-xs flex-col gap-4 [--radius:1rem]\">\n  <Item variant=\"muted\">\n    <ItemMedia>\n      <Spinner />\n    </ItemMedia>\n    <ItemContent>\n      <ItemTitle className=\"line-clamp-1\">Processing payment...</ItemTitle>\n    </ItemContent>\n    <ItemContent className=\"flex-none justify-end\">\n      <span className=\"text-sm tabular-nums\">$100.00</span>\n    </ItemContent>\n  </Item>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Switch",
+      "module": "switch",
+      "uses": ["Label", "Switch"],
+      "icons": [],
+      "jsx": "<div className=\"flex items-center space-x-2\">\n  <Switch id=\"airplane-mode\" />\n  <Label htmlFor=\"airplane-mode\">Airplane Mode</Label>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Tabs",
+      "module": "tabs",
+      "uses": [
+        "Button",
+        "Card",
+        "CardContent",
+        "CardDescription",
+        "CardFooter",
+        "CardHeader",
+        "CardTitle",
+        "Input",
+        "Label",
+        "Tabs",
+        "TabsContent",
+        "TabsList",
+        "TabsTrigger"
+      ],
+      "icons": ["AppWindowIcon", "CodeIcon"],
+      "jsx": "<div className=\"flex w-full max-w-sm flex-col gap-6\">\n  <Tabs defaultValue=\"account\">\n    <TabsList>\n      <TabsTrigger value=\"account\">Account</TabsTrigger>\n      <TabsTrigger value=\"password\">Password</TabsTrigger>\n    </TabsList>\n    <TabsContent value=\"account\">\n      <Card>\n        <CardHeader>\n          <CardTitle>Account</CardTitle>\n          <CardDescription>\n            Make changes to your account here. Click save when you&apos;re\n            done.\n          </CardDescription>\n        </CardHeader>\n        <CardContent className=\"grid gap-6\">\n          <div className=\"grid gap-3\">\n            <Label htmlFor=\"tabs-demo-name\">Name</Label>\n            <Input id=\"tabs-demo-name\" defaultValue=\"Pedro Duarte\" />\n          </div>\n          <div className=\"grid gap-3\">\n            <Label htmlFor=\"tabs-demo-username\">Username</Label>\n            <Input id=\"tabs-demo-username\" defaultValue=\"@peduarte\" />\n          </div>\n        </CardContent>\n        <CardFooter>\n          <Button>Save changes</Button>\n        </CardFooter>\n      </Card>\n    </TabsContent>\n    <TabsContent value=\"password\">\n      <Card>\n        <CardHeader>\n          <CardTitle>Password</CardTitle>\n          <CardDescription>\n            Change your password here. After saving, you&apos;ll be logged\n            out.\n          </CardDescription>\n        </CardHeader>\n        <CardContent className=\"grid gap-6\">\n          <div className=\"grid gap-3\">\n            <Label htmlFor=\"tabs-demo-current\">Current password</Label>\n            <Input id=\"tabs-demo-current\" type=\"password\" />\n          </div>\n          <div className=\"grid gap-3\">\n            <Label htmlFor=\"tabs-demo-new\">New password</Label>\n            <Input id=\"tabs-demo-new\" type=\"password\" />\n          </div>\n        </CardContent>\n        <CardFooter>\n          <Button>Save password</Button>\n        </CardFooter>\n      </Card>\n    </TabsContent>\n  </Tabs>\n</div>",
+      "note": null
+    },
+    {
+      "name": "Textarea",
+      "module": "textarea",
+      "uses": ["Textarea"],
+      "icons": [],
+      "jsx": "<Textarea placeholder=\"Type your message here.\" />",
+      "note": null
+    },
+    {
+      "name": "Toggle",
+      "module": "toggle",
+      "uses": ["Toggle"],
+      "icons": ["BookmarkIcon"],
+      "jsx": "<Toggle\n  aria-label=\"Toggle bookmark\"\n  size=\"sm\"\n  variant=\"outline\"\n  className=\"data-[state=on]:bg-transparent data-[state=on]:*:[svg]:fill-blue-500 data-[state=on]:*:[svg]:stroke-blue-500\"\n>\n  <BookmarkIcon />\n  Bookmark\n</Toggle>",
+      "note": null
+    },
+    {
+      "name": "Toggle group",
+      "module": "toggle-group",
+      "uses": ["ToggleGroup", "ToggleGroupItem"],
+      "icons": ["Bold", "Italic", "Underline"],
+      "jsx": "<ToggleGroup variant=\"outline\" type=\"multiple\">\n  <ToggleGroupItem value=\"bold\" aria-label=\"Toggle bold\">\n    <Bold className=\"h-4 w-4\" />\n  </ToggleGroupItem>\n  <ToggleGroupItem value=\"italic\" aria-label=\"Toggle italic\">\n    <Italic className=\"h-4 w-4\" />\n  </ToggleGroupItem>\n  <ToggleGroupItem value=\"strikethrough\" aria-label=\"Toggle strikethrough\">\n    <Underline className=\"h-4 w-4\" />\n  </ToggleGroupItem>\n</ToggleGroup>",
+      "note": null
+    },
+    {
+      "name": "Tooltip",
+      "module": "tooltip",
+      "uses": ["Button", "Tooltip", "TooltipContent", "TooltipTrigger"],
+      "icons": [],
+      "jsx": "<Tooltip>\n  <TooltipTrigger asChild>\n    <Button variant=\"outline\">Hover</Button>\n  </TooltipTrigger>\n  <TooltipContent>\n    <p>Add to library</p>\n  </TooltipContent>\n</Tooltip>",
+      "note": null
+    }
+  ]
+}
