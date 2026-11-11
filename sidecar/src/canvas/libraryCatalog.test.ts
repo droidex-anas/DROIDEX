@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
-import { leaveOutFailingSeeds, libraryCatalogFiles } from './libraryCatalog.js';
+import {
+  LIBRARY_CATALOG_NOTICE,
+  leaveOutFailingSeeds,
+  libraryCatalogFiles,
+} from './libraryCatalog.js';
+import seeds from './libraryCatalogSeeds.json' with { type: 'json' };
 
 const BUTTON = 'components/ui/button.tsx';
 const SEPARATOR = 'components/ui/separator.tsx';
@@ -46,7 +52,20 @@ test('a shadcn demo seeds the catalog only when the kit kept its module and expo
   assert.deepEqual(libraryCatalogFiles(libraryFiles(buttonOnly, [SEPARATOR])), {});
 });
 
-test('a seed that does not build is left out with a diagnostic, and the catalog goes with the last one', () => {
+test("the demos carry shadcn/ui's MIT notice, the same one NOTICE carries", () => {
+  const files = libraryFiles(`export { Button } from './components/ui/button';\n`, [BUTTON]);
+  const notice = libraryCatalogFiles(files)[LIBRARY_CATALOG_NOTICE];
+  assert.match(
+    notice,
+    /shadcn\/ui\s+\(https:\/\/github\.com\/shadcn-ui\/ui, commit [0-9a-f]{40}\)/,
+  );
+  assert.ok(notice.endsWith(seeds.license));
+  const repositoryNotice = readFileSync(new URL('../../../NOTICE', import.meta.url), 'utf8');
+  for (const line of seeds.license.trim().split('\n'))
+    assert.ok(repositoryNotice.includes(line), `NOTICE lacks "${line}"`);
+});
+
+test('a seed that does not build is left out with a diagnostic, and the catalog and notice go with the last one', () => {
   const entry = `export { Button } from './components/ui/button';\nexport { Separator } from './components/ui/separator';\n`;
   const files = libraryFiles(entry, [BUTTON, SEPARATOR]);
   const kit = { files: { ...files, ...libraryCatalogFiles(files) } };
@@ -67,6 +86,7 @@ test('a seed that does not build is left out with a diagnostic, and the catalog 
     catalogOf(one.kit.files).map(({ name }) => name),
     ['Button'],
   );
+  assert.ok(Object.hasOwn(one.kit.files, LIBRARY_CATALOG_NOTICE));
   assert.deepEqual(one.diagnostics, [
     {
       code: 'compile_failed',
@@ -76,4 +96,5 @@ test('a seed that does not build is left out with a diagnostic, and the catalog 
   ]);
   const all = leaveOutFailingSeeds(kit, failing(['Button', 'Separator']));
   assert.equal(Object.hasOwn(all.kit.files, KIT_CATALOG_FILE), false);
+  assert.equal(Object.hasOwn(all.kit.files, LIBRARY_CATALOG_NOTICE), false);
 });
