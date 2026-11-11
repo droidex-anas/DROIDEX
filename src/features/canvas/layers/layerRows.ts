@@ -103,7 +103,8 @@ function elementEntries(frame: CanvasFrame, layers: FrameLayers, closed: Readonl
     parentKey: designId,
   });
   const nodes = layerNodes(layers);
-  if (nodes.length === 0) return [note('empty', 'No layers')];
+  const more = note('more', 'Not every layer could be listed');
+  if (nodes.length === 0) return [layers.outline.truncated ? more : note('empty', 'No layers')];
 
   const childrenOf = new Map<string | null, OutlineNode[]>();
   for (const node of nodes) {
@@ -133,7 +134,7 @@ function elementEntries(frame: CanvasFrame, layers: FrameLayers, closed: Readonl
     });
     if (open) pending.push(...siblingsOf(childrenOf, node.nodeId, key, level + 1));
   }
-  if (layers.outline.truncated) entries.push(note('more', 'Not every layer could be listed'));
+  if (layers.outline.truncated) entries.push(more);
   return entries;
 }
 
