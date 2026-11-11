@@ -15,6 +15,7 @@ import {
 } from '@droidex/icons';
 import { ALT_MODIFIER_LABEL } from '../../lib/shortcuts';
 import { LAYERS_KEY_LABEL } from './boardKeys';
+import type { BoardStage } from './boardStage';
 import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
@@ -98,7 +99,8 @@ export interface LayersToggle {
 }
 
 export interface BoardControlsProps {
-  scale: number;
+  /** The live view, whose zoom the zoom bar reads out. */
+  stage: BoardStage;
   /** Spec §11's timings; the selection bar reveals on the popover token. */
   motion: CanvasMotion;
   mode: BoardMode;
@@ -124,7 +126,7 @@ export interface BoardControlsProps {
 }
 
 export function BoardControls({
-  scale,
+  stage,
   motion,
   mode,
   selectedCount,
@@ -224,7 +226,7 @@ export function BoardControls({
       </div>
 
       <ZoomControl
-        scale={scale}
+        stage={stage}
         hasFrames={hasFrames}
         hasSelection={selectedCount > 0}
         onZoom={onZoom}

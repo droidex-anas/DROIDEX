@@ -1,8 +1,10 @@
 // The board's world layer: every frame, placed in canvas space under the one
 // transform that pans and zooms the board, with the overlays drawn over them in
-// the same space.
+// the same space. The transform is the stage's to write, so a pan or a zoom
+// moves the layer without rendering it.
 
 import type { ReactNode } from 'react';
+import type { BoardStage } from './boardStage';
 import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction, type BoardInteractionEvent } from './canvasState';
 import type { CanvasPresence } from './canvasPresence';
@@ -30,6 +32,9 @@ interface BoardWorldProps extends Pick<
   frames: CanvasFrame[];
   /** Where each of `frames` is drawn, in the same order. */
   drawn: PlacedFrame[];
+  /** The live view, which places the layer. */
+  stage: BoardStage;
+  /** Where the view last settled, which a frame toolbar is placed for. */
   viewport: Viewport;
   /** The part of the board no panel covers, which a frame toolbar keeps to. */
   size: Point;
@@ -55,6 +60,7 @@ export function BoardWorld({
   canvasId,
   frames,
   drawn,
+  stage,
   viewport,
   size,
   scale,
@@ -82,17 +88,7 @@ export function BoardWorld({
   children,
 }: BoardWorldProps) {
   return (
-    <div
-      className="absolute left-0 top-0"
-      style={
-        {
-          transform: `translate(${String(viewport.x)}px, ${String(viewport.y)}px) scale(${String(scale)})`,
-          transformOrigin: '0 0',
-          // The board stylesheet divides frame chrome by this, so it keeps its size.
-          '--board-scale': String(scale),
-        } as React.CSSProperties
-      }
-    >
+    <div ref={stage.attach} className="absolute left-0 top-0" style={{ transformOrigin: '0 0' }}>
       {frames.map((frame, index) => (
         <DesignFrame
           key={frame.designId}
