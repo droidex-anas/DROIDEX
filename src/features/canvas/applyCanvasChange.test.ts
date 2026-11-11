@@ -25,6 +25,12 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
   return { ...fields(designId, revisionId), build: { status: 'pending', generation: 0 } };
 }
 
+function applied(...args: Parameters<typeof applyCanvasChange>): CanvasSnapshot {
+  const next = applyCanvasChange(...args);
+  assert.ok(next);
+  return next;
+}
+
 const snapshot: CanvasSnapshot = {
   canvasId: 'cv_01',
   sequence: 4,
@@ -34,7 +40,7 @@ const snapshot: CanvasSnapshot = {
 };
 
 test('a change replaces frames in place, drops removals and appends new frames', () => {
-  const next = applyCanvasChange(snapshot, {
+  const next = applied(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [fields('cards', 'rev_09'), fields('cta')],
@@ -57,7 +63,7 @@ test('a change replaces frames in place, drops removals and appends new frames',
 });
 
 test('a frame keeps its build, the same object, until a change sends one, which can come alone', () => {
-  const moved = applyCanvasChange(snapshot, {
+  const moved = applied(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [{ ...fields('hey'), rect: { x: 40, y: 0, width: 720, height: 720 } }],
@@ -66,7 +72,7 @@ test('a frame keeps its build, the same object, until a change sends one, which 
   });
   assert.equal(moved.frames[0].rect.x, 40);
   assert.equal(moved.frames[0].build, snapshot.frames[0].build);
-  const built = applyCanvasChange(moved, {
+  const built = applied(moved, {
     canvasId: 'cv_01',
     sequence: 6,
     frames: [],
@@ -86,7 +92,7 @@ test('a frame keeps its build, the same object, until a change sends one, which 
 });
 
 test('a change that touches nothing still advances the sequence', () => {
-  const next = applyCanvasChange(snapshot, {
+  const next = applied(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [],
@@ -98,7 +104,7 @@ test('a change that touches nothing still advances the sequence', () => {
 });
 
 test('a removed frame stays removed even when the change also reports it', () => {
-  const next = applyCanvasChange(snapshot, {
+  const next = applied(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [fields('hey', 'rev_09')],
@@ -124,7 +130,7 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
     ...snapshot,
     annotations: [mark('a', 'ink'), mark('b', 'ink'), mark('c', 'ink')],
   };
-  const next = applyCanvasChange(drawn, {
+  const next = applied(drawn, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [],
@@ -138,7 +144,7 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
     ['b:red', 'c:ink', 'd:ink'],
   );
   // A frame change leaves the layer and its version alone.
-  const moved = applyCanvasChange(next, {
+  const moved = applied(next, {
     canvasId: 'cv_01',
     sequence: 6,
     frames: [fields('hey', 'rev_10')],
@@ -150,7 +156,7 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
 });
 
 test('a reorder restacks the frames it names, back to front', () => {
-  const next = applyCanvasChange(
+  const next = applied(
     { ...snapshot, frames: [frame('hey'), frame('cards'), frame('cta')] },
     {
       canvasId: 'cv_01',
