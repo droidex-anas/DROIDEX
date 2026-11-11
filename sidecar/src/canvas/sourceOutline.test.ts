@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { isBuild } from '../../../src/features/canvas/buildValidation.js';
 import type { SourceFiles } from './protocol.js';
+import { sourceOutlineSchema } from './schema.js';
 import { instrumentSource } from './sourceElements.js';
+import { OUTLINE_BUDGET } from './sourceOutline.js';
 
 /** The outline as indented lines: a tag in brackets, its text, its lock, and `fixed` when it cannot move alone. */
 function outlineOf(files: SourceFiles): string[] {
@@ -129,4 +132,152 @@ test('long text is clamped, and nesting past the open depth is reported as trunc
   const [paragraph] = instrumentSource({ 'main.tsx': `export default () => <p>${long}</p>;` }, 'r1')
     .outline.nodes;
   assert.equal(paragraph?.text, `${'x'.repeat(63)}…`);
+});
+
+test('a small source that would expand past the budget stops with a partial outline marked truncated', () => {
+  // Every level renders the next twice, so 15 KB of source opens 2,048 instances of a long name.
+  const name = `Long${'A'.repeat(5000)}`;
+  const doubling = Array.from({ length: 11 }, (_, index) => {
+    const child = index === 10 ? name : `C${String(index + 1)}`;
+    return `function C${String(index)}() { return <><${child} /><${child} /></>; }`;
+  });
+  // Every helper has two returns, each calling the next.
+  const helpers = Array.from(
+    { length: 16 },
+    (_, index) =>
+      `function f${String(index)}() { if (Math.random()) return f${String(index + 1)}(); return f${String(index + 1)}(); }`,
+  );
+  const designs = [
+    `function ${name}() { return <span />; }\n${doubling.join('\n')}\nexport default () => <C0 />;`,
+    `${helpers.join('\n')}\nfunction f16() { return <span />; }\nexport default () => f0();`,
+  ];
+  for (const main of designs) {
+    const { outline } = instrumentSource({ 'main.tsx': main }, 'r1');
+    assert.equal(outline.truncated, true);
+    assert.ok(Buffer.byteLength(JSON.stringify(outline)) <= OUTLINE_BUDGET.bytes);
+    assert.ok(outline.nodes.every((node) => Array.from(node.name).length <= 64));
+    assert.equal(sourceOutlineSchema.safeParse(outline).success, true);
+  }
+});
+
+test('row ids follow where JSX is written, so editing text or adding an import above keeps them', () => {
+  const ids = (main: string) =>
+    instrumentSource({ 'main.tsx': main }, 'r1').outline.nodes.map((node) => node.nodeId);
+  const before = ids(
+    'export default () => <main><h1>Short</h1><section><p>Same</p></section></main>;',
+  );
+  const after = ids(
+    "import './styles.css';\nexport default () =>\n  <main><h1>Much longer text</h1><section><p>Same</p></section></main>;",
+  );
+  assert.equal(before.length, 4);
+  assert.deepEqual(after, before);
+});
+
+test('JSX that renders through other forms still gets rows, and JSX that never renders gets none', () => {
+  const cases: [SourceFiles, string[]][] = [
+    [
+      {
+        'main.tsx':
+          'export default ({ open }) => { const body = <h1>Shown</h1>; return open ? body : null; }',
+      },
+      ['Condition fixed', '  <h1> "Shown" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx': "import * as C from './Card'; export default () => <C.Card />;",
+        'Card.tsx': 'export function Card() { return <p>Card</p>; }',
+      },
+      ['C.Card fixed', '  <p> "Card" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
+          'function Shell({ children: body, data }) { return <section>{data.children}{body}</section>; }\nexport default () => <Shell data={{}}><b>Given</b></Shell>;',
+      },
+      ['Shell fixed', '  <section> [computed] fixed', '    <b> "Given" [shared]'],
+    ],
+    [
+      {
+        'main.tsx':
+          'export default ({ a }) => <main>{<h1>Left</h1> ?? a}{a || <p>Right</p>}</main>;',
+      },
+      [
+        '<main> [computed] fixed',
+        '  Condition',
+        '    <h1> "Left" fixed',
+        '  Condition',
+        '    <p> "Right" fixed',
+      ],
+    ],
+    [
+      {
+        'main.tsx':
+          'import { createPortal } from \'react-dom\';\nexport default () => [<h1 key="a">One</h1>, createPortal(<aside>Two</aside>, document.body)];',
+      },
+      ['<h1> "One" [shared] fixed', '<aside> "Two" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
+          'function Item(item) { return <li>{item}</li>; }\nexport default ({ items }) => <ul>{items.map(Item)}</ul>;',
+      },
+      ['<ul> [computed] fixed', '  Repeat', '    <li> [repeated] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
+          'export default ({ ready }) => { let body = <p>Now</p>; const later = () => { body = <b>Never</b>; }; if (!ready) return null; return <main>{body}</main>; }',
+      },
+      ['<main> [computed] fixed', '  <p> "Now" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
+          'export default function Page({ data }) { if (!data) return <p>Loading</p>; return <main>Ready</main>; }',
+      },
+      ['Condition fixed', '  <p> "Loading" fixed', '  <main> "Ready" fixed'],
+    ],
+  ];
+  for (const [files, expected] of cases)
+    assert.deepEqual(outlineOf(files), expected, files['main.tsx']);
+});
+
+test('both validators take an outline only as a tree of bounded one-line rows', () => {
+  const root = {
+    nodeId: '0123456789abcdef',
+    parentId: null,
+    kind: 'instance',
+    name: 'Card',
+    text: null,
+    elementId: null,
+    lock: null,
+    free: false,
+  };
+  const child = { ...root, nodeId: 'fedcba9876543210', parentId: root.nodeId };
+  const accepts = (nodes: unknown[]) => {
+    const outline = { nodes, truncated: false };
+    const sidecar = sourceOutlineSchema.safeParse(outline).success;
+    const build = {
+      status: 'ready',
+      revisionId: 'r1',
+      artifactId: 'a1',
+      elements: [],
+      diagnostics: [],
+    };
+    assert.equal(isBuild({ ...build, outline, generation: 1 }), sidecar, JSON.stringify(nodes));
+    return sidecar;
+  };
+  assert.equal(accepts([root, child]), true);
+  assert.equal(accepts([{ ...root, name: '😀'.repeat(64) }]), true);
+  for (const nodes of [
+    [root, root],
+    [child, root],
+    [{ ...root, parentId: root.nodeId }],
+    [{ ...root, elementId: 'el_1' }],
+    [{ ...root, kind: 'element' }],
+    [{ ...root, text: 'Not an element' }],
+    [{ ...root, name: '😀'.repeat(65) }],
+    [{ ...root, name: 'Two\nlines' }],
+  ])
+    assert.equal(accepts(nodes), false);
 });

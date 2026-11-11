@@ -1,31 +1,59 @@
 // A design's source outline: what its root component renders, as written and
 // in reading order. An instance of a design component opens onto that
 // component's JSX, with the children it was given where the component renders
-// them; a `.map` is one Repeat row over its template and `{open && …}` one
+// them; a `.map` is one Repeat row over its template, and `{open && …}`, a
+// function with several returns or a variable given JSX in several places one
 // Condition row. Rows say whether they can be edited directly and why not.
 
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-import type { ComponentUses } from './componentUses.js';
+import { functionName, type ComponentUses } from './componentUses.js';
 import type { OutlineNode, SourceOutline } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import type { Site } from './sourceElements.js';
+import {
+  assignedValues,
+  childrenBindings,
+  importedFrom,
+  isFunctionExpression,
+  isPortal,
+  localFunction,
+  namedCallback,
+  readsChildren,
+  returnedValues,
+  type ChildrenBinding,
+} from './sourceReferences.js';
 
-/** Instances opened inside instances past this depth stay closed rows. */
-const MAX_OPEN_DEPTH = 12;
-const MAX_TEXT_CODE_POINTS = 64;
+/**
+ * What one outline may cost, so a small source cannot expand into a large or
+ * slow one: how deep instances, helper calls and variables open inside each
+ * other, how many expressions are read, and the rows and bytes it sends. Past
+ * any of them the outline stops where it is and says it is truncated.
+ */
+export const OUTLINE_BUDGET = {
+  depth: 12,
+  steps: 100_000,
+  rows: CANVAS_LIMITS.maxSourceElements,
+  bytes: 1024 * 1024,
+};
 const KIT_MODULE = '@droidex/design-system';
 
 type Lock = NonNullable<OutlineNode['lock']>;
+type Row = Omit<OutlineNode, 'nodeId' | 'parentId'>;
 
 interface Place {
   parentId: string | null;
   /** Why an element here that is not written once is shared. */
   reason: Lock;
-  /** The components and JSX variables being opened, so neither opens into itself. */
+  /** The components, functions and JSX variables being opened, so none opens into itself. */
   opening: readonly ts.Node[];
-  /** The children the innermost open instance was given, and the place they were written in. */
-  slot: { children: readonly ts.JsxChild[]; place: Place } | null;
+  /** What the innermost open instance was given, and the place it was written in. */
+  slot: Slot | null;
+}
+
+interface Slot extends ChildrenBinding {
+  children: readonly ts.JsxChild[];
+  place: Place;
 }
 
 export function sourceOutline(
@@ -36,39 +64,79 @@ export function sourceOutline(
   const checker = program.getTypeChecker();
   const elements = new Map(sites.map((site) => [site.node as ts.Node, site.element]));
   const nodes: OutlineNode[] = [];
-  const nodeIds = new Set<string>();
+  /** How many rows each written place has under each parent, so a repeat gets its own id. */
+  const occurrences = new Map<string, number>();
+  const assigned = new Map<ts.VariableDeclaration, ts.Expression[]>();
+  const returns = new Map<ts.Block, ts.Expression[]>();
+  let steps = 0;
+  let bytes = 0;
   let truncated = false;
 
-  const add = (at: ts.Node, row: Omit<OutlineNode, 'nodeId' | 'parentId'>, place: Place) => {
-    if (nodes.length === CANVAS_LIMITS.maxSourceElements) {
+  const add = (at: ts.Node, row: Row, place: Place) => {
+    if (truncated || nodes.length === OUTLINE_BUDGET.rows) {
       truncated = true;
       return null;
     }
-    const key = [place.parentId, at.getSourceFile().fileName, at.getStart()];
-    let nodeId = hashOf(key);
-    // The same source can render twice under one row, as `{children}{children}` does.
-    while (nodeIds.has(nodeId)) nodeId = hashOf([...key, nodeId]);
-    nodeIds.add(nodeId);
-    nodes.push({ nodeId, parentId: place.parentId, ...row });
-    return nodeId;
+    const key = JSON.stringify([place.parentId, writtenAt(at)]);
+    const occurrence = occurrences.get(key) ?? 0;
+    occurrences.set(key, occurrence + 1);
+    const node = { nodeId: hashOf(key, occurrence), parentId: place.parentId, ...row };
+    const size = Buffer.byteLength(JSON.stringify(node), 'utf8') + 1;
+    if (bytes + size > OUTLINE_BUDGET.bytes) {
+      truncated = true;
+      return null;
+    }
+    bytes += size;
+    nodes.push(node);
+    return node.nodeId;
+  };
+  /** Adds a row that only holds others, and takes it back if `fill` gives it none. */
+  const addHolder = (at: ts.Node, row: Row, place: Place, fill: (inside: Place) => void) => {
+    const before = { rows: nodes.length, bytes };
+    const nodeId = add(at, row, place);
+    if (nodeId === null) return;
+    fill({ ...place, parentId: nodeId });
+    if (nodes.length > before.rows + 1) return;
+    nodes.length = before.rows;
+    bytes = before.bytes;
+  };
+  /** The place inside `node` as it opens; null where it is already open or too deep. */
+  const enter = (node: ts.Node, place: Place): Place | null => {
+    if (place.opening.includes(node)) return null;
+    if (place.opening.length > OUTLINE_BUDGET.depth) {
+      truncated = true;
+      return null;
+    }
+    return { ...place, opening: [...place.opening, node] };
   };
   /** The lock of a row that is not an element: none where it renders once. */
   const lockAt = (at: ts.Node, place: Place) => (uses.rendersOnce(at) ? null : place.reason);
 
+  /** Counts one more expression read, and says whether the budget still allows it. */
+  const step = () => {
+    steps += 1;
+    if (steps > OUTLINE_BUDGET.steps) truncated = true;
+    return !truncated;
+  };
+
   const content = (at: ts.Node, place: Place, free: boolean): void => {
-    if (ts.isParenthesizedExpression(at)) content(at.expression, place, free);
-    else if (ts.isJsxFragment(at)) children(at.children, place);
-    else if (ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)) jsx(at, place, free);
-    else if (ts.isJsxExpression(at)) {
+    if (!step()) return;
+    if (ts.isParenthesizedExpression(at) || ts.isJsxExpression(at)) {
       if (at.expression) content(at.expression, place, free);
-    } else if (ts.isConditionalExpression(at)) condition(at, [at.whenTrue, at.whenFalse], place);
-    else if (ts.isBinaryExpression(at) && LOGICAL_OPERATORS.has(at.operatorToken.kind))
-      condition(at, [at.right], place);
+    } else if (ts.isJsxFragment(at)) children(at.children, place);
+    else if (ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)) jsx(at, place, free);
+    else if (ts.isConditionalExpression(at)) condition(at, [at.whenTrue, at.whenFalse], place);
+    else if (ts.isBinaryExpression(at)) condition(at, renderedSides(at), place);
+    else if (ts.isArrayLiteralExpression(at))
+      for (const element of at.elements) content(element, place, false);
     else if (ts.isCallExpression(at)) call(at, place);
-    else if (isChildren(at)) {
-      if (place.slot)
-        children(place.slot.children, { ...place.slot.place, parentId: place.parentId });
-    } else if (ts.isIdentifier(at)) variable(at, place);
+    else if (ts.isIdentifier(at) || ts.isPropertyAccessExpression(at)) named(at, place);
+  };
+  /** A name rendered where it stands: the open instance's children, or a variable holding JSX. */
+  const named = (at: ts.Identifier | ts.PropertyAccessExpression, place: Place) => {
+    if (place.slot && readsChildren(at, place.slot, checker))
+      children(place.slot.children, { ...place.slot.place, parentId: place.parentId });
+    else if (ts.isIdentifier(at)) variable(at, place);
   };
   const children = (list: readonly ts.JsxChild[], place: Place) => {
     for (const child of list) if (!ts.isJsxText(child)) content(child, place, true);
@@ -83,7 +151,7 @@ export function sourceOutline(
         node,
         {
           kind: 'element',
-          name: element.tagName,
+          name: label(element.tagName),
           text: textOf(node),
           elementId: element.elementId,
           lock: lock[element.editability],
@@ -100,7 +168,7 @@ export function sourceOutline(
       node,
       {
         kind: 'instance',
-        name: tag.getText(),
+        name: label(tag.getText()),
         text: null,
         elementId: null,
         lock: isKit ? 'kit' : lockAt(node, place),
@@ -116,16 +184,12 @@ export function sourceOutline(
       if (ts.isJsxElement(node)) children(node.children, inside);
       return;
     }
-    if (place.opening.includes(component)) return;
-    if (place.opening.length > MAX_OPEN_DEPTH) {
-      truncated = true;
-      return;
-    }
-    returned(component, {
-      ...inside,
-      opening: [...place.opening, component],
-      slot: ts.isJsxElement(node) ? { children: node.children, place: inside } : null,
-    });
+    const opened = enter(component, inside);
+    if (!opened) return;
+    const slot = ts.isJsxElement(node)
+      ? { children: node.children, place: inside, ...childrenBindings(component, checker) }
+      : null;
+    returned(component, { ...opened, slot });
   };
 
   /** JSX passed in a prop, as `icon={<Icon />}`, listed first under the instance it is given to. */
@@ -133,34 +197,45 @@ export function sourceOutline(
     const opening = ts.isJsxElement(node) ? node.openingElement : node;
     for (const attribute of opening.attributes.properties) {
       const value = ts.isJsxAttribute(attribute) ? attribute.initializer : undefined;
-      if (value && ts.isJsxExpression(value) && value.expression && hasJsx(value.expression))
+      if (value && ts.isJsxExpression(value) && value.expression)
         content(value.expression, place, false);
     }
   };
 
-  const condition = (at: ts.Expression, branches: readonly ts.Expression[], place: Place) => {
-    if (!branches.some(hasJsx)) return;
+  const condition = (at: ts.Node, branches: readonly ts.Expression[], place: Place) => {
+    if (branches.length === 0) return;
     const row = { kind: 'condition', name: 'Condition', text: null, elementId: null } as const;
-    const nodeId = add(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place);
-    if (nodeId === null) return;
-    for (const branch of branches) content(branch, { ...place, parentId: nodeId }, false);
+    addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place, (inside) => {
+      for (const branch of branches) content(branch, inside, false);
+    });
   };
 
-  /** A call given a function, as `.map` is, repeats it; a local function's JSX opens where it is called. */
+  /**
+   * A portal renders its child where it stands in the outline; a local
+   * function's JSX opens where it is called; a call given a function, as
+   * `.map` is, inline or by name, repeats it.
+   */
   const call = (at: ts.CallExpression, place: Place) => {
-    const template = at.arguments.find(
-      (argument) => ts.isArrowFunction(argument) || ts.isFunctionExpression(argument),
-    );
-    if (!template) {
-      const fn = localFunction(at.expression, checker);
-      if (fn && !place.opening.includes(fn))
-        returned(fn, { ...place, opening: [...place.opening, fn] });
+    if (isPortal(at, checker)) {
+      const child = at.arguments.at(0);
+      if (child) content(child, place, false);
       return;
     }
-    if (!hasJsx(template)) return;
+    const inline = at.arguments.find(isFunctionExpression);
+    const helper = inline ? undefined : localFunction(at.expression, checker);
+    if (helper) {
+      const inner = enter(helper, place);
+      if (inner) returned(helper, inner);
+      return;
+    }
+    const template = inline ?? namedCallback(at, checker);
+    if (!template) return;
+    const inner = enter(template, place);
+    if (!inner) return;
     const row = { kind: 'repeat', name: 'Repeat', text: null, elementId: null } as const;
-    const nodeId = add(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place);
-    if (nodeId !== null) returned(template, { ...place, parentId: nodeId, reason: 'repeated' });
+    addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, inner, (inside) => {
+      returned(template, { ...inside, reason: 'repeated' });
+    });
   };
 
   /**
@@ -171,25 +246,25 @@ export function sourceOutline(
   const variable = (name: ts.Identifier, place: Place) => {
     const declaration = checker.getSymbolAtLocation(name)?.valueDeclaration;
     if (!declaration || !ts.isVariableDeclaration(declaration)) return;
-    if (place.opening.includes(declaration)) return;
-    const values = assignedValues(declaration, checker).filter(hasJsx);
-    const inner = { ...place, opening: [...place.opening, declaration] };
+    const inner = enter(declaration, place);
+    if (!inner) return;
+    let values = assigned.get(declaration);
+    if (!values) assigned.set(declaration, (values = assignedValues(declaration, checker)));
     if (values.length === 1) content(values[0], inner, false);
     else if (values.length > 1) condition(name, values, inner);
   };
 
+  /** What a function renders; returns in several places, as an early return, are a Condition. */
   const returned = (fn: ts.SignatureDeclaration, place: Place) => {
     if (!('body' in fn) || !fn.body) return;
     if (!ts.isBlock(fn.body)) {
       content(fn.body, place, false);
       return;
     }
-    const visit = (node: ts.Node): void => {
-      if (ts.isFunctionLike(node)) return;
-      if (ts.isReturnStatement(node) && node.expression) content(node.expression, place, false);
-      else node.forEachChild(visit);
-    };
-    fn.body.forEachChild(visit);
+    let values = returns.get(fn.body);
+    if (!values) returns.set(fn.body, (values = returnedValues(fn.body)));
+    if (values.length === 1) content(values[0], place, false);
+    else if (values.length > 1) condition(fn.body, values, place);
   };
 
   if (uses.root)
@@ -197,24 +272,61 @@ export function sourceOutline(
   return { nodes, truncated };
 }
 
-const LOGICAL_OPERATORS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.AmpersandAmpersandToken,
-  ts.SyntaxKind.BarBarToken,
-  ts.SyntaxKind.QuestionQuestionToken,
-]);
-
-function hashOf(key: unknown[]): string {
-  return createHash('sha256').update(JSON.stringify(key)).digest('hex').slice(0, 16);
+/** The sides of a logical expression that may be what renders: the right of `&&`, either of `||` and `??`. */
+function renderedSides(at: ts.BinaryExpression): ts.Expression[] {
+  switch (at.operatorToken.kind) {
+    case ts.SyntaxKind.AmpersandAmpersandToken:
+      return [at.right];
+    case ts.SyntaxKind.BarBarToken:
+    case ts.SyntaxKind.QuestionQuestionToken:
+      return [at.left, at.right];
+    default:
+      return [];
+  }
 }
 
-/** `children` or `props.children`, where a component renders what its instance was given. */
-function isChildren(node: ts.Node): boolean {
-  if (ts.isIdentifier(node)) return node.text === 'children';
-  return ts.isPropertyAccessExpression(node) && node.name.text === 'children';
+function hashOf(key: string, occurrence: number): string {
+  return createHash('sha256')
+    .update(`${key}#${String(occurrence)}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
+/**
+ * Where a node is written, by structure rather than offset, so an edit of text
+ * before it keeps its rows' ids: the named function or top-level statement
+ * that holds it, then the position of each node on the way down to it.
+ */
+function writtenAt(node: ts.Node): string {
+  const steps: number[] = [];
+  let at = node;
+  for (;;) {
+    const parent = at.parent;
+    const name = ts.isFunctionLike(at) ? functionName(at) : undefined;
+    if (name) return `${at.getSourceFile().fileName}:${name}:${steps.join('.')}`;
+    if (ts.isSourceFile(parent)) {
+      const statement = ts.isExportAssignment(at)
+        ? 'default'
+        : String(parent.statements.indexOf(at as ts.Statement));
+      return `${parent.fileName}:${statement}:${steps.join('.')}`;
+    }
+    steps.unshift(childIndex(parent, at));
+    at = parent;
+  }
+}
+
+function childIndex(parent: ts.Node, child: ts.Node): number {
+  let index = 0;
+  parent.forEachChild((each) => {
+    if (each === child) return true;
+    index += 1;
+    return undefined;
+  });
+  return index;
 }
 
 /** An expression that stands as a JSX child in `{…}`, so it can move as a whole. */
-function isFreeChild(node: ts.Expression): boolean {
+function isFreeChild(node: ts.Node): boolean {
   const holder = node.parent;
   return (
     ts.isJsxExpression(holder) &&
@@ -222,10 +334,11 @@ function isFreeChild(node: ts.Expression): boolean {
   );
 }
 
-function hasJsx(node: ts.Node): boolean {
-  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node))
-    return true;
-  return ts.forEachChild(node, (child) => hasJsx(child) || undefined) ?? false;
+/** A display label clamped to the outline's bound, on one line. */
+function label(text: string): string {
+  const points = Array.from(text.replace(/\s+/g, ' ').trim());
+  const max = CANVAS_LIMITS.maxOutlineLabelCodePoints;
+  return points.length <= max ? points.join('') : `${points.slice(0, max - 1).join('')}…`;
 }
 
 /** The literal text an element holds directly, one line, clamped. */
@@ -236,59 +349,6 @@ function textOf(node: ts.JsxElement | ts.JsxSelfClosingElement): string | null {
     const value = ts.isJsxExpression(child) ? child.expression : undefined;
     return value && ts.isStringLiteralLike(value) ? [value.text] : [];
   });
-  const text = parts.join(' ').replace(/\s+/g, ' ').trim();
-  if (text === '') return null;
-  const points = Array.from(text);
-  return points.length <= MAX_TEXT_CODE_POINTS
-    ? text
-    : `${points.slice(0, MAX_TEXT_CODE_POINTS - 1).join('')}…`;
-}
-
-/** A variable's initializer and, unless it is a `const`, every value assigned to it in its block. */
-function assignedValues(
-  declaration: ts.VariableDeclaration,
-  checker: ts.TypeChecker,
-): ts.Expression[] {
-  const values = declaration.initializer ? [declaration.initializer] : [];
-  const list = declaration.parent;
-  if (ts.isVariableDeclarationList(list) && list.flags & ts.NodeFlags.Const) return values;
-  const symbol = checker.getSymbolAtLocation(declaration.name);
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isBinaryExpression(node) &&
-      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
-      ts.isIdentifier(node.left) &&
-      checker.getSymbolAtLocation(node.left) === symbol
-    )
-      values.push(node.right);
-    node.forEachChild(visit);
-  };
-  ts.findAncestor(declaration, (node) => ts.isBlock(node) || ts.isSourceFile(node))?.forEachChild(
-    visit,
-  );
-  return values;
-}
-
-/** The function a callee names in the design: a function declaration or a variable holding one. */
-function localFunction(
-  callee: ts.Expression,
-  checker: ts.TypeChecker,
-): ts.SignatureDeclaration | undefined {
-  if (!ts.isIdentifier(callee)) return undefined;
-  const declaration = checker.getSymbolAtLocation(callee)?.valueDeclaration;
-  if (!declaration) return undefined;
-  if (ts.isFunctionDeclaration(declaration)) return declaration;
-  const value = ts.isVariableDeclaration(declaration) ? declaration.initializer : undefined;
-  return value && (ts.isArrowFunction(value) || ts.isFunctionExpression(value)) ? value : undefined;
-}
-
-/** The module a tag's name is imported from, or undefined for one declared in its file. */
-function importedFrom(tag: ts.JsxTagNameExpression, checker: ts.TypeChecker): string | undefined {
-  let name: ts.Node = tag;
-  while (ts.isPropertyAccessExpression(name)) name = name.expression;
-  if (!ts.isIdentifier(name)) return undefined;
-  const declaration = checker.getSymbolAtLocation(name)?.declarations?.at(0);
-  const statement = declaration && ts.findAncestor(declaration, ts.isImportDeclaration);
-  const specifier = statement?.moduleSpecifier;
-  return specifier && ts.isStringLiteral(specifier) ? specifier.text : undefined;
+  const text = label(parts.join(' '));
+  return text === '' ? null : text;
 }

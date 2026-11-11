@@ -606,7 +606,7 @@ test('every serialized event the sidecar emits passes the renderer validator', (
 
 test('the renderer accepts a ready element map and rejects incomplete or unbounded maps', () => {
   const node = { nodeId: '0123456789abcdef', parentId: null, kind: 'element', name: 'h1' };
-  const row = { ...node, text: 'Hey', elementId: null, lock: null, free: false };
+  const row = { ...node, text: 'Hey', elementId: wire.element.elementId, lock: null, free: false };
   const ready = {
     status: 'ready',
     revisionId: 'rev_02',

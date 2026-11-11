@@ -79,6 +79,7 @@ test('a design above the selection limit still compiles with an honest diagnosti
   const design = await compile({ 'main.tsx': source });
   assert.match(design.html, /id="canvas-root"/);
   assert.deepEqual(design.elements, []);
+  assert.deepEqual(design.outline, { nodes: [], truncated: true });
   assert.deepEqual(
     design.diagnostics.map((entry) => entry.code),
     ['selection_unavailable'],
