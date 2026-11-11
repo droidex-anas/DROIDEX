@@ -40,7 +40,7 @@ const CATALOG: CatalogListing[] = [
 const NOTHING_REMOVED = () => false;
 
 function shown(sections: DocumentSection[], query: string) {
-  return searchSections(sections, CATALOG, query).map((section) => ({
+  return searchSections(sections, CATALOG, NOTHING_REMOVED, query).map((section) => ({
     id: section.id,
     items: section.items.map((item) => item.id),
     catalog: section.catalog?.map((entry) => entry.name),
@@ -48,14 +48,14 @@ function shown(sections: DocumentSection[], query: string) {
 }
 
 test('a kit without a Components section lists its catalog in one before its assets', () => {
-  const sections = searchSections([COLORS, ASSETS], CATALOG, '');
+  const sections = searchSections([COLORS, ASSETS], CATALOG, NOTHING_REMOVED, '');
   assert.deepEqual(
     sections.map((section) => section.id),
     ['colors', CATALOG_SECTION_ID, 'assets'],
   );
   assert.equal(itemCount(sections[1], NOTHING_REMOVED), 2);
   assert.deepEqual(
-    searchSections([COLORS, ASSETS], [], '').map((section) => section.id),
+    searchSections([COLORS, ASSETS], [], NOTHING_REMOVED, '').map((section) => section.id),
     ['colors', 'assets'],
   );
 });
@@ -74,4 +74,17 @@ test('search finds catalog entries by name, module or note, and keeps a section 
     { id: 'components', items: ['sidebar'], catalog: [] },
   ]);
   assert.deepEqual(shown([COLORS, ASSETS], 'nothing like it'), []);
+});
+
+test('a draft removing the Components section leaves the catalog listed in one of its own', () => {
+  const isRemoved = (key: string) => key === COMPONENTS.id;
+  const sections = searchSections([COMPONENTS, ASSETS], CATALOG, isRemoved, '');
+  assert.deepEqual(
+    sections.map((section) => [section.id, section.catalog?.length]),
+    [
+      ['components', undefined],
+      [CATALOG_SECTION_ID, 2],
+      ['assets', undefined],
+    ],
+  );
 });

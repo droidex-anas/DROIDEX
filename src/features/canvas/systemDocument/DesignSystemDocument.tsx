@@ -212,7 +212,7 @@ function KitDocument({
   const isRemoved = (key: string) => marks.get(key) === 'removed';
   const shown =
     marks.size > 0 ? withRemoved(base.sections, working.sections, marks) : working.sections;
-  const visible = searchSections(shown, view.catalog, query);
+  const visible = searchSections(shown, view.catalog, isRemoved, query);
   const active = useActiveSection(
     scrollRef,
     visible.map((section) => section.id),

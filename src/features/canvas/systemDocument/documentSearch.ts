@@ -15,6 +15,7 @@ export const CATALOG_SECTION_ID = '_catalog';
 export function searchSections(
   sections: DocumentSection[],
   catalog: readonly CatalogListing[],
+  isRemoved: (key: string) => boolean,
   query: string,
 ): ShownSection[] {
   const needle = query.trim().toLowerCase();
@@ -41,8 +42,11 @@ export function searchSections(
   const listed = catalog.filter(
     (entry) => matches(entry.name) || matches(entry.module) || matches(entry.note),
   );
-  const all = withCatalogSection(sections, catalog);
-  const holder = all.find((section) => section.kind === 'components');
+  // The catalog is the saved kit's, so a draft removing the Components section does not hide it.
+  const canHold = (section: DocumentSection) =>
+    section.kind === 'components' && !isRemoved(section.id);
+  const all = withCatalogSection(sections, catalog, canHold);
+  const holder = all.find(canHold);
   return all.flatMap((section): ShownSection[] => {
     const isHolder = section === holder;
     if (needle === '') return [isHolder ? { ...section, catalog } : section];
@@ -68,9 +72,9 @@ export function itemCount(section: ShownSection, isRemoved: (key: string) => boo
 function withCatalogSection(
   sections: DocumentSection[],
   catalog: readonly CatalogListing[],
+  canHold: (section: DocumentSection) => boolean,
 ): DocumentSection[] {
-  if (catalog.length === 0 || sections.some((section) => section.kind === 'components'))
-    return sections;
+  if (catalog.length === 0 || sections.some(canHold)) return sections;
   const derived: DocumentSection = {
     kind: 'components',
     id: CATALOG_SECTION_ID,
