@@ -1,8 +1,9 @@
 // An outline row under its frame in the layers panel: its kind's icon and its
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
-// here. A row picks only its own drawn element, and otherwise says why it
-// cannot. A note row says what an open frame's layers cannot show.
+// here, which the row's description also says. A row picks only its own drawn
+// element, and otherwise says why it cannot. A note row says what an open
+// frame's layers cannot show.
 
 import { useEffect, useEffectEvent, type ReactElement } from 'react';
 import { Lock } from '@droidex/icons';
@@ -74,6 +75,7 @@ export function ElementRow({
   const target = drawn?.state === 'drawn' ? drawn.node : null;
   const unpickable = drawn && drawn.state !== 'drawn' ? UNPICKABLE[drawn.state] : null;
   const { icon: KindIcon, label: kind } = layerKind(node);
+  const lockId = `${id}-lock`;
   const unlight = useEffectEvent(() => {
     onUnlight(entry.key);
   });
@@ -118,6 +120,7 @@ export function ElementRow({
       aria-selected={selected}
       aria-expanded={entry.open ?? undefined}
       aria-label={accessibleName(entry, kind, unpickable?.said)}
+      aria-describedby={node.lock ? lockId : undefined}
       className="group absolute inset-x-0 top-0"
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={() => {
@@ -131,6 +134,11 @@ export function ElementRow({
       }}
     >
       {unpickable ? <Unpickable tip={unpickable.tip}>{row}</Unpickable> : row}
+      {node.lock && (
+        <span id={lockId} className="sr-only">
+          {LOCK_REASONS[node.lock]}
+        </span>
+      )}
     </div>
   );
 }
