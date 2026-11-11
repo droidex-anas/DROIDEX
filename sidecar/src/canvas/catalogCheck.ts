@@ -6,6 +6,7 @@
 // loads the TypeScript parser, so only it imports this module.
 
 import ts from 'typescript';
+import { entryImports, entryModule } from './catalogEntryModule.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import {
@@ -17,7 +18,6 @@ import {
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
 
-const ICON_SPECIFIER = 'lucide-react';
 const NOT_ONE_ELEMENT =
   'Its jsx must be one JSX element or fragment and nothing else, with no statement, semicolon or comment around it.';
 const READS_A_RECEIVER =
@@ -152,12 +152,7 @@ export function catalogDesign(catalog: readonly CatalogEntry[]): SourceFiles {
   const imports: string[] = [];
   const elements: string[] = [];
   catalog.forEach((entry, index) => {
-    const header = entryImports(entry).map(
-      ({ name, from }) => `import { ${name} } from '${from}';`,
-    );
-    // Anonymous, so no name of the module's own can shadow one the entry imports.
-    header.push('', 'export default function () {', '  return (');
-    files[entryFile(index)] = `${header.join('\n')}\n${entry.jsx}\n  );\n}\n`;
+    files[entryFile(index)] = entryModule(entry);
     imports.push(`import Entry${String(index)} from './catalog/${String(index)}';`);
     elements.push(`      <Entry${String(index)} />`);
   });
@@ -200,13 +195,6 @@ export function catalogBuildFailures(
         : `lucide-react has no icon ${imported.name}.`;
     return entryFailure(entry.name, { code: 'invalid_input', message });
   });
-}
-
-function entryImports(entry: CatalogEntry): { name: string; from: string }[] {
-  return [
-    ...[...new Set(entry.uses)].map((name) => ({ name, from: KIT_SPECIFIER })),
-    ...[...new Set(entry.icons)].map((name) => ({ name, from: ICON_SPECIFIER })),
-  ];
 }
 
 function entryFile(index: number): string {

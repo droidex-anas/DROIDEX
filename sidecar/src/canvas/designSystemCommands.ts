@@ -172,8 +172,14 @@ export async function answerDesignSystemCommand(
       });
       return saved(ref, imported.diagnostics);
     }
-    case 'canvas.readKitPreview':
-      return { kind: 'kitPreview', preview: await previews.read(command.ref, command.item) };
+    case 'canvas.readKitPreview': {
+      const { target } = command;
+      const preview =
+        target.kind === 'preview'
+          ? await previews.read(target.ref, target.item)
+          : await previews.readCatalogEntry(target.ref, target.entry);
+      return { kind: 'kitPreview', preview };
+    }
     case 'canvas.saveKitCapture':
       await saveKitCapture(command.ref, command.item, Buffer.from(command.png, 'base64'));
       return { kind: 'ok' };
