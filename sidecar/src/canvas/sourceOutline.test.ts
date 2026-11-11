@@ -171,6 +171,13 @@ test('row ids follow where JSX is written, so editing text or adding an import a
   );
   assert.equal(before.length, 4);
   assert.deepEqual(after, before);
+
+  const held = ids('const body = <section><p>Held</p></section>;\nexport default () => body;');
+  const heldAfter = ids(
+    "import './styles.css';\nconst body = <section><p>Held</p></section>;\nexport default () => body;",
+  );
+  assert.equal(held.length, 2);
+  assert.deepEqual(heldAfter, held);
 });
 
 test('JSX that renders through other forms still gets rows, and JSX that never renders gets none', () => {

@@ -294,8 +294,9 @@ function hashOf(key: string, occurrence: number): string {
 
 /**
  * Where a node is written, by structure rather than offset, so an edit of text
- * before it keeps its rows' ids: the named function or top-level statement
- * that holds it, then the position of each node on the way down to it.
+ * before it keeps its rows' ids: the named function, top-level variable or
+ * top-level statement that holds it, then the position of each node on the
+ * way down to it.
  */
 function writtenAt(node: ts.Node): string {
   const steps: number[] = [];
@@ -304,6 +305,8 @@ function writtenAt(node: ts.Node): string {
     const parent = at.parent;
     const name = ts.isFunctionLike(at) ? functionName(at) : undefined;
     if (name) return `${at.getSourceFile().fileName}:${name}:${steps.join('.')}`;
+    if (isTopLevelVariable(at))
+      return `${at.getSourceFile().fileName}:var ${at.name.text}:${steps.join('.')}`;
     if (ts.isSourceFile(parent)) {
       const statement = ts.isExportAssignment(at)
         ? 'default'
@@ -313,6 +316,17 @@ function writtenAt(node: ts.Node): string {
     steps.unshift(childIndex(parent, at));
     at = parent;
   }
+}
+
+function isTopLevelVariable(
+  node: ts.Node,
+): node is ts.VariableDeclaration & { name: ts.Identifier } {
+  return (
+    ts.isVariableDeclaration(node) &&
+    ts.isIdentifier(node.name) &&
+    ts.isVariableStatement(node.parent.parent) &&
+    ts.isSourceFile(node.parent.parent.parent)
+  );
 }
 
 function childIndex(parent: ts.Node, child: ts.Node): number {
