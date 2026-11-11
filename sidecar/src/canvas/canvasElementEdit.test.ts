@@ -193,6 +193,31 @@ test('a move to before the line that sets a value the layer reads is refused', a
   );
 });
 
+test('a move past a line that assigns a value the layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  let label = 'Early';
+  if (flag) return <section />;
+  label = 'Late';
+  return <main><span>{label}</span></main>;
+}`;
+  const { code, message } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+  assert.equal(
+    message,
+    'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+  );
+});
+
+test('a move to before the enum a layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  if (flag) return <section />;
+  enum Size { Large = 'Large' }
+  return <main><span>{Size.Large}</span></main>;
+}`;
+  const { code } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+});
+
 test('a move into an element with a spread, which may set its content, is refused', async (t) => {
   const main =
     "export default () => <main><section {...{dangerouslySetInnerHTML:{__html:'Existing'}}} /><i>A</i></main>;";
