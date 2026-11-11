@@ -125,14 +125,14 @@ function replaceImage(
   };
 }
 
-/** A `<path>`'s own `d`, where it is written as one string; the schema has checked the new one. */
+/** A `<path>`'s own `d`, where it is written as one quoted string; the schema has checked the new one. */
 function replacePath(
   opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
   source: ts.SourceFile,
   d: string,
 ): SourceReplacement {
   const written = attributeValue(attribute(opening, 'd'));
-  if (opening.tagName.getText(source) !== 'path' || !written || !isLiteral(written))
+  if (opening.tagName.getText(source) !== 'path' || !written || !ts.isStringLiteral(written))
     throw ambiguous();
   return { start: written.getStart(source), end: written.end, replacement: JSON.stringify(d) };
 }

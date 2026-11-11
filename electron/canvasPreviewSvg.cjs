@@ -80,14 +80,14 @@ const SVG_REPORTER = `
   };
   // A path's own data, the matrix from its user units to the design's pixels,
   // which covers its viewBox, transforms and groups, and its box there. A path
-  // drawn nowhere has no matrix.
+  // drawn nowhere has no matrix, and one under display none no client rect.
   const shape = (node) => {
     if (!node) return null;
     if (!(node instanceof SVGPathElement)) return { refused: 'not_path' };
     const d = node.getAttribute('d') ?? '';
     if (bytes(d) > ${String(MAX_PREVIEW_PATH_DATA_BYTES)}) return { refused: 'too_large' };
     const matrix = node.getScreenCTM();
-    if (!matrix) return { refused: 'not_drawn' };
+    if (!matrix || node.getClientRects().length === 0) return { refused: 'not_drawn' };
     const { a, b, c, d: scaleY, e, f } = matrix;
     return { d: d, matrix: [a, b, c, scaleY, e, f], rect: rectOf(node) };
   };`;

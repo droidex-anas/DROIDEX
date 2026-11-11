@@ -269,6 +269,9 @@ export default function Mark() {
       </g>
       <circle cx="15" cy="5" r="2" />
       <path d={LONG} />
+      <g display="none">
+        <path d="M0 0 L1 1" />
+      </g>
     </svg>
   );
 }
@@ -330,6 +333,16 @@ export default function Mark() {
     };
     assert.deepEqual(readPreviewShape(await askGuest(page, previewShapeScript(long))), {
       refused: 'too_large',
+    });
+    // Under a hidden group a path still has a matrix, but it is drawn nowhere.
+    const hiddenPath = design.elements.filter((element) => element.tagName === 'path')[2];
+    assert.ok(hiddenPath, 'the compiler mapped the hidden path');
+    const hidden = {
+      elementId: hiddenPath.elementId,
+      instancePath: circle.node.instancePath.replace(/\d+$/, '3/0'),
+    };
+    assert.deepEqual(readPreviewShape(await askGuest(page, previewShapeScript(hidden))), {
+      refused: 'not_drawn',
     });
 
     // A d preview redraws the path, and moving away puts the source's back.
