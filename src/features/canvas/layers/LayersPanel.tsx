@@ -132,6 +132,12 @@ export function LayersPanel({
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
   const moveHelpId = `${treeId}-move-help`;
+  const hideHelpId = `${treeId}-hide-help`;
+  /** An element row's keyboard help, which names ⇧⌘H only where its eye can hide or show it. */
+  const elementHelp = (row: LayerEntry) =>
+    isHideable(rows, row) && (row.node.visibility === 'shown' || row.node.visibility === 'hidden')
+      ? `${moveHelpId} ${hideHelpId}`
+      : moveHelpId;
 
   // Closed from inside, the panel hands the keyboard to the board first, so focus is not lost with it.
   const close = () => {
@@ -254,9 +260,14 @@ export function LayersPanel({
             </span>
           )}
           {onEditLayer && (
-            <span id={moveHelpId} className="sr-only">
-              {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, ${DUPLICATE_KEY_LABEL} duplicates it, and ${HIDE_KEY_LABEL} hides or shows it.`}
-            </span>
+            <>
+              <span id={moveHelpId} className="sr-only">
+                {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, and ${DUPLICATE_KEY_LABEL} duplicates it.`}
+              </span>
+              <span id={hideHelpId} className="sr-only">
+                {`${HIDE_KEY_LABEL} hides or shows it.`}
+              </span>
+            </>
           )}
           <div
             ref={list}
@@ -281,7 +292,7 @@ export function LayersPanel({
                   }
                   lit={row.key === elementRows.litKey}
                   describedBy={
-                    row.kind === 'frame' ? onReorder && helpId : onEditLayer && moveHelpId
+                    row.kind === 'frame' ? onReorder && helpId : onEditLayer && elementHelp(row)
                   }
                   rename={
                     row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
@@ -366,7 +377,7 @@ export function LayersPanel({
   );
 }
 
-/** A key that edits a layer: held down, it would send the edit again for the revision the last one replaced. */
+/** A key that edits a layer, or hides or shows a frame: held down, it would send the edit again for the revision the last one replaced. */
 function isLayerEdit(key: LayerKey | null): boolean {
-  return key?.kind === 'remove' || key?.kind === 'duplicate';
+  return key?.kind === 'remove' || key?.kind === 'duplicate' || key?.kind === 'toggle-hidden';
 }

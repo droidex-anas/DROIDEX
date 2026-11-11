@@ -104,7 +104,7 @@ export function ElementRow({
   const unpickable = drawn && drawn.state !== 'drawn' ? UNPICKABLE[drawn.state] : null;
   const { icon: KindIcon, label: kind } = layerKind(node);
   const lockId = `${id}-lock`;
-  const eyeLock = onSetHidden && hideLock(node);
+  const eyeLock = hideLock(node);
   const eyeLockId = `${id}-eye-lock`;
   const unlight = useEffectEvent(() => {
     onUnlight(entry.key);
@@ -211,7 +211,7 @@ function ElementTools({
   const eyeLock = hideLock(entry.node);
   return (
     <>
-      {onSetHidden && eyeLock && <HideLockGlyph reason={HIDE_LOCK_REASONS[eyeLock]} />}
+      {eyeLock && <HideLockGlyph reason={HIDE_LOCK_REASONS[eyeLock]} />}
       {onSetHidden && !eyeLock && (
         <Tooltip label={`${hidden ? 'Show' : 'Hide'} (${HIDE_KEY_LABEL})`}>
           <Button
