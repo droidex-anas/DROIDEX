@@ -62,6 +62,12 @@ test('Delete and Backspace remove the layer and Ctrl+D duplicates it, without ot
   assert.equal(layerKey(press('Backspace', { metaKey: true }), 1, 3), null);
   assert.equal(layerKey(press('d', { ctrlKey: true, shiftKey: true }), 1, 3), null);
 });
+
+test('Shift+F10 and the menu key open the row’s menu', () => {
+  assert.deepEqual(layerKey(press('F10', { shiftKey: true }), 1, 3), { kind: 'menu' });
+  assert.deepEqual(layerKey(press('ContextMenu'), 1, 3), { kind: 'menu' });
+  assert.equal(layerKey(press('F10'), 1, 3), null);
+});
 test('the keyboard row is where it moved to, else the first selected frame, else the first row', () => {
   const designIds = ['a', 'b', 'c'];
   assert.equal(activeRow(designIds, 'b', ['c']), 1);

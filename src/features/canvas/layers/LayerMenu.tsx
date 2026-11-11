@@ -1,5 +1,6 @@
 // The context menu of a layer's row in the layers panel: what the row's own
-// keys do to its layer, opened where the pointer right-clicked.
+// keys do to its layer, opened where the pointer right-clicked or, from the
+// keyboard, below the row.
 
 import type { RefObject } from 'react';
 import { Copy, Trash } from '@droidex/icons';
@@ -42,6 +43,7 @@ export function LayerMenu({
         Duplicate
         <Menu.Shortcut>{DUPLICATE_KEY_LABEL}</Menu.Shortcut>
       </Menu.Item>
+      <Menu.Divider />
       <Menu.Item icon={Trash} danger onSelect={onDelete}>
         Delete
         <Menu.Shortcut>⌫</Menu.Shortcut>

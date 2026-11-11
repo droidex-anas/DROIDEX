@@ -4,9 +4,9 @@
 // A frame that has built opens on its layers as its source writes them; a click picks a
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
 // pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
-// in its source; Delete removes it and ⌘D copies it, as its menu does. The tree is one tab
-// stop whose rows the keyboard walks through aria-activedescendant, so a canvas of any size
-// mounts only its visible rows.
+// in its source; Delete removes it and ⌘D copies it, as its menu does, which a right-click
+// or ⇧F10 opens. The tree is one tab stop whose rows the keyboard walks through
+// aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { AnchorPoint } from '../../../components/ui/usePopoverPosition';
@@ -106,7 +106,7 @@ export function LayersPanel({
       editLayer(row, { kind: 'move', ...place });
     },
   });
-  /** The open menu: the row it is for, and where the right-click was. */
+  /** The open menu: the row it is for, and where the right-click was, or below the row from the keyboard. */
   const [menu, setMenu] = useState<{ row: ElementEntry; at: AnchorPoint } | null>(null);
   const active = activeIndex >= 0 ? rows[activeIndex] : undefined;
   const renaming = useRenaming(keys, onRename, tree, closeButton);
@@ -177,6 +177,12 @@ export function LayersPanel({
     else if (key.kind === 'indent') move.step(row, 'in');
     else if ((key.kind === 'remove' || key.kind === 'duplicate') && isOutlineRow(row))
       editLayer(row, { kind: key.kind });
+    else if (key.kind === 'menu') openMenuBelow(row);
+  };
+  const openMenuBelow = (row: ElementEntry) => {
+    const box = document.getElementById(rowId(row.key))?.getBoundingClientRect();
+    if (onEditLayer && isOutlineRow(row) && box)
+      setMenu({ row, at: { x: box.left, y: box.bottom } });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
@@ -222,6 +228,12 @@ export function LayersPanel({
           data-refused={move.line?.drop.state === 'refused' || undefined}
           className="canvas-layers-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2"
           onKeyDown={onKeyDown}
+          onContextMenu={(event) => {
+            // The menu key's own event, where the platform sends one, lands on the focused tree.
+            if (event.target !== event.currentTarget) return;
+            event.preventDefault();
+            if (active?.kind === 'element') openMenuBelow(active);
+          }}
           {...move.handlers}
           onFocus={(event) => {
             // A click's focus would scroll the row being clicked out from under the pointer.

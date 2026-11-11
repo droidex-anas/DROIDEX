@@ -691,4 +691,24 @@ test('Delete, ⌘D and a layer’s menu remove or copy it in its source, and the
   await expect
     .poll(() => page.evaluate(() => window.boardHarness.toasts()))
     .toEqual(['This element changed. Pick it again.']);
+
+  // ⇧F10, the menu key and the menu event the tree takes open the keyboard row's menu below
+  // it; Escape gives the keyboard back to the tree.
+  await expect(tree).toBeFocused();
+  await keyboardOn('img');
+  const opens = [
+    () => page.keyboard.press('Shift+F10'),
+    () => page.keyboard.press('ContextMenu'),
+    () => tree.dispatchEvent('contextmenu'),
+  ];
+  for (const open of opens) {
+    await open();
+    await expect(menu.getByRole('menuitem', { name: /^Duplicate/ })).toBeFocused();
+    const [rowBox, menuBox] = await Promise.all([row('img').boundingBox(), menu.boundingBox()]);
+    expect(menuBox?.y).toBeGreaterThanOrEqual((rowBox?.y ?? 0) + (rowBox?.height ?? 0));
+    await page.keyboard.press('Escape');
+    await expect(menu).toHaveCount(0);
+    await expect(tree).toBeFocused();
+  }
+  expect(await edits()).toHaveLength(3);
 });
