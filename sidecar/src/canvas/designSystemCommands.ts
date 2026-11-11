@@ -173,11 +173,11 @@ export async function answerDesignSystemCommand(
       return saved(ref, imported.diagnostics);
     }
     case 'canvas.readKitPreview': {
-      const { ref, target } = command;
+      const { target } = command;
       const preview =
         target.kind === 'preview'
-          ? await previews.read(ref, target.item)
-          : await previews.readCatalogEntry(ref, target.entry);
+          ? await previews.read(target.ref, target.item)
+          : await previews.readCatalogEntry(target.ref, target.entry);
       return { kind: 'kitPreview', preview };
     }
     case 'canvas.saveKitCapture':

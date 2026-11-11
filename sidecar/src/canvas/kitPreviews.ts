@@ -84,11 +84,8 @@ export class KitPreviews {
     return this.readExample(ref, [item], (system) => kitExample(system, item));
   }
 
-  /** The catalog entry named `entry` in that kit version or proposal, alone on a page. */
-  readCatalogEntry(
-    ref: DesignSystemRef | DesignSystemProposalRef,
-    entry: string,
-  ): Promise<KitPreview> {
+  /** The catalog entry named `entry` in that saved kit version, alone on a page. */
+  readCatalogEntry(ref: DesignSystemRef, entry: string): Promise<KitPreview> {
     return this.readExample(ref, ['catalog', entry], (system) =>
       catalogEntryExample(system, entry),
     );

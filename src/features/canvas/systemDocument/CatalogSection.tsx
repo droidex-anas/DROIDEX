@@ -87,7 +87,14 @@ function EntryStage({
   const { kit, draftTokens, specimen } = previewing;
   const fitRef = useRef<HTMLDivElement>(null);
   const scale = useFitScale(fitRef, STAGE_WIDTH);
-  const target = useMemo((): KitPreviewTarget => ({ kind: 'catalog', entry: name }), [name]);
+  const target = useMemo(
+    (): KitPreviewTarget => ({
+      kind: 'catalog',
+      ref: { id: kit.id, version: kit.version, mode: kit.mode },
+      entry: name,
+    }),
+    [kit.id, kit.version, kit.mode, name],
+  );
   return (
     <div
       id={id}
@@ -111,7 +118,6 @@ function EntryStage({
             <KitGuest
               key={JSON.stringify([kit.id, kit.version, kit.mode, name])}
               kit={kit}
-              proposalId={null}
               target={target}
               width={STAGE_WIDTH}
               height={STAGE_HEIGHT}

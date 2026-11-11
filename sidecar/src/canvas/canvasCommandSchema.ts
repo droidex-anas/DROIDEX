@@ -336,10 +336,21 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('canvas.readKitPreview'),
       ...request,
-      ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
       target: z.discriminatedUnion('kind', [
-        z.object({ kind: z.literal('preview'), item: documentIdSchema }).strict(),
-        z.object({ kind: z.literal('catalog'), entry: catalogNameSchema }).strict(),
+        z
+          .object({
+            kind: z.literal('preview'),
+            ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
+            item: documentIdSchema,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('catalog'),
+            ref: designSystemRefSchema,
+            entry: catalogNameSchema,
+          })
+          .strict(),
       ]),
     })
     .strict(),

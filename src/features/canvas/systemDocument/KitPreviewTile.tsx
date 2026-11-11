@@ -74,7 +74,17 @@ export function KitPreviewTile({
   const isChanged = proposalId !== null || Object.keys(draftTokens).length > 0;
   const isSavedLook = !isLive && Boolean(still) && isChanged;
   const isNeverCaptured = still === null && otherStill === null;
-  const target = useMemo((): KitPreviewTarget => ({ kind: 'preview', item }), [item]);
+  const target = useMemo(
+    (): KitPreviewTarget => ({
+      kind: 'preview',
+      ref:
+        proposalId === null
+          ? { id: kit.id, version: kit.version, mode: kit.mode }
+          : { id: kit.id, proposalId, mode: kit.mode },
+      item,
+    }),
+    [kit.id, kit.version, kit.mode, proposalId, item],
+  );
   return (
     <div
       ref={observe(item)}
@@ -95,7 +105,6 @@ export function KitPreviewTile({
             <KitGuest
               key={JSON.stringify([kit.id, kit.version, proposalId, kit.mode, item])}
               kit={kit}
-              proposalId={proposalId}
               target={target}
               width={width}
               height={height}
@@ -123,7 +132,6 @@ type ArtifactRead =
  */
 export function KitGuest({
   kit,
-  proposalId,
   target,
   width,
   height,
@@ -131,8 +139,8 @@ export function KitGuest({
   draftTokens,
   wantsCapture,
 }: {
+  /** The saved version: what a capture is kept for, and a draft's values change. */
   kit: DesignSystemRef;
-  proposalId: string | null;
   /** Kept stable while the guest lives: a new target is a new guest. */
   target: KitPreviewTarget;
   width: number;
@@ -163,8 +171,7 @@ export function KitGuest({
 
   useEffect(() => {
     let wanted = true;
-    const ref = proposalId === null ? { id, version, mode } : { id, proposalId, mode };
-    canvasClient.designSystems.readPreview(ref, target).then(
+    canvasClient.designSystems.readPreview(target).then(
       (preview) => {
         if (!wanted) return;
         if (preview.status === 'ready') setRead({ status: 'ready', html: preview.artifact.html });
@@ -181,7 +188,7 @@ export function KitGuest({
     return () => {
       wanted = false;
     };
-  }, [id, version, proposalId, mode, target]);
+  }, [target]);
 
   useEffect(() => {
     const container = host.current;

@@ -381,8 +381,14 @@ export interface DesignSystemProposalRef {
   mode: DesignSystemRef['mode'];
 }
 
-/** What a kit preview shows: a preview by its id or `cover`, or a catalog entry by its name. */
-type KitPreviewTarget = { kind: 'preview'; item: string } | { kind: 'catalog'; entry: string };
+/**
+ * What a kit preview shows: a preview by its id or `cover`, from a saved
+ * version or a waiting proposal, or a catalog entry by its name, which a saved
+ * version alone answers for.
+ */
+type KitPreviewTarget =
+  | { kind: 'preview'; ref: DesignSystemRef | DesignSystemProposalRef; item: string }
+  | { kind: 'catalog'; ref: DesignSystemRef; entry: string };
 
 // ── Bridge commands and events ───────────────────────────────────────
 // The pane's half of the Canvas contract. `appSessionId` is the only session
@@ -592,15 +598,10 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode, or a waiting proposal's. A capture is
-  // a base64 PNG the document took from a saved version's live preview; a later
-  // one replaces it, and `item` names its preview as a preview target does.
-  | {
-      type: 'canvas.readKitPreview';
-      requestId: string;
-      ref: DesignSystemRef | DesignSystemProposalRef;
-      target: KitPreviewTarget;
-    }
+  // One preview of a kit in one mode, as its target names it. A capture is a
+  // base64 PNG the document took from a saved version's live preview; a later
+  // one replaces it, and its `item` names a preview as a preview target does.
+  | { type: 'canvas.readKitPreview'; requestId: string; target: KitPreviewTarget }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;

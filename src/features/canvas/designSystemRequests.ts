@@ -7,7 +7,6 @@ import type {
   CanvasDiagnostic,
   DesignSystemCover,
   DesignSystemDocumentView,
-  DesignSystemProposalRef,
   DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
@@ -177,14 +176,10 @@ export class DesignSystemRequests {
     return { ref, diagnostics };
   }
 
-  async readPreview(
-    ref: DesignSystemRef | DesignSystemProposalRef,
-    target: KitPreviewTarget,
-  ): Promise<KitPreview> {
+  async readPreview(target: KitPreviewTarget): Promise<KitPreview> {
     const event = await this.send({
       type: 'canvas.readKitPreview',
       requestId: requestId(),
-      ref,
       target,
     });
     return reply(event, 'kitPreview').preview;
