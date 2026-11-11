@@ -536,14 +536,14 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   expect(await trees()).toBe(2);
 
   // A frame shut and opened again reads where its elements are drawn again; its rows show
-  // meanwhile, from the source, but none of the last read's, so none can be picked.
+  // meanwhile, from the source, saying they are being read, but none of the last read's, so none can be picked.
   await page.evaluate(() => {
     window.guestTreeHeld = true;
   });
   await frameRow.getByRole('button', { name: 'Collapse' }).click();
   await frameRow.getByRole('button', { name: 'Expand' }).click();
   await expect(
-    tree.getByRole('treeitem', { name: 'Pricing, Text, not drawn', exact: true }),
+    tree.getByRole('treeitem', { name: 'Pricing, Text, reading', exact: true }),
   ).toBeVisible();
   expect(await trees()).toBe(3);
 });

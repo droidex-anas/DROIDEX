@@ -1,8 +1,8 @@
 // An outline row under its frame in the layers panel: its kind's icon and its
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
-// here. A row whose element is not drawn cannot be picked. A note row says
-// what an open frame's layers cannot show.
+// here. A row picks only its own drawn element, and otherwise says why it
+// cannot. A note row says what an open frame's layers cannot show.
 
 import { useEffect, useEffectEvent, type ReactElement } from 'react';
 import { Lock } from '@droidex/icons';
@@ -12,6 +12,7 @@ import { Row, RowCaret } from '../../../components/ui/Row';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import type { PreviewNode } from '../previewDocument';
 import type { OutlineNode } from '../protocol';
+import type { Drawn } from './drawnLayers';
 import { layerKind } from './elementKind';
 import type { LayerEntry } from './layerRows';
 
@@ -24,6 +25,17 @@ const LOCK_REASONS: Record<NonNullable<OutlineNode['lock']>, string> = {
   shared: 'Used in several places. Ask the agent to change it.',
   computed: 'This element’s styles are worked out in code. Ask the agent to change it.',
   kit: 'From the kit.',
+};
+
+/** What an element row that cannot pick says: as a tooltip, and after its accessible name. */
+const UNPICKABLE: Record<Exclude<Drawn['state'], 'drawn'>, { tip: string; said: string }> = {
+  absent: { tip: 'Not drawn right now.', said: 'not drawn' },
+  ambiguous: {
+    tip: 'Can’t tell which drawn copy this is. Pick it on the board.',
+    said: 'copy unknown',
+  },
+  reading: { tip: 'Reading the preview…', said: 'reading' },
+  unread: { tip: 'Couldn’t read where the preview draws this.', said: 'not read' },
 };
 
 export type ElementEntry = Extract<LayerEntry, { kind: 'element' }>;
@@ -54,15 +66,16 @@ export function ElementRow({
   onPick: (entry: ElementEntry) => void;
   onToggle: (entry: ElementEntry) => void;
   /** The pointer came onto the row: the board lights its frame and outlines its drawn element. */
-  onLight: (designId: string, target: PreviewNode | null) => void;
+  onLight: (owner: string, designId: string, target: PreviewNode | null) => void;
   /** The pointer left, or the list scrolled the row away from under it. */
-  onUnlight: (designId: string, target: PreviewNode | null) => void;
+  onUnlight: (owner: string) => void;
 }) {
-  const { node, frame, target } = entry;
-  const undrawn = node.elementId !== null && target === null;
+  const { node, frame, drawn } = entry;
+  const target = drawn?.state === 'drawn' ? drawn.node : null;
+  const unpickable = drawn && drawn.state !== 'drawn' ? UNPICKABLE[drawn.state] : null;
   const { icon: KindIcon, label: kind } = layerKind(node);
   const unlight = useEffectEvent(() => {
-    onUnlight(frame.designId, target);
+    onUnlight(entry.key);
   });
   useEffect(
     () => () => {
@@ -104,27 +117,27 @@ export function ElementRow({
       aria-setsize={entry.count}
       aria-selected={selected}
       aria-expanded={entry.open ?? undefined}
-      aria-label={accessibleName(entry, kind, undrawn)}
+      aria-label={accessibleName(entry, kind, unpickable?.said)}
       className="group absolute inset-x-0 top-0"
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={() => {
         onPick(entry);
       }}
       onPointerEnter={() => {
-        onLight(frame.designId, target);
+        onLight(entry.key, frame.designId, target);
       }}
       onPointerLeave={() => {
-        onUnlight(frame.designId, target);
+        onUnlight(entry.key);
       }}
     >
-      {undrawn ? <NotDrawn>{row}</NotDrawn> : row}
+      {unpickable ? <Unpickable tip={unpickable.tip}>{row}</Unpickable> : row}
     </div>
   );
 }
 
-function NotDrawn({ children }: { children: ReactElement }) {
+function Unpickable({ tip, children }: { tip: string; children: ReactElement }) {
   return (
-    <Tooltip label="Not drawn right now." placement="right" className="flex w-full">
+    <Tooltip label={tip} placement="right" className="flex w-full">
       {children}
     </Tooltip>
   );
@@ -145,11 +158,11 @@ function LockGlyph({ lock, last }: { lock: NonNullable<OutlineNode['lock']>; las
   );
 }
 
-/** The row's label, then its kind unless the label already names it, then what stops a pick or an edit. */
-function accessibleName(entry: ElementEntry, kind: string, undrawn: boolean): string {
+/** The row's label, then its kind unless the label already names it, then what stops an edit or a pick. */
+function accessibleName(entry: ElementEntry, kind: string, unpickable: string | undefined): string {
   const parts = [entry.name === kind ? kind : `${entry.name}, ${kind}`];
   if (entry.node.lock) parts.push('locked');
-  if (undrawn) parts.push('not drawn');
+  if (unpickable) parts.push(unpickable);
   return parts.join(', ');
 }
 

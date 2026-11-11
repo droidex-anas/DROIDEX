@@ -64,7 +64,7 @@ export function LayersPanel({
   const list = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const treeId = useId();
-  const { rows, fold, rowOf, reveal } = useLayerRows(frames, elements.runs);
+  const { rows, fold, rowOf, reveal, readRest } = useLayerRows(frames, elements.runs);
   const keys = rows.map((row) => row.key);
   const { movedTo, activeIndex, moveTo, typeTo } = useKeyboardRow(rows, selectedFrameIds);
   const elementRows = useElementRows(elements, rowOf, reveal, moveTo);
@@ -79,6 +79,10 @@ export function LayersPanel({
   const renaming = useRenaming(keys, onRename, tree, closeButton);
   const kept = [activeIndex, renaming.index];
   const { virtualizer, revealRestacked } = useLayerList(tree, keys, ROW_PX, kept, movedTo);
+  const shownRows = virtualizer.getVirtualItems().map((item) => ({ item, row: rows[item.index] }));
+  // A row on show past what its frame's preview has read has the rest read.
+  for (const { row } of shownRows)
+    if (row.kind === 'element' && row.drawn?.state === 'unread') readRest(row.frame.designId);
   const selected = new Set(selectedFrameIds);
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
@@ -174,8 +178,7 @@ export function LayersPanel({
             style={{ height: virtualizer.getTotalSize() }}
             {...stack.listHandlers}
           >
-            {virtualizer.getVirtualItems().map((item) => {
-              const row = rows[item.index];
+            {shownRows.map(({ item, row }) => {
               const { designId } = row.frame;
               return (
                 <LayerListRow

@@ -1,60 +1,81 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useState } from 'react';
+import type { PreviewNode } from '../previewDocument';
 import type { PreviewTree } from '../previewDocumentTree';
-import type { AttachedRun, PreviewRuns } from '../previewRuns';
-import type { CanvasBuildState, CanvasFrame } from '../protocol';
+import type { PreviewRuns } from '../previewRuns';
+import type { CanvasBuildState, CanvasFrame, SourceOutline } from '../protocol';
+import { drawnLayers, type DrawnLayers } from './drawnLayers';
 import {
   ancestorIds,
-  elementNode,
   layerEntries,
+  layerNodes,
   nodeKey,
   type FrameLayers,
   type LayerEntry,
 } from './layerRows';
+import { usePreviewReads } from './usePreviewReads';
 
 type ReadyBuild = Extract<CanvasBuildState, { status: 'ready' }>;
 
-const NONE_DRAWN: FrameLayers['drawn'] = new Map();
+/** Where a drawn element's row is: found, not there, or not known until more is read. */
+export type RowSearch = { state: 'found'; key: string } | { state: 'missing' | 'waiting' };
+
+const MISSING: RowSearch = { state: 'missing' };
+const WAITING: RowSearch = { state: 'waiting' };
 
 /**
  * The panel's rows for `frames`, back to front as the board stacks them, what
- * opens or closes a row's children, and where an element's row is. Frames
- * start closed and their layers open.
+ * opens or closes a row's children, and where a drawn element's row is.
+ * Frames start closed and their layers open.
  */
 export function useLayerRows(frames: readonly CanvasFrame[], runs: PreviewRuns) {
   const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
   const readyOf = useReadyBuilds(frames);
-  const drawnOf = useDrawnElements(runs, frames, open);
+  const reads = usePreviewReads(runs, frames, open);
   const layersOf = (designId: string): FrameLayers | null => {
     const build = readyOf(designId);
-    return build ? { outline: build.outline, drawn: drawnOf(designId, build.revisionId) } : null;
+    if (!build) return null;
+    const read = reads.of(designId, build.revisionId);
+    return {
+      outline: build.outline,
+      drawn: read.state === 'read' ? drawnLayersOf(build.outline, read.tree) : null,
+      reading: read.state === 'reading' || (read.state === 'read' && read.more),
+    };
   };
-  const nodeOf = (designId: string, elementId: string) => {
-    const outline = readyOf(designId)?.outline;
-    const node = outline && elementNode(outline, elementId);
-    return outline && node ? { outline, node } : null;
-  };
+  const nodeIdOf = (designId: string, node: PreviewNode) =>
+    open.has(designId) ? layersOf(designId)?.drawn?.rowAt.get(node.instancePath) : undefined;
   return {
     rows: layerEntries([...frames].reverse(), layersOf, open, closed),
     fold: (row: LayerEntry, shown: boolean) => {
       if (row.kind === 'frame') setOpen(withMember(open, row.key, shown));
       else setClosed(withMember(closed, row.key, !shown));
     },
-    /** The key of the row an element first appears on in its frame's layers; null where it has none. */
-    rowOf: (designId: string, elementId: string): string | null => {
-      const found = nodeOf(designId, elementId);
-      return found && nodeKey(designId, found.node.nodeId);
+    /** The key of the row a drawn element is on in its open frame's layers; null where none is. */
+    rowOf: (designId: string, node: PreviewNode): string | null => {
+      const nodeId = nodeIdOf(designId, node);
+      return nodeId === undefined ? null : nodeKey(designId, nodeId);
     },
     /** Opens the element's frame and every row that holds its row, and says which row that is. */
-    reveal: (designId: string, elementId: string): string | null => {
-      const found = nodeOf(designId, elementId);
-      if (!found) return null;
-      if (!open.has(designId)) setOpen(withMember(open, designId, true));
-      const holders = ancestorIds(found.outline, found.node).map((id) => nodeKey(designId, id));
+    reveal: (designId: string, node: PreviewNode): RowSearch => {
+      if (!readyOf(designId)) return MISSING;
+      if (!open.has(designId)) {
+        setOpen(withMember(open, designId, true));
+        return WAITING;
+      }
+      const layers = layersOf(designId);
+      const nodeId = layers?.drawn?.rowAt.get(node.instancePath);
+      if (!layers || nodeId === undefined) {
+        // Past the pages read so far, it may still be drawn; the rest is read to find it.
+        if (layers?.reading || reads.readRest(designId)) return WAITING;
+        return MISSING;
+      }
+      const holders = ancestorIds(layerNodes(layers), nodeId).map((id) => nodeKey(designId, id));
       if (holders.some((key) => closed.has(key)))
         setClosed(new Set([...closed].filter((key) => !holders.includes(key))));
-      return nodeKey(designId, found.node.nodeId);
+      return { state: 'found', key: nodeKey(designId, nodeId) };
     },
+    /** Reads the rest of an open frame's preview, for rows past what is read. */
+    readRest: reads.readRest,
   };
 }
 
@@ -76,76 +97,17 @@ function useReadyBuilds(frames: readonly CanvasFrame[]) {
   return (designId: string) => ready.get(designId);
 }
 
-interface Answer {
-  held: AttachedRun;
-  /** Each drawn element's first instance, or null when the tree could not be read. */
-  drawn: FrameLayers['drawn'] | null;
-}
+const matched = new WeakMap<SourceOutline, WeakMap<PreviewTree, DrawnLayers>>();
 
-/** One ask of a frame's run; a newer ask, or forgetting the frame, makes its answer late. */
-interface Ask {
-  held: AttachedRun;
-}
-
-/**
- * Where the `open` frames' live previews draw their elements, read from each
- * preview's element tree as its frame opens and again whenever that preview's
- * run changes, and never otherwise. A frame that closes, goes or changes runs
- * is forgotten with its answer, so it reads again as it next opens and a late
- * answer is dropped. Until a frame's run of `revisionId` has answered, none of
- * its elements is drawn.
- */
-function useDrawnElements(
-  runs: PreviewRuns,
-  frames: readonly CanvasFrame[],
-  open: ReadonlySet<string>,
-) {
-  const readVersion = () => runs.version;
-  const version = useSyncExternalStore(runs.subscribe, readVersion, readVersion);
-  const [answers, setAnswers] = useState<ReadonlyMap<string, Answer>>(() => new Map());
-  /** Each open frame's latest ask, so it is asked once per run. */
-  const asked = useRef(new Map<string, Ask>());
-
-  useEffect(() => {
-    const askedOf = asked.current;
-    const wanted = new Map<string, AttachedRun>();
-    for (const { designId } of frames) {
-      const held = runs.get(designId);
-      if (held && open.has(designId)) wanted.set(designId, held);
-    }
-    for (const [designId, ask] of askedOf)
-      if (wanted.get(designId) !== ask.held) askedOf.delete(designId);
-    setAnswers((previous) => {
-      const kept = [...previous].filter(
-        ([designId, answer]) => askedOf.get(designId)?.held === answer.held,
-      );
-      return kept.length === previous.size ? previous : new Map(kept);
-    });
-    for (const [designId, held] of wanted) {
-      if (askedOf.get(designId)?.held === held) continue;
-      const ask = { held };
-      askedOf.set(designId, ask);
-      void held.run.tree().then((tree) => {
-        if (askedOf.get(designId) !== ask) return;
-        const drawn = tree && firstInstances(tree);
-        setAnswers((previous) => new Map(previous).set(designId, { held, drawn }));
-      });
-    }
-  }, [frames, open, runs, version]);
-
-  return (designId: string, revisionId: string): FrameLayers['drawn'] => {
-    const held = runs.get(designId);
-    if (held?.revisionId !== revisionId) return NONE_DRAWN;
-    const answer = answers.get(designId);
-    return answer?.held === held && answer.drawn ? answer.drawn : NONE_DRAWN;
-  };
-}
-
-function firstInstances(tree: PreviewTree): FrameLayers['drawn'] {
-  const drawn = new Map<string, string>();
-  for (const node of tree.nodes)
-    if (!drawn.has(node.elementId)) drawn.set(node.elementId, node.instancePath);
-  return drawn;
+/** `drawnLayers`, kept for as long as the outline and the tree it was read from are the same objects. */
+function drawnLayersOf(outline: SourceOutline, tree: PreviewTree): DrawnLayers {
+  const byTree = matched.get(outline) ?? new WeakMap<PreviewTree, DrawnLayers>();
+  matched.set(outline, byTree);
+  const known = byTree.get(tree);
+  if (known) return known;
+  const layers = drawnLayers(outline, tree);
+  byTree.set(tree, layers);
+  return layers;
 }
 
 function withMember(set: ReadonlySet<string>, key: string, member: boolean): ReadonlySet<string> {

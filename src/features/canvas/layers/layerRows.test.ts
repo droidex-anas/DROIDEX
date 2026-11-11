@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { PreviewTree } from '../previewDocumentTree';
 import type { CanvasFrame, OutlineNode, SourceOutline } from '../protocol';
+import { drawnLayers } from './drawnLayers';
 import { layerEntries, nodeKey, type FrameLayers } from './layerRows';
 
 function frame(designId: string, name: string): CanvasFrame {
@@ -50,13 +52,30 @@ const outline: SourceOutline = {
   ],
   truncated: false,
 };
-// The live preview drew the list's items past its tree's cap.
+const read = (nodes: [string, string, number][], truncated: boolean): PreviewTree => ({
+  nodes: nodes.map(([elementId, instancePath, depth]) => ({
+    elementId,
+    instancePath,
+    tagName: 'div',
+    depth,
+  })),
+  cap: 400,
+  truncated,
+});
+// The live preview drew the list's items past the first page of its tree.
 const layers: FrameLayers = {
   outline,
-  drawn: new Map([
-    ['el_section', '0'],
-    ['el_title', '0/0'],
-  ]),
+  drawn: drawnLayers(
+    outline,
+    read(
+      [
+        ['el_section', '0', 0],
+        ['el_title', '0/0', 1],
+      ],
+      true,
+    ),
+  ),
+  reading: false,
 };
 
 test('an open frame lists its source outline under it, nested as written, each row going to its drawn element', () => {
@@ -93,14 +112,15 @@ test('an open frame lists its source outline under it, nested as written, each r
       ['Footer', 2, 2],
     ],
   );
-  // Only a drawn element can be picked or outlined; an instance, a repeat or an undrawn element cannot.
+  // Only a drawn element can be picked or outlined; an instance or a repeat has nothing to,
+  // and the item past the page read is not known yet.
   assert.deepEqual(
-    elements.map((row) => row.target),
+    elements.map((row) => row.drawn),
     [
-      { elementId: 'el_section', instancePath: '0' },
-      { elementId: 'el_title', instancePath: '0/0' },
+      { state: 'drawn', node: { elementId: 'el_section', instancePath: '0' } },
+      { state: 'drawn', node: { elementId: 'el_title', instancePath: '0/0' } },
       null,
-      null,
+      { state: 'unread' },
       null,
     ],
   );
@@ -115,12 +135,57 @@ test('a closed row hides what it holds, and a frame that is shut shows none of i
   assert.deepEqual(names(new Set()), ['Pricing page']);
 });
 
-test('an open frame says when its outline is empty or stopped at the cap', () => {
+test('an element row says when its element is being read, unreadable, absent or past what was read', () => {
   const frames = [frame('a', 'Pricing page')];
-  const notes = (shown: SourceOutline) =>
-    layerEntries(frames, () => ({ outline: shown, drawn: new Map() }), new Set(['a']), new Set())
-      .filter((row) => row.kind === 'note')
-      .map((row) => row.name);
-  assert.deepEqual(notes({ nodes: [], truncated: false }), ['No layers']);
-  assert.deepEqual(notes({ ...outline, truncated: true }), ['Showing the first 5 layers']);
+  const title = (shown: Omit<FrameLayers, 'outline'>) =>
+    layerEntries(frames, () => ({ outline, ...shown }), new Set(['a']), new Set())
+      .flatMap((row) => (row.kind === 'element' && row.name === 'Pricing' ? [row.drawn] : []))
+      .at(0);
+  assert.deepEqual(title({ drawn: null, reading: true }), { state: 'reading' });
+  assert.deepEqual(title({ drawn: null, reading: false }), { state: 'unread' });
+  const sectionOnly = read([['el_section', '0', 0]], false);
+  assert.deepEqual(title({ drawn: drawnLayers(outline, sectionOnly), reading: false }), {
+    state: 'absent',
+  });
+  const stopped = { ...sectionOnly, truncated: true };
+  assert.deepEqual(title({ drawn: drawnLayers(outline, stopped), reading: false }), {
+    state: 'unread',
+  });
+  // While the rest is read, what is not read yet is on its way.
+  assert.deepEqual(title({ drawn: drawnLayers(outline, stopped), reading: true }), {
+    state: 'reading',
+  });
+});
+
+test('an open frame says when its outline is empty or stopped at its limits, and lists what is drawn but not written', () => {
+  const frames = [frame('a', 'Pricing page')];
+  const names = (shown: SourceOutline, tree: PreviewTree | null = null) =>
+    layerEntries(
+      frames,
+      () => ({ outline: shown, drawn: tree && drawnLayers(shown, tree), reading: false }),
+      new Set(['a']),
+      new Set(),
+    ).map((row) => [row.name, row.level]);
+  assert.deepEqual(names({ nodes: [], truncated: false }), [
+    ['Pricing page', 1],
+    ['No layers', 2],
+  ]);
+  // The outline stopped before the footer's aside, which the preview draws: it still gets a row.
+  const cut = { nodes: outline.nodes.slice(0, 4), truncated: true };
+  const drawn = read(
+    [
+      ['el_section', '0', 0],
+      ['el_aside', '1', 0],
+    ],
+    false,
+  );
+  assert.deepEqual(names(cut, drawn), [
+    ['Pricing page', 1],
+    ['section', 2],
+    ['Pricing', 3],
+    ['Repeat', 3],
+    ['Fast', 4],
+    ['div', 2],
+    ['Not every layer could be listed', 2],
+  ]);
 });
