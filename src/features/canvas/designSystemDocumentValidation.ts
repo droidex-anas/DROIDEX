@@ -315,7 +315,8 @@ function isLibraryProvenance(value: unknown): boolean {
     boundedList(value.skipped, MAX_LIBRARY_SKIPS, isLibrarySkip) &&
     count(value.skippedCount) &&
     count(value.partialCount) &&
-    listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount)
+    listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount) &&
+    reviewsEachFileOnce(value.skipped)
   );
 }
 
@@ -333,6 +334,11 @@ function listsAtMostItsCounts(
 ): boolean {
   const kept = skipped.filter((skip) => record(skip) && KEPT_SKIP_REASONS.has(skip.reason)).length;
   return kept <= partialCount && skipped.length - kept <= skippedCount;
+}
+
+function reviewsEachFileOnce(skipped: readonly unknown[]): boolean {
+  const files = skipped.map((skip) => (record(skip) ? skip.file : null));
+  return new Set(files).size === files.length;
 }
 
 /** A review record's file or detail: a project path or short text, never an absolute path. */
