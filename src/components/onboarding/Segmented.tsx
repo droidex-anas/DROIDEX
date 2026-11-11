@@ -28,6 +28,10 @@ export function Segmented<T extends string>({
 }) {
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const index = options.findIndex((option) => option.value === value);
+  // With nothing picked, the first enabled segment holds the tab stop so the
+  // group stays reachable from the keyboard.
+  const focusIndex =
+    index >= 0 ? index : options.findIndex((option) => option.disabledReason === undefined);
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const step = arrowStep(event.key);
@@ -35,7 +39,7 @@ export function Segmented<T extends string>({
     event.preventDefault();
     const count = options.length;
     for (let k = 1; k < count; k++) {
-      const next = (((index + step * k) % count) + count) % count;
+      const next = (((focusIndex + step * k) % count) + count) % count;
       const option = options.at(next);
       if (!option || option.disabledReason !== undefined) continue;
       onChange(option.value);
@@ -68,7 +72,7 @@ export function Segmented<T extends string>({
           type="button"
           role="radio"
           aria-checked={i === index}
-          tabIndex={i === index ? 0 : -1}
+          tabIndex={i === focusIndex ? 0 : -1}
           disabled={option.disabledReason !== undefined}
           title={option.disabledReason}
           className="ob-segment text-label"

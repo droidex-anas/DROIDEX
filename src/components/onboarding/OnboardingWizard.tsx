@@ -133,6 +133,9 @@ export default function OnboardingWizard({
   const [seenStatuses, setSeenStatuses] = useState(statuses);
 
   const chosen = useMemo(() => chosenAgents(picks, statuses), [picks, statuses]);
+  // Derived, not stored: the preferred agent may not be able to start chats
+  // yet, and an agent that turns ready later has to be able to take over.
+  const draftAgent = startingAgent(chosen, statuses, defaults.draftAgent);
   const installing = AGENTS.find((agent) => runs[agent]?.outcome === 'running') ?? null;
 
   // When the open agent turns ready, setup moves on to the next one that
@@ -172,12 +175,6 @@ export default function OnboardingWizard({
     setStep(next);
     if (next === 'agents' && !scanned) recheckAgents();
     if (next === 'setup') setOpen(nextToSetUp(chosen, statuses, null, skipped));
-    if (next === 'defaults') {
-      setDefaults((current) => ({
-        ...current,
-        draftAgent: startingAgent(chosen, statuses, current.draftAgent),
-      }));
-    }
   }
 
   function skipAgent(agent: ProviderKind) {
@@ -203,7 +200,7 @@ export default function OnboardingWizard({
   }
 
   async function finish() {
-    const { editor, draftAgent, cliAutoUpdate, harnessCliAutoUpdate, appAutoUpdate } = defaults;
+    const { editor, cliAutoUpdate, harnessCliAutoUpdate, appAutoUpdate } = defaults;
     const saved = await complete({
       defaultEditor: editor,
       cliAutoUpdate,
@@ -221,7 +218,7 @@ export default function OnboardingWizard({
   let lead: ProviderKind | null = null;
   if (step === 'agents') lead = spotlight;
   else if (step === 'setup') lead = installing ?? open;
-  else if (step === 'defaults') lead = defaults.draftAgent;
+  else if (step === 'defaults') lead = draftAgent;
   const figures = stageFigures({
     step,
     chosen,
@@ -295,7 +292,7 @@ export default function OnboardingWizard({
     case 'defaults':
       body = (
         <DefaultsStep
-          values={defaults}
+          values={{ ...defaults, draftAgent }}
           chosen={chosen}
           statuses={statuses}
           installedEditors={installedEditors}
@@ -311,7 +308,7 @@ export default function OnboardingWizard({
           chosen={chosen}
           statuses={statuses}
           editor={defaults.editor}
-          draftAgent={defaults.draftAgent}
+          draftAgent={draftAgent}
           finishing={saving}
           onStart={() => void finish()}
           onBack={() => {

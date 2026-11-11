@@ -17,12 +17,15 @@ export const NO_PROVIDER_PROBES: ProviderProbeMap = new Map();
 
 // Claude Code's and Codex's readiness each cost a CLI process to learn, so they
 // are probed on demand and remembered: provider status can then be emitted on
-// any event without spawning anything. One round of probes runs at a time; a
-// refresh that arrives while one is in flight joins it instead of starting more.
-// Each answer is announced as it lands, so one harness never waits on another.
+// any event without spawning anything. One round of probes runs at a time. The
+// live round may predate what a refresh reports (an install, a sign-in), so a
+// refresh that arrives during it queues one more round, shared by every refresh
+// that arrives meanwhile. Each answer is announced as it lands, so one harness
+// never waits on another.
 export class ProviderProbes {
   private readonly latest = new Map<ProviderKind, ProviderStatus>();
   private inFlight?: Promise<void>;
+  private queued?: Promise<void>;
   // The live round's controller, kept past its answers: a probe's catalog can
   // still be streaming from its process, and shutdown has to reach it.
   private abort?: AbortController;
@@ -41,9 +44,21 @@ export class ProviderProbes {
   }
 
   refresh(): Promise<void> {
-    if (this.inFlight) return this.inFlight;
+    if (this.queued) return this.queued;
+    if (!this.inFlight) return this.startRound();
+    const queued = this.inFlight.then(() => {
+      // Shutdown drops the queued round.
+      if (this.queued !== queued) return;
+      this.queued = undefined;
+      return this.startRound();
+    });
+    this.queued = queued;
+    return queued;
+  }
+
+  private startRound(): Promise<void> {
     // A new round supersedes whatever the last one is still streaming.
-    this.cancel();
+    this.abort?.abort();
     const abort = new AbortController();
     this.abort = abort;
     const generation = ++this.generation;
@@ -81,5 +96,6 @@ export class ProviderProbes {
   cancel(): void {
     this.abort?.abort();
     this.abort = undefined;
+    this.queued = undefined;
   }
 }
