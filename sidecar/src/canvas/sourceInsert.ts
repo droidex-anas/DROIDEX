@@ -39,6 +39,7 @@ export function insertLayer(files: SourceFiles, nodeId: string, entry: CatalogEn
   const { text } = source;
   const eol = lineEnding(text);
   const paste = landing(target, uses, eol);
+  checkIds(files, entry.jsx);
   const imports = importEdits(
     source,
     [
@@ -71,7 +72,9 @@ export function insertLayer(files: SourceFiles, nodeId: string, entry: CatalogEn
 function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
   const source = target.at.getSourceFile();
   const held = holdingElement(target, uses);
-  if ('element' in held) {
+  // Code decides whether a layer it writes renders, as `{open && <section />}` does,
+  // so only a free layer or the frame's top layer takes the entry inside.
+  if ('element' in held && (target.row.free || target.row.parentId === null)) {
     const { element } = held;
     if (!hasText(element) && !isVector(element)) return pasteAtEnd(source, element, eol);
     if (hasText(element) && target.row.parentId === null && !anchorOf(element))
@@ -87,6 +90,35 @@ function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
   const indent = lineIndent(text, node.getStart());
   const before = standsAlone(text, node) ? eol + indent : '';
   return { start: node.end, end: node.end, before, after: '', indent };
+}
+
+/** Refuses an entry that gives an element an `id` the frame already gives one: a document holds each id once. */
+function checkIds(files: SourceFiles, jsx: string): void {
+  const taken = new Set(
+    Object.entries(files)
+      .filter(([name]) => /\.[jt]sx?$/.test(name))
+      .flatMap(([name, text]) => idsIn(name, text)),
+  );
+  const repeated = idsIn('entry.tsx', jsx).find((id) => taken.has(id));
+  if (repeated !== undefined)
+    throw invalid(
+      `This frame already has an element with id "${repeated}", and the entry would repeat it.`,
+    );
+}
+
+/** The literal `id` values the JSX in `text` writes. */
+function idsIn(name: string, text: string): string[] {
+  const ids: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isJsxAttribute(node) && node.name.getText() === 'id') {
+      const value = node.initializer;
+      const literal = value && ts.isJsxExpression(value) ? value.expression : value;
+      if (literal && ts.isStringLiteralLike(literal)) ids.push(literal.text);
+    }
+    node.forEachChild(visit);
+  };
+  visit(ts.createSourceFile(name, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX));
+  return ids;
 }
 
 /** Whether the node is an `svg` or inside one, where only vector parts belong. */

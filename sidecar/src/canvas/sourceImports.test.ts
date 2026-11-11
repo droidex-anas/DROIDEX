@@ -3,7 +3,7 @@ import test from 'node:test';
 import ts from 'typescript';
 import { SourceElementError } from './sourceElementError.js';
 import { importEdits, type ModuleNames } from './sourceImports.js';
-import { splice } from './sourceLines.js';
+import { lineEnding, splice } from './sourceLines.js';
 
 const KIT = '@droidex/design-system';
 
@@ -16,7 +16,7 @@ function imported(text: string, wanted: ModuleNames[]): string {
     true,
     ts.ScriptKind.TSX,
   );
-  return splice(text, importEdits(source, wanted, '\n'));
+  return splice(text, importEdits(source, wanted, lineEnding(text)));
 }
 
 function refusal(text: string, wanted: ModuleNames[]): string {
@@ -55,6 +55,31 @@ test('a module the file does not import yet gets a new import after its last, wr
       { module: 'lucide-react', names: ['Plus'] },
     ]),
     'import { useState } from "react"\nimport { Card } from "./Card"\nimport { Button } from "@droidex/design-system"\nimport { Plus } from "lucide-react"\n\nexport default () => null\n',
+  );
+});
+
+test('a comment holding a comma in a named import does not take the added name', () => {
+  assert.equal(
+    imported(`import { Button /*,*/ , } from '${KIT}';\n`, [{ module: KIT, names: ['Badge'] }]),
+    `import { Button /*,*/ , Badge, } from '${KIT}';\n`,
+  );
+});
+
+test("a file's first import goes below its directives and opening comments, in its line endings", () => {
+  assert.equal(
+    imported("'use client';\r\n// License header\r\nexport default () => null;\r\n", [
+      { module: KIT, names: ['Badge'] },
+    ]),
+    `'use client';\r\n// License header\r\nimport { Badge } from '${KIT}';\r\n\r\nexport default () => null;\r\n`,
+  );
+});
+
+test('a named function expression binds its name where the entry would land, so it is refused', () => {
+  assert.equal(
+    refusal('const Page = function Badge() { return <main />; };\nexport default Page;\n', [
+      { module: KIT, names: ['Badge'] },
+    ]),
+    'This file already has its own Badge. Ask the agent to add it.',
   );
 });
 

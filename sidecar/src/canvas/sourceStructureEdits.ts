@@ -18,6 +18,7 @@ import {
   standsAlone,
   startsLine,
 } from './sourceLines.js';
+import { heldText } from './sourceOutline.js';
 
 type LayerChange = Extract<ElementEdit, { layer: unknown }>['change'];
 
@@ -306,12 +307,8 @@ function enclosingBlock(node: ts.Node): ts.Node | undefined {
   );
 }
 
-/** Whitespace that breaks a line is formatting JSX drops; any other text, spaces too, renders. */
 export function hasText(parent: JsxParent | ElementNode): boolean {
-  if (ts.isJsxSelfClosingElement(parent)) return false;
-  return parent.children.some(
-    (child) => ts.isJsxText(child) && !child.containsOnlyTriviaWhiteSpaces,
-  );
+  return heldText(parent).length > 0;
 }
 
 /** Whether the layer already sits right before `before` in the parent, or last when it is null. */
