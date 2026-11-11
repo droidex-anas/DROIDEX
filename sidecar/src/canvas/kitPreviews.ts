@@ -11,8 +11,17 @@ import { boundDiagnostics } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
 import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
+import { kitPrimitives } from './designSystemBrief.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
+import {
+  catalogCompileFailure,
+  catalogModule,
+  KIT_CATALOG_FILE,
+  readKitCatalog,
+  unexportedUses,
+  type CatalogFailure,
+} from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemProposalRef,
@@ -82,9 +91,10 @@ export class KitPreviews {
 
   /**
    * Compiles a kit that may not be saved yet: its entry, then each of its
-   * examples once. Returns the failures' diagnostics, none when everything
-   * builds. One stylesheet carries both modes and the mode is only the
-   * document's `data-mode`, so one compile answers for both.
+   * examples once, then its catalog as one module. Returns the failures'
+   * diagnostics, none when everything builds. One stylesheet carries both
+   * modes and the mode is only the document's `data-mode`, so one compile
+   * answers for both.
    */
   async check(
     kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>,
@@ -107,8 +117,34 @@ export class KitPreviews {
       for (const diagnostic of preview.diagnostics)
         diagnostics.push(diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic);
     }
+    for (const { diagnostic } of await this.checkCatalog(kit)) diagnostics.push(diagnostic);
     this.refuseClosed();
     return boundDiagnostics(diagnostics);
+  }
+
+  /** Compiles the kit's catalog as one module; none when it builds or the kit has no catalog. */
+  async checkCatalog(kit: Pick<DesignSystem, 'files' | 'sections'>): Promise<CatalogFailure[]> {
+    const read = readKitCatalog(kit.files);
+    if ('problem' in read)
+      return [
+        {
+          entry: null,
+          diagnostic: { code: 'invalid_input', message: read.problem, file: KIT_CATALOG_FILE },
+        },
+      ];
+    if (read.catalog.length === 0) return [];
+    const unexported = unexportedUses(read.catalog, new Set(kitPrimitives(kit)));
+    if (unexported.length > 0) return unexported;
+    const module = catalogModule(read.catalog);
+    this.refuseClosed();
+    const { preview } = await this.compile({
+      kind: 'kitPreview',
+      kit: { files: kit.files, sections: kit.sections },
+      mode: 'light',
+      example: module.source,
+    });
+    if (preview.status === 'ready') return [];
+    return preview.diagnostics.map((diagnostic) => catalogCompileFailure(module, diagnostic));
   }
 
   /** Refuses every read and cancels every compile; nothing compiles after this. */

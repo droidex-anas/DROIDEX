@@ -39,6 +39,7 @@ import {
 } from './designSystemStorage.js';
 import { designSystemProvenanceSchema } from './designSystemProvenance.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
+import { catalogProblem } from './kitCatalog.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
   boundedSourceFilesSchema,
@@ -113,7 +114,7 @@ function versionProblem(system: z.infer<typeof designSystemObjectSchema>): strin
   );
   if (documentBytes > DOCUMENT_LIMITS.maxDocumentBytes)
     return 'The design system document is over 256 KiB. Remove some of it.';
-  return null;
+  return catalogProblem(system.files);
 }
 
 const savedBySchema = z.discriminatedUnion('actor', [
