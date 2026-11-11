@@ -11,6 +11,7 @@ import {
   stopCanvasRuntime,
 } from './canvasRuntime.js';
 import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
+import { KIT_THEME_FILE, kitTailwindTheme } from './kitTailwindTheme.js';
 import {
   canonicalCss,
   resolveStyleChange,
@@ -49,6 +50,7 @@ const RAW_VALUES = [
   'auto',
   'fit-content',
   'none',
+  'currentcolor',
   ...Object.values(BLUR),
   'blur(0.5rem)',
 ];
@@ -122,9 +124,73 @@ test('every class a style edit writes sets its property to the value the edit me
     // `blur-none` sets its blur to nothing.
     const isFilter = property === 'filter' || property === 'backdropFilter';
     const read = isFilter && set.trim() === '' ? 'none' : set;
-    assert.equal(canonicalCss(read), canonicalCss(value), `${name} for ${property}: ${value}`);
+    // SVG reads a bare stroke width in pixels.
+    const sets = property === 'strokeWidth' && /^\d+$/.test(read) ? `${read}px` : read;
+    assert.equal(canonicalCss(sets), canonicalCss(value), `${name} for ${property}: ${value}`);
     assert.deepEqual(classStyle(name), { sets: longhands(property), scope: 'always' }, name);
   }
+});
+
+test('a stroke class sets the width or the colour its value names', () => {
+  for (const name of [
+    'stroke-2',
+    'stroke-[1.5]',
+    'stroke-[number:var(--w)]',
+    'stroke-[percentage:var(--w)]',
+  ])
+    assert.deepEqual(classStyle(name)?.sets, ['strokeWidth'], name);
+  for (const name of [
+    'stroke-black',
+    'stroke-[#fff]',
+    'stroke-[red]',
+    'stroke-[var(--ds-accent)]',
+    'stroke-current',
+  ])
+    assert.deepEqual(classStyle(name)?.sets, ['stroke'], name);
+});
+
+test('a colour key the kit theme names is read as a colour, with its opacity and variants', () => {
+  const colors = { accent: 'var(--ds-accent)' };
+  const theme = kitTailwindTheme({
+    sections: [],
+    files: { [KIT_THEME_FILE]: JSON.stringify({ colors }) },
+  });
+  assert.deepEqual(classStyle('fill-accent', theme), { sets: ['fill'], scope: 'always' });
+  assert.deepEqual(classStyle('stroke-accent/50', theme), { sets: ['stroke'], scope: 'always' });
+  assert.deepEqual(classStyle('dark:fill-accent', theme), { sets: ['fill'], scope: 'frame' });
+  assert.equal(classStyle('fill-accent'), null);
+});
+
+test('a kit colour key that is also another utility of its prefix reads as both, shared', () => {
+  const theme = {
+    colors: { cover: '#f00', brand: '#f00', '2': '#f00' },
+    fontSize: { brand: '20px' },
+  };
+  assert.deepEqual(classStyle('bg-cover', theme), {
+    sets: ['backgroundColor', 'backgroundSize'],
+    shared: true,
+    scope: 'always',
+  });
+  assert.equal(classStyle('!bg-cover', theme)?.important, true);
+  assert.deepEqual(classStyle('text-brand', theme), {
+    sets: ['fontSize', 'color'],
+    shared: true,
+    scope: 'always',
+  });
+  assert.deepEqual(classStyle('border-t-2', theme)?.sets, ['borderTopWidth', 'borderTopColor']);
+  assert.deepEqual(classStyle('bg-brand', theme), { sets: ['backgroundColor'], scope: 'always' });
+  // Key t-2 makes the class border + t-2 as well as border-t + 2.
+  assert.deepEqual(classStyle('border-t-2', { colors: { 't-2': '#f00' } }), {
+    sets: [
+      'borderTopWidth',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+    ],
+    shared: true,
+    scope: 'always',
+  });
 });
 
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {

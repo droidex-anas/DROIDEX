@@ -12,7 +12,8 @@
 // placeholder so an opacity modifier (bg-surface/50) keeps working.
 
 import defaultTheme from 'tailwindcss/defaultTheme';
-import setupContextUtils from 'tailwindcss/lib/lib/setupContextUtils';
+import generateRules from 'tailwindcss/lib/lib/generateRules';
+import setupContextUtils, { type TailwindContext } from 'tailwindcss/lib/lib/setupContextUtils';
 import nameClass from 'tailwindcss/lib/util/nameClass';
 import resolveConfig from 'tailwindcss/resolveConfig';
 import { z } from 'zod';
@@ -137,9 +138,11 @@ interface StockClasses {
   names: ReadonlySet<string>;
   /** The utilities a key in each namespace names a class of: text, border, bg... for colors. */
   utilities: Readonly<Record<ThemeNamespace, readonly string[]>>;
+  context: TailwindContext;
 }
 
 let stockClasses: StockClasses | null = null;
+let kitContext: { theme: string; context: TailwindContext } | null = null;
 
 // Tailwind shares utilities across namespaces (text- takes a colour or a font
 // size, border- a colour or a width), so a key is also checked against
@@ -151,12 +154,8 @@ function readStockClasses(): StockClasses {
   const extend = Object.fromEntries(
     THEME_NAMESPACES.map((namespace) => [namespace, { [probe(namespace)]: 'var(--probe)' }]),
   );
-  const classes = setupContextUtils
-    .createContext(
-      // Preflight adds no class and reads a file beside Tailwind's source that a bundle lacks.
-      resolveConfig({ content: [], corePlugins: { preflight: false }, theme: { extend } }),
-    )
-    .getClassList();
+  const context = createContext(extend);
+  const classes = context.getClassList();
   const names = new Set<string>();
   const utilities = Object.fromEntries(
     THEME_NAMESPACES.map((namespace) => [namespace, [] as string[]]),
@@ -168,8 +167,39 @@ function readStockClasses(): StockClasses {
     else if (!name.startsWith('-'))
       utilities[namespace].push(name.slice(0, -`-${probe(namespace)}`.length));
   }
-  stockClasses = { names, utilities };
+  stockClasses = { names, utilities, context };
   return stockClasses;
+}
+
+function createContext(extend: KitTheme): TailwindContext {
+  return setupContextUtils.createContext(
+    // Preflight adds no class and reads a file beside Tailwind's source that a bundle lacks.
+    resolveConfig({ content: [], corePlugins: { preflight: false }, theme: { extend } }),
+  );
+}
+
+/**
+ * The CSS properties, custom ones aside, of each rule Tailwind generates for a
+ * utility (no variant) under a kit theme, `{}` for stock Tailwind. More than
+ * one rule is more than one utility's reading of the class: with a colour key
+ * `cover`, bg-cover sets both background-size and background-color. Only the
+ * last kit's context is kept, as edits come from one kit at a time.
+ */
+export function classRules(utility: string, theme: KitTheme): string[][] {
+  let context: TailwindContext;
+  if (Object.keys(theme).length === 0) context = readStockClasses().context;
+  else {
+    const key = JSON.stringify(theme);
+    if (kitContext?.theme !== key) kitContext = { theme: key, context: createContext(theme) };
+    context = kitContext.context;
+  }
+  return generateRules.generateRules(new Set([utility]), context).map(([, rule]) => {
+    const properties: string[] = [];
+    rule.walkDecls(({ prop }) => {
+      if (!prop.startsWith('--')) properties.push(prop);
+    });
+    return properties;
+  });
 }
 
 /** Whether a key is the default theme's own or would name a class stock Tailwind generates. */
