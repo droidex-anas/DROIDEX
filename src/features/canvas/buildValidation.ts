@@ -81,11 +81,12 @@ function isOutlineNode(value: unknown): boolean {
     (value.text === null || (value.kind === 'element' && isOutlineLabel(value.text))) &&
     (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
-    typeof value.free === 'boolean'
+    typeof value.free === 'boolean' &&
+    typeof value.contentFromProps === 'boolean'
   );
 }
 
-function isOutlineNodeId(value: unknown): boolean {
+export function isOutlineNodeId(value: unknown): boolean {
   return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
 }
 

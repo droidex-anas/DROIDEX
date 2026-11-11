@@ -298,6 +298,7 @@ const OUTLINE: SourceOutline = {
           elementId: null,
           lock: null,
           free: false,
+          contentFromProps: false,
         },
         {
           nodeId: '0000000000000002',
@@ -308,6 +309,7 @@ const OUTLINE: SourceOutline = {
           elementId: 'el_card',
           lock: 'shared',
           free: false,
+          contentFromProps: false,
         },
         {
           nodeId: '0000000000000003',
@@ -318,9 +320,33 @@ const OUTLINE: SourceOutline = {
           elementId: 'el_title',
           lock: null,
           free: true,
+          contentFromProps: false,
         },
       ]
     : [],
+  truncated: false,
+};
+
+// `?moves=1` writes a page whose layers move: main holding a title, a line, a section and an image.
+const movable = (nodeId: string, parentId: string | null, name: string, text: string | null) => ({
+  nodeId,
+  parentId,
+  kind: 'element' as const,
+  name,
+  text,
+  elementId: `el_${nodeId}`,
+  lock: null,
+  free: parentId !== null,
+  contentFromProps: false,
+});
+const MOVES: SourceOutline = {
+  nodes: [
+    movable('main', null, 'main', null),
+    movable('title', 'main', 'h1', 'Pricing'),
+    movable('line', 'main', 'p', 'Start free'),
+    movable('section', 'main', 'section', null),
+    movable('image', 'main', 'img', null),
+  ],
   truncated: false,
 };
 
@@ -331,7 +357,7 @@ function built(revisionId: string): CanvasFrame['build'] {
     revisionId,
     artifactId: 'a'.repeat(64),
     elements: ELEMENTS,
-    outline: OUTLINE,
+    outline: params.has('moves') ? MOVES : OUTLINE,
     diagnostics: [],
   };
 }
@@ -568,7 +594,9 @@ function Harness() {
     hovering: picksElements(interaction.mode),
     onEditElement: (input) => {
       editCalls.push(input);
-      return new Promise<WriteReceipt>((resolve, reject) => editReplies.push({ resolve, reject }));
+      return new Promise<WriteReceipt>((resolve, reject) =>
+        editReplies.push({ resolve, reject }),
+      ).then((receipt) => ({ receipt, landed: null }));
     },
   });
   if (params.has('project')) projectExport.open = setExporting;
@@ -745,7 +773,8 @@ function Harness() {
     editCalls,
     seeds,
     answerEdit: (index) => {
-      const { designId } = editCalls[index].edit.element;
+      const { edit } = editCalls[index];
+      const { designId } = 'element' in edit ? edit.element : edit.layer;
       const revisionId = `rev_0${String(index + 2)}`;
       editReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
       setSnapshot((current) => ({
@@ -868,6 +897,20 @@ function Harness() {
               reorderCalls.push(designIds);
               setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
             }}
+            onMoveLayer={(layer, place) => {
+              const mutationId = `move_${String(editCalls.length)}`;
+              editCalls.push({ mutationId, edit: { layer, change: { kind: 'move', ...place } } });
+              return new Promise<WriteReceipt>((resolve, reject) =>
+                editReplies.push({ resolve, reject }),
+              ).then(
+                // Every revision's outline is the same, so the layer lands on its own row.
+                (receipt) => ({ receipt, landed: layer.nodeId }),
+                () => null,
+              );
+            }}
+            onHistory={(step) =>
+              step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
+            }
             onPick={(designId, additive) => {
               setInteraction(
                 reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),

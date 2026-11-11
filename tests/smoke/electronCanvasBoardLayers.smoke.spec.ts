@@ -1,6 +1,7 @@
 // The layers panel against the board harness: a row per frame, front to back,
 // with only the visible ones mounted, picking and lighting frames from
-// it, the keyboard's way to a frame and back, renaming, and the rail's toggle.
+// it, the keyboard's way to a frame and back, renaming, the rail's toggle,
+// and moving a layer in its source.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, serveBoard, stubGuests } from './board/boardPage';
@@ -546,4 +547,82 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
     tree.getByRole('treeitem', { name: 'Pricing, Text, reading', exact: true }),
   ).toBeVisible();
   expect(await trees()).toBe(3);
+});
+
+test('A layer’s handle and ⌥ with the arrows move it in its source, and a drop it cannot take says why', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&layers=1&moves=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  await tree
+    .getByRole('treeitem', { name: 'Design A, Ready' })
+    .getByRole('button', { name: 'Expand' })
+    .click();
+  const row = (name: string) => tree.getByRole('treeitem', { name: new RegExp(`^${name},`) });
+  const moves = () =>
+    page.evaluate(() =>
+      window.boardHarness.editCalls.map(({ edit }) => ('layer' in edit ? edit : null)),
+    );
+  const line = row('Start free');
+  await line.hover();
+  const grip = await line.locator('.canvas-layer-tool').boundingBox();
+  const title = await row('Pricing').boundingBox();
+  const image = await row('img').boundingBox();
+  if (!grip || !title || !image) throw new Error('Missing row geometry');
+
+  // Dragged to the boundary above the title, the line goes first in main.
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, title.y + 2, { steps: 4 });
+  await page.mouse.up();
+  const layer = { designId: 'a', revisionId: 'rev_01', nodeId: 'line' };
+  expect(await moves()).toEqual([
+    { layer, change: { kind: 'move', parentId: 'main', beforeId: 'title' } },
+  ]);
+
+  // Below the image and a level in, the image would hold it: the line says it can't, and the drop sends nothing.
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2 + 14, image.y + image.height - 2, { steps: 4 });
+  await expect(tree.getByText('This layer can’t hold other layers.')).toBeVisible();
+  await page.mouse.up();
+  await expect(tree.getByText('This layer can’t hold other layers.')).toHaveCount(0);
+  expect(await moves()).toHaveLength(1);
+
+  // The handle left the keyboard on the line's row: ⌥↓ moves it past the section, ⌥→ nowhere,
+  // as the title above it holds text, and ⌥← nowhere, as main is the frame's top layer.
+  await expect(tree).toBeFocused();
+  await page.keyboard.press('Alt+ArrowDown');
+  await page.keyboard.press('Alt+ArrowRight');
+  await page.keyboard.press('Alt+ArrowLeft');
+  expect((await moves()).slice(1)).toEqual([
+    { layer, change: { kind: 'move', parentId: 'main', beforeId: 'image' } },
+  ]);
+
+  // Once the first move has built, the keyboard follows the line to the row it landed on.
+  await page.keyboard.press('ArrowUp');
+  const lineId = (await line.getAttribute('id')) ?? '';
+  await expect(tree).not.toHaveAttribute('aria-activedescendant', lineId);
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await expect(tree).toHaveAttribute('aria-activedescendant', lineId);
+
+  // A drag ends without a move when its frame moves on to another revision, whose rows may
+  // name other layers, or when the window loses focus.
+  const regrab = async () => {
+    await line.hover();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2, title.y + 2, { steps: 4 });
+    await expect(tree).toHaveAttribute('data-dragging', 'true');
+  };
+  await regrab();
+  await page.evaluate(() => window.boardHarness.editByUser('a'));
+  await expect(tree).not.toHaveAttribute('data-dragging');
+  await page.mouse.up();
+  await regrab();
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(tree).not.toHaveAttribute('data-dragging');
+  await page.mouse.up();
+  expect(await moves()).toHaveLength(2);
 });

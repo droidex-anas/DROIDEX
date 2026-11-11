@@ -32,7 +32,7 @@ test('Right opens the row and Left closes it, unless a chord holds them', () => 
   assert.equal(layerKey(press('ArrowRight', { metaKey: true }), 1, 3), null);
 });
 
-test('Ctrl+Shift+H hides or shows the row, and Alt with an arrow restacks it a row, up to the ends', () => {
+test('Ctrl+Shift+H hides or shows the row, Alt with Up or Down restacks it a row up to the ends, and with Left or Right moves it out or in', () => {
   // ⇧⌘H on the Mac; the test runs off it.
   assert.deepEqual(layerKey(press('H', { ctrlKey: true, shiftKey: true }), 1, 3), {
     kind: 'toggle-hidden',
@@ -48,6 +48,8 @@ test('Ctrl+Shift+H hides or shows the row, and Alt with an arrow restacks it a r
   // The front row goes no further forward, and the back row no further back, nor wraps.
   assert.equal(layerKey(press('ArrowUp', { altKey: true }), 0, 3), null);
   assert.equal(layerKey(press('ArrowDown', { altKey: true }), 2, 3), null);
+  assert.deepEqual(layerKey(press('ArrowLeft', { altKey: true }), 1, 3), { kind: 'outdent' });
+  assert.deepEqual(layerKey(press('ArrowRight', { altKey: true }), 1, 3), { kind: 'indent' });
   assert.deepEqual(moveRow(['a', 'b', 'c'], 0, 2), ['b', 'c', 'a']);
   assert.deepEqual(moveRow(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
 });

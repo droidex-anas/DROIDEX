@@ -456,6 +456,11 @@
   cursor: grabbing;
 }
 
+.canvas-layers-tree[data-refused],
+.canvas-layers-tree[data-refused] * {
+  cursor: not-allowed;
+}
+
 /* A colour that paints nothing, as the element panel's swatch shows it. */
 .canvas-swatch-none {
   background-color: var(--surface);

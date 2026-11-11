@@ -3,19 +3,24 @@
 // a row under the pointer lights its frame, and its eye and handle hide and restack it.
 // A frame that has built opens on its layers as its source writes them; a click picks a
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
-// pick and hover find their layer's row. The tree is one tab stop whose rows the keyboard
-// walks through aria-activedescendant, so a canvas of any size mounts only its visible rows.
+// pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
+// in its source. The tree is one tab stop whose rows the keyboard walks through
+// aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
 import { useEffect, useEffectEvent, useId, useRef, type KeyboardEvent } from 'react';
-import { isLayersKey } from '../boardKeys';
+import type { HistoryStep } from '../boardHistory';
+import { historyStep, isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
+import type { ElementEntry } from './ElementRow';
+import { LayerDropLine } from './LayerDropLine';
 import { LayerListRow } from './LayerListRow';
 import { LayersHeader } from './LayersHeader';
 import { HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
-import type { LayerEntry } from './layerRows';
+import { rowInset, type LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
+import { useElementMove, type MoveLayer } from './useElementMove';
 import { useElementRows } from './useElementRows';
 import { useKeyboardRow } from './useKeyboardRow';
 import { useLayerList } from './useLayerList';
@@ -39,6 +44,9 @@ export interface LayersPanelProps {
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   /** Every frame's designId, back to front. */
   onReorder: ((designIds: string[]) => void) | undefined;
+  onMoveLayer: MoveLayer | undefined;
+  /** ⌘Z and its redo keys step the board's history; false where there is no step. */
+  onHistory: (step: HistoryStep) => boolean;
   onPick: (designId: string, additive: boolean) => void;
   /** Enter: the board centres the frame and takes the keyboard. */
   onFocusFrame: (designId: string) => void;
@@ -55,6 +63,8 @@ export function LayersPanel({
   onRename,
   onSetHidden,
   onReorder,
+  onMoveLayer,
+  onHistory,
   onPick,
   onFocusFrame,
   onLeave,
@@ -75,6 +85,16 @@ export function LayersPanel({
     ROW_PX,
     onReorder,
   );
+  const move = useElementMove({
+    list,
+    rows,
+    rowPx: ROW_PX,
+    pickedKey: elementRows.pickedKey,
+    reveal,
+    moveTo,
+    pick: elements.pick,
+    onMoveLayer,
+  });
   const active = activeIndex >= 0 ? rows[activeIndex] : undefined;
   const renaming = useRenaming(keys, onRename, tree, closeButton);
   const kept = [activeIndex, renaming.index];
@@ -97,6 +117,7 @@ export function LayersPanel({
   const selected = new Set(selectedFrameIds);
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
+  const moveHelpId = `${treeId}-move-help`;
 
   // Closed from inside, the panel hands the keyboard to the board first, so focus is not lost with it.
   const close = () => {
@@ -134,16 +155,25 @@ export function LayersPanel({
     else if (key.kind === 'leave') onLeave(row.frame.designId);
     else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
     else if (row.kind === 'frame') runOnFrame(key, row);
-    else if (row.kind === 'element' && (key.kind === 'pick' || key.kind === 'focus'))
-      elementRows.pick(row);
+    else if (row.kind === 'element') runOnElement(key, row);
+  };
+  const runOnElement = (key: LayerKey, row: ElementEntry) => {
+    if (key.kind === 'pick' || key.kind === 'focus') elementRows.pick(row);
+    else if (key.kind === 'restack') move.step(row, key.index < activeIndex ? 'up' : 'down');
+    else if (key.kind === 'outdent') move.step(row, 'out');
+    else if (key.kind === 'indent') move.step(row, 'in');
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
-    if (key?.kind === 'leave') stack.cancel();
+    if (key?.kind === 'leave') {
+      stack.cancel();
+      move.cancel();
+    }
     if (key) run(key, active);
-    if (key || typeTo(event)) event.preventDefault();
+    const step = key ? null : historyStep(event);
+    if (key || (step && onHistory(step)) || typeTo(event)) event.preventDefault();
   };
 
   return (
@@ -168,9 +198,11 @@ export function LayersPanel({
           aria-multiselectable
           aria-activedescendant={active ? rowId(active.key) : undefined}
           tabIndex={0}
-          data-dragging={stack.dragging || undefined}
+          data-dragging={stack.dragging || move.dragging || undefined}
+          data-refused={move.line?.drop.state === 'refused' || undefined}
           className="canvas-layers-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2"
           onKeyDown={onKeyDown}
+          {...move.handlers}
           onFocus={(event) => {
             // A click's focus would scroll the row being clicked out from under the pointer.
             if (event.target !== event.currentTarget || !event.target.matches(':focus-visible'))
@@ -181,6 +213,12 @@ export function LayersPanel({
           {onReorder && (
             <span id={helpId} className="sr-only">
               {`${HIDE_KEY_LABEL} hides or shows the frame. Alt with Up or Down moves it a layer toward the front or back.`}
+            </span>
+          )}
+          {onMoveLayer && (
+            <span id={moveHelpId} className="sr-only">
+              Alt with Up or Down moves the layer before or after the one beside it. Alt with Left
+              moves it out of the layer holding it, and with Right into the layer above it.
             </span>
           )}
           <div
@@ -205,7 +243,9 @@ export function LayersPanel({
                       : row.key === elementRows.pickedKey
                   }
                   lit={row.key === elementRows.litKey}
-                  describedBy={onReorder && helpId}
+                  describedBy={
+                    row.kind === 'frame' ? onReorder && helpId : onMoveLayer && moveHelpId
+                  }
                   rename={
                     row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
                   }
@@ -225,6 +265,14 @@ export function LayersPanel({
                   }}
                   onSetHidden={onSetHidden}
                   onGrab={onReorder && stack.grab}
+                  onGrabElement={
+                    onMoveLayer &&
+                    ((event, grabbed) => {
+                      moveTo(grabbed.key);
+                      tree.current?.focus({ preventScroll: true });
+                      move.grab(event, grabbed);
+                    })
+                  }
                   onPickElement={elementRows.pick}
                   onLight={boardLight.light}
                   onUnlight={boardLight.unlight}
@@ -232,10 +280,13 @@ export function LayersPanel({
               );
             })}
             {stack.dropGap !== null && (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-x-0 h-0.5 -translate-y-px rounded-full bg-selection"
-                style={{ top: stack.dropGap * ROW_PX }}
+              <LayerDropLine top={stack.dropGap * ROW_PX} left={0} refusal={null} />
+            )}
+            {move.line && move.line.drop.state !== 'still' && (
+              <LayerDropLine
+                top={move.line.gap * ROW_PX}
+                left={rowInset(move.line.level)}
+                refusal={move.line.drop.state === 'refused' ? move.line.drop.reason : null}
               />
             )}
           </div>

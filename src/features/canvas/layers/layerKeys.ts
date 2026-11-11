@@ -3,7 +3,8 @@
 // canvas can be read row by row; Right opens a row's children and Left closes
 // them. Space toggles the row's frame in the selection, Enter takes the board
 // to it, F2 renames it, ⇧⌘H hides or shows it, ⌥↑ and ⌥↓ move it a row toward
-// the front or back, and Escape gives the keyboard back to the board.
+// the front or back, ⌥← moves a layer out of its parent and ⌥→ into the layer
+// above it, and Escape gives the keyboard back to the board.
 
 import { navigationIndex } from '../../../components/ui/menuKeys';
 import { formatChord, matchesChord } from '../../../lib/shortcuts';
@@ -13,6 +14,8 @@ export type LayerKey =
   | { kind: 'open' }
   | { kind: 'close' }
   | { kind: 'restack'; index: number }
+  | { kind: 'outdent' }
+  | { kind: 'indent' }
   | { kind: 'pick' }
   | { kind: 'focus' }
   | { kind: 'rename' }
@@ -41,6 +44,8 @@ export function layerKey(event: KeyPress, active: number, count: number): LayerK
     return active > 0 ? { kind: 'restack', index: active - 1 } : null;
   if (matchesChord(event, 'Alt+ArrowDown'))
     return active < count - 1 ? { kind: 'restack', index: active + 1 } : null;
+  if (matchesChord(event, 'Alt+ArrowLeft')) return { kind: 'outdent' };
+  if (matchesChord(event, 'Alt+ArrowRight')) return { kind: 'indent' };
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   const index = navigationIndex(event.key, active, count);
   if (index !== null) return { kind: 'move', index };

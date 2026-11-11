@@ -209,7 +209,7 @@ export const sourceElementSchema = z
   .strict()
   .refine((element) => element.end > element.start);
 
-const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
+export const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
 // Each code point is at most two UTF-16 units, so the cheap length check comes first.
 const outlineLabelSchema = z
   .string()
@@ -234,6 +234,7 @@ export const sourceOutlineSchema = z
             elementId: canvasIdentifierSchema.nullable(),
             lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
             free: z.boolean(),
+            contentFromProps: z.boolean(),
           })
           .strict()
           .refine(
@@ -340,35 +341,46 @@ const styleSchema = z
 export const editElementInputSchema = z
   .object({
     mutationId: canvasIdentifierSchema,
-    edit: z
-      .object({
-        element: z
-          .object({
-            designId: canvasIdentifierSchema,
-            revisionId: canvasIdentifierSchema,
+    edit: z.union([
+      z
+        .object({
+          element: revisionRefSchema.extend({
             elementId: canvasIdentifierSchema,
             instancePath: z.string().max(512),
-          })
-          .strict(),
-        change: z.discriminatedUnion('kind', [
-          z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-          z
+          }),
+          change: z.discriminatedUnion('kind', [
+            z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
+            z
+              .object({
+                kind: z.literal('style'),
+                styles: z
+                  .array(styleSchema)
+                  .min(1, STYLE_COUNT_MESSAGE)
+                  .max(CANVAS_LIMITS.maxStylesPerEdit, STYLE_COUNT_MESSAGE)
+                  // Two values for one property would contradict each other.
+                  .refine((styles) => !hasDuplicate(styles.map((style) => style.property)), {
+                    message: STYLE_REPEAT_MESSAGE,
+                  }),
+              })
+              .strict(),
+            z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
+          ]),
+        })
+        .strict(),
+      // A layer is a row of the revision's outline, as its nodeId names it.
+      z
+        .object({
+          layer: revisionRefSchema.extend({ nodeId: outlineNodeIdSchema }),
+          change: z
             .object({
-              kind: z.literal('style'),
-              styles: z
-                .array(styleSchema)
-                .min(1, STYLE_COUNT_MESSAGE)
-                .max(CANVAS_LIMITS.maxStylesPerEdit, STYLE_COUNT_MESSAGE)
-                // Two values for one property would contradict each other.
-                .refine((styles) => !hasDuplicate(styles.map((style) => style.property)), {
-                  message: STYLE_REPEAT_MESSAGE,
-                }),
+              kind: z.literal('move'),
+              parentId: outlineNodeIdSchema,
+              beforeId: outlineNodeIdSchema.nullable(),
             })
             .strict(),
-          z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
-        ]),
-      })
-      .strict(),
+        })
+        .strict(),
+    ]),
   })
   .strict();
 

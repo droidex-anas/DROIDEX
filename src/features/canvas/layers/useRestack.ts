@@ -3,7 +3,7 @@ import { boardPoint } from '../boardCoordinates';
 import { moveRow } from './layerKeys';
 
 // The design system's distance a press travels before it becomes a drag.
-const DRAG_THRESHOLD_PX = 4;
+export const DRAG_THRESHOLD_PX = 4;
 
 interface Drag {
   designId: string;

@@ -56,10 +56,12 @@ interface Slot extends ChildrenBinding {
   place: Place;
 }
 
+/** `written`, when given, is filled with the node each row is written at, by row id. */
 export function sourceOutline(
   program: ts.Program,
   uses: ComponentUses,
   sites: readonly Site[],
+  written?: Map<string, ts.Node>,
 ): SourceOutline {
   const checker = program.getTypeChecker();
   const elements = new Map(sites.map((site) => [site.node as ts.Node, site.element]));
@@ -88,6 +90,7 @@ export function sourceOutline(
     }
     bytes += size;
     nodes.push(node);
+    written?.set(node.nodeId, at);
     return node.nodeId;
   };
   /** Adds a row that only holds others, and takes it back if `fill` gives it none. */
@@ -99,6 +102,7 @@ export function sourceOutline(
     if (nodes.length > before.rows + 1) return;
     nodes.length = before.rows;
     bytes = before.bytes;
+    written?.delete(nodeId);
   };
   /** The place inside `node` as it opens; null where it is already open or too deep. */
   const enter = (node: ts.Node, place: Place): Place | null => {
@@ -156,6 +160,7 @@ export function sourceOutline(
           elementId: element.elementId,
           lock: lock[element.editability],
           free,
+          contentFromProps: contentFromProps(node),
         },
         place,
       );
@@ -173,6 +178,7 @@ export function sourceOutline(
         elementId: null,
         lock: isKit ? 'kit' : lockAt(node, place),
         free,
+        contentFromProps: false,
       },
       place,
     );
@@ -204,7 +210,13 @@ export function sourceOutline(
 
   const condition = (at: ts.Node, branches: readonly ts.Expression[], place: Place) => {
     if (branches.length === 0) return;
-    const row = { kind: 'condition', name: 'Condition', text: null, elementId: null } as const;
+    const row = {
+      kind: 'condition',
+      name: 'Condition',
+      text: null,
+      elementId: null,
+      contentFromProps: false,
+    } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place, (inside) => {
       for (const branch of branches) content(branch, inside, false);
     });
@@ -232,7 +244,13 @@ export function sourceOutline(
     if (!template) return;
     const inner = enter(template, place);
     if (!inner) return;
-    const row = { kind: 'repeat', name: 'Repeat', text: null, elementId: null } as const;
+    const row = {
+      kind: 'repeat',
+      name: 'Repeat',
+      text: null,
+      elementId: null,
+      contentFromProps: false,
+    } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, inner, (inside) => {
       returned(template, { ...inside, reason: 'repeated' });
     });
@@ -348,6 +366,19 @@ function isFreeChild(node: ts.Node): boolean {
   );
 }
 
+/**
+ * Whether a prop gives the element its content, or may: `children` or
+ * `dangerouslySetInnerHTML` written on it, or a spread that can carry either.
+ * Children written in JSX would fight that content.
+ */
+function contentFromProps(node: ts.JsxElement | ts.JsxSelfClosingElement): boolean {
+  const { attributes } = ts.isJsxElement(node) ? node.openingElement : node;
+  return attributes.properties.some(
+    (property) =>
+      ts.isJsxSpreadAttribute(property) ||
+      ['children', 'dangerouslySetInnerHTML'].includes(property.name.getText()),
+  );
+}
 /** A display label clamped to the outline's bound, on one line. */
 function label(text: string): string {
   const points = Array.from(text.replace(/\s+/g, ' ').trim());

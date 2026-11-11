@@ -4,8 +4,9 @@
 // what makes a target selectable at all.
 
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
+import { instrumentSource } from './sourceElements.js';
 import {
   APP,
   canvasCommandHandler,
@@ -64,7 +65,7 @@ test('a direct element edit commits a new revision and rejects untrusted targets
     styles: [{ property: 'color', value: '--ds-accent' }],
   });
   const changed = okReply(canvas, 'req-edit-valid');
-  assert.ok(changed.kind === 'written');
+  assert.ok(changed.kind === 'edited');
   assert.notEqual(changed.receipt.revisionId, element.revisionId);
   assert.match(
     (await canvas.workspace.readFiles(canvasId, changed.receipt))['main.tsx'] ?? '',
@@ -89,7 +90,7 @@ test('a retried element edit returns its original receipt through a new handler'
   };
   await canvas.handle(command);
   const first = okReply(canvas, 'req-edit-first');
-  assert.ok(first.kind === 'written');
+  assert.ok(first.kind === 'edited');
 
   const { handle: replay } = canvasCommandHandler({
     ready: Promise.resolve(canvas.workspace),
@@ -116,6 +117,114 @@ test('a retried element edit returns its original receipt through a new handler'
   assert.equal(canvas.workspace.snapshot(canvasId).sequence, first.receipt.sequence);
 });
 
+test('a layer moves in one revision and answers the row it landed on; its retry answers without one', async (t) => {
+  const main = 'export default function Hey(){return <main><h1>Hey</h1><p>Hi</p></main>}';
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const row = (name: string) => build.outline.nodes.find((node) => node.name === name)?.nodeId;
+  const { designId, revisionId } = element;
+  const command = {
+    type: 'canvas.editElement',
+    requestId: 'req-move',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-move',
+      edit: {
+        layer: { designId, revisionId, nodeId: row('p') },
+        change: { kind: 'move', parentId: row('main'), beforeId: row('h1') },
+      },
+    },
+  };
+  await canvas.handle(command);
+  const moved = okReply(canvas, 'req-move');
+  assert.ok(moved.kind === 'edited');
+  const files = await canvas.workspace.readFiles(canvasId, moved.receipt);
+  assert.equal(
+    files['main.tsx'],
+    'export default function Hey(){return <main><p>Hi</p><h1>Hey</h1></main>}',
+  );
+  const landed = instrumentSource({ ...files }, moved.receipt.revisionId).outline.nodes.find(
+    (node) => node.nodeId === moved.landed,
+  );
+  assert.equal(landed?.text, 'Hi');
+
+  await canvas.handle({ ...command, requestId: 'req-move-retry' });
+  assert.deepEqual(okReply(canvas, 'req-move-retry'), { ...moved, landed: null });
+});
+
+/** Asks to move `subject` last into `target` and answers the refusal, checking the source stayed. */
+async function refusedMove(t: TestContext, main: string, subject: string, target: string) {
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const row = (name: string) => build.outline.nodes.find((node) => node.name === name)?.nodeId;
+  const { designId, revisionId } = element;
+  await canvas.handle({
+    type: 'canvas.editElement',
+    requestId: 'req-refused-move',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-refused-move',
+      edit: {
+        layer: { designId, revisionId, nodeId: row(subject) },
+        change: { kind: 'move', parentId: row(target), beforeId: null },
+      },
+    },
+  });
+  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], main);
+  assert.equal(canvas.workspace.snapshot(canvasId).frames[0]?.revisionId, revisionId);
+  return errorOf(canvas, 'req-refused-move');
+}
+
+test('a move to before the line that sets a value the layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  if (flag) return <section />;
+  const label = 'Scoped';
+  return <main><span>{label}</span></main>;
+}`;
+  const { code, message } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+  assert.equal(
+    message,
+    'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+  );
+});
+
+test('a move past a line that assigns a value the layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  let label = 'Early';
+  if (flag) return <section />;
+  label = 'Late';
+  return <main><span>{label}</span></main>;
+}`;
+  const { code, message } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+  assert.equal(
+    message,
+    'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+  );
+});
+
+test('a move to before the enum a layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  if (flag) return <section />;
+  enum Size { Large = 'Large' }
+  return <main><span>{Size.Large}</span></main>;
+}`;
+  const { code } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+});
+
+test('a move into an element with a spread, which may set its content, is refused', async (t) => {
+  const main =
+    "export default () => <main><section {...{dangerouslySetInnerHTML:{__html:'Existing'}}} /><i>A</i></main>;";
+  const { code, message } = await refusedMove(t, main, 'i', 'section');
+  assert.equal(code, 'invalid_edit');
+  assert.equal(message, "This layer's props may set its content, so it can't hold other layers.");
+});
 test('a style edit sets every style it names in one revision, and its retry answers from the ledger', async (t) => {
   const { canvas, canvasId, element } = await editableElement(t);
   const command = (requestId: string, mutationId: string, padding: string) => ({
@@ -142,7 +251,7 @@ test('a style edit sets every style it names in one revision, and its retry answ
 
   await canvas.handle(command('req-style', 'm-style', '0.5rem'));
   const first = okReply(canvas, 'req-style');
-  assert.ok(first.kind === 'written');
+  assert.ok(first.kind === 'edited');
   assert.equal(first.receipt.sequence, before + 1);
   assert.ok(
     isCanvasEvent({ type: 'canvas.result', requestId: 'req-style', ok: true, reply: first }),
@@ -183,7 +292,7 @@ test('an element of a component rendered once is edited in the file it is writte
     },
   });
   const changed = okReply(canvas, 'req-top-bar');
-  assert.ok(changed.kind === 'written');
+  assert.ok(changed.kind === 'edited');
   assert.deepEqual(
     { ...(await canvas.workspace.readFiles(canvasId, changed.receipt)) },
     {

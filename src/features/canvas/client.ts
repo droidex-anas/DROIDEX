@@ -493,8 +493,8 @@ export class CanvasClient {
       this.project(board, next);
       return;
     }
-    // A gap means a change never arrived, and a frame sent without a build the
-    // projection holds cannot be shown: only a fresh snapshot closes either.
+    // A gap means a change never arrived, and a frame the projection does not
+    // hold yet, sent without its build, cannot be shown: only a fresh snapshot closes either.
     board.queued.push(change);
     void this.load(board, change.canvasId).catch(reportLostSnapshot);
   }

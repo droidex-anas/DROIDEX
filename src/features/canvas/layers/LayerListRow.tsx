@@ -6,6 +6,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { FrameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
 import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
+import { isMovable } from './layerMoves';
 import { LayerRow } from './LayerRow';
 import type { LayerEntry } from './layerRows';
 
@@ -26,6 +27,7 @@ export function LayerListRow({
   onToolPress,
   onSetHidden,
   onGrab,
+  onGrabElement,
   onPickElement,
   onLight,
   onUnlight,
@@ -42,6 +44,7 @@ export function LayerListRow({
   selected: boolean;
   /** An element row's element is under the board's pointer. */
   lit: boolean;
+  /** What tells how to restack a frame row, or move an element row, from the keyboard. */
   describedBy: string | undefined;
   /** Set while this frame row is being renamed. */
   rename: ((frame: CanvasFrame, name: string) => Promise<unknown>) | undefined;
@@ -52,6 +55,7 @@ export function LayerListRow({
   onToolPress: (designId: string) => void;
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
+  onGrabElement: ((event: PointerEvent<HTMLElement>, row: ElementEntry) => void) | undefined;
   onPickElement: (row: ElementEntry) => void;
   /** The pointer came onto a row, whose key owns the light until it leaves. */
   onLight: (owner: string, designId: string, node: PreviewNode | null) => void;
@@ -59,6 +63,7 @@ export function LayerListRow({
 }) {
   if (row.kind === 'note') return <NoteRow id={id} top={top} active={active} entry={row} />;
   if (row.kind === 'element') {
+    const movable = isMovable(row);
     return (
       <ElementRow
         id={id}
@@ -67,8 +72,10 @@ export function LayerListRow({
         entry={row}
         selected={selected}
         lit={lit}
+        describedBy={movable ? describedBy : undefined}
         onPick={onPickElement}
         onToggle={onToggle}
+        onGrab={movable ? onGrabElement : undefined}
         onLight={onLight}
         onUnlight={onUnlight}
       />

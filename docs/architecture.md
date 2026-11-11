@@ -665,7 +665,11 @@ replace only literal ranges within the element's own site; computed/shared sites
 agent edit and stale references require reselection. A className spelled with string literals,
 including through a `cn()`/`clsx()` call whose arguments are all literals, is still a literal
 site. `canvas.editElement` sets text, or a batch of whitelisted style properties in one
-revision. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+revision, or moves a layer of the outline: its JSX is cut whole and pasted among another
+element's children within the same block of the same component, in the file's own indentation
+and line endings, leaving strings and templates as written; a move into or out of text, or into
+an element whose content a prop sets, is refused. The reply names the row's nodeId in the new
+revision so the selection can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
 token with that value and stays raw only when the kit has none. What a style edit writes is
 what a person writing Tailwind would: the class that says the value in place of the classes it
 makes dead, with the style attribute only where no stock class says it or a frame-scoped class

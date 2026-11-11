@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { elementStep, historyStep } from './boardKeys';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput } from './elementEditProtocol';
+import type { EditElementInput, ElementEdited } from './elementEditProtocol';
 import {
   commitStyles,
   commitText,
@@ -26,7 +26,7 @@ import { elementSite } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame, ElementRef, WriteReceipt } from './protocol';
+import type { CanvasFrame, ElementRef } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
 import { useEditTokens } from './useEditTokens';
 import { useElementHover } from './useElementHover';
@@ -45,7 +45,7 @@ interface ElementEditorInputs {
   active: boolean;
   /** The element under the pointer is asked for, as it is in Edit and Design. */
   hovering: boolean;
-  onEditElement: (input: EditElementInput) => Promise<WriteReceipt>;
+  onEditElement: (input: EditElementInput) => Promise<ElementEdited>;
 }
 
 export function useElementEditor({
@@ -210,6 +210,11 @@ export function useElementEditor({
     return true;
   };
 
+  /** Drops the selection if it is in `designId`. */
+  const clearIn = (designId: string) => {
+    if (latest.current.selection?.draft.element.designId === designId) choose(null);
+  };
+
   /** Changes what the selected element previews, from what it draws now. */
   const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
@@ -237,7 +242,7 @@ export function useElementEditor({
       choose(settled && { ...now, draft: settled });
     };
     latest.current.onEditElement(committed.input).then(
-      (receipt) => {
+      ({ receipt }) => {
         settle({ status: 'edited', revisionId: receipt.revisionId });
       },
       (refusal: unknown) => {
@@ -292,6 +297,7 @@ export function useElementEditor({
     mode,
     pick,
     clear,
+    clearIn,
     preview: (property: string, value: string, element: ElementRef): boolean => {
       if (!selects(element)) return false;
       update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));

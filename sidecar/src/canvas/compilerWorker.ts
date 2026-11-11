@@ -24,6 +24,7 @@ import {
   type CompilerRequest,
   type CompilerResponse,
   type CompilerUnavailableReason,
+  type EditedSource,
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
@@ -40,6 +41,7 @@ import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
+import { moveLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
@@ -284,11 +286,20 @@ async function runEdit(
   const { requestId, files, elements, edit, designSystem } = request;
   try {
     stopIfCancelled(signal);
-    const change = await sourceChange(edit.change, designSystem);
+    let edited: EditedSource;
+    if ('layer' in edit) {
+      const { parentId, beforeId } = edit.change;
+      edited = moveLayer(files, { nodeId: edit.layer.nodeId, parentId, beforeId });
+    } else {
+      const change = await sourceChange(edit.change, designSystem);
+      stopIfCancelled(signal);
+      edited = {
+        files: applyElementEdit(files, elements, { element: edit.element, change }),
+        landed: null,
+      };
+    }
     stopIfCancelled(signal);
-    const changed = applyElementEdit(files, elements, { element: edit.element, change });
-    stopIfCancelled(signal);
-    send({ requestId, status: 'edited', files: changed } satisfies CompilerResponse);
+    send({ requestId, status: 'edited', ...edited } satisfies CompilerResponse);
   } catch (error) {
     if (error instanceof SourceElementError) {
       const code = error.code === 'selection_limit' ? 'stale_reference' : error.code;
@@ -321,7 +332,7 @@ async function runEdit(
 
 /** Resolves each style of a style edit against the pinned kit. */
 async function sourceChange(
-  change: ElementEdit['change'],
+  change: Extract<ElementEdit, { element: unknown }>['change'],
   designSystem: DesignSystemRef,
 ): Promise<SourceChange> {
   if (change.kind !== 'style') return change;
