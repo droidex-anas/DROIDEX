@@ -11,6 +11,7 @@ import {
   stopCanvasRuntime,
 } from './canvasRuntime.js';
 import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
+import { KIT_THEME_FILE, kitTailwindTheme } from './kitTailwindTheme.js';
 import {
   canonicalCss,
   resolveStyleChange,
@@ -149,7 +150,11 @@ test('a stroke class sets the width or the colour its value names', () => {
 });
 
 test('a colour key the kit theme names is read as a colour, with its opacity and variants', () => {
-  const theme = { colors: { accent: 'var(--ds-accent)' } };
+  const colors = { accent: 'var(--ds-accent)' };
+  const theme = kitTailwindTheme({
+    sections: [],
+    files: { [KIT_THEME_FILE]: JSON.stringify({ colors }) },
+  });
   assert.deepEqual(classStyle('fill-accent', theme), { sets: ['fill'], scope: 'always' });
   assert.deepEqual(classStyle('stroke-accent/50', theme), { sets: ['stroke'], scope: 'always' });
   assert.deepEqual(classStyle('dark:fill-accent', theme), { sets: ['fill'], scope: 'frame' });
@@ -162,7 +167,7 @@ test('a kit colour key that is also another utility of its prefix reads as both,
     fontSize: { brand: '20px' },
   };
   assert.deepEqual(classStyle('bg-cover', theme), {
-    sets: ['backgroundColor'],
+    sets: ['backgroundColor', 'backgroundSize'],
     shared: true,
     scope: 'always',
   });
@@ -173,6 +178,18 @@ test('a kit colour key that is also another utility of its prefix reads as both,
   });
   assert.deepEqual(classStyle('border-t-2', theme)?.sets, ['borderTopWidth', 'borderTopColor']);
   assert.deepEqual(classStyle('bg-brand', theme), { sets: ['backgroundColor'], scope: 'always' });
+  // Key t-2 makes the class border + t-2 as well as border-t + 2.
+  assert.deepEqual(classStyle('border-t-2', { colors: { 't-2': '#f00' } }), {
+    sets: [
+      'borderTopWidth',
+      'borderTopColor',
+      'borderRightColor',
+      'borderBottomColor',
+      'borderLeftColor',
+    ],
+    shared: true,
+    scope: 'always',
+  });
 });
 
 test('a class under a breakpoint or colour mode applies per frame, under any other variant per state', () => {

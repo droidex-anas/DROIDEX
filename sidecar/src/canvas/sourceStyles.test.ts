@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { KIT_THEME_FILE, kitTailwindTheme } from './kitTailwindTheme.js';
 import type { SourceElement, SourceFiles } from './protocol.js';
 import { applyElementEdit } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
@@ -64,7 +65,11 @@ test('an SVG paint edit drops the presentation attribute its class or inline sty
 });
 
 test('an SVG paint edit replaces a paint class named by the kit or by a colour name', () => {
-  const theme = { colors: { accent: 'var(--ds-accent)', other: 'var(--ds-other)' } };
+  const colors = { accent: 'var(--ds-accent)', other: 'var(--ds-other)' };
+  const theme = kitTailwindTheme({
+    sections: [],
+    files: { [KIT_THEME_FILE]: JSON.stringify({ colors }) },
+  });
   const cases: { markup: string; property: string; changed: string }[] = [
     { markup: 'fill-accent', property: 'fill', changed: 'fill-[color:var(--ds-other)]' },
     { markup: 'stroke-accent/50', property: 'stroke', changed: 'stroke-[color:var(--ds-other)]' },
@@ -156,6 +161,13 @@ test('a class a kit theme colour key makes two utilities stays, and the edited p
       colors: '2',
       styles: [{ property: 'stroke', resolution: other }],
       changed: '<path className="stroke-2" style={{ stroke: "var(--ds-other)" }} />',
+    },
+    {
+      markup: '<div className="border-t-2" style={{ borderStyle: "solid" }}>Box</div>',
+      colors: 't-2',
+      styles: [{ property: 'borderWidth', resolution: raw('1px') }],
+      changed:
+        '<div className="border-t-2" style={{ borderStyle: "solid", borderWidth: 1 }}>Box</div>',
     },
   ];
   for (const { markup, colors, styles, changed } of cases) {
