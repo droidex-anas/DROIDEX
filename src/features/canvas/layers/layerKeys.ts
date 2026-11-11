@@ -2,10 +2,11 @@
 // arrows, Home and End walk the rows without touching the selection, so a long
 // canvas can be read row by row; Right opens a row's children and Left closes
 // them. Space toggles the row's frame in the selection, Enter takes the board
-// to it, F2 renames it, ⇧⌘H hides or shows it, ⌥↑ and ⌥↓ move it a row toward
-// the front or back, ⌥← moves a layer out of its parent and ⌥→ into the layer
-// above it, Delete removes a layer and ⌘D copies it, ⇧F10 or the menu key
-// opens its menu, and Escape gives the keyboard back to the board.
+// to it, F2 renames it, ⇧⌘H hides or shows the row's frame or layer, ⌥↑ and ⌥↓
+// move it a row toward the front or back, ⌥← moves a layer out of its parent
+// and ⌥→ into the layer above it, Delete removes a layer and ⌘D copies it,
+// ⇧F10 or the menu key opens its menu, and Escape gives the keyboard back to
+// the board.
 
 import { navigationIndex } from '../../../components/ui/menuKeys';
 import { formatChord, matchesChord } from '../../../lib/shortcuts';

@@ -61,12 +61,17 @@ const LazyDesignSystemDocument = lazy(async () => ({
 
 const readArtifact = canvas.readArtifact.bind(canvas);
 
-const LAYER_EDIT_VERBS: Record<LayerChange['kind'], string> = {
+const LAYER_EDIT_VERBS: Record<Exclude<LayerChange['kind'], 'hide'>, string> = {
   move: 'move',
   remove: 'delete',
   duplicate: 'duplicate',
   insert: 'add to',
 };
+
+function layerEditVerb(change: LayerChange): string {
+  if (change.kind !== 'hide') return LAYER_EDIT_VERBS[change.kind];
+  return change.hidden ? 'hide' : 'show';
+}
 
 export interface ShownDocument {
   id: string;
@@ -230,7 +235,7 @@ export function CanvasBoardMount({
     try {
       return await editor.editLayer(layer, change);
     } catch (error) {
-      toast.error(`Couldn’t ${LAYER_EDIT_VERBS[change.kind]} the layer. ${canvasMessage(error)}`);
+      toast.error(`Couldn’t ${layerEditVerb(change)} the layer. ${canvasMessage(error)}`);
       return null;
     }
   };

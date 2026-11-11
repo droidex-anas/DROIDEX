@@ -5,8 +5,9 @@
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
 // pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
 // in its source; Delete removes it and ⌘D copies it, as its menu does, which a right-click
-// or ⇧F10 opens. The tree is one tab stop whose rows the keyboard walks through
-// aria-activedescendant, so a canvas of any size mounts only its visible rows.
+// or ⇧F10 opens. An element's eye, or ⇧⌘H, hides it with Tailwind's `hidden` class. The
+// tree is one tab stop whose rows the keyboard walks through aria-activedescendant, so a
+// canvas of any size mounts only its visible rows.
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { AnchorPoint } from '../../../components/ui/usePopoverPosition';
@@ -20,7 +21,7 @@ import { LayerListRow } from './LayerListRow';
 import { DUPLICATE_KEY_LABEL, HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import { LayerMenu } from './LayerMenu';
-import { isOutlineRow } from './layerMoves';
+import { isHideable, isOutlineRow } from './layerMoves';
 import { rowInset, type LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
 import { useElementMove } from './useElementMove';
@@ -130,6 +131,12 @@ export function LayersPanel({
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
   const moveHelpId = `${treeId}-move-help`;
+  const hideHelpId = `${treeId}-hide-help`;
+  /** An element row's keyboard help, which names ⇧⌘H only where its eye can hide or show it. */
+  const elementHelp = (row: LayerEntry) =>
+    isHideable(rows, row) && (row.node.visibility === 'shown' || row.node.visibility === 'hidden')
+      ? `${moveHelpId} ${hideHelpId}`
+      : moveHelpId;
 
   // Closed from inside, the panel hands the keyboard to the board first, so focus is not lost with it.
   const close = () => {
@@ -179,6 +186,8 @@ export function LayersPanel({
     else if (key.kind === 'indent') move.step(row, 'in');
     else if ((key.kind === 'remove' || key.kind === 'duplicate') && isOutlineRow(row))
       editLayer(row, { kind: key.kind });
+    else if (key.kind === 'toggle-hidden' && isHideable(rows, row))
+      editLayer(row, { kind: 'hide', hidden: row.node.visibility !== 'hidden' });
     else if (key.kind === 'menu') openMenuBelow(row);
   };
   const openMenuBelow = (row: ElementEntry) => {
@@ -186,15 +195,18 @@ export function LayersPanel({
     if (onEditLayer && isOutlineRow(row) && box)
       setMenu({ row, at: { x: box.left, y: box.bottom } });
   };
+  /** ⌘D splits the chat anywhere but on a layer that can be edited, and ⇧⌘H is the app's on a row this chat cannot hide. */
+  const isAppKey = (key: LayerKey | null, row: LayerEntry) => {
+    if (key?.kind === 'duplicate') return row.kind !== 'element' || !onEditLayer;
+    if (key?.kind === 'toggle-hidden') return !(row.kind === 'frame' ? onSetHidden : onEditLayer);
+    return false;
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
-    // ⌘D splits the chat anywhere but on a layer that can be edited.
-    if (key?.kind === 'duplicate') {
-      if (active.kind !== 'element' || !onEditLayer) return;
-      event.stopPropagation();
-    }
+    if (isAppKey(key, active)) return;
+    if (key?.kind === 'duplicate') event.stopPropagation();
     if (event.repeat && isLayerEdit(key)) {
       event.preventDefault();
       return;
@@ -250,9 +262,14 @@ export function LayersPanel({
             </span>
           )}
           {onEditLayer && (
-            <span id={moveHelpId} className="sr-only">
-              {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, and ${DUPLICATE_KEY_LABEL} duplicates it.`}
-            </span>
+            <>
+              <span id={moveHelpId} className="sr-only">
+                {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, and ${DUPLICATE_KEY_LABEL} duplicates it.`}
+              </span>
+              <span id={hideHelpId} className="sr-only">
+                {`${HIDE_KEY_LABEL} hides or shows it.`}
+              </span>
+            </>
           )}
           <div
             ref={list}
@@ -277,7 +294,7 @@ export function LayersPanel({
                   }
                   lit={row.key === elementRows.litKey}
                   describedBy={
-                    row.kind === 'frame' ? onReorder && helpId : onEditLayer && moveHelpId
+                    row.kind === 'frame' ? onReorder && helpId : onEditLayer && elementHelp(row)
                   }
                   rename={
                     row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
@@ -305,6 +322,16 @@ export function LayersPanel({
                       tree.current?.focus({ preventScroll: true });
                       move.grab(event, grabbed);
                     })
+                  }
+                  onSetElementHidden={
+                    onEditLayer && isHideable(rows, row)
+                      ? (hiding, hidden) => {
+                          // The keyboard stays on the tree, on this row, as a frame's eye leaves it.
+                          moveTo(hiding.key);
+                          tree.current?.focus({ preventScroll: true });
+                          editLayer(hiding, { kind: 'hide', hidden });
+                        }
+                      : undefined
                   }
                   onPickElement={elementRows.pick}
                   onElementMenu={
@@ -352,7 +379,7 @@ export function LayersPanel({
   );
 }
 
-/** A key that edits a layer: held down, it would send the edit again for the revision the last one replaced. */
+/** A key that edits a layer, or hides or shows a frame: held down, it would send the edit again for the revision the last one replaced. */
 function isLayerEdit(key: LayerKey | null): boolean {
-  return key?.kind === 'remove' || key?.kind === 'duplicate';
+  return key?.kind === 'remove' || key?.kind === 'duplicate' || key?.kind === 'toggle-hidden';
 }

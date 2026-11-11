@@ -56,6 +56,7 @@ function isSourceElement(value: unknown): boolean {
 
 const OUTLINE_KINDS = new Set(['element', 'instance', 'repeat', 'condition']);
 const OUTLINE_LOCKS = new Set(['repeated', 'shared', 'computed', 'kit']);
+const OUTLINE_VISIBILITIES = new Set(['shown', 'hidden', 'computed', 'display', 'attribute']);
 
 const MAX_OUTLINE_LABEL_CODE_POINTS = 64;
 
@@ -71,6 +72,8 @@ function isOutline(value: unknown): boolean {
   return true;
 }
 
+const OUTLINE_FLAGS = ['free', 'contentFromProps'] as const;
+
 function isOutlineNode(value: unknown): boolean {
   return (
     record(value) &&
@@ -81,9 +84,16 @@ function isOutlineNode(value: unknown): boolean {
     (value.text === null || (value.kind === 'element' && isOutlineLabel(value.text))) &&
     (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
-    typeof value.free === 'boolean' &&
-    typeof value.contentFromProps === 'boolean'
+    OUTLINE_FLAGS.every((flag) => typeof value[flag] === 'boolean') &&
+    isRowVisibility(value.kind, value.visibility)
   );
+}
+
+/** Only an element can be hidden, or have its visibility decided where the eye can't edit it. */
+function isRowVisibility(kind: unknown, visibility: unknown): boolean {
+  return kind === 'element'
+    ? OUTLINE_VISIBILITIES.has(visibility as string)
+    : visibility === 'shown';
 }
 
 export function isOutlineNodeId(value: unknown): boolean {

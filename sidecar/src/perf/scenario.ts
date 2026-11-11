@@ -179,7 +179,8 @@ export const SKIPPED_PERF_SCENARIOS: Record<string, string> = {
     'Renderer probe, not a sidecar replay: synthetic 10k-row mounted-window measurement.',
   'terminal-flood':
     'Electron probe, not a sidecar replay: PTY flood through the tree’s own output delivery.',
-  'browser-workspace': 'Needs a GUI browser/design workspace; not headless-feasible.',
+  'browser-workspace':
+    'Needs a GUI browser pane; not headless-feasible. The design canvas runs headless as npm run perf:canvas, and in --compare and --gates.',
   'hidden-window': 'Needs a real Electron window and visibility signals; not headless-feasible.',
   'sidecar-restart':
     'Owned by the concurrent supervision phase; this suite records the gap and does not build it.',
