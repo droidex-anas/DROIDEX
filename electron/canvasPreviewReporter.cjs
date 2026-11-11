@@ -21,7 +21,8 @@
  * or the text between two points and the element that holds it, and a `locate`
  * event gives the box of the first drawn instance of each element it names; a
  * `vector` event carries the design's root `<svg>` as a standalone file, and a
- * `tree` event every marked element in document order. A kit preview's
+ * `tree` event one page of the marked elements in document order, starting
+ * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.

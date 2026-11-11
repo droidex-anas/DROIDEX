@@ -162,10 +162,10 @@ export type CanvasBuildOutcome =
   | { status: 'cancelled'; revisionId: string | null };
 
 /**
- * One design's build state and the attempt it belongs to. `generation` is the
- * per-design attempt counter, which only ever increases, so a reader can tell a
- * build that actually moved from the same one read again, as a fresh snapshot
- * reads every frame's.
+ * One design's build state and the attempt it belongs to. `generation` counts
+ * the design's build attempts and only goes up: the sidecar publishes a result
+ * only while its attempt is the latest, and the renderer takes a new generation
+ * as a new build even when identical source rebuilt to the same artifact.
  */
 export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
