@@ -38,7 +38,7 @@ import {
   type PreviewTarget,
   type PreviewVector,
 } from './previewDocument';
-import { PREVIEW_TREE_SCRIPT, readPreviewTree, type PreviewTree } from './previewDocumentTree';
+import { previewTreeScript, readPreviewTree, type PreviewTree } from './previewDocumentTree';
 import type { CanvasDiagnostic, FrameRect } from './protocol';
 
 /** How long the board waits between two polls of one guest. */
@@ -139,8 +139,8 @@ export interface PreviewRun {
   locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null>;
   /** The design's root `<svg>` as a standalone file, or why it has none. */
   vector(): Promise<PreviewVector | null>;
-  /** Every marked element in document order, as far as the tree's cap. */
-  tree(): Promise<PreviewTree | null>;
+  /** The marked elements in document order: the first page, or `before` with the next page added. */
+  tree(before: PreviewTree | null): Promise<PreviewTree | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -277,10 +277,10 @@ class GuestRun implements PreviewRun {
     return this.canAsk() ? readPreviewVector(answer) : null;
   }
 
-  async tree(): Promise<PreviewTree | null> {
+  async tree(before: PreviewTree | null): Promise<PreviewTree | null> {
     if (!this.canAsk()) return null;
-    const answer = await this.ask(PREVIEW_TREE_SCRIPT);
-    return this.canAsk() ? readPreviewTree(answer) : null;
+    const answer = await this.ask(previewTreeScript(before?.nodes.length ?? 0));
+    return this.canAsk() ? readPreviewTree(answer, before) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

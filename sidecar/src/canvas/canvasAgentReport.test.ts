@@ -21,6 +21,7 @@ function frame(diagnostics: CanvasDiagnostic[]): CanvasFrame {
       revisionId: 'revision-1',
       artifactId: 'artifact-1',
       elements: [],
+      outline: { nodes: [], truncated: false },
       diagnostics,
       generation: 1,
     },

@@ -385,6 +385,7 @@ export class CanvasBuilds {
           status: 'ready',
           artifactId: compiled.artifactId,
           elements: compiled.elements,
+          outline: compiled.outline,
           diagnostics: compiled.diagnostics,
         },
         persists: true,

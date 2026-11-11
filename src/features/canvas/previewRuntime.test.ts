@@ -342,21 +342,24 @@ test('a locate asks a started guest directly and answers null before start and o
 
 test('a tree asks a started guest directly and answers null before start and once stopped', async () => {
   const session = run();
-  assert.equal(await session.preview.tree(), null, 'nothing to ask before start');
+  assert.equal(await session.preview.tree(null), null, 'nothing to ask before start');
 
   await started(session);
-  const answer = session.preview.tree();
+  const answer = session.preview.tree(null);
   const call = session.calls[2];
-  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.tree()');
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.tree({"from":0})');
   const tree = {
     nodes: [{ elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 }],
     cap: 400,
-    truncated: false,
+    truncated: true,
   };
-  call.settle(JSON.stringify(tree));
+  call.settle(JSON.stringify({ ...tree, from: 0 }));
   assert.deepEqual(await answer, tree);
+  // The next page starts where the last one stopped.
+  void session.preview.tree(tree);
+  assert.equal(session.calls[3].code, 'globalThis.__droidexCanvasPreview.tree({"from":1})');
 
-  const stranded = session.preview.tree();
+  const stranded = session.preview.tree(null);
   session.preview.stop();
   assert.equal(await stranded, null);
 });

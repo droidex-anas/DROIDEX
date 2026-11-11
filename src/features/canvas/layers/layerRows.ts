@@ -1,17 +1,20 @@
 // The layers panel's rows, front to back: one per frame and, under a frame
-// that is open, its elements in document order as its live preview walked
-// them, without those inside an element that is closed. A row says whether its
-// children show, or null when it has none to show.
+// that is open, what its source renders in reading order, nested as the
+// build's outline writes it, then a row for each drawn element the outline
+// does not write, without what is inside a row that is closed. A row says
+// whether its children show, or null when it has none to show.
 
-import { elementSite } from '../pickedElement';
-import type { PreviewTree, PreviewTreeNode } from '../previewDocumentTree';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame, OutlineNode, SourceOutline } from '../protocol';
+import type { Drawn, DrawnLayers } from './drawnLayers';
 
-/** An open frame's elements: being read from its preview, read, or not readable from it. */
-export type ElementTree =
-  | { state: 'reading' }
-  | { state: 'read'; tree: PreviewTree; revisionId: string }
-  | { state: 'unread' };
+/** An open frame's layers: its outline, and where its live preview draws them as far as read. */
+export interface FrameLayers {
+  outline: SourceOutline;
+  /** Null until its preview has answered, or where it cannot. */
+  drawn: DrawnLayers | null;
+  /** Its preview is being read, so what is not read yet is on its way. */
+  reading: boolean;
+}
 
 interface RowBase {
   key: string;
@@ -27,35 +30,53 @@ export type LayerEntry =
   | (RowBase & { kind: 'frame'; position: number; count: number; open: boolean | null })
   | (RowBase & {
       kind: 'element';
-      node: PreviewTreeNode;
-      component: string | null;
+      node: OutlineNode;
+      /** Where an element's row picks and outlines, or why it cannot; null for the other kinds. */
+      drawn: Drawn | null;
       parentKey: string;
       position: number;
       count: number;
       open: boolean | null;
     })
-  /** What a frame's elements cannot show: still being read, none, or past the cap. */
+  /** What a frame's outline cannot show: nothing, or what is past its limits. */
   | (RowBase & { kind: 'note'; parentKey: string });
 
-/** An element row's key; a path is digits and slashes, so it never meets a note's. */
-export function elementKey(designId: string, instancePath: string): string {
-  return `${designId}#${instancePath}`;
+/** A row's key; a node id is hex or a path, so it never meets a note's. */
+export function nodeKey(designId: string, nodeId: string): string {
+  return `${designId}#${nodeId}`;
+}
+
+/** Every row of an open frame's layers: its outline's, then those of the drawn elements it does not write. */
+export function layerNodes(layers: FrameLayers): OutlineNode[] {
+  const { outline, drawn } = layers;
+  return drawn && drawn.unwritten.length > 0
+    ? [...outline.nodes, ...drawn.unwritten]
+    : outline.nodes;
+}
+
+/** The ids of the rows that hold `nodeId`, innermost first. */
+export function ancestorIds(nodes: readonly OutlineNode[], nodeId: string): string[] {
+  const parents = new Map(nodes.map((each) => [each.nodeId, each.parentId]));
+  const ids: string[] = [];
+  for (let id = parents.get(nodeId) ?? null; id !== null; id = parents.get(id) ?? null)
+    ids.push(id);
+  return ids;
 }
 
 /**
- * `frames` front to back; `treeOf` is null for a frame without a live preview,
- * which has no elements to open.
+ * `frames` front to back; `layersOf` is null for a frame that has never built,
+ * which has nothing to open.
  */
 export function layerEntries(
   frames: readonly CanvasFrame[],
-  treeOf: (designId: string) => ElementTree | null,
+  layersOf: (designId: string) => FrameLayers | null,
   open: ReadonlySet<string>,
   closed: ReadonlySet<string>,
 ): LayerEntry[] {
   const entries: LayerEntry[] = [];
   frames.forEach((frame, index) => {
-    const tree = treeOf(frame.designId);
-    const shown = tree !== null && open.has(frame.designId);
+    const layers = layersOf(frame.designId);
+    const shown = layers !== null && open.has(frame.designId);
     entries.push({
       kind: 'frame',
       key: frame.designId,
@@ -64,76 +85,74 @@ export function layerEntries(
       level: 1,
       position: index + 1,
       count: frames.length,
-      open: tree && shown,
+      open: layers && shown,
     });
-    if (tree && shown) entries.push(...elementEntries(frame, tree, closed));
+    if (layers && shown) entries.push(...elementEntries(frame, layers, closed));
   });
   return entries;
 }
 
-function elementEntries(frame: CanvasFrame, tree: ElementTree, closed: ReadonlySet<string>) {
+function elementEntries(frame: CanvasFrame, layers: FrameLayers, closed: ReadonlySet<string>) {
+  const { designId } = frame;
   const note = (suffix: string, name: string): LayerEntry => ({
     kind: 'note',
-    key: `${frame.designId}#${suffix}`,
+    key: `${designId}#${suffix}`,
     frame,
     name,
     level: 2,
-    parentKey: frame.designId,
+    parentKey: designId,
   });
-  if (tree.state === 'reading') return [note('reading', 'Reading elements…')];
-  if (tree.state === 'unread') return [note('unread', 'Couldn’t read this design’s elements')];
-  const { nodes, truncated } = tree.tree;
-  if (nodes.length === 0) return [note('empty', 'No elements')];
+  const nodes = layerNodes(layers);
+  const more = note('more', 'Not every layer could be listed');
+  if (nodes.length === 0) return [layers.outline.truncated ? more : note('empty', 'No layers')];
 
-  const places = siblingPlaces(nodes);
+  const childrenOf = new Map<string | null, OutlineNode[]>();
+  for (const node of nodes) {
+    const siblings = childrenOf.get(node.parentId);
+    if (siblings) siblings.push(node);
+    else childrenOf.set(node.parentId, [node]);
+  }
   const entries: LayerEntry[] = [];
-  const parents: string[] = [];
-  // The depth of the closed element whose descendants are being skipped.
-  let closedAt: number | null = null;
-  nodes.forEach((node, index) => {
-    if (closedAt !== null && node.depth > closedAt) return;
-    closedAt = null;
-    const key = elementKey(frame.designId, node.instancePath);
-    const hasChildren = (nodes.at(index + 1)?.depth ?? -1) > node.depth;
-    const isOpen = hasChildren ? !closed.has(key) : null;
-    const component = elementSite(frame, tree.revisionId, node.elementId)?.component ?? null;
-    parents.length = node.depth;
+  // Depth first, without recursion, as an outline can nest as deep as its source does.
+  const pending = siblingsOf(childrenOf, null, designId, 2);
+  for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+    const { node, parentKey, level, position, count } = next;
+    const key = nodeKey(designId, node.nodeId);
+    const open = childrenOf.has(node.nodeId) ? !closed.has(key) : null;
     entries.push({
       kind: 'element',
       key,
       frame,
-      name: component ?? node.tagName,
-      level: node.depth + 2,
+      name: node.text ?? node.name,
+      level,
       node,
-      component,
-      parentKey: node.depth === 0 ? frame.designId : parents[node.depth - 1],
-      ...places[index],
-      open: isOpen,
+      drawn: drawnState(node, layers),
+      parentKey,
+      position,
+      count,
+      open,
     });
-    parents.push(key);
-    if (isOpen === false) closedAt = node.depth;
-  });
-  // The walk can stop at its byte budget before the node cap, so the note counts what came.
-  if (truncated) entries.push(note('more', `Showing the first ${String(nodes.length)} elements`));
+    if (open) pending.push(...siblingsOf(childrenOf, node.nodeId, key, level + 1));
+  }
+  if (layers.outline.truncated) entries.push(more);
   return entries;
 }
 
-/** Each node's place among the nodes that share its parent, as aria-posinset and -setsize. */
-function siblingPlaces(nodes: readonly PreviewTreeNode[]) {
-  const places = nodes.map(() => ({ position: 0, count: 0 }));
-  const groups: number[][] = [];
-  const open: number[][] = [];
-  nodes.forEach((node, index) => {
-    open.length = node.depth + 1;
-    if (!open[node.depth]) {
-      open[node.depth] = [];
-      groups.push(open[node.depth]);
-    }
-    open[node.depth].push(index);
-  });
-  for (const group of groups)
-    group.forEach((index, at) => {
-      places[index] = { position: at + 1, count: group.length };
-    });
-  return places;
+/** The rows `parentId` holds, last first, as the walk takes them off the end. */
+function siblingsOf(
+  childrenOf: ReadonlyMap<string | null, OutlineNode[]>,
+  parentId: string | null,
+  parentKey: string,
+  level: number,
+) {
+  const siblings = childrenOf.get(parentId) ?? [];
+  return siblings
+    .map((node, index) => ({ node, parentKey, level, position: index + 1, count: siblings.length }))
+    .reverse();
+}
+
+function drawnState(node: OutlineNode, layers: FrameLayers): Drawn | null {
+  if (node.elementId === null) return null;
+  const drawn = layers.drawn?.drawn.get(node.nodeId) ?? { state: 'unread' };
+  return drawn.state === 'unread' && layers.reading ? { state: 'reading' } : drawn;
 }

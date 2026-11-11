@@ -277,9 +277,11 @@ export function settledFrame(
     }, BUILD_WAIT_MS).unref();
     unsubscribe = changes.subscribe(
       (change) => {
-        const frame = change.frames.find((entry) => entry.designId === designId);
-        if (frame && isSettled(frame, revisionId)) finish(frame);
-        else if (change.removedDesignIds.includes(designId)) finish(undefined);
+        if (change.removedDesignIds.includes(designId)) finish(undefined);
+        else if (change.builds.some((entry) => entry.designId === designId)) {
+          const frame = safely(readFrame);
+          if (!frame || isSettled(frame, revisionId)) finish(frame);
+        }
       },
       // A closed workspace publishes nothing more, so its last word is the receipt.
       () => {

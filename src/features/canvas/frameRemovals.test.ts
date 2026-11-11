@@ -51,7 +51,13 @@ function fakeClient() {
 /** Lets every settled answer run through the history. */
 const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-const restored: CanvasChange = { canvasId: 'cv', sequence: 3, frames: [], removedDesignIds: [] };
+const restored: CanvasChange = {
+  canvasId: 'cv',
+  sequence: 3,
+  frames: [],
+  builds: [],
+  removedDesignIds: [],
+};
 
 let shown: ToastItem[] = [];
 const stopWatching = subscribeToasts((toasts) => {

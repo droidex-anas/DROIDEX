@@ -61,6 +61,7 @@ import type {
   SwitchRevisionInput,
   RevisionSummary,
   SourceElement,
+  SourceOutline,
   UndoRemovalInput,
   WriteFilesInput,
   WriteReceipt,
@@ -284,6 +285,44 @@ const ELEMENTS: SourceElement[] = params.has('edit')
       },
     ]
   : [];
+// Its source outline: an instance of Card, which renders the section holding the title.
+const OUTLINE: SourceOutline = {
+  nodes: params.has('edit')
+    ? [
+        {
+          nodeId: '0000000000000001',
+          parentId: null,
+          kind: 'instance',
+          name: 'Card',
+          text: null,
+          elementId: null,
+          lock: null,
+          free: false,
+        },
+        {
+          nodeId: '0000000000000002',
+          parentId: '0000000000000001',
+          kind: 'element',
+          name: 'section',
+          text: null,
+          elementId: 'el_card',
+          lock: 'shared',
+          free: false,
+        },
+        {
+          nodeId: '0000000000000003',
+          parentId: '0000000000000002',
+          kind: 'element',
+          name: 'h1',
+          text: 'Pricing',
+          elementId: 'el_title',
+          lock: null,
+          free: true,
+        },
+      ]
+    : [],
+  truncated: false,
+};
 
 function built(revisionId: string): CanvasFrame['build'] {
   return {
@@ -292,6 +331,7 @@ function built(revisionId: string): CanvasFrame['build'] {
     revisionId,
     artifactId: 'a'.repeat(64),
     elements: ELEMENTS,
+    outline: OUTLINE,
     diagnostics: [],
   };
 }
@@ -557,22 +597,35 @@ function Harness() {
       focusFrame: (designId) => board.current?.focusFrame(designId),
     });
   }, [snapshot, interaction]);
-  const change = (frames: CanvasFrame[], removedDesignIds: string[]): CanvasChange => ({
+  /** A change as the sidecar sends one: the frames without their builds, and the builds of `rebuilt` alone. */
+  const change = (
+    frames: CanvasFrame[],
+    removedDesignIds: string[],
+    rebuilt: CanvasFrame[] = [],
+  ): CanvasChange => ({
     canvasId: shown.current.canvasId,
     sequence: shown.current.sequence + 1,
-    frames,
+    frames: frames.map(({ build: _build, ...fields }) => fields),
+    builds: rebuilt.map(({ designId, build }) => ({ designId, build })),
     removedDesignIds,
   });
+  const apply = (current: CanvasSnapshot, next: CanvasChange): CanvasSnapshot => {
+    const applied = applyCanvasChange(current, next);
+    if (!applied)
+      throw new Error('The harness sent a frame the board does not hold without its build.');
+    return applied;
+  };
   window.boardHarness = {
     calls,
     annotateCalls,
     answerAnnotate: (index) => {
       const { upserts, deletes } = annotateCalls[index];
       setSnapshot((current) =>
-        applyCanvasChange(current, {
+        apply(current, {
           canvasId: current.canvasId,
           sequence: current.sequence + 1,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           annotations: {
             version: current.annotationsVersion + 1,
@@ -608,7 +661,7 @@ function Harness() {
       });
       // The client's projection holds the answer before React renders it, and
       // the history reads it as soon as the reply settles.
-      shown.current = applyCanvasChange(shown.current, change(placed, []));
+      shown.current = apply(shown.current, change(placed, []));
       setSnapshot(shown.current);
       replies[index].resolve();
     },
@@ -663,7 +716,7 @@ function Harness() {
       const landed = shown.current.frames
         .filter((frame) => frame.designId === designId)
         .map((frame) => ({ ...frame, revisionId: 'rev_landed', build: built('rev_landed') }));
-      setSnapshot(applyCanvasChange(shown.current, change(landed, [])));
+      setSnapshot(apply(shown.current, change(landed, [], landed)));
     },
     holdSourceReads: () => {
       sourceReads.held = true;
@@ -677,11 +730,11 @@ function Harness() {
     takeOff: (designId) => {
       const leaving = shown.current.frames.find((frame) => frame.designId === designId);
       if (leaving) takenOff.set(designId, leaving);
-      setSnapshot(applyCanvasChange(shown.current, change([], [designId])));
+      setSnapshot(apply(shown.current, change([], [designId])));
     },
     putBack: (designId) => {
       const returning = takenOff.get(designId);
-      if (returning) setSnapshot(applyCanvasChange(shown.current, change([returning], [])));
+      if (returning) setSnapshot(apply(shown.current, change([returning], [], [returning])));
     },
     leave: () => {
       setPresence(NO_PRESENCE);
@@ -715,13 +768,14 @@ function Harness() {
         undoId,
         shown.current.frames.filter((frame) => designIds.includes(frame.designId)),
       );
-      setSnapshot(applyCanvasChange(shown.current, change([], designIds)));
+      setSnapshot(apply(shown.current, change([], designIds)));
       removeReplies[index].resolve(undoId);
     },
     undoCalls,
     answerUndo: (index) => {
-      const restored = change(removedFrames.get(undoCalls[index].undoId) ?? [], []);
-      setSnapshot(applyCanvasChange(shown.current, restored));
+      const frames = removedFrames.get(undoCalls[index].undoId) ?? [];
+      const restored = change(frames, [], frames);
+      setSnapshot(apply(shown.current, restored));
       undoReplies[index].resolve(restored);
     },
     refuseUndo: (index) =>
@@ -742,7 +796,7 @@ function Harness() {
       const renamed = shown.current.frames
         .filter((frame) => frame.designId === designId)
         .map((frame) => ({ ...frame, name, manifestVersion: frame.manifestVersion + 1 }));
-      setSnapshot(applyCanvasChange(shown.current, change(renamed, [])));
+      setSnapshot(apply(shown.current, change(renamed, [])));
       renameReplies[index].resolve();
     },
     commitManifest: (designId, name) => {
@@ -753,18 +807,16 @@ function Harness() {
           name: name ?? frame.name,
           manifestVersion: frame.manifestVersion + 1,
         }));
-      setSnapshot(applyCanvasChange(shown.current, change(committed, [])));
+      setSnapshot(apply(shown.current, change(committed, [])));
     },
     switchCalls,
     answerSwitch: (index) => {
       const { designId, revisionId } = switchCalls[index];
-      const switched = change(
-        shown.current.frames
-          .filter((frame) => frame.designId === designId)
-          .map((frame) => ({ ...frame, revisionId, build: built(revisionId) })),
-        [],
-      );
-      setSnapshot(applyCanvasChange(shown.current, switched));
+      const frames = shown.current.frames
+        .filter((frame) => frame.designId === designId)
+        .map((frame) => ({ ...frame, revisionId, build: built(revisionId) }));
+      const switched = change(frames, [], frames);
+      setSnapshot(apply(shown.current, switched));
       switchReplies[index].resolve({ designId, revisionId, sequence: switched.sequence });
     },
     refuseSwitch: (index) =>
@@ -782,7 +834,7 @@ function Harness() {
       const written = shown.current.frames
         .filter((frame) => frame.designId === designId)
         .map((frame) => ({ ...frame, revisionId, build: built(revisionId) }));
-      setSnapshot(applyCanvasChange(shown.current, change(written, [])));
+      setSnapshot(apply(shown.current, change(written, [], written)));
       writeReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
     },
     toasts: () => toasts.map((shown) => shown.message),
@@ -810,13 +862,11 @@ function Harness() {
             onRename={frameActions.rename}
             onSetHidden={(frame, hidden) => {
               hideCalls.push({ designId: frame.designId, hidden });
-              setSnapshot(applyCanvasChange(shown.current, change([{ ...frame, hidden }], [])));
+              setSnapshot(apply(shown.current, change([{ ...frame, hidden }], [])));
             }}
             onReorder={(designIds) => {
               reorderCalls.push(designIds);
-              setSnapshot(
-                applyCanvasChange(shown.current, { ...change([], []), order: designIds }),
-              );
+              setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
             }}
             onPick={(designId, additive) => {
               setInteraction(

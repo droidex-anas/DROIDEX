@@ -116,6 +116,31 @@ export interface SourceElement {
   editability: 'literal' | 'computed' | 'shared';
 }
 
+/** One row of a design's source outline: something written in its source, nested as written. */
+export interface OutlineNode {
+  /** Unique within its outline: an element opened through two instances is two rows. */
+  nodeId: string;
+  /** Null for a row the root component renders directly. */
+  parentId: string | null;
+  kind: 'element' | 'instance' | 'repeat' | 'condition';
+  /** The tag, the component's name, 'Repeat' or 'Condition'. */
+  name: string;
+  /** An element's own literal text, on one line, 64 code points at most. */
+  text: string | null;
+  /** The element's marker; null for the other kinds. */
+  elementId: string | null;
+  /** Why it cannot be edited directly: in a repeat, rendered several times, worked out in code, or the kit's. */
+  lock: 'repeated' | 'shared' | 'computed' | 'kit' | null;
+  /** A direct JSX child, so it can be moved, removed or copied as a whole. */
+  free: boolean;
+}
+
+/** What a design's root renders, in reading order, and whether it stopped at a cap. */
+export interface SourceOutline {
+  nodes: OutlineNode[];
+  truncated: boolean;
+}
+
 /** What one design's build is doing, on its own. */
 export type CanvasBuildOutcome =
   | { status: 'pending' }
@@ -125,6 +150,7 @@ export type CanvasBuildOutcome =
       revisionId: string;
       artifactId: string;
       elements: SourceElement[];
+      outline: SourceOutline;
       diagnostics: CanvasDiagnostic[];
     }
   | {
@@ -136,10 +162,10 @@ export type CanvasBuildOutcome =
   | { status: 'cancelled'; revisionId: string | null };
 
 /**
- * One design's build state and the attempt it belongs to. `generation` is the
- * per-design attempt counter, which only ever increases, so a reader can tell a
- * build that actually moved from a frame that was merely re-sent: an arrange
- * re-sends every frame it touches with its build untouched.
+ * One design's build state and the attempt it belongs to. `generation` counts
+ * the design's build attempts and only goes up: the sidecar publishes a result
+ * only while its attempt is the latest, and the renderer takes a new generation
+ * as a new build even when identical source rebuilt to the same artifact.
  */
 export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
@@ -202,10 +228,20 @@ export interface CanvasSnapshot {
   annotations: Annotation[];
 }
 
+/** A frame as a change reports it: its build travels apart, and only when it changed. */
+export type ChangedFrame = Omit<CanvasFrame, 'build'>;
+
+interface FrameBuild {
+  designId: string;
+  build: CanvasBuildState;
+}
+
 export interface CanvasChange {
   canvasId: string;
   sequence: number;
-  frames: CanvasFrame[];
+  frames: ChangedFrame[];
+  /** The builds this change moved; a frame new to the canvas always has its build here. */
+  builds: FrameBuild[];
   removedDesignIds: string[];
   /** Present only on a change that touched the annotation layer. */
   annotations?: AnnotationChange;
