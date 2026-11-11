@@ -1,9 +1,10 @@
-// Under the cover (spec §5): where the kit came from, and how many of its
-// source's tokens did not map to the document.
+// Under the cover (spec §5): where the kit came from, how many of its source's
+// tokens did not map to the document, and what a library import left out.
 
 import { useEffect, useState } from 'react';
 import { canvasClient } from '../canvasClient';
 import type { DesignSystemProvenance } from '../protocol';
+import { ImportReview } from './ImportReview';
 
 export function ProvenanceLine({
   provenance,
@@ -18,7 +19,14 @@ export function ProvenanceLine({
     unmapped > 0 ? `${String(unmapped)} ${unmapped === 1 ? 'token' : 'tokens'} not mapped` : null,
   ].filter((part) => part !== null);
   if (parts.length === 0) return null;
-  return <p className="text-caption text-muted">{parts.join(' · ')}</p>;
+  const library =
+    provenance !== null && 'project' in provenance ? provenance.project.library : null;
+  return (
+    <>
+      <p className="text-caption text-muted">{parts.join(' · ')}</p>
+      {library && <ImportReview library={library} />}
+    </>
+  );
 }
 
 function useProvenanceOrigin(provenance: DesignSystemProvenance | null): string | null {
