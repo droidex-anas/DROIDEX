@@ -197,8 +197,12 @@ function hideLayer(files: SourceFiles, nodeId: string, hidden: boolean): EditedL
   const { row, at } = subject;
   if (row.kind !== 'element' || !(ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)))
     throw invalid('Only an element can be hidden.');
+  // Only its hidden class or a hidden attribute says a sibling is not showing.
   const isOtherShownTopLayer = (other: OutlineNode) =>
-    other.parentId === null && other !== row && other.visibility !== 'hidden';
+    other.parentId === null &&
+    other !== row &&
+    other.visibility !== 'hidden' &&
+    other.visibility !== 'attribute';
   if (hidden && row.parentId === null && !outline.nodes.some(isOtherShownTopLayer))
     throw invalid(REFUSALS.hide.root);
   writtenOnceAnchor(subject, uses, 'hide');

@@ -114,8 +114,9 @@ function readClasses(element: ElementNode): Classes {
   const literal = attributeValue(written);
   if (!literal || !isLiteral(literal)) return { lock: 'computed' };
   const raw = literal.getText().slice(1, -1);
-  // An escape would make the source spelling differ from the classes it names.
-  if (raw.includes('\\')) return { lock: 'computed' };
+  // An escape or a character reference (`&#32;`) would make the source
+  // spelling differ from the classes it names.
+  if (raw.includes('\\') || raw.includes('&')) return { lock: 'computed' };
   if (tokens(raw).some(outranksHidden)) return { lock: 'display' };
   return { written, literal, raw };
 }
