@@ -7,6 +7,7 @@ import {
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
+import { starterKit } from './designSystemImport.js';
 import { discardProposal, proposeDesignSystem, readProposal } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews, kitExample } from './kitPreviews.js';
@@ -179,4 +180,15 @@ test("a waiting proposal's previews build from its own examples, and a settled o
   await discardProposal('proposed', proposalId);
   await assert.rejects(previews.read(ref, 'sidebar'), { code: 'invalid_input' });
   await previews.close();
+});
+
+test('a kit check compiles its entry, each example, then its whole catalog once', async () => {
+  const { previews, compiled } = countingPreviews(() => design('<html></html>'));
+  const kit = starterKit();
+
+  assert.deepEqual(await previews.check(kit), []);
+  const examples = compiled.map((input) => (input.kind === 'kitPreview' ? input.example : ''));
+  assert.equal(examples.length, 1 + Object.keys(kit.examples).length + 1);
+  assert.equal(examples.filter((source) => source.includes('function Catalog()')).length, 1);
+  assert.match(examples.at(-1) ?? '', /<Button variant="quiet">Cancel<\/Button>[\s\S]*<Badge>/);
 });

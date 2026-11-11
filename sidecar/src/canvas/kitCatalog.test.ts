@@ -3,9 +3,10 @@ import test, { after } from 'node:test';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { stopCanvasRuntime } from './canvasRuntime.js';
 import { starterKit } from './designSystemImport.js';
-import { designSystemSchema } from './designSystems.js';
+import { designSystemSchema, readDesignSystem } from './designSystems.js';
 import { catalogFile, catalogProblem, KIT_CATALOG_FILE, type CatalogEntry } from './kitCatalog.js';
 import { KitPreviews } from './kitPreviews.js';
+import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 
 pinScratchProfile();
 after(() => stopCanvasRuntime());
@@ -52,6 +53,15 @@ test('a catalog file outside its bounds is refused, naming what it breaks', () =
     ...rest,
   });
   assert.match(parsed.error?.issues[0]?.message ?? '', /catalog\.json is not JSON/);
+});
+
+test("every preset's catalog builds against its kit", async (t) => {
+  const previews = new KitPreviews();
+  t.after(() => previews.close());
+  const droidex = await readDesignSystem({ id: 'droidex', version: 1 });
+  const kits = { Auto: AUTO_DESIGN_SYSTEM, DROIDEX: droidex, starter: starterKit() };
+  for (const [name, kit] of Object.entries(kits))
+    assert.deepEqual(await previews.checkCatalog(kit), [], name);
 });
 
 test('a catalog failure is told as the entry whose lines it is on, and an unexported name refuses before any compile', async (t) => {
