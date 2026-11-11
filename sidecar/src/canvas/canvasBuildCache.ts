@@ -20,10 +20,11 @@ import {
   canvasIdentifierSchema,
   designSystemAdherenceSchema,
   sourceElementSchema,
+  sourceOutlineSchema,
 } from './schema.js';
 import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
 
-const BUILD_OUTCOME_VERSION = 6;
+const BUILD_OUTCOME_VERSION = 7;
 
 const diagnosticSchema = z
   .object({
@@ -44,6 +45,7 @@ const readyResultSchema = z
     status: z.literal('ready'),
     artifactId: canvasIdentifierSchema,
     elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
+    outline: sourceOutlineSchema,
     diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
   })
   .strict();
@@ -320,6 +322,7 @@ export function builtState(
       revisionId,
       artifactId: result.artifactId,
       elements: result.elements,
+      outline: result.outline,
       diagnostics: result.diagnostics,
     };
   return { status: 'failed', revisionId, diagnostics: result.diagnostics, lastWorkingRevisionId };

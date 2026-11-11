@@ -20,12 +20,12 @@ import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './can
 import { isCanvasEvent } from './wireValidation';
 import { CanvasClient } from './client';
 import { fakeCanvasBridge, flush } from '../../test/canvasTransport';
-import type { CanvasChange, CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasChange, CanvasFrame, CanvasSnapshot, ChangedFrame } from './protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const CANVAS = 'cv_01';
 
-function frame(designId: string, revisionId: string | null = null): CanvasFrame {
+function fields(designId: string, revisionId: string | null = null): ChangedFrame {
   return {
     designId,
     name: designId,
@@ -37,12 +37,16 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     variantOf: null,
     seededRevisionId: null,
     hidden: false,
-    build: { status: 'pending', generation: 0 },
   };
 }
 
+function frame(designId: string, revisionId: string | null = null): CanvasFrame {
+  return { ...fields(designId, revisionId), build: { status: 'pending', generation: 0 } };
+}
+
 function change(sequence: number, frames: CanvasFrame[] = []): CanvasChange {
-  return { canvasId: CANVAS, sequence, frames, removedDesignIds: [] };
+  const builds = frames.map(({ designId, build }) => ({ designId, build }));
+  return { canvasId: CANVAS, sequence, frames, builds, removedDesignIds: [] };
 }
 
 /** A watched canvas seeded at `sequence`, plus the projections its listener saw. */
@@ -123,11 +127,47 @@ test('a gap requests one fresh snapshot and drops the changes it supersedes', as
   assert.equal(bridge.count('canvas.subscribe'), 2);
 });
 
+test('a change naming a new frame without its build reads a snapshot rather than lose the frame', async () => {
+  const { bridge, client, seen } = await watching(4);
+  seen.length = 0;
+  bridge.deliver({
+    type: 'canvas.change',
+    change: {
+      canvasId: CANVAS,
+      sequence: 5,
+      frames: [fields('cta')],
+      builds: [],
+      removedDesignIds: [],
+    },
+  });
+  await flush();
+  assert.equal(bridge.count('canvas.subscribe'), 2);
+  assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);
+  assert.deepEqual(seen, []);
+
+  bridge.deliver({
+    type: 'canvas.snapshot',
+    requestId: bridge.last('canvas.subscribe').requestId,
+    snapshot: {
+      canvasId: CANVAS,
+      sequence: 5,
+      frames: [frame('hey'), frame('cta')],
+      annotationsVersion: 0,
+      annotations: [],
+    },
+  });
+  await flush();
+  assert.deepEqual(
+    client.snapshotOf(CANVAS)?.frames.map((entry) => entry.designId),
+    ['hey', 'cta'],
+  );
+});
+
 test('a change for a canvas this client does not watch is ignored', async () => {
   const { bridge, client } = await watching(4);
   bridge.deliver({
     type: 'canvas.change',
-    change: { canvasId: 'cv_other', sequence: 1, frames: [], removedDesignIds: [] },
+    change: { canvasId: 'cv_other', sequence: 1, frames: [], builds: [], removedDesignIds: [] },
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);

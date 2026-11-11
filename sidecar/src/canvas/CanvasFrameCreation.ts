@@ -13,13 +13,12 @@ import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import { recordRevisions } from './canvasRevisionMetadata.js';
 import {
-  canvasChange,
   emptyCanvasManifest,
   mutationFingerprint,
   recordMutation,
-  toFrame,
   type CanvasManifest,
 } from './canvasManifest.js';
+import { canvasChange, toFrame } from './canvasProjection.js';
 import { recordedCreate } from './canvasReceipts.js';
 import type { CanvasScope, CreateFramesInput, CreateFramesResult } from './protocol.js';
 

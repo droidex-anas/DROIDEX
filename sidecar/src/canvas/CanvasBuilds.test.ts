@@ -323,6 +323,7 @@ test('a restart serves a cached artifact and rebuilds one that is gone', async (
     revisionId: receipt.revisionId,
     artifactId: 'artifact-one',
     elements,
+    outline: { nodes: [], truncated: false },
     diagnostics: [],
     // A restored outcome is attempt zero: nothing was built in this session.
     generation: 0,

@@ -8,7 +8,6 @@ import { canvasError } from './canvasError.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import {
-  canvasChange,
   CANVAS_TOMBSTONE_LIMIT,
   mutationFingerprint,
   recordMutation,
@@ -17,6 +16,7 @@ import {
   type PersistedDesign,
   type Placement,
 } from './canvasManifest.js';
+import { canvasChange, frameChange } from './canvasProjection.js';
 import {
   recordedArrange,
   recordedFrameEdit,
@@ -47,12 +47,12 @@ export class CanvasFrameEdits {
       const designIds = input.frames.map((frame) => frame.designId);
       const fingerprint = mutationFingerprint(input);
       const manifest = this.leases.requireDesigns(scope, designIds);
-      const recorded = recordedArrange(manifest, input.mutationId, fingerprint, this.builds);
+      const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, designIds);
-        const again = recordedArrange(live, input.mutationId, fingerprint, this.builds);
+        const again = recordedArrange(live, input.mutationId, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
         const moved: PersistedDesign[] = [];
@@ -84,7 +84,7 @@ export class CanvasFrameEdits {
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, designIds));
-        const change = canvasChange(next, moved, this.builds);
+        const change = frameChange(next, moved);
         return { value: change, change };
       });
     });
@@ -152,6 +152,7 @@ export class CanvasFrameEdits {
             canvasId: next.canvasId,
             sequence: next.sequence,
             frames: [],
+            builds: [],
             removedDesignIds: input.designIds,
           },
         };
@@ -318,6 +319,7 @@ export class CanvasFrameEdits {
           canvasId: next.canvasId,
           sequence: next.sequence,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           order: [...input.designIds],
         };
@@ -338,12 +340,12 @@ export class CanvasFrameEdits {
     this.commits.requireOpen();
     const manifest = this.leases.requireDesigns(scope, [designId]);
     const fingerprint = mutationFingerprint(input);
-    const recorded = recordedFrameEdit(manifest, mutationId, kind, fingerprint, this.builds);
+    const recorded = recordedFrameEdit(manifest, mutationId, kind, fingerprint);
     if (recorded) return recorded;
 
     return this.commits.publish(async () => {
       const live = this.leases.requireDesigns(scope, [designId]);
-      const again = recordedFrameEdit(live, mutationId, kind, fingerprint, this.builds);
+      const again = recordedFrameEdit(live, mutationId, kind, fingerprint);
       if (again) return { value: again };
       const next = structuredClone(live);
       const design = requireDesign(next, designId);
@@ -366,7 +368,7 @@ export class CanvasFrameEdits {
         this.leases.isActive,
       );
       await this.heads.install(next, this.scopedGate(scope, [designId]));
-      const change = canvasChange(next, [design], this.builds);
+      const change = frameChange(next, [design]);
       return { value: change, change };
     });
   }

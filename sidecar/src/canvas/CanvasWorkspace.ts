@@ -25,16 +25,13 @@ import { recordRevisions } from './canvasRevisionMetadata.js';
 import { CanvasSettings } from './canvasSettings.js';
 import { CanvasWriterLease } from './canvasWriterLease.js';
 import {
-  canvasChange,
-  canvasSnapshot,
-  canvasSummary,
   mutationFingerprint,
   recordMutation,
   requireDesign,
   requireExpectedRevision,
-  toFrame,
   type CanvasManifest,
 } from './canvasManifest.js';
+import { canvasChange, canvasSnapshot, canvasSummary, toFrame } from './canvasProjection.js';
 import { recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,

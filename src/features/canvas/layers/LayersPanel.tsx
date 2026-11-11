@@ -1,21 +1,22 @@
 // The layers panel at the board's left: a row per frame, front to back, saying how its
 // build stands. A click picks the frame (Shift or ⌘ adds it), a double-click renames it,
 // a row under the pointer lights its frame, and its eye and handle hide and restack it.
-// A frame with a live preview opens on its elements, which a click picks in Edit and
-// the pointer outlines on the board. The tree is one tab stop whose rows the keyboard
+// A frame that has built opens on its layers as its source writes them; a click picks a
+// layer's element in Edit and the pointer outlines it on the board, and the board's own
+// pick and hover find their layer's row. The tree is one tab stop whose rows the keyboard
 // walks through aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
-import { useId, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, type KeyboardEvent } from 'react';
 import { isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
-import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
+import { LayerListRow } from './LayerListRow';
 import { LayersHeader } from './LayersHeader';
-import { LayerRow } from './LayerRow';
 import { HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import type { LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
+import { useElementRows } from './useElementRows';
 import { useKeyboardRow } from './useKeyboardRow';
 import { useLayerList } from './useLayerList';
 import { useLayerRows } from './useLayerRows';
@@ -63,9 +64,10 @@ export function LayersPanel({
   const list = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const treeId = useId();
-  const { rows, fold } = useLayerRows(frames, elements.runs);
+  const { rows, fold, rowOf, reveal, readRest } = useLayerRows(frames, elements.runs);
   const keys = rows.map((row) => row.key);
   const { movedTo, activeIndex, moveTo, typeTo } = useKeyboardRow(rows, selectedFrameIds);
+  const elementRows = useElementRows(elements, rowOf, reveal, moveTo);
   const boardLight = useBoardLight(tree, elements.hover);
   const stack = useRestack(
     list,
@@ -77,6 +79,21 @@ export function LayersPanel({
   const renaming = useRenaming(keys, onRename, tree, closeButton);
   const kept = [activeIndex, renaming.index];
   const { virtualizer, revealRestacked } = useLayerList(tree, keys, ROW_PX, kept, movedTo);
+  const shownRows = virtualizer.getVirtualItems().map((item) => ({ item, row: rows[item.index] }));
+  // A row on show past what its frame's preview has read has the rest read.
+  const unreadShown = [
+    ...new Set(
+      shownRows.flatMap(({ row }) =>
+        row.kind === 'element' && row.drawn?.state === 'unread' ? [row.frame.designId] : [],
+      ),
+    ),
+  ].join(' ');
+  const readRestOf = useEffectEvent((designIds: string) => {
+    for (const designId of designIds.split(' ')) readRest(designId);
+  });
+  useEffect(() => {
+    if (unreadShown) readRestOf(unreadShown);
+  }, [unreadShown]);
   const selected = new Set(selectedFrameIds);
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
@@ -91,10 +108,6 @@ export function LayersPanel({
     moveTo(row.key);
     fold(row, shown);
     tree.current?.focus({ preventScroll: true });
-  };
-  const pickElement = (row: ElementEntry) => {
-    moveTo(row.key);
-    elements.pick(row.frame.designId, row.node);
   };
   /** Right opens a closed row, then goes to its first child; Left closes an open row, then goes to its parent. */
   const openOrClose = (opening: boolean, row: LayerEntry) => {
@@ -122,7 +135,7 @@ export function LayersPanel({
     else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
     else if (row.kind === 'frame') runOnFrame(key, row);
     else if (row.kind === 'element' && (key.kind === 'pick' || key.kind === 'focus'))
-      pickElement(row);
+      elementRows.pick(row);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
@@ -131,62 +144,6 @@ export function LayersPanel({
     if (key?.kind === 'leave') stack.cancel();
     if (key) run(key, active);
     if (key || typeTo(event)) event.preventDefault();
-  };
-
-  const rowOf = (row: LayerEntry, index: number, top: number) => {
-    const shared = { id: rowId(row.key), top, active: index === activeIndex };
-    if (row.kind === 'note') return <NoteRow key={row.key} {...shared} entry={row} />;
-    if (row.kind === 'element') {
-      return (
-        <ElementRow
-          key={row.key}
-          {...shared}
-          entry={row}
-          picked={elements.picked}
-          onPick={pickElement}
-          onToggle={(folded) => {
-            toggle(folded, !folded.open);
-          }}
-          onLight={boardLight.light}
-          onUnlight={boardLight.unlight}
-        />
-      );
-    }
-    const { frame } = row;
-    return (
-      <LayerRow
-        key={row.key}
-        {...shared}
-        frame={frame}
-        stage={frameStatus(frame, agentWorking).stage}
-        position={row.position}
-        count={row.count}
-        selected={selected.has(frame.designId)}
-        open={row.open}
-        onToggle={() => {
-          toggle(row, !row.open);
-        }}
-        describedBy={onReorder && helpId}
-        rename={renaming.designId === frame.designId ? onRename : undefined}
-        onRenameDone={renaming.done}
-        onClick={(event) => {
-          moveTo(frame.designId);
-          onPick(frame.designId, event.shiftKey || event.metaKey || event.ctrlKey);
-        }}
-        onDoubleClick={() => {
-          renaming.start(frame.designId);
-        }}
-        onLight={boardLight.light}
-        onUnlight={boardLight.unlight}
-        onToolPress={() => {
-          // The keyboard stays on the tree, on this row, for a chord or Escape after the press.
-          moveTo(frame.designId);
-          tree.current?.focus({ preventScroll: true });
-        }}
-        onSetHidden={onSetHidden}
-        onGrab={onReorder && stack.grab}
-      />
-    );
   };
 
   return (
@@ -232,9 +189,48 @@ export function LayersPanel({
             style={{ height: virtualizer.getTotalSize() }}
             {...stack.listHandlers}
           >
-            {virtualizer
-              .getVirtualItems()
-              .map((item) => rowOf(rows[item.index], item.index, item.start))}
+            {shownRows.map(({ item, row }) => {
+              const { designId } = row.frame;
+              return (
+                <LayerListRow
+                  key={row.key}
+                  row={row}
+                  id={rowId(row.key)}
+                  top={item.start}
+                  active={item.index === activeIndex}
+                  stage={frameStatus(row.frame, agentWorking).stage}
+                  selected={
+                    row.kind === 'frame'
+                      ? selected.has(designId)
+                      : row.key === elementRows.pickedKey
+                  }
+                  lit={row.key === elementRows.litKey}
+                  describedBy={onReorder && helpId}
+                  rename={
+                    row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
+                  }
+                  onToggle={(folded) => {
+                    toggle(folded, !folded.open);
+                  }}
+                  onFrameClick={(frameId, event) => {
+                    moveTo(frameId);
+                    onPick(frameId, event.shiftKey || event.metaKey || event.ctrlKey);
+                  }}
+                  onRenameStart={renaming.start}
+                  onRenameDone={renaming.done}
+                  onToolPress={(frameId) => {
+                    // The keyboard stays on the tree, on this row, for a chord or Escape after the press.
+                    moveTo(frameId);
+                    tree.current?.focus({ preventScroll: true });
+                  }}
+                  onSetHidden={onSetHidden}
+                  onGrab={onReorder && stack.grab}
+                  onPickElement={elementRows.pick}
+                  onLight={boardLight.light}
+                  onUnlight={boardLight.unlight}
+                />
+              );
+            })}
             {stack.dropGap !== null && (
               <div
                 aria-hidden

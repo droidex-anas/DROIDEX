@@ -14,14 +14,23 @@ interface Component {
 
 const REACT_WRAPPERS = new Set(['memo', 'forwardRef']);
 
-/**
- * Whether a JSX node renders at most once in the design: it sits in a
- * component rendered once, in a place that renders it rather than stores it.
- * References are resolved by scope, across files and through re-exports, and
- * anything this does not recognise counts as rendered many times, because an
- * edit to such a node would also change copies the user did not pick.
- */
-export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
+/** How the design's components are used, read once per program. */
+export interface ComponentUses {
+  /**
+   * Whether a JSX node renders at most once in the design: it sits in a
+   * component rendered once, in a place that renders it rather than stores it.
+   * References are resolved by scope, across files and through re-exports, and
+   * anything this does not recognise counts as rendered many times, because an
+   * edit to such a node would also change copies the user did not pick.
+   */
+  rendersOnce: (node: ts.Node) => boolean;
+  /** The design component a JSX tag names, as `Card` or `C.Card`; undefined for one from a package or not found. */
+  componentOf: (tag: ts.JsxTagNameExpression) => ts.SignatureDeclaration | undefined;
+  /** `main.tsx`'s default export, which renders the design. */
+  root: ts.SignatureDeclaration | undefined;
+}
+
+export function componentUses(program: ts.Program): ComponentUses {
   const checker = program.getTypeChecker();
   const bySymbol = new Map<ts.Symbol, Component>();
   const byFunction = new Map<ts.SignatureDeclaration, Component>();
@@ -135,7 +144,14 @@ export function renderedOnce(program: ts.Program): (node: ts.Node) => boolean {
     return slot !== undefined && rendersOnce(slot);
   }
 
-  return rendersOnce;
+  return {
+    rendersOnce,
+    componentOf: (tag) =>
+      ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag)
+        ? componentOf(checker.getSymbolAtLocation(tag))?.fn
+        : undefined,
+    root: root?.fn,
+  };
 }
 
 /**
@@ -174,8 +190,13 @@ function rendersChild(parent: ts.Node, child: ts.Node): boolean {
       !parent.dotDotDotToken && (ts.isJsxElement(parent.parent) || ts.isJsxFragment(parent.parent))
     );
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
-  if (ts.isBinaryExpression(parent))
-    return child === parent.right && LOGICAL_OPERATORS.has(parent.operatorToken.kind);
+  if (ts.isBinaryExpression(parent)) {
+    const operator = parent.operatorToken.kind;
+    if (operator === ts.SyntaxKind.AmpersandAmpersandToken) return child === parent.right;
+    return (
+      operator === ts.SyntaxKind.BarBarToken || operator === ts.SyntaxKind.QuestionQuestionToken
+    );
+  }
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isCaseClause(parent)) return child !== parent.expression;
   if (ts.isSwitchStatement(parent)) return child === parent.caseBlock;
@@ -188,12 +209,6 @@ const PASSES_THROUGH = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.Block,
   ts.SyntaxKind.CaseBlock,
   ts.SyntaxKind.DefaultClause,
-]);
-
-const LOGICAL_OPERATORS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.AmpersandAmpersandToken,
-  ts.SyntaxKind.BarBarToken,
-  ts.SyntaxKind.QuestionQuestionToken,
 ]);
 
 interface Declared {

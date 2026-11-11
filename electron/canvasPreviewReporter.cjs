@@ -21,7 +21,8 @@
  * or the text between two points and the element that holds it, and a `locate`
  * event gives the box of the first drawn instance of each element it names; a
  * `vector` event carries the design's root `<svg>` as a standalone file, and a
- * `tree` event every marked element in document order. A kit preview's
+ * `tree` event one page of the marked elements in document order, starting
+ * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -345,23 +346,30 @@ const GENERATED_FRAME_REPORTER = `(() => {
     const markup = new XMLSerializer().serializeToString(copy);
     return bytes(markup) <= ${String(MAX_PREVIEW_VECTOR_BYTES)} ? { svg: markup } : { refused: 'too_large' };
   };
-  // Each marked element's depth counts the marked elements that hold it. The
-  // budget leaves the event's own fields room under the intermediate's cap.
+  // Each marked element's depth counts the marked elements that hold it. A
+  // page starts \`from\` marked elements in, so a long tree is read a page at a
+  // time. The budget leaves the event's own fields room under the
+  // intermediate's cap.
   const TREE_BUDGET = ${String(MAX_PREVIEW_TREE_BYTES - 1024)};
-  const tree = () => {
+  const tree = (from) => {
     const nodes = [];
     const holders = [];
+    let index = 0;
     let used = 0;
     let truncated = false;
     for (const node of document.querySelectorAll('[' + MARKER + ']')) {
       const instancePath = pathOf(node);
       if (instancePath === null) continue;
       while (holders.length > 0 && !holders[holders.length - 1].contains(node)) holders.pop();
+      const depth = holders.length;
+      holders.push(node);
+      index += 1;
+      if (index <= from) continue;
       const entry = {
         elementId: node.getAttribute(MARKER),
         instancePath: instancePath,
         tagName: node.localName,
-        depth: holders.length,
+        depth: depth,
       };
       const size = bytes(JSON.stringify(entry)) + 1;
       if (nodes.length === ${String(MAX_PREVIEW_TREE_NODES)} || used + size > TREE_BUDGET) {
@@ -370,9 +378,8 @@ const GENERATED_FRAME_REPORTER = `(() => {
       }
       used += size;
       nodes.push(entry);
-      holders.push(node);
     }
-    return { nodes: nodes, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: truncated };
+    return { nodes: nodes, from: from, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: truncated };
   };
   let draftTokens = [];
   const setTokens = (tokens) => {
@@ -448,7 +455,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
     } else if (command.command === 'vector') {
       post('vector', Object.assign({ sequence: command.sequence }, vector()));
     } else if (command.command === 'tree') {
-      post('tree', Object.assign({ sequence: command.sequence }, tree()));
+      post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {
       const target = command.target;
       select(

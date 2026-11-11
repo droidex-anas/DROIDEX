@@ -55,6 +55,7 @@ const design = (html: string): CompiledDesign => ({
   html,
   diagnostics: [],
   elements: [],
+  outline: { nodes: [], truncated: false },
 });
 
 test("a kit's cover and previews compile into preview documents", async (t) => {

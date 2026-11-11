@@ -640,10 +640,14 @@ than waiting out a poll deadline.
 
 The artifact itself travels over the ordinary bridge: `canvas.readArtifact`
 answers one revision's document, read from the derived build cache by
-`sidecar/src/canvas/canvasBuildCache.ts`. Every build state carries the
-registry's per-design `generation`, so a board can tell a build that moved from a
-frame an arrange merely re-sent, and a rebuild of identical source — which is
-content-addressed to the same artifact ID — still reads as a new attempt.
+`sidecar/src/canvas/canvasBuildCache.ts`. A `CanvasChange` that creates, writes,
+restores or rebuilds frames carries each named frame's build in `builds`; an
+arrange, rename, hide or restack carries none, so the frames' element maps and
+outlines are not sent again. A change naming a frame the renderer has never
+seen without its build is answered by reading a fresh snapshot. Every build
+state carries the registry's per-design `generation`, so a rebuild of
+identical source — which is content-addressed to the same artifact ID — still
+reads as a new attempt.
 
 Canvas source selection is derived by `sidecar/src/canvas/sourceElements.ts` with the
 TypeScript parser bundled into the owned compiler process. That process instruments native

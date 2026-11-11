@@ -101,6 +101,11 @@ test('remove and retry publish once; Undo restores source, name and location', a
   assert.equal(restored.frames[0]?.name, 'Hey');
   assert.deepEqual(restored.frames[0]?.rect, rect);
   assert.equal(restored.frames[0]?.revisionId, written.revisionId);
+  assert.deepEqual(
+    restored.builds.map((entry) => entry.designId),
+    [original.designId],
+    'a restored frame comes back with its build',
+  );
   assert.equal((await workspace.readFiles(canvasId, written))['main.tsx'], SOURCE);
   assert.deepEqual(await workspace.undoRemoval(scope, 'undo-hey', removed.undoId), restored);
   await assert.rejects(workspace.undoRemoval(scope, 'undo-again', removed.undoId), {
@@ -201,6 +206,7 @@ test('rename validates names and compares the design manifest version', async (t
     0,
   );
   assert.equal(renamed.frames[0]?.name, 'Better');
+  assert.deepEqual(renamed.builds, [], 'a rename does not send the build again');
   assert.equal(workspace.snapshot(canvasId).frames[0]?.manifestVersion, 1);
   assert.deepEqual(
     await workspace.renameFrame(scope, 'rename-hey', original.designId, '  Better  ', 0),
@@ -222,6 +228,7 @@ test('hide survives reopening, replays its receipt and compares the manifest ver
   };
   const hidden = await workspace.frameEdits.setHidden(scope, hide);
   assert.equal(hidden.frames[0]?.hidden, true);
+  assert.deepEqual(hidden.builds, [], 'a hide does not send the build again');
   const sequence = workspace.snapshot(canvasId).sequence;
   assert.deepEqual(await workspace.frameEdits.setHidden(scope, hide), hidden);
   assert.equal(workspace.snapshot(canvasId).sequence, sequence);

@@ -1,7 +1,8 @@
 // The fixed choices the element panel offers: the segments for layout, flex
 // alignment, text alignment and border style, and the options for keyword
 // properties and Tailwind's stock blurs. Flex and grid keep whether their element sits inline; the
-// displays that are no layout wait in the Display row's ⋯ menu.
+// displays that are no layout wait in the Display row's ⋯ menu. SVG shapes, and the svg around
+// them, take vector paint.
 
 import {
   AlignCenter,
@@ -50,6 +51,14 @@ export function layoutOf(display: string): Layout | null {
   if (display === 'block') return 'block';
   const inner = display.replace(/^inline-/, '');
   return inner === 'flex' || inner === 'grid' ? inner : null;
+}
+
+const SVG_SHAPES = new Set(['path', 'rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon']);
+
+/** How an element takes vector paint: as an SVG shape, as the svg around them, or not at all. */
+export function vectorPaint(tagName: string): 'shape' | 'root' | null {
+  if (SVG_SHAPES.has(tagName)) return 'shape';
+  return tagName === 'svg' ? 'root' : null;
 }
 
 /** The `display` a picked layout writes: flex and grid on an inline element stay inline. */

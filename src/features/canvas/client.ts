@@ -395,9 +395,10 @@ export class CanvasClient {
     let projection = snapshot;
     for (const change of queued) {
       if (change.sequence <= projection.sequence) continue;
-      if (change.sequence !== projection.sequence + 1)
-        return { snapshot: projection, current: false };
-      projection = applyCanvasChange(projection, change);
+      const next =
+        change.sequence === projection.sequence + 1 && applyCanvasChange(projection, change);
+      if (!next) return { snapshot: projection, current: false };
+      projection = next;
     }
     return { snapshot: projection, current: true };
   }
@@ -487,11 +488,13 @@ export class CanvasClient {
       return;
     }
     if (change.sequence <= current.sequence) return;
-    if (change.sequence === current.sequence + 1) {
-      this.project(board, applyCanvasChange(current, change));
+    const next = change.sequence === current.sequence + 1 && applyCanvasChange(current, change);
+    if (next) {
+      this.project(board, next);
       return;
     }
-    // A gap means a change never arrived, and only a fresh snapshot closes it.
+    // A gap means a change never arrived, and a frame sent without a build the
+    // projection holds cannot be shown: only a fresh snapshot closes either.
     board.queued.push(change);
     void this.load(board, change.canvasId).catch(reportLostSnapshot);
   }

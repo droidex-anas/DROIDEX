@@ -58,6 +58,8 @@ export function useElementEditor({
 }: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [error, setError] = useState('');
+  /** Counts the picks answered, so a pick of the element already selected still reads as one. */
+  const [picks, setPicks] = useState(0);
   const [seenFrames, setSeenFrames] = useState(frames);
   /** The run whose guest holds the selection, so moving it elsewhere releases this one. */
   const holder = useRef<PreviewRun | null>(null);
@@ -172,7 +174,10 @@ export function useElementEditor({
         if (held?.revisionId !== revisionId) return;
         const asked = picking.current;
         const answersPick = asked?.run === held.run && asked.sequence === sequence;
-        if (answersPick) picking.current = null;
+        if (answersPick) {
+          picking.current = null;
+          setPicks((count) => count + 1);
+        }
         const selected = selectionIn(latest.current.selection, designId, revisionId);
         if (element && selected && sameElement(selected.draft.element, element)) {
           choose({ ...selected, shown: element });
@@ -279,6 +284,7 @@ export function useElementEditor({
 
   return {
     selection,
+    picks,
     error,
     selections,
     panel,

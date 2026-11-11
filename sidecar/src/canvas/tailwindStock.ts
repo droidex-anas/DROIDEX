@@ -96,6 +96,8 @@ export const BLUR: Scale = {
   '3xl': 'blur(64px)',
 };
 export const BORDER_WIDTH: Scale = { '': '1px', '0': '0px', '2': '2px', '4': '4px', '8': '8px' };
+/** Tailwind writes these bare, which SVG reads in its user units: pixels. */
+export const STROKE_WIDTH: Scale = { '0': '0px', '1': '1px', '2': '2px' };
 
 /** Keyword properties, by the CSS value each stock class sets. */
 export const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, string>>>> = {
@@ -109,6 +111,8 @@ export const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, st
     none: 'hidden',
   },
   flexWrap: { nowrap: 'flex-nowrap', wrap: 'flex-wrap', 'wrap-reverse': 'flex-wrap-reverse' },
+  fill: { none: 'fill-none', currentcolor: 'fill-current' },
+  stroke: { none: 'stroke-none', currentcolor: 'stroke-current' },
   flexGrow: { '1': 'grow', '0': 'grow-0' },
   alignSelf: {
     auto: 'self-auto',

@@ -1,11 +1,11 @@
 // The selected element's text and styles while Edit has one, in a full-height
 // column at the board's right: typed controls grouped the way a designer reads
-// them — content, layout, size, spacing, typography, fill, border, effects —
-// reading the values the preview computes, with the kit's tokens one press
-// away. A flex or grid container shows its alignment, and an item of one its
-// own. Typing previews in the guest; picking a segment, option, token or swatch
-// applies at once; Enter commits every style preview as one edit, or the text
-// as its own, and Escape takes one back.
+// them — content, an SVG's paint, layout, size, spacing, typography, fill,
+// border, effects — reading the values the preview computes, with the kit's
+// tokens one press away. A flex or grid container shows its alignment, and an
+// item of one its own. Typing previews in the guest; picking a segment, option,
+// token or swatch applies at once; Enter commits every style preview as one
+// edit, or the text as its own, and Escape takes one back.
 
 import type { ReactNode, Ref } from 'react';
 import { ChevronRight } from '@droidex/icons';
@@ -30,11 +30,13 @@ import {
   OVERFLOW,
   TEXT_ALIGN,
   TEXT_TRANSFORM,
+  vectorPaint,
   WEIGHTS,
   WRAP,
 } from './elementPanelChoices';
 import { Labelled, Pair, Section } from './ElementPanelRows';
 import { ElementTextField } from './ElementTextField';
+import { ElementVectorPaint } from './ElementVectorPaint';
 import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
 import { isDrawn } from './previewDocument';
@@ -183,6 +185,7 @@ export function ElementPanel({
   const fontTokens = tokenOptions('fontFamily') ?? [];
   const fontFamily = value('fontFamily');
   const fontToken = fontTokens.find((option) => sameFontStack(option.hint ?? '', fontFamily));
+  const vector = vectorPaint(draft.site.tagName);
   return (
     <div
       ref={ref}
@@ -234,6 +237,15 @@ export function ElementPanel({
               onLeave={onLeave}
             />
           </Section>
+        )}
+        {vector && (
+          <ElementVectorPaint
+            value={value}
+            disabled={readOnly}
+            onPick={pick}
+            colour={colour}
+            strokeWidth={number('strokeWidth', 'Stroke width', 'Width', { min: 0, step: 0.5 })}
+          />
         )}
         <Section title="Layout">
           <SegmentedControl
@@ -401,9 +413,12 @@ export function ElementPanel({
           </Labelled>
           <Labelled label="Colour">{colour('color', 'Text colour')}</Labelled>
         </Section>
-        <Section title="Fill">
-          <Labelled label="Fill">{colour('backgroundColor', 'Fill')}</Labelled>
-        </Section>
+        {/* A shape's background paints nothing; its fill is the vector one. */}
+        {vector !== 'shape' && (
+          <Section title="Fill">
+            <Labelled label="Fill">{colour('backgroundColor', 'Fill')}</Labelled>
+          </Section>
+        )}
         <Section title="Border">
           <Labelled label="Colour">{colour('borderColor', 'Border colour')}</Labelled>
           {segmented('borderStyle', 'Style', BORDER_STYLE)}

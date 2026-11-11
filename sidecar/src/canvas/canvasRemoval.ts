@@ -165,7 +165,7 @@ export class CanvasRemoval {
     const removedDesignIds = live.designs.map((design) => design.designId);
     return {
       value: undefined,
-      change: { canvasId, sequence: next.sequence, frames: [], removedDesignIds },
+      change: { canvasId, sequence: next.sequence, frames: [], builds: [], removedDesignIds },
     };
   }
 

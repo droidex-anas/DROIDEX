@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
-import { functionName, renderedOnce } from './componentUses.js';
-import { resolveRelative } from './designBundle.js';
-import type { SourceElement, SourceFiles } from './protocol.js';
+import { componentUses, functionName, type ComponentUses } from './componentUses.js';
+import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
+import { resolveRelative } from './relativeImport.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';
+import { sourceOutline } from './sourceOutline.js';
 
 export type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
 export interface Site {
@@ -19,8 +20,10 @@ const MARKER = 'data-droidex-element';
 export function instrumentSource(
   files: SourceFiles,
   revisionId: string,
-): { files: SourceFiles; elements: SourceElement[] } {
-  const sites = sourceSites(files, revisionId);
+): { files: SourceFiles; elements: SourceElement[]; outline: SourceOutline } {
+  const program = parseProgram(files);
+  const uses = componentUses(program);
+  const sites = programSites(program, uses, files, revisionId);
   const derived: SourceFiles = { ...files };
   const byFile = new Map<ts.SourceFile, Site[]>();
   for (const site of sites) {
@@ -44,15 +47,27 @@ export function instrumentSource(
     text += source.text.slice(offset);
     derived[source.fileName] = text + inlineSourceMap(source, inserts);
   }
-  return { files: derived, elements: sites.map((site) => site.element) };
+  return {
+    files: derived,
+    elements: sites.map((site) => site.element),
+    outline: sourceOutline(program, uses, sites),
+  };
 }
 
 export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
+  const program = parseProgram(files);
+  return programSites(program, componentUses(program), files, revisionId);
+}
+
+function programSites(
+  program: ts.Program,
+  { rendersOnce }: ComponentUses,
+  files: SourceFiles,
+  revisionId: string,
+): Site[] {
   const hash = createHash('sha256').update(
     JSON.stringify([revisionId, Object.entries(files).sort(([a], [b]) => comparePaths(a, b))]),
   );
-  const program = parseProgram(files);
-  const rendersOnce = renderedOnce(program);
   const sites: Site[] = [];
   for (const source of program.getSourceFiles()) {
     const file = source.fileName;
@@ -214,24 +229,28 @@ function isComputed(node: ElementNode): boolean {
   );
 }
 
+// SVG paint attributes, which a paint edit replaces and so must be able to read.
+const PAINT_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth', 'stroke-width']);
+
 function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
   const names = new Set<string>();
   for (const attr of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attr)) return true;
     const name = attr.name.getText();
-    if (names.has(name)) return true;
+    if (names.has(name) || isComputedAttribute(name, attributeValue(attr))) return true;
     names.add(name);
-    if (
-      name === 'children' ||
-      name === 'dangerouslySetInnerHTML' ||
-      name.toLowerCase() === 'srcset'
-    )
-      return true;
-    const value = attributeValue(attr);
-    if (name === 'className' && value && classLiterals(value) === null) return true;
-    if (name === 'src' && value && !isLiteral(value)) return true;
-    if (name === 'style' && hasComputedStyle(value)) return true;
   }
+  return false;
+}
+
+function isComputedAttribute(name: string, value: ts.Expression | undefined): boolean {
+  if (name === 'children' || name === 'dangerouslySetInnerHTML' || name.toLowerCase() === 'srcset')
+    return true;
+  if (name === 'className') return value !== undefined && classLiterals(value) === null;
+  if (name === 'src') return value !== undefined && !isLiteral(value);
+  if (name === 'style') return hasComputedStyle(value);
+  if (PAINT_ATTRIBUTES.has(name))
+    return value === undefined || !(isLiteral(value) || ts.isNumericLiteral(value));
   return false;
 }
 
