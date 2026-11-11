@@ -61,6 +61,7 @@ export const editElementInputSchema = z
               .strict(),
             z.object({ kind: z.literal('remove') }).strict(),
             z.object({ kind: z.literal('duplicate') }).strict(),
+            z.object({ kind: z.literal('hide'), hidden: z.boolean() }).strict(),
           ]),
         })
         .strict(),

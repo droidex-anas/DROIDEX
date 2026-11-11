@@ -47,9 +47,28 @@ const VOID_TAGS = new Set([
 
 /** A layer written once, as a whole JSX child of another element, so it can be cut and pasted. */
 export function isMovable(row: LayerEntry): row is ElementEntry {
-  if (row.kind !== 'element' || row.inText) return false;
-  const { free, parentId, lock } = row.node;
-  return free && parentId !== null && lock !== 'repeated' && lock !== 'shared';
+  return row.kind === 'element' && !row.inText && row.node.parentId !== null && isWrittenOnce(row);
+}
+
+/**
+ * An element written once, as a whole JSX child, so its eye can hide it by its
+ * class. As the sidecar holds, a frame keeps a top layer that shows.
+ */
+export function isHideable(rows: readonly LayerEntry[], row: LayerEntry): row is ElementEntry {
+  if (row.kind !== 'element' || row.node.kind !== 'element' || !isWrittenOnce(row)) return false;
+  if (row.node.parentId !== null || row.node.visibility === 'hidden') return true;
+  return rows.some(
+    (other) =>
+      other !== row &&
+      isOutlineRow(other) &&
+      other.parentKey === row.parentKey &&
+      other.node.visibility !== 'hidden' &&
+      other.node.visibility !== 'attribute',
+  );
+}
+
+function isWrittenOnce({ node }: ElementEntry): boolean {
+  return node.free && node.lock !== 'repeated' && node.lock !== 'shared';
 }
 
 /** A row of the frame's outline, which an edit can name; a drawn element the outline does not write has none. */
