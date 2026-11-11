@@ -234,6 +234,7 @@ export const sourceOutlineSchema = z
             elementId: canvasIdentifierSchema.nullable(),
             lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
             free: z.boolean(),
+            contentFromProps: z.boolean(),
           })
           .strict()
           .refine(

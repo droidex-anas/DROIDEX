@@ -298,6 +298,7 @@ const OUTLINE: SourceOutline = {
           elementId: null,
           lock: null,
           free: false,
+          contentFromProps: false,
         },
         {
           nodeId: '0000000000000002',
@@ -308,6 +309,7 @@ const OUTLINE: SourceOutline = {
           elementId: 'el_card',
           lock: 'shared',
           free: false,
+          contentFromProps: false,
         },
         {
           nodeId: '0000000000000003',
@@ -318,6 +320,7 @@ const OUTLINE: SourceOutline = {
           elementId: 'el_title',
           lock: null,
           free: true,
+          contentFromProps: false,
         },
       ]
     : [],
@@ -334,6 +337,7 @@ const movable = (nodeId: string, parentId: string | null, name: string, text: st
   elementId: `el_${nodeId}`,
   lock: null,
   free: parentId !== null,
+  contentFromProps: false,
 });
 const MOVES: SourceOutline = {
   nodes: [

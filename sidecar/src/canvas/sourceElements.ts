@@ -59,12 +59,13 @@ export function sourceLayers(files: SourceFiles): {
   uses: ComponentUses;
   outline: SourceOutline;
   written: Map<string, ts.Node>;
+  checker: ts.TypeChecker;
 } {
   const program = parseProgram(files);
   const uses = componentUses(program);
   const written = new Map<string, ts.Node>();
   const outline = sourceOutline(program, uses, programSites(program, uses, files, ''), written);
-  return { uses, outline, written };
+  return { uses, outline, written, checker: program.getTypeChecker() };
 }
 
 export function sourceSites(files: SourceFiles, revisionId: string): Site[] {

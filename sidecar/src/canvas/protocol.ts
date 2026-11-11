@@ -133,6 +133,8 @@ export interface OutlineNode {
   lock: 'repeated' | 'shared' | 'computed' | 'kit' | null;
   /** A direct JSX child, so it can be moved, removed or copied as a whole. */
   free: boolean;
+  /** An element whose props set or may set its content, so it takes no written children. */
+  contentFromProps: boolean;
 }
 
 /** What a design's root renders, in reading order, and whether it stopped at a cap. */
