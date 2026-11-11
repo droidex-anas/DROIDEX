@@ -71,6 +71,8 @@ function isOutline(value: unknown): boolean {
   return true;
 }
 
+const OUTLINE_FLAGS = ['free', 'contentFromProps', 'hidden'] as const;
+
 function isOutlineNode(value: unknown): boolean {
   return (
     record(value) &&
@@ -81,8 +83,7 @@ function isOutlineNode(value: unknown): boolean {
     (value.text === null || (value.kind === 'element' && isOutlineLabel(value.text))) &&
     (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
-    typeof value.free === 'boolean' &&
-    typeof value.contentFromProps === 'boolean'
+    OUTLINE_FLAGS.every((flag) => typeof value[flag] === 'boolean')
   );
 }
 

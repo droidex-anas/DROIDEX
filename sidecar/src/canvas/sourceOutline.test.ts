@@ -16,7 +16,8 @@ function outlineOf(files: SourceFiles): string[] {
     const name = node.kind === 'element' ? `<${node.name}>` : node.name;
     const text = node.text === null ? '' : ` "${node.text}"`;
     const lock = node.lock === null ? '' : ` [${node.lock}]`;
-    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}`;
+    const hidden = node.hidden ? ' hidden' : '';
+    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}${hidden}`;
   });
 }
 
@@ -262,6 +263,13 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
     [
       {
         'main.tsx':
+          'export default ({ open }) => <main><aside hidden>A</aside><p hidden={open}>B</p><Card hidden /></main>;',
+      },
+      ['<main> fixed', '  <aside> "A" hidden', '  <p> "B"', '  Card'],
+    ],
+    [
+      {
+        'main.tsx':
           'export default ({ step }) => { if (step) { var body = <h1>One</h1>; } else { body = <h2>Two</h2>; } return <main>{body}</main>; }',
       },
       [
@@ -294,6 +302,7 @@ test('both validators take an outline only as a tree of bounded one-line rows', 
     lock: null,
     free: false,
     contentFromProps: false,
+    hidden: false,
   };
   const child = { ...root, nodeId: 'fedcba9876543210', parentId: root.nodeId };
   const accepts = (nodes: unknown[]) => {

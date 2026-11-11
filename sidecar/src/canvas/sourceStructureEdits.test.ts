@@ -584,3 +584,95 @@ export default () => {
     'export default () => <><main>Root</main><main>Root</main></>;',
   );
 });
+
+/** Hides or shows the row named `subject`, checking it lands on that row; returns the edited main.tsx. */
+function hidden(main: string, subject: string, hide = true): string {
+  const files = { 'main.tsx': main };
+  const nodeId = rowId(files, subject);
+  const result = editLayer(files, nodeId, { kind: 'hide', hidden: hide });
+  const after = instrumentSource({ ...files, ...result.files }, 'r2').outline.nodes;
+  assert.equal(after.find((node) => node.nodeId === result.landed)?.hidden, hide);
+  assert.equal(result.landed, nodeId);
+  return result.files['main.tsx'];
+}
+
+test('hiding writes a bare hidden first among the attributes, and showing takes it away with its line', () => {
+  const main =
+    'export default () => <main><aside className="flex gap-2">Side</aside><hr /></main>;';
+  const hiddenMain =
+    'export default () => <main><aside hidden className="flex gap-2">Side</aside><hr /></main>;';
+  assert.equal(hidden(main, 'aside'), hiddenMain);
+  assert.equal(hidden(hiddenMain, 'aside', false), main);
+  assert.equal(
+    hidden(main, 'hr'),
+    'export default () => <main><aside className="flex gap-2">Side</aside><hr hidden /></main>;',
+  );
+  assert.equal(
+    hidden('export default () => <main><p className="a" hidden>B</p></main>;', 'p', false),
+    'export default () => <main><p className="a">B</p></main>;',
+  );
+
+  const lines = `export default () => (
+  <main>
+    <aside
+      className="flex"
+      title="Side"
+    >
+      Side
+    </aside>
+  </main>
+);
+`;
+  const hiddenLines = lines.replace(
+    '<aside\n      className',
+    '<aside\n      hidden\n      className',
+  );
+  assert.equal(hidden(lines, 'aside'), hiddenLines);
+  assert.equal(hidden(hiddenLines, 'aside', false), lines);
+});
+
+test('hiding is refused where code decides whether the layer shows, or the layer is not free to change', () => {
+  const files = {
+    'main.tsx': `function Card() { return <article>Card</article>; }
+export default ({ open, items }) => (
+  <main>
+    <p hidden={open}>Open</p>
+    <h2 hidden="">Title</h2>
+    <Card />
+    <Card />
+    <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
+    {open && <aside>Open</aside>}
+    <section />
+  </main>
+);
+`,
+  };
+  const code = 'Whether this layer shows is worked out in code. Ask the agent.';
+  const cases: [string, string, string][] = [
+    ['p', 'ambiguous_element', code],
+    ['h2', 'ambiguous_element', code],
+    ['main', 'invalid_edit', "A frame's top layer can't be hidden. Hide the frame instead."],
+    ['Card', 'invalid_edit', 'Only an element can be hidden.'],
+    ['article', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
+    [
+      'li',
+      'ambiguous_element',
+      'Written once and repeated for each item. Ask the agent to change it.',
+    ],
+    [
+      'aside',
+      'ambiguous_element',
+      'This layer is written inside code (a list, a condition or a prop). Ask the agent to hide it.',
+    ],
+  ];
+  for (const [subject, errorCode, message] of cases)
+    assert.throws(
+      () => editLayer(files, rowId(files, subject), { kind: 'hide', hidden: true }),
+      { code: errorCode, message },
+      subject,
+    );
+  assert.throws(() => editLayer(files, rowId(files, 'section'), { kind: 'hide', hidden: false }), {
+    code: 'invalid_edit',
+    message: 'The layer already shows.',
+  });
+});

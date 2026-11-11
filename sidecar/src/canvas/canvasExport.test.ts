@@ -714,4 +714,5 @@ export default function Hey() { return <Card className="dark:bg-black"><img src=
   const stylesheet = await readFile(join(destination, 'dist/style.css'), 'utf8');
   assert.match(stylesheet, /--ds-accent/);
   assert.ok(stylesheet.includes(String.raw`.dark\:bg-black:where([data-mode='dark']`));
+  assert.ok(stylesheet.includes('[hidden]:where(:not([hidden="until-found"]))'));
 });

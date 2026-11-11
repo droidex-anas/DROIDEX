@@ -305,6 +305,7 @@ const OUTLINE: SourceOutline = {
           lock: null,
           free: false,
           contentFromProps: false,
+          hidden: false,
         },
         {
           nodeId: '0000000000000002',
@@ -316,6 +317,7 @@ const OUTLINE: SourceOutline = {
           lock: 'shared',
           free: false,
           contentFromProps: false,
+          hidden: false,
         },
         {
           nodeId: '0000000000000003',
@@ -327,6 +329,7 @@ const OUTLINE: SourceOutline = {
           lock: null,
           free: true,
           contentFromProps: false,
+          hidden: false,
         },
       ]
     : [],
@@ -344,6 +347,7 @@ const movable = (nodeId: string, parentId: string | null, name: string, text: st
   lock: null,
   free: parentId !== null,
   contentFromProps: false,
+  hidden: false,
 });
 const MOVES: SourceOutline = {
   nodes: [

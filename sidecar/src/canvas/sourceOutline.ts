@@ -11,6 +11,7 @@ import { functionName, type ComponentUses } from './componentUses.js';
 import type { OutlineNode, SourceOutline } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import type { Site } from './sourceElements.js';
+import { isHidden } from './sourceHiddenAttribute.js';
 import {
   assignedValues,
   childrenBindings,
@@ -71,7 +72,8 @@ export function sourceOutline(
   const assigned = new Map<ts.VariableDeclaration, ts.Expression[]>();
   const returns = new Map<ts.Block, ts.Expression[]>();
   let steps = 0;
-  let bytes = 0;
+  // The rows are sent inside `{"nodes":[…],"truncated":…}`, which counts too.
+  let bytes = Buffer.byteLength(JSON.stringify({ nodes: [], truncated: false }), 'utf8');
   let truncated = false;
 
   const add = (at: ts.Node, row: Row, place: Place) => {
@@ -161,6 +163,7 @@ export function sourceOutline(
           lock: lock[element.editability],
           free,
           contentFromProps: contentFromProps(node),
+          hidden: isHidden(node),
         },
         place,
       );
@@ -179,6 +182,7 @@ export function sourceOutline(
         lock: isKit ? 'kit' : lockAt(node, place),
         free,
         contentFromProps: false,
+        hidden: false,
       },
       place,
     );
@@ -216,6 +220,7 @@ export function sourceOutline(
       text: null,
       elementId: null,
       contentFromProps: false,
+      hidden: false,
     } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place, (inside) => {
       for (const branch of branches) content(branch, inside, false);
@@ -250,6 +255,7 @@ export function sourceOutline(
       text: null,
       elementId: null,
       contentFromProps: false,
+      hidden: false,
     } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, inner, (inside) => {
       returned(template, { ...inside, reason: 'repeated' });

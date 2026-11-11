@@ -233,6 +233,7 @@ export const sourceOutlineSchema = z
             lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
             free: z.boolean(),
             contentFromProps: z.boolean(),
+            hidden: z.boolean(),
           })
           .strict()
           .refine(

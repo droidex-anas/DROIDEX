@@ -67,6 +67,7 @@ test('Delete names the picked element’s row, or the usage of the component tha
     lock: null,
     free: true,
     contentFromProps: false,
+    hidden: false,
   });
   // Where each element is written: Card's own, or the page's.
   const writtenIn = { el_main: null, el_root: 'Card', el_title: 'Card', el_icon: null };

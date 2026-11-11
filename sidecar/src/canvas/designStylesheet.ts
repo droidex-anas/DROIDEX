@@ -36,7 +36,15 @@ interface Segment {
   firstLine: number;
 }
 
-const PREAMBLE = '@tailwind base;\n@tailwind components;\n';
+/**
+ * Keeps an element written with `hidden` hidden. Tailwind 3's preflight hides
+ * `[hidden]`, but a display utility such as `flex` comes later and wins; this
+ * is the rule Tailwind 4's preflight ships.
+ */
+export const HIDDEN_RULE =
+  '[hidden]:where(:not([hidden="until-found"])) {\n  display: none !important;\n}\n';
+/** What every design sheet, and every export's build, starts with. */
+export const STYLESHEET_PREAMBLE = `@tailwind base;\n${HIDDEN_RULE}@tailwind components;\n`;
 // Utilities come last so a utility class wins over the kit's own rules.
 const UTILITIES = '@tailwind utilities;\n';
 
@@ -80,7 +88,7 @@ export async function buildDesignStylesheet(
   }
 
   const segments: Segment[] = [];
-  let sheet = PREAMBLE;
+  let sheet = STYLESHEET_PREAMBLE;
   for (const [file, css] of sources) {
     segments.push({ file, firstLine: countLines(sheet) });
     sheet += css.endsWith('\n') ? css : `${css}\n`;
