@@ -16,7 +16,7 @@ import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError, storageFailure } from './canvasError.js';
 import { moduleDeclarationsSchema, type ModuleDeclarations } from './compilerModules.js';
 import type { DesignSystem } from './designSystems.js';
-import type { KitFailure } from './kitCatalog.js';
+import { kitFailureSchema, type KitFailure } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemAdherence,
@@ -443,10 +443,10 @@ function readResponse(
   requestId: number,
   { status, modules, failures }: Record<string, unknown>,
 ): Extract<CompilerResponse, { status: 'modules' | 'catalogChecked' }> | null | undefined {
-  if (status === 'catalogChecked')
-    return Array.isArray(failures)
-      ? { requestId, status, failures: failures as KitFailure[] }
-      : null;
+  if (status === 'catalogChecked') {
+    const parsed = kitFailureSchema.array().safeParse(failures);
+    return parsed.success ? { requestId, status, failures: parsed.data } : null;
+  }
   if (status !== 'modules') return undefined;
   const parsed = moduleDeclarationsSchema.array().safeParse(modules);
   return parsed.success ? { requestId, status: 'modules', modules: parsed.data } : null;

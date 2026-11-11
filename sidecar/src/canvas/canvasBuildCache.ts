@@ -22,23 +22,9 @@ import {
   sourceElementSchema,
   sourceOutlineSchema,
 } from './schema.js';
-import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
+import { canvasDiagnosticSchema, MAX_BUILD_DIAGNOSTICS } from './canvasDiagnostics.js';
 
 const BUILD_OUTCOME_VERSION = 7;
-
-const diagnosticSchema = z
-  .object({
-    code: z.string().min(1).max(64),
-    message: z.string().min(1).max(MAX_DIAGNOSTIC_MESSAGE_LENGTH),
-    // A design path, or one under `@droidex/design-system/`.
-    file: z
-      .string()
-      .max(CANVAS_LIMITS.maxSourcePathLength + 64)
-      .optional(),
-    line: z.number().int().nonnegative().optional(),
-    column: z.number().int().nonnegative().optional(),
-  })
-  .strict();
 
 const readyResultSchema = z
   .object({
@@ -46,14 +32,14 @@ const readyResultSchema = z
     artifactId: canvasIdentifierSchema,
     elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
     outline: sourceOutlineSchema,
-    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+    diagnostics: z.array(canvasDiagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
   })
   .strict();
 
 const failedResultSchema = z
   .object({
     status: z.literal('failed'),
-    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+    diagnostics: z.array(canvasDiagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
   })
   .strict();
 

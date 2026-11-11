@@ -4,6 +4,7 @@
 // compiler checks that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
+import { canvasDiagnosticSchema } from './canvasDiagnostics.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { sourcePathSchema, type SourceFiles } from './schema.js';
 
@@ -45,10 +46,11 @@ const catalogSchema = z.array(entrySchema).max(CATALOG_LIMITS.maxEntries);
 export type CatalogEntry = z.infer<typeof entrySchema>;
 
 /** A kit check failure, told as the catalog entry it belongs to; `entry` is null for one outside every entry. */
-export interface KitFailure {
-  entry: string | null;
-  diagnostic: CanvasDiagnostic;
-}
+export const kitFailureSchema = z
+  .object({ entry: z.string().nullable(), diagnostic: canvasDiagnosticSchema })
+  .strict();
+
+export type KitFailure = z.infer<typeof kitFailureSchema>;
 
 /** The catalog a kit carries, none when it has no catalog file, or why the file is unusable. */
 export function readKitCatalog(
