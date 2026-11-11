@@ -37,7 +37,7 @@ const outline: SourceOutline = {
   truncated: false,
 };
 
-function rowsOf(build: CanvasFrame['build']): LayerEntry[] {
+function rowsOf(build: CanvasFrame['build'], shown = outline): LayerEntry[] {
   const frame: CanvasFrame = {
     designId: 'a',
     name: 'Design A',
@@ -51,7 +51,7 @@ function rowsOf(build: CanvasFrame['build']): LayerEntry[] {
     hidden: false,
     build,
   };
-  const layers = { outline, drawn: null, reading: false };
+  const layers = { outline: shown, drawn: null, reading: false };
   return layerEntries([frame], () => layers, new Set(['a']), new Set());
 }
 
@@ -123,6 +123,21 @@ test('a drop where the layer already is changes nothing, and one it cannot take 
     reason: 'Wait until this frame has built.',
   });
   assert.equal(stepPlace(rebuilding, at('h1'), 'down'), null);
+});
+
+test('a layer inside text stays in it, and an element with text of its own takes no other layer', () => {
+  const nodes = [
+    ...outline.nodes,
+    node('note', 'main', 'p', { text: 'Hello' }),
+    node('b', 'note', 'b'),
+  ];
+  const texts = rowsOf(rows[0].frame.build, { nodes, truncated: false });
+  const index = (nodeId: string) => texts.findIndex((row) => row.key === `a#${nodeId}`);
+  assert.equal(isMovable(texts[index('b')]), false);
+  assert.deepEqual(dropLine(texts, index('h1'), index('b'), 4).drop, {
+    state: 'refused',
+    reason: 'This layer sits inside text. Edit the text instead.',
+  });
 });
 
 test('the keyboard steps a layer past its free siblings, out of its parent, or into the layer above', () => {

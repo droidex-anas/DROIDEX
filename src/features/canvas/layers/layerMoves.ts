@@ -30,12 +30,16 @@ export type LayerStep = 'up' | 'down' | 'out' | 'in';
 
 const VOID_TAGS = new Set([
   'area',
+  'base',
   'br',
   'col',
   'embed',
   'hr',
   'img',
   'input',
+  'link',
+  'meta',
+  'param',
   'source',
   'track',
   'wbr',
@@ -43,7 +47,7 @@ const VOID_TAGS = new Set([
 
 /** A layer written once, as a whole JSX child of another element, so it can be cut and pasted. */
 export function isMovable(row: LayerEntry): row is ElementEntry {
-  if (row.kind !== 'element') return false;
+  if (row.kind !== 'element' || row.inText) return false;
   const { free, parentId, lock } = row.node;
   return free && parentId !== null && lock !== 'repeated' && lock !== 'shared';
 }
@@ -123,8 +127,7 @@ function dropAt(
   if (holder >= subject && holder < subtreeEnd(rows, subject))
     return refused('A layer can’t move into itself.');
   const parent = rows[holder];
-  if (parent.kind === 'frame') return refused('A layer can move only inside another layer.');
-  if (!canHold(parent)) return refused('This layer can’t hold other layers.');
+  if (!canHold(parent)) return refused(holdRefusal(parent));
   const below = rows.at(gap);
   const before = below?.level === level ? below : null;
   if (parent.key === row.parentKey && isInPlace(rows, row, before)) return { state: 'still' };
@@ -153,17 +156,27 @@ function isInPlace(rows: readonly LayerEntry[], row: ElementEntry, before: Layer
   return before === row || before === nextSibling;
 }
 
-/** An element written in the source, once, that can have children. */
+/** An element written in the source, once, that can have children and has no text of its own. */
 function canHold(row: LayerEntry): row is ElementEntry {
   if (row.kind !== 'element') return false;
-  const { kind, nodeId, lock, name } = row.node;
+  const { kind, nodeId, lock, name, text } = row.node;
   return (
     kind === 'element' &&
     !nodeId.startsWith('@') &&
     lock !== 'repeated' &&
     lock !== 'shared' &&
+    text === null &&
     !VOID_TAGS.has(name)
   );
+}
+
+/** Why a row that can't hold a dropped layer can't. */
+function holdRefusal(row: LayerEntry): string {
+  if (row.kind !== 'element') return 'A layer can move only inside another layer.';
+  const { kind, text } = row.node;
+  return kind === 'element' && text !== null
+    ? 'This layer sits inside text. Edit the text instead.'
+    : 'This layer can’t hold other layers.';
 }
 
 /** The rows show the frame's current revision, which a move must name. */

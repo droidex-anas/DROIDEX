@@ -34,6 +34,8 @@ export type LayerEntry =
       /** Where an element's row picks and outlines, or why it cannot; null for the other kinds. */
       drawn: Drawn | null;
       parentKey: string;
+      /** Its parent holds text of its own, so it sits inside that text. */
+      inText: boolean;
       position: number;
       count: number;
       open: boolean | null;
@@ -125,7 +127,7 @@ function elementEntries(frame: CanvasFrame, layers: FrameLayers, closed: Readonl
   // Depth first, without recursion, as an outline can nest as deep as its source does.
   const pending = siblingsOf(childrenOf, null, designId, 2);
   for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-    const { node, parentKey, level, position, count } = next;
+    const { node, parentKey, inText, level, position, count } = next;
     const key = nodeKey(designId, node.nodeId);
     const open = childrenOf.has(node.nodeId) ? !closed.has(key) : null;
     entries.push({
@@ -137,26 +139,35 @@ function elementEntries(frame: CanvasFrame, layers: FrameLayers, closed: Readonl
       node,
       drawn: drawnState(node, layers),
       parentKey,
+      inText,
       position,
       count,
       open,
     });
-    if (open) pending.push(...siblingsOf(childrenOf, node.nodeId, key, level + 1));
+    if (open) pending.push(...siblingsOf(childrenOf, node, key, level + 1));
   }
   if (layers.outline.truncated) entries.push(more);
   return entries;
 }
 
-/** The rows `parentId` holds, last first, as the walk takes them off the end. */
+/** The rows `parent` holds, or the outline's top for null, last first, as the walk takes them off the end. */
 function siblingsOf(
   childrenOf: ReadonlyMap<string | null, OutlineNode[]>,
-  parentId: string | null,
+  parent: OutlineNode | null,
   parentKey: string,
   level: number,
 ) {
-  const siblings = childrenOf.get(parentId) ?? [];
+  const siblings = childrenOf.get(parent?.nodeId ?? null) ?? [];
+  const inText = parent !== null && parent.text !== null;
   return siblings
-    .map((node, index) => ({ node, parentKey, level, position: index + 1, count: siblings.length }))
+    .map((node, index) => ({
+      node,
+      parentKey,
+      inText,
+      level,
+      position: index + 1,
+      count: siblings.length,
+    }))
     .reverse();
 }
 
