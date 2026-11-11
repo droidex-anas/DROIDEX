@@ -60,6 +60,8 @@ test('Delete and Backspace remove the layer and Ctrl+D duplicates it, without ot
   // ⌘D on the Mac; the test runs off it.
   assert.deepEqual(layerKey(press('d', { ctrlKey: true }), 1, 3), { kind: 'duplicate' });
   assert.equal(layerKey(press('Backspace', { metaKey: true }), 1, 3), null);
+  assert.equal(layerKey(press('Delete', { shiftKey: true }), 1, 3), null);
+  assert.equal(layerKey(press('Backspace', { shiftKey: true }), 1, 3), null);
   assert.equal(layerKey(press('d', { ctrlKey: true, shiftKey: true }), 1, 3), null);
 });
 

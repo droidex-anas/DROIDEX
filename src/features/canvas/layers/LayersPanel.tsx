@@ -165,8 +165,11 @@ export function LayersPanel({
   };
   const run = (key: LayerKey, row: LayerEntry) => {
     if (key.kind === 'move') moveTo(rows[key.index].key);
-    else if (key.kind === 'leave') onLeave(row.frame.designId);
-    else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
+    else if (key.kind === 'leave') {
+      stack.cancel();
+      move.cancel();
+      onLeave(row.frame.designId);
+    } else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
     else if (row.kind === 'frame') runOnFrame(key, row);
     else if (row.kind === 'element') runOnElement(key, row);
   };
@@ -188,14 +191,14 @@ export function LayersPanel({
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
-    // ⌘D splits the chat anywhere but on a layer.
+    // ⌘D splits the chat anywhere but on a layer that can be edited.
     if (key?.kind === 'duplicate') {
-      if (active.kind !== 'element') return;
+      if (active.kind !== 'element' || !onEditLayer) return;
       event.stopPropagation();
     }
-    if (key?.kind === 'leave') {
-      stack.cancel();
-      move.cancel();
+    if (event.repeat && isLayerEdit(key)) {
+      event.preventDefault();
+      return;
     }
     if (key) run(key, active);
     const step = key ? null : historyStep(event);
@@ -348,4 +351,9 @@ export function LayersPanel({
       )}
     </aside>
   );
+}
+
+/** A key that edits a layer: held down, it would send the edit again for the revision the last one replaced. */
+function isLayerEdit(key: LayerKey | null): boolean {
+  return key?.kind === 'remove' || key?.kind === 'duplicate';
 }
