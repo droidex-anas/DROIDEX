@@ -71,6 +71,12 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     eventsRebuiltPerDelta: 200,
     terminalDeliveriesPerFlood: 1_000,
     livePrimarySessionsAfterSoak: 3,
+    reactCommitsPerPanFrame: 2,
+    layoutReadsPerPanFrame: 40,
+    longTasksDuringGestures: 1,
+    panBusyP95Ms: 30,
+    panOverBudgetShare: 0.5,
+    panRafP95Ms: 50,
   });
   assert.equal(fail.hardPassed, false);
 
@@ -80,11 +86,51 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     eventsRebuiltPerDelta: 2,
     terminalDeliveriesPerFlood: 4,
     livePrimarySessionsAfterSoak: 0,
+    reactCommitsPerPanFrame: 1,
+    layoutReadsPerPanFrame: 6,
+    longTasksDuringGestures: 0,
+    panBusyP95Ms: 3,
+    panOverBudgetShare: 0,
+    panRafP95Ms: 17,
   });
   assert.equal(pass.hardPassed, true);
   for (const result of pass.results) {
     assert.ok(result.justification.length > 0);
   }
+});
+
+test('canvas gates hold pan commits and long tasks, and a run without Chromium leaves them unmeasured', () => {
+  const measured = {
+    mountedRowsAt10k: 26,
+    rowVisitsPerTailDeltaAt10k: 26,
+    eventsRebuiltPerDelta: 2,
+    terminalDeliveriesPerFlood: 4,
+    livePrimarySessionsAfterSoak: 0,
+    reactCommitsPerPanFrame: 1,
+    layoutReadsPerPanFrame: 6,
+    longTasksDuringGestures: 0,
+    panBusyP95Ms: 3,
+    panOverBudgetShare: 0,
+    panRafP95Ms: 17,
+  };
+  assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerPanFrame: 2 }).hardPassed, false);
+  assert.equal(evaluateProbeGates({ ...measured, longTasksDuringGestures: 1 }).hardPassed, false);
+  // Slow frames warn and never fail.
+  assert.equal(evaluateProbeGates({ ...measured, panBusyP95Ms: 30 }).hardPassed, true);
+
+  const withoutChromium = evaluateProbeGates({
+    ...measured,
+    reactCommitsPerPanFrame: null,
+    layoutReadsPerPanFrame: null,
+    longTasksDuringGestures: null,
+    panBusyP95Ms: null,
+    panOverBudgetShare: null,
+    panRafP95Ms: null,
+  });
+  assert.equal(withoutChromium.hardPassed, true);
+  const canvas = withoutChromium.results.filter((result) => result.id.startsWith('canvas.'));
+  assert.equal(canvas.length, 6);
+  assert.ok(canvas.every((result) => result.status === 'unmeasured'));
 });
 
 function emptySidecar(resources: { livePrimarySessions: number }) {
