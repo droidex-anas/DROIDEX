@@ -47,7 +47,7 @@ import {
   useNavHidden,
   type DocumentNavProps,
 } from './DocumentNav';
-import { itemCount, searchSections } from './documentSearch';
+import { CATALOG_SECTION_ID, itemCount, searchSections } from './documentSearch';
 import {
   changedTokenValues,
   documentNames,
@@ -212,7 +212,7 @@ function KitDocument({
   const isRemoved = (key: string) => marks.get(key) === 'removed';
   const shown =
     marks.size > 0 ? withRemoved(base.sections, working.sections, marks) : working.sections;
-  const visible = searchSections(shown, query);
+  const visible = searchSections(shown, view.catalog, isRemoved, query);
   const active = useActiveSection(
     scrollRef,
     visible.map((section) => section.id),
@@ -223,6 +223,10 @@ function KitDocument({
       dark: specimenProperties(working.sections, 'dark'),
     }),
     [working.sections],
+  );
+  const catalogSpecimen = useMemo(
+    () => specimenProperties((editing ?? base).sections, mode),
+    [editing, base, mode],
   );
   const names = documentNames(working.sections);
   const baseTokens = new Map(
@@ -242,6 +246,7 @@ function KitDocument({
     proposalId: reviewed?.proposalId ?? null,
     draftTokens,
     specimen: specimens[mode],
+    catalogSpecimen,
     ...slots,
   };
 
@@ -276,7 +281,7 @@ function KitDocument({
   };
 
   const sectionEditing = (section: DocumentSection): SectionEditing | null => {
-    if (!onChange) return null;
+    if (!onChange || section.id === CATALOG_SECTION_ID) return null;
     const at = working.sections.findIndex((live) => live.id === section.id);
     return {
       itemIds: at < 0 ? [] : working.sections[at].items.map((item) => item.id),
