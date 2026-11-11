@@ -33,13 +33,14 @@ export function usePaletteKeys({
     document.getElementById(optionId(index))?.scrollIntoView({ block: 'nearest' });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
     if (step !== undefined && count > 0) {
       event.preventDefault();
       moveTo((activeIndex + step + count) % count);
     } else if (event.key === 'Enter' && activeIndex >= 0) {
       event.preventDefault();
-      onAdd(activeIndex);
+      if (!event.repeat) onAdd(activeIndex);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();

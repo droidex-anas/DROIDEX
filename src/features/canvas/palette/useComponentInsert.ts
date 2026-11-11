@@ -161,10 +161,15 @@ function usePickAdded(
     elements.pick(designId, node);
   });
   useEffect(() => {
-    const frame = frames.find((each) => each.designId === added?.designId);
+    // A pick since the add drops it, and a tree read for it then picks nothing.
+    if (!added) {
+      asked.current = null;
+      return;
+    }
+    const frame = frames.find((each) => each.designId === added.designId);
     const outline = frame && builtOutline(frame);
-    const held = added && runs.get(added.designId);
-    if (!added || !outline || held?.revisionId !== added.revisionId) return;
+    const held = runs.get(added.designId);
+    if (!outline || held?.revisionId !== added.revisionId) return;
     if (asked.current?.added === added && asked.current.run === held.run) return;
     const asking = { added, run: held.run };
     asked.current = asking;

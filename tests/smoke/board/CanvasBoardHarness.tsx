@@ -902,6 +902,14 @@ function Harness() {
     },
     toasts: () => toasts.map((shown) => shown.message),
   };
+  // As the app's mount does: the keyboard goes back to the frame's label, else the board.
+  const focusBoard = (designId: string | undefined) => {
+    if (designId !== undefined && shownFrames.some((frame) => frame.designId === designId)) {
+      board.current?.focusLabel(designId);
+      return;
+    }
+    document.querySelector<HTMLElement>('[data-board-mode]')?.focus();
+  };
   return (
     <div style={{ padding: 24 }}>
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
@@ -923,6 +931,7 @@ function Harness() {
             tab={sideTab}
             onTab={setSideTab}
             onClose={() => {
+              focusBoard(interaction.selectedFrameIds.at(0));
               setLayersOpen(false);
             }}
           >
@@ -931,7 +940,11 @@ function Harness() {
                 kit={undefined}
                 place={palette.place}
                 onAdd={palette.add}
-                onLeave={() => undefined}
+                onLeave={() => {
+                  focusBoard(
+                    interaction.selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId,
+                  );
+                }}
               />
             ) : (
               <LayersPanel
