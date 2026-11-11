@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { SourceFiles } from './protocol.js';
 import { instrumentSource } from './sourceElements.js';
-import { moveLayer, type LayerMove } from './sourceStructureEdits.js';
+import { editLayer, moveLayer, type LayerMove } from './sourceStructureEdits.js';
 
 /** The id of the first outline row with this name, in reading order. */
 function rowId(files: SourceFiles, name: string): string {
@@ -325,6 +325,200 @@ test('a move that would change what the source means is refused with the reason'
       () => moveLayer(files, moveOf(files, subject, parent, null)),
       { code, message },
       main,
+    );
+  }
+});
+
+/** The ids of the outline rows with this name, in reading order. */
+function rowIds(files: SourceFiles, name: string): string[] {
+  const rows = instrumentSource(files, 'r1').outline.nodes.filter((node) => node.name === name);
+  return rows.map((node) => node.nodeId);
+}
+
+/** Removes the `nth` row named `subject`; returns the edited main.tsx and the label of the row landed on. */
+function removed(main: string, subject: string, nth = 0) {
+  const files = { 'main.tsx': main };
+  const result = editLayer(files, rowIds(files, subject)[nth], { kind: 'remove' });
+  assert.deepEqual(Object.keys(result.files), ['main.tsx']);
+  const after = instrumentSource({ ...files, ...result.files }, 'r2');
+  const row = after.outline.nodes.find((node) => node.nodeId === result.landed);
+  return { main: result.files['main.tsx'], landed: row && (row.text ?? row.name) };
+}
+
+/** Copies the `nth` row named `subject`, checking the row landed on is the copy, next of that name. */
+function duplicated(main: string, subject: string, nth = 0): string {
+  const files = { 'main.tsx': main };
+  const result = editLayer(files, rowIds(files, subject)[nth], { kind: 'duplicate' });
+  assert.deepEqual(Object.keys(result.files), ['main.tsx']);
+  assert.equal(result.landed, rowIds({ ...files, ...result.files }, subject)[nth + 1]);
+  return result.files['main.tsx'];
+}
+
+const LIST = `export default () => (
+  <ul>
+    <li>Fast</li>
+    <li>Cheap</li>
+  </ul>
+);
+`;
+
+test('a removed layer takes its line, and the keyboard goes to the row after it, else before, else its parent', () => {
+  assert.deepEqual(removed(LIST, 'li', 1), {
+    main: `export default () => (
+  <ul>
+    <li>Fast</li>
+  </ul>
+);
+`,
+    landed: 'Fast',
+  });
+  assert.deepEqual(removed(LIST, 'li', 0).landed, 'Cheap');
+  assert.deepEqual(
+    removed(
+      `export default () => (
+  <main>
+    <ul>
+      <li>Only</li>
+    </ul>
+  </main>
+);
+`,
+      'li',
+    ),
+    {
+      main: `export default () => (
+  <main>
+    <ul></ul>
+  </main>
+);
+`,
+      landed: 'ul',
+    },
+  );
+  assert.deepEqual(
+    removed('export default () => <main><h1>A</h1><p>Hi <b>B</b></p></main>;', 'b'),
+    {
+      main: 'export default () => <main><h1>A</h1><p>Hi </p></main>;',
+      landed: 'Hi',
+    },
+  );
+});
+
+test('removing an instance removes its usage and keeps the component it renders', () => {
+  const main = `function Badge({ children }) { return <span>{children}</span>; }
+export default () => (
+  <main>
+    <h1>Title</h1>
+    <Badge>New</Badge>
+  </main>
+);
+`;
+  assert.deepEqual(removed(main, 'Badge'), {
+    main: `function Badge({ children }) { return <span>{children}</span>; }
+export default () => (
+  <main>
+    <h1>Title</h1>
+  </main>
+);
+`,
+    landed: 'Title',
+  });
+});
+
+test('a copy goes right after its layer, on a line of its own where the layer has one', () => {
+  assert.equal(
+    duplicated(LIST, 'li'),
+    `export default () => (
+  <ul>
+    <li>Fast</li>
+    <li>Fast</li>
+    <li>Cheap</li>
+  </ul>
+);
+`,
+  );
+  assert.equal(
+    duplicated('export default () => <main><h1>A</h1><p>B</p></main>;', 'h1'),
+    'export default () => <main><h1>A</h1><h1>A</h1><p>B</p></main>;',
+  );
+  const crlf = [
+    'export default ({ open }) => (',
+    '  <main>',
+    '    {open && (',
+    '      <aside>Open</aside>',
+    '    )}',
+    '  </main>',
+    ');',
+  ];
+  assert.equal(
+    duplicated(crlf.join('\r\n'), 'Condition'),
+    [...crlf.slice(0, 5), ...crlf.slice(2, 5), ...crlf.slice(5)].join('\r\n'),
+  );
+});
+
+test('a removal or copy that is not of one JSX child written once is refused with the reason', () => {
+  const files = {
+    'main.tsx': `function Badge({ icon }) { return <span>{icon}</span>; }
+function Pair() { return <div><s>Twice</s></div>; }
+export default ({ items }) => (
+  <main>
+    <h1 id="title">Title</h1>
+    <section><h2 id="more">More</h2></section>
+    <Pair />
+    <Pair />
+    <Badge icon={<em>Tip</em>} />
+    <ol>{items.map((item) => <li key={item}><u>{item}</u></li>)}</ol>
+  </main>
+);
+`,
+  };
+  const cases: [string, 'remove' | 'duplicate', string, string][] = [
+    [
+      'unknown',
+      'remove',
+      'stale_reference',
+      'This selection belongs to different source. Reselect the element in the current revision.',
+    ],
+    [
+      'main',
+      'remove',
+      'invalid_edit',
+      "A frame's top layer can't be deleted. Delete the frame instead.",
+    ],
+    [
+      'main',
+      'duplicate',
+      'invalid_edit',
+      "A frame's top layer can't be duplicated. Duplicate the frame instead.",
+    ],
+    [
+      'em',
+      'remove',
+      'ambiguous_element',
+      'This layer is written inside code (a list, a condition or a prop). Ask the agent to delete it.',
+    ],
+    [
+      'em',
+      'duplicate',
+      'ambiguous_element',
+      'This layer is written inside code (a list, a condition or a prop). Ask the agent to duplicate it.',
+    ],
+    [
+      'u',
+      'remove',
+      'ambiguous_element',
+      'Written once and repeated for each item. Ask the agent to change it.',
+    ],
+    ['s', 'duplicate', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
+    ['h1', 'duplicate', 'invalid_edit', 'This layer has an id, and a copy would repeat it.'],
+    ['section', 'duplicate', 'invalid_edit', 'This layer has an id, and a copy would repeat it.'],
+  ];
+  for (const [subject, kind, code, message] of cases) {
+    const nodeId = subject === 'unknown' ? '0000000000000000' : rowId(files, subject);
+    assert.throws(
+      () => editLayer(files, nodeId, { kind }),
+      { code, message },
+      `${kind} ${subject}`,
     );
   }
 });

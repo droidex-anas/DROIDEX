@@ -6,10 +6,24 @@ import ts from 'typescript';
 /** The layer's text, with its whole line when it stands alone on one, so no blank line is left. */
 export function cutRange(text: string, node: ts.Node): { start: number; end: number } {
   const start = node.getStart();
+  return standsAlone(text, node)
+    ? { start: lineStart(text, start), end: text.indexOf('\n', node.end) + 1 }
+    : { start, end: node.end };
+}
+
+/** Whether the node has its lines to itself, with only indentation before it and nothing after. */
+export function standsAlone(text: string, node: ts.Node): boolean {
   const lineEnd = text.indexOf('\n', node.end);
-  const alone =
-    startsLine(text, start) && lineEnd !== -1 && /^[ \t]*\r?$/.test(text.slice(node.end, lineEnd));
-  return alone ? { start: lineStart(text, start), end: lineEnd + 1 } : { start, end: node.end };
+  return (
+    startsLine(text, node.getStart()) &&
+    lineEnd !== -1 &&
+    /^[ \t]*\r?$/.test(text.slice(node.end, lineEnd))
+  );
+}
+
+/** The file's line ending: CRLF where it uses one, else LF. */
+export function lineEnding(text: string): string {
+  return text.includes('\r\n') ? '\r\n' : '\n';
 }
 
 /**

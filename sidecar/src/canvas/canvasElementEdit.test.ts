@@ -154,6 +154,36 @@ test('a layer moves in one revision and answers the row it landed on; its retry 
   assert.deepEqual(okReply(canvas, 'req-move-retry'), { ...moved, landed: null });
 });
 
+test('a layer is duplicated through the same edit, answering the copy', async (t) => {
+  const main = 'export default function Hey(){return <main><h1>Hey</h1><p>Hi</p></main>}';
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const nodeId = build.outline.nodes.find((node) => node.name === 'p')?.nodeId;
+  const { designId, revisionId } = element;
+  await canvas.handle({
+    type: 'canvas.editElement',
+    requestId: 'req-copy',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-copy',
+      edit: { layer: { designId, revisionId, nodeId }, change: { kind: 'duplicate' } },
+    },
+  });
+  const copied = okReply(canvas, 'req-copy');
+  assert.ok(copied.kind === 'edited');
+  const files = await canvas.workspace.readFiles(canvasId, copied.receipt);
+  assert.equal(
+    files['main.tsx'],
+    'export default function Hey(){return <main><h1>Hey</h1><p>Hi</p><p>Hi</p></main>}',
+  );
+  const copies = instrumentSource({ ...files }, copied.receipt.revisionId).outline.nodes.filter(
+    (node) => node.name === 'p',
+  );
+  assert.equal(copied.landed, copies[1].nodeId);
+});
+
 test('a style edit sets every style it names in one revision, and its retry answers from the ledger', async (t) => {
   const { canvas, canvasId, element } = await editableElement(t);
   const command = (requestId: string, mutationId: string, padding: string) => ({

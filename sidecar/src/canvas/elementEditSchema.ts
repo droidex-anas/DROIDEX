@@ -53,13 +53,17 @@ export const editElementInputSchema = z
       z
         .object({
           layer: revisionRefSchema.extend({ nodeId: outlineNodeIdSchema }),
-          change: z
-            .object({
-              kind: z.literal('move'),
-              parentId: outlineNodeIdSchema,
-              beforeId: outlineNodeIdSchema.nullable(),
-            })
-            .strict(),
+          change: z.discriminatedUnion('kind', [
+            z
+              .object({
+                kind: z.literal('move'),
+                parentId: outlineNodeIdSchema,
+                beforeId: outlineNodeIdSchema.nullable(),
+              })
+              .strict(),
+            z.object({ kind: z.literal('remove') }).strict(),
+            z.object({ kind: z.literal('duplicate') }).strict(),
+          ]),
         })
         .strict(),
     ]),

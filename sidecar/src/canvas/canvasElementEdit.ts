@@ -8,7 +8,7 @@ import { CompileCancelledError, CompilerWorker, type EditedSource } from './comp
 import type { CanvasScope, EditElementInput, WriteReceipt } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
-/** The edit's revision, and the nodeId a moved layer has in it; null for other edits and replays. */
+/** The edit's revision, and the nodeId of the row a layer edit lands on in it; null for other edits and replays. */
 export async function editCanvasElement(
   workspace: CanvasWorkspace,
   builds: CanvasBuilds,

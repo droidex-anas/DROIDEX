@@ -680,7 +680,7 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  /** A direct edit's revision, and the nodeId a moved layer has in it; null for any other edit, or a replay. */
+  /** A direct edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
   | { kind: 'edited'; receipt: WriteReceipt; landed: string | null }
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }

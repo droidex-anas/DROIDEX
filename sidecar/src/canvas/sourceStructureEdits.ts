@@ -1,13 +1,31 @@
-// Moves one layer of the outline to another place in the source: the JSX it is
-// written as is cut from its parent and pasted among another element's
-// children, keeping the file's own indentation and line endings.
+// Edits one layer of the outline where its source writes it: the JSX it is
+// written as moves among another element's children, is removed, or is copied
+// right after itself, keeping the file's own indentation and line endings.
 
 import ts from 'typescript';
 import type { ComponentUses } from './componentUses.js';
-import type { OutlineNode, SourceFiles } from './protocol.js';
+import type { ElementEdit, OutlineNode, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
-import { cutRange, indentUnit, lineIndent, reindent, splice, startsLine } from './sourceLines.js';
+import {
+  cutRange,
+  indentUnit,
+  lineEnding,
+  lineIndent,
+  reindent,
+  splice,
+  standsAlone,
+  startsLine,
+} from './sourceLines.js';
+
+type LayerChange = Extract<ElementEdit, { layer: unknown }>['change'];
+
+/** The one changed file, complete, and a row of the edited source named by its nodeId. */
+interface EditedLayers {
+  files: SourceFiles;
+  /** Null where the row cannot be found. */
+  landed: string | null;
+}
 
 export interface LayerMove {
   /** The outline row being moved. */
@@ -59,24 +77,37 @@ const VOID_TAGS = new Set([
   'wbr',
 ]);
 
-/** The one changed file, complete, and the moved row's nodeId in the edited source (null if it cannot be found). */
-export function moveLayer(
-  files: SourceFiles,
-  move: LayerMove,
-): { files: SourceFiles; landed: string | null } {
-  const { uses, outline, written } = sourceLayers(files);
-  const rows = new Map(outline.nodes.map((row) => [row.nodeId, row]));
-  const layer = (nodeId: string): Layer => {
-    const row = rows.get(nodeId);
-    const at = written.get(nodeId);
-    if (!row || !at) throw staleReference();
-    return { row, at };
-  };
+/** What a refusal of each edit says of a frame's root, and asks the agent to do instead. */
+const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = {
+  move: { root: "A frame's top layer can't move.", action: 'move' },
+  remove: {
+    root: "A frame's top layer can't be deleted. Delete the frame instead.",
+    action: 'delete',
+  },
+  duplicate: {
+    root: "A frame's top layer can't be duplicated. Duplicate the frame instead.",
+    action: 'duplicate',
+  },
+};
+
+/**
+ * The layer `nodeId` changed as `change` says. The row landed on is, in the
+ * edited source, the moved layer, its copy, or the row beside a removed layer
+ * that takes the keyboard in its place.
+ */
+export function editLayer(files: SourceFiles, nodeId: string, change: LayerChange): EditedLayers {
+  if (change.kind === 'move')
+    return moveLayer(files, { nodeId, parentId: change.parentId, beforeId: change.beforeId });
+  return change.kind === 'remove' ? removeLayer(files, nodeId) : duplicateLayer(files, nodeId);
+}
+
+export function moveLayer(files: SourceFiles, move: LayerMove): EditedLayers {
+  const { uses, layer } = layersIn(files);
   const subject = layer(move.nodeId);
   const target = layer(move.parentId);
   const sibling = move.beforeId === null ? null : layer(move.beforeId);
 
-  const anchor = movableAnchor(subject, uses);
+  const anchor = writtenOnceAnchor(subject, uses, 'move');
   const parent = holder(target, uses);
   checkPlace(anchor, parent);
   const before = sibling && siblingAnchor(sibling, parent, anchor);
@@ -86,7 +117,7 @@ export function moveLayer(
 
   const source = anchor.node.getSourceFile();
   const text = source.text;
-  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const eol = lineEnding(text);
   const movedIndent = lineIndent(text, anchor.node.getStart());
   const cut = cutRange(text, anchor.node);
   const paste = before
@@ -109,13 +140,64 @@ export function moveLayer(
   };
 }
 
+/** Removes the layer; a parent left with no children keeps no blank line between its tags. */
+function removeLayer(files: SourceFiles, nodeId: string): EditedLayers {
+  const { uses, outline, written, layer } = layersIn(files);
+  const subject = layer(nodeId);
+  const anchor = writtenOnceAnchor(subject, uses, 'remove');
+  const source = anchor.node.getSourceFile();
+  const cut = isOnlyChild(anchor) ? between(anchor.parent) : cutRange(source.text, anchor.node);
+  const changed = { [source.fileName]: splice(source.text, [{ ...cut, replacement: '' }]) };
+  const next = keyboardRow(outline.nodes, subject.row);
+  const at = next && written.get(next.nodeId);
+  if (!at) return { files: changed, landed: null };
+  const file = at.getSourceFile().fileName;
+  const start = at.getStart();
+  const moved =
+    file === source.fileName && start >= cut.end ? start - (cut.end - cut.start) : start;
+  return { files: changed, landed: rowStartingAt({ ...files, ...changed }, file, moved) };
+}
+
+/** Puts a copy of the layer right after it: on a line of its own when the layer has one. */
+function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
+  const { uses, layer } = layersIn(files);
+  const { node } = writtenOnceAnchor(layer(nodeId), uses, 'duplicate');
+  if (writesId(node)) throw invalid('This layer has an id, and a copy would repeat it.');
+  const source = node.getSourceFile();
+  const { text } = source;
+  const start = node.getStart();
+  const before = standsAlone(text, node) ? lineEnding(text) + lineIndent(text, start) : '';
+  const copy = before + text.slice(start, node.end);
+  const changed = {
+    [source.fileName]: splice(text, [{ start: node.end, end: node.end, replacement: copy }]),
+  };
+  return {
+    files: changed,
+    landed: rowStartingAt({ ...files, ...changed }, source.fileName, node.end + before.length),
+  };
+}
+
+/** The outline's rows by id, refusing an id the source no longer writes. */
+function layersIn(files: SourceFiles) {
+  const { uses, outline, written } = sourceLayers(files);
+  const rows = new Map(outline.nodes.map((row) => [row.nodeId, row]));
+  const layer = (nodeId: string): Layer => {
+    const row = rows.get(nodeId);
+    const at = written.get(nodeId);
+    if (!row || !at) throw staleReference();
+    return { row, at };
+  };
+  return { uses, outline, written, layer };
+}
+
 /** The subject's anchor, refused when it is not written as one JSX child that renders once. */
-function movableAnchor(subject: Layer, uses: ComponentUses): Anchor {
+function writtenOnceAnchor(subject: Layer, uses: ComponentUses, edit: LayerChange['kind']): Anchor {
   const anchor = anchorOf(subject.at);
-  if (!anchor && subject.row.parentId === null) throw invalid("A frame's top layer can't move.");
+  const { root, action } = REFUSALS[edit];
+  if (!anchor && subject.row.parentId === null) throw invalid(root);
   if (!anchor)
     throw ambiguous(
-      'This layer is written inside code (a list, a condition or a prop). Ask the agent to move it.',
+      `This layer is written inside code (a list, a condition or a prop). Ask the agent to ${action} it.`,
     );
   if (uses.rendersOnce(subject.at)) return anchor;
   if (subject.row.lock === 'repeated')
@@ -271,6 +353,38 @@ function pasteAtEnd(
     return { start: last.end, end: last.end, before: eol + indent, after: '', indent };
   }
   return { start: closing, end: closing, before: eol + inner, after: eol + outer, indent: inner };
+}
+
+/** Whether the layer is its parent's one child, beside only the line breaks JSX drops. */
+function isOnlyChild({ node, parent }: Anchor): boolean {
+  return parent.children.every(
+    (child) => child === node || (ts.isJsxText(child) && child.containsOnlyTriviaWhiteSpaces),
+  );
+}
+
+/** Everything between a parent's opening and closing tags. */
+function between(parent: JsxParent): { start: number; end: number } {
+  return ts.isJsxElement(parent)
+    ? { start: parent.openingElement.end, end: parent.closingElement.getStart() }
+    : { start: parent.openingFragment.end, end: parent.closingFragment.getStart() };
+}
+
+/** The row the keyboard goes to once `row` is gone: the next of its siblings, else the one before, else its parent. */
+function keyboardRow(rows: readonly OutlineNode[], row: OutlineNode): OutlineNode | null {
+  const siblings = rows.filter((each) => each.parentId === row.parentId);
+  const at = siblings.indexOf(row);
+  return (
+    siblings.find((_, index) => index > at) ??
+    siblings.findLast((_, index) => index < at) ??
+    rows.find((each) => each.nodeId === row.parentId) ??
+    null
+  );
+}
+
+/** Whether the layer, or anything inside it, writes an `id`, which a document holds once. */
+function writesId(node: ts.Node): boolean {
+  if (ts.isJsxAttribute(node) && node.name.getText() === 'id') return true;
+  return node.forEachChild(writesId) ?? false;
 }
 
 /** The row of the edited source written at `position`, or whose anchor starts there. */

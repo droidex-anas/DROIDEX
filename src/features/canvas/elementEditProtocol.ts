@@ -23,12 +23,18 @@ export interface EditElementInput {
     | {
         /** A row of the revision's outline. */
         layer: { designId: string; revisionId: string; nodeId: string };
-        /** Into the element row `parentId`, before its child row `beforeId`, or last for null. */
-        change: { kind: 'move'; parentId: string; beforeId: string | null };
+        change: LayerChange;
       };
 }
 
-/** An edit's revision, and the nodeId a moved layer has in it; null for any other edit, or a replay. */
+export type LayerChange =
+  /** Into the element row `parentId`, before its child row `beforeId`, or last for null. */
+  | { kind: 'move'; parentId: string; beforeId: string | null }
+  | { kind: 'remove' }
+  /** A copy right after the layer. */
+  | { kind: 'duplicate' };
+
+/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
 export interface ElementEdited {
   receipt: WriteReceipt;
   landed: string | null;
