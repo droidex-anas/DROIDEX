@@ -50,38 +50,59 @@ test('a probe of another revision, or of an element the build does not know, pic
   assert.equal(pickedElement(frame, 'r2', { ...finding, elementId: 'el_9' }), null);
 });
 
-test('Delete names the picked element’s row, or the usage of the component whose root it is', () => {
+test('Delete names the picked element’s row, or the usage of the component that draws only it', () => {
   const row = (
     nodeId: string,
     parentId: string | null,
     kind: OutlineNode['kind'],
-    elementId: string | null,
-  ) => ({
+    name: string,
+    elementId: string | null = null,
+  ): OutlineNode => ({
     nodeId,
     parentId,
     kind,
-    name: nodeId,
+    name,
     text: null,
     elementId,
     lock: null,
     free: true,
+    contentFromProps: false,
   });
-  const outlined = {
-    designId: 'design',
+  // Where each element is written: Card's own, or the page's.
+  const writtenIn = { el_main: null, el_root: 'Card', el_title: 'Card', el_icon: null };
+  const outlined = (...nodes: OutlineNode[]) => ({
     build: {
       ...build,
-      outline: {
-        nodes: [
-          row('main', null, 'element', 'el_main'),
-          row('card', 'main', 'instance', null),
-          row('root', 'card', 'element', 'el_root'),
-          row('title', 'root', 'element', 'el_title'),
-        ],
-        truncated: false,
-      },
+      elements: Object.entries(writtenIn).map(([elementId, component]) => ({
+        ...build.elements[0],
+        elementId,
+        component,
+      })),
+      outline: { nodes, truncated: false },
     },
-  };
-  assert.equal(pickedLayer(outlined, 'r2', 'el_title')?.nodeId, 'title');
-  assert.equal(pickedLayer(outlined, 'r2', 'el_root')?.nodeId, 'card');
-  assert.equal(pickedLayer(outlined, 'r1', 'el_title'), undefined);
+  });
+  const page = row('main', null, 'element', 'main', 'el_main');
+  const card = outlined(
+    page,
+    row('card', 'main', 'instance', 'Card'),
+    row('icon', 'card', 'element', 'em', 'el_icon'),
+    row('root', 'card', 'element', 'section', 'el_root'),
+    row('title', 'root', 'element', 'h1', 'el_title'),
+  );
+  assert.equal(pickedLayer(card, 'r2', 'el_title')?.nodeId, 'title');
+  assert.equal(pickedLayer(card, 'r2', 'el_root')?.nodeId, 'card');
+  // JSX passed in Card's icon prop is the page's, so Delete names it, not the Card.
+  assert.equal(pickedLayer(card, 'r2', 'el_icon')?.nodeId, 'icon');
+  assert.equal(pickedLayer(card, 'r1', 'el_title'), undefined);
+
+  // Each of two Cards draws the section: Delete names a section row, which is
+  // refused, never the first Card in place of the one picked.
+  const twice = outlined(
+    page,
+    row('first', 'main', 'instance', 'Card'),
+    { ...row('root1', 'first', 'element', 'section', 'el_root'), lock: 'shared' },
+    row('second', 'main', 'instance', 'Card'),
+    { ...row('root2', 'second', 'element', 'section', 'el_root'), lock: 'shared' },
+  );
+  assert.equal(pickedLayer(twice, 'r2', 'el_root')?.kind, 'element');
 });

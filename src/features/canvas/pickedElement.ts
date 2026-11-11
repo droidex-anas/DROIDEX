@@ -57,10 +57,10 @@ export function elementSite(
 
 /**
  * The layer Delete removes for an element picked in the design's `revisionId`,
- * once that revision has built: the element's own outline row, or for the root
- * a component draws, the row of that component's usage. An element a component
- * draws in several places has a row for each; any of them names it, since none
- * can be removed alone.
+ * once that revision has built: the element's own outline row, or where it is
+ * all a component draws, the row of that component's usage. An element drawn
+ * in several places has a row for each, all one written element that renders
+ * more than once, so whichever is named is refused as its lock says.
  */
 export function pickedLayer(
   frame: Pick<CanvasFrame, 'build'>,
@@ -70,7 +70,19 @@ export function pickedLayer(
   const { build } = frame;
   if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
   const { nodes } = build.outline;
-  const row = nodes.find((node) => node.elementId === elementId);
-  const parent = row && nodes.find((node) => node.nodeId === row.parentId);
-  return parent?.kind === 'instance' ? parent : row;
+  const rows = nodes.filter((node) => node.elementId === elementId);
+  const [row] = rows;
+  if (rows.length !== 1) return row;
+  const usage = nodes.find((node) => node.nodeId === row.parentId);
+  if (usage?.kind !== 'instance') return row;
+  // The usage also lists the JSX passed in its props, written outside its component.
+  const writtenIn = (node: OutlineNode) =>
+    build.elements.find((element) => element.elementId === node.elementId)?.component;
+  const drawsOnlyRow = nodes.every(
+    (node) =>
+      node.parentId !== usage.nodeId ||
+      node === row ||
+      (node.kind === 'element' && writtenIn(node) !== usage.name),
+  );
+  return writtenIn(row) === usage.name && drawsOnlyRow ? usage : row;
 }
