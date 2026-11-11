@@ -16,7 +16,8 @@ function outlineOf(files: SourceFiles): string[] {
     const name = node.kind === 'element' ? `<${node.name}>` : node.name;
     const text = node.text === null ? '' : ` "${node.text}"`;
     const lock = node.lock === null ? '' : ` [${node.lock}]`;
-    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}`;
+    const shown = node.visibility === 'shown' ? '' : ` ${node.visibility}`;
+    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}${shown}`;
   });
 }
 
@@ -262,6 +263,20 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
     [
       {
         'main.tsx':
+          'export default ({ open }) => <main><aside className="flex hidden">A</aside><p hidden={open}>B</p><b className="hidden md:block">C</b><i className={open ? "hidden" : ""}>D</i><Card className="hidden" /></main>;',
+      },
+      [
+        '<main> fixed',
+        '  <aside> "A" hidden',
+        '  <p> "B" attribute',
+        '  <b> "C" display',
+        '  <i> "D" [computed] computed',
+        '  Card',
+      ],
+    ],
+    [
+      {
+        'main.tsx':
           'export default ({ step }) => { if (step) { var body = <h1>One</h1>; } else { body = <h2>Two</h2>; } return <main>{body}</main>; }',
       },
       [
@@ -294,6 +309,7 @@ test('both validators take an outline only as a tree of bounded one-line rows', 
     lock: null,
     free: false,
     contentFromProps: false,
+    visibility: 'shown',
   };
   const child = { ...root, nodeId: 'fedcba9876543210', parentId: root.nodeId };
   const accepts = (nodes: unknown[]) => {
@@ -316,6 +332,7 @@ test('both validators take an outline only as a tree of bounded one-line rows', 
     [child, root],
     [{ ...root, parentId: root.nodeId }],
     [{ ...root, elementId: 'el_1' }],
+    [{ ...root, visibility: 'hidden' }],
     [{ ...root, kind: 'element' }],
     [{ ...root, text: 'Not an element' }],
     [{ ...root, name: '😀'.repeat(65) }],

@@ -5,17 +5,11 @@
 // presentation attribute the edit sets goes too, as any class or style beats it.
 
 import ts from 'typescript';
+import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
 import type { KitTheme } from './kitTailwindTheme.js';
 import type { SourceReplacement } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
-import {
-  ambiguous,
-  attribute,
-  attributeValue,
-  classLiterals,
-  isLiteral,
-  propertyName,
-} from './sourceElements.js';
+import { ambiguous, classLiterals } from './sourceElements.js';
 import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
 

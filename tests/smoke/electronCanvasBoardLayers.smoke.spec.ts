@@ -1,7 +1,7 @@
 // The layers panel against the board harness: a row per frame, front to back,
 // with only the visible ones mounted, picking and lighting frames from
 // it, the keyboard's way to a frame and back, renaming, the rail's toggle,
-// and moving, deleting and duplicating a layer in its source.
+// and moving, deleting, duplicating and hiding a layer in its source.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, serveBoard, stubGuests } from './board/boardPage';
@@ -566,7 +566,7 @@ test('A layer’s handle and ⌥ with the arrows move it in its source, and a dr
     );
   const line = row('Start free');
   await line.hover();
-  const grip = await line.locator('.canvas-layer-tool').boundingBox();
+  const grip = await line.locator('.cursor-grab').boundingBox();
   const title = await row('Pricing').boundingBox();
   const image = await row('img').boundingBox();
   if (!grip || !title || !image) throw new Error('Missing row geometry');
@@ -711,4 +711,66 @@ test('Delete, ⌘D and a layer’s menu remove or copy it in its source, and the
     await expect(tree).toBeFocused();
   }
   expect(await edits()).toHaveLength(3);
+});
+
+test('A layer’s eye and ⇧⌘H hide or show its element in its source, and a hidden one’s row is muted', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&layers=1&moves=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  await tree
+    .getByRole('treeitem', { name: 'Design A, Ready' })
+    .getByRole('button', { name: 'Expand' })
+    .click();
+  const row = (name: string) => tree.getByRole('treeitem', { name: new RegExp(`^${name},`) });
+  const keyboardOn = async (name: string) => {
+    await expect(tree).toHaveAttribute(
+      'aria-activedescendant',
+      (await row(name).getAttribute('id')) ?? '',
+    );
+  };
+  const edits = () => page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit));
+  const layer = (nodeId: string) => ({ designId: 'a', revisionId: 'rev_01', nodeId });
+
+  // The section is written hidden: its row says so, is muted, and keeps its eye pressed in view.
+  const section = tree.getByRole('treeitem', {
+    name: 'section, Container, hidden, not read',
+    exact: true,
+  });
+  const sectionEye = section.getByRole('button', { name: 'Hide' });
+  await expect(sectionEye).toHaveAttribute('aria-pressed', 'true');
+  await expect(sectionEye).toHaveCSS('opacity', '1');
+  await expect(section.locator('.text-muted', { hasText: /^section$/ })).toBeVisible();
+
+  // The line's eye shows under the pointer, hides the line, and leaves the keyboard on its row.
+  const line = row('Start free');
+  const lineEye = line.getByRole('button', { name: 'Hide' });
+  await expect(lineEye).toHaveCSS('opacity', '0');
+  await line.hover();
+  await expect(lineEye).toHaveCSS('opacity', '1');
+  await lineEye.hover();
+  await expect(page.getByRole('tooltip')).toHaveText(/^Hide \(.+H\)$/);
+  await lineEye.click();
+  expect(await edits()).toEqual([{ layer: layer('line'), change: { kind: 'hide', hidden: true } }]);
+  await expect(tree).toBeFocused();
+  await keyboardOn('Start free');
+
+  // ⇧⌘H on the section's row shows it; main, the frame's top layer, has no eye and takes none.
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ControlOrMeta+Shift+H');
+  expect((await edits())[1]).toEqual({
+    layer: layer('section'),
+    change: { kind: 'hide', hidden: false },
+  });
+  await expect(row('main').getByRole('button', { name: 'Hide' })).toHaveCount(0);
+  // The image's own classes decide its display, so its eye is locked and says why.
+  await expect(row('img').getByRole('button', { name: 'Hide' })).toHaveCount(0);
+  await expect(row('img')).toHaveAccessibleDescription(/^Its classes or style set how it displays/);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('ArrowUp');
+  await keyboardOn('main');
+  await page.keyboard.press('ControlOrMeta+Shift+H');
+  expect(await edits()).toHaveLength(2);
 });

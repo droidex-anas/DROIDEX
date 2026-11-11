@@ -315,6 +315,7 @@ const OUTLINE: SourceOutline = {
           lock: null,
           free: false,
           contentFromProps: false,
+          visibility: 'shown',
         },
         {
           nodeId: '0000000000000002',
@@ -326,6 +327,7 @@ const OUTLINE: SourceOutline = {
           lock: 'shared',
           free: false,
           contentFromProps: false,
+          visibility: 'shown',
         },
         {
           nodeId: '0000000000000003',
@@ -337,13 +339,15 @@ const OUTLINE: SourceOutline = {
           lock: null,
           free: true,
           contentFromProps: false,
+          visibility: 'shown',
         },
       ]
     : [],
   truncated: false,
 };
 
-// `?moves=1` writes a page whose layers move: main holding a title, a line, a section and an image.
+// `?moves=1` writes a page whose layers move: main holding a title, a line, a hidden section and
+// an image whose own classes decide its display.
 const movable = (nodeId: string, parentId: string | null, name: string, text: string | null) => ({
   nodeId,
   parentId,
@@ -354,14 +358,15 @@ const movable = (nodeId: string, parentId: string | null, name: string, text: st
   lock: null,
   free: parentId !== null,
   contentFromProps: false,
+  visibility: 'shown' as const,
 });
 const MOVES: SourceOutline = {
   nodes: [
     movable('main', null, 'main', null),
     movable('title', 'main', 'h1', 'Pricing'),
     movable('line', 'main', 'p', 'Start free'),
-    movable('section', 'main', 'section', null),
-    movable('image', 'main', 'img', null),
+    { ...movable('section', 'main', 'section', null), visibility: 'hidden' as const },
+    { ...movable('image', 'main', 'img', null), visibility: 'display' as const },
   ],
   truncated: false,
 };

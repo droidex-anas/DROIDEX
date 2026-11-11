@@ -66,6 +66,7 @@ export const editElementInputSchema = z
             // Names an entry of the frame's pinned kit catalog, never JSX, so
             // only what passed the kit check is written.
             z.object({ kind: z.literal('insert'), entry: catalogNameSchema }).strict(),
+            z.object({ kind: z.literal('hide'), hidden: z.boolean() }).strict(),
           ]),
         })
         .strict(),

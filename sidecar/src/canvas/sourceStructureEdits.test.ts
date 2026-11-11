@@ -604,3 +604,175 @@ export default () => {
     'export default () => <><main>Root</main><main>Root</main></>;',
   );
 });
+
+/** Hides or shows the row named `subject`, checking it lands on that row; returns the edited main.tsx. */
+function hidden(main: string, subject: string, hide = true): string {
+  const files = { 'main.tsx': main };
+  const nodeId = rowId(files, subject);
+  const result = editLayer(files, nodeId, { kind: 'hide', hidden: hide });
+  const after = instrumentSource({ ...files, ...result.files }, 'r2').outline.nodes;
+  assert.equal(result.landed, nodeId);
+  assert.equal(
+    after.find((node) => node.nodeId === result.landed)?.visibility,
+    hide ? 'hidden' : 'shown',
+  );
+  return result.files['main.tsx'];
+}
+
+/** Hides the row and shows it again, checking the hidden source and that showing restores every byte. */
+function roundTrip(main: string, subject: string, hiddenMain: string) {
+  assert.equal(hidden(main, subject), hiddenMain);
+  assert.equal(hidden(hiddenMain, subject, false), main);
+}
+
+test('hiding adds the hidden class, or a className of its own, and showing takes back exactly that', () => {
+  const page = (body: string) => `export default () => <main>${body}<hr /></main>;`;
+  roundTrip(page('<aside>Side</aside>'), 'aside', page('<aside className="hidden">Side</aside>'));
+  roundTrip(page(''), 'hr', page('').replace('<hr />', '<hr className="hidden" />'));
+  roundTrip(
+    page('<aside className="flex  gap-2 ">Side</aside>'),
+    'aside',
+    page('<aside className="flex  gap-2 hidden ">Side</aside>'),
+  );
+  roundTrip(page(`<p className={'a'}>B</p>`), 'p', page(`<p className={'a hidden'}>B</p>`));
+  // A comment beside the attributes stays, whichever way the eye goes.
+  roundTrip(
+    page('<p title="a" /* keep */>B</p>'),
+    'p',
+    page('<p title="a" className="hidden" /* keep */>B</p>'),
+  );
+  assert.equal(
+    hidden(page('<p /* keep */ className="hidden">B</p>'), 'p', false),
+    page('<p /* keep */>B</p>'),
+  );
+  assert.equal(
+    hidden(page('<p className={"hidden flex"} id="b">B</p>'), 'p', false),
+    page('<p className={"flex"} id="b">B</p>'),
+  );
+
+  const lines = `export default () => (
+  <main>
+    <aside
+      title="Side"
+    >
+      Side
+    </aside>
+  </main>
+);
+`;
+  const hiddenLines = lines.replace('title="Side"\n', 'title="Side"\n      className="hidden"\n');
+  roundTrip(lines, 'aside', hiddenLines);
+  roundTrip(lines.replaceAll('\n', '\r\n'), 'aside', hiddenLines.replaceAll('\n', '\r\n'));
+});
+
+test('a bare & in a class, as an arbitrary variant writes it, is read as the class it is', () => {
+  const page = (body: string) => `export default () => <main>${body}<hr /></main>;`;
+  roundTrip(
+    page('<ul className="[&>*]:p-2">L</ul>'),
+    'ul',
+    page('<ul className="[&>*]:p-2 hidden">L</ul>'),
+  );
+  const refused = (className: string, message: RegExp) => {
+    const files = { 'main.tsx': page(`<ul className="${className}">L</ul>`) };
+    assert.throws(() => editLayer(files, rowId(files, 'ul'), { kind: 'hide', hidden: true }), {
+      code: 'ambiguous_element',
+      message,
+    });
+  };
+  refused('[&:hover]:flex', /^Its classes or style set how it displays/);
+  refused('a&amp;b', /^Its classes or props are worked out in code/);
+});
+
+test('hiding is refused where something else may decide whether the layer shows, or it is not free to change', () => {
+  const files = {
+    'main.tsx': `import { cn } from './cn';
+function Card() { return <article>Card</article>; }
+export default ({ open, items, rest, style }) => (
+  <main>
+    <p hidden={open}>Attribute</p>
+    <p {...rest}>Spread</p>
+    <p className={cn('flex')}>Joined</p>
+    <p className={\`flex \${open}\`}>Template</p>
+    <p className={open ? 'flex' : 'grid'}>Conditional</p>
+    <p className="hidden md:flex">Breakpoint</p>
+    <p className="!flex">Important</p>
+    <p className="[display:flex]">Arbitrary</p>
+    <p className="dark:block">Mode</p>
+    <p style={{ display: 'flex' }}>Styled</p>
+    <p style={style}>Style object</p>
+    <Card />
+    <Card />
+    <ul>{items.map((item) => <li key={item}>{item}</li>)}</ul>
+    {open && <aside>Open</aside>}
+    <section />
+  </main>
+);
+`,
+  };
+  const attribute =
+    'Its hidden attribute decides whether it shows. Ask the agent to hide or show it.';
+  const code = 'Its classes or props are worked out in code. Ask the agent to hide or show it.';
+  const display =
+    'Its classes or style set how it displays, which can win over hiding it. Ask the agent to hide or show it.';
+  const cases: [string, string, string][] = [
+    ['Attribute', 'ambiguous_element', attribute],
+    ['Spread', 'ambiguous_element', code],
+    ['Joined', 'ambiguous_element', code],
+    ['Template', 'ambiguous_element', code],
+    ['Conditional', 'ambiguous_element', code],
+    ['Breakpoint', 'ambiguous_element', display],
+    ['Important', 'ambiguous_element', display],
+    ['Arbitrary', 'ambiguous_element', display],
+    ['Mode', 'ambiguous_element', display],
+    ['Styled', 'ambiguous_element', display],
+    ['Style object', 'ambiguous_element', display],
+    ['main', 'invalid_edit', "A frame's top layer can't be hidden. Hide the frame instead."],
+    ['Card', 'invalid_edit', 'Only an element can be hidden.'],
+    ['article', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
+    [
+      'li',
+      'ambiguous_element',
+      'Written once and repeated for each item. Ask the agent to change it.',
+    ],
+    [
+      'Open',
+      'ambiguous_element',
+      'This layer is written inside code (a list, a condition or a prop). Ask the agent to hide it.',
+    ],
+  ];
+  const rows = instrumentSource(files, 'r1').outline.nodes;
+  for (const [subject, errorCode, message] of cases) {
+    const row = rows.find((node) => node.text === subject || node.name === subject);
+    assert.ok(row, subject);
+    assert.throws(
+      () => editLayer(files, row.nodeId, { kind: 'hide', hidden: true }),
+      { code: errorCode, message },
+      subject,
+    );
+  }
+  assert.throws(() => editLayer(files, rowId(files, 'section'), { kind: 'hide', hidden: false }), {
+    code: 'invalid_edit',
+    message: 'The layer already shows.',
+  });
+});
+
+test('a frame keeps a top layer that shows: one of a fragment’s top layers hides only beside another shown', () => {
+  const root = "A frame's top layer can't be hidden. Hide the frame instead.";
+  const refused = (main: string, subject: string) => {
+    const files = { 'main.tsx': main };
+    assert.throws(() => editLayer(files, rowId(files, subject), { kind: 'hide', hidden: true }), {
+      code: 'invalid_edit',
+      message: root,
+    });
+  };
+  refused('export default () => <><p>Hi</p></>;', 'p');
+  refused('export default () => <><p>Hi</p><footer className="hidden" /></>;', 'p');
+  assert.equal(
+    hidden('export default () => <><p>Hi</p><footer className="hidden" /></>;', 'footer', false),
+    'export default () => <><p>Hi</p><footer /></>;',
+  );
+  assert.equal(
+    hidden('export default () => <><p>Hi</p><footer /></>;', 'p'),
+    'export default () => <><p className="hidden">Hi</p><footer /></>;',
+  );
+});

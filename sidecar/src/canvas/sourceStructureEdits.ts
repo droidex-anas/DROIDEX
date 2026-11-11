@@ -7,6 +7,7 @@ import type { ComponentUses } from './componentUses.js';
 import type { ElementEdit, OutlineNode, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
+import { hiddenClassEdit } from './sourceHiddenClass.js';
 import { enclosingFunction, readsLaterBinding } from './sourceLaterBindings.js';
 import {
   cutRange,
@@ -91,12 +92,13 @@ const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = 
     action: 'duplicate',
   },
   insert: { root: "This frame's top layer can't hold other layers.", action: 'add to' },
+  hide: { root: "A frame's top layer can't be hidden. Hide the frame instead.", action: 'hide' },
 };
 
 /**
  * The layer `nodeId` changed as `change` says. The row landed on is, in the
- * edited source, the moved layer, its copy, or the row beside a removed layer
- * that takes the keyboard in its place.
+ * edited source, the moved, copied or hidden layer, or the row beside a removed
+ * layer that takes the keyboard in its place.
  */
 export function editLayer(
   files: SourceFiles,
@@ -105,6 +107,7 @@ export function editLayer(
 ): EditedLayers {
   if (change.kind === 'move')
     return moveLayer(files, { nodeId, parentId: change.parentId, beforeId: change.beforeId });
+  if (change.kind === 'hide') return hideLayer(files, nodeId, change.hidden);
   return change.kind === 'remove' ? removeLayer(files, nodeId) : duplicateLayer(files, nodeId);
 }
 
@@ -188,6 +191,31 @@ function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
     files: changed,
     landed: rowStartingAt({ ...files, ...changed }, source.fileName, node.end + before.length),
   };
+}
+
+/**
+ * Hides the element with Tailwind's `hidden` class, or takes the class away to
+ * show it again. A frame keeps a top layer that shows.
+ */
+function hideLayer(files: SourceFiles, nodeId: string, hidden: boolean): EditedLayers {
+  const { uses, outline, layer } = layersIn(files);
+  const subject = layer(nodeId);
+  const { row, at } = subject;
+  if (row.kind !== 'element' || !(ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)))
+    throw invalid('Only an element can be hidden.');
+  // Only its hidden class or a hidden attribute says a sibling is not showing.
+  const isOtherShownTopLayer = (other: OutlineNode) =>
+    other.parentId === null &&
+    other !== row &&
+    other.visibility !== 'hidden' &&
+    other.visibility !== 'attribute';
+  if (hidden && row.parentId === null && !outline.nodes.some(isOtherShownTopLayer))
+    throw invalid(REFUSALS.hide.root);
+  writtenOnceAnchor(subject, uses, 'hide');
+  const source = at.getSourceFile();
+  const edited = splice(source.text, [hiddenClassEdit(at, hidden)]);
+  // An edit inside the opening tag leaves the row its id.
+  return { files: { [source.fileName]: edited }, landed: nodeId };
 }
 
 /** The outline's rows by id, refusing an id the source no longer writes. */
