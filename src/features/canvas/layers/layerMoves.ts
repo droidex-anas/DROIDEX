@@ -47,8 +47,16 @@ const VOID_TAGS = new Set([
 
 /** A layer written once, as a whole JSX child of another element, so it can be cut and pasted. */
 export function isMovable(row: LayerEntry): row is ElementEntry {
-  if (row.kind !== 'element' || row.inText) return false;
-  const { free, parentId, lock } = row.node;
+  return row.kind === 'element' && !row.inText && isWrittenOnceChild(row);
+}
+
+/** An element written once, as a whole JSX child of another, so it can take the `hidden` attribute. */
+export function isHideable(row: LayerEntry): row is ElementEntry {
+  return row.kind === 'element' && row.node.kind === 'element' && isWrittenOnceChild(row);
+}
+
+function isWrittenOnceChild({ node }: ElementEntry): boolean {
+  const { free, parentId, lock } = node;
   return free && parentId !== null && lock !== 'repeated' && lock !== 'shared';
 }
 

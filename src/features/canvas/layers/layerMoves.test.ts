@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CanvasFrame, OutlineNode, SourceOutline } from '../protocol';
-import { dropLine, isMovable, stepPlace } from './layerMoves';
+import { dropLine, isHideable, isMovable, stepPlace } from './layerMoves';
 import { layerEntries, type LayerEntry } from './layerRows';
 
 const node = (
@@ -73,6 +73,11 @@ const drop = (subject: string, gap: number, level: number) =>
 test('the rows that move are those written once as a whole child of an element', () => {
   const movable = rows.filter(isMovable).map((row) => row.node.nodeId);
   assert.deepEqual(movable, ['h1', 'section', 'p', 'img', 'ul', 'repeat']);
+});
+
+test('the rows that hide are the elements among them, which take the hidden attribute', () => {
+  const hideable = rows.filter(isHideable).map((row) => row.node.nodeId);
+  assert.deepEqual(hideable, ['h1', 'section', 'p', 'img', 'ul']);
 });
 
 test('a drop lands among the children of the row a level out above it, at the level the pointer asks', () => {

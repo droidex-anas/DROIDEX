@@ -2,7 +2,8 @@
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
 // here, which the row's description also says. A layer that can move has a
-// handle to drag it by, and a right-click opens a written layer's menu. A row
+// handle to drag it by, an element that can hide an eye, and a right-click
+// opens a written layer's menu. A hidden element's row is muted. A row
 // picks only its own drawn element, and otherwise says why it cannot. A note row says what an open frame's layers cannot show.
 
 import {
@@ -12,7 +13,7 @@ import {
   type PointerEvent,
   type ReactElement,
 } from 'react';
-import { GripVertical, Lock } from '@droidex/icons';
+import { Eye, EyeOff, GripVertical, Lock } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Row, RowCaret } from '../../../components/ui/Row';
@@ -55,6 +56,7 @@ export function ElementRow({
   onPick,
   onToggle,
   onGrab,
+  onSetHidden,
   onMenu,
   onLight,
   onUnlight,
@@ -75,6 +77,8 @@ export function ElementRow({
   onToggle: (entry: ElementEntry) => void;
   /** The pointer went down on the row's handle; undefined where its layer cannot move. */
   onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
+  /** The row's eye was pressed; undefined where its element cannot hide. */
+  onSetHidden: ((entry: ElementEntry, hidden: boolean) => void) | undefined;
   /** A right-click on the row; undefined where its layer has no menu. */
   onMenu: ((event: MouseEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
   /** The pointer came onto the row: the board lights its frame and outlines its drawn element. */
@@ -99,8 +103,10 @@ export function ElementRow({
   const row = (
     <Row
       icon={<KindIcon className="size-icon-md" />}
-      label={entry.name}
-      trailing={<ElementTools entry={entry} onToggle={onToggle} onGrab={onGrab} />}
+      label={node.hidden ? <span className="text-muted">{entry.name}</span> : entry.name}
+      trailing={
+        <ElementTools entry={entry} onToggle={onToggle} onGrab={onGrab} onSetHidden={onSetHidden} />
+      }
       data-keyboard-row={active || undefined}
       style={{ paddingLeft: rowInset(entry.level) }}
       className={cn(
@@ -147,19 +153,38 @@ export function ElementRow({
   );
 }
 
-/** The row's handle, which moves its layer, its lock, and the caret that opens its children. */
+/** The row's eye and handle, which hide and move its layer, its lock, and the caret that opens its children. */
 function ElementTools({
   entry,
   onToggle,
   onGrab,
+  onSetHidden,
 }: {
   entry: ElementEntry;
   onToggle: (entry: ElementEntry) => void;
   onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
+  onSetHidden: ((entry: ElementEntry, hidden: boolean) => void) | undefined;
 }) {
-  const { lock } = entry.node;
+  const { lock, hidden } = entry.node;
   return (
     <>
+      {onSetHidden && (
+        <Tooltip label={hidden ? 'Show' : 'Hide'}>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={hidden ? EyeOff : Eye}
+            aria-label="Hide"
+            aria-pressed={hidden}
+            tabIndex={-1}
+            className="canvas-layer-tool -my-1.5"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSetHidden(entry, !hidden);
+            }}
+          />
+        </Tooltip>
+      )}
       {onGrab && (
         <RowGrip
           last={!lock && entry.open === null}
@@ -211,6 +236,7 @@ function idList(...ids: (string | null | undefined)[]): string | undefined {
 /** The row's label, then its kind unless the label already names it, then what stops an edit or a pick. */
 function accessibleName(entry: ElementEntry, kind: string, unpickable: string | undefined): string {
   const parts = [entry.name === kind ? kind : `${entry.name}, ${kind}`];
+  if (entry.node.hidden) parts.push('hidden');
   if (entry.node.lock) parts.push('locked');
   if (unpickable) parts.push(unpickable);
   return parts.join(', ');

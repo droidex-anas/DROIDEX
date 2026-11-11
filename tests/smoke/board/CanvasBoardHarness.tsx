@@ -336,7 +336,7 @@ const OUTLINE: SourceOutline = {
   truncated: false,
 };
 
-// `?moves=1` writes a page whose layers move: main holding a title, a line, a section and an image.
+// `?moves=1` writes a page whose layers move: main holding a title, a line, a hidden section and an image.
 const movable = (nodeId: string, parentId: string | null, name: string, text: string | null) => ({
   nodeId,
   parentId,
@@ -354,7 +354,7 @@ const MOVES: SourceOutline = {
     movable('main', null, 'main', null),
     movable('title', 'main', 'h1', 'Pricing'),
     movable('line', 'main', 'p', 'Start free'),
-    movable('section', 'main', 'section', null),
+    { ...movable('section', 'main', 'section', null), hidden: true },
     movable('image', 'main', 'img', null),
   ],
   truncated: false,

@@ -5,8 +5,9 @@
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
 // pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
 // in its source; Delete removes it and ⌘D copies it, as its menu does, which a right-click
-// or ⇧F10 opens. The tree is one tab stop whose rows the keyboard walks through
-// aria-activedescendant, so a canvas of any size mounts only its visible rows.
+// or ⇧F10 opens. An element's eye, or ⇧⌘H, hides it with the `hidden` attribute. The
+// tree is one tab stop whose rows the keyboard walks through aria-activedescendant, so a
+// canvas of any size mounts only its visible rows.
 
 import { useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent } from 'react';
 import type { AnchorPoint } from '../../../components/ui/usePopoverPosition';
@@ -21,7 +22,7 @@ import { LayersHeader } from './LayersHeader';
 import { DUPLICATE_KEY_LABEL, HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import { LayerMenu } from './LayerMenu';
-import { isOutlineRow } from './layerMoves';
+import { isHideable, isOutlineRow } from './layerMoves';
 import { rowInset, type LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
 import { useElementMove } from './useElementMove';
@@ -177,6 +178,8 @@ export function LayersPanel({
     else if (key.kind === 'indent') move.step(row, 'in');
     else if ((key.kind === 'remove' || key.kind === 'duplicate') && isOutlineRow(row))
       editLayer(row, { kind: key.kind });
+    else if (key.kind === 'toggle-hidden' && isHideable(row))
+      editLayer(row, { kind: 'hide', hidden: !row.node.hidden });
     else if (key.kind === 'menu') openMenuBelow(row);
   };
   const openMenuBelow = (row: ElementEntry) => {
@@ -249,7 +252,7 @@ export function LayersPanel({
           )}
           {onEditLayer && (
             <span id={moveHelpId} className="sr-only">
-              {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, and ${DUPLICATE_KEY_LABEL} duplicates it.`}
+              {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, ${DUPLICATE_KEY_LABEL} duplicates it, and ${HIDE_KEY_LABEL} hides or shows it.`}
             </span>
           )}
           <div
@@ -302,6 +305,15 @@ export function LayersPanel({
                       moveTo(grabbed.key);
                       tree.current?.focus({ preventScroll: true });
                       move.grab(event, grabbed);
+                    })
+                  }
+                  onSetElementHidden={
+                    onEditLayer &&
+                    ((row, hidden) => {
+                      // The keyboard stays on the tree, on this row, as a frame's eye leaves it.
+                      moveTo(row.key);
+                      tree.current?.focus({ preventScroll: true });
+                      editLayer(row, { kind: 'hide', hidden });
                     })
                   }
                   onPickElement={elementRows.pick}

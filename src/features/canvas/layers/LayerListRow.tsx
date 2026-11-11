@@ -6,7 +6,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { FrameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
 import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
-import { isMovable, isOutlineRow } from './layerMoves';
+import { isHideable, isMovable, isOutlineRow } from './layerMoves';
 import { LayerRow } from './LayerRow';
 import type { LayerEntry } from './layerRows';
 
@@ -28,6 +28,7 @@ export function LayerListRow({
   onSetHidden,
   onGrab,
   onGrabElement,
+  onSetElementHidden,
   onPickElement,
   onElementMenu,
   onLight,
@@ -57,6 +58,8 @@ export function LayerListRow({
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
   onGrabElement: ((event: PointerEvent<HTMLElement>, row: ElementEntry) => void) | undefined;
+  /** An element row's eye was pressed; undefined where layers cannot be edited. */
+  onSetElementHidden: ((row: ElementEntry, hidden: boolean) => void) | undefined;
   onPickElement: (row: ElementEntry) => void;
   /** A right-click on an element row; undefined where layers cannot be edited. */
   onElementMenu: ((event: MouseEvent<HTMLElement>, row: ElementEntry) => void) | undefined;
@@ -79,6 +82,7 @@ export function LayerListRow({
         onPick={onPickElement}
         onToggle={onToggle}
         onGrab={movable ? onGrabElement : undefined}
+        onSetHidden={isHideable(row) ? onSetElementHidden : undefined}
         onMenu={isOutlineRow(row) ? onElementMenu : undefined}
         onLight={onLight}
         onUnlight={onUnlight}
