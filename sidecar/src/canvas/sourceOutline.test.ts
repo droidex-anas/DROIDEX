@@ -199,6 +199,21 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
     [
       {
         'main.tsx':
+          'function Shell({ children, ...rest }) { return <section>{rest.children}{children}</section>; }\nexport default () => <Shell><b>Given</b></Shell>;',
+      },
+      ['Shell fixed', '  <section> [computed] fixed', '    <b> "Given"'],
+    ],
+    [
+      {
+        'main.tsx': "import { Card } from './ui/Card'; export default () => <Card />;",
+        'ui/Card.tsx': "import { Label } from '..'; export function Card() { return <Label />; }",
+        'index.tsx': 'export function Label() { return <b>Label</b>; }',
+      },
+      ['Card fixed', '  Label fixed', '    <b> "Label" fixed'],
+    ],
+    [
+      {
+        'main.tsx':
           'export default ({ a }) => <main>{<h1>Left</h1> ?? a}{a || <p>Right</p>}</main>;',
       },
       [
@@ -219,6 +234,13 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
     [
       {
         'main.tsx':
+          "import { createPortal as portal } from 'react-dom';\nexport default () => portal(<aside>Two</aside>, document.body);",
+      },
+      ['<aside> "Two" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
           'function Item(item) { return <li>{item}</li>; }\nexport default ({ items }) => <ul>{items.map(Item)}</ul>;',
       },
       ['<ul> [computed] fixed', '  Repeat', '    <li> [repeated] fixed'],
@@ -229,6 +251,18 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
           'export default ({ ready }) => { let body = <p>Now</p>; const later = () => { body = <b>Never</b>; }; if (!ready) return null; return <main>{body}</main>; }',
       },
       ['<main> [computed] fixed', '  <p> "Now" [shared] fixed'],
+    ],
+    [
+      {
+        'main.tsx':
+          'export default ({ step }) => { if (step) { var body = <h1>One</h1>; } else { body = <h2>Two</h2>; } return <main>{body}</main>; }',
+      },
+      [
+        '<main> [computed] fixed',
+        '  Condition',
+        '    <h1> "One" [shared] fixed',
+        '    <h2> "Two" [shared] fixed',
+      ],
     ],
     [
       {
