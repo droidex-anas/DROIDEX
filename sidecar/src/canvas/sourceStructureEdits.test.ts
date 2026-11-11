@@ -176,6 +176,26 @@ test('a moved layer takes the indentation of its new place, in tabs or spaces, a
       ...spaces.slice(6),
     ].join('\r\n'),
   );
+
+  // A layer indented unlike its new place takes the place's step, not its own.
+  const mixed = [
+    'export default () => (',
+    '  <main>',
+    '    <section />',
+    '\t\t<p>End</p>',
+    '  </main>',
+    ');',
+  ];
+  assert.equal(
+    moved(mixed.join('\n'), 'p', 'section'),
+    [
+      ...mixed.slice(0, 2),
+      '    <section>',
+      '      <p>End</p>',
+      '    </section>',
+      ...mixed.slice(4),
+    ].join('\n'),
+  );
 });
 
 test('a move that is not one cut and paste within a component is refused with the reason', () => {

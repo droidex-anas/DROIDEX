@@ -279,6 +279,22 @@ test('a move past a line that assigns a value the layer reads is refused', async
   );
 });
 
+test('a move past a write into a property or index of a value the layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  const config = { color: 'red', sizes: [1] };
+  if (flag) return <section />;
+  config.color = 'blue';
+  config.sizes[0]++;
+  return <main><span>{config.color}</span></main>;
+}`;
+  const { code, message } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+  assert.equal(
+    message,
+    'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+  );
+});
+
 test('a move to before the enum a layer reads is refused', async (t) => {
   const main = `export default function App({ flag = true }) {
   if (flag) return <section />;

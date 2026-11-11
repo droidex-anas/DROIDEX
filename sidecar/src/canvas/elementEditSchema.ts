@@ -7,6 +7,7 @@ import { catalogNameSchema } from './kitCatalog.js';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
+  elementRefSchema,
   hasDuplicate,
   outlineNodeIdSchema,
   revisionRefSchema,
@@ -28,10 +29,7 @@ export const editElementInputSchema = z
     edit: z.union([
       z
         .object({
-          element: revisionRefSchema.extend({
-            elementId: canvasIdentifierSchema,
-            instancePath: z.string().max(512),
-          }),
+          element: elementRefSchema,
           change: z.discriminatedUnion('kind', [
             z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
             z

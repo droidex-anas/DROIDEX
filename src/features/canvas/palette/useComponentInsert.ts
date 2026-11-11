@@ -8,10 +8,10 @@ import type { CanvasPresence } from '../canvasPresence';
 import type { LayerElements } from '../layers/layerElements';
 import { drawnLayers } from '../layers/drawnLayers';
 import type { EditLayer } from '../layers/useLayerEdit';
-import { pickedLayer } from '../pickedElement';
+import { pickedLayer, type PickedLayer } from '../pickedElement';
 import type { PreviewNode } from '../previewDocument';
 import type { PreviewRun } from '../previewRuntime';
-import type { CanvasFrame, ElementRef, OutlineNode, SourceOutline } from '../protocol';
+import type { CanvasFrame, ElementRef, SourceOutline } from '../protocol';
 import { landingHint, landingOf } from './paletteRows';
 
 /** The row an add landed on, in the revision it made. */
@@ -27,7 +27,7 @@ interface Target {
   frame: CanvasFrame;
   revisionId: string;
   /** Null until the frame has built the revision. */
-  node: OutlineNode | null;
+  layer: PickedLayer | null;
 }
 
 /** What the tab says of where an entry goes, and whether one can go there now. */
@@ -61,10 +61,10 @@ export function useComponentInsert({
   usePickAdded(added, frames, elements);
 
   const add = (entry: string) => {
-    if (!target?.node || !onEditLayer || !place.canAdd) return;
+    if (!target?.layer || !('row' in target.layer) || !onEditLayer || !place.canAdd) return;
     const { designId } = target.frame;
     setAdding(true);
-    const layer = { designId, revisionId: target.revisionId, nodeId: target.node.nodeId };
+    const layer = { designId, revisionId: target.revisionId, nodeId: target.layer.row.nodeId };
     const pick = picked?.pick ?? null;
     void onEditLayer(layer, { kind: 'insert', entry }).then((edited) => {
       setAdding(false);
@@ -92,26 +92,26 @@ function targetOf(
     return {
       frame: addedFrame,
       revisionId: added.revisionId,
-      node: rowOf(addedFrame, added.nodeId),
+      layer: rowOf(addedFrame, added.nodeId),
     };
   if (picked) {
     const frame = frameOf(picked.designId);
     if (!frame) return null;
-    const node = pickedLayer(frame, picked.revisionId, picked.elementId) ?? null;
-    return { frame, revisionId: picked.revisionId, node };
+    const layer = pickedLayer(frame, picked.revisionId, picked.elementId) ?? null;
+    return { frame, revisionId: picked.revisionId, layer };
   }
   const frame = selectedFrameIds.length === 1 ? frameOf(selectedFrameIds[0]) : undefined;
   if (!frame?.revisionId) return null;
-  return { frame, revisionId: frame.revisionId, node: rowOf(frame, null) };
+  return { frame, revisionId: frame.revisionId, layer: rowOf(frame, null) };
 }
 
 /** The row `nodeId` of the frame's built outline, or for null its top layer. */
-function rowOf(frame: CanvasFrame, nodeId: string | null): OutlineNode | null {
+function rowOf(frame: CanvasFrame, nodeId: string | null): PickedLayer | null {
   const nodes = builtOutline(frame)?.nodes ?? [];
   const row = nodes.find((node) =>
     nodeId === null ? node.parentId === null : node.nodeId === nodeId,
   );
-  return row ?? null;
+  return row ? { row } : null;
 }
 
 function placeOf(
@@ -125,8 +125,12 @@ function placeOf(
   if (presence.has(target.frame.designId))
     return refuse('The agent is writing this frame. Add once it’s done.');
   const outline = builtOutline(target.frame);
-  if (!target.node || !outline) return refuse('Wait until this frame has built.');
-  const landing = landingOf(outline.nodes, target.node);
+  if (!target.layer || !outline) return refuse('Wait until this frame has built.');
+  if ('refusal' in target.layer)
+    return refuse(
+      'Can’t tell this element from the component that draws it. Pick its layer in Layers.',
+    );
+  const landing = landingOf(outline.nodes, target.layer.row);
   return { hint: landingHint(landing), canAdd: landing.kind !== 'refused' };
 }
 

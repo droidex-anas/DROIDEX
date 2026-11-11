@@ -73,7 +73,7 @@ function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
   const held = holdingElement(target, uses);
   if ('element' in held) {
     const { element } = held;
-    if (!hasText(element) && !isVector(element)) return pasteAtEnd(source, element, eol, '');
+    if (!hasText(element) && !isVector(element)) return pasteAtEnd(source, element, eol);
     if (hasText(element) && target.row.parentId === null && !anchorOf(element))
       throw invalid("This frame's top layer holds text. Pick a layer that holds others.");
   }

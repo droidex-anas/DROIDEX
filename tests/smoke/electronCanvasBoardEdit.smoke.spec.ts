@@ -87,6 +87,9 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await fontSize.press('Enter');
   await fontSize.press('Enter');
   await expect(panel.getByRole('status')).toHaveText('Saving…');
+  // Delete on the board waits too: it would edit the revision the commit is replacing.
+  await board.focus();
+  await page.keyboard.press('Delete');
   expect(await page.evaluate(() => window.boardHarness.editCalls)).toEqual([
     {
       mutationId: expect.any(String),
@@ -177,7 +180,9 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByTestId('canvas-board')).toBeFocused();
   await expect(title).toBeVisible();
 
-  // Delete removes the picked element's layer from its source rather than its frame.
+  // Delete removes the picked element's layer from its source rather than its frame,
+  // and a second Delete while that one is in flight sends nothing more.
+  await page.keyboard.press('Delete');
   await page.keyboard.press('Delete');
   expect(await page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit))).toEqual([
     {

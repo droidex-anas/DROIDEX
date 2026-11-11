@@ -120,7 +120,7 @@ const designRefSchema = z
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
-const elementRefSchema = z
+export const elementRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
