@@ -6,6 +6,7 @@
 // a kit serves many canvases and a silent change would restyle all of them.
 
 import { z } from 'zod';
+import { boundDiagnostics } from './canvasDiagnostics.js';
 import { CanvasCommandError, canvasError } from './canvasError.js';
 import { applyDocumentChanges, documentChangesSchema } from './designSystemEdits.js';
 import { starterKit } from './designSystemImport.js';
@@ -19,7 +20,9 @@ import {
   saveDesignSystem,
   type DesignSystem,
 } from './designSystems.js';
+import { KIT_CATALOG_FILE, type KitFailure } from './kitCatalog.js';
 import type { KitPreviews } from './kitPreviews.js';
+import { leaveOutFailingSeeds } from './libraryCatalog.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import {
   canvasIdentifierSchema,
@@ -97,8 +100,8 @@ export async function saveKit(
   input: KitSave,
   context: KitSaveContext,
 ): Promise<Record<string, unknown>> {
-  const { base, baseVersion, diagnostics } = await kitBase(input, context);
-  const kit: Omit<DesignSystem, 'version'> = {
+  const { base, baseVersion, diagnostics, seeded } = await kitBase(input, context);
+  const edited: Omit<DesignSystem, 'version'> = {
     ...base,
     name: input.name ?? base.name,
     cover: coverOf(input.cover, base.cover),
@@ -106,32 +109,68 @@ export async function saveKit(
     files: { ...base.files, ...input.files },
     examples: { ...base.examples, ...input.examples },
   };
-  const parsed = designSystemSchema.safeParse({ ...kit, version: (baseVersion ?? 0) + 1 });
+  const parsed = designSystemSchema.safeParse({ ...edited, version: (baseVersion ?? 0) + 1 });
   if (!parsed.success)
     throw canvasError('invalid_input', parsed.error.issues[0]?.message ?? 'That kit is not valid.');
-  const built = await context.kits.check(parsed.data);
-  if (built.length > 0) throw new KitBuildError(built);
+  // The seeded demos are the import's own until the save writes the catalog itself.
+  const seeds = seeded && !Object.hasOwn(input.files ?? {}, KIT_CATALOG_FILE);
+  const built = await checkKit(parsed.data, seeds, context.kits);
+  if (built.failures.length > 0)
+    throw new KitBuildError(boundDiagnostics(built.failures.map(({ diagnostic }) => diagnostic)));
+  const kit = { ...edited, files: built.files };
+  // The import's diagnostics alone can fill the cap, and these are about the kit as saved.
+  const reported = boundDiagnostics([...built.diagnostics, ...diagnostics]);
 
   const { appSessionId, beforePublish } = context;
   const { mutationId } = input;
   if (baseVersion === null) {
     const savedBy = { actor: 'agent' as const, appSessionId };
     const ref = await saveDesignSystem(kit, { mutationId, baseVersion, savedBy, beforePublish });
-    return { status: 'saved', ref: { id: ref.id, version: ref.version }, diagnostics };
+    return {
+      status: 'saved',
+      ref: { id: ref.id, version: ref.version },
+      diagnostics: reported,
+    };
   }
   await proposeDesignSystem(kit, { mutationId, baseVersion, appSessionId, beforePublish });
   return {
     status: 'proposed',
     id: kit.id,
     baseVersion,
-    diagnostics,
+    diagnostics: reported,
     message: `The user reviews this proposal in the design system's document. Builds keep using version ${String(baseVersion)} until they accept it.`,
   };
 }
 
 /**
+ * Checks the kit as it will be saved. When it carries a library's seeded
+ * demos, those that do not build are left out rather than refused, and the
+ * kit is checked again without them.
+ */
+async function checkKit(
+  kit: DesignSystem,
+  seeds: boolean,
+  kits: KitSaveContext['kits'],
+): Promise<{
+  files: DesignSystem['files'];
+  failures: KitFailure[];
+  diagnostics: CanvasDiagnostic[];
+}> {
+  const failures = await kits.check(kit);
+  if (!seeds || failures.length === 0 || failures.some(({ entry }) => entry === null))
+    return { files: kit.files, failures, diagnostics: [] };
+  const left = leaveOutFailingSeeds(kit, failures);
+  return {
+    files: left.kit.files,
+    failures: await kits.check(left.kit),
+    diagnostics: left.diagnostics,
+  };
+}
+
+/**
  * What the save builds on, the version it builds after (none for a new kit),
- * and what reading project files reported.
+ * what reading project files reported, and whether it carries a library's
+ * seeded catalog.
  */
 async function kitBase(
   input: KitSave,
@@ -140,6 +179,7 @@ async function kitBase(
   base: Omit<DesignSystem, 'version'>;
   baseVersion: number | null;
   diagnostics: CanvasDiagnostic[];
+  seeded: boolean;
 }> {
   const { kit } = input;
   if ('baseVersion' in kit) {
@@ -149,7 +189,7 @@ async function kitBase(
         `Presets are read-only. Make your own kit from it with kit: { id: 'a-new-id', from: { copy: { id: '${kit.id}', version: ${String(kit.baseVersion)} } } }.`,
       );
     const base = await readDesignSystem({ id: kit.id, version: kit.baseVersion });
-    return { base, baseVersion: kit.baseVersion, diagnostics: [] };
+    return { base, baseVersion: kit.baseVersion, diagnostics: [], seeded: false };
   }
   if (designSystemKind(kit.id) !== 'user')
     throw canvasError('preset_read_only', 'That id belongs to a built-in kit. Choose another id.');
@@ -159,6 +199,7 @@ async function kitBase(
       base: { id: kit.id, name: input.name, ...starterKit() },
       baseVersion: null,
       diagnostics: [],
+      seeded: false,
     };
   }
   if ('copy' in kit.from) {
@@ -169,6 +210,7 @@ async function kitBase(
       base: { ...original, id: kit.id, name, provenance: { copiedFrom: copy } },
       baseVersion: null,
       diagnostics: [],
+      seeded: false,
     };
   }
   if (input.name === undefined) throw canvasError('invalid_input', 'Name the new design system.');
@@ -184,7 +226,16 @@ async function kitBase(
   });
   if (imported.status === 'refused')
     throw canvasError('invalid_input', imported.diagnostics[0].message);
-  return { base: imported.system, baseVersion: null, diagnostics: imported.diagnostics };
+  const { provenance } = imported.system;
+  return {
+    base: imported.system,
+    baseVersion: null,
+    diagnostics: imported.diagnostics,
+    seeded:
+      provenance !== undefined &&
+      'project' in provenance &&
+      provenance.project.library !== undefined,
+  };
 }
 
 function coverOf(cover: KitSave['cover'], current: DesignSystem['cover']): DesignSystem['cover'] {

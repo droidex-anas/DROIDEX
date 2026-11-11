@@ -7,32 +7,39 @@ import {
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
+import { starterKit } from './designSystemImport.js';
 import { discardProposal, proposeDesignSystem, readProposal } from './designSystemProposals.js';
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews, kitExample } from './kitPreviews.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 pinScratchProfile();
 
 const LIGHT: DesignSystemRef = { id: 'droidex', version: 1, mode: 'light' };
 const DARK: DesignSystemRef = { ...LIGHT, mode: 'dark' };
 
-/** A compiler that answers each compile with what `answer` returns, counting them. */
+/** A compiler that answers each compile with what `answer` returns, counting them and catalog checks. */
 function countingPreviews(
   answer: (input: CompileInput) => CompiledDesign | Promise<CompiledDesign>,
 ) {
   const compiled: CompileInput[] = [];
+  const catalogs: SourceFiles[] = [];
   const previews = new KitPreviews({
     compiler: () => ({
       compile: async (input) => {
         compiled.push(input);
         return answer(input);
       },
+      checkCatalog: (kit) => {
+        catalogs.push(kit.files);
+        return Promise.resolve([]);
+      },
       terminate: () => Promise.resolve(),
     }),
   });
-  return { previews, compiled };
+  return { previews, compiled, catalogs };
 }
 
 /** Every preview the shipped kits have, in both modes. */
@@ -180,4 +187,13 @@ test("a waiting proposal's previews build from its own examples, and a settled o
   await discardProposal('proposed', proposalId);
   await assert.rejects(previews.read(ref, 'sidebar'), { code: 'invalid_input' });
   await previews.close();
+});
+
+test('a kit check compiles its entry, each example, then checks its whole catalog once', async () => {
+  const { previews, compiled, catalogs } = countingPreviews(() => design('<html></html>'));
+  const kit = starterKit();
+
+  assert.deepEqual(await previews.check(kit), []);
+  assert.equal(compiled.length, 1 + Object.keys(kit.examples).length);
+  assert.deepEqual(catalogs, [kit.files]);
 });

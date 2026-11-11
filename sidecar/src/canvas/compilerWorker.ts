@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
+import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
 import {
   DamagedRuntimeError,
   ownedCanvasRuntimeDir,
@@ -33,6 +34,7 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
+import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
 import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
@@ -41,6 +43,7 @@ import { instrumentSource } from './sourceElements.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
 
@@ -55,7 +58,8 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
-  if (input.kind === 'kitPreview') return compileKitPreview(input, signal);
+  if (input.kind === 'kitPreview')
+    return compileUnderKit({ [DESIGN_ENTRY]: input.example }, input.kit, input.mode, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -120,24 +124,25 @@ export async function compileDesign(
 }
 
 /**
- * One kit example as a one-file design under that kit. Nothing on it can be
- * selected, and the kit is not held to its own rules.
+ * A kit example, or the kit's catalog, as a design under that kit. Nothing on
+ * it can be selected, and the kit is not held to its own rules.
  */
-async function compileKitPreview(
-  input: KitPreviewCompileInput,
+async function compileUnderKit(
+  files: SourceFiles,
+  kit: KitPreviewCompileInput['kit'],
+  mode: DesignSystemRef['mode'],
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
-  const files = { [DESIGN_ENTRY]: input.example };
-  const bundle = await bundleDesign({ files, kitFiles: input.kit.files });
+  const bundle = await bundleDesign({ files, kitFiles: kit.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
   const unbound = unboundNameDiagnostics(files);
   if (unbound.length > 0) throw new CompileFailedError(unbound);
-  const stylesheet = await buildDesignStylesheet(files, input.kit);
+  const stylesheet = await buildDesignStylesheet(files, kit);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
 
-  const html = previewDocument(stylesheet.css, bundle.js, input.mode);
+  const html = previewDocument(stylesheet.css, bundle.js, mode);
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
@@ -145,6 +150,32 @@ async function compileKitPreview(
     elements: [],
     outline: { nodes: [], truncated: false },
   };
+}
+
+/** Why the kit's catalog is unusable, else each entry on its own, then all of them built under the kit. */
+async function checkCatalog(
+  kit: KitPreviewCompileInput['kit'],
+  signal: AbortSignal,
+): Promise<KitFailure[]> {
+  const read = readKitCatalog(kit.files);
+  if ('problem' in read)
+    return [
+      {
+        entry: null,
+        diagnostic: { code: 'invalid_input', message: read.problem, file: KIT_CATALOG_FILE },
+      },
+    ];
+  if (read.catalog.length === 0) return [];
+  const standalone = standaloneFailures(read.catalog);
+  if (standalone.length > 0) return standalone;
+  stopIfCancelled(signal);
+  try {
+    await compileUnderKit(catalogDesign(read.catalog), kit, 'light', signal);
+    return [];
+  } catch (error) {
+    if (!(error instanceof CompileFailedError)) throw error;
+    return catalogBuildFailures(read.catalog, error.diagnostics);
+  }
 }
 
 function stopIfCancelled(signal: AbortSignal): void {
@@ -235,6 +266,10 @@ process.on('message', (request: CompilerRequest) => {
   running.set(request.requestId, controller);
   if (request.type === 'edit') {
     void runEdit(request, controller.signal).finally(() => running.delete(request.requestId));
+  } else if (request.type === 'checkCatalog') {
+    void runCatalogCheck(request, controller.signal).finally(() => {
+      running.delete(request.requestId);
+    });
   } else {
     void runCompile(request.requestId, request.input, controller.signal).finally(() => {
       running.delete(request.requestId);
@@ -325,6 +360,18 @@ async function shutdown(requestId: number): Promise<void> {
   send({ requestId, status: 'stopped' } satisfies CompilerResponse, () => {
     process.exit(0);
   });
+}
+
+async function runCatalogCheck(
+  { requestId, kit }: Extract<CompilerRequest, { type: 'checkCatalog' }>,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    const failures = await checkCatalog(kit, signal);
+    send({ requestId, status: 'catalogChecked', failures } satisfies CompilerResponse);
+  } catch (error) {
+    send({ requestId, ...outcomeOf(error) } satisfies CompilerResponse);
+  }
 }
 
 async function runCompile(

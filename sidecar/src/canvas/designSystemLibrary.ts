@@ -19,6 +19,7 @@ import { importDesignSystem, type ImportDesignSystemResult } from './designSyste
 import type { LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
+import { libraryCatalogFiles } from './libraryCatalog.js';
 import {
   COMPONENT_NAME,
   KIT_UTILS_FILE,
@@ -36,6 +37,7 @@ import {
   readProjectText,
 } from './projectPaths.js';
 import type { CanvasDiagnostic } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 /**
  * Of a kit's files, these many are the library's components, and the rest its
@@ -102,19 +104,21 @@ export async function importLibraryDesignSystem(
   ]);
   const library = kitComponents(read.components, folderFiles, read.aliases, kitNames, diagnostics);
   if ('problem' in library) return refused(library.problem, diagnostics);
+  const files: SourceFiles = {
+    [KIT_ENTRY]: library.entry,
+    'fonts.css': inter.css,
+    'fonts/Inter-OFL.txt': inter.license,
+    ...(stylesheet === '' ? {} : { 'styles.css': stylesheet }),
+    [KIT_THEME_FILE]: `${JSON.stringify(theme.theme, null, 2)}\n`,
+    [KIT_UTILS_FILE]: read.utils,
+    ...Object.fromEntries(library.files),
+  };
+  Object.assign(files, libraryCatalogFiles(files));
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.
     sections: imported.system.sections.filter((section) => section.kind !== 'components'),
-    files: {
-      [KIT_ENTRY]: library.entry,
-      'fonts.css': inter.css,
-      'fonts/Inter-OFL.txt': inter.license,
-      ...(stylesheet === '' ? {} : { 'styles.css': stylesheet }),
-      [KIT_THEME_FILE]: `${JSON.stringify(theme.theme, null, 2)}\n`,
-      [KIT_UTILS_FILE]: read.utils,
-      ...Object.fromEntries(library.files),
-    },
+    files,
     examples: {},
     provenance: {
       project: {
