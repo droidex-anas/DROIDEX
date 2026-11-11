@@ -4,7 +4,14 @@ import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { stopCanvasRuntime } from './canvasRuntime.js';
 import { starterKit } from './designSystemImport.js';
 import { designSystemSchema, readDesignSystem } from './designSystems.js';
-import { catalogFile, catalogProblem, KIT_CATALOG_FILE, type CatalogEntry } from './kitCatalog.js';
+import {
+  catalogFile,
+  catalogProblem,
+  entryFailure,
+  KIT_CATALOG_FILE,
+  kitFailureSchema,
+  type CatalogEntry,
+} from './kitCatalog.js';
 import { KitPreviews } from './kitPreviews.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 
@@ -81,6 +88,9 @@ test('a catalog failure is told as the entry whose lines it is on, and an unexpo
     [['Broken', KIT_CATALOG_FILE]],
   );
   assert.match(built[0].diagnostic.message, /^catalog\.json, Broken: .*Missing/);
+  // The label goes on after the compiler bounds its message, and must keep the reply valid.
+  const long = entryFailure('Broken', { code: 'invalid_input', message: 'x'.repeat(2048) });
+  assert.ok(kitFailureSchema.safeParse(long).success);
 
   // Entry is also what the check once named each entry's own component.
   for (const name of ['Table', 'Entry']) {

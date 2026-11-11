@@ -4,7 +4,7 @@
 // compiler checks that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
-import { canvasDiagnosticSchema } from './canvasDiagnostics.js';
+import { canvasDiagnosticSchema, truncateDiagnosticText } from './canvasDiagnostics.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { sourcePathSchema, type SourceFiles } from './schema.js';
 
@@ -108,7 +108,11 @@ export function entryFailure(
 ): KitFailure {
   return {
     entry,
-    diagnostic: { code, message: `${entryLabel(entry)}: ${message}`, file: KIT_CATALOG_FILE },
+    diagnostic: {
+      code,
+      message: truncateDiagnosticText(`${entryLabel(entry)}: ${message}`),
+      file: KIT_CATALOG_FILE,
+    },
   };
 }
 
