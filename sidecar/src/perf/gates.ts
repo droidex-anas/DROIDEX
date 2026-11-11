@@ -39,6 +39,14 @@ const TERMINAL_DELIVERIES_BUDGET = 16;
 // Incremental projection should touch the live tail, not the settled prefix.
 const FEED_REBUILT_EVENTS_PER_DELTA_BUDGET = 8;
 
+// The canvas scenario's 30-frame board commits its React viewport on every pan
+// frame and reads layout 3 times per pointer event, 2 events a frame. Both are
+// today's measured ceiling, held until the board's stage owns pan.
+const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 1.1;
+const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
+// 120 Hz: the main-thread work one frame may take.
+const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
+
 export function expectedMarkerSamples(spec: PerfScenarioSpec): number {
   if (spec.toolMarkerEvery <= 0 || spec.deltasPerTurn <= 0) return 0;
   const pairs = Math.floor(spec.deltasPerTurn / spec.toolMarkerEvery);
@@ -138,6 +146,12 @@ export function evaluateProbeGates(options: {
   eventsRebuiltPerDelta: number | null;
   terminalDeliveriesPerFlood: number | null;
   livePrimarySessionsAfterSoak: number | null;
+  reactCommitsPerPanFrame: number | null;
+  layoutReadsPerPanFrame: number | null;
+  longTasksDuringGestures: number | null;
+  panBusyP95Ms: number | null;
+  panOverBudgetShare: number | null;
+  panRafP95Ms: number | null;
 }): GateEvaluation {
   const results: GateResult[] = [
     hard({
@@ -184,6 +198,60 @@ export function evaluateProbeGates(options: {
       budget: 0,
       justification:
         'Soak create/close must release every session. 0 live primaries is the leak invariant.',
+    }),
+    hard({
+      id: 'canvas.reactCommitsPerPanFrame',
+      name: 'React commits per background-pan frame, 30-frame board',
+      unit: 'commits',
+      actual: options.reactCommitsPerPanFrame,
+      budget: CANVAS_COMMITS_PER_PAN_FRAME_BUDGET,
+      justification:
+        'The board commits its viewport once per pan frame (measured 1.00–1.03). Held there until pan moves off React, then 0.',
+    }),
+    hard({
+      id: 'canvas.layoutReadsPerPanFrame',
+      name: 'layout reads per background-pan frame, 30-frame board',
+      unit: 'reads',
+      actual: options.layoutReadsPerPanFrame,
+      budget: CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET,
+      justification:
+        'Rect, offset and client-size reads: 3 per pointer event at 2 events a frame (measured 5.6–6.0).',
+    }),
+    hard({
+      id: 'canvas.longTasksDuringGestures',
+      name: 'long tasks (>50 ms) during canvas gestures, 30-frame board',
+      unit: 'tasks',
+      actual: options.longTasksDuringGestures,
+      budget: 0,
+      justification:
+        'A task over 50 ms drops at least 5 frames at 120 Hz; none of the 12 gestures may have one.',
+    }),
+    warn({
+      id: 'canvas.panBusyP95Ms',
+      name: 'main-thread work per pan frame, p95',
+      unit: 'ms',
+      actual: options.panBusyP95Ms,
+      budget: CANVAS_FRAME_BUDGET_MS,
+      justification:
+        'The 120 Hz budget. Headless Chromium on a shared runner is too noisy for a hard gate.',
+    }),
+    warn({
+      id: 'canvas.panOverBudgetShare',
+      name: 'pan frames over the 8.33 ms budget',
+      unit: 'ratio',
+      actual: options.panOverBudgetShare,
+      budget: 0,
+      justification:
+        'Recorded for comparison; a share of traced frames, as noisy as the time it counts.',
+    }),
+    warn({
+      id: 'canvas.panRafP95Ms',
+      name: 'gap between pan animation frames, p95',
+      unit: 'ms',
+      actual: options.panRafP95Ms,
+      budget: Number.POSITIVE_INFINITY,
+      justification:
+        'Recorded for comparison. Headless Chromium draws at 60 Hz, so this shows dropped frames, not 120 Hz.',
     }),
   ];
   return wrap(results);

@@ -22,12 +22,21 @@ npm run perf:compare -- --baseline origin/main
 npm run perf:report
 npm run perf:gates
 npm run quality:bundle-budgets
+npm run perf:canvas -- --runs 3
 ```
 
 `perf:compare` uses a git worktree of the baseline ref and this branch’s
 probes against that tree’s own production modules. Baseline probe output is
 cached in `sidecar/src/perf/baselines/origin-main.json` with the measured
 commit. A SHA mismatch is a stale cache, not a silent reuse.
+
+`perf:canvas` builds the board harness (`tests/smoke/board`) for production
+and streams 12 gestures at 120 Hz on a 30- and a 100-frame board in headless
+Chromium: pans, wheel zooms, frame drags, a marquee, Edit hover, Alt
+measurement, the Layers rows and a panel scrub. It writes
+`reports/perf/canvas.{json,md}`. `perf:compare` and `perf:gates` run it
+once on the 30-frame board; without Playwright's Chromium its gates are
+unmeasured, not failed.
 
 Timing CPU and RSS from a shared CI runner are recorded and **warned**, never
 failed. Promote a timing metric to a hard gate only after variance on
@@ -47,6 +56,9 @@ dedicated hardware is understood.
 | Transport pending estimated bytes | 32 MiB | Product cap of the replay buffer. |
 | Persistence overflow on a normal replay | 0 failures | Write-behind is capped at 50k rows / 64 MiB; overflow is explicit, not unbounded growth. |
 | Live primary sessions after soak cleanup | 0 | 12 create/close cycles must release every session. |
+| React commits per pan frame, 30-frame board | 1.1 commits | The board commits its viewport on every pan frame today; the ratchet drops to 0 when pan leaves React. |
+| Layout reads per pan frame, 30-frame board | 6.5 reads | Rect, offset and client-size reads, 3 per pointer event at 2 events a frame today. |
+| Long tasks during canvas gestures, 30-frame board | 0 | A task over 50 ms drops at least 5 frames at 120 Hz. |
 | History worker third-party modules | 0 | `historyWorkerBundle.test.ts`. Both worker isolates compile this graph; a value import of the Droid SDK once cost ~83 MiB of sidecar RSS. |
 | History worker bundle | 200_000 bytes | Same test, ~2× the 98 KiB the workers actually need. |
 | Initial renderer JS | 1_388_000 bytes | `tools/check-bundle-budgets.mjs`, which records the measurements and budget changes. |
@@ -62,6 +74,7 @@ The #115 contract still stands as a product target, not a shared-runner gate:
 | Composer / first interactive input | Feels ready with the shell; no workspace-engine tax on first paint | Startup phase marks in `rendererPerf` are environment-specific. |
 | Event-to-paint p95, ordinary streaming | Roughly 1–3 frames (16–50 ms) | Needs a real renderer paint; sidecar replay only measures append→WS receive. |
 | Ordinary live output long tasks | Avoid >50 ms | `PerformanceObserver` longtask, renderer-only. |
+| Canvas pan frame, main-thread work p95 | 8.33 ms (120 Hz) | `perf:canvas` trace in headless Chromium, which draws at 60 Hz; the share of frames over 8.33 ms and the rAF gap p95 are recorded too. |
 | Long-session switch | Should not scale with full history size | Sidecar `session-switch` exercises `session.loadHistory` while streams run; renderer switch latency is not this number. |
 | Memory plateau | Live resource count, not session duration | Soak checks session leaks. RSS on CI is noisy. |
 | Hidden / minimized CPU | Approach idle aside from work that is still running | Needs a real Electron window. Not measured headless. |
@@ -82,7 +95,7 @@ that reference, not a 4K fullscreen session.
 
 ## Skipped workloads
 
-- **browser/design workspace + model stream** — needs GUI.
+- **browser pane + model stream** — needs GUI. The design canvas is measured headless by `perf:canvas`.
 - **hidden/minimized app with background agents** — needs a real window.
 - **sidecar restart/reconnect** — owned by the concurrent supervision phase.
 

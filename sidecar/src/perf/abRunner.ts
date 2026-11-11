@@ -104,6 +104,12 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     livePrimarySessionsAfterSoak:
       candidateReplays.find((report) => report.scenario.kind === 'soak')?.sidecar.resources
         ?.livePrimarySessions ?? null,
+    reactCommitsPerPanFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerPanFrame'),
+    layoutReadsPerPanFrame: metricValue(candidateProbes, 'canvas.layoutReadsPerPanFrame'),
+    longTasksDuringGestures: metricValue(candidateProbes, 'canvas.longTasksDuringGestures'),
+    panBusyP95Ms: metricValue(candidateProbes, 'canvas.panBusyP95Ms'),
+    panOverBudgetShare: metricValue(candidateProbes, 'canvas.panOverBudgetShare'),
+    panRafP95Ms: metricValue(candidateProbes, 'canvas.panRafP95Ms'),
   });
   const replayGates = candidateReplays.map((report) => report.gates);
 
@@ -159,7 +165,37 @@ function runProbes(candidateRoot: string, treeRoot: string): AbProbeResult {
     cwd: candidateRoot,
     stdio: ['ignore', 'pipe', 'inherit'],
   });
-  return JSON.parse(output) as AbProbeResult;
+  const probes = JSON.parse(output) as AbProbeResult;
+  const canvas = runCanvasScenario(candidateRoot, treeRoot);
+  return {
+    ...probes,
+    metrics: [...probes.metrics, ...canvas.metrics],
+    notes: [...probes.notes, ...canvas.notes],
+  };
+}
+
+/**
+ * This branch's canvas scenario against the tree's board harness, one run on
+ * the 30-frame board. It needs Playwright's Chromium, so a machine or tree
+ * without one leaves the canvas metrics unmeasured and says why.
+ */
+function runCanvasScenario(
+  candidateRoot: string,
+  treeRoot: string,
+): Pick<AbProbeResult, 'metrics' | 'notes'> {
+  const script = join(candidateRoot, 'tests/perf/canvas/run.ts');
+  const args = ['--import', 'tsx', script, '--tree', treeRoot, '--frames', '30', '--runs', '1'];
+  try {
+    const output = execFileSync(process.execPath, [...args, '--metrics'], {
+      encoding: 'utf8',
+      cwd: candidateRoot,
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    return { metrics: JSON.parse(output) as AbProbeResult['metrics'], notes: [] };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
+    return { metrics: [], notes: [`canvas scenario unmeasured: ${reason}`] };
+  }
 }
 
 function ensureViteBuild(treeRoot: string): void {
