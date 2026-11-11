@@ -5,16 +5,7 @@
 // draft's token values; otherwise it shows the saved version's capture, or a
 // quiet placeholder before it has ever rendered live in this mode.
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Badge } from '../../../components/ui/Badge';
 import { cn } from '../../../components/ui/cn';
 import {
@@ -31,6 +22,7 @@ import { usePickedColor } from './pickedColor';
 import { createGuestElement } from '../previewGuestElement';
 import { startPreview, type PreviewRun } from '../previewRuntime';
 import type { DesignSystemRef, KitPreviewTarget } from '../protocol';
+import { useFitScale } from './useFitScale';
 
 /** What every tile of one document shares. */
 export interface KitPreviewing {
@@ -129,7 +121,7 @@ type ArtifactRead =
  * events reach it, so hover and press show the kit's states, but Tab never
  * enters it. Only a preview is captured.
  */
-function KitGuest({
+export function KitGuest({
   kit,
   proposalId,
   target,
@@ -333,25 +325,4 @@ function TileNote({ text }: { text: string }) {
       {text}
     </p>
   );
-}
-
-/** The tile's width over the item's, at most 1, or 0 before it is measured. */
-function useFitScale(ref: RefObject<HTMLElement | null>, width: number): number {
-  const [scale, setScale] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const measure = (shown: number) => {
-      setScale(Math.min(1, shown / width));
-    };
-    measure(element.getBoundingClientRect().width);
-    const observer = new ResizeObserver(([entry]) => {
-      measure(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-    };
-  }, [ref, width]);
-  return scale;
 }
