@@ -52,6 +52,7 @@ const VOID_TAGS = new Set([
   'input',
   'link',
   'meta',
+  'param',
   'source',
   'track',
   'wbr',
@@ -85,13 +86,12 @@ export function moveLayer(
   const source = anchor.node.getSourceFile();
   const text = source.text;
   const eol = text.includes('\r\n') ? '\r\n' : '\n';
-  const moved = text.slice(anchor.node.getStart(), anchor.node.end);
   const movedIndent = lineIndent(text, anchor.node.getStart());
   const cut = cutRange(text, anchor.node);
   const paste = before
     ? pasteBefore(text, before.node, eol)
     : pasteAtEnd(source, parent, eol, movedIndent);
-  const pasted = paste.before + reindent(moved, movedIndent, paste.indent);
+  const pasted = paste.before + reindent(anchor.node, movedIndent, paste.indent);
   const edited = splice(text, [
     { start: cut.start, end: cut.end, replacement: '' },
     { start: paste.start, end: paste.end, replacement: pasted + paste.after },
@@ -130,9 +130,22 @@ function holder(target: Layer, uses: ComponentUses): ElementNode {
     (ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)) &&
     !VOID_TAGS.has(tagOf(at)) &&
     uses.rendersOnce(at)
-  )
+  ) {
+    if (setsContent(at))
+      throw invalid("This layer's content is set by a prop, so it can't hold other layers.");
     return at;
+  }
   throw invalid("This layer can't hold other layers.");
+}
+
+/** Whether a prop gives the element its content, which children written in JSX would fight. */
+function setsContent(element: ElementNode): boolean {
+  const { attributes } = ts.isJsxElement(element) ? element.openingElement : element;
+  return attributes.properties.some(
+    (property) =>
+      ts.isJsxAttribute(property) &&
+      ['children', 'dangerouslySetInnerHTML'].includes(property.name.getText()),
+  );
 }
 
 function checkPlace(anchor: Anchor, parent: ElementNode): void {
@@ -144,6 +157,10 @@ function checkPlace(anchor: Anchor, parent: ElementNode): void {
     enclosingFunction(anchor.node) !== enclosingFunction(parent)
   )
     throw invalid("Layers can move only within the component they're written in.");
+  if (enclosingBlock(anchor.node) !== enclosingBlock(parent))
+    throw ambiguous(
+      'This layer and that place are in different blocks of code. Ask the agent to move it.',
+    );
 }
 
 /** The sibling the layer lands before: one of the parent's own children, other than the layer. */
@@ -178,9 +195,24 @@ function enclosingFunction(node: ts.Node): ts.Node | undefined {
   return ts.findAncestor(node, ts.isFunctionLike);
 }
 
+/** The nearest scope a variable can be declared in: a layer leaving it may lose names it reads. */
+function enclosingBlock(node: ts.Node): ts.Node | undefined {
+  return ts.findAncestor(
+    node,
+    (scope) =>
+      ts.isFunctionLike(scope) ||
+      ts.isBlock(scope) ||
+      ts.isCaseOrDefaultClause(scope) ||
+      ts.isIterationStatement(scope, false),
+  );
+}
+
+/** Whitespace that breaks a line is formatting JSX drops; any other text, spaces too, renders. */
 function hasText(parent: JsxParent | ElementNode): boolean {
   if (ts.isJsxSelfClosingElement(parent)) return false;
-  return parent.children.some((child) => ts.isJsxText(child) && /\S/.test(child.text));
+  return parent.children.some(
+    (child) => ts.isJsxText(child) && !child.containsOnlyTriviaWhiteSpaces,
+  );
 }
 
 /** Whether the layer already sits right before `before` in the parent, or last when it is null. */
@@ -249,16 +281,37 @@ function pasteAtEnd(
   return { start: closing, end: closing, before: eol + inner, after: eol + outer, indent: inner };
 }
 
-/** Shifts every line after the first from one indentation to another; blank lines stay as they are. */
-function reindent(moved: string, from: string, to: string): string {
+/**
+ * The node's text with every line after the first shifted from one indentation
+ * to another; blank lines and lines inside a string or template stay as written.
+ */
+function reindent(node: ts.Node, from: string, to: string): string {
+  const start = node.getStart();
+  const moved = node.getSourceFile().text.slice(start, node.end);
   if (from === to) return moved;
+  const literals = literalRanges(node);
+  let lineStartsAt = start;
   return moved
     .split('\n')
     .map((line, index) => {
-      if (index === 0 || line.trim() === '' || !line.startsWith(from)) return line;
+      const at = lineStartsAt;
+      lineStartsAt += line.length + 1;
+      const inLiteral = literals.some((literal) => literal.start < at && at < literal.end);
+      if (index === 0 || inLiteral || line.trim() === '' || !line.startsWith(from)) return line;
       return to + line.slice(from.length);
     })
     .join('\n');
+}
+
+function literalRanges(node: ts.Node): { start: number; end: number }[] {
+  const ranges: { start: number; end: number }[] = [];
+  const visit = (child: ts.Node): void => {
+    if (ts.isStringLiteral(child) || ts.isTemplateLiteral(child))
+      ranges.push({ start: child.getStart(), end: child.end });
+    else child.forEachChild(visit);
+  };
+  visit(node);
+  return ranges;
 }
 
 /**

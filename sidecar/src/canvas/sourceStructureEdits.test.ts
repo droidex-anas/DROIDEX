@@ -253,3 +253,78 @@ export default ({ items, open }) => (
     assert.throws(() => moveLayer(files, move), { code, message }, JSON.stringify(change));
   }
 });
+
+test('a moved layer keeps the lines of its strings and templates as written', () => {
+  const main = `export default () => (
+  <main>
+    <section />
+    <pre title="a
+    b">{\`first
+    second\`}</pre>
+  </main>
+);
+`;
+  assert.equal(
+    moved(main, 'pre', 'section'),
+    `export default () => (
+  <main>
+    <section>
+      <pre title="a
+    b">{\`first
+    second\`}</pre>
+    </section>
+  </main>
+);
+`,
+  );
+});
+
+test('a move that would change what the source means is refused with the reason', () => {
+  const text = 'This layer sits inside text. Edit the text instead.';
+  const prop = "This layer's content is set by a prop, so it can't hold other layers.";
+  const cases: [string, string, string, string, string][] = [
+    [
+      `export default ({ flag }) => {
+  if (flag) {
+    const label = 'Scoped';
+    return <main><span>{label}</span></main>;
+  }
+  return <section />;
+};`,
+      'span',
+      'section',
+      'ambiguous_element',
+      'This layer and that place are in different blocks of code. Ask the agent to move it.',
+    ],
+    ['export default () => <main><pre>   </pre><i>A</i></main>;', 'i', 'pre', 'invalid_edit', text],
+    [
+      'export default () => <main><p> <b>A</b></p><i>B</i></main>;',
+      'b',
+      'main',
+      'invalid_edit',
+      text,
+    ],
+    [
+      'export default ({ html }) => <main><div dangerouslySetInnerHTML={{ __html: html }} /><i>A</i></main>;',
+      'i',
+      'div',
+      'invalid_edit',
+      prop,
+    ],
+    [
+      'export default () => <main><div children="Set" /><i>A</i></main>;',
+      'i',
+      'div',
+      'invalid_edit',
+      prop,
+    ],
+  ];
+  for (const [main, subject, parent, code, message] of cases) {
+    const files = { 'main.tsx': main };
+    assert.throws(
+      () => moveLayer(files, moveOf(files, subject, parent, null)),
+      { code, message },
+      main,
+    );
+  }
+});
