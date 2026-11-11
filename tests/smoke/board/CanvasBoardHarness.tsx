@@ -899,7 +899,8 @@ function Harness() {
               return new Promise<WriteReceipt>((resolve, reject) =>
                 editReplies.push({ resolve, reject }),
               ).then(
-                (receipt) => ({ receipt, landed: null }),
+                // Every revision's outline is the same, so the layer lands on its own row.
+                (receipt) => ({ receipt, landed: layer.nodeId }),
                 () => null,
               );
             }}

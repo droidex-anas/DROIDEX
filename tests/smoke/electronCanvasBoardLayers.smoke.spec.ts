@@ -590,14 +590,39 @@ test('A layer’s handle and ⌥ with the arrows move it in its source, and a dr
   await expect(tree.getByText('This layer can’t hold other layers.')).toHaveCount(0);
   expect(await moves()).toHaveLength(1);
 
-  // The handle left the keyboard on the line's row: ⌥↓ moves it past the section, ⌥→ into
-  // the title above it, and ⌥← nowhere, as main is the frame's top layer.
+  // The handle left the keyboard on the line's row: ⌥↓ moves it past the section, ⌥→ nowhere,
+  // as the title above it holds text, and ⌥← nowhere, as main is the frame's top layer.
   await expect(tree).toBeFocused();
   await page.keyboard.press('Alt+ArrowDown');
   await page.keyboard.press('Alt+ArrowRight');
   await page.keyboard.press('Alt+ArrowLeft');
   expect((await moves()).slice(1)).toEqual([
     { layer, change: { kind: 'move', parentId: 'main', beforeId: 'image' } },
-    { layer, change: { kind: 'move', parentId: 'title', beforeId: null } },
   ]);
+
+  // Once the first move has built, the keyboard follows the line to the row it landed on.
+  await page.keyboard.press('ArrowUp');
+  const lineId = (await line.getAttribute('id')) ?? '';
+  await expect(tree).not.toHaveAttribute('aria-activedescendant', lineId);
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await expect(tree).toHaveAttribute('aria-activedescendant', lineId);
+
+  // A drag ends without a move when its frame moves on to another revision, whose rows may
+  // name other layers, or when the window loses focus.
+  const regrab = async () => {
+    await line.hover();
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2, title.y + 2, { steps: 4 });
+    await expect(tree).toHaveAttribute('data-dragging', 'true');
+  };
+  await regrab();
+  await page.evaluate(() => window.boardHarness.editByUser('a'));
+  await expect(tree).not.toHaveAttribute('data-dragging');
+  await page.mouse.up();
+  await regrab();
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(tree).not.toHaveAttribute('data-dragging');
+  await page.mouse.up();
+  expect(await moves()).toHaveLength(2);
 });
