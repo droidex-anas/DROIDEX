@@ -6,6 +6,7 @@ import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationV
 import {
   isBuild,
   isDiagnostic,
+  isOutlineNodeId,
   MAX_BUILD_DIAGNOSTICS,
   MAX_SOURCE_FILE_BYTES,
 } from './buildValidation';
@@ -60,6 +61,7 @@ const REPLY_KINDS = new Set([
   'canvasCreated',
   'created',
   'written',
+  'edited',
   'arranged',
   'removed',
   'undone',
@@ -186,6 +188,8 @@ function isReply(value: unknown): boolean {
       );
     case 'written':
       return isReceipt(value.receipt);
+    case 'edited':
+      return isReceipt(value.receipt) && (value.landed === null || isOutlineNodeId(value.landed));
     case 'arranged':
     case 'undone':
     case 'renamed':

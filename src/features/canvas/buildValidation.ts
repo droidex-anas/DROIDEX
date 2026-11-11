@@ -85,7 +85,7 @@ function isOutlineNode(value: unknown): boolean {
   );
 }
 
-function isOutlineNodeId(value: unknown): boolean {
+export function isOutlineNodeId(value: unknown): boolean {
   return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
 }
 

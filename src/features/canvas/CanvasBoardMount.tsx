@@ -124,8 +124,10 @@ export function CanvasBoardMount({
   // Each edit that made a revision is a step in the board's history.
   const editElement = useCallback(
     async (input: EditElementInput) => {
-      const receipt = await canvas.source.editElement(appSessionId, canvasId, input);
-      const { designId, revisionId } = input.edit.element;
+      const edited = await canvas.source.editElement(appSessionId, canvasId, input);
+      const { receipt } = edited;
+      const { designId, revisionId } =
+        'element' in input.edit ? input.edit.element : input.edit.layer;
       const frame = frames.find((each) => each.designId === designId);
       if (frame && receipt.revisionId !== revisionId)
         boardHistory.record(
@@ -137,7 +139,7 @@ export function CanvasBoardMount({
             receipt.revisionId,
           ),
         );
-      return receipt;
+      return edited;
     },
     [appSessionId, canvasId, frames, switchRevision],
   );

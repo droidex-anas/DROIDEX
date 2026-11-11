@@ -580,6 +580,7 @@ test('a reply the protocol does not define is not an answer', () => {
     requestId: 3,
     status: 'edited',
     files: { 'main.tsx': '<h1>Changed</h1>' },
+    landed: null,
   };
   assert.deepEqual(compilerResponse(edited), edited);
 

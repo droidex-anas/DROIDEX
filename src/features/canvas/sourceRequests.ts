@@ -1,9 +1,9 @@
 // One design's source, correlated by the Canvas client like any other request:
 // read an immutable revision, write a new one from the source drawer, and make
-// one direct edit to a selected element.
+// one direct edit to a selected element or a layer.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { EditElementInput } from './elementEditProtocol';
+import type { EditElementInput, ElementEdited } from './elementEditProtocol';
 import type { CanvasCommand, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 export class SourceRequests {
@@ -36,12 +36,12 @@ export class SourceRequests {
     return reply(event, 'written').receipt;
   }
 
-  /** A retry with the same mutation ID answers the first run's receipt. */
+  /** A retry with the same mutation ID answers the first run's receipt, without a landing. */
   async editElement(
     appSessionId: string,
     canvasId: string,
     input: EditElementInput,
-  ): Promise<WriteReceipt> {
+  ): Promise<ElementEdited> {
     const event = await this.send({
       type: 'canvas.editElement',
       requestId: requestId(),
@@ -49,6 +49,7 @@ export class SourceRequests {
       canvasId,
       input,
     });
-    return reply(event, 'written').receipt;
+    const { receipt, landed } = reply(event, 'edited');
+    return { receipt, landed };
   }
 }

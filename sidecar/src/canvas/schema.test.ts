@@ -470,6 +470,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'edited', receipt: wire.receipt, landed: '0123456789abcdef' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: { kind: 'arranged', change: wire.change },
     },
     {

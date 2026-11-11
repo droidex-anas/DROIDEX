@@ -568,7 +568,9 @@ function Harness() {
     hovering: picksElements(interaction.mode),
     onEditElement: (input) => {
       editCalls.push(input);
-      return new Promise<WriteReceipt>((resolve, reject) => editReplies.push({ resolve, reject }));
+      return new Promise<WriteReceipt>((resolve, reject) =>
+        editReplies.push({ resolve, reject }),
+      ).then((receipt) => ({ receipt, landed: null }));
     },
   });
   if (params.has('project')) projectExport.open = setExporting;
@@ -745,7 +747,8 @@ function Harness() {
     editCalls,
     seeds,
     answerEdit: (index) => {
-      const { designId } = editCalls[index].edit.element;
+      const { edit } = editCalls[index];
+      const { designId } = 'element' in edit ? edit.element : edit.layer;
       const revisionId = `rev_0${String(index + 2)}`;
       editReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
       setSnapshot((current) => ({

@@ -194,9 +194,9 @@ export class CanvasWorkspace {
     return this.creation.create(scope, input);
   }
 
-  recordedEdit(scope: CanvasScope, input: EditElementInput): WriteReceipt | null {
+  recordedEdit(scope: CanvasScope, designId: string, input: EditElementInput): WriteReceipt | null {
     this.commits.requireOpen();
-    const manifest = this.leases.requireDesigns(scope, [input.edit.element.designId]);
+    const manifest = this.leases.requireDesigns(scope, [designId]);
     return recordedRevision(manifest, input.mutationId, 'edit', mutationFingerprint(input));
   }
 

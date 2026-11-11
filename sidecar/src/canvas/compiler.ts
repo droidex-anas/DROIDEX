@@ -117,6 +117,12 @@ export type CompilerRequest =
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
+/** The files an edit changed, and the nodeId a moved layer has in them (null for any other edit). */
+export interface EditedSource {
+  files: SourceFiles;
+  landed: string | null;
+}
+
 type EditFailureCode =
   | 'stale_reference'
   | 'ambiguous_element'
@@ -126,7 +132,7 @@ type EditFailureCode =
 
 export type CompilerResponse =
   | { requestId: number; status: 'ready'; design: CompiledDesign }
-  | { requestId: number; status: 'edited'; files: SourceFiles }
+  | ({ requestId: number; status: 'edited' } & EditedSource)
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'modules'; modules: ModuleDeclarations[] }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
@@ -180,19 +186,19 @@ export class CompilerWorker {
     );
   }
 
-  /** Applies one literal edit in the parser-owning process. */
+  /** Applies one direct edit in the parser-owning process. */
   edit(
     files: SourceFiles,
     elements: SourceElement[],
     edit: ElementEdit,
     designSystem: DesignSystemRef,
     signal: AbortSignal,
-  ): Promise<SourceFiles> {
-    return this.request<SourceFiles>(
+  ): Promise<EditedSource> {
+    return this.request<EditedSource>(
       signal,
       (requestId) => ({ type: 'edit', requestId, files, elements, edit, designSystem }),
       (response) => {
-        if (response.status === 'edited') return response.files;
+        if (response.status === 'edited') return { files: response.files, landed: response.landed };
         if (response.status === 'edit_failed') return canvasError(response.code, response.message);
         return undefined;
       },
@@ -412,11 +418,12 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
 
 function editResponse(
   requestId: number,
-  { status, files, code, message }: Record<string, unknown>,
+  { status, files, landed, code, message }: Record<string, unknown>,
 ): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
   if (status === 'edited') {
     const parsedFiles = sourceFilesSchema.safeParse(files);
-    return parsedFiles.success ? { requestId, status, files: parsedFiles.data } : null;
+    if (!parsedFiles.success || (landed !== null && typeof landed !== 'string')) return null;
+    return { requestId, status, files: parsedFiles.data, landed };
   }
   if (status === 'edit_failed')
     return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)
