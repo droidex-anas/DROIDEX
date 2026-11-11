@@ -7,6 +7,7 @@ import type { ComponentUses } from './componentUses.js';
 import type { OutlineNode, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
+import { cutRange, indentUnit, lineIndent, reindent, splice, startsLine } from './sourceLines.js';
 
 export interface LayerMove {
   /** The outline row being moved. */
@@ -225,15 +226,6 @@ function isAlreadyThere(anchor: Anchor, parent: ElementNode, before: Anchor | nu
   return before === null ? next === undefined : before.node === next;
 }
 
-/** The layer's text, with its whole line when it stands alone on one, so no blank line is left. */
-function cutRange(text: string, node: ts.Node): { start: number; end: number } {
-  const start = node.getStart();
-  const lineEnd = text.indexOf('\n', node.end);
-  const alone =
-    startsLine(text, start) && lineEnd !== -1 && /^[ \t]*\r?$/.test(text.slice(node.end, lineEnd));
-  return alone ? { start: lineStart(text, start), end: lineEnd + 1 } : { start, end: node.end };
-}
-
 /** On its own line above a sibling that starts one, inline right before one that does not. */
 function pasteBefore(text: string, sibling: ts.Node, eol: string): Paste {
   const start = sibling.getStart();
@@ -281,65 +273,6 @@ function pasteAtEnd(
   return { start: closing, end: closing, before: eol + inner, after: eol + outer, indent: inner };
 }
 
-/**
- * The node's text with every line after the first shifted from one indentation
- * to another; blank lines and lines inside a string or template stay as written.
- */
-function reindent(node: ts.Node, from: string, to: string): string {
-  const start = node.getStart();
-  const moved = node.getSourceFile().text.slice(start, node.end);
-  if (from === to) return moved;
-  const literals = literalRanges(node);
-  let lineStartsAt = start;
-  return moved
-    .split('\n')
-    .map((line, index) => {
-      const at = lineStartsAt;
-      lineStartsAt += line.length + 1;
-      const inLiteral = literals.some((literal) => literal.start < at && at < literal.end);
-      if (index === 0 || inLiteral || line.trim() === '' || !line.startsWith(from)) return line;
-      return to + line.slice(from.length);
-    })
-    .join('\n');
-}
-
-function literalRanges(node: ts.Node): { start: number; end: number }[] {
-  const ranges: { start: number; end: number }[] = [];
-  const visit = (child: ts.Node): void => {
-    if (ts.isStringLiteral(child) || ts.isTemplateLiteral(child))
-      ranges.push({ start: child.getStart(), end: child.end });
-    else child.forEachChild(visit);
-  };
-  visit(node);
-  return ranges;
-}
-
-/**
- * One level of indentation as the file writes JSX: a tab where the lines in
- * play use tabs, else the smallest step in spaces from a JSX parent's line to
- * a child on a line of its own, else two spaces.
- */
-function indentUnit(source: ts.SourceFile, sample: string): string {
-  if (sample.includes('\t')) return '\t';
-  const text = source.text;
-  let step = Infinity;
-  const visit = (node: ts.Node): void => {
-    if (isJsxParent(node)) {
-      const outer = lineIndent(text, node.getStart());
-      for (const child of node.children) {
-        const start = child.getStart();
-        if (ts.isJsxText(child) || !startsLine(text, start)) continue;
-        const difference = lineIndent(text, start).length - outer.length;
-        if (difference > 0 && !`${outer}${lineIndent(text, start)}`.includes('\t'))
-          step = Math.min(step, difference);
-      }
-    }
-    node.forEachChild(visit);
-  };
-  visit(source);
-  return step === Infinity ? '  ' : ' '.repeat(step);
-}
-
 /** The row of the edited source written at `position`, or whose anchor starts there. */
 function rowStartingAt(files: SourceFiles, file: string, position: number): string | null {
   const { outline, written } = sourceLayers(files);
@@ -349,29 +282,6 @@ function rowStartingAt(files: SourceFiles, file: string, position: number): stri
     if (at.getStart() === position || anchorOf(at)?.node.getStart() === position) return nodeId;
   }
   return null;
-}
-
-/** Applies non-overlapping replacements, the later one first so earlier offsets hold. */
-function splice(
-  text: string,
-  replacements: { start: number; end: number; replacement: string }[],
-): string {
-  let result = text;
-  for (const { start, end, replacement } of replacements.toSorted((a, b) => b.start - a.start))
-    result = result.slice(0, start) + replacement + result.slice(end);
-  return result;
-}
-
-function lineStart(text: string, position: number): number {
-  return text.lastIndexOf('\n', position - 1) + 1;
-}
-
-function startsLine(text: string, position: number): boolean {
-  return /^[ \t]*$/.test(text.slice(lineStart(text, position), position));
-}
-
-function lineIndent(text: string, position: number): string {
-  return /^[ \t]*/.exec(text.slice(lineStart(text, position)))?.[0] ?? '';
 }
 
 function staleReference(): SourceElementError {
