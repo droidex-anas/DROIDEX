@@ -141,7 +141,7 @@ function setStyle(
       (read.scope === 'frame' || (read.scope === 'always' && read.shared)) &&
       read.sets.some((longhand) => own.includes(longhand)),
   );
-  if (outranking.some(({ read }) => read.scope === 'always' && read.important))
+  if (outranking.some(({ read }) => read.important))
     throw new SourceElementError(
       'ambiguous_element',
       `A class marked important sets this element's ${property}, so a value written here would not show. Ask the agent to change it.`,
