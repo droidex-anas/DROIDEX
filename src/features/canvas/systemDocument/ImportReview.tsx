@@ -5,7 +5,6 @@ import { useId, useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
-import { Tooltip } from '../../../components/ui/Tooltip';
 import type { LibraryProvenance } from '../protocol';
 import { importReview } from './importReviewGroups';
 
@@ -44,18 +43,11 @@ export function ImportReview({ library }: { library: LibraryProvenance }) {
               <h3 className="text-label text-muted">{group.title}</h3>
               <ul className="flex flex-col">
                 {group.rows.map((row) => (
-                  // The file keeps its whole name; a note without room for it goes below.
-                  <li
-                    key={`${row.file}:${row.note ?? ''}`}
-                    className="flex min-w-0 flex-wrap items-baseline gap-x-3 py-1"
-                  >
-                    <Tooltip label={row.file} className="min-w-0 max-w-full">
-                      <span className="min-w-0 truncate text-body text-primary">{row.file}</span>
-                    </Tooltip>
+                  // Both wrap rather than cut, so every name and note reads whole without a pointer.
+                  <li key={`${row.file}:${row.note ?? ''}`} className="flex min-w-0 flex-col py-1">
+                    <span className="break-words text-body text-primary">{row.file}</span>
                     {row.note !== null && (
-                      <Tooltip label={row.note} className="min-w-0 grow basis-40">
-                        <span className="min-w-0 truncate text-caption text-muted">{row.note}</span>
-                      </Tooltip>
+                      <span className="break-words text-caption text-muted">{row.note}</span>
                     )}
                   </li>
                 ))}
