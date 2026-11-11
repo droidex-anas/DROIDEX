@@ -720,7 +720,7 @@ to `reports/perf/`. Headless scenarios: `smoke`, `idle`, `streaming`,
 and sidecar-restart are documented skips (restart belongs to the supervision
 phase). The design canvas has its own headless scenario, `npm run perf:canvas`:
 Playwright streams board gestures at 120 Hz into the board harness and counts
-React commits, layout reads and long tasks per frame.
+React commits and layout reads per frame and long tasks per gesture.
 
 A/B probes (`npm run perf:compare` / `npm run perf:report`) measure the same
 self-contained metrics on a baseline git worktree and on this tree. Metrics

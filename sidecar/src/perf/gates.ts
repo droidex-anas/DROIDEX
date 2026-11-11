@@ -40,7 +40,8 @@ const TERMINAL_DELIVERIES_BUDGET = 16;
 const FEED_REBUILT_EVENTS_PER_DELTA_BUDGET = 8;
 
 // The canvas scenario's 30-frame board commits its React viewport on every pan
-// frame and reads layout 3 times per pointer event, 2 events a frame. Both are
+// frame and reads layout 3 times per pointer event, 2 events a frame (rects,
+// offsets, client and scroll sizes and computed style all count). Both are
 // today's measured ceiling, held until the board's stage owns pan.
 const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 1.1;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
@@ -215,7 +216,7 @@ export function evaluateProbeGates(options: {
       actual: options.layoutReadsPerPanFrame,
       budget: CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET,
       justification:
-        'Rect, offset and client-size reads: 3 per pointer event at 2 events a frame (measured 5.6–6.0).',
+        'Rect, offset, client and scroll geometry and computed-style reads: 3 per pointer event at 2 events a frame (measured 5.6–6.0).',
     }),
     hard({
       id: 'canvas.longTasksDuringGestures',

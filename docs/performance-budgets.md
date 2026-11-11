@@ -28,15 +28,17 @@ npm run perf:canvas -- --runs 3
 `perf:compare` uses a git worktree of the baseline ref and this branch’s
 probes against that tree’s own production modules. Baseline probe output is
 cached in `sidecar/src/perf/baselines/origin-main.json` with the measured
-commit. A SHA mismatch is a stale cache, not a silent reuse.
+commit and the A/B metrics it covers. A SHA or metric-set mismatch is a stale
+cache, not a silent reuse.
 
 `perf:canvas` builds the board harness (`tests/smoke/board`) for production
 and streams 12 gestures at 120 Hz on a 30- and a 100-frame board in headless
 Chromium: pans, wheel zooms, frame drags, a marquee, Edit hover, Alt
 measurement, the Layers rows and a panel scrub. It writes
-`reports/perf/canvas.{json,md}`. `perf:compare` and `perf:gates` run it
-once on the 30-frame board; without Playwright's Chromium its gates are
-unmeasured, not failed.
+`reports/perf/canvas.{json,md}`. `perf:gates` runs it once on the 30-frame
+board, and `perf:compare` once on each of the baseline and candidate trees.
+Without Playwright's Chromium, or on a tree without the harness, its gates are
+unmeasured; any other failure of the scenario fails the run.
 
 Timing CPU and RSS from a shared CI runner are recorded and **warned**, never
 failed. Promote a timing metric to a hard gate only after variance on
@@ -57,7 +59,7 @@ dedicated hardware is understood.
 | Persistence overflow on a normal replay | 0 failures | Write-behind is capped at 50k rows / 64 MiB; overflow is explicit, not unbounded growth. |
 | Live primary sessions after soak cleanup | 0 | 12 create/close cycles must release every session. |
 | React commits per pan frame, 30-frame board | 1.1 commits | The board commits its viewport on every pan frame today; the ratchet drops to 0 when pan leaves React. |
-| Layout reads per pan frame, 30-frame board | 6.5 reads | Rect, offset and client-size reads, 3 per pointer event at 2 events a frame today. |
+| Layout reads per pan frame, 30-frame board | 6.5 reads | Rects, offset, client and scroll geometry and computed style, 3 per pointer event at 2 events a frame today. |
 | Long tasks during canvas gestures, 30-frame board | 0 | A task over 50 ms drops at least 5 frames at 120 Hz. |
 | History worker third-party modules | 0 | `historyWorkerBundle.test.ts`. Both worker isolates compile this graph; a value import of the Droid SDK once cost ~83 MiB of sidecar RSS. |
 | History worker bundle | 200_000 bytes | Same test, ~2× the 98 KiB the workers actually need. |

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import {
 } from './abCompare.js';
 import { evaluateProbeGates, mergeGateEvaluations } from './gates.js';
 import { runSoak, sessionSwitchTick } from './lifecycle.js';
+import { METRIC_CATALOG } from './metricKind.js';
 import { runReplay } from './runner.js';
 import { resolveScenario, SKIPPED_PERF_SCENARIOS } from './scenario.js';
 
@@ -30,6 +31,9 @@ export const DEFAULT_COMPARE_SCENARIOS = [
 ] as const;
 
 const GATE_SCENARIOS = ['smoke', 'soak'] as const;
+
+// tests/perf/canvas/run.ts exits with this when Playwright's Chromium is not installed.
+const CANVAS_CHROMIUM_MISSING_EXIT = 3;
 
 export interface CompareOptions {
   baselineRef: string;
@@ -60,7 +64,8 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     !options.refreshBaseline &&
     cache !== null &&
     cache.baselineCommit === baselineCommit &&
-    cache.baselineRef === options.baselineRef;
+    cache.baselineRef === options.baselineRef &&
+    JSON.stringify(cache.abMetricIds) === JSON.stringify(abMetricIds());
 
   let baselineProbes: AbProbeResult | null = cacheHit ? cache.probes : null;
   if (options.includeBaseline && !cacheHit) {
@@ -73,6 +78,7 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     const nextCache: BaselineCache = {
       baselineRef: options.baselineRef,
       baselineCommit,
+      abMetricIds: abMetricIds(),
       measuredAt: new Date().toISOString(),
       probes: baselineProbes,
     };
@@ -176,26 +182,42 @@ function runProbes(candidateRoot: string, treeRoot: string): AbProbeResult {
 
 /**
  * This branch's canvas scenario against the tree's board harness, one run on
- * the 30-frame board. It needs Playwright's Chromium, so a machine or tree
- * without one leaves the canvas metrics unmeasured and says why.
+ * the 30-frame board. A machine without Playwright's Chromium, or a tree
+ * without the harness, leaves the canvas metrics unmeasured and says why; any
+ * other failure of the scenario fails the run.
  */
 function runCanvasScenario(
   candidateRoot: string,
   treeRoot: string,
 ): Pick<AbProbeResult, 'metrics' | 'notes'> {
+  if (!existsSync(join(treeRoot, 'tests/smoke/board/index.html'))) {
+    return {
+      metrics: [],
+      notes: ['canvas scenario unmeasured: the tree has no tests/smoke/board.'],
+    };
+  }
   const script = join(candidateRoot, 'tests/perf/canvas/run.ts');
   const args = ['--import', 'tsx', script, '--tree', treeRoot, '--frames', '30', '--runs', '1'];
-  try {
-    const output = execFileSync(process.execPath, [...args, '--metrics'], {
-      encoding: 'utf8',
-      cwd: candidateRoot,
-      stdio: ['ignore', 'pipe', 'inherit'],
-    });
-    return { metrics: JSON.parse(output) as AbProbeResult['metrics'], notes: [] };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message.split('\n')[0] : String(error);
-    return { metrics: [], notes: [`canvas scenario unmeasured: ${reason}`] };
+  const result = spawnSync(process.execPath, [...args, '--metrics'], {
+    encoding: 'utf8',
+    cwd: candidateRoot,
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  if (result.error) throw result.error;
+  if (result.status === CANVAS_CHROMIUM_MISSING_EXIT) {
+    return {
+      metrics: [],
+      notes: [
+        "canvas scenario unmeasured: Playwright's Chromium is not installed (npx playwright install chromium).",
+      ],
+    };
   }
+  if (result.status !== 0) {
+    throw new Error(
+      `The canvas scenario failed on ${treeRoot} (${result.signal ?? `exit ${String(result.status)}`}).`,
+    );
+  }
+  return { metrics: JSON.parse(result.stdout) as AbProbeResult['metrics'], notes: [] };
 }
 
 function ensureViteBuild(treeRoot: string): void {
@@ -226,6 +248,10 @@ function linkModules(candidateRoot: string, worktree: string): void {
   if (!existsSync(join(worktree, 'sidecar/node_modules')) && existsSync(sidecarModules)) {
     execFileSync('ln', ['-s', sidecarModules, join(worktree, 'sidecar/node_modules')]);
   }
+}
+
+function abMetricIds(): string[] {
+  return METRIC_CATALOG.filter((metric) => metric.class === 'ab').map((metric) => metric.id);
 }
 
 function readCache(path: string): BaselineCache | null {
