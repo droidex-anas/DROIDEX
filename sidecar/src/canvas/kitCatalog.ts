@@ -86,10 +86,10 @@ export function catalogFile(catalog: readonly CatalogEntry[]): string {
 /** What the kit document lists of an entry; its JSX stays in the sidecar. */
 export type CatalogListing = Pick<CatalogEntry, 'name' | 'module' | 'note'>;
 
+/** The listing of a saved version's catalog, which was checked when it was saved. */
 export function catalogListing(files: SourceFiles): CatalogListing[] {
   const read = readKitCatalog(files);
-  // A saved version's catalog was checked when it was saved.
-  if ('problem' in read) return [];
+  if ('problem' in read) throw new Error(read.problem);
   return read.catalog.map(({ name, module, note }) => ({ name, module, note }));
 }
 
