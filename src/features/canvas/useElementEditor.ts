@@ -210,6 +210,11 @@ export function useElementEditor({
     return true;
   };
 
+  /** Drops the selection if it is in `designId`. */
+  const clearIn = (designId: string) => {
+    if (latest.current.selection?.draft.element.designId === designId) choose(null);
+  };
+
   /** Changes what the selected element previews, from what it draws now. */
   const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
@@ -292,6 +297,7 @@ export function useElementEditor({
     mode,
     pick,
     clear,
+    clearIn,
     preview: (property: string, value: string, element: ElementRef): boolean => {
       if (!selects(element)) return false;
       update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));

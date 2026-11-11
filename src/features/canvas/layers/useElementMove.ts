@@ -22,6 +22,8 @@ export type MoveLayer = (layer: LayerRef, place: LayerPlace) => Promise<ElementE
 
 interface Drag {
   key: string;
+  /** The frame's revision at the grab, and the built one its rows showed; null while building. */
+  revision: { frame: string | null; built: string | null };
   /** The pointer that pressed the handle; any other one is ignored until it lets go. */
   pointerId: number;
   /** Where the press started, in list pixels. */
@@ -71,8 +73,30 @@ export function useElementMove({
   const [drag, setDrag] = useState<Drag | null>(null);
   const follow = useLanding(rows, reveal, moveTo, pick);
   const subject = drag ? rows.findIndex((row) => row.key === drag.key) : -1;
-  const line =
-    drag?.over && subject >= 0 ? dropLine(rows, subject, drag.over.gap, drag.over.level) : null;
+  // Row ids are places in the source, so once the frame moves on a row may name another layer.
+  const held = drag !== null && subject >= 0 && isSameRevision(rows[subject], drag.revision);
+  const line = held && drag.over ? dropLine(rows, subject, drag.over.gap, drag.over.level) : null;
+  const cancel = () => {
+    if (!drag) return;
+    if (list.current?.hasPointerCapture(drag.pointerId))
+      list.current.releasePointerCapture(drag.pointerId);
+    setDrag(null);
+  };
+  const cancelDrag = useEffectEvent(cancel);
+  const dragging = drag !== null;
+  useEffect(() => {
+    if (dragging && !held) cancelDrag();
+  }, [dragging, held]);
+  useEffect(() => {
+    if (!dragging) return;
+    const onBlur = () => {
+      cancelDrag();
+    };
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('blur', onBlur);
+    };
+  }, [dragging]);
 
   const move = (row: ElementEntry, place: LayerPlace) => {
     const { designId, build } = row.frame;
@@ -108,23 +132,24 @@ export function useElementMove({
       if (place) move(row, place);
     },
     /** Ends a drag without moving its layer. */
-    cancel: () => {
-      if (!drag) return;
-      if (list.current?.hasPointerCapture(drag.pointerId))
-        list.current.releasePointerCapture(drag.pointerId);
-      setDrag(null);
-    },
+    cancel,
     grab: (event: PointerEvent<HTMLElement>, row: ElementEntry) => {
       if (event.button !== 0 || drag || !list.current) return;
       event.preventDefault();
       event.stopPropagation();
       list.current.setPointerCapture(event.pointerId);
-      setDrag({ key: row.key, pointerId: event.pointerId, start: listPoint(event), over: null });
+      setDrag({
+        key: row.key,
+        revision: revisionOf(row),
+        pointerId: event.pointerId,
+        start: listPoint(event),
+        over: null,
+      });
     },
     /** For the list's container, which the list's captured pointer events bubble to. */
     handlers: {
       onPointerMove: (event: PointerEvent<HTMLElement>) => {
-        if (drag?.pointerId !== event.pointerId || subject < 0) return;
+        if (drag?.pointerId !== event.pointerId || !held) return;
         const over = overAt(event, drag);
         if (over && (over.gap !== drag.over?.gap || over.level !== drag.over.level))
           setDrag({ ...drag, over });
@@ -133,7 +158,7 @@ export function useElementMove({
       onPointerUp: (event: PointerEvent<HTMLElement>) => {
         if (drag?.pointerId !== event.pointerId) return;
         setDrag(null);
-        const over = subject >= 0 ? overAt(event, drag) : null;
+        const over = held ? overAt(event, drag) : null;
         if (!over) return;
         const { drop } = dropLine(rows, subject, over.gap, over.level);
         const row = rows[subject];
@@ -204,6 +229,16 @@ function landedRow(
 function mayBeDrawn(rows: readonly LayerEntry[], landing: Landing, drawn: Drawn | null): boolean {
   if (drawn?.state !== 'reading' && drawn?.state !== 'unread') return false;
   return rows.find((row) => row.key === landing.designId)?.frame.revisionId === landing.revisionId;
+}
+
+function revisionOf(row: LayerEntry): Drag['revision'] {
+  const { revisionId, build } = row.frame;
+  return { frame: revisionId, built: build.status === 'ready' ? build.revisionId : null };
+}
+
+function isSameRevision(row: LayerEntry, revision: Drag['revision']): boolean {
+  const now = revisionOf(row);
+  return now.frame === revision.frame && now.built === revision.built;
 }
 
 function drawnAt(rows: readonly LayerEntry[], key: string): Drawn | null {

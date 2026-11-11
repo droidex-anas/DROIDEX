@@ -219,15 +219,15 @@ export function CanvasBoardMount({
     });
   };
   const moveLayer = async (layer: LayerRef, place: LayerPlace) => {
-    // A move shifts the frame's elements in its source, so a pick there would follow the wrong one.
-    const holdsPick = editor.selection?.draft.element.designId === layer.designId;
     const input: EditElementInput = {
       mutationId: crypto.randomUUID(),
       edit: { layer, change: { kind: 'move', ...place } },
     };
     try {
       const edited = await editElement(input);
-      if (holdsPick) editor.clear();
+      // A move shifts the frame's elements in its source, so a pick there, made before or
+      // during the move, would follow the wrong one.
+      editor.clearIn(layer.designId);
       return edited;
     } catch (error) {
       toast.error(`Couldn’t move the layer. ${canvasMessage(error)}`);
