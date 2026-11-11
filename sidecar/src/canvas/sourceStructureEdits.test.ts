@@ -525,3 +525,62 @@ export default ({ items, open }) => (
     );
   }
 });
+
+test('a copy that would repeat a key, a ref or an id props may set is refused, as is deleting a frame’s last top layer', () => {
+  const files = {
+    'main.tsx': `import { useRef } from 'react';
+const props = { id: 'name' };
+export default () => {
+  const ref = useRef(null);
+  return (
+    <main>
+      <p key="one">One</p>
+      <input {...props} />
+      <label><input ref={ref} /></label>
+      <ul>{[1, 2].map((n) => <li key={n}>{n}</li>)}</ul>
+    </main>
+  );
+};
+`,
+  };
+  const cases: [string, string, string][] = [
+    [
+      'p',
+      'invalid_edit',
+      'This layer has a key, and a copy would repeat it. Ask the agent to duplicate it.',
+    ],
+    [
+      'input',
+      'ambiguous_element',
+      'This layer takes props from code, which may set an id a copy would repeat. Ask the agent to duplicate it.',
+    ],
+    [
+      'label',
+      'invalid_edit',
+      'This layer has a ref, which a copy would take over. Ask the agent to duplicate it.',
+    ],
+  ];
+  for (const [subject, code, message] of cases)
+    assert.throws(
+      () => editLayer(files, rowId(files, subject), { kind: 'duplicate' }),
+      { code, message },
+      subject,
+    );
+  // Each list keys its own items, so a copy of the list repeats none among its siblings.
+  assert.doesNotThrow(() => editLayer(files, rowId(files, 'ul'), { kind: 'duplicate' }));
+
+  // A fragment holding a frame's top layers: one of several goes, the last stays, and either copies.
+  assert.equal(
+    removed('export default () => <><main>Root</main><footer>Foot</footer></>;', 'footer').main,
+    'export default () => <><main>Root</main></>;',
+  );
+  const alone = { 'main.tsx': 'export default () => <><main>Root</main></>;' };
+  assert.throws(() => editLayer(alone, rowId(alone, 'main'), { kind: 'remove' }), {
+    code: 'invalid_edit',
+    message: "A frame's top layer can't be deleted. Delete the frame instead.",
+  });
+  assert.equal(
+    duplicated(alone['main.tsx'], 'main'),
+    'export default () => <><main>Root</main><main>Root</main></>;',
+  );
+});

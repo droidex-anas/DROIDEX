@@ -149,6 +149,10 @@ function removeLayer(files: SourceFiles, nodeId: string): EditedLayers {
   const { uses, outline, written, layer } = layersIn(files);
   const subject = layer(nodeId);
   const anchor = writtenOnceAnchor(subject, uses, 'remove');
+  // A fragment can hold a frame's top layer; with it gone the frame would draw nothing.
+  const isOtherTopLayer = (row: OutlineNode) => row.parentId === null && row !== subject.row;
+  if (subject.row.parentId === null && !outline.nodes.some(isOtherTopLayer))
+    throw invalid(REFUSALS.remove.root);
   const source = anchor.node.getSourceFile();
   const cut = isOnlyChild(anchor) ? between(anchor.parent) : cutRange(source.text, anchor.node);
   const changed = { [source.fileName]: splice(source.text, [{ ...cut, replacement: '' }]) };
@@ -166,7 +170,7 @@ function removeLayer(files: SourceFiles, nodeId: string): EditedLayers {
 function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
   const { uses, layer } = layersIn(files);
   const { node } = writtenOnceAnchor(layer(nodeId), uses, 'duplicate');
-  if (writesId(node)) throw invalid('This layer has an id, and a copy would repeat it.');
+  checkCopy(node);
   const source = node.getSourceFile();
   const { text } = source;
   const start = node.getStart();
@@ -403,10 +407,48 @@ function keyboardRow(rows: readonly OutlineNode[], row: OutlineNode): OutlineNod
   );
 }
 
-/** Whether the layer, or anything inside it, writes an `id`, which a document holds once. */
-function writesId(node: ts.Node): boolean {
-  if (ts.isJsxAttribute(node) && node.name.getText() === 'id') return true;
-  return node.forEachChild(writesId) ?? false;
+/**
+ * Refuses a copy that would repeat what must be one of a kind: an `id`, which
+ * a document holds once, or one props spread from code may set; a `ref`, which
+ * the copy would take over; or a `key` among the parent's children.
+ */
+function checkCopy(copied: ts.Node): void {
+  if (writesSiblingKey(copied))
+    throw invalid(
+      'This layer has a key, and a copy would repeat it. Ask the agent to duplicate it.',
+    );
+  const attribute = copiedAttribute(copied);
+  if (attribute === 'id') throw invalid('This layer has an id, and a copy would repeat it.');
+  if (attribute === 'ref')
+    throw invalid(
+      'This layer has a ref, which a copy would take over. Ask the agent to duplicate it.',
+    );
+  if (attribute === 'spread')
+    throw ambiguous(
+      'This layer takes props from code, which may set an id a copy would repeat. Ask the agent to duplicate it.',
+    );
+}
+
+/** The first `id`, `ref` or spread of props the layer, or anything inside it, writes. */
+function copiedAttribute(node: ts.Node): 'id' | 'ref' | 'spread' | undefined {
+  if (ts.isJsxSpreadAttribute(node)) return 'spread';
+  if (ts.isJsxAttribute(node)) {
+    const name = node.name.getText();
+    if (name === 'id' || name === 'ref') return name;
+  }
+  return node.forEachChild(copiedAttribute);
+}
+
+/** Whether an element the copy puts among the parent's children has a `key`; a list's keys are its own. */
+function writesSiblingKey(node: ts.Node): boolean {
+  if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node)) {
+    const opening = ts.isJsxElement(node) ? node.openingElement : node;
+    return opening.attributes.properties.some(
+      (attribute) => ts.isJsxAttribute(attribute) && attribute.name.getText() === 'key',
+    );
+  }
+  if (ts.isFunctionLike(node)) return false;
+  return node.forEachChild(writesSiblingKey) ?? false;
 }
 
 /** The row of the edited source written at `position`, or whose anchor starts there. */
