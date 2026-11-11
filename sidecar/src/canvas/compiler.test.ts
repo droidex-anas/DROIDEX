@@ -599,6 +599,7 @@ test('a reply the protocol does not define is not an answer', () => {
     { requestId: 1, status: 'failed' },
     { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
     { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
+    { requestId: 1, status: 'catalogChecked', failures: [null, { entry: 42, diagnostic: 'oops' }] },
   ]) {
     assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }

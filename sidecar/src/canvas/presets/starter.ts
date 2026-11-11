@@ -4,6 +4,8 @@
 // tokens; a new kit starts from the starter's token values and files.
 
 import type { DocumentPart } from '../buildDocument.js';
+import { KIT_CATALOG_FILE } from '../kitCatalog.js';
+import { PRIMITIVE_CATALOG } from './catalogs.js';
 import inter from './fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from './primitives.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
@@ -256,9 +258,10 @@ export const STARTER_TOKENS: Record<'light' | 'dark', Record<string, string>> = 
   },
 };
 
-/** The shared primitives, their stylesheet and Inter, which the starter's type tokens name. */
+/** The shared primitives, their catalog, their stylesheet and Inter, which the starter's type tokens name. */
 export const STARTER_FILES: Record<string, string> = {
   'index.tsx': PRIMITIVES_TSX,
+  [KIT_CATALOG_FILE]: PRIMITIVE_CATALOG,
   'tokens.css': inter.css + KIT_CSS,
   'fonts/Inter-OFL.txt': inter.license,
 };

@@ -8,11 +8,19 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { storageFailure } from '../canvasError.js';
 import { isMissing } from '../designSystemStorage.js';
+import { KIT_CATALOG_FILE } from '../kitCatalog.js';
 import type { DesignSystemRef } from '../protocol.js';
+import { DROIDEX_CATALOG } from './catalogs.js';
 import kit from './droidex/system.json' with { type: 'json' };
 
-/** The preset as exported; the built-in list validates it with the other kits. */
-export const DROIDEX_KIT: unknown = kit;
+/**
+ * The preset as exported, with its catalog, which is written here so a fresh
+ * export keeps it; the built-in list validates it with the other kits.
+ */
+export const DROIDEX_KIT: unknown = {
+  ...kit,
+  files: { ...kit.files, [KIT_CATALOG_FILE]: DROIDEX_CATALOG },
+};
 
 // The built sidecar runs from the root of dist, where the build copies this folder to presets/.
 const CAPTURES_DIR = fileURLToPath(

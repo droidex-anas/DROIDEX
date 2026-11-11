@@ -14,6 +14,7 @@ import { MAX_LIBRARY_SKIPS } from './designSystemProvenance.js';
 import { saveDesignSystem } from './designSystems.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { KitPreviews } from './kitPreviews.js';
+import { LIBRARY_CATALOG_NOTICE } from './libraryCatalog.js';
 
 pinScratchProfile();
 after(() => stopCanvasRuntime());
@@ -300,6 +301,12 @@ test('a left-out import is recorded short and without a host path, and the kit e
   const document = await readFile(join(destination, 'document.json'), 'utf8');
   assert.match(document, /…\/Host/);
   assert.doesNotMatch(document, /example-person/);
+  const notice = await readFile(join(destination, 'src', LIBRARY_CATALOG_NOTICE), 'utf8');
+  assert.match(
+    notice,
+    /^The demos in catalog\.json are taken from the component demos of shadcn\/ui/,
+  );
+  assert.match(notice, /MIT License/);
 });
 
 test('aliases map as TypeScript reads them, and theme values the kit cannot keep whole are reported', async (t) => {

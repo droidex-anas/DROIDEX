@@ -25,6 +25,7 @@ import {
 } from './designSystems.js';
 import type { DesignSystemProvenance } from './designSystemProvenance.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import { catalogListing, type CatalogListing } from './kitCatalog.js';
 import { editTokens } from './styleEdits.js';
 import { readKitFonts } from './kitFonts.js';
 import type { KitPreviews } from './kitPreviews.js';
@@ -42,6 +43,8 @@ export interface DesignSystemDocumentView {
   sections: DocumentSection[];
   /** The example file names its previews may name. */
   examples: string[];
+  /** The entries of the kit's catalog.json, in its order. */
+  catalog: CatalogListing[];
   /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;
@@ -203,6 +206,7 @@ async function readDocument(ref: DesignSystemVersionRef): Promise<DesignSystemDo
     cover: system.cover,
     sections: system.sections,
     examples: Object.keys(system.examples).sort(),
+    catalog: catalogListing(system.files),
     unmapped: unmappedKitTokens(system),
     provenance: system.provenance ?? null,
     savedAt: entry?.savedAt ?? null,

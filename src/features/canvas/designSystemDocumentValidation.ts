@@ -22,6 +22,10 @@ export const MAX_KIT_NAME_LENGTH = 120;
 // a kit holds as many examples as a design holds files.
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_EXAMPLES = 64;
+// `CATALOG_LIMITS` in the sidecar's kitCatalog.ts.
+const MAX_CATALOG_ENTRIES = 128;
+const MAX_CATALOG_NAME_LENGTH = 80;
+const MAX_CATALOG_NOTE_LENGTH = 200;
 // The project fields of the sidecar's designSystemProvenance.ts: the files a
 // kit was read from, and a library kit's exports and token names.
 const MAX_PROJECT_NAME_LENGTH = 255;
@@ -148,7 +152,7 @@ function isPreview(value: unknown): boolean {
     value.kind === 'preview' &&
     isItemId(value.id) &&
     isTitle(value.title) &&
-    isExamplePath(value.example) &&
+    isSourcePath(value.example) &&
     isWholeBetween(value.width, 240, 1440) &&
     isWholeBetween(value.height, 120, 1200) &&
     isOptionalNote(value.note, MAX_ITEM_NOTE_BYTES)
@@ -224,7 +228,9 @@ export function isKitDocument(value: unknown): boolean {
     isKitKind(value.kind) &&
     isCover(value.cover) &&
     isDocumentSections(value.sections) &&
-    boundedList(value.examples, MAX_EXAMPLES, isExamplePath) &&
+    boundedList(value.examples, MAX_EXAMPLES, isSourcePath) &&
+    boundedList(value.catalog, MAX_CATALOG_ENTRIES, isCatalogListing) &&
+    isUniqueBy(value.catalog, 'name') &&
     boundedList(value.unmapped, MAX_TOKENS, isTokenName) &&
     (value.provenance === null || isKitProvenance(value.provenance)) &&
     (value.savedAt === null || isTimestamp(value.savedAt)) &&
@@ -272,7 +278,7 @@ function isKitKind(value: unknown): boolean {
 function isCover(value: unknown): boolean {
   if (value === null) return true;
   if (hasOnlyKeys(value, ['kind', 'example']) && value.kind === 'preview')
-    return isExamplePath(value.example);
+    return isSourcePath(value.example);
   return (
     hasOnlyKeys(value, ['kind', 'assetId']) && value.kind === 'image' && isAssetId(value.assetId)
   );
@@ -316,7 +322,7 @@ function isLibraryProvenance(value: unknown): boolean {
     count(value.skippedCount) &&
     count(value.partialCount) &&
     listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount) &&
-    reviewsEachFileOnce(value.skipped)
+    isUniqueBy(value.skipped, 'file')
   );
 }
 
@@ -336,9 +342,11 @@ function listsAtMostItsCounts(
   return kept <= partialCount && skipped.length - kept <= skippedCount;
 }
 
-function reviewsEachFileOnce(skipped: readonly unknown[]): boolean {
-  const files = skipped.map((skip) => (record(skip) ? skip.file : null));
-  return new Set(files).size === files.length;
+/** Whether no two records of a list share their value at `key`. */
+function isUniqueBy(list: unknown, key: string): boolean {
+  if (!Array.isArray(list)) return false;
+  const values = list.map((each: unknown) => (record(each) ? each[key] : null));
+  return new Set(values).size === values.length;
 }
 
 /** A review record's file or detail: a project path or short text, never an absolute path. */
@@ -374,8 +382,17 @@ function isTimestamp(value: unknown): boolean {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value));
 }
 
-/** A name in the kit's examples, held to the sidecar's `sourcePathSchema`. */
-function isExamplePath(value: unknown): boolean {
+function isCatalogListing(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, ['name', 'module', 'note']) &&
+    boundedText(value.name, MAX_CATALOG_NAME_LENGTH) &&
+    (value.module === null || isSourcePath(value.module)) &&
+    (value.note === null || boundedText(value.note, MAX_CATALOG_NOTE_LENGTH))
+  );
+}
+
+/** A kit file's or example's name, held to the sidecar's `sourcePathSchema`. */
+function isSourcePath(value: unknown): boolean {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_SOURCE_PATH_LENGTH)
     return false;
   if (value.includes('\\') || hasControlCharacter(value) || UNPAIRED_SURROGATE.test(value))

@@ -1,5 +1,7 @@
 import { buildDocument } from '../buildDocument.js';
 import type { DesignSystem } from '../designSystems.js';
+import { KIT_CATALOG_FILE } from '../kitCatalog.js';
+import { PRIMITIVE_CATALOG } from './catalogs.js';
 import { PRIMITIVES_TSX } from './primitives.js';
 import { PRIMITIVE_EXAMPLES, PRIMITIVE_PARTS, rulesNote } from './starter.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
@@ -76,6 +78,10 @@ export const AUTO_DESIGN_SYSTEM: DesignSystem = {
     ],
     components: PRIMITIVE_PARTS,
   }),
-  files: { 'index.tsx': PRIMITIVES_TSX, 'tokens.css': KIT_CSS },
+  files: {
+    'index.tsx': PRIMITIVES_TSX,
+    [KIT_CATALOG_FILE]: PRIMITIVE_CATALOG,
+    'tokens.css': KIT_CSS,
+  },
   examples: PRIMITIVE_EXAMPLES,
 };

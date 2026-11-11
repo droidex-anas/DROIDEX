@@ -1,7 +1,24 @@
+import { z } from 'zod';
 import type { CanvasDiagnostic } from './protocol.js';
+import { CANVAS_LIMITS } from './schema.js';
 
 export const MAX_BUILD_DIAGNOSTICS = 64;
-export const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 2048;
+const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 2048;
+
+/** A diagnostic read back from outside this process: a cached outcome or a compiler reply. */
+export const canvasDiagnosticSchema = z
+  .object({
+    code: z.string().min(1).max(64),
+    message: z.string().min(1).max(MAX_DIAGNOSTIC_MESSAGE_LENGTH),
+    // A design path, or one under `@droidex/design-system/`.
+    file: z
+      .string()
+      .max(CANVAS_LIMITS.maxSourcePathLength + 64)
+      .optional(),
+    line: z.number().int().nonnegative().optional(),
+    column: z.number().int().nonnegative().optional(),
+  })
+  .strict();
 
 /** Keeps compiler replies, live frames and cached outcomes within the wire limits. */
 export function boundDiagnostics(diagnostics: readonly CanvasDiagnostic[]): CanvasDiagnostic[] {

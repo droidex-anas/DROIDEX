@@ -4,7 +4,8 @@ import test from 'node:test';
 import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
 import { designSystemProvenanceSchema } from '../../../sidecar/src/canvas/designSystemProvenance.js';
-import { STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
+import { catalogListing } from '../../../sidecar/src/canvas/kitCatalog.js';
+import { STARTER_FILES, STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
 import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
@@ -144,6 +145,7 @@ test('the renderer accepts every design system reply and event the sidecar sends
     cover: { kind: 'preview', example: 'cover.tsx' },
     sections: DROIDEX_DOCUMENT_SECTIONS,
     examples: ['cover.tsx'],
+    catalog: catalogListing(STARTER_FILES),
     unmapped: ['--brand-ink'],
     provenance: { copiedFrom: { id: 'droidex', version: 1 } },
     savedAt: '2026-10-31T12:00:00.000Z',
@@ -253,6 +255,13 @@ test('the renderer accepts every design system reply and event the sidecar sends
     isCanvasEvent({ type: 'canvas.result', requestId: 'req_05', ok: true, reply }),
     false,
   );
+  // The sidecar refuses a catalog that names two entries alike.
+  const listing = { name: 'Button', module: 'index.tsx', note: null };
+  assert.equal(isKitDocument({ ...paper, catalog: [listing] }), true);
+  assert.equal(
+    isKitDocument({ ...paper, catalog: [listing, { ...listing, note: 'Twice' }] }),
+    false,
+  );
 });
 
 test('both boundaries accept a library kit provenance and refuse the same malformed ones', () => {
@@ -265,6 +274,7 @@ test('both boundaries accept a library kit provenance and refuse the same malfor
     cover: null,
     sections: DROIDEX_DOCUMENT_SECTIONS,
     examples: [],
+    catalog: [],
     unmapped: [],
     provenance: null,
     savedAt: null,
