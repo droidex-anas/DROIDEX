@@ -48,10 +48,10 @@ function fileName(module: string | null): string | null {
   );
 }
 
-/** "AlertDialog with icon" is alert, dialog, with and icon. */
+/** "AlertDialog with icon" is alert, dialog, with and icon; "XMLHttpRequest" is xml, http and request. */
 function words(name: string): string[] {
   return name
-    .split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])/)
+    .split(/[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])/)
     .filter((word) => word !== '')
     .map((word) => word.toLowerCase());
 }
@@ -64,7 +64,10 @@ export function landingOf(nodes: readonly OutlineNode[], node: OutlineNode): Lan
   const inVector = [node, ...holders].some(
     (each) => each.kind === 'element' && each.name === 'svg',
   );
-  if (holdsLayers(node) && !inVector) return { kind: 'inside', name: node.name };
+  // Code decides whether a layer it writes renders, as `{open && <section />}` does,
+  // so only a free layer or the frame's top layer takes the entry inside.
+  if (holdsLayers(node) && !inVector && (node.free || node.parentId === null))
+    return { kind: 'inside', name: node.name };
   if (node.parentId === null && !node.free)
     return refused(
       node.text === null
@@ -78,8 +81,8 @@ export function landingOf(nodes: readonly OutlineNode[], node: OutlineNode): Lan
     return refused(
       'This layer is written inside code (a list, a condition or a prop). Ask the agent to add to it.',
     );
-  const holder = holders.find((each) => each.kind === 'element');
-  if (holder && holder.text !== null)
+  const parent = holders.at(0);
+  if (parent && parent.text !== null)
     return refused('This layer sits inside text. Pick a layer that holds others.');
   if (inVector) return refused('This layer is part of a vector. Pick a layer outside it.');
   return { kind: 'after', name: node.name };

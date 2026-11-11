@@ -16,6 +16,8 @@ const CATALOG: CatalogListing[] = [
   entry('Data table', 'table.tsx', 'Sortable rows'),
   entry('TabBar'),
   entry('Stable list', null, 'Holds a table of tabs'),
+  entry('Lexicon'),
+  entry('SVGIcon'),
 ];
 
 test('a search finds names starting with it first, then words, then names, then files and notes', () => {
@@ -28,6 +30,8 @@ test('a search finds names starting with it first, then words, then names, then 
   // "Bar" is a word of TabBar; "dialog" one of Alert dialog's.
   assert.deepEqual(names('bar'), ['TabBar']);
   assert.deepEqual(names('DIALOG'), ['Alert dialog']);
+  // "Icon" is a word of SVGIcon, so it goes before a name only holding it.
+  assert.deepEqual(names('icon'), ['SVGIcon', 'Lexicon']);
   assert.deepEqual(names('sortable'), ['Data table']);
   assert.deepEqual(names('menu'), []);
   // A file matches by its name, not the folder or extension every entry shares.
@@ -67,6 +71,7 @@ const PAGE = [
   node('item', 'list', 'li', { lock: 'repeated', free: false }),
   node('field', 'main', 'Input', { contentFromProps: true }),
   node('slot', 'section', 'span', { free: false, text: 'Sale' }),
+  node('shown', 'main', 'section', { free: false }),
   node('icon', 'main', 'svg'),
   node('path', 'icon', 'path'),
 ];
@@ -88,6 +93,7 @@ test('an entry goes last inside a layer that holds others, else right after it',
     'Written once and repeated for each item. Ask the agent to change it.',
   );
   assert.match(hint('slot'), /^This layer is written inside code/);
+  assert.match(hint('shown'), /^This layer is written inside code/);
   assert.equal(hint('link'), 'This layer sits inside text. Pick a layer that holds others.');
   assert.equal(hint('icon'), 'This layer is part of a vector. Pick a layer outside it.');
   assert.equal(hint('path'), 'This layer is part of a vector. Pick a layer outside it.');

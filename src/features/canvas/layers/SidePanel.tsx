@@ -5,7 +5,6 @@
 import { useId, type KeyboardEvent, type ReactNode } from 'react';
 import { X } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
-import { cn } from '../../../components/ui/cn';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import {
   COMPONENTS_KEY_LABEL,
@@ -44,6 +43,8 @@ export function SidePanel({
     if (!chosen || typing) return;
     event.preventDefault();
     event.stopPropagation();
+    // A held key auto-repeats and would toggle straight back.
+    if (event.repeat) return;
     if (chosen === tab) {
       onClose();
       return;
@@ -80,25 +81,20 @@ export function SidePanel({
               label={`${TABS[each].label}  ${TABS[each].keyLabel}`}
               placement="bottom"
             >
-              <button
+              <Button
                 id={tabId(each)}
-                type="button"
+                variant="ghost"
+                size="sm"
                 role="tab"
                 aria-selected={tab === each}
                 aria-controls={`${id}-panel`}
                 tabIndex={tab === each ? 0 : -1}
-                className={cn(
-                  'h-control-sm select-none rounded-md px-2.5 text-label transition-colors duration-150 ease-out',
-                  tab === each
-                    ? 'bg-elevated text-primary'
-                    : 'text-muted hover:bg-elevated hover:text-primary',
-                )}
                 onClick={() => {
                   onTab(each);
                 }}
               >
                 {TABS[each].label}
-              </button>
+              </Button>
             </Tooltip>
           ))}
         </div>

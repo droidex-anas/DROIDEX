@@ -50,8 +50,9 @@ export function reindent(node: ts.Node, from: string, to: string): string {
 
 /**
  * JSX written from column 0 in two-space steps, as a kit catalog writes it,
- * set at `indent` in a file that steps by `unit` and ends lines with `eol`;
- * blank lines and lines inside a string or template stay as written.
+ * with every line after the first set at `indent` in a file that steps by
+ * `unit`, and lines ended with `eol`. The first line starts wherever the
+ * caller places it; blank lines and lines inside a string or template stay as written.
  */
 export function placeSnippet(jsx: string, indent: string, unit: string, eol: string): string {
   const text = jsx.replaceAll('\r\n', '\n');

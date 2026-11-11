@@ -68,24 +68,34 @@ function boundNames(source: ts.SourceFile): Map<string, ts.Node[]> {
 }
 
 function declaredName(node: ts.Node): ts.Identifier | undefined {
-  if (
+  if (!isDeclaration(node) && !isImportBinding(node)) return undefined;
+  const { name } = node;
+  return name && ts.isIdentifier(name) ? name : undefined;
+}
+
+function isDeclaration(node: ts.Node) {
+  return (
     ts.isVariableDeclaration(node) ||
     ts.isParameter(node) ||
     ts.isBindingElement(node) ||
     ts.isFunctionDeclaration(node) ||
+    // A named function or class expression binds its name inside itself, where the entry may land.
+    ts.isFunctionExpression(node) ||
     ts.isClassDeclaration(node) ||
+    ts.isClassExpression(node) ||
     ts.isEnumDeclaration(node) ||
     ts.isInterfaceDeclaration(node) ||
-    ts.isTypeAliasDeclaration(node) ||
+    ts.isTypeAliasDeclaration(node)
+  );
+}
+
+function isImportBinding(node: ts.Node) {
+  return (
     ts.isImportClause(node) ||
     ts.isNamespaceImport(node) ||
     ts.isImportSpecifier(node) ||
     ts.isImportEqualsDeclaration(node)
-  ) {
-    const { name } = node;
-    return name && ts.isIdentifier(name) ? name : undefined;
-  }
-  return undefined;
+  );
 }
 
 /** Whether the node is `name` imported as a value under its own name from `module`. */
@@ -134,7 +144,7 @@ function joined(text: string, named: ts.NamedImports, names: string[], eol: stri
     return { ...inside, replacement: ` ${names.join(', ')} ` };
   }
   const { hasTrailingComma } = named.elements;
-  const at = hasTrailingComma ? text.indexOf(',', last.end) + 1 : last.end;
+  const at = hasTrailingComma ? trailingComma(named).end : last.end;
   const inline = !startsLine(text, last.getStart());
   const indent = lineIndent(text, last.getStart());
   const items = names.map((name) => (inline ? ` ${name}` : `${eol}${indent}${name}`));
@@ -142,6 +152,14 @@ function joined(text: string, named: ts.NamedImports, names: string[], eol: stri
     ? items.map((item) => `${item},`).join('')
     : `,${items.join(',')}`;
   return { start: at, end: at, replacement };
+}
+
+/** The comma token after a named import's last name, which a comment may hold a comma before. */
+function trailingComma(named: ts.NamedImports): ts.Node {
+  const list = named.getChildren().find((child) => child.kind === ts.SyntaxKind.SyntaxList);
+  const comma = list?.getChildren().at(-1);
+  if (comma?.kind !== ts.SyntaxKind.CommaToken) throw new Error('A trailing comma has no token.');
+  return comma;
 }
 
 /** New imports after the file's last one, quoted and ended as it is; at the top of a file with none. */
@@ -153,9 +171,44 @@ function newImports(source: ts.SourceFile, added: ModuleNames[], eol: string): R
     ({ module, names }) =>
       `import { ${names.join(', ')} } from ${quote}${module}${quote}${semicolon}`,
   );
-  if (!last)
-    return { start: 0, end: 0, replacement: lines.map((line) => line + eol).join('') + eol };
-  return { start: last.end, end: last.end, replacement: lines.map((line) => eol + line).join('') };
+  if (last)
+    return {
+      start: last.end,
+      end: last.end,
+      replacement: lines.map((line) => eol + line).join(''),
+    };
+  const { text } = source;
+  const head = headEnd(source);
+  // On the line after the head, or at the top of a file without one.
+  let start = 0;
+  let opening = '';
+  if (head > 0) {
+    const lineEnd = text.indexOf('\n', head);
+    start = lineEnd === -1 ? text.length : lineEnd + 1;
+    if (lineEnd === -1) opening = eol;
+  }
+  const blank = /^\r?\n/.test(text.slice(start)) ? '' : eol;
+  const replacement = opening + lines.map((line) => line + eol).join('') + blank;
+  return { start, end: start, replacement };
+}
+
+/**
+ * Where the head of a file with no imports ends: past its directives, as
+ * `'use client'`, and the comments that open it, which stay first. A doc
+ * comment belongs to the code it documents, so the imports go above it.
+ */
+function headEnd(source: ts.SourceFile): number {
+  const { text } = source;
+  let end = 0;
+  for (const statement of source.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
+    end = statement.end;
+  }
+  for (const comment of ts.getLeadingCommentRanges(text, end) ?? []) {
+    if (text.startsWith('/**', comment.pos)) break;
+    end = comment.end;
+  }
+  return end;
 }
 
 function invalid(message: string): SourceElementError {

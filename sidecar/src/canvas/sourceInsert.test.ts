@@ -127,6 +127,33 @@ test('the names an entry uses are imported once, and the row found past them', (
   );
 });
 
+test('a layer holding only a string in braces holds text, so the entry goes after it', () => {
+  assert.equal(
+    inserted(`${KIT}export default () => <main><section>{"Hello"}</section></main>;`, 'section'),
+    `${KIT}export default () => <main><section>{"Hello"}</section><Button>Continue</Button></main>;`,
+  );
+});
+
+test('an element written inside a condition does not take the entry, though it could hold it', () => {
+  assert.equal(
+    refusal(`${KIT}export default () => <main>{true && <section />}</main>;`, 'section'),
+    'This layer is written inside code (a list, a condition or a prop). Ask the agent to add to it.',
+  );
+});
+
+test('an entry giving an element an id the frame already gives one is refused, naming the id', () => {
+  const email: CatalogEntry = {
+    ...BUTTON,
+    name: 'Email',
+    uses: [],
+    jsx: '<div>\n  <label htmlFor="email">Email</label>\n  <input id="email" />\n</div>',
+  };
+  assert.equal(
+    refusal('export default () => <main><input id="email" /></main>;', 'main', email),
+    'This frame already has an element with id "email", and the entry would repeat it.',
+  );
+});
+
 test('a layer the edit cannot reach alone is refused with the reason', () => {
   assert.equal(
     refusal(`${KIT}export default () => <h1>Pricing</h1>;`, 'h1'),

@@ -49,6 +49,9 @@ export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
     return () => {
       stale = true;
       window.clearTimeout(showSkeleton);
+      // Coming back to this kit reads it again, so it starts over as loading.
+      setSettled(null);
+      setSlow(null);
     };
   }, [key, reading, id, version]);
 
