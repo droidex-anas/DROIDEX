@@ -39,11 +39,11 @@ const TERMINAL_DELIVERIES_BUDGET = 16;
 // Incremental projection should touch the live tail, not the settled prefix.
 const FEED_REBUILT_EVENTS_PER_DELTA_BUDGET = 8;
 
-// The canvas scenario's 30-frame board commits its React viewport on every pan
-// frame and reads layout 3 times per pointer event, 2 events a frame (rects,
-// offsets, client and scroll sizes and computed style all count). Both are
-// today's measured ceiling, held until the board's stage owns pan.
-const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 1.1;
+// The canvas scenario's 30-frame board pans on its stage, so React commits only
+// as a pan starts and ends (2 over 61 frames), and reads layout 3 times per
+// pointer event, 2 events a frame (rects, offsets, client and scroll sizes and
+// computed style all count). Both budgets sit just above what was measured.
+const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 0.1;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
 // 120 Hz: the main-thread work one frame may take.
 const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
@@ -207,7 +207,7 @@ export function evaluateProbeGates(options: {
       actual: options.reactCommitsPerPanFrame,
       budget: CANVAS_COMMITS_PER_PAN_FRAME_BUDGET,
       justification:
-        'The board commits its viewport once per pan frame (measured 1.00–1.03). Held there until pan moves off React, then 0.',
+        'Pan moves the stage, not React: a 61-frame pan commits as it starts and ends (measured 0.03). 0.1 is 6 commits a pan, far from one a frame.',
     }),
     hard({
       id: 'canvas.layoutReadsPerPanFrame',

@@ -86,7 +86,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     eventsRebuiltPerDelta: 2,
     terminalDeliveriesPerFlood: 4,
     livePrimarySessionsAfterSoak: 0,
-    reactCommitsPerPanFrame: 1,
+    reactCommitsPerPanFrame: 0.03,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -106,14 +106,14 @@ test('canvas gates hold pan commits and long tasks, and a run without Chromium l
     eventsRebuiltPerDelta: 2,
     terminalDeliveriesPerFlood: 4,
     livePrimarySessionsAfterSoak: 0,
-    reactCommitsPerPanFrame: 1,
+    reactCommitsPerPanFrame: 0.03,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
     panOverBudgetShare: 0,
     panRafP95Ms: 17,
   };
-  assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerPanFrame: 2 }).hardPassed, false);
+  assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerPanFrame: 1 }).hardPassed, false);
   assert.equal(evaluateProbeGates({ ...measured, longTasksDuringGestures: 1 }).hardPassed, false);
   // Slow frames warn and never fail.
   assert.equal(evaluateProbeGates({ ...measured, panBusyP95Ms: 30 }).hardPassed, true);
