@@ -262,6 +262,10 @@ test('a left-out import is recorded short and without a host path, and the kit e
       "import { Drive } from 'C:\\\\Users\\\\example-person\\\\Drive'\nexport { Drive }\n",
     'components/ui/url.tsx':
       "import { Url } from 'file:///Users/example-person/Url.tsx'\nexport { Url }\n",
+    'components/ui/encoded.tsx':
+      "import { Encoded } from 'file:%2FUsers%2Fexample-person%2Fprivate-customer%2FHost'\nexport { Encoded }\n",
+    'components/ui/garbled.tsx':
+      "import { Garbled } from 'file:%2FUsers%2Fexample-person%ZZ'\nexport { Garbled }\n",
     'components/ui/long.tsx': `import { Long } from '${'x'.repeat(1025)}'\nexport { Long }\n`,
   };
   const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
@@ -276,6 +280,8 @@ test('a left-out import is recorded short and without a host path, and the kit e
   );
   assert.deepEqual(details, {
     'drive.tsx': '…/Drive',
+    'encoded.tsx': '…/Host',
+    'garbled.tsx': 'a local file',
     'host.tsx': '…/Host',
     'long.tsx': `${'x'.repeat(199)}…`,
     'notice.tsx': 'components/ui/sonner.tsx',
