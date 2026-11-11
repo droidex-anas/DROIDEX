@@ -26,7 +26,7 @@ export function toFrame(
 }
 
 /** A frame without its build, as a change reports it. */
-export function changedFrame(design: PersistedDesign): ChangedFrame {
+function changedFrame(design: PersistedDesign): ChangedFrame {
   return {
     designId: design.designId,
     name: design.name,

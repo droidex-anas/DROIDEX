@@ -231,7 +231,7 @@ export interface CanvasSnapshot {
 /** A frame as a change reports it: its build travels apart, and only when it changed. */
 export type ChangedFrame = Omit<CanvasFrame, 'build'>;
 
-export interface FrameBuild {
+interface FrameBuild {
   designId: string;
   build: CanvasBuildState;
 }
