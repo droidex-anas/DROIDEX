@@ -438,7 +438,10 @@ export class SessionManager {
         ((appSessionId) => createAutomationMcpServer(appSessionId));
       this.createSessionsMcpResource =
         options.dependencies.createSessionsMcpResource ??
-        ((appSessionId) => createSessionsMcpServer(appSessionId, this.sidebarSessions));
+        ((appSessionId) =>
+          createSessionsMcpServer(appSessionId, this.sidebarSessions, () =>
+            this.runtime.factoryApiKey(),
+          ));
       this.mcpConfiguration = options.dependencies.mcpConfiguration;
       this.loadConfiguredMcpServers = options.dependencies.loadConfiguredMcpServers;
       this.factoryDefaultsOverride = options.dependencies.getFactoryDefaults;
@@ -463,7 +466,9 @@ export class SessionManager {
         createBrowserMcpServer(browsers, appSessionId);
       this.createAutomationMcpResource = (appSessionId) => createAutomationMcpServer(appSessionId);
       this.createSessionsMcpResource = (appSessionId) =>
-        createSessionsMcpServer(appSessionId, this.sidebarSessions);
+        createSessionsMcpServer(appSessionId, this.sidebarSessions, () =>
+          this.runtime.factoryApiKey(),
+        );
       this.mcpConfiguration = new DroidMcpConfiguration();
       this.loadConfiguredMcpServers = loadFactoryMcpServers;
       this.factoryDefaultsOverride = undefined;
@@ -1705,7 +1710,15 @@ export class SessionManager {
     );
     if (kind === 'codex') {
       const inAppServers = [
-        ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
+        ...(managesChats
+          ? [
+              createSessionsMcpServer(
+                () => ref.id,
+                this.sidebarSessions,
+                () => this.runtime.factoryApiKey(),
+              ),
+            ]
+          : []),
         ...(attended ? [createAutomationMcpServer(() => ref.id)] : []),
         canvas,
       ];

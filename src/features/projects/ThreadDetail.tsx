@@ -8,6 +8,7 @@ import { MessageFeed } from '../../components/MessageFeed';
 import { loadSessionHistory } from '../../lib/commands';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
 import type { TranscriptEvent } from '../../types/bridge';
+import { AccountMark } from '../providers/AccountMark';
 import type { ThreadRow } from './threadBoard';
 
 /* One thread, read in place: its own conversation exactly as the chat renders
@@ -57,11 +58,7 @@ export function ThreadDetail({
         />
         <ActivityStatusGlyph status={row.status} />
         <span className="min-w-0 flex-1 truncate text-body-strong text-primary">{row.title}</span>
-        {row.droidProfile === 'alt' && (
-          <span className="shrink-0 text-caption text-muted" title="Alt Factory account">
-            <span className="sr-only">Factory account: </span>Alt
-          </span>
-        )}
+        <AccountMark profile={row.droidProfile} />
         <Button
           variant="ghost"
           size="sm"

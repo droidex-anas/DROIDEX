@@ -1,3 +1,4 @@
+import type { DroidProfile } from '../droidProfiles.js';
 import type { SessionSummary } from '../protocol.js';
 import type { ProjectPort } from './sessions.js';
 import {
@@ -15,7 +16,7 @@ const WORKING_CHATS_LIMIT = 8;
 /** What a spawn with reportBack false tells the chat that made it. */
 export interface StartedChat {
   appSessionId: string;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   title: string;
   cwd?: string;
   branch?: string;

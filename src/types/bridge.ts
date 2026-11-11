@@ -18,6 +18,10 @@ export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } fro
 export const PROVIDER_KINDS = ['droid', 'claude', 'codex'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
+// An extra Factory login a Droid chat runs on. Main, the default, has no profile.
+export const DROID_PROFILES = ['alt', 'alt2'] as const;
+export type DroidProfile = (typeof DROID_PROFILES)[number];
+
 type SessionPhase =
   | 'intake'
   | 'planning'
@@ -191,7 +195,7 @@ export interface ModelSwitch {
 }
 
 export interface SessionSummary {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   appSessionId: string;
   providerSessionId?: string;
   compactedFromProviderSessionIds?: string[];
@@ -766,7 +770,7 @@ export type ClientCommand =
   | { type: 'settings.defaults' }
   | {
       type: 'session.create';
-      droidProfile?: 'alt';
+      droidProfile?: DroidProfile;
       clientRef: string;
       // Establishes Design purpose; commit attachment before publication and the first turn.
       canvas?: { canvasId: string | null; name?: string; mutationId: string };

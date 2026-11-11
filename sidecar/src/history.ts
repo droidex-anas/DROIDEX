@@ -47,7 +47,7 @@ import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
-import { altDroidHome, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
+import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX, DROID_PROFILES } from './droidProfiles.js';
 import { sessionNoticesRevision } from './sessionNotices.js';
 import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
 
@@ -922,9 +922,10 @@ function summaryPatchesFromRows(
 
 function storedDroidProfile(value: unknown): Pick<SessionSummary, 'droidProfile'> {
   if (value === null || value === undefined) return {};
-  if (value !== '"alt"')
+  const droidProfile = DROID_PROFILES.find((profile) => JSON.stringify(profile) === value);
+  if (!droidProfile)
     throw new Error('Stored Droid profile binding is invalid. Restore the history database.');
-  return { droidProfile: 'alt' };
+  return { droidProfile };
 }
 
 function hiddenProviderSessionIdsFromRows(rows: Record<string, unknown>[]): Set<string> {
@@ -1450,13 +1451,14 @@ function shouldIncludeCwd(
 }
 
 // Enumeration, replay and search share these roots, including the optional
-// Alt login and transcripts DROIDEX writes for other providers.
+// Alt logins and transcripts DROIDEX writes for other providers.
 function scanSessionFileTree(): SessionFileScan {
   const files = new Map<string, SessionFileStat>();
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
-  // Alt is a private extra login, so it never replaces or breaks a Main chat:
-  // its root is walked last and a file whose identity Main already has is skipped.
+  // Alt profiles are private extra logins, so they never replace or break a Main
+  // chat: their roots are walked last, in profile order, and a file whose
+  // identity an earlier root already has is skipped.
   const walk = (dir: string, depth: number, isAlt: boolean) => {
     if (depth > 4) return;
     // A directory can be removed between the root check and this readdir
@@ -1496,9 +1498,7 @@ function scanSessionFileTree(): SessionFileScan {
   };
   for (const root of [join(homedir(), '.factory', 'sessions'), providerSessionsDir()])
     if (existsSync(root)) walk(root, 0, false);
-  const altHome = altDroidHome();
-  const altRoot = altHome ? join(altHome, '.factory', 'sessions') : undefined;
-  if (altRoot && existsSync(altRoot)) walk(altRoot, 0, true);
+  for (const { root } of altSessionRoots()) if (existsSync(root)) walk(root, 0, true);
   for (const file of files.values()) {
     file.settingsMtimeMs =
       settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
@@ -1584,11 +1584,9 @@ function summarizeSessionFile(
   const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
   if (!classification || !isDurable) return { summary: null, ...cachedLaunch };
   const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
-  const altHome = altDroidHome();
-  const droidProfile: SessionSummary['droidProfile'] =
-    altHome && file.path.startsWith(`${join(altHome, '.factory', 'sessions')}${sep}`)
-      ? 'alt'
-      : undefined;
+  const droidProfile = altSessionRoots().find(({ root }) =>
+    file.path.startsWith(`${root}${sep}`),
+  )?.profile;
   return {
     summary: {
       appSessionId: providerSessionId,

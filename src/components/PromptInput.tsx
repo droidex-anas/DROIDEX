@@ -150,6 +150,7 @@ import { DraftSelections, type DraftSelection } from './composer/DraftSelections
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { useAskSideChat } from './sidechats/useAskSideChat';
+import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   PROVIDER_MARKS,
@@ -2427,11 +2428,6 @@ export default function PromptInput({
       }}
     />
   );
-  const altProfileTag = activeSession?.droidProfile === 'alt' && (
-    <span className="shrink-0 px-2 text-caption text-muted" title="Alt Factory account">
-      <span className="sr-only">Factory account: </span>Alt
-    </span>
-  );
   const modelPicker = (
     <>
       <button
@@ -2641,7 +2637,7 @@ export default function PromptInput({
               }}
               chat={
                 activeSession &&
-                (visibleTarget.kind === 'primary' || activeSession.droidProfile === 'alt')
+                (visibleTarget.kind === 'primary' || activeSession.droidProfile !== undefined)
                   ? {
                       usageLimit: visibleTarget.kind === 'primary' ? usageLimit : undefined,
                       droidProfile: activeSession.droidProfile,
@@ -2839,7 +2835,7 @@ export default function PromptInput({
             design system and library names give way first, then the autonomy
             label, never the model's. */}
         <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
-          {altProfileTag}
+          <AccountMark profile={activeSession?.droidProfile} className="px-2" />
           {autonomyControl}
           {references.canvasKey && (
             <Suspense fallback={null}>

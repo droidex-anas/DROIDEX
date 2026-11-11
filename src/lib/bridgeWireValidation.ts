@@ -13,6 +13,7 @@ import type {
 } from '../types/bridge';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
 import {
+  isDroidProfile,
   isModelInfo,
   isProviderKind,
   isProviderStatus,
@@ -437,7 +438,7 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.resumeId) &&
     isOptionalCanvasTools(value.canvasTools) &&
     (value.droidProfile === undefined ||
-      (value.provider === 'droid' && value.droidProfile === 'alt')) &&
+      (value.provider === 'droid' && isDroidProfile(value.droidProfile))) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
     (value.pendingSteers === undefined ||

@@ -1,7 +1,7 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { failureReport, inboxFull, questionText } from './projectMessages.js';
-import type { ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
+import type { ModelSwitch, ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
 import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
@@ -352,8 +352,20 @@ export function threadState(
    nothing says so plainly: the owner has to see the difference between a report
    and silence, or it will keep nudging a thread that cannot answer. A long reply
    is excerpted here and read in full with thread_read, so the excerpt says it is
-   one, in words that read the same to the person watching this chat. */
+   one, in words that read the same to the person watching this chat. A model
+   the harness moved the thread to leads, since later turns run on it too. */
 function threadReport(title: string, session: SessionSummary, turn: ThreadTurn): string {
+  const outcome = turnOutcome(title, session, turn);
+  return turn.modelSwitch ? `${modelSwitchNote(turn.modelSwitch)}\n${outcome}` : outcome;
+}
+
+function modelSwitchNote({ from, to, cause }: ModelSwitch): string {
+  return cause === 'usage_limit'
+    ? `Its account's usage ran out on ${from}, so its harness moved it to ${to}.`
+    : `Its harness moved it from ${from} to ${to}.`;
+}
+
+function turnOutcome(title: string, session: SessionSummary, turn: ThreadTurn): string {
   const reply = turn.text.slice(0, 1_200);
   const excerpt =
     reply.length < turn.text.length
