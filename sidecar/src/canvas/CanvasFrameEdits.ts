@@ -8,7 +8,6 @@ import { canvasError } from './canvasError.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import {
-  canvasChange,
   CANVAS_TOMBSTONE_LIMIT,
   mutationFingerprint,
   recordMutation,
@@ -17,6 +16,7 @@ import {
   type PersistedDesign,
   type Placement,
 } from './canvasManifest.js';
+import { canvasChange } from './canvasProjection.js';
 import {
   recordedArrange,
   recordedFrameEdit,

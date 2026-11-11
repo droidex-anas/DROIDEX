@@ -4,7 +4,8 @@
 // head as it stands now, so an entry a later commit removed is simply no longer
 // part of the answer.
 
-import { findMutation, toFrame, type BuildStates, type CanvasManifest } from './canvasManifest.js';
+import { findMutation, type CanvasManifest } from './canvasManifest.js';
+import { toFrame, type BuildStates } from './canvasProjection.js';
 import type {
   AnnotatedChange,
   CanvasChange,
