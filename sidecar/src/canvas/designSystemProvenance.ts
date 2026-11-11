@@ -21,7 +21,7 @@ export const MAX_LIBRARY_SKIPS = 128;
  * `detail` names the import for unsupported_import, the left-out sibling for
  * needs_left_out and the export for duplicate_export; it is null otherwise.
  */
-export const LIBRARY_SKIP_REASONS = [
+const LIBRARY_SKIP_REASONS = [
   'over_limit',
   'unreadable',
   'unsupported_import',
