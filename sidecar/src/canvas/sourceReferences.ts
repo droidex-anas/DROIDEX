@@ -29,9 +29,11 @@ export function childrenBindings(
       ts.isIdentifier(element.name) &&
       (element.propertyName ?? element.name).getText() === 'children',
   );
+  if (named) return { binding: checker.getSymbolAtLocation(named.name), props: undefined };
+  // `{ children, ...rest }` leaves the children out of `rest`.
   const rest = parameter.elements.find((element) => element.dotDotDotToken);
   return {
-    binding: named && checker.getSymbolAtLocation(named.name),
+    binding: undefined,
     props: rest && ts.isIdentifier(rest.name) ? checker.getSymbolAtLocation(rest.name) : undefined,
   };
 }
@@ -61,8 +63,8 @@ export function isFunctionExpression(
 
 /**
  * A variable's initializer and, unless it is a `const`, every value assigned
- * to it in its block. A function in that block is not followed: it may never
- * be called.
+ * to it in the function or file declaring it. A function inside is not
+ * followed: it may never be called.
  */
 export function assignedValues(
   declaration: ts.VariableDeclaration,
@@ -83,9 +85,11 @@ export function assignedValues(
       values.push(node.right);
     node.forEachChild(visit);
   };
-  ts.findAncestor(declaration, (node) => ts.isBlock(node) || ts.isSourceFile(node))?.forEachChild(
-    visit,
-  );
+  // A `var` belongs to its function, not its block.
+  ts.findAncestor(
+    declaration,
+    (node) => ts.isFunctionLike(node) || ts.isSourceFile(node),
+  )?.forEachChild(visit);
   return values;
 }
 
@@ -136,14 +140,16 @@ export function namedCallback(
   return undefined;
 }
 
-/** `createPortal(child, …)` or `ReactDOM.createPortal(child, …)`, bound to React DOM's own. */
+/** `createPortal(child, …)`, under any local name, or `ReactDOM.createPortal(child, …)`, bound to React DOM's own. */
 export function isPortal(at: ts.CallExpression, checker: ts.TypeChecker): boolean {
   const callee = at.expression;
-  const name = ts.isPropertyAccessExpression(callee) ? callee.name : callee;
+  if (importedFrom(callee, checker) !== 'react-dom') return false;
+  if (ts.isPropertyAccessExpression(callee)) return callee.name.text === 'createPortal';
+  const declaration = checker.getSymbolAtLocation(callee)?.declarations?.at(0);
   return (
-    ts.isIdentifier(name) &&
-    name.text === 'createPortal' &&
-    importedFrom(callee, checker) === 'react-dom'
+    declaration !== undefined &&
+    ts.isImportSpecifier(declaration) &&
+    (declaration.propertyName ?? declaration.name).text === 'createPortal'
   );
 }
 

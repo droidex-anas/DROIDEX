@@ -24,7 +24,9 @@ export function resolveRelative(
     segments.push(segment);
   }
   const base = segments.join('/');
-  const candidates = [base, `${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`];
+  const candidates = base
+    ? [base, `${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`]
+    : ['index.tsx', 'index.ts'];
   const found = candidates.find((candidate) => Object.hasOwn(tree, candidate));
   return found === undefined ? { kind: 'missing' } : { kind: 'file', path: found };
 }

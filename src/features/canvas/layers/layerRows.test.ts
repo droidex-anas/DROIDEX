@@ -170,6 +170,10 @@ test('an open frame says when its outline is empty or stopped at its limits, and
     ['Pricing page', 1],
     ['No layers', 2],
   ]);
+  assert.deepEqual(names({ nodes: [], truncated: true }), [
+    ['Pricing page', 1],
+    ['Not every layer could be listed', 2],
+  ]);
   // The outline stopped before the footer's aside, which the preview draws: it still gets a row.
   const cut = { nodes: outline.nodes.slice(0, 4), truncated: true };
   const drawn = read(

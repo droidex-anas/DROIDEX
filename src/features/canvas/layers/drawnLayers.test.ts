@@ -100,12 +100,23 @@ test('a drawn element no row writes gets its own row under the row of the elemen
   };
   const layers = drawnLayers(
     outline,
-    tree(['0 el_main', '  0/0 el_x', '    0/0/0 el_h1', '    0/0/1 el_y', '1 el_z']),
+    tree([
+      '0 el_main',
+      '  0/0 el_x',
+      '    0/0/0 el_h1',
+      '    0/0/1 el_y',
+      '1 el_z',
+      '  1/0 el_q',
+      '2 el_w',
+    ]),
   );
+  // Each walk lists the elements it finds in document order.
   assert.deepEqual(
     layers.unwritten.map(({ nodeId, parentId, elementId }) => [nodeId, parentId, elementId]),
     [
       ['@1', null, 'el_z'],
+      ['@1/0', '@1', 'el_q'],
+      ['@2', null, 'el_w'],
       ['@0/0', 'm', 'el_x'],
       ['@0/0/1', '@0/0', 'el_y'],
     ],
@@ -115,6 +126,8 @@ test('a drawn element no row writes gets its own row under the row of the elemen
     m: '0',
     h: '0/0/0',
     '@1': '1',
+    '@1/0': '1/0',
+    '@2': '2',
     '@0/0': '0/0',
     '@0/0/1': '0/0/1',
   });
