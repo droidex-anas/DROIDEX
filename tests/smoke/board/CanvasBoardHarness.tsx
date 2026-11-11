@@ -601,6 +601,7 @@ function Harness() {
     canvasId: shown.current.canvasId,
     sequence: shown.current.sequence + 1,
     frames,
+    builds: frames.map(({ designId, build }) => ({ designId, build })),
     removedDesignIds,
   });
   window.boardHarness = {
@@ -613,6 +614,7 @@ function Harness() {
           canvasId: current.canvasId,
           sequence: current.sequence + 1,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           annotations: {
             version: current.annotationsVersion + 1,

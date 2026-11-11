@@ -104,7 +104,7 @@ for (const leaving of ['unsubscribe', 'page-gone'] as const) {
       canvas.events.some(
         (event) =>
           event.type === 'canvas.change' &&
-          event.change.frames.some((frame) => frame.build.status === 'ready'),
+          event.change.builds.some((entry) => entry.build.status === 'ready'),
       ),
       false,
     );

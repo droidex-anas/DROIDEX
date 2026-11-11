@@ -5,7 +5,7 @@
 // part of the answer.
 
 import { findMutation, type CanvasManifest } from './canvasManifest.js';
-import { toFrame, type BuildStates } from './canvasProjection.js';
+import { canvasChange, frameChange, toFrame, type BuildStates } from './canvasProjection.js';
 import type {
   AnnotatedChange,
   CanvasChange,
@@ -43,21 +43,16 @@ export function recordedArrange(
   manifest: CanvasManifest,
   mutationId: string,
   fingerprint: string,
-  builds: BuildStates,
 ): CanvasChange | null {
   const record = findMutation(manifest, mutationId, 'arrange', fingerprint);
   if (record?.kind !== 'arrange') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    // The layout comes from the record, the rest of each frame from the current
-    // head, so a frame later commits removed is simply no longer in the answer.
-    frames: record.placements.flatMap((placement) => {
-      const design = manifest.designs.find((entry) => entry.designId === placement.designId);
-      return design ? [toFrame(manifest.canvasId, { ...design, ...placement }, builds)] : [];
-    }),
-    removedDesignIds: [],
-  };
+  // The layout comes from the record, the rest of each frame from the current
+  // head, so a frame later commits removed is simply no longer in the answer.
+  const placed = record.placements.flatMap((placement) => {
+    const design = manifest.designs.find((entry) => entry.designId === placement.designId);
+    return design ? [{ ...design, ...placement }] : [];
+  });
+  return { ...frameChange(manifest, placed), sequence: record.sequence };
 }
 
 export function recordedRemove(
@@ -77,12 +72,7 @@ export function recordedUndo(
 ): CanvasChange | null {
   const record = findMutation(manifest, mutationId, 'undo', fingerprint);
   if (record?.kind !== 'undo') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    frames: record.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
-    removedDesignIds: [],
-  };
+  return { ...canvasChange(manifest, record.designs, builds), sequence: record.sequence };
 }
 
 export function recordedFrameEdit(
@@ -90,16 +80,10 @@ export function recordedFrameEdit(
   mutationId: string,
   kind: 'rename' | 'hide',
   fingerprint: string,
-  builds: BuildStates,
 ): CanvasChange | null {
   const record = findMutation(manifest, mutationId, kind, fingerprint);
   if (record?.kind !== 'rename' && record?.kind !== 'hide') return null;
-  return {
-    canvasId: manifest.canvasId,
-    sequence: record.sequence,
-    frames: [toFrame(manifest.canvasId, record.design, builds)],
-    removedDesignIds: [],
-  };
+  return { ...frameChange(manifest, [record.design]), sequence: record.sequence };
 }
 
 export function recordedReorder(
@@ -113,6 +97,7 @@ export function recordedReorder(
     canvasId: manifest.canvasId,
     sequence: record.sequence,
     frames: [],
+    builds: [],
     removedDesignIds: [],
     // Like an arrange's frames: one a later commit removed is no longer in the answer.
     order: record.designIds.filter((id) =>
@@ -133,6 +118,7 @@ export function recordedAnnotate(
     canvasId: manifest.canvasId,
     sequence: record.sequence,
     frames: [],
+    builds: [],
     removedDesignIds: [],
     annotations: {
       version: record.annotationsVersion,

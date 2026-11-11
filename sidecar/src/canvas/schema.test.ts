@@ -141,6 +141,16 @@ const sketch: Annotation = {
   updatedAt: 1_767_225_600_500,
 };
 
+const hey = {
+  designId: 'dsg_hey',
+  name: 'Hey',
+  rect: { x: 0, y: 0, width: 720, height: 720 },
+  designSystem,
+  variantOf: null,
+  seededRevisionId: null,
+  hidden: false,
+};
+
 const wire: SidecarWire = {
   createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
   create: {
@@ -165,16 +175,10 @@ const wire: SidecarWire = {
     canvasId: 'cv_01',
     frames: [
       {
-        designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
+        ...hey,
         layoutVersion: 0,
         manifestVersion: 0,
         revisionId: null,
-        designSystem,
-        variantOf: null,
-        seededRevisionId: null,
-        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -241,16 +245,10 @@ const wire: SidecarWire = {
     annotations: [sketch],
     frames: [
       {
-        designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
+        ...hey,
         layoutVersion: 2,
         manifestVersion: 2,
         revisionId: 'rev_02',
-        designSystem,
-        variantOf: null,
-        seededRevisionId: null,
-        hidden: false,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
@@ -279,18 +277,10 @@ const wire: SidecarWire = {
   change: {
     canvasId: 'cv_01',
     sequence: 8,
-    frames: [
+    frames: [{ ...hey, layoutVersion: 2, manifestVersion: 2, revisionId: 'rev_03' }],
+    builds: [
       {
         designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
-        layoutVersion: 2,
-        manifestVersion: 2,
-        revisionId: 'rev_03',
-        designSystem,
-        variantOf: null,
-        seededRevisionId: null,
-        hidden: false,
         build: {
           status: 'failed',
           generation: 2,
@@ -522,6 +512,7 @@ test('every serialized event the sidecar emits passes the renderer validator', (
           canvasId: 'cv_01',
           sequence: 9,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           annotations: { version: 4, upserted: [sketch], removedIds: ['ann_old'] },
         },

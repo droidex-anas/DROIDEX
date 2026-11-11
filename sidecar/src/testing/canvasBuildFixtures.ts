@@ -33,7 +33,7 @@ export function diagnosticMessages(canvas: Board, designId: string): string[] {
 /** Every build state a published change reported for one frame, in order. */
 export function reportedStates(canvas: Board, designId: string): CanvasBuildState[] {
   return canvas.changes.flatMap((change) =>
-    change.frames.filter((frame) => frame.designId === designId).map((frame) => frame.build),
+    change.builds.filter((entry) => entry.designId === designId).map((entry) => entry.build),
   );
 }
 
