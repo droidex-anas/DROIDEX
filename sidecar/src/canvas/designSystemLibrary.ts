@@ -16,7 +16,7 @@ import { readModules } from './compiler.js';
 import { readConfigBindings, type ConfigValue } from './configLiterals.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
-import { MAX_LIBRARY_SKIPS, type LibrarySkip } from './designSystemProvenance.js';
+import type { LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
 import {
@@ -26,6 +26,7 @@ import {
   type LibraryAliases,
   type LibraryComponent,
 } from './libraryComponents.js';
+import { libraryReview } from './libraryReview.js';
 import { libraryStylesheet, libraryTheme, type LibraryFile } from './libraryTheme.js';
 import inter from './presets/fonts/inter.json' with { type: 'json' };
 import {
@@ -95,11 +96,12 @@ export async function importLibraryDesignSystem(
   const theme = libraryTheme(read.config, kitNames, diagnostics);
   if ('problem' in theme) return refused(theme.problem, diagnostics);
   const stylesheet = libraryStylesheet(read.css, kitNames, diagnostics);
-  const library = kitComponents(read.components, read.aliases, kitNames, diagnostics);
+  const folderFiles = new Set([
+    ...read.components.map(({ file }) => file),
+    ...read.skipped.map(({ file }) => file),
+  ]);
+  const library = kitComponents(read.components, folderFiles, read.aliases, kitNames, diagnostics);
   if ('problem' in library) return refused(library.problem, diagnostics);
-  const skipped = [...read.skipped, ...library.skipped].sort((left, right) =>
-    left.file.localeCompare(right.file),
-  );
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.
@@ -124,8 +126,7 @@ export async function importLibraryDesignSystem(
           tokens: Object.fromEntries(
             Object.entries(kitNames).map(([projectName, kitName]) => [kitName, projectName]),
           ),
-          skipped: skipped.slice(0, MAX_LIBRARY_SKIPS),
-          skippedCount: skipped.length,
+          ...libraryReview([...read.skipped, ...library.skipped]),
         },
       },
     },

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test, { after } from 'node:test';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { COMPONENTS_JSON, LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
@@ -6,7 +9,9 @@ import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './
 import { kitPrimitives } from './designSystemBrief.js';
 import { MAX_LIBRARY_COMPONENTS, TAILWIND_4_REFUSAL } from './designSystemLibrary.js';
 import { importProjectDesignSystem } from './designSystemProject.js';
+import { exportDesignSystem } from './designSystemExport.js';
 import { MAX_LIBRARY_SKIPS } from './designSystemProvenance.js';
+import { saveDesignSystem } from './designSystems.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { KitPreviews } from './kitPreviews.js';
 
@@ -203,16 +208,20 @@ test('a library past the component bound keeps the first by name and lists the r
   });
 });
 
-test('a library import records each file it leaves out and why, the ones it never parses included', async (t) => {
+test('a library import records each file it leaves out or keeps in part, once, the ones it never parses included', async (t) => {
   const files = {
     ...LIBRARY,
+    'components/ui/1-up.tsx': 'export default function () {\n  return <div />\n}\n',
+    'components/ui/ghost.tsx':
+      'import { Missing } from "./missing"\n\nexport function Ghost() {\n  return <Missing />\n}\n',
     'components/ui/charts/bar.tsx': 'export function Bar() {\n  return <div />\n}\n',
     'components/ui/use-toast.ts': 'export function useToast() {}\n',
     'components/ui/date_picker.tsx': 'export function DatePicker() {\n  return <div />\n}\n',
     'components/ui/.DS_Store': '',
     'components/ui/huge.tsx': `// ${'x'.repeat(256 * 1024)}\n`,
     'components/ui/hidden.tsx': 'const Hidden = () => <div />\n',
-    'components/ui/big-button.tsx': 'export function Button() {\n  return <button />\n}\n',
+    'components/ui/big-button.tsx':
+      'export function Button() {\n  return <button />\n}\n\nexport const buttonVariants = () => ""\n',
   };
   const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
   assert.equal(imported.status, 'imported');
@@ -226,17 +235,65 @@ test('a library import records each file it leaves out and why, the ones it neve
     detail,
   });
   assert.deepEqual(source.library?.skipped, [
-    skip('button.tsx', 'duplicate_export', 'Button'),
+    skip('1-up.tsx', 'no_exports'),
+    skip('button.tsx', 'duplicate_export', 'Button, buttonVariants'),
     skip('charts', 'not_a_component'),
     skip('date_picker.tsx', 'not_a_component'),
+    skip('ghost.tsx', 'unsupported_import', 'components/ui/missing'),
     skip('hidden.tsx', 'no_exports'),
     skip('huge.tsx', 'unreadable'),
     skip('notice.tsx', 'needs_left_out', 'components/ui/sonner.tsx'),
     skip('sonner.tsx', 'unsupported_import', 'next-themes'),
     skip('use-toast.ts', 'not_a_component'),
   ]);
-  assert.equal(source.library?.skippedCount, 8);
+  assert.equal(source.library?.skippedCount, 7);
+  assert.equal(source.library?.partialCount, 3);
   assert.equal(source.library?.components.Button, 'components/ui/big-button.tsx');
+  for (const kept of ['1-up', 'button', 'hidden'])
+    assert.ok(Object.hasOwn(imported.system.files, `components/ui/${kept}.tsx`), kept);
+});
+
+test('a left-out import is recorded short and without a host path, and the kit exports without it', async (t) => {
+  const files = {
+    ...LIBRARY,
+    'components/ui/host.tsx':
+      "import { Host } from '/Users/example-person/private-customer/src/Host'\nexport { Host }\n",
+    'components/ui/drive.tsx':
+      "import { Drive } from 'C:\\\\Users\\\\example-person\\\\Drive'\nexport { Drive }\n",
+    'components/ui/url.tsx':
+      "import { Url } from 'file:///Users/example-person/Url.tsx'\nexport { Url }\n",
+    'components/ui/long.tsx': `import { Long } from '${'x'.repeat(1025)}'\nexport { Long }\n`,
+  };
+  const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
+  assert.equal(imported.status, 'imported');
+  assert.ok(kitPrimitives(imported.system).includes('Card'));
+  const { project: source } = imported.system.provenance as Extract<
+    typeof imported.system.provenance,
+    { project: unknown }
+  >;
+  const details = Object.fromEntries(
+    (source.library?.skipped ?? []).map(({ file, detail }) => [file.split('/').at(-1), detail]),
+  );
+  assert.deepEqual(details, {
+    'drive.tsx': '…/Drive',
+    'host.tsx': '…/Host',
+    'long.tsx': `${'x'.repeat(199)}…`,
+    'notice.tsx': 'components/ui/sonner.tsx',
+    'sonner.tsx': 'next-themes',
+    'url.tsx': '…/Url.tsx',
+  });
+
+  await saveDesignSystem(imported.system, {
+    mutationId: 'library-export',
+    baseVersion: null,
+    savedBy: { actor: 'user' },
+  });
+  const destination = await mkdtemp(join(tmpdir(), 'library-export-'));
+  t.after(() => rm(destination, { recursive: true, force: true }));
+  await exportDesignSystem({ id: KIT.id, version: imported.system.version }, destination);
+  const document = await readFile(join(destination, 'document.json'), 'utf8');
+  assert.match(document, /…\/Host/);
+  assert.doesNotMatch(document, /example-person/);
 });
 
 test('aliases map as TypeScript reads them, and theme values the kit cannot keep whole are reported', async (t) => {
