@@ -209,7 +209,7 @@ export const sourceElementSchema = z
   .strict()
   .refine((element) => element.end > element.start);
 
-const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
+export const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
 // Each code point is at most two UTF-16 units, so the cheap length check comes first.
 const outlineLabelSchema = z
   .string()
@@ -369,12 +369,12 @@ export const editElementInputSchema = z
       // A layer is a row of the revision's outline, as its nodeId names it.
       z
         .object({
-          layer: revisionRefSchema.extend({ nodeId: canvasIdentifierSchema }),
+          layer: revisionRefSchema.extend({ nodeId: outlineNodeIdSchema }),
           change: z
             .object({
               kind: z.literal('move'),
-              parentId: canvasIdentifierSchema,
-              beforeId: canvasIdentifierSchema.nullable(),
+              parentId: outlineNodeIdSchema,
+              beforeId: outlineNodeIdSchema.nullable(),
             })
             .strict(),
         })

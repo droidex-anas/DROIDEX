@@ -26,6 +26,7 @@ import type {
 } from './protocol.js';
 import {
   CANVAS_LIMITS,
+  outlineNodeIdSchema,
   sourceElementSchema,
   sourceFilesSchema,
   sourceOutlineSchema,
@@ -422,8 +423,9 @@ function editResponse(
 ): Extract<CompilerResponse, { status: 'edited' | 'edit_failed' }> | null | undefined {
   if (status === 'edited') {
     const parsedFiles = sourceFilesSchema.safeParse(files);
-    if (!parsedFiles.success || (landed !== null && typeof landed !== 'string')) return null;
-    return { requestId, status, files: parsedFiles.data, landed };
+    const parsedLanded = outlineNodeIdSchema.nullable().safeParse(landed);
+    if (!parsedFiles.success || !parsedLanded.success) return null;
+    return { requestId, status, files: parsedFiles.data, landed: parsedLanded.data };
   }
   if (status === 'edit_failed')
     return typeof message === 'string' && EDIT_FAILURE_CODES.includes(code as EditFailureCode)
