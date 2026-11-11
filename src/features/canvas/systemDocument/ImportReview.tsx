@@ -1,9 +1,11 @@
 // Under the provenance line of a library kit: how many of the library's files
-// the import left out, and, opened, which and why.
+// the import left out or kept with notes, and, opened, which and why.
 
 import { useId, useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
+import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import type { LibraryProvenance } from '../protocol';
 import { importReview } from './importReviewGroups';
 
@@ -14,22 +16,24 @@ export function ImportReview({ library }: { library: LibraryProvenance }) {
   if (review === null) return null;
   return (
     <div className="flex flex-col items-start gap-2">
-      {/* A ghost control: its text sits on the line's edge and its fill hangs past it. */}
-      <button
-        type="button"
+      {/* Its text sits on the line's edge and its fill hangs past it. */}
+      <Button
+        variant="ghost"
+        size="sm"
         aria-expanded={open}
         aria-controls={listId}
         onClick={() => {
           setOpen((current) => !current);
         }}
-        className="-mx-2 flex h-control-sm items-center gap-1 rounded-md px-2 text-label text-muted transition-colors hover:bg-elevated hover:text-secondary aria-expanded:text-secondary"
+        className="-mx-2.5"
+        labelClassName="flex items-center gap-1"
       >
         {review.label}
         <ChevronRight
           aria-hidden
           className={cn('size-icon-sm shrink-0 transition-transform', open && 'rotate-90')}
         />
-      </button>
+      </Button>
       {open && (
         <div id={listId} className="flex w-full flex-col gap-4 rounded-lg bg-surface p-4">
           {review.folder !== null && (
@@ -40,15 +44,18 @@ export function ImportReview({ library }: { library: LibraryProvenance }) {
               <h3 className="text-label text-muted">{group.title}</h3>
               <ul className="flex flex-col">
                 {group.rows.map((row) => (
+                  // The file keeps its whole name; a note without room for it goes below.
                   <li
                     key={`${row.file}:${row.note ?? ''}`}
-                    className="flex min-w-0 items-baseline gap-3 py-1"
+                    className="flex min-w-0 flex-wrap items-baseline gap-x-3 py-1"
                   >
-                    <span className="min-w-0 truncate text-body text-primary">{row.file}</span>
+                    <Tooltip label={row.file} className="min-w-0 max-w-full">
+                      <span className="min-w-0 truncate text-body text-primary">{row.file}</span>
+                    </Tooltip>
                     {row.note !== null && (
-                      <span className="ml-auto min-w-0 shrink truncate text-caption text-muted">
-                        {row.note}
-                      </span>
+                      <Tooltip label={row.note} className="min-w-0 grow basis-40">
+                        <span className="min-w-0 truncate text-caption text-muted">{row.note}</span>
+                      </Tooltip>
                     )}
                   </li>
                 ))}
