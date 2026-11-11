@@ -41,6 +41,15 @@ export type LayerEntry =
   /** What a frame's outline cannot show: nothing, or what is past its limits. */
   | (RowBase & { kind: 'note'; parentKey: string });
 
+/** Where a frame row's icon sits, as Row's padding puts it, and each level's step in. */
+const LEVEL_ONE_INSET_PX = 12;
+export const LEVEL_STEP_PX = 12;
+
+/** How far in a row of tree level `level` starts its icon, in list pixels. */
+export function rowInset(level: number): number {
+  return LEVEL_ONE_INSET_PX + (level - 1) * LEVEL_STEP_PX;
+}
+
 /** A row's key; a node id is hex or a path, so it never meets a note's. */
 export function nodeKey(designId: string, nodeId: string): string {
   return `${designId}#${nodeId}`;

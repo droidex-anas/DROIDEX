@@ -9,7 +9,6 @@ import {
   Clock,
   Eye,
   EyeOff,
-  GripVertical,
   LayoutTemplate,
   Spinner,
 } from '@droidex/icons';
@@ -18,7 +17,7 @@ import { cn } from '../../../components/ui/cn';
 import { Row } from '../../../components/ui/Row';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { canvasActivity } from '../canvasMotion';
-import { FoldCaret } from './ElementRow';
+import { FoldCaret, RowGrip } from './ElementRow';
 import { FrameNameField } from '../FrameNameField';
 import type { FrameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
@@ -195,19 +194,13 @@ function FrameTools({
         </Tooltip>
       )}
       {onGrab && (
-        <span
-          aria-hidden
-          className={cn(
-            'canvas-layer-tool -my-1.5 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted transition duration-150 ease-out hover:text-secondary',
-            open === null && '-mr-2',
-          )}
+        <RowGrip
+          last={open === null}
           onPointerDown={(event) => {
             onToolPress();
             onGrab(event, frame.designId);
           }}
-        >
-          <GripVertical className={GLYPH} />
-        </span>
+        />
       )}
       {open !== null && <FoldCaret open={open} onToggle={onToggle} />}
     </>

@@ -55,21 +55,26 @@ export function useLayerRows(frames: readonly CanvasFrame[], runs: PreviewRuns) 
       const nodeId = nodeIdOf(designId, node);
       return nodeId === undefined ? null : nodeKey(designId, nodeId);
     },
-    /** Opens the element's frame and every row that holds its row, and says which row that is. */
-    reveal: (designId: string, node: PreviewNode): RowSearch => {
+    /**
+     * Opens the frame and every row that holds the row of a drawn element, or
+     * of a row of the frame's outline, and says which row that is.
+     */
+    reveal: (designId: string, row: PreviewNode | { nodeId: string }): RowSearch => {
       if (!readyOf(designId)) return MISSING;
       if (!open.has(designId)) {
         setOpen(withMember(open, designId, true));
         return WAITING;
       }
       const layers = layersOf(designId);
-      const nodeId = layers?.drawn?.rowAt.get(node.instancePath);
+      const nodeId = 'nodeId' in row ? row.nodeId : layers?.drawn?.rowAt.get(row.instancePath);
       if (!layers || nodeId === undefined) {
         // Past the pages read so far, it may still be drawn; the rest is read to find it.
         if (layers?.reading || reads.readRest(designId)) return WAITING;
         return MISSING;
       }
-      const holders = ancestorIds(layerNodes(layers), nodeId).map((id) => nodeKey(designId, id));
+      const nodes = layerNodes(layers);
+      if (!nodes.some((node) => node.nodeId === nodeId)) return MISSING;
+      const holders = ancestorIds(nodes, nodeId).map((id) => nodeKey(designId, id));
       if (holders.some((key) => closed.has(key)))
         setClosed(new Set([...closed].filter((key) => !holders.includes(key))));
       return { state: 'found', key: nodeKey(designId, nodeId) };

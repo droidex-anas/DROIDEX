@@ -1,12 +1,12 @@
 // An outline row under its frame in the layers panel: its kind's icon and its
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
-// here, which the row's description also says. A row picks only its own drawn
-// element, and otherwise says why it cannot. A note row says what an open
-// frame's layers cannot show.
+// here, which the row's description also says. A layer that can move has a
+// handle to drag it by. A row picks only its own drawn element, and otherwise
+// says why it cannot. A note row says what an open frame's layers cannot show.
 
-import { useEffect, useEffectEvent, type ReactElement } from 'react';
-import { Lock } from '@droidex/icons';
+import { useEffect, useEffectEvent, type PointerEvent, type ReactElement } from 'react';
+import { GripVertical, Lock } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Row, RowCaret } from '../../../components/ui/Row';
@@ -15,11 +15,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { OutlineNode } from '../protocol';
 import type { Drawn } from './drawnLayers';
 import { layerKind } from './elementKind';
-import type { LayerEntry } from './layerRows';
-
-/** Where a frame row's icon sits, as Row's padding puts it, and each level's step in. */
-const LEVEL_ONE_INSET_PX = 12;
-const LEVEL_STEP_PX = 12;
+import { rowInset, type LayerEntry } from './layerRows';
 
 const LOCK_REASONS: Record<NonNullable<OutlineNode['lock']>, string> = {
   repeated: 'Written once and repeated for each item. Ask the agent to change it.',
@@ -49,8 +45,10 @@ export function ElementRow({
   active,
   selected,
   lit,
+  describedBy,
   onPick,
   onToggle,
+  onGrab,
   onLight,
   onUnlight,
 }: {
@@ -64,8 +62,12 @@ export function ElementRow({
   selected: boolean;
   /** The pointer is over this row's element on the board. */
   lit: boolean;
+  /** The id of what tells how to move the layer from the keyboard, where it can move. */
+  describedBy: string | undefined;
   onPick: (entry: ElementEntry) => void;
   onToggle: (entry: ElementEntry) => void;
+  /** The pointer went down on the row's handle; undefined where its layer cannot move. */
+  onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
   /** The pointer came onto the row: the board lights its frame and outlines its drawn element. */
   onLight: (owner: string, designId: string, target: PreviewNode | null) => void;
   /** The pointer left, or the list scrolled the row away from under it. */
@@ -89,21 +91,9 @@ export function ElementRow({
     <Row
       icon={<KindIcon className="size-icon-md" />}
       label={entry.name}
-      trailing={
-        <>
-          {node.lock && <LockGlyph lock={node.lock} last={entry.open === null} />}
-          {entry.open !== null && (
-            <FoldCaret
-              open={entry.open}
-              onToggle={() => {
-                onToggle(entry);
-              }}
-            />
-          )}
-        </>
-      }
+      trailing={<ElementTools entry={entry} onToggle={onToggle} onGrab={onGrab} />}
       data-keyboard-row={active || undefined}
-      style={{ paddingLeft: inset(entry.level) }}
+      style={{ paddingLeft: rowInset(entry.level) }}
       className={cn(
         'cursor-default select-none transition-colors duration-150 ease-out',
         selected ? 'bg-active' : cn('group-hover:bg-elevated', lit && 'bg-elevated'),
@@ -120,7 +110,7 @@ export function ElementRow({
       aria-selected={selected}
       aria-expanded={entry.open ?? undefined}
       aria-label={accessibleName(entry, kind, unpickable?.said)}
-      aria-describedby={node.lock ? lockId : undefined}
+      aria-describedby={idList(node.lock && lockId, describedBy)}
       className="group absolute inset-x-0 top-0"
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={() => {
@@ -140,6 +130,40 @@ export function ElementRow({
         </span>
       )}
     </div>
+  );
+}
+
+/** The row's handle, which moves its layer, its lock, and the caret that opens its children. */
+function ElementTools({
+  entry,
+  onToggle,
+  onGrab,
+}: {
+  entry: ElementEntry;
+  onToggle: (entry: ElementEntry) => void;
+  onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
+}) {
+  const { lock } = entry.node;
+  return (
+    <>
+      {onGrab && (
+        <RowGrip
+          last={!lock && entry.open === null}
+          onPointerDown={(event) => {
+            onGrab(event, entry);
+          }}
+        />
+      )}
+      {lock && <LockGlyph lock={lock} last={entry.open === null} />}
+      {entry.open !== null && (
+        <FoldCaret
+          open={entry.open}
+          onToggle={() => {
+            onToggle(entry);
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -164,6 +188,10 @@ function LockGlyph({ lock, last }: { lock: NonNullable<OutlineNode['lock']>; las
       </span>
     </Tooltip>
   );
+}
+
+function idList(...ids: (string | null | undefined)[]): string | undefined {
+  return ids.filter((id) => id).join(' ') || undefined;
 }
 
 /** The row's label, then its kind unless the label already names it, then what stops an edit or a pick. */
@@ -197,10 +225,33 @@ export function NoteRow({
         icon={null}
         label={<span className="text-caption text-muted">{entry.name}</span>}
         data-keyboard-row={active || undefined}
-        style={{ paddingLeft: inset(entry.level) }}
+        style={{ paddingLeft: rowInset(entry.level) }}
         className="cursor-default select-none"
       />
     </div>
+  );
+}
+
+/** A row's handle, which drags it to another place in the list. */
+export function RowGrip({
+  last,
+  onPointerDown,
+}: {
+  /** Nothing comes after it in the row. */
+  last: boolean;
+  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'canvas-layer-tool -my-1.5 flex size-control-sm shrink-0 cursor-grab items-center justify-center text-muted transition duration-150 ease-out hover:text-secondary',
+        last && '-mr-2',
+      )}
+      onPointerDown={onPointerDown}
+    >
+      <GripVertical className="size-icon-md" />
+    </span>
   );
 }
 
@@ -223,8 +274,4 @@ export function FoldCaret({ open, onToggle }: { open: boolean; onToggle: () => v
       }}
     />
   );
-}
-
-function inset(level: number): number {
-  return LEVEL_ONE_INSET_PX + (level - 1) * LEVEL_STEP_PX;
 }

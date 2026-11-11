@@ -38,7 +38,9 @@ import type { EditElementInput } from './elementEditProtocol';
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
 import { layerElements } from './layers/layerElements';
+import type { LayerPlace } from './layers/layerMoves';
 import { LayersPanel } from './layers/LayersPanel';
+import type { LayerRef } from './layers/useElementMove';
 import { PreviewRuns } from './previewRuns';
 import type {
   ArrangeFramesInput,
@@ -216,6 +218,22 @@ export function CanvasBoardMount({
       toast.error(`Couldn’t restack the frames. ${canvasMessage(error)}`);
     });
   };
+  const moveLayer = async (layer: LayerRef, place: LayerPlace) => {
+    // A move shifts the frame's elements in its source, so a pick there would follow the wrong one.
+    const holdsPick = editor.selection?.draft.element.designId === layer.designId;
+    const input: EditElementInput = {
+      mutationId: crypto.randomUUID(),
+      edit: { layer, change: { kind: 'move', ...place } },
+    };
+    try {
+      const edited = await editElement(input);
+      if (holdsPick) editor.clear();
+      return edited;
+    } catch (error) {
+      toast.error(`Couldn’t move the layer. ${canvasMessage(error)}`);
+      return null;
+    }
+  };
   const { selectedFrameIds } = interaction;
   useBoardPaste(boardArea, {
     appSessionId,
@@ -283,6 +301,8 @@ export function CanvasBoardMount({
           onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
           onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
           onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}
+          onMoveLayer={frameActions.actions.canEdit ? moveLayer : undefined}
+          onHistory={stepHistory}
           onPick={(designId, additive) => {
             // A hidden frame is off the board, so it cannot be picked or gone to.
             if (!isShown(designId)) return;
