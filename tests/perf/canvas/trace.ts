@@ -71,18 +71,17 @@ export function readFrameWork(trace: Buffer, frameMark: string): FrameWork {
     while (open.length > 0 && openUntil(open[open.length - 1]) <= event.ts) open.pop();
     const inScript = open.some((outer) => SCRIPT.has(outer.name));
     open.push(event);
-    if (!within(event)) continue;
-    const ms = (event.dur ?? 0) / 1000;
+    // Time counts the part inside the stream's frames, so the first frame's rAF
+    // callback, which starts just before its mark, still counts.
+    const ms = (Math.min(last.ts, openUntil(event)) - Math.max(first.ts, event.ts)) / 1000;
+    if (ms <= 0) continue;
     if (SCRIPT.has(event.name) && !inScript) work.scriptMs += ms;
-    if (event.name === 'UpdateLayoutTree') {
-      work.styleMs += ms;
-      if (inScript) work.forcedStyles += 1;
-    }
-    if (event.name === 'Layout') {
-      work.layoutMs += ms;
-      if (inScript) work.forcedLayouts += 1;
-    }
     if (PAINT.has(event.name)) work.paintMs += ms;
+    if (event.name === 'UpdateLayoutTree') work.styleMs += ms;
+    if (event.name === 'Layout') work.layoutMs += ms;
+    if (!within(event) || !inScript) continue;
+    if (event.name === 'UpdateLayoutTree') work.forcedStyles += 1;
+    if (event.name === 'Layout') work.forcedLayouts += 1;
   }
   return work;
 }

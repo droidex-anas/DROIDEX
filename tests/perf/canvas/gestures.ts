@@ -9,10 +9,16 @@ import { PacedInput, type Point } from './input';
 /** Events each way: half a second out, half a second back. */
 const STEPS = 60;
 
+/** The board's stage, whose transform is the viewport. */
+const STAGE = '[data-testid="canvas-board"] > [style*="transform-origin"]';
+const FRAME_A = '[data-design-frame="a"]';
+
 export interface Gesture {
   name: string;
   description: string;
   tool: BoardTool;
+  /** The element whose inline style the gesture changes, checked in the warm-up stream. */
+  moves?: string;
   /** Readies the page once, before the first stream. */
   prepare?: (page: Page) => Promise<void>;
   stream: (page: Page) => Promise<void>;
@@ -129,6 +135,7 @@ export const GESTURES: Gesture[] = [
     name: 'pan',
     description: 'Background press-drag pan, 240 px across and back',
     tool: 'board',
+    moves: STAGE,
     stream: async (page) => {
       const from = await background(page);
       await drag(await PacedInput.open(page), from, (index) =>
@@ -140,36 +147,42 @@ export const GESTURES: Gesture[] = [
     name: 'wheelPan',
     description: 'Two-finger scroll pan, 60 wheel events of 6 px down and 60 up',
     tool: 'board',
+    moves: STAGE,
     stream: (page) => wheel(page, 6, null),
   },
   {
     name: 'pinch',
     description: 'Trackpad pinch (Ctrl+wheel), 60 events in and 60 out',
     tool: 'board',
+    moves: STAGE,
     stream: (page) => wheel(page, -3, 'Control'),
   },
   {
     name: 'metaWheel',
     description: '⌘-wheel zoom, 60 events in and 60 out',
     tool: 'board',
+    moves: STAGE,
     stream: (page) => wheel(page, -4, 'Meta'),
   },
   {
     name: 'moveOne',
     description: 'Drag one frame by its label, out and back',
     tool: 'board',
+    moves: FRAME_A,
     stream: (page) => moveFrames(page, ['a']),
   },
   {
     name: 'moveFive',
     description: 'Drag five selected frames by one label, out and back',
     tool: 'board',
+    moves: FRAME_A,
     stream: (page) => moveFrames(page, ['a', 'b', 'x0', 'x1', 'x2']),
   },
   {
     name: 'resizeOne',
     description: 'Resize one frame from its south-east corner, out and back',
     tool: 'board',
+    moves: FRAME_A,
     prepare: selectFrameA,
     stream: async (page) => {
       const handle = await rectOf(page, '[data-design-frame="a"] [data-handle="southeast"]');

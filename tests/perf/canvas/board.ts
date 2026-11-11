@@ -97,18 +97,21 @@ export async function openGrid(
 
   const ids = designIds(frames);
   const columns = Math.ceil(Math.sqrt(frames));
+  // A manifest commit reads the board as last rendered, so the grid and each
+  // commit wait a frame for React to render them before the next.
   await page.evaluate(
-    ({ ids, columns }) => {
-      window.boardGuestReady = true;
-      ids.forEach((designId, index) => {
-        const x = (index % columns) * 450;
-        const y = Math.floor(index / columns) * 350;
-        window.boardHarness.publish(designId, { x, y, width: 400, height: 300 }, 4);
-      });
-    },
+    ({ ids, columns }) =>
+      new Promise<void>((resolve) => {
+        window.boardGuestReady = true;
+        ids.forEach((designId, index) => {
+          const x = (index % columns) * 450;
+          const y = Math.floor(index / columns) * 350;
+          window.boardHarness.publish(designId, { x, y, width: 400, height: 300 }, 4);
+        });
+        requestAnimationFrame(() => resolve());
+      }),
     { ids, columns },
   );
-  // A manifest commit reads the board as last rendered, so each waits for the one before.
   for (const [index, designId] of ids.entries()) {
     const name = `${NAMES[index % NAMES.length]} ${String(Math.floor(index / NAMES.length) + 1)}`;
     await page.evaluate(

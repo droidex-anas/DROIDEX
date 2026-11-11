@@ -1,5 +1,6 @@
 // One gesture on one board, measured: a warm-up stream that also counts the
-// components each commit rendered, a timed stream for frame pacing and
+// components each commit rendered and checks the gesture moved what it
+// should, a timed stream for frame pacing and
 // counts, and a traced stream for the main thread's work per frame. Tracing
 // and the render walk each slow the page, so neither runs in the timed stream.
 
@@ -99,11 +100,15 @@ export async function measureGesture(
 }
 
 /** One stream of the gesture, and what the probe kept from its start to the board settling after it. */
-async function stream(page: Page, gesture: Gesture, countRenders: boolean): Promise<ProbeWindow> {
-  await page.evaluate((count) => {
-    window.canvasProbe.begin(count);
-    window.canvasProbe.streamStart();
-  }, countRenders);
+async function stream(page: Page, gesture: Gesture, warm: boolean): Promise<ProbeWindow> {
+  const watch = warm ? (gesture.moves ?? null) : null;
+  await page.evaluate(
+    ({ warm, watch }) => {
+      window.canvasProbe.begin(warm, watch);
+      window.canvasProbe.streamStart();
+    },
+    { warm, watch },
+  );
   await gesture.stream(page);
   await page.evaluate(() => {
     window.canvasProbe.streamEnd();
@@ -112,6 +117,8 @@ async function stream(page: Page, gesture: Gesture, countRenders: boolean): Prom
   const kept = await page.evaluate(() => window.canvasProbe.end());
   if (kept.frameTimes.length < 2)
     throw new Error(`${gesture.name} streamed fewer than two frames.`);
+  // The stream ends where it began, so only its frames between show it moved.
+  if (watch && kept.watchedStyles < 2) throw new Error(`${gesture.name} did not move ${watch}.`);
   return kept;
 }
 

@@ -35,18 +35,18 @@ const COUNTS: Column[] = [
 ];
 
 const TIMING: Column[] = [
-  ['Busy p50', 'busyP50Ms', 1],
-  ['Busy p95', 'busyP95Ms', 1],
-  ['Busy p99', 'busyP99Ms', 1],
-  ['Over 8.3 ms', 'overBudgetShare', 2],
-  ['Script', 'scriptMsPerFrame', 1],
-  ['Style', 'styleMsPerFrame', 1],
-  ['Layout', 'layoutMsPerFrame', 1],
-  ['Paint', 'paintMsPerFrame', 1],
-  ['rAF p50', 'rafP50Ms', 1],
-  ['rAF p95', 'rafP95Ms', 1],
-  ['rAF p99', 'rafP99Ms', 1],
-  ['Dropped', 'droppedFrames', 0],
+  ['Busy p50 ms', 'busyP50Ms', 1],
+  ['Busy p95 ms', 'busyP95Ms', 1],
+  ['Busy p99 ms', 'busyP99Ms', 1],
+  ['Share over 8.3 ms', 'overBudgetShare', 2],
+  ['Script ms', 'scriptMsPerFrame', 1],
+  ['Style ms', 'styleMsPerFrame', 1],
+  ['Layout ms', 'layoutMsPerFrame', 1],
+  ['Paint ms', 'paintMsPerFrame', 1],
+  ['rAF p50 ms', 'rafP50Ms', 1],
+  ['rAF p95 ms', 'rafP95Ms', 1],
+  ['rAF p99 ms', 'rafP99Ms', 1],
+  ['Dropped frames', 'droppedFrames', 0],
 ];
 
 export function renderCanvasReport(report: CanvasReport): string {
@@ -57,17 +57,24 @@ export function renderCanvasReport(report: CanvasReport): string {
     `- Tree: \`${report.treeRoot}\``,
     `- ${report.environment.browser} on ${report.environment.platform} (${report.environment.cpu})`,
     `- ${String(report.runs)} runs; each cell is the median, with the least and greatest run when they differ.`,
-    '- Input is paced at 8.33 ms. Busy is main-thread task time per frame in ms, from a traced stream; script, style, layout and paint are its parts.',
+    '- Input is paced at 8.33 ms. Busy is main-thread task time per frame, from a traced stream; script, style, layout and paint are its parts, per frame.',
     '- rAF is the gap between animation frames in ms, from an untraced stream; headless Chromium draws at 60 Hz, so 16.7 ms is a frame on time.',
     '',
   ];
   for (const [frames, gestures] of Object.entries(report.boards)) {
     lines.push(`## ${frames} frames`, '', '### Counts', '', ...table(gestures, COUNTS), '');
-    lines.push('### Timing (ms)', '', ...table(gestures, TIMING), '');
+    lines.push('### Timing', '', ...table(gestures, TIMING), '');
   }
-  lines.push('## Gate metrics', '', '| Metric | Value | Method |', '| --- | --- | --- |');
+  lines.push(
+    '## Gate metrics',
+    '',
+    '| Metric | Value | Unit | Method |',
+    '| --- | --- | --- | --- |',
+  );
   for (const metric of report.metrics)
-    lines.push(`| \`${metric.id}\` | ${round(metric.value, 3)} | ${metric.method} |`);
+    lines.push(
+      `| \`${metric.id}\` | ${round(metric.value, 3)} | ${metric.unit} | ${metric.method} |`,
+    );
   lines.push('');
   return lines.join('\n');
 }

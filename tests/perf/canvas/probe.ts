@@ -1,7 +1,8 @@
 // The in-page half of the canvas scenario, installed before the page's own
 // scripts. Between begin() and end() it keeps every animation frame, long task
 // and long animation frame; between streamStart() and streamEnd() it counts
-// React commits, the components they rendered (when asked) and layout reads.
+// React commits, the components they rendered (when asked) and layout reads,
+// and keeps each frame's inline style of the element a gesture should move.
 
 export interface ProbeWindow {
   /** rAF timestamps while the input stream ran. */
@@ -9,8 +10,13 @@ export interface ProbeWindow {
   commits: number;
   /** Components React rendered in those commits; 0 unless the window counted them. */
   renders: number;
-  /** Geometry reads that can force layout: rects, offsets and client sizes. */
+  /**
+   * Reads that can force style or layout: each call of a rect method or
+   * getComputedStyle, and each read of an offset, client or scroll getter.
+   */
   layoutReads: number;
+  /** Distinct inline styles the watched element showed across the stream's frames. */
+  watchedStyles: number;
   /** Durations of long tasks (over 50 ms) anywhere in the window. */
   longTasks: number[];
   /** Durations of long animation frames (over 50 ms) anywhere in the window. */
@@ -18,7 +24,7 @@ export interface ProbeWindow {
 }
 
 interface CanvasProbe {
-  begin: (countRenders: boolean) => void;
+  begin: (countRenders: boolean, watch: string | null) => void;
   streamStart: () => void;
   streamEnd: () => void;
   end: () => ProbeWindow;
@@ -61,8 +67,15 @@ export function installProbe(frameMark: string) {
     return count;
   };
 
-  let window_ = { begunAt: 0, endedAt: 0, streaming: false, countRenders: false };
+  let window_ = {
+    begunAt: 0,
+    endedAt: 0,
+    streaming: false,
+    countRenders: false,
+    watch: null as string | null,
+  };
   let counts = { frameTimes: [] as number[], commits: 0, renders: 0, layoutReads: 0 };
+  let watchedStyles = new Set<string | null>();
   const longTasks: { startTime: number; duration: number }[] = [];
   const longFrames: { startTime: number; duration: number }[] = [];
 
@@ -97,9 +110,23 @@ export function installProbe(frameMark: string) {
       },
     });
   }
+  const computedStyle = window.getComputedStyle;
+  window.getComputedStyle = (...args) => {
+    countRead();
+    return computedStyle.apply(window, args);
+  };
   const getters: [object, string[]][] = [
-    [Element.prototype, ['clientWidth', 'clientHeight', 'clientLeft', 'clientTop']],
-    [HTMLElement.prototype, ['offsetWidth', 'offsetHeight', 'offsetLeft', 'offsetTop']],
+    [
+      Element.prototype,
+      [
+        ...['clientWidth', 'clientHeight', 'clientLeft', 'clientTop'],
+        ...['scrollWidth', 'scrollHeight', 'scrollLeft', 'scrollTop'],
+      ],
+    ],
+    [
+      HTMLElement.prototype,
+      ['offsetWidth', 'offsetHeight', 'offsetLeft', 'offsetTop', 'offsetParent'],
+    ],
   ];
   for (const [prototype, names] of getters) {
     for (const name of names) {
@@ -110,7 +137,7 @@ export function installProbe(frameMark: string) {
         ...descriptor,
         get(this: Element) {
           countRead();
-          return get.call(this) as number;
+          return get.call(this) as unknown;
         },
       });
     }
@@ -120,6 +147,8 @@ export function installProbe(frameMark: string) {
     if (window_.streaming) {
       counts.frameTimes.push(time);
       performance.mark(frameMark);
+      if (window_.watch)
+        watchedStyles.add(document.querySelector(window_.watch)?.getAttribute('style') ?? null);
     }
     requestAnimationFrame(tick);
   };
@@ -137,9 +166,16 @@ export function installProbe(frameMark: string) {
       .filter((entry) => entry.startTime >= window_.begunAt && entry.startTime < window_.endedAt)
       .map((entry) => entry.duration);
   window.canvasProbe = {
-    begin: (countRenders) => {
-      window_ = { begunAt: performance.now(), endedAt: Infinity, streaming: false, countRenders };
+    begin: (countRenders, watch) => {
+      window_ = {
+        begunAt: performance.now(),
+        endedAt: Infinity,
+        streaming: false,
+        countRenders,
+        watch,
+      };
       counts = { frameTimes: [], commits: 0, renders: 0, layoutReads: 0 };
+      watchedStyles = new Set();
     },
     streamStart: () => {
       window_.streaming = true;
@@ -149,7 +185,12 @@ export function installProbe(frameMark: string) {
     },
     end: () => {
       window_.endedAt = performance.now();
-      return { ...counts, longTasks: within(longTasks), longFrames: within(longFrames) };
+      return {
+        ...counts,
+        watchedStyles: watchedStyles.size,
+        longTasks: within(longTasks),
+        longFrames: within(longFrames),
+      };
     },
   };
 }

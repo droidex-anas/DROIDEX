@@ -1,18 +1,22 @@
 // The canvas perf scenario: every gesture on a 30- and a 100-frame board of
 // the tree's board harness, in headless Chromium at real timers, repeated
 // `--runs` times. Writes reports/perf/canvas.{json,md}; with `--metrics` it
-// prints only the gate metrics, which perf:compare and perf:gates read.
+// prints only the gate metrics, which perf:compare and perf:gates read. It
+// exits with status 3 when Playwright's Chromium is not installed.
 //
 //   npm run perf:canvas -- [--runs 3] [--frames 30,100] [--gesture pan] [--tree <root>] [--metrics]
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { cpus } from 'node:os';
 import { join, resolve } from 'node:path';
-import { chromium } from '@playwright/test';
+import { chromium, type Browser } from '@playwright/test';
 import { serveHarness } from './board';
 import { GESTURES } from './gestures';
 import { measureGesture, type GestureSample } from './measure';
 import { renderCanvasReport, type CanvasReport, type GestureSummary } from './report';
+
+/** Perf gates report the canvas metrics unmeasured, not failed, on this exit status. */
+const CHROMIUM_MISSING_EXIT = 3;
 
 interface Options {
   treeRoot: string;
@@ -46,6 +50,9 @@ function parseArgs(argv: string[]): Options {
   }
   if (!Number.isInteger(options.runs) || options.runs < 1)
     throw new Error('--runs takes a whole number.');
+  // The grid always holds designs A and B.
+  if (options.frames.some((frames) => !Number.isInteger(frames) || frames < 2))
+    throw new Error('--frames takes whole numbers of at least 2.');
   for (const name of options.gestures)
     if (!GESTURES.some((gesture) => gesture.name === name))
       throw new Error(`No gesture is named "${name}".`);
@@ -53,8 +60,8 @@ function parseArgs(argv: string[]): Options {
 }
 
 async function runScenario(options: Options): Promise<CanvasReport> {
+  const browser = await launchChromium();
   const harness = await serveHarness(options.treeRoot);
-  const browser = await chromium.launch();
   const samples = new Map<string, GestureSample[]>();
   try {
     for (let run = 1; run <= options.runs; run += 1) {
@@ -96,6 +103,18 @@ async function runScenario(options: Options): Promise<CanvasReport> {
   }
 }
 
+/** Exits with CHROMIUM_MISSING_EXIT when Playwright's Chromium is not installed. */
+async function launchChromium(): Promise<Browser> {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.includes("Executable doesn't exist"))
+      throw error;
+    console.error(error.message.split('\n')[0]);
+    process.exit(CHROMIUM_MISSING_EXIT);
+  }
+}
+
 /** The median, least and greatest of each field over the runs. */
 function summarize(runs: GestureSample[]): Omit<GestureSummary, 'description'> {
   const fields = Object.keys(runs[0]) as (keyof GestureSample)[];
@@ -106,7 +125,8 @@ function summarize(runs: GestureSample[]): Omit<GestureSummary, 'description'> {
   return {
     median: pick((values) => {
       const sorted = values.toSorted((a, b) => a - b);
-      return sorted[Math.floor((sorted.length - 1) / 2)];
+      const middle = Math.floor(sorted.length / 2);
+      return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
     }),
     min: pick((values) => Math.min(...values)),
     max: pick((values) => Math.max(...values)),
