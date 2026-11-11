@@ -17,6 +17,7 @@ import {
   setFrameHiddenInputSchema,
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
+import { editElementInputSchema } from './elementEditSchema.js';
 import type { CanvasCommand } from './protocol.js';
 import {
   CANVAS_LIMITS,
@@ -26,7 +27,6 @@ import {
   designSystemRefSchema,
   designSystemVersionRefSchema,
   designSystemAdherenceSchema,
-  editElementInputSchema,
   switchRevisionInputSchema,
   revisionPageSchema,
   revisionRefSchema,

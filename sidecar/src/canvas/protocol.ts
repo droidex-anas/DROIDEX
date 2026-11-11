@@ -1,5 +1,5 @@
 // Canvas wire DTOs. Mutation inputs are defined once by the Zod parsers in
-// schema.ts and frameEditSchema.ts and re-exported here; the renderer keeps a
+// schema.ts, frameEditSchema.ts and elementEditSchema.ts and re-exported here; the renderer keeps a
 // hand-written mirror at src/features/canvas/protocol.ts, and schema.test.ts
 // stops compiling when the two drift.
 
@@ -18,7 +18,6 @@ import type {
   DesignSystemAdherence,
   DesignSystemRef,
   DesignSystemVersionRef,
-  EditElementInput,
   FrameRect,
   SwitchRevisionInput,
   RevisionPage,
@@ -26,6 +25,7 @@ import type {
   SourceFiles,
   WriteFilesInput,
 } from './schema.js';
+import type { EditElementInput } from './elementEditSchema.js';
 import type {
   AnnotateCanvasInput,
   Annotation,
@@ -49,6 +49,7 @@ export type {
   RenameFrameInput,
   UndoRemovalInput,
 } from './frameEditSchema.js';
+export type { EditElementInput } from './elementEditSchema.js';
 export type {
   CanvasTurnContext,
   CreateCanvasResult,
@@ -57,7 +58,6 @@ export type {
   DesignSystemAdherence,
   DesignSystemRef,
   DesignSystemVersionRef,
-  EditElementInput,
   ElementRef,
   FrameRect,
   SwitchRevisionInput,
