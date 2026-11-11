@@ -82,12 +82,13 @@ function seed(module, source) {
   return { seed: { name: label(module), module, uses: used(uses), icons: used(icons), jsx: text, note: null } };
 }
 
-/** Why the JSX cannot stand alone: a handler, or a name it does not import. Adds each name it does import to `named`. */
+/** Why the JSX cannot stand alone: a handler, a module load, or a name it does not import. Adds each name it does import to `named`. */
 function freeName(jsx, imported, named) {
   let problem = null;
   const visit = (node) => {
     if (problem) return;
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) problem = 'has a handler';
+    else if (loadsModule(node)) problem = 'loads a module';
     else if (ts.isIdentifier(node) && isReference(node) && node.text !== 'undefined') {
       if (imported.has(node.text)) named.add(node.text);
       else problem = `names ${node.text}, which it does not import`;
@@ -96,6 +97,11 @@ function freeName(jsx, imported, named) {
   };
   visit(jsx);
   return problem;
+}
+
+function loadsModule(node) {
+  if (ts.isCallExpression(node)) return node.expression.kind === ts.SyntaxKind.ImportKeyword;
+  return ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.ImportKeyword;
 }
 
 function isReference(node) {
