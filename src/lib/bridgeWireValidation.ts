@@ -176,6 +176,18 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       );
     case 'harness.cli.report':
       return Array.isArray(value.clis) && value.clis.every(isHarnessCliState);
+    case 'harness.cli.install.progress':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        (value.stream === 'stdout' || value.stream === 'stderr') &&
+        typeof value.line === 'string'
+      );
+    case 'harness.cli.install.done':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        typeof value.exitCode === 'number'
+      );
     case 'harness.cli.update.done':
       return (
         isHarnessCliProvider(value.provider) &&

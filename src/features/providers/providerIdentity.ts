@@ -27,6 +27,13 @@ export const PROVIDER_USAGE_URLS: Record<ProviderKind, string> = {
   codex: 'https://chatgpt.com/codex/settings/usage',
 };
 
+// What each harness's own CLI runs to sign in, typed in a terminal.
+export const PROVIDER_SIGN_IN_COMMANDS: Record<ProviderKind, string> = {
+  droid: 'droid',
+  claude: 'claude',
+  codex: 'codex login',
+};
+
 // Each provider carries the official mark of the harness it runs, full color
 // and at one size so the three read as one family.
 export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {

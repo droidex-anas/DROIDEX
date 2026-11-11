@@ -743,6 +743,7 @@ export type ClientCommand =
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
   | { type: 'harness.cli.check' }
+  | { type: 'harness.cli.install'; provider: HarnessCliProvider; channel: InstallChannel }
   | { type: 'harness.cli.update'; provider: HarnessCliProvider }
   | { type: 'droidproxy.status' }
   | { type: 'droidproxy.launch' }
@@ -1079,6 +1080,18 @@ export type ServerEvent =
     }
   | { type: 'cli.install.done'; phase: 'install' | 'update'; ok: boolean; exitCode: number }
   | { type: 'harness.cli.report'; clis: HarnessCliState[] }
+  | {
+      type: 'harness.cli.install.progress';
+      provider: HarnessCliProvider;
+      stream: 'stdout' | 'stderr';
+      line: string;
+    }
+  | {
+      type: 'harness.cli.install.done';
+      provider: HarnessCliProvider;
+      ok: boolean;
+      exitCode: number;
+    }
   | {
       type: 'harness.cli.update.done';
       provider: HarnessCliProvider;

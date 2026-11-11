@@ -1,6 +1,27 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { locateInstall } from './harnessCli.js';
+import { buildHarnessInstallCommand, locateInstall } from './harnessCli.js';
+
+test('each harness installs through its documented installers', () => {
+  const script = buildHarnessInstallCommand('claude', 'script');
+  assert.equal(script.command, 'sh');
+  // A failed download must stop before the installer runs.
+  assert.match(
+    script.args[1] ?? '',
+    /curl -fsSL https:\/\/claude\.ai\/install\.sh[^&]*&&[^&]*bash/,
+  );
+  assert.deepEqual(buildHarnessInstallCommand('claude', 'brew').args, [
+    'install',
+    '--cask',
+    'claude-code',
+  ]);
+  assert.deepEqual(buildHarnessInstallCommand('codex', 'npm').args, [
+    'install',
+    '-g',
+    '@openai/codex',
+  ]);
+  assert.throws(() => buildHarnessInstallCommand('codex', 'script'), /no script installer/);
+});
 
 test('locateInstall picks the updater that owns the resolved binary', () => {
   const cask = locateInstall(

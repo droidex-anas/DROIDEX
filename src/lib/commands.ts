@@ -111,6 +111,9 @@ export const updateCli = (channel?: InstallChannel) => {
 export const checkHarnessClis = () => {
   bridge.send({ type: 'harness.cli.check' });
 };
+export const installHarnessCli = (provider: HarnessCliProvider, channel: InstallChannel) => {
+  bridge.send({ type: 'harness.cli.install', provider, channel });
+};
 export const updateHarnessCli = (provider: HarnessCliProvider) => {
   bridge.send({ type: 'harness.cli.update', provider });
 };

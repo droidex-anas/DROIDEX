@@ -130,7 +130,7 @@ import {
   DEFAULT_PROVIDER,
   type ProviderKind,
 } from './providers/providerKind.js';
-import { HarnessCliUpdater } from './providers/harnessCli.js';
+import { HarnessCliInstaller } from './providers/harnessCli.js';
 import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
@@ -383,7 +383,7 @@ export class SessionManager {
     },
   });
   private readonly providerProbes: ProviderProbes;
-  private readonly harnessClis = new HarnessCliUpdater(
+  private readonly harnessClis = new HarnessCliInstaller(
     (event) => {
       this.emit(event);
     },
@@ -1122,6 +1122,9 @@ export class SessionManager {
         return;
       case 'harness.cli.check':
         await this.harnessClis.report();
+        return;
+      case 'harness.cli.install':
+        await this.harnessClis.install(cmd.provider, cmd.channel);
         return;
       case 'harness.cli.update':
         await this.harnessClis.update(cmd.provider);
