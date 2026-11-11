@@ -16,6 +16,7 @@ import { ownedEsbuildBinary } from './canvasRuntime.js';
 import { canvasError, storageFailure } from './canvasError.js';
 import { moduleDeclarationsSchema, type ModuleDeclarations } from './compilerModules.js';
 import type { DesignSystem } from './designSystems.js';
+import type { KitFailure } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemAdherence,
@@ -114,6 +115,7 @@ export type CompilerRequest =
       designSystem: DesignSystemRef;
     }
   | { type: 'readModules'; requestId: number; sources: string[] }
+  | { type: 'checkCatalog'; requestId: number; kit: KitPreviewCompileInput['kit'] }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
@@ -129,6 +131,7 @@ export type CompilerResponse =
   | { requestId: number; status: 'edited'; files: SourceFiles }
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'modules'; modules: ModuleDeclarations[] }
+  | { requestId: number; status: 'catalogChecked'; failures: KitFailure[] }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
   | {
@@ -205,6 +208,15 @@ export class CompilerWorker {
       signal,
       (requestId) => ({ type: 'readModules', requestId, sources }),
       (response) => (response.status === 'modules' ? response.modules : undefined),
+    );
+  }
+
+  /** Why the kit's catalog is unusable, or each entry that does not stand alone or build. */
+  checkCatalog(kit: KitPreviewCompileInput['kit'], signal: AbortSignal): Promise<KitFailure[]> {
+    return this.request(
+      signal,
+      (requestId) => ({ type: 'checkCatalog', requestId, kit }),
+      (response) => (response.status === 'catalogChecked' ? response.failures : undefined),
     );
   }
 
@@ -390,7 +402,8 @@ export function compilerResponse(message: unknown): CompilerResponse | null {
   if (typeof requestId !== 'number') return null;
   const edit = editResponse(requestId, fields);
   if (edit !== undefined) return edit;
-  if (status === 'modules') return modulesResponse(requestId, fields.modules);
+  const read = readResponse(requestId, fields);
+  if (read !== undefined) return read;
   switch (status) {
     case 'cancelled':
     case 'stopped':
@@ -425,10 +438,16 @@ function editResponse(
   return undefined;
 }
 
-function modulesResponse(
+/** The answer to a read of source rather than a build: its modules, or a catalog's failures. */
+function readResponse(
   requestId: number,
-  modules: unknown,
-): Extract<CompilerResponse, { status: 'modules' }> | null {
+  { status, modules, failures }: Record<string, unknown>,
+): Extract<CompilerResponse, { status: 'modules' | 'catalogChecked' }> | null | undefined {
+  if (status === 'catalogChecked')
+    return Array.isArray(failures)
+      ? { requestId, status, failures: failures as KitFailure[] }
+      : null;
+  if (status !== 'modules') return undefined;
   const parsed = moduleDeclarationsSchema.array().safeParse(modules);
   return parsed.success ? { requestId, status: 'modules', modules: parsed.data } : null;
 }

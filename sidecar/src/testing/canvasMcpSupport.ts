@@ -191,6 +191,7 @@ function answeringKits(): KitPreviews {
   return new KitPreviews({
     compiler: () => ({
       compile: (input) => compile(input as KitPreviewCompileInput),
+      checkCatalog: () => Promise.resolve([]),
       terminate: () => Promise.resolve(),
     }),
     deadline: () => () => undefined,

@@ -18,9 +18,8 @@ import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
 import type { LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
-import { KIT_CATALOG_FILE } from './kitCatalog.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
-import { seedLibraryCatalog } from './libraryCatalog.js';
+import { libraryCatalogFiles } from './libraryCatalog.js';
 import {
   COMPONENT_NAME,
   KIT_UTILS_FILE,
@@ -114,8 +113,7 @@ export async function importLibraryDesignSystem(
     [KIT_UTILS_FILE]: read.utils,
     ...Object.fromEntries(library.files),
   };
-  const catalog = seedLibraryCatalog(files);
-  if (catalog !== null) files[KIT_CATALOG_FILE] = catalog;
+  Object.assign(files, libraryCatalogFiles(files));
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.

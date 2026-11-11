@@ -225,7 +225,7 @@ export interface SessionManagerOptions {
   // Asks the renderer pages showing a canvas for an inspect screenshot.
   canvasCapture?: CanvasCapture;
   // Compiles a kit an agent saves before it is written.
-  kitPreviews?: Pick<KitPreviews, 'check' | 'checkCatalog'>;
+  kitPreviews?: Pick<KitPreviews, 'check'>;
   // Asks the desktop app's main process to import an image from a chat's project.
   importProjectImage?: ImportProjectImage;
   onUserPrompt?: (appSessionId: string) => void;
@@ -341,7 +341,7 @@ export class SessionManager {
   private readonly canvasWorkspace: () => Promise<CanvasWorkspace>;
   private readonly canvasCapture: CanvasCapture;
   private readonly importProjectImage: ImportProjectImage;
-  private readonly kitPreviews: Pick<KitPreviews, 'check' | 'checkCatalog'>;
+  private readonly kitPreviews: Pick<KitPreviews, 'check'>;
   private readonly browsers: SessionBrowsers;
   private readonly createLocalMcpResource: SessionManagerDependencies['createLocalMcpResource'];
   private readonly createAutomationMcpResource: NonNullable<
@@ -425,11 +425,8 @@ export class SessionManager {
         Promise.reject(
           canvasError('capture_unavailable', 'No DROIDEX window can capture this design.'),
         ));
-    const kitBuildsUnavailable = () =>
-      Promise.reject(new Error('Design system builds are unavailable.'));
     this.kitPreviews = options.kitPreviews ?? {
-      check: kitBuildsUnavailable,
-      checkCatalog: kitBuildsUnavailable,
+      check: () => Promise.reject(new Error('Design system builds are unavailable.')),
     };
     this.importProjectImage =
       options.importProjectImage ??

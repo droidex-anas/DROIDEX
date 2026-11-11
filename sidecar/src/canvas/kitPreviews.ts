@@ -7,21 +7,12 @@
 
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
 import { buildFailure } from './canvasBuildFailures.js';
-import { boundDiagnostics } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
 import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
-import { kitPrimitives } from './designSystemBrief.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
-import {
-  catalogCompileFailure,
-  catalogModule,
-  KIT_CATALOG_FILE,
-  readKitCatalog,
-  unexportedUses,
-  type CatalogFailure,
-} from './kitCatalog.js';
+import type { KitFailure } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemProposalRef,
@@ -34,7 +25,7 @@ export type KitPreview =
   | { status: 'ready'; artifact: PreviewArtifact }
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
 
-type KitCompiler = Pick<CompilerWorker, 'compile' | 'terminate'>;
+type KitCompiler = Pick<CompilerWorker, 'compile' | 'checkCatalog' | 'terminate'>;
 
 export interface KitPreviewsDeps {
   compiler?: () => KitCompiler;
@@ -46,6 +37,11 @@ interface Answer {
   preview: KitPreview;
   kept: boolean;
 }
+
+/** What one compiler request answered, or the diagnostics its failure reports. */
+type Attempt<T> =
+  | { status: 'done'; value: T }
+  | { status: 'failed'; diagnostics: CanvasDiagnostic[]; kept: boolean };
 
 const MAX_KEPT_PREVIEWS = 32;
 const SHUTTING_DOWN = 'DROIDEX is shutting down.';
@@ -91,19 +87,16 @@ export class KitPreviews {
 
   /**
    * Compiles a kit that may not be saved yet: its entry, then each of its
-   * examples once, then its catalog as one module. Returns the failures'
-   * diagnostics, none when everything builds. One stylesheet carries both
-   * modes and the mode is only the document's `data-mode`, so one compile
-   * answers for both.
+   * examples once, then its catalog. Returns the failures, none when everything
+   * builds. One stylesheet carries both modes and the mode is only the
+   * document's `data-mode`, so one compile answers for both.
    */
-  async check(
-    kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>,
-  ): Promise<CanvasDiagnostic[]> {
+  async check(kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>): Promise<KitFailure[]> {
     const source = { files: kit.files, sections: kit.sections };
     const entries: [string, string][] = [[KIT_ENTRY, KIT_ENTRY_CHECK]];
     for (const [name, example] of Object.entries(kit.examples))
       entries.push([`examples/${name}`, example]);
-    const diagnostics: CanvasDiagnostic[] = [];
+    const failures: KitFailure[] = [];
     for (const [file, example] of entries) {
       this.refuseClosed();
       const { preview } = await this.compile({
@@ -115,36 +108,23 @@ export class KitPreviews {
       if (preview.status === 'ready') continue;
       // The entry stands in for the example it compiled; the kit's own files keep their paths.
       for (const diagnostic of preview.diagnostics)
-        diagnostics.push(diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic);
+        failures.push({
+          entry: null,
+          diagnostic: diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic,
+        });
     }
-    for (const { diagnostic } of await this.checkCatalog(kit)) diagnostics.push(diagnostic);
-    this.refuseClosed();
-    return boundDiagnostics(diagnostics);
+    failures.push(...(await this.checkCatalog(source)));
+    return failures;
   }
 
-  /** Compiles the kit's catalog as one module; none when it builds or the kit has no catalog. */
-  async checkCatalog(kit: Pick<DesignSystem, 'files' | 'sections'>): Promise<CatalogFailure[]> {
-    const read = readKitCatalog(kit.files);
-    if ('problem' in read)
-      return [
-        {
-          entry: null,
-          diagnostic: { code: 'invalid_input', message: read.problem, file: KIT_CATALOG_FILE },
-        },
-      ];
-    if (read.catalog.length === 0) return [];
-    const unexported = unexportedUses(read.catalog, new Set(kitPrimitives(kit)));
-    if (unexported.length > 0) return unexported;
-    const module = catalogModule(read.catalog);
+  /** Why the kit's catalog is unusable, or each entry that does not stand alone or build. */
+  async checkCatalog(kit: Pick<DesignSystem, 'files' | 'sections'>): Promise<KitFailure[]> {
     this.refuseClosed();
-    const { preview } = await this.compile({
-      kind: 'kitPreview',
-      kit: { files: kit.files, sections: kit.sections },
-      mode: 'light',
-      example: module.source,
-    });
-    if (preview.status === 'ready') return [];
-    return preview.diagnostics.map((diagnostic) => catalogCompileFailure(module, diagnostic));
+    const source = { files: kit.files, sections: kit.sections };
+    const answer = await this.attempt((compiler, signal) => compiler.checkCatalog(source, signal));
+    this.refuseClosed();
+    if (answer.status === 'done') return answer.value;
+    return answer.diagnostics.map((diagnostic) => ({ entry: null, diagnostic }));
   }
 
   /** Refuses every read and cancels every compile; nothing compiles after this. */
@@ -199,6 +179,20 @@ export class KitPreviews {
   }
 
   private async compile(input: KitPreviewCompileInput): Promise<Answer> {
+    const answer = await this.attempt((compiler, signal) => compiler.compile(input, signal));
+    if (answer.status === 'failed')
+      return {
+        preview: { status: 'failed', diagnostics: answer.diagnostics },
+        kept: answer.kept,
+      };
+    const { artifactId, html } = answer.value;
+    return { preview: { status: 'ready', artifact: { artifactId, html } }, kept: true };
+  }
+
+  /** One request to the kit compiler, ended when it outlives the build deadline. */
+  private async attempt<T>(
+    request: (compiler: KitCompiler, signal: AbortSignal) => Promise<T>,
+  ): Promise<Attempt<T>> {
     const compiler = (this.compiler ??= this.fork());
     const abort = new AbortController();
     let overdue = false;
@@ -210,13 +204,11 @@ export class KitPreviews {
     });
     this.running.add(abort);
     try {
-      const { artifactId, html } = await compiler.compile(input, abort.signal);
-      return { preview: { status: 'ready', artifact: { artifactId, html } }, kept: true };
+      return { status: 'done', value: await request(compiler, abort.signal) };
     } catch (error) {
       const failure = buildFailure(error, overdue);
       if (failure?.result.status !== 'failed') throw error;
-      const { diagnostics } = failure.result;
-      return { preview: { status: 'failed', diagnostics }, kept: failure.persists };
+      return { status: 'failed', diagnostics: failure.result.diagnostics, kept: failure.persists };
     } finally {
       cancelDeadline();
       this.running.delete(abort);

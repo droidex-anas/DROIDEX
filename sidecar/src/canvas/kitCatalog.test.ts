@@ -64,7 +64,7 @@ test("every preset's catalog builds against its kit", async (t) => {
     assert.deepEqual(await previews.checkCatalog(kit), [], name);
 });
 
-test('a catalog failure is told as the entry whose lines it is on, and an unexported name refuses before any compile', async (t) => {
+test('a catalog failure is told as the entry whose lines it is on, and an unexported name as that entry', async (t) => {
   const previews = new KitPreviews();
   t.after(() => previews.close());
   const built = await previews.checkCatalog(
@@ -96,4 +96,86 @@ test('a catalog failure is told as the entry whose lines it is on, and an unexpo
       },
     },
   ]);
+});
+
+test('an entry stands alone, one JSX element naming only its own uses, icons and bindings, or it is refused by name', async (t) => {
+  const previews = new KitPreviews();
+  t.after(() => previews.close());
+  const fitting = [
+    entry('Button', '<Button>Go</Button>'),
+    entry('List', "<ul>{['a', 'b'].map((item) => <li key={item}>{item}</li>)}</ul>", []),
+    { ...entry('Add', '<Button>\n  <PlusIcon /> Add\n</Button>'), icons: ['PlusIcon'] },
+  ];
+  assert.deepEqual(await previews.checkCatalog(starterWith(catalogFile(fitting))), []);
+  const cases: [string, string[], RegExp][] = [
+    ['<div />\n)}\n<span>injected</span>\n{(null', [], /\(jsx line 2\)/],
+    [
+      '<div />\n)}\n</>\n);\n}\nimport { useState } from "react";\nexport const injected = 42;\nfunction Tail() {return (<>\n{(null',
+      [],
+      /\(jsx line 2\)/,
+    ],
+    ['<div />; <span />', [], /must be one JSX element or fragment/],
+    ['<div />, <span />', [], /must be one JSX element or fragment/],
+    ['<div /> /* open', [], /\(jsx line 1\)/],
+    ['<div>\r\r\r\r<Missing />\r</div>', [], /Missing is not in its uses or icons/],
+    ['<Button />', [], /Button is not in its uses or icons/],
+    ['<div>{window.location.href}</div>', [], /window is not in its uses or icons/],
+    ['<div>{`hello ${unknownValue}`}</div>', [], /unknownValue is not in its uses or icons/],
+    ["<div>{void import('react')}</div>", [], /cannot load a module/],
+    ['<div />', ['Button'], /Button is in its uses, but its jsx does not use it/],
+  ];
+  for (const [jsx, uses, message] of cases) {
+    const failures = await previews.checkCatalog(
+      starterWith(catalogFile([...fitting, entry('Bad', jsx, uses)])),
+    );
+    assert.deepEqual(
+      failures.map(({ entry: name }) => name),
+      ['Bad'],
+      jsx,
+    );
+    assert.match(failures[0].diagnostic.message, /^catalog\.json, Bad: /, jsx);
+    assert.match(failures[0].diagnostic.message, message, jsx);
+  }
+});
+
+test("the kit's built exports decide what an entry may use, and a missing name is every entry's that names it", async (t) => {
+  const previews = new KitPreviews();
+  t.after(() => previews.close());
+  const kit = starterKit();
+  const files = {
+    ...kit.files,
+    'index.tsx': `${kit.files['index.tsx']}
+export * from './parts';
+  export function Indented() {
+    return <div />;
+  }
+export const Bar = () => null, Foo = () => null;
+`,
+    'parts.tsx': 'export function Part() {\n  return <div />;\n}\n',
+  };
+  const exported = ['Part', 'Indented', 'Foo'].map((name) => entry(name, `<${name} />`, [name]));
+  assert.deepEqual(
+    await previews.checkCatalog({
+      ...kit,
+      files: { ...files, [KIT_CATALOG_FILE]: catalogFile(exported) },
+    }),
+    [],
+  );
+
+  const missingIcon = (name: string) => ({
+    ...entry(name, '<NoSuchIcon />', []),
+    icons: ['NoSuchIcon'],
+  });
+  const failures = await previews.checkCatalog(
+    starterWith(
+      catalogFile([missingIcon('First'), entry('Button', '<Button />'), missingIcon('Second')]),
+    ),
+  );
+  assert.deepEqual(
+    failures.map(({ entry: name, diagnostic }) => [name, diagnostic.message]),
+    [
+      ['First', 'catalog.json, First: lucide-react has no icon NoSuchIcon.'],
+      ['Second', 'catalog.json, Second: lucide-react has no icon NoSuchIcon.'],
+    ],
+  );
 });

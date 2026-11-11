@@ -1,11 +1,9 @@
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
-// like its project theme. Each entry is one JSX expression a palette inserts
-// into a frame, with the kit exports and lucide-react icons it names. The kit
-// check compiles every entry at once as one module, so a failure on an entry's
-// lines is told as that entry's.
+// like its project theme. Each entry is one JSX element a palette inserts
+// into a frame, with the kit exports and lucide-react icons it names. The
+// compiler checks that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
-import { DESIGN_ENTRY } from './designEntry.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { sourcePathSchema, type SourceFiles } from './schema.js';
 
@@ -46,8 +44,8 @@ const catalogSchema = z.array(entrySchema).max(CATALOG_LIMITS.maxEntries);
 
 export type CatalogEntry = z.infer<typeof entrySchema>;
 
-/** A catalog failure, told as the entry it belongs to; `entry` is null for one outside every entry. */
-export interface CatalogFailure {
+/** A kit check failure, told as the catalog entry it belongs to; `entry` is null for one outside every entry. */
+export interface KitFailure {
   entry: string | null;
   diagnostic: CanvasDiagnostic;
 }
@@ -101,88 +99,11 @@ export function catalogProblem(files: SourceFiles): string | null {
   return 'problem' in read ? read.problem : null;
 }
 
-/** Each name an entry uses that the kit entry does not export. */
-export function unexportedUses(
-  catalog: readonly CatalogEntry[],
-  exports: ReadonlySet<string>,
-): CatalogFailure[] {
-  return catalog.flatMap((entry) =>
-    entry.uses
-      .filter((name) => !exports.has(name))
-      .map((name) =>
-        entryFailure(entry.name, {
-          code: 'invalid_input',
-          message: `${name} is not exported by the kit. Use a name its index.tsx exports.`,
-        }),
-      ),
-  );
-}
-
-/** The catalog as one design module, and the entry each of its lines belongs to. */
-export interface CatalogModule {
-  source: string;
-  /** By line, from line 1; null for a line no entry wrote. */
-  owners: (string | null)[];
-}
-
-/**
- * Every entry as a child of one fragment, each name imported once on its own
- * line by the first entry that names it.
- */
-export function catalogModule(catalog: readonly CatalogEntry[]): CatalogModule {
-  const lines: string[] = [];
-  const owners: (string | null)[] = [];
-  const add = (line: string, owner: string | null) => {
-    lines.push(line);
-    owners.push(owner);
-  };
-  const imported = new Set<string>();
-  const addImport = (name: string, from: string, owner: string) => {
-    const key = `${from}:${name}`;
-    if (imported.has(key)) return;
-    imported.add(key);
-    add(`import { ${name} } from '${from}';`, owner);
-  };
-  for (const entry of catalog) {
-    for (const name of entry.uses) addImport(name, '@droidex/design-system', entry.name);
-    for (const name of entry.icons) addImport(name, 'lucide-react', entry.name);
-  }
-  add('', null);
-  add('export default function Catalog() {', null);
-  add('  return (', null);
-  add('    <>', null);
-  for (const entry of catalog) {
-    // Parentheses hold the entry to one expression.
-    add('      {(', entry.name);
-    for (const line of entry.jsx.split('\n')) add(line, entry.name);
-    add('      )}', entry.name);
-  }
-  add('    </>', null);
-  add('  );', null);
-  add('}', null);
-  return { source: `${lines.join('\n')}\n`, owners };
-}
-
-/** A diagnostic from compiling the catalog module, told as the entry its line belongs to. */
-export function catalogCompileFailure(
-  module: CatalogModule,
-  diagnostic: CanvasDiagnostic,
-): CatalogFailure {
-  // A kit file's own failure keeps its path: the catalog only exposed it.
-  if (diagnostic.file !== DESIGN_ENTRY) return { entry: null, diagnostic };
-  const owner = diagnostic.line === undefined ? null : (module.owners[diagnostic.line - 1] ?? null);
-  if (owner === null)
-    return {
-      entry: null,
-      diagnostic: { code: diagnostic.code, message: diagnostic.message, file: KIT_CATALOG_FILE },
-    };
-  return entryFailure(owner, diagnostic);
-}
-
-function entryFailure(
+/** A failure of one entry, told as that entry's. */
+export function entryFailure(
   entry: string,
   { code, message }: Pick<CanvasDiagnostic, 'code' | 'message'>,
-): CatalogFailure {
+): KitFailure {
   return {
     entry,
     diagnostic: { code, message: `${entryLabel(entry)}: ${message}`, file: KIT_CATALOG_FILE },

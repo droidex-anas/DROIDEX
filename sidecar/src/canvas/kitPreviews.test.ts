@@ -13,27 +13,33 @@ import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews, kitExample } from './kitPreviews.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 pinScratchProfile();
 
 const LIGHT: DesignSystemRef = { id: 'droidex', version: 1, mode: 'light' };
 const DARK: DesignSystemRef = { ...LIGHT, mode: 'dark' };
 
-/** A compiler that answers each compile with what `answer` returns, counting them. */
+/** A compiler that answers each compile with what `answer` returns, counting them and catalog checks. */
 function countingPreviews(
   answer: (input: CompileInput) => CompiledDesign | Promise<CompiledDesign>,
 ) {
   const compiled: CompileInput[] = [];
+  const catalogs: SourceFiles[] = [];
   const previews = new KitPreviews({
     compiler: () => ({
       compile: async (input) => {
         compiled.push(input);
         return answer(input);
       },
+      checkCatalog: (kit) => {
+        catalogs.push(kit.files);
+        return Promise.resolve([]);
+      },
       terminate: () => Promise.resolve(),
     }),
   });
-  return { previews, compiled };
+  return { previews, compiled, catalogs };
 }
 
 /** Every preview the shipped kits have, in both modes. */
@@ -183,13 +189,11 @@ test("a waiting proposal's previews build from its own examples, and a settled o
   await previews.close();
 });
 
-test('a kit check compiles its entry, each example, then its whole catalog once', async () => {
-  const { previews, compiled } = countingPreviews(() => design('<html></html>'));
+test('a kit check compiles its entry, each example, then checks its whole catalog once', async () => {
+  const { previews, compiled, catalogs } = countingPreviews(() => design('<html></html>'));
   const kit = starterKit();
 
   assert.deepEqual(await previews.check(kit), []);
-  const examples = compiled.map((input) => (input.kind === 'kitPreview' ? input.example : ''));
-  assert.equal(examples.length, 1 + Object.keys(kit.examples).length + 1);
-  assert.equal(examples.filter((source) => source.includes('function Catalog()')).length, 1);
-  assert.match(examples.at(-1) ?? '', /<Button variant="quiet">Cancel<\/Button>[\s\S]*<Badge>/);
+  assert.equal(compiled.length, 1 + Object.keys(kit.examples).length);
+  assert.deepEqual(catalogs, [kit.files]);
 });

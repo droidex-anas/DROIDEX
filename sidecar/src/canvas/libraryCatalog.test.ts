@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { KIT_CATALOG_FILE, readKitCatalog, type CatalogFailure } from './kitCatalog.js';
-import { keepBuildingSeeds, seedLibraryCatalog } from './libraryCatalog.js';
+import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
+import { leaveOutFailingSeeds, libraryCatalogFiles } from './libraryCatalog.js';
 
 const BUTTON = 'components/ui/button.tsx';
 const SEPARATOR = 'components/ui/separator.tsx';
@@ -22,7 +22,7 @@ function catalogOf(files: Record<string, string>) {
 test('a shadcn demo seeds the catalog only when the kit kept its module and exports every name it uses', () => {
   const both = `export { Button, buttonVariants } from './components/ui/button';\nexport { Separator } from './components/ui/separator';\n`;
   const files = libraryFiles(both, [BUTTON, SEPARATOR]);
-  const catalog = catalogOf({ ...files, [KIT_CATALOG_FILE]: seedLibraryCatalog(files) ?? '' });
+  const catalog = catalogOf({ ...files, ...libraryCatalogFiles(files) });
   assert.deepEqual(
     catalog.map(({ name, module, uses }) => [name, module, uses]),
     [
@@ -37,41 +37,32 @@ test('a shadcn demo seeds the catalog only when the kit kept its module and expo
   assert.deepEqual(catalog[0].icons, ['ArrowUpIcon']);
 
   // The separator module left out, then kept without its export.
+  const buttonFiles = libraryFiles(both, [BUTTON]);
   assert.deepEqual(
-    catalogOf({
-      [KIT_CATALOG_FILE]: seedLibraryCatalog(libraryFiles(both, [BUTTON])) ?? '',
-      ...libraryFiles(both, [BUTTON]),
-    }).map(({ name }) => name),
+    catalogOf({ ...buttonFiles, ...libraryCatalogFiles(buttonFiles) }).map(({ name }) => name),
     ['Button'],
   );
   const buttonOnly = `export { Button } from './components/ui/button';\n`;
-  assert.equal(seedLibraryCatalog(libraryFiles(buttonOnly, [SEPARATOR])), null);
+  assert.deepEqual(libraryCatalogFiles(libraryFiles(buttonOnly, [SEPARATOR])), {});
 });
 
-test('a seed that does not build is left out with a diagnostic, and the file goes with the last one', async () => {
+test('a seed that does not build is left out with a diagnostic, and the catalog goes with the last one', () => {
   const entry = `export { Button } from './components/ui/button';\nexport { Separator } from './components/ui/separator';\n`;
   const files = libraryFiles(entry, [BUTTON, SEPARATOR]);
-  const kit = {
-    sections: [],
-    files: { ...files, [KIT_CATALOG_FILE]: seedLibraryCatalog(files) ?? '' },
-  };
-  const failing = (names: string[]) => ({
-    checkCatalog: () =>
-      Promise.resolve(
-        names.map(
-          (name): CatalogFailure => ({
-            entry: name,
-            diagnostic: {
-              code: 'compile_failed',
-              message: `catalog.json, ${name}: broken.`,
-              file: KIT_CATALOG_FILE,
-            },
-          }),
-        ),
-      ),
-  });
+  const kit = { files: { ...files, ...libraryCatalogFiles(files) } };
+  const failing = (names: string[]) =>
+    names.map(
+      (name): KitFailure => ({
+        entry: name,
+        diagnostic: {
+          code: 'compile_failed',
+          message: `catalog.json, ${name}: broken.`,
+          file: KIT_CATALOG_FILE,
+        },
+      }),
+    );
 
-  const one = await keepBuildingSeeds(kit, failing(['Separator']));
+  const one = leaveOutFailingSeeds(kit, failing(['Separator']));
   assert.deepEqual(
     catalogOf(one.kit.files).map(({ name }) => name),
     ['Button'],
@@ -83,7 +74,6 @@ test('a seed that does not build is left out with a diagnostic, and the file goe
       file: KIT_CATALOG_FILE,
     },
   ]);
-  const all = await keepBuildingSeeds(kit, failing(['Button', 'Separator']));
+  const all = leaveOutFailingSeeds(kit, failing(['Button', 'Separator']));
   assert.equal(Object.hasOwn(all.kit.files, KIT_CATALOG_FILE), false);
-  assert.deepEqual(await keepBuildingSeeds(kit, failing([])), { kit, diagnostics: [] });
 });
