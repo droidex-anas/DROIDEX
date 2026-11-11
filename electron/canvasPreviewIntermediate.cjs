@@ -375,7 +375,7 @@ ${SVG_INTERMEDIATE}
         !isPath(target.instancePath) ||
         !target.styles ||
         typeof target.styles !== 'object' ||
-        !(target.d === undefined || isPathData(target.d, PATH_DATA_CHARACTERS))
+        !(target.d === undefined || isPreviewPathData(target.d, 'board'))
       )
         return 'invalid_request';
       const styles = {};

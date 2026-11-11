@@ -10,6 +10,9 @@ test('a shape answer is the source path data with a finite matrix and a box, or 
   assert.deepEqual(readPreviewShape(JSON.stringify({ refused: 'not_path', d: 'M0 0' })), {
     refused: 'not_path',
   });
+  assert.deepEqual(readPreviewShape(JSON.stringify({ refused: 'unreadable' })), {
+    refused: 'unreadable',
+  });
   // A path at the reporter's cap, with every newline escaped, still reads.
   const long = { ...drawn, d: 'M0 0' + '\n'.repeat(16 * 1024 - 4) };
   assert.equal(readPreviewShape(JSON.stringify(long))?.d.length, 16 * 1024);
@@ -18,6 +21,9 @@ test('a shape answer is the source path data with a finite matrix and a box, or 
     { refused: 'anything' },
     { ...drawn, d: 'M0 0 url(#x)' },
     { ...drawn, d: '<script>' },
+    { ...drawn, d: 'M' },
+    { ...drawn, d: 'Ee' },
+    { ...drawn, d: 'M0 0L' },
     { ...drawn, d: 'M0 0' + ' '.repeat(16 * 1024 - 3) },
     { ...drawn, matrix: [2, 0, 0, 2, 8] },
     { ...drawn, matrix: [2, 0, 0, 2, 8, '8'] },

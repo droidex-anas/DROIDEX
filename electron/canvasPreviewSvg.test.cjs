@@ -1,6 +1,7 @@
 // The intermediate's half of canvasPreviewSvg.cjs: a design's frame can post
 // anything, so a shape answer reaches the board only as path data, a finite
 // matrix and a box, and a select previews only the board's own path data.
+// sidecar/src/canvas/pathData.test.ts holds the path data rule itself.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -55,9 +56,11 @@ test('a shape answer carries only source path data, a finite matrix and a box, o
   const wrapped = { ...drawn, d: 'M0 0' + '\n'.repeat(16 * 1024 - 4) };
   assert.deepEqual(await answer(wrapped), wrapped);
   assert.deepEqual(await answer({ refused: 'not_drawn', d: 'x' }), { refused: 'not_drawn' });
+  // The source's own data, when it is not path data, is a refusal the board can name.
+  for (const d of ['M', 'Ee', 'M0 0L', 'M0 0L1e39 1', 'M0 0 url(#x)'])
+    assert.deepEqual(await answer({ ...drawn, d }), { refused: 'unreadable' }, d);
   for (const shape of [
     { refused: 'anything' },
-    { ...drawn, d: 'M0 0 url(#x)' },
     { ...drawn, d: 'M0 0' + ' '.repeat(16 * 1024 - 3) },
     { ...drawn, matrix: [2, 0, 0, 2, 8] },
     { ...drawn, matrix: [2, 0, 0, 2, 8, null] },
@@ -73,7 +76,15 @@ test("a select previews a path's d only as path data with spaces and commas", ()
   const select = (d, sequence) =>
     preview.select({ target: { ...target, d }, properties: [], sequence });
 
-  for (const d of ['M0 0\nL1 1', 'M0 0 url(#x)', 'M' + '0'.repeat(16 * 1024), 42, null])
+  for (const d of [
+    'M0 0\nL1 1',
+    'M0 0 url(#x)',
+    'M0 0L',
+    'Ee',
+    'M' + '0'.repeat(16 * 1024),
+    42,
+    null,
+  ])
     assert.equal(select(d, 1), 'invalid_request', String(d).slice(0, 20));
   assert.deepEqual(posted, []);
   select('M0 0 L1,1 Z', 2);

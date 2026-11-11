@@ -92,24 +92,77 @@ const SVG_REPORTER = `
     return { d: d, matrix: [a, b, c, scaleY, e, f], rect: rectOf(node) };
   };`;
 
-// A shape answer's `d` is the source's own, which may wrap across lines; a
-// preview's is the board's, written with spaces and commas only.
+/**
+ * Whether `d` is whole SVG path data, read the way Chromium draws it. Between
+ * its parts, `board` data has spaces and commas only, as the board writes it;
+ * `source` data any SVG whitespace, as a source may wrap. The sidecar
+ * (sidecar/src/canvas/pathData.ts) and the renderer
+ * (src/features/canvas/paths/pathData.ts) read it by the same rule;
+ * sidecar/src/canvas/pathData.test.ts holds the three to one set of cases.
+ * The intermediate runs this function's own text, so it uses nothing around it.
+ */
+function isPathData(d, spacing) {
+  const space = spacing === 'source' ? '[ \\t\\n\\f\\r]*' : ' *';
+  const SPACES = new RegExp(space, 'y');
+  const SEPARATOR = new RegExp(`${space}(,?)${space}`, 'y');
+  const NUMBER = /[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE]([+-]?[0-9]+))?/y;
+  // An arc's large-arc and sweep flags are one digit each, which may touch what follows.
+  const FLAG = /[01]/y;
+  // How many numbers one segment of each command takes; Z takes none.
+  const COMMAND_NUMBERS = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
+  const isCommand = (character) => Object.hasOwn(COMMAND_NUMBERS, character.toUpperCase());
+  // Chromium reads a path's numbers as floats, and refuses one past 1e38 or an exponent past 38.
+  const isInRange = ([number, exponent]) =>
+    Math.abs(Number(number)) <= 1e38 && Number(exponent ?? 0) <= 38;
+  let at = 0;
+  const read = (pattern) => {
+    pattern.lastIndex = at;
+    const found = pattern.exec(d);
+    if (found) at = pattern.lastIndex;
+    return found;
+  };
+  read(SPACES);
+  if (d.charAt(at).toUpperCase() !== 'M') return false;
+  while (at < d.length) {
+    const command = d.charAt(at).toUpperCase();
+    if (!isCommand(command)) return false;
+    const count = COMMAND_NUMBERS[command];
+    at += 1;
+    read(SPACES);
+    if (count === 0) continue;
+    let comma = false;
+    do {
+      for (let index = 0; index < count; index += 1) {
+        const isFlag = command === 'A' && (index === 3 || index === 4);
+        const found = read(isFlag ? FLAG : NUMBER);
+        if (!found || (!isFlag && !isInRange(found))) return false;
+        comma = read(SEPARATOR)[1] === ',';
+      }
+      // A comma promises another segment; anything but a command or the end is one.
+    } while (comma || (at < d.length && !isCommand(d.charAt(at))));
+  }
+  return true;
+}
+
+// A shape answer's `d` is the source's own; a preview's is the board's.
 const SVG_INTERMEDIATE = `
-  const PATH_DATA_CHARACTERS = /^[0-9MmLlHhVvCcSsQqTtAaZzEe.,+ -]*$/;
-  const SOURCE_PATH_DATA_CHARACTERS = /^[0-9MmLlHhVvCcSsQqTtAaZzEe.,+\\t\\n\\f\\r -]*$/;
-  const isPathData = (value, characters) =>
+  ${String(isPathData)}
+  const isPreviewPathData = (value, spacing) =>
     typeof value === 'string' &&
     bytes(value) <= ${String(MAX_PREVIEW_PATH_DATA_BYTES)} &&
-    characters.test(value);
-  const SHAPE_REFUSALS = ['not_path', 'not_drawn', 'too_large'];
+    isPathData(value, spacing);
+  const SHAPE_REFUSALS = ['not_path', 'not_drawn', 'too_large', 'unreadable'];
   const normalizeShape = (shape) => {
     if (!shape || typeof shape !== 'object') return null;
     if (SHAPE_REFUSALS.includes(shape.refused)) return { refused: shape.refused };
-    const { matrix } = shape;
+    const { d, matrix } = shape;
     const rect = rectOf(shape.rect);
     const isMatrix = Array.isArray(matrix) && matrix.length === 6 && matrix.every(Number.isFinite);
-    if (!rect || !isMatrix || !isPathData(shape.d, SOURCE_PATH_DATA_CHARACTERS)) return null;
-    return { d: shape.d, matrix: matrix.slice(), rect };
+    if (!rect || !isMatrix || typeof d !== 'string' || bytes(d) > ${String(MAX_PREVIEW_PATH_DATA_BYTES)})
+      return null;
+    // A source may write data Chromium draws only up to its first fault; the board cannot edit that.
+    if (!isPathData(d, 'source')) return { refused: 'unreadable' };
+    return { d, matrix: matrix.slice(), rect };
   };`;
 
 module.exports = {
@@ -117,4 +170,5 @@ module.exports = {
   MAX_PREVIEW_VECTOR_BYTES,
   SVG_INTERMEDIATE,
   SVG_REPORTER,
+  isPathData,
 };

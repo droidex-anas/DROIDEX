@@ -2,6 +2,7 @@
 // data, the matrix that maps its user units to the design's pixels, and its box
 // there. The board edits the data and draws handles through the matrix.
 
+import { readPathData } from './paths/pathData';
 import { jsonArgument, readAnswer, readRect, record, type PreviewNode } from './previewDocument';
 import type { FrameRect } from './protocol';
 
@@ -9,9 +10,8 @@ import type { FrameRect } from './protocol';
 const MAX_PREVIEW_PATH_DATA_BYTES = 16 * 1024;
 /** JSON escaping at most doubles the whitespace a `d` may carry. */
 const MAX_PREVIEW_SHAPE_ANSWER_BYTES = 2 * MAX_PREVIEW_PATH_DATA_BYTES + 1024;
-/** The source's own `d`, which may wrap across lines; anything else refuses the answer. */
-const SOURCE_PATH_DATA = /^[0-9MmLlHhVvCcSsQqTtAaZzEe.,+\t\n\f\r -]*$/;
-const SHAPE_REFUSALS = ['not_path', 'not_drawn', 'too_large'] as const;
+/** `unreadable`: the source's own `d` is not path data the board can edit. */
+const SHAPE_REFUSALS = ['not_path', 'not_drawn', 'too_large', 'unreadable'] as const;
 
 /** `matrix` is `[a, b, c, d, e, f]` of `getScreenCTM()`: x' = a·x + c·y + e, y' = b·x + d·y + f. */
 export type PreviewShape =
@@ -34,7 +34,7 @@ export function readPreviewShape(value: unknown): PreviewShape | null {
   const { d, matrix } = parsed;
   const rect = readRect(parsed.rect);
   if (!rect || !isMatrix(matrix)) return null;
-  if (typeof d !== 'string' || d.length > MAX_PREVIEW_PATH_DATA_BYTES || !SOURCE_PATH_DATA.test(d))
+  if (typeof d !== 'string' || d.length > MAX_PREVIEW_PATH_DATA_BYTES || !readPathData(d, 'source'))
     return null;
   return { d, matrix: [...matrix], rect };
 }
