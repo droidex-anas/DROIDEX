@@ -307,7 +307,9 @@ export async function readDesignSystem(
   if (!system)
     throw canvasError(
       'storage_failed',
-      'The saved kit is damaged. Restore that design system version.',
+      libraryVersionSchema.safeParse(value).success
+        ? 'This kit was imported from a component library by an earlier build and cannot be read. Import the library again as a new design system and choose that one.'
+        : 'The saved kit is damaged. Restore that design system version.',
     );
   // A file whose contents name another version would serve the wrong kit.
   if (system.id !== ref.id || system.version !== ref.version)
@@ -317,6 +319,12 @@ export async function readDesignSystem(
     );
   return system;
 }
+
+// No earlier library provenance is read, and no version of such a kit has
+// one this build reads, so restoring cannot help.
+const libraryVersionSchema = z.object({
+  system: z.object({ provenance: z.object({ project: z.object({ library: z.object({}) }) }) }),
+});
 
 /** The kit a current version file holds, when its header describes it. */
 function savedSystem(value: unknown): DesignSystem | null {

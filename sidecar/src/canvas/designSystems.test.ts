@@ -312,6 +312,28 @@ test('listing returns preset swatches and the latest user version without readin
   );
 });
 
+test('a library kit an earlier build saved cannot be read and asks to be imported again', async () => {
+  const library = { kind: 'shadcn' as const, components: {}, tokens: {}, skipped: [] };
+  const kit: DesignSystem = {
+    ...userKit('early-library'),
+    provenance: {
+      project: {
+        name: 'acme',
+        files: ['components.json'],
+        library: { ...library, skippedCount: 0, partialCount: 0 },
+      },
+    },
+  };
+  await save(kit);
+  const path = join(canvasDir(), 'design-systems', kit.id, '1.json');
+  const saved = await readFile(path, 'utf8');
+  await writeFile(path, saved.replace(/,\s*"partialCount":\s*0/, ''));
+  await assert.rejects(readDesignSystem({ id: kit.id, version: 1, mode: 'light' }), {
+    code: 'storage_failed',
+    message: /Import the library again as a new design system/,
+  });
+});
+
 test('listing leaves out a kit with a damaged header and keeps every other kit', async (t) => {
   const warn = t.mock.method(console, 'warn', () => undefined);
   await save(userKit('readable-kit'));
