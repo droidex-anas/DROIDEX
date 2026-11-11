@@ -3,7 +3,7 @@ import type { CanvasDiagnostic } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 export const MAX_BUILD_DIAGNOSTICS = 64;
-export const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 2048;
+const MAX_DIAGNOSTIC_MESSAGE_LENGTH = 2048;
 
 /** A diagnostic read back from outside this process: a cached outcome or a compiler reply. */
 export const canvasDiagnosticSchema = z
