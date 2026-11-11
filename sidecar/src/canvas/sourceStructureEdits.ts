@@ -8,6 +8,7 @@ import type { ElementEdit, OutlineNode, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
 import { hiddenEdit } from './sourceHiddenAttribute.js';
+import { enclosingFunction, readsLaterBinding } from './sourceLaterBindings.js';
 import {
   cutRange,
   indentUnit,
@@ -293,10 +294,6 @@ function tagOf(node: ElementNode): string {
   return (ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName).getText();
 }
 
-function enclosingFunction(node: ts.Node): ts.Node | undefined {
-  return ts.findAncestor(node, ts.isFunctionLike);
-}
-
 /** The nearest scope a variable can be declared in: a layer leaving it may lose names it reads. */
 function enclosingBlock(node: ts.Node): ts.Node | undefined {
   return ts.findAncestor(
@@ -309,30 +306,6 @@ function enclosingBlock(node: ts.Node): ts.Node | undefined {
   );
 }
 
-/**
- * Whether the JSX reads a name its function (or the module, outside any)
- * declares at or after `position`: pasted there, it would read the name
- * before it is set. Function declarations are hoisted whole, so they don't count.
- */
-function readsLaterBinding(moved: ts.Node, position: number, checker: ts.TypeChecker): boolean {
-  const scope = enclosingFunction(moved);
-  const declaredLater = (declaration: ts.Declaration) =>
-    (ts.isVariableDeclaration(declaration) ||
-      ts.isBindingElement(declaration) ||
-      ts.isClassDeclaration(declaration)) &&
-    declaration.end > position &&
-    enclosingFunction(declaration) === scope;
-  const reads = (node: ts.Node): boolean => {
-    if (ts.isIdentifier(node)) {
-      const symbol = ts.isShorthandPropertyAssignment(node.parent)
-        ? checker.getShorthandAssignmentValueSymbol(node.parent)
-        : checker.getSymbolAtLocation(node);
-      if (symbol?.declarations?.some(declaredLater)) return true;
-    }
-    return node.forEachChild(reads) ?? false;
-  };
-  return reads(moved);
-}
 /** Whitespace that breaks a line is formatting JSX drops; any other text, spaces too, renders. */
 function hasText(parent: JsxParent | ElementNode): boolean {
   if (ts.isJsxSelfClosingElement(parent)) return false;
