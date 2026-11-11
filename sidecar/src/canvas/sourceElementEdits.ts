@@ -2,17 +2,11 @@
 // canonical source range an element is, and an edit replaces only bytes within it.
 
 import ts from 'typescript';
+import { attribute, attributeValue, isLiteral } from './jsxAttributes.js';
 import type { KitTheme } from './kitTailwindTheme.js';
 import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
-import {
-  ambiguous,
-  attribute,
-  attributeValue,
-  isLiteral,
-  sourceSites,
-  type ElementNode,
-} from './sourceElements.js';
+import { ambiguous, sourceSites, type ElementNode } from './sourceElements.js';
 import { styleReplacements, type ResolvedStyle } from './sourceStyles.js';
 
 /**

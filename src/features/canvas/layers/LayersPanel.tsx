@@ -196,15 +196,18 @@ export function LayersPanel({
     if (onEditLayer && isOutlineRow(row) && box)
       setMenu({ row, at: { x: box.left, y: box.bottom } });
   };
+  /** ⌘D splits the chat anywhere but on a layer that can be edited, and ⇧⌘H is the app's on a row this chat cannot hide. */
+  const isAppKey = (key: LayerKey | null, row: LayerEntry) => {
+    if (key?.kind === 'duplicate') return row.kind !== 'element' || !onEditLayer;
+    if (key?.kind === 'toggle-hidden') return !(row.kind === 'frame' ? onSetHidden : onEditLayer);
+    return false;
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
-    // ⌘D splits the chat anywhere but on a layer that can be edited.
-    if (key?.kind === 'duplicate') {
-      if (active.kind !== 'element' || !onEditLayer) return;
-      event.stopPropagation();
-    }
+    if (isAppKey(key, active)) return;
+    if (key?.kind === 'duplicate') event.stopPropagation();
     if (event.repeat && isLayerEdit(key)) {
       event.preventDefault();
       return;

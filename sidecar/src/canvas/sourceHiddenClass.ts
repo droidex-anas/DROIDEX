@@ -4,15 +4,10 @@
 // only where nothing else the element writes could decide its display instead.
 
 import ts from 'typescript';
+import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
 import type { OutlineNode } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
-import {
-  attribute,
-  attributeValue,
-  isLiteral,
-  propertyName,
-  type ElementNode,
-} from './sourceElements.js';
+import type { ElementNode } from './sourceElements.js';
 import { cutRange, lineEnding, lineIndent, standsAlone, startsLine } from './sourceLines.js';
 import { splitOutside } from './tailwindStyles.js';
 
@@ -69,6 +64,7 @@ const DISPLAY_UTILITIES = new Set([
 ]);
 
 const HIDDEN = 'hidden';
+const CHARACTER_REFERENCE = /&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]*);/i;
 
 /** Whether the element shows, is hidden by its `hidden` class, or decides that some way the eye can't edit. */
 export function visibility(element: ElementNode): Visibility {
@@ -115,8 +111,8 @@ function readClasses(element: ElementNode): Classes {
   if (!literal || !isLiteral(literal)) return { lock: 'computed' };
   const raw = literal.getText().slice(1, -1);
   // An escape or a character reference (`&#32;`) would make the source
-  // spelling differ from the classes it names.
-  if (raw.includes('\\') || raw.includes('&')) return { lock: 'computed' };
+  // spelling differ from the classes it names; a bare `&`, as in `[&>*]:p-2`, is itself.
+  if (raw.includes('\\') || CHARACTER_REFERENCE.test(raw)) return { lock: 'computed' };
   if (tokens(raw).some(outranksHidden)) return { lock: 'display' };
   return { written, literal, raw };
 }

@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { componentUses, functionName, type ComponentUses } from './componentUses.js';
+import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
 import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
 import { resolveRelative } from './relativeImport.js';
 import { CANVAS_LIMITS } from './schema.js';
@@ -284,17 +285,6 @@ function hasComputedStyle(value: ts.Expression | undefined): boolean {
   return false;
 }
 
-export function attribute(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) {
-  return opening.attributes.properties.find(
-    (attr): attr is ts.JsxAttribute => ts.isJsxAttribute(attr) && attr.name.getText() === name,
-  );
-}
-export function attributeValue(attr: ts.JsxAttribute | undefined): ts.Expression | undefined {
-  const value = attr?.initializer;
-  if (!value) return undefined;
-  return ts.isJsxExpression(value) ? value.expression : value;
-}
-
 const CLASS_JOINERS = new Set(['cn', 'clsx', 'cx']);
 
 /**
@@ -325,14 +315,6 @@ function isNumber(node: ts.Expression): boolean {
     node.operator === ts.SyntaxKind.MinusToken &&
     ts.isNumericLiteral(node.operand)
   );
-}
-export function propertyName(name: ts.PropertyName): string {
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : '';
-}
-export function isLiteral(
-  node: ts.Node,
-): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral {
-  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
 export function ambiguous(): SourceElementError {
   return new SourceElementError(
