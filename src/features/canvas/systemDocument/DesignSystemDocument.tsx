@@ -224,6 +224,10 @@ function KitDocument({
     }),
     [working.sections],
   );
+  const catalogSpecimen = useMemo(
+    () => specimenProperties((editing ?? base).sections, mode),
+    [editing, base, mode],
+  );
   const names = documentNames(working.sections);
   const baseTokens = new Map(
     Array.from(tokensByName(base.sections), ([name, { token }]) => [name, token]),
@@ -242,6 +246,7 @@ function KitDocument({
     proposalId: reviewed?.proposalId ?? null,
     draftTokens,
     specimen: specimens[mode],
+    catalogSpecimen,
     ...slots,
   };
 

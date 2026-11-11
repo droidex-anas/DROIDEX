@@ -34,6 +34,8 @@ export interface KitPreviewing {
   draftTokens: Readonly<Record<string, string>>;
   /** The kit's specimen tokens in the previewed mode, whose canvas colour a narrow tile sits on. */
   specimen: CSSProperties;
+  /** The same for the catalog, which is the saved version's with a draft's values, never a proposal's. */
+  catalogSpecimen: CSSProperties;
   /** The items holding a live slot. */
   live: readonly string[];
   /** The ref that tells the slots where an item's tile is. */

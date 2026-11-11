@@ -27,7 +27,16 @@ export function CatalogSection({
   return (
     <div className="-mx-3 flex flex-col">
       <SectionHeader id={`${listId}-label`} label="Catalog" className="pt-0" />
-      <ul aria-labelledby={`${listId}-label`} className="flex flex-col">
+      {previewing.proposalId !== null && (
+        <p id={`${listId}-saved`} className="px-3 pb-2 text-caption text-secondary">
+          Catalog and previews show the saved version. The proposal may change them.
+        </p>
+      )}
+      <ul
+        aria-labelledby={`${listId}-label`}
+        aria-describedby={previewing.proposalId === null ? undefined : `${listId}-saved`}
+        className="flex flex-col"
+      >
         {entries.map((entry, index) => {
           const isOpen = entry.name === openName;
           const stageId = `${listId}-stage-${String(index)}`;
@@ -84,7 +93,7 @@ function EntryStage({
   name: string;
   previewing: KitPreviewing;
 }) {
-  const { kit, draftTokens, specimen } = previewing;
+  const { kit, draftTokens, catalogSpecimen } = previewing;
   const fitRef = useRef<HTMLDivElement>(null);
   const scale = useFitScale(fitRef, STAGE_WIDTH);
   const target = useMemo(
@@ -99,7 +108,7 @@ function EntryStage({
     <div
       id={id}
       className="mx-3 mb-2 mt-1 overflow-hidden rounded-lg"
-      style={{ ...specimen, background: 'var(--ds-canvas, var(--surface))' }}
+      style={{ ...catalogSpecimen, background: 'var(--ds-canvas, var(--surface))' }}
     >
       <div
         className="relative mx-auto"
