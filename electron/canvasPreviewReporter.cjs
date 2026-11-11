@@ -22,7 +22,8 @@ const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
  * command selects nothing either: a `probe` event names the element at a point,
  * or the text between two points and the element that holds it, and a `locate`
  * event gives the box of the first drawn instance of each element it names; a
- * `vector` event carries the design's root `<svg>` as a standalone file, and a
+ * `vector` event carries the design's root `<svg>` as a standalone file, a
+ * `shape` event the data, matrix and box of the `<path>` a path names, and a
  * `tree` event one page of the marked elements in document order, starting
  * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
@@ -87,10 +88,10 @@ const GENERATED_FRAME_REPORTER = `(() => {
 
   // The element the board selected: its source marker, where it sits under
   // the body, its box, the computed values of the properties the board asked
-  // for and its text. The board's previews are inline styles on it and the
-  // text it holds, put back as soon as the selection moves. Commands come only
-  // from the intermediate, which is \`top\` here and, unlike \`parent\`, cannot
-  // be replaced by the design.
+  // for and its text. The board's previews are inline styles on it, the text
+  // it holds and a path's \`d\`, put back as soon as the selection moves.
+  // Commands come only from the intermediate, which is \`top\` here and,
+  // unlike \`parent\`, cannot be replaced by the design.
   const MARKER = 'data-droidex-element';
   const kebab = (name) => name.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
   const pathOf = (node) => {
@@ -117,6 +118,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
   let commandSequence = 0;
   let previewed = [];
   let previewedText = null;
+  let previewedPath = null;
   let lastSelection = '';
   let selectionQueued = false;
   // Text a direct edit can write is an element's one text node. It is offered
@@ -209,13 +211,16 @@ const GENERATED_FRAME_REPORTER = `(() => {
     });
   };
   const watchSelected = new ResizeObserver(reportSelection);
-  const select = (node, properties, styles, text, sequence) => {
+  const select = (node, properties, styles, text, d, sequence) => {
     commandSequence = sequence;
     for (const entry of previewed.reverse())
       entry.node.style.setProperty(entry.property, entry.value, entry.priority);
     previewed = [];
     if (previewedText) previewedText.node.data = previewedText.value;
     previewedText = null;
+    if (previewedPath?.value === null) previewedPath.node.removeAttribute('d');
+    else if (previewedPath) previewedPath.node.setAttribute('d', previewedPath.value);
+    previewedPath = null;
     if (selected) watchSelected.unobserve(selected.node);
     const elementId = node ? node.getAttribute(MARKER) : null;
     const instancePath = node ? pathOf(node) : null;
@@ -235,6 +240,10 @@ const GENERATED_FRAME_REPORTER = `(() => {
       if (shown && typeof text === 'string') {
         previewedText = { node: shown, value: shown.data };
         shown.data = text;
+      }
+      if (node instanceof SVGPathElement && typeof d === 'string') {
+        previewedPath = { node: node, value: node.getAttribute('d') };
+        node.setAttribute('d', d);
       }
       watchSelected.observe(node);
     }
@@ -352,7 +361,7 @@ ${SVG_REPORTER}
         lastSelection = '';
         reportSelection();
       } else {
-        select(node || null, command.properties, {}, null, command.sequence);
+        select(node || null, command.properties, {}, null, null, command.sequence);
       }
     } else if (command.command === 'hover') {
       let node = null;
@@ -389,6 +398,9 @@ ${SVG_REPORTER}
       post('locate', { sequence: command.sequence, rects: rects });
     } else if (command.command === 'vector') {
       post('vector', Object.assign({ sequence: command.sequence }, vector()));
+    } else if (command.command === 'shape') {
+      const node = markedAt(command.elementId, command.instancePath);
+      post('shape', { sequence: command.sequence, shape: shape(node) });
     } else if (command.command === 'tree') {
       post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {
@@ -398,6 +410,7 @@ ${SVG_REPORTER}
         command.properties,
         target ? target.styles : {},
         target ? target.text : null,
+        target ? target.d : null,
         command.sequence,
       );
     }

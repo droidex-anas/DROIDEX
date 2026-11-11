@@ -18,6 +18,10 @@ import {
   type PreviewProbe,
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
+import {
+  previewShapeScript,
+  readPreviewShape,
+} from '../../src/features/canvas/previewDocumentShape';
 import { pickedElement } from '../../src/features/canvas/pickedElement';
 import type { CanvasFrame } from '../../src/features/canvas/protocol';
 import {
@@ -247,6 +251,97 @@ export default function Card() {
     // A command without a sequence number for its answer to echo is refused too.
     assert.equal(
       await askGuest(page, previewPickScript({ step: 'first' }, properties, 0)),
+      'invalid_request',
+    );
+  });
+});
+
+test('[C4 shape] the production guest reads a path through its transforms and previews its d', async () => {
+  const design = await compileDesign({
+    'main.tsx': `const LONG = 'M0 0' + ' L1 1'.repeat(4000);
+
+export default function Mark() {
+  return (
+    <svg width="200" height="100" viewBox="0 0 20 10" style={{ display: 'block' }}>
+      <g transform="translate(2 1)">
+        <path d="M0 0
+          L10 0 L10 5 Z" />
+      </g>
+      <circle cx="15" cy="5" r="2" />
+      <path d={LONG} />
+    </svg>
+  );
+}
+`,
+  });
+
+  await withCanvasHost(async (_app, page) => {
+    await mountPreviewGuest(page);
+    const instance = newInstance('shape');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () => (await drainGuest(page, instance)).events.some((e) => e.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    let sequence = 0;
+    const select = async (target: PreviewTarget | null) => {
+      sequence += 1;
+      const asked = sequence;
+      assert.equal(await askGuest(page, previewSelectScript(target, [], asked)), 'sent');
+      let element: PreviewElement | null | undefined;
+      await expect
+        .poll(
+          async () => {
+            for (const event of (await drainGuest(page, instance)).events)
+              if (event.event === 'selection' && event.sequence === asked) element = event.element;
+            return element !== undefined;
+          },
+          { timeout: 10_000, intervals: [50] },
+        )
+        .toBe(true);
+      return element ?? null;
+    };
+    const shapeAt = async (at: { x: number; y: number }) => {
+      const found = readPreviewHover(await askGuest(page, previewHoverScript(at)));
+      assert.ok(found, `an element at ${at.x}, ${at.y}`);
+      return {
+        node: { elementId: found.elementId, instancePath: found.instancePath },
+        shape: readPreviewShape(await askGuest(page, previewShapeScript(found))),
+      };
+    };
+
+    // The viewBox scales by 10 and the group moves the path by (2, 1) user
+    // units, so its matrix carries both and its box is in the design's pixels.
+    const triangle = await shapeAt({ x: 110, y: 20 });
+    assert.ok(triangle.shape && 'd' in triangle.shape);
+    assert.equal(triangle.shape.d.replace(/\s+/g, ' '), 'M0 0 L10 0 L10 5 Z');
+    assert.deepEqual(triangle.shape.matrix, [10, 0, 0, 10, 20, 10]);
+    assert.deepEqual(triangle.shape.rect, { x: 20, y: 10, width: 100, height: 50 });
+    const circle = await shapeAt({ x: 150, y: 50 });
+    assert.deepEqual(circle.shape, { refused: 'not_path' });
+    // A path past the reporter's cap is refused, never cut.
+    const longPath = design.elements.filter((element) => element.tagName === 'path')[1];
+    assert.ok(longPath, 'the compiler mapped the long path');
+    const long = {
+      elementId: longPath.elementId,
+      instancePath: circle.node.instancePath.replace(/\d+$/, '2'),
+    };
+    assert.deepEqual(readPreviewShape(await askGuest(page, previewShapeScript(long))), {
+      refused: 'too_large',
+    });
+
+    // A d preview redraws the path, and moving away puts the source's back.
+    const target = { ...triangle.node, styles: {}, text: null };
+    const wider = await select({ ...target, d: 'M0 0 L18 0 L18 5 Z' });
+    assert.equal(wider?.rect.width, 180);
+    assert.equal(await select(null), null);
+    assert.equal((await select(target))?.rect.width, 100);
+    assert.deepEqual((await shapeAt({ x: 110, y: 20 })).shape, triangle.shape);
+    // Only the board's own path data, spaces and commas, is previewed.
+    assert.equal(
+      await askGuest(page, previewSelectScript({ ...target, d: 'M0 0\nL1 1' }, [], 99)),
       'invalid_request',
     );
   });
