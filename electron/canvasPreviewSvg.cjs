@@ -110,7 +110,10 @@ function isPathData(d, spacing) {
   const FLAG = /[01]/y;
   // How many numbers one segment of each command takes; Z takes none.
   const COMMAND_NUMBERS = { M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0 };
-  const isCommand = (character) => Object.hasOwn(COMMAND_NUMBERS, character.toUpperCase());
+  // Only ASCII letters are commands, and `ſ` upper-cases to S.
+  const upperCase = (character) =>
+    /^[a-z]$/.test(character) ? character.toUpperCase() : character;
+  const isCommand = (character) => Object.hasOwn(COMMAND_NUMBERS, upperCase(character));
   // Chromium reads a path's numbers as floats, and refuses one past 1e38 or an exponent past 38.
   const isInRange = ([number, exponent]) =>
     Math.abs(Number(number)) <= 1e38 && Number(exponent ?? 0) <= 38;
@@ -122,9 +125,9 @@ function isPathData(d, spacing) {
     return found;
   };
   read(SPACES);
-  if (d.charAt(at).toUpperCase() !== 'M') return false;
+  if (upperCase(d.charAt(at)) !== 'M') return false;
   while (at < d.length) {
-    const command = d.charAt(at).toUpperCase();
+    const command = upperCase(d.charAt(at));
     if (!isCommand(command)) return false;
     const count = COMMAND_NUMBERS[command];
     at += 1;

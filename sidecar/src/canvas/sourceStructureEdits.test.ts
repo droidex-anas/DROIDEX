@@ -635,6 +635,11 @@ test('hiding adds the hidden class, or a className of its own, and showing takes
     page('<aside className="flex  gap-2 hidden ">Side</aside>'),
   );
   roundTrip(page(`<p className={'a'}>B</p>`), 'p', page(`<p className={'a hidden'}>B</p>`));
+  roundTrip(
+    page('<p hidden={false}>B</p>'),
+    'p',
+    page('<p hidden={false} className="hidden">B</p>'),
+  );
   // A comment beside the attributes stays, whichever way the eye goes.
   roundTrip(
     page('<p title="a" /* keep */>B</p>'),
@@ -774,5 +779,10 @@ test('a frame keeps a top layer that shows: one of a fragment’s top layers hid
   assert.equal(
     hidden('export default () => <><p>Hi</p><footer /></>;', 'p'),
     'export default () => <><p className="hidden">Hi</p><footer /></>;',
+  );
+  // The root itself, written where no JSX holds it, shows again.
+  assert.equal(
+    hidden('export default () => <main className="hidden">M</main>;', 'main', false),
+    'export default () => <main>M</main>;',
   );
 });

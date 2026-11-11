@@ -22,7 +22,7 @@ import { LayersHeader } from './LayersHeader';
 import { DUPLICATE_KEY_LABEL, HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import { LayerMenu } from './LayerMenu';
-import { isHideable, isOutlineRow } from './layerMoves';
+import { isHideable, isMovable, isOutlineRow } from './layerMoves';
 import { rowInset, type LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
 import { useElementMove } from './useElementMove';
@@ -133,11 +133,17 @@ export function LayersPanel({
   const helpId = `${treeId}-help`;
   const moveHelpId = `${treeId}-move-help`;
   const hideHelpId = `${treeId}-hide-help`;
-  /** An element row's keyboard help, which names ⇧⌘H only where its eye can hide or show it. */
-  const elementHelp = (row: LayerEntry) =>
-    isHideable(rows, row) && (row.node.visibility === 'shown' || row.node.visibility === 'hidden')
-      ? `${moveHelpId} ${hideHelpId}`
-      : moveHelpId;
+  /** An element row's keyboard help: how to move it where it can move, and ⇧⌘H where its eye can hide or show it. */
+  const elementHelp = (row: LayerEntry) => {
+    const ids: string[] = [];
+    if (isMovable(row)) ids.push(moveHelpId);
+    if (
+      isHideable(rows, row) &&
+      (row.node.visibility === 'shown' || row.node.visibility === 'hidden')
+    )
+      ids.push(hideHelpId);
+    return ids.join(' ') || undefined;
+  };
 
   // Closed from inside, the panel hands the keyboard to the board first, so focus is not lost with it.
   const close = () => {
@@ -196,7 +202,7 @@ export function LayersPanel({
     if (onEditLayer && isOutlineRow(row) && box)
       setMenu({ row, at: { x: box.left, y: box.bottom } });
   };
-  /** ⌘D splits the chat anywhere but on a layer that can be edited, and ⇧⌘H is the app's on a row this chat cannot hide. */
+  /** ⌘D splits the chat anywhere but on a layer that can be edited, and ⇧⌘H is the app's where this chat cannot hide that kind of row. */
   const isAppKey = (key: LayerKey | null, row: LayerEntry) => {
     if (key?.kind === 'duplicate') return row.kind !== 'element' || !onEditLayer;
     if (key?.kind === 'toggle-hidden') return !(row.kind === 'frame' ? onSetHidden : onEditLayer);

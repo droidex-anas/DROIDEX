@@ -36,9 +36,9 @@ export function isPathData(d: string): boolean {
   if (d.length > MAX_PATH_DATA_LENGTH) return false;
   const reader = { d, at: 0 };
   read(reader, SPACES);
-  if (d.charAt(reader.at).toUpperCase() !== 'M') return false;
+  if (upperCase(d.charAt(reader.at)) !== 'M') return false;
   while (reader.at < d.length) {
-    const command = d.charAt(reader.at).toUpperCase();
+    const command = upperCase(d.charAt(reader.at));
     reader.at += 1;
     read(reader, SPACES);
     if (!readSegments(reader, command)) return false;
@@ -81,5 +81,10 @@ function isInRange(number: string, exponent: string | undefined): boolean {
 }
 
 function isCommand(character: string): boolean {
-  return COMMAND_NUMBERS.has(character.toUpperCase());
+  return COMMAND_NUMBERS.has(upperCase(character));
+}
+
+/** Only ASCII letters are commands, and `ſ` upper-cases to S. */
+function upperCase(character: string): string {
+  return /^[a-z]$/.test(character) ? character.toUpperCase() : character;
 }

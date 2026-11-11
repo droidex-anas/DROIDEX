@@ -33,6 +33,8 @@ const NOT_PATH_DATA = [
   'M0 0,',
   'M0 0, L1 1',
   'M0 0 X1 1',
+  // `ſ` upper-cases to S, but no letter past ASCII is a command.
+  'M0 0ſ1 1 2 2',
   'M0 0A5 5 0 2 0 10 10',
   'M0\t0',
   'M0\n0',

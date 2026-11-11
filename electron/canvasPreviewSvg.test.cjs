@@ -50,7 +50,8 @@ test('a shape answer carries only source path data, a finite matrix and a box, o
     return asked.then(JSON.parse);
   };
   const rect = { x: 8, y: 8, width: 20, height: 20 };
-  const drawn = { d: 'M0 0\n  L10,10 Z', matrix: [2, 0, 0, 2, 8, 8], rect };
+  // Any SVG whitespace a source wraps its data with reaches the board as it was written.
+  const drawn = { d: 'M0 0\n\t L10,\r\n\f10 Z', matrix: [2, 0, 0, 2, 8, 8], rect };
   assert.deepEqual(await answer({ ...drawn, style: 'x' }), drawn);
   // Every newline doubles under JSON, past the 4096 bytes other events may measure.
   const wrapped = { ...drawn, d: 'M0 0' + '\n'.repeat(16 * 1024 - 4) };
