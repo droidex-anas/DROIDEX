@@ -126,6 +126,14 @@ export interface LibraryItem {
 /** One kit token a direct style edit may name, with its value in each mode. */
 export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
 
+/** One insertable entry of a kit's catalog, as the kit document lists it. */
+export interface CatalogListing {
+  name: string;
+  /** The kit file it shows, for grouping and search. */
+  module: string | null;
+  note: string | null;
+}
+
 /** A kit version as its document shows it: everything but its source. */
 export interface DesignSystemDocumentView {
   id: string;
@@ -138,6 +146,8 @@ export interface DesignSystemDocumentView {
   sections: DocumentSection[];
   /** The example file names its previews may name. */
   examples: string[];
+  /** The entries of the kit's catalog.json, in its order. */
+  catalog: CatalogListing[];
   /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;

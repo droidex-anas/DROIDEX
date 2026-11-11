@@ -85,6 +85,16 @@ export function catalogFile(catalog: readonly CatalogEntry[]): string {
   return `${JSON.stringify(catalog, null, 2)}\n`;
 }
 
+/** What the kit document lists of an entry; its JSX stays in the sidecar. */
+export type CatalogListing = Pick<CatalogEntry, 'name' | 'module' | 'note'>;
+
+export function catalogListing(files: SourceFiles): CatalogListing[] {
+  const read = readKitCatalog(files);
+  // A saved version's catalog was checked when it was saved.
+  if ('problem' in read) return [];
+  return read.catalog.map(({ name, module, note }) => ({ name, module, note }));
+}
+
 /** Why the kit's catalog file is unusable, or null when it is usable or absent. */
 export function catalogProblem(files: SourceFiles): string | null {
   const read = readKitCatalog(files);

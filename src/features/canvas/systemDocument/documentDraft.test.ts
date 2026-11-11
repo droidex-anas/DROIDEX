@@ -77,6 +77,7 @@ function kitAt(id: string, version: number): DesignSystemDocumentView {
     cover: null,
     sections: base,
     examples: [],
+    catalog: [],
     unmapped: [],
     provenance: null,
     savedAt: null,
