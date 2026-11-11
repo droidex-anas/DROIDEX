@@ -55,7 +55,13 @@ export function useComponentInsert({
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<Added | null>(null);
   const picked = elements.picked;
-  if (added && picked && picked.pick !== added.pick) setAdded(null);
+  // A pick since the add, or another frame selected, takes the next entry elsewhere.
+  if (
+    added &&
+    ((picked && picked.pick !== added.pick) ||
+      selectedFrameIds.some((designId) => designId !== added.designId))
+  )
+    setAdded(null);
   const target = targetOf(frames, selectedFrameIds, picked?.element ?? null, added);
   const place = placeOf(target, { adding, presence, canEdit: onEditLayer !== undefined });
   usePickAdded(added, frames, elements);
@@ -82,13 +88,9 @@ function targetOf(
   added: Added | null,
 ): Target | null {
   const frameOf = (designId: string) => frames.find((frame) => frame.designId === designId);
-  // The added layer stays the target while its frame shows that revision and no other frame is selected.
+  // The added layer stays the target while its frame shows that revision.
   const addedFrame = added && frameOf(added.designId);
-  if (
-    added &&
-    addedFrame?.revisionId === added.revisionId &&
-    selectedFrameIds.every((designId) => designId === added.designId)
-  )
+  if (added && addedFrame?.revisionId === added.revisionId)
     return {
       frame: addedFrame,
       revisionId: added.revisionId,
@@ -161,15 +163,19 @@ function usePickAdded(
     elements.pick(designId, node);
   });
   useEffect(() => {
-    // A pick since the add drops it, and a tree read for it then picks nothing.
+    // A tree read asked for the add picks nothing once the add is dropped, or
+    // once its frame or preview moves on from the revision it made.
     if (!added) {
       asked.current = null;
       return;
     }
     const frame = frames.find((each) => each.designId === added.designId);
-    const outline = frame && builtOutline(frame);
+    const outline = frame?.revisionId === added.revisionId ? builtOutline(frame) : undefined;
     const held = runs.get(added.designId);
-    if (!outline || held?.revisionId !== added.revisionId) return;
+    if (!outline || held?.revisionId !== added.revisionId) {
+      asked.current = null;
+      return;
+    }
     if (asked.current?.added === added && asked.current.run === held.run) return;
     const asking = { added, run: held.run };
     asked.current = asking;
