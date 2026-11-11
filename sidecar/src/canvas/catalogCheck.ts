@@ -20,6 +20,8 @@ import type { SourceFiles } from './schema.js';
 const ICON_SPECIFIER = 'lucide-react';
 const NOT_ONE_ELEMENT =
   'Its jsx must be one JSX element or fragment and nothing else, with no statement, semicolon or comment around it.';
+const READS_A_RECEIVER =
+  'An entry cannot use this or new.target, which would read whatever it is inserted into.';
 const LOADS_A_MODULE =
   'An entry cannot load a module. List the kit exports it names in uses and its lucide-react icons in icons.';
 
@@ -77,6 +79,7 @@ function entryProblem(
   const visit = (node: ts.Node): string | undefined => {
     if (ts.isTypeNode(node)) return undefined;
     if (loadsModule(node)) return LOADS_A_MODULE;
+    if (readsReceiver(node)) return READS_A_RECEIVER;
     if (ts.isIdentifier(node) && isReference(node) && !isBoundIn(source, node, checker)) {
       if (!declared.has(node.text) && node.text !== 'undefined')
         return `${node.text} is not in its uses or icons, and the entry does not bind it. An entry names only its uses, its icons, what it binds itself, and undefined.`;
@@ -94,6 +97,11 @@ function entryProblem(
 
 function isJsxElement(node: ts.Expression): boolean {
   return ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node);
+}
+
+function readsReceiver(node: ts.Node): boolean {
+  if (node.kind === ts.SyntaxKind.ThisKeyword) return true;
+  return ts.isMetaProperty(node) && node.keywordToken === ts.SyntaxKind.NewKeyword;
 }
 
 function loadsModule(node: ts.Node): boolean {
@@ -147,7 +155,8 @@ export function catalogDesign(catalog: readonly CatalogEntry[]): SourceFiles {
     const header = entryImports(entry).map(
       ({ name, from }) => `import { ${name} } from '${from}';`,
     );
-    header.push('', 'export default function Entry() {', '  return (');
+    // Anonymous, so no name of the module's own can shadow one the entry imports.
+    header.push('', 'export default function () {', '  return (');
     files[entryFile(index)] = `${header.join('\n')}\n${entry.jsx}\n  );\n}\n`;
     imports.push(`import Entry${String(index)} from './catalog/${String(index)}';`);
     elements.push(`      <Entry${String(index)} />`);

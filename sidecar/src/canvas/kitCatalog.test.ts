@@ -82,20 +82,22 @@ test('a catalog failure is told as the entry whose lines it is on, and an unexpo
   );
   assert.match(built[0].diagnostic.message, /^catalog\.json, Broken: .*Missing/);
 
-  const unexported = await previews.checkCatalog(
-    starterWith(catalogFile([entry('Table', '<Table />', ['Table'])])),
-  );
-  assert.deepEqual(unexported, [
-    {
-      entry: 'Table',
-      diagnostic: {
-        code: 'invalid_input',
-        message:
-          'catalog.json, Table: Table is not exported by the kit. Use a name its index.tsx exports.',
-        file: KIT_CATALOG_FILE,
+  // Entry is also what the check once named each entry's own component.
+  for (const name of ['Table', 'Entry']) {
+    const unexported = await previews.checkCatalog(
+      starterWith(catalogFile([entry(name, `<${name} />`, [name])])),
+    );
+    assert.deepEqual(unexported, [
+      {
+        entry: name,
+        diagnostic: {
+          code: 'invalid_input',
+          message: `catalog.json, ${name}: ${name} is not exported by the kit. Use a name its index.tsx exports.`,
+          file: KIT_CATALOG_FILE,
+        },
       },
-    },
-  ]);
+    ]);
+  }
 });
 
 test('an entry stands alone, one JSX element naming only its own uses, icons and bindings, or it is refused by name', async (t) => {
@@ -122,6 +124,7 @@ test('an entry stands alone, one JSX element naming only its own uses, icons and
     ['<div>{window.location.href}</div>', [], /window is not in its uses or icons/],
     ['<div>{`hello ${unknownValue}`}</div>', [], /unknownValue is not in its uses or icons/],
     ["<div>{void import('react')}</div>", [], /cannot load a module/],
+    ['<div>{this.missing}</div>', [], /cannot use this or new\.target/],
     ['<div />', ['Button'], /Button is in its uses, but its jsx does not use it/],
   ];
   for (const [jsx, uses, message] of cases) {
