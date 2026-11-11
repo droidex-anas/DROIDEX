@@ -32,6 +32,7 @@ const node = (
   elementId: null,
   lock: null,
   free: true,
+  contentFromProps: false,
   ...row,
 });
 

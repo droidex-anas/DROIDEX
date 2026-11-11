@@ -18,6 +18,7 @@ const node = (
   elementId: `el_${nodeId}`,
   lock: null,
   free: true,
+  contentFromProps: false,
   ...row,
 });
 
@@ -125,11 +126,12 @@ test('a drop where the layer already is changes nothing, and one it cannot take 
   assert.equal(stepPlace(rebuilding, at('h1'), 'down'), null);
 });
 
-test('a layer inside text stays in it, and an element with text of its own takes no other layer', () => {
+test('a layer inside text stays in it, and an element with text of its own or content from props takes no other layer', () => {
   const nodes = [
     ...outline.nodes,
     node('note', 'main', 'p', { text: 'Hello' }),
     node('b', 'note', 'b'),
+    node('box', 'main', 'div', { contentFromProps: true }),
   ];
   const texts = rowsOf(rows[0].frame.build, { nodes, truncated: false });
   const index = (nodeId: string) => texts.findIndex((row) => row.key === `a#${nodeId}`);
@@ -138,8 +140,11 @@ test('a layer inside text stays in it, and an element with text of its own takes
     state: 'refused',
     reason: 'This layer sits inside text. Edit the text instead.',
   });
+  assert.deepEqual(dropLine(texts, index('h1'), texts.length, 4).drop, {
+    state: 'refused',
+    reason: 'This layer’s props may set its content, so it can’t hold other layers.',
+  });
 });
-
 test('the keyboard steps a layer past its free siblings, out of its parent, or into the layer above', () => {
   assert.equal(stepPlace(rows, at('h1'), 'up'), null);
   assert.deepEqual(stepPlace(rows, at('h1'), 'down'), { parentId: 'main', beforeId: 'ul' });

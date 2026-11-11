@@ -281,7 +281,7 @@ test('a moved layer keeps the lines of its strings and templates as written', ()
 
 test('a move that would change what the source means is refused with the reason', () => {
   const text = 'This layer sits inside text. Edit the text instead.';
-  const prop = "This layer's content is set by a prop, so it can't hold other layers.";
+  const prop = "This layer's props may set its content, so it can't hold other layers.";
   const cases: [string, string, string, string, string][] = [
     [
       `export default ({ flag }) => {

@@ -185,6 +185,7 @@ function unwrittenRow(node: PreviewTreeNode, parentId: string | null): OutlineNo
     elementId: node.elementId,
     lock: null,
     free: false,
+    contentFromProps: false,
   };
 }
 

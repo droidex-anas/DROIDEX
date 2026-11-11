@@ -160,6 +160,7 @@ export function sourceOutline(
           elementId: element.elementId,
           lock: lock[element.editability],
           free,
+          contentFromProps: contentFromProps(node),
         },
         place,
       );
@@ -177,6 +178,7 @@ export function sourceOutline(
         elementId: null,
         lock: isKit ? 'kit' : lockAt(node, place),
         free,
+        contentFromProps: false,
       },
       place,
     );
@@ -208,7 +210,13 @@ export function sourceOutline(
 
   const condition = (at: ts.Node, branches: readonly ts.Expression[], place: Place) => {
     if (branches.length === 0) return;
-    const row = { kind: 'condition', name: 'Condition', text: null, elementId: null } as const;
+    const row = {
+      kind: 'condition',
+      name: 'Condition',
+      text: null,
+      elementId: null,
+      contentFromProps: false,
+    } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place, (inside) => {
       for (const branch of branches) content(branch, inside, false);
     });
@@ -236,7 +244,13 @@ export function sourceOutline(
     if (!template) return;
     const inner = enter(template, place);
     if (!inner) return;
-    const row = { kind: 'repeat', name: 'Repeat', text: null, elementId: null } as const;
+    const row = {
+      kind: 'repeat',
+      name: 'Repeat',
+      text: null,
+      elementId: null,
+      contentFromProps: false,
+    } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, inner, (inside) => {
       returned(template, { ...inside, reason: 'repeated' });
     });
@@ -352,6 +366,19 @@ function isFreeChild(node: ts.Node): boolean {
   );
 }
 
+/**
+ * Whether a prop gives the element its content, or may: `children` or
+ * `dangerouslySetInnerHTML` written on it, or a spread that can carry either.
+ * Children written in JSX would fight that content.
+ */
+function contentFromProps(node: ts.JsxElement | ts.JsxSelfClosingElement): boolean {
+  const { attributes } = ts.isJsxElement(node) ? node.openingElement : node;
+  return attributes.properties.some(
+    (property) =>
+      ts.isJsxSpreadAttribute(property) ||
+      ['children', 'dangerouslySetInnerHTML'].includes(property.name.getText()),
+  );
+}
 /** A display label clamped to the outline's bound, on one line. */
 function label(text: string): string {
   const points = Array.from(text.replace(/\s+/g, ' ').trim());

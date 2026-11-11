@@ -102,7 +102,7 @@ export function editLayer(files: SourceFiles, nodeId: string, change: LayerChang
 }
 
 export function moveLayer(files: SourceFiles, move: LayerMove): EditedLayers {
-  const { uses, layer } = layersIn(files);
+  const { uses, layer, checker } = layersIn(files);
   const subject = layer(move.nodeId);
   const target = layer(move.parentId);
   const sibling = move.beforeId === null ? null : layer(move.beforeId);
@@ -123,6 +123,10 @@ export function moveLayer(files: SourceFiles, move: LayerMove): EditedLayers {
   const paste = before
     ? pasteBefore(text, before.node, eol)
     : pasteAtEnd(source, parent, eol, movedIndent);
+  if (readsLaterBinding(anchor.node, paste.start, checker))
+    throw ambiguous(
+      'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+    );
   const pasted = paste.before + reindent(anchor.node, movedIndent, paste.indent);
   const edited = splice(text, [
     { start: cut.start, end: cut.end, replacement: '' },
@@ -179,7 +183,7 @@ function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
 
 /** The outline's rows by id, refusing an id the source no longer writes. */
 function layersIn(files: SourceFiles) {
-  const { uses, outline, written } = sourceLayers(files);
+  const { uses, outline, written, checker } = sourceLayers(files);
   const rows = new Map(outline.nodes.map((row) => [row.nodeId, row]));
   const layer = (nodeId: string): Layer => {
     const row = rows.get(nodeId);
@@ -187,7 +191,7 @@ function layersIn(files: SourceFiles) {
     if (!row || !at) throw staleReference();
     return { row, at };
   };
-  return { uses, outline, written, layer };
+  return { uses, outline, written, checker, layer };
 }
 
 /** The subject's anchor, refused when it is not written as one JSX child that renders once. */
@@ -218,21 +222,11 @@ function holder(target: Layer, uses: ComponentUses): ElementNode {
     !VOID_TAGS.has(tagOf(at)) &&
     uses.rendersOnce(at)
   ) {
-    if (setsContent(at))
-      throw invalid("This layer's content is set by a prop, so it can't hold other layers.");
+    if (target.row.contentFromProps)
+      throw invalid("This layer's props may set its content, so it can't hold other layers.");
     return at;
   }
   throw invalid("This layer can't hold other layers.");
-}
-
-/** Whether a prop gives the element its content, which children written in JSX would fight. */
-function setsContent(element: ElementNode): boolean {
-  const { attributes } = ts.isJsxElement(element) ? element.openingElement : element;
-  return attributes.properties.some(
-    (property) =>
-      ts.isJsxAttribute(property) &&
-      ['children', 'dangerouslySetInnerHTML'].includes(property.name.getText()),
-  );
 }
 
 function checkPlace(anchor: Anchor, parent: ElementNode): void {
@@ -294,6 +288,30 @@ function enclosingBlock(node: ts.Node): ts.Node | undefined {
   );
 }
 
+/**
+ * Whether the JSX reads a name its function (or the module, outside any)
+ * declares at or after `position`: pasted there, it would read the name
+ * before it is set. Function declarations are hoisted whole, so they don't count.
+ */
+function readsLaterBinding(moved: ts.Node, position: number, checker: ts.TypeChecker): boolean {
+  const scope = enclosingFunction(moved);
+  const declaredLater = (declaration: ts.Declaration) =>
+    (ts.isVariableDeclaration(declaration) ||
+      ts.isBindingElement(declaration) ||
+      ts.isClassDeclaration(declaration)) &&
+    declaration.end > position &&
+    enclosingFunction(declaration) === scope;
+  const reads = (node: ts.Node): boolean => {
+    if (ts.isIdentifier(node)) {
+      const symbol = ts.isShorthandPropertyAssignment(node.parent)
+        ? checker.getShorthandAssignmentValueSymbol(node.parent)
+        : checker.getSymbolAtLocation(node);
+      if (symbol?.declarations?.some(declaredLater)) return true;
+    }
+    return node.forEachChild(reads) ?? false;
+  };
+  return reads(moved);
+}
 /** Whitespace that breaks a line is formatting JSX drops; any other text, spaces too, renders. */
 function hasText(parent: JsxParent | ElementNode): boolean {
   if (ts.isJsxSelfClosingElement(parent)) return false;

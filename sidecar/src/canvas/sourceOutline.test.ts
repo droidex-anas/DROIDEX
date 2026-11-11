@@ -293,6 +293,7 @@ test('both validators take an outline only as a tree of bounded one-line rows', 
     elementId: null,
     lock: null,
     free: false,
+    contentFromProps: false,
   };
   const child = { ...root, nodeId: 'fedcba9876543210', parentId: root.nodeId };
   const accepts = (nodes: unknown[]) => {

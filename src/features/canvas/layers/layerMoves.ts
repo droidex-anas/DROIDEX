@@ -164,12 +164,13 @@ function isInPlace(rows: readonly LayerEntry[], row: ElementEntry, before: Layer
 /** An element written in the source, once, that can have children and has no text of its own. */
 function canHold(row: LayerEntry): row is ElementEntry {
   if (!isOutlineRow(row)) return false;
-  const { kind, lock, name, text } = row.node;
+  const { kind, lock, name, text, contentFromProps } = row.node;
   return (
     kind === 'element' &&
     lock !== 'repeated' &&
     lock !== 'shared' &&
     text === null &&
+    !contentFromProps &&
     !VOID_TAGS.has(name)
   );
 }
@@ -177,10 +178,12 @@ function canHold(row: LayerEntry): row is ElementEntry {
 /** Why a row that can't hold a dropped layer can't. */
 function holdRefusal(row: LayerEntry): string {
   if (row.kind !== 'element') return 'A layer can move only inside another layer.';
-  const { kind, text } = row.node;
-  return kind === 'element' && text !== null
-    ? 'This layer sits inside text. Edit the text instead.'
-    : 'This layer can’t hold other layers.';
+  const { kind, text, contentFromProps } = row.node;
+  if (kind === 'element' && text !== null)
+    return 'This layer sits inside text. Edit the text instead.';
+  if (contentFromProps)
+    return 'This layer’s props may set its content, so it can’t hold other layers.';
+  return 'This layer can’t hold other layers.';
 }
 
 /** The rows show the frame's current revision, which a move must name. */
