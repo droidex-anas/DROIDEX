@@ -670,9 +670,12 @@ element's children within the same block of the same component, in the file's ow
 and line endings, leaving strings and templates as written; a move into or out of text, or into
 an element whose content a prop sets, is refused. It also removes a layer, closing a parent it
 leaves empty to `<ul></ul>` and keeping an instance's component, or puts a copy right after it,
-refused when the layer writes an `id`. The reply names the row the edit lands on in the new
-revision (the moved layer, the copy, or the row beside a removed one) so the selection and the
-keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+refused when the layer writes an `id`. It adds an entry of the catalog of the kit version the
+frame pins, last inside the layer when it holds others and else right after it, importing the
+kit exports and lucide-react icons the entry names into that file once, refused where the file
+binds one of those names itself. The board's Components tab beside Layers sends it. The reply
+names the row the edit lands on in the new revision (the moved layer, the copy, the added
+element, or the row beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
 token with that value and stays raw only when the kit has none. What a style edit writes is
 what a person writing Tailwind would: the class that says the value in place of the classes it
 makes dead, with the style attribute only where no stock class says it or a frame-scoped class

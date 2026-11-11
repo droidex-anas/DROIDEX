@@ -1,4 +1,4 @@
-// The layers panel at the board's left: a row per frame, front to back, saying how its
+// The side panel's Layers tab: a row per frame, front to back, saying how its
 // build stands. A click picks the frame (Shift or ⌘ adds it), a double-click renames it,
 // a row under the pointer lights its frame, and its eye and handle hide and restack it.
 // A frame that has built opens on its layers as its source writes them; a click picks a
@@ -17,7 +17,6 @@ import type { CanvasFrame } from '../protocol';
 import type { ElementEntry } from './ElementRow';
 import { LayerDropLine } from './LayerDropLine';
 import { LayerListRow } from './LayerListRow';
-import { LayersHeader } from './LayersHeader';
 import { DUPLICATE_KEY_LABEL, HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
 import { LayerMenu } from './LayerMenu';
@@ -75,9 +74,9 @@ export function LayersPanel({
   onLeave,
   onClose,
 }: LayersPanelProps) {
+  const panel = useRef<HTMLDivElement>(null);
   const tree = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLDivElement>(null);
-  const closeButton = useRef<HTMLButtonElement>(null);
   const treeId = useId();
   const { rows, fold, rowOf, reveal, readRest } = useLayerRows(frames, elements.runs);
   const keys = rows.map((row) => row.key);
@@ -109,7 +108,7 @@ export function LayersPanel({
   /** The open menu: the row it is for, and where the right-click was, or below the row from the keyboard. */
   const [menu, setMenu] = useState<{ row: ElementEntry; at: AnchorPoint } | null>(null);
   const active = activeIndex >= 0 ? rows[activeIndex] : undefined;
-  const renaming = useRenaming(keys, onRename, tree, closeButton);
+  const renaming = useRenaming(keys, onRename, tree, panel);
   const kept = [activeIndex, renaming.index];
   const { virtualizer, revealRestacked } = useLayerList(tree, keys, ROW_PX, kept, movedTo);
   const shownRows = virtualizer.getVirtualItems().map((item) => ({ item, row: rows[item.index] }));
@@ -203,9 +202,10 @@ export function LayersPanel({
   };
 
   return (
-    <aside
-      aria-label="Layers"
-      className="flex h-full w-sidebar shrink-0 flex-col bg-surface"
+    <div
+      ref={panel}
+      tabIndex={-1}
+      className="flex min-h-0 flex-1 flex-col outline-none"
       onKeyDown={(event) => {
         if (!isLayersKey(event) || event.target instanceof HTMLInputElement) return;
         event.preventDefault();
@@ -213,7 +213,6 @@ export function LayersPanel({
         close();
       }}
     >
-      <LayersHeader closeButton={closeButton} onClose={close} />
       {rows.length === 0 ? (
         <p className="px-5 text-caption text-secondary">No frames yet</p>
       ) : (
@@ -346,6 +345,6 @@ export function LayersPanel({
           }}
         />
       )}
-    </aside>
+    </div>
   );
 }
