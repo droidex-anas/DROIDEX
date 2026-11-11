@@ -723,17 +723,20 @@ from generated CSS through the same preview scheme.
 WebSocket) against a scripted provider and writes JSON + Markdown artifacts
 to `reports/perf/`. Headless scenarios: `smoke`, `idle`, `streaming`,
 `multi-agent`, `agents-4`, `agents-16`, `agents-27`, `long-history`,
-`long-tail`, `session-switch`, `soak`. Browser/design workspace, hidden-window
-CPU, and sidecar-restart are documented skips (restart belongs to the
-supervision phase).
+`long-tail`, `session-switch`, `soak`. The browser pane, hidden-window CPU,
+and sidecar-restart are documented skips (restart belongs to the supervision
+phase). The design canvas has its own headless scenario, `npm run perf:canvas`:
+Playwright streams board gestures at 120 Hz into the board harness and counts
+React commits and layout reads per frame and long tasks per gesture.
 
 A/B probes (`npm run perf:compare` / `npm run perf:report`) measure the same
 self-contained metrics on a baseline git worktree and on this tree. Metrics
 that need phase-0/1/4 code are labelled **candidate-only** and never get a
 fabricated baseline. `npm run perf:gates` / `npm run quality:perf-gates` fail
 on bounded mounted rows, bounded queues, marker loss, soak leaks, terminal
-delivery amplification, and feed rebuild counts. Timing CPU/RSS is recorded
-and warned, not failed, on shared runners. Bundle bytes stay gated by
+delivery amplification, feed rebuild counts, and the canvas's commits and
+layout reads per pan frame and long tasks during gestures. Timing CPU/RSS is
+recorded and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run quality:bundle-budgets`. Release numbers live in
 `docs/performance-budgets.md`.
 
