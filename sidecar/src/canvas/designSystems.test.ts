@@ -356,7 +356,7 @@ test('an unusable kit is refused before anything is written', async () => {
       withFiles('crowded-kit', {
         'index.tsx': '',
         ...Object.fromEntries(
-          Array.from({ length: CANVAS_LIMITS.maxSourceFilesPerDesign }, (_, index) => [
+          Array.from({ length: DESIGN_SYSTEM_LIMITS.maxFiles }, (_, index) => [
             `file-${index}.tsx`,
             '',
           ]),

@@ -213,15 +213,22 @@ const sourceFileSchema = z
     message: FILE_BYTES_MESSAGE,
   });
 
-export const sourceFilesSchema = z
-  .record(sourcePathSchema, sourceFileSchema)
-  .refine((files) => Object.keys(files).length <= CANVAS_LIMITS.maxSourceFilesPerDesign, {
-    message: FILE_COUNT_MESSAGE,
-  })
-  .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
-  .refine((files) => totalSourceBytes(Object.values(files)) <= CANVAS_LIMITS.maxDesignSourceBytes, {
-    message: TOTAL_BYTES_MESSAGE,
-  });
+/** Source files by path: at most `maxFiles`, distinct, and within the byte limits. */
+export function boundedSourceFilesSchema(maxFiles: number, countMessage: string) {
+  return z
+    .record(sourcePathSchema, sourceFileSchema)
+    .refine((files) => Object.keys(files).length <= maxFiles, { message: countMessage })
+    .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
+    .refine(
+      (files) => totalSourceBytes(Object.values(files)) <= CANVAS_LIMITS.maxDesignSourceBytes,
+      { message: TOTAL_BYTES_MESSAGE },
+    );
+}
+
+export const sourceFilesSchema = boundedSourceFilesSchema(
+  CANVAS_LIMITS.maxSourceFilesPerDesign,
+  FILE_COUNT_MESSAGE,
+);
 
 const deletedPathsSchema = z
   .array(sourcePathSchema)

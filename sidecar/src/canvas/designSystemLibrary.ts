@@ -36,8 +36,11 @@ import {
 } from './projectPaths.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
-/** A kit holds 64 files; these many are the library's components, and the rest its own. */
-export const MAX_LIBRARY_COMPONENTS = 48;
+/**
+ * Of a kit's files, these many are the library's components, and the rest its
+ * own: half again shadcn/ui's 61-file ui folder.
+ */
+export const MAX_LIBRARY_COMPONENTS = 96;
 export const TAILWIND_4_REFUSAL =
   'This project uses Tailwind 4. The canvas builds with Tailwind 3.4, so its kit cannot be imported yet.';
 

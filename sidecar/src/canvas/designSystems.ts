@@ -40,7 +40,12 @@ import {
 import { designSystemProvenanceSchema } from './designSystemProvenance.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
-import { canvasIdentifierSchema, sourceFilesSchema, sourcePathSchema } from './schema.js';
+import {
+  boundedSourceFilesSchema,
+  canvasIdentifierSchema,
+  sourceFilesSchema,
+  sourcePathSchema,
+} from './schema.js';
 
 /** The file a kit exports its primitives from, and the only entry it may have. */
 export const KIT_ENTRY = 'index.tsx';
@@ -48,6 +53,8 @@ export const KIT_ENTRY = 'index.tsx';
 export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
+  /** More than a design's files, so a kit can hold a whole component library. */
+  maxFiles: 128,
 } as const;
 
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -55,9 +62,10 @@ const UNKNOWN_MESSAGE = 'That design system version is not available.';
 const BUILT_IN_MESSAGE = 'That design system name belongs to a built-in kit. Choose another id.';
 const DELETED_MESSAGE = 'That design system was deleted. Restore it before saving to it.';
 
-const kitFilesSchema = sourceFilesSchema.refine((files) => Object.hasOwn(files, KIT_ENTRY), {
-  message: ENTRY_MESSAGE,
-});
+const kitFilesSchema = boundedSourceFilesSchema(
+  DESIGN_SYSTEM_LIMITS.maxFiles,
+  `A design system holds at most ${String(DESIGN_SYSTEM_LIMITS.maxFiles)} files.`,
+).refine((files) => Object.hasOwn(files, KIT_ENTRY), { message: ENTRY_MESSAGE });
 
 const coverSchema = z
   .discriminatedUnion('kind', [
