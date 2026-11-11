@@ -46,11 +46,8 @@ import {
   reorderFramesInputSchema,
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
-import {
-  createFramesInputSchema,
-  editElementInputSchema,
-  writeFilesInputSchema,
-} from './schema.js';
+import { editElementInputSchema } from './elementEditSchema.js';
+import { createFramesInputSchema, writeFilesInputSchema } from './schema.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

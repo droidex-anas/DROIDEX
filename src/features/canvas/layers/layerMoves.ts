@@ -52,6 +52,11 @@ export function isMovable(row: LayerEntry): row is ElementEntry {
   return free && parentId !== null && lock !== 'repeated' && lock !== 'shared';
 }
 
+/** A row of the frame's outline, which an edit can name; a drawn element the outline does not write has none. */
+export function isOutlineRow(row: LayerEntry): row is ElementEntry {
+  return row.kind === 'element' && !row.node.nodeId.startsWith('@');
+}
+
 /**
  * Where the layer on row `subject` drops with the pointer `at` rows down the
  * list and asking for tree level `level`: the nearest boundary within its own
@@ -158,11 +163,10 @@ function isInPlace(rows: readonly LayerEntry[], row: ElementEntry, before: Layer
 
 /** An element written in the source, once, that can have children and has no text of its own. */
 function canHold(row: LayerEntry): row is ElementEntry {
-  if (row.kind !== 'element') return false;
-  const { kind, nodeId, lock, name, text, contentFromProps } = row.node;
+  if (!isOutlineRow(row)) return false;
+  const { kind, lock, name, text, contentFromProps } = row.node;
   return (
     kind === 'element' &&
-    !nodeId.startsWith('@') &&
     lock !== 'repeated' &&
     lock !== 'shared' &&
     text === null &&

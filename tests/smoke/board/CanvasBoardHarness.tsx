@@ -23,7 +23,7 @@ import {
   type BoardInteraction,
 } from '../../../src/features/canvas/canvasState';
 import { isBoardEditor, isLayersKey } from '../../../src/features/canvas/boardKeys';
-import { CanvasRequestError } from '../../../src/features/canvas/client';
+import { canvasMessage, CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { ExportToProjectDialog } from '../../../src/features/canvas/ExportToProjectDialog';
 import {
@@ -42,7 +42,10 @@ import {
   type VariantChoice,
 } from '../../../src/features/canvas/variantRequests';
 import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
-import type { EditElementInput } from '../../../src/features/canvas/elementEditProtocol';
+import type {
+  EditElementInput,
+  ElementEdited,
+} from '../../../src/features/canvas/elementEditProtocol';
 import {
   elementPins,
   pickElement,
@@ -67,7 +70,7 @@ import type {
   WriteReceipt,
 } from '../../../src/features/canvas/protocol';
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
-import { subscribeToasts, type ToastItem } from '../../../src/lib/toast';
+import { subscribeToasts, toast, type ToastItem } from '../../../src/lib/toast';
 import '../../../src/index.css';
 // The harness mounts the board without the pane that normally brings these in.
 import '../../../src/features/canvas/canvasAnimations.css';
@@ -120,8 +123,12 @@ interface BoardHarness {
   editCalls: EditElementInput[];
   /** What Design's quick prompt handed the chat's composer. */
   seeds: { text: string; send: boolean }[];
-  /** Answers one edit with the revision it wrote, and builds that revision. */
-  answerEdit: (index: number) => void;
+  /**
+   * Answers one edit with the revision it wrote, and builds that revision. A
+   * layer's edit lands on `landed`, or else on its own row.
+   */
+  /** `landed` names the row the edit lands on; null for none, omitted for its own. */
+  answerEdit: (index: number, landed?: string | null) => void;
   refuseEdit: (index: number) => void;
   removeCalls: RemoveFramesInput[];
   /** Removes one delete's frames the way the sidecar does, answering `undo_<index>`. */
@@ -403,7 +410,7 @@ const previewClicks: string[] = [];
 const editCalls: EditElementInput[] = [];
 const seeds: { text: string; send: boolean }[] = [];
 const editReplies: {
-  resolve: (receipt: WriteReceipt) => void;
+  resolve: (edited: ElementEdited) => void;
   reject: (error: Error) => void;
 }[] = [];
 const removeCalls: RemoveFramesInput[] = [];
@@ -594,9 +601,7 @@ function Harness() {
     hovering: picksElements(interaction.mode),
     onEditElement: (input) => {
       editCalls.push(input);
-      return new Promise<WriteReceipt>((resolve, reject) =>
-        editReplies.push({ resolve, reject }),
-      ).then((receipt) => ({ receipt, landed: null }));
+      return new Promise<ElementEdited>((resolve, reject) => editReplies.push({ resolve, reject }));
     },
   });
   if (params.has('project')) projectExport.open = setExporting;
@@ -772,11 +777,16 @@ function Harness() {
     },
     editCalls,
     seeds,
-    answerEdit: (index) => {
+    answerEdit: (index, landed) => {
       const { edit } = editCalls[index];
       const { designId } = 'element' in edit ? edit.element : edit.layer;
       const revisionId = `rev_0${String(index + 2)}`;
-      editReplies[index].resolve({ designId, revisionId, sequence: index + 2 });
+      // Every revision's outline is the same, so a layer lands on its own row unless told otherwise.
+      const ownRow = 'layer' in edit ? edit.layer.nodeId : null;
+      editReplies[index].resolve({
+        receipt: { designId, revisionId, sequence: index + 2 },
+        landed: landed === undefined ? ownRow : landed,
+      });
       setSnapshot((current) => ({
         ...current,
         sequence: current.sequence + 1,
@@ -897,17 +907,12 @@ function Harness() {
               reorderCalls.push(designIds);
               setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
             }}
-            onMoveLayer={(layer, place) => {
-              const mutationId = `move_${String(editCalls.length)}`;
-              editCalls.push({ mutationId, edit: { layer, change: { kind: 'move', ...place } } });
-              return new Promise<WriteReceipt>((resolve, reject) =>
-                editReplies.push({ resolve, reject }),
-              ).then(
-                // Every revision's outline is the same, so the layer lands on its own row.
-                (receipt) => ({ receipt, landed: layer.nodeId }),
-                () => null,
-              );
-            }}
+            onEditLayer={(layer, change) =>
+              editor.editLayer(layer, change).catch((refusal: unknown) => {
+                toast.error(canvasMessage(refusal));
+                return null;
+              })
+            }
             onHistory={(step) =>
               step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
             }

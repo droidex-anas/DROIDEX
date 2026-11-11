@@ -154,6 +154,36 @@ test('a layer moves in one revision and answers the row it landed on; its retry 
   assert.deepEqual(okReply(canvas, 'req-move-retry'), { ...moved, landed: null });
 });
 
+test('a layer is duplicated through the same edit, answering the copy', async (t) => {
+  const main = 'export default function Hey(){return <main><h1>Hey</h1><p>Hi</p></main>}';
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const nodeId = build.outline.nodes.find((node) => node.name === 'p')?.nodeId;
+  const { designId, revisionId } = element;
+  await canvas.handle({
+    type: 'canvas.editElement',
+    requestId: 'req-copy',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-copy',
+      edit: { layer: { designId, revisionId, nodeId }, change: { kind: 'duplicate' } },
+    },
+  });
+  const copied = okReply(canvas, 'req-copy');
+  assert.ok(copied.kind === 'edited');
+  const files = await canvas.workspace.readFiles(canvasId, copied.receipt);
+  assert.equal(
+    files['main.tsx'],
+    'export default function Hey(){return <main><h1>Hey</h1><p>Hi</p><p>Hi</p></main>}',
+  );
+  const copies = instrumentSource({ ...files }, copied.receipt.revisionId).outline.nodes.filter(
+    (node) => node.name === 'p',
+  );
+  assert.equal(copied.landed, copies[1].nodeId);
+});
+
 /** Asks to move `subject` last into `target` and answers the refusal, checking the source stayed. */
 async function refusedMove(t: TestContext, main: string, subject: string, target: string) {
   const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
@@ -208,6 +238,22 @@ test('a move past a line that assigns a value the layer reads is refused', async
   );
 });
 
+test('a move past a write into a property or index of a value the layer reads is refused', async (t) => {
+  const main = `export default function App({ flag = true }) {
+  const config = { color: 'red', sizes: [1] };
+  if (flag) return <section />;
+  config.color = 'blue';
+  config.sizes[0]++;
+  return <main><span>{config.color}</span></main>;
+}`;
+  const { code, message } = await refusedMove(t, main, 'span', 'section');
+  assert.equal(code, 'ambiguous_element');
+  assert.equal(
+    message,
+    'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
+  );
+});
+
 test('a move to before the enum a layer reads is refused', async (t) => {
   const main = `export default function App({ flag = true }) {
   if (flag) return <section />;
@@ -225,6 +271,7 @@ test('a move into an element with a spread, which may set its content, is refuse
   assert.equal(code, 'invalid_edit');
   assert.equal(message, "This layer's props may set its content, so it can't hold other layers.");
 });
+
 test('a style edit sets every style it names in one revision, and its retry answers from the ledger', async (t) => {
   const { canvas, canvasId, element } = await editableElement(t);
   const command = (requestId: string, mutationId: string, padding: string) => ({

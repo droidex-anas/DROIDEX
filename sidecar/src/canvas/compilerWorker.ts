@@ -41,7 +41,7 @@ import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
-import { moveLayer } from './sourceStructureEdits.js';
+import { editLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
 import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
@@ -288,8 +288,7 @@ async function runEdit(
     stopIfCancelled(signal);
     let edited: EditedSource;
     if ('layer' in edit) {
-      const { parentId, beforeId } = edit.change;
-      edited = moveLayer(files, { nodeId: edit.layer.nodeId, parentId, beforeId });
+      edited = editLayer(files, edit.layer.nodeId, edit.change);
     } else {
       const change = await sourceChange(edit.change, designSystem);
       stopIfCancelled(signal);

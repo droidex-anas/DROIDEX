@@ -2,10 +2,16 @@
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
 // here, which the row's description also says. A layer that can move has a
-// handle to drag it by. A row picks only its own drawn element, and otherwise
-// says why it cannot. A note row says what an open frame's layers cannot show.
+// handle to drag it by, and a right-click opens a written layer's menu. A row
+// picks only its own drawn element, and otherwise says why it cannot. A note row says what an open frame's layers cannot show.
 
-import { useEffect, useEffectEvent, type PointerEvent, type ReactElement } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactElement,
+} from 'react';
 import { GripVertical, Lock } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
@@ -49,6 +55,7 @@ export function ElementRow({
   onPick,
   onToggle,
   onGrab,
+  onMenu,
   onLight,
   onUnlight,
 }: {
@@ -68,6 +75,8 @@ export function ElementRow({
   onToggle: (entry: ElementEntry) => void;
   /** The pointer went down on the row's handle; undefined where its layer cannot move. */
   onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
+  /** A right-click on the row; undefined where its layer has no menu. */
+  onMenu: ((event: MouseEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
   /** The pointer came onto the row: the board lights its frame and outlines its drawn element. */
   onLight: (owner: string, designId: string, target: PreviewNode | null) => void;
   /** The pointer left, or the list scrolled the row away from under it. */
@@ -115,6 +124,11 @@ export function ElementRow({
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={() => {
         onPick(entry);
+      }}
+      onContextMenu={(event) => {
+        if (!onMenu) return;
+        event.preventDefault();
+        onMenu(event, entry);
       }}
       onPointerEnter={() => {
         onLight(entry.key, frame.designId, target);

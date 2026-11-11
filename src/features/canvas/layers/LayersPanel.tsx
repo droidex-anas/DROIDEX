@@ -4,10 +4,12 @@
 // A frame that has built opens on its layers as its source writes them; a click picks a
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
 // pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
-// in its source. The tree is one tab stop whose rows the keyboard walks through
+// in its source; Delete removes it and ⌘D copies it, as its menu does, which a right-click
+// or ⇧F10 opens. The tree is one tab stop whose rows the keyboard walks through
 // aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
-import { useEffect, useEffectEvent, useId, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState, type KeyboardEvent } from 'react';
+import type { AnchorPoint } from '../../../components/ui/usePopoverPosition';
 import type { HistoryStep } from '../boardHistory';
 import { historyStep, isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
@@ -16,13 +18,16 @@ import type { ElementEntry } from './ElementRow';
 import { LayerDropLine } from './LayerDropLine';
 import { LayerListRow } from './LayerListRow';
 import { LayersHeader } from './LayersHeader';
-import { HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
+import { DUPLICATE_KEY_LABEL, HIDE_KEY_LABEL, layerKey, type LayerKey } from './layerKeys';
 import type { LayerElements } from './layerElements';
+import { LayerMenu } from './LayerMenu';
+import { isOutlineRow } from './layerMoves';
 import { rowInset, type LayerEntry } from './layerRows';
 import { useBoardLight } from './useBoardLight';
-import { useElementMove, type MoveLayer } from './useElementMove';
+import { useElementMove } from './useElementMove';
 import { useElementRows } from './useElementRows';
 import { useKeyboardRow } from './useKeyboardRow';
+import { useLayerEdit, type EditLayer } from './useLayerEdit';
 import { useLayerList } from './useLayerList';
 import { useLayerRows } from './useLayerRows';
 import { useRenaming } from './useRenaming';
@@ -44,7 +49,7 @@ export interface LayersPanelProps {
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   /** Every frame's designId, back to front. */
   onReorder: ((designIds: string[]) => void) | undefined;
-  onMoveLayer: MoveLayer | undefined;
+  onEditLayer: EditLayer | undefined;
   /** ⌘Z and its redo keys step the board's history; false where there is no step. */
   onHistory: (step: HistoryStep) => boolean;
   onPick: (designId: string, additive: boolean) => void;
@@ -63,7 +68,7 @@ export function LayersPanel({
   onRename,
   onSetHidden,
   onReorder,
-  onMoveLayer,
+  onEditLayer,
   onHistory,
   onPick,
   onFocusFrame,
@@ -85,16 +90,24 @@ export function LayersPanel({
     ROW_PX,
     onReorder,
   );
-  const move = useElementMove({
-    list,
+  const editLayer = useLayerEdit({
     rows,
-    rowPx: ROW_PX,
     pickedKey: elementRows.pickedKey,
     reveal,
     moveTo,
     pick: elements.pick,
-    onMoveLayer,
+    onEditLayer,
   });
+  const move = useElementMove({
+    list,
+    rows,
+    rowPx: ROW_PX,
+    onMove: (row, place) => {
+      editLayer(row, { kind: 'move', ...place });
+    },
+  });
+  /** The open menu: the row it is for, and where the right-click was, or below the row from the keyboard. */
+  const [menu, setMenu] = useState<{ row: ElementEntry; at: AnchorPoint } | null>(null);
   const active = activeIndex >= 0 ? rows[activeIndex] : undefined;
   const renaming = useRenaming(keys, onRename, tree, closeButton);
   const kept = [activeIndex, renaming.index];
@@ -152,8 +165,11 @@ export function LayersPanel({
   };
   const run = (key: LayerKey, row: LayerEntry) => {
     if (key.kind === 'move') moveTo(rows[key.index].key);
-    else if (key.kind === 'leave') onLeave(row.frame.designId);
-    else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
+    else if (key.kind === 'leave') {
+      stack.cancel();
+      move.cancel();
+      onLeave(row.frame.designId);
+    } else if (key.kind === 'open' || key.kind === 'close') openOrClose(key.kind === 'open', row);
     else if (row.kind === 'frame') runOnFrame(key, row);
     else if (row.kind === 'element') runOnElement(key, row);
   };
@@ -162,14 +178,27 @@ export function LayersPanel({
     else if (key.kind === 'restack') move.step(row, key.index < activeIndex ? 'up' : 'down');
     else if (key.kind === 'outdent') move.step(row, 'out');
     else if (key.kind === 'indent') move.step(row, 'in');
+    else if ((key.kind === 'remove' || key.kind === 'duplicate') && isOutlineRow(row))
+      editLayer(row, { kind: key.kind });
+    else if (key.kind === 'menu') openMenuBelow(row);
+  };
+  const openMenuBelow = (row: ElementEntry) => {
+    const box = document.getElementById(rowId(row.key))?.getBoundingClientRect();
+    if (onEditLayer && isOutlineRow(row) && box)
+      setMenu({ row, at: { x: box.left, y: box.bottom } });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     // The name field keeps its own keys.
     if (event.target !== event.currentTarget || !active) return;
     const key = layerKey(event, activeIndex, rows.length);
-    if (key?.kind === 'leave') {
-      stack.cancel();
-      move.cancel();
+    // ⌘D splits the chat anywhere but on a layer that can be edited.
+    if (key?.kind === 'duplicate') {
+      if (active.kind !== 'element' || !onEditLayer) return;
+      event.stopPropagation();
+    }
+    if (event.repeat && isLayerEdit(key)) {
+      event.preventDefault();
+      return;
     }
     if (key) run(key, active);
     const step = key ? null : historyStep(event);
@@ -202,6 +231,12 @@ export function LayersPanel({
           data-refused={move.line?.drop.state === 'refused' || undefined}
           className="canvas-layers-tree min-h-0 flex-1 overflow-y-auto px-2 pb-2"
           onKeyDown={onKeyDown}
+          onContextMenu={(event) => {
+            // The menu key's own event, where the platform sends one, lands on the focused tree.
+            if (event.target !== event.currentTarget) return;
+            event.preventDefault();
+            if (active?.kind === 'element') openMenuBelow(active);
+          }}
           {...move.handlers}
           onFocus={(event) => {
             // A click's focus would scroll the row being clicked out from under the pointer.
@@ -215,10 +250,9 @@ export function LayersPanel({
               {`${HIDE_KEY_LABEL} hides or shows the frame. Alt with Up or Down moves it a layer toward the front or back.`}
             </span>
           )}
-          {onMoveLayer && (
+          {onEditLayer && (
             <span id={moveHelpId} className="sr-only">
-              Alt with Up or Down moves the layer before or after the one beside it. Alt with Left
-              moves it out of the layer holding it, and with Right into the layer above it.
+              {`Alt with Up or Down moves the layer before or after the one beside it. Alt with Left moves it out of the layer holding it, and with Right into the layer above it. Delete removes it, and ${DUPLICATE_KEY_LABEL} duplicates it.`}
             </span>
           )}
           <div
@@ -244,7 +278,7 @@ export function LayersPanel({
                   }
                   lit={row.key === elementRows.litKey}
                   describedBy={
-                    row.kind === 'frame' ? onReorder && helpId : onMoveLayer && moveHelpId
+                    row.kind === 'frame' ? onReorder && helpId : onEditLayer && moveHelpId
                   }
                   rename={
                     row.kind === 'frame' && renaming.designId === designId ? onRename : undefined
@@ -266,7 +300,7 @@ export function LayersPanel({
                   onSetHidden={onSetHidden}
                   onGrab={onReorder && stack.grab}
                   onGrabElement={
-                    onMoveLayer &&
+                    onEditLayer &&
                     ((event, grabbed) => {
                       moveTo(grabbed.key);
                       tree.current?.focus({ preventScroll: true });
@@ -274,6 +308,13 @@ export function LayersPanel({
                     })
                   }
                   onPickElement={elementRows.pick}
+                  onElementMenu={
+                    onEditLayer &&
+                    ((event, row) => {
+                      moveTo(row.key);
+                      setMenu({ row, at: { x: event.clientX, y: event.clientY } });
+                    })
+                  }
                   onLight={boardLight.light}
                   onUnlight={boardLight.unlight}
                 />
@@ -292,6 +333,27 @@ export function LayersPanel({
           </div>
         </div>
       )}
+      {menu && (
+        <LayerMenu
+          name={menu.row.name}
+          at={menu.at}
+          anchorRef={tree}
+          onDuplicate={() => {
+            editLayer(menu.row, { kind: 'duplicate' });
+          }}
+          onDelete={() => {
+            editLayer(menu.row, { kind: 'remove' });
+          }}
+          onClose={() => {
+            setMenu(null);
+          }}
+        />
+      )}
     </aside>
   );
+}
+
+/** A key that edits a layer: held down, it would send the edit again for the revision the last one replaced. */
+function isLayerEdit(key: LayerKey | null): boolean {
+  return key?.kind === 'remove' || key?.kind === 'duplicate';
 }

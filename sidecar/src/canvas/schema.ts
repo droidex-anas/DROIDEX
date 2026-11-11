@@ -55,8 +55,6 @@ const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSou
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
 const TOTAL_BYTES_MESSAGE = `The source written for one design must stay under ${String(CANVAS_LIMITS.maxDesignSourceBytes / (1024 * 1024))} MiB in total.`;
 const FRAME_COUNT_MESSAGE = `One create reserves 1 to ${String(CANVAS_LIMITS.maxFramesPerCreate)} frames.`;
-const STYLE_COUNT_MESSAGE = `One edit sets 1 to ${String(CANVAS_LIMITS.maxStylesPerEdit)} styles.`;
-const STYLE_REPEAT_MESSAGE = 'A style property can appear only once in an edit.';
 
 // Canvas IDs, design IDs, revision IDs and mutation IDs share one rule: an
 // opaque token that is safe to log and can never widen a filesystem path.
@@ -122,7 +120,7 @@ const designRefSchema = z
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
-const elementRefSchema = z
+export const elementRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
@@ -259,7 +257,7 @@ function isForest(nodes: readonly { nodeId: string; parentId: string | null }[])
   return true;
 }
 
-const sourceFileSchema = z
+export const sourceFileSchema = z
   .string()
   .refine((content) => Buffer.byteLength(content, 'utf8') <= CANVAS_LIMITS.maxFileBytes, {
     message: FILE_BYTES_MESSAGE,
@@ -332,58 +330,6 @@ export const writeFilesInputSchema = z
     });
   });
 
-// A style's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
-// which the edit resolves to a kit token with that value when the kit has one.
-const styleSchema = z
-  .object({ property: z.string().min(1).max(64), value: z.string().min(1).max(128) })
-  .strict();
-
-export const editElementInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    edit: z.union([
-      z
-        .object({
-          element: revisionRefSchema.extend({
-            elementId: canvasIdentifierSchema,
-            instancePath: z.string().max(512),
-          }),
-          change: z.discriminatedUnion('kind', [
-            z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-            z
-              .object({
-                kind: z.literal('style'),
-                styles: z
-                  .array(styleSchema)
-                  .min(1, STYLE_COUNT_MESSAGE)
-                  .max(CANVAS_LIMITS.maxStylesPerEdit, STYLE_COUNT_MESSAGE)
-                  // Two values for one property would contradict each other.
-                  .refine((styles) => !hasDuplicate(styles.map((style) => style.property)), {
-                    message: STYLE_REPEAT_MESSAGE,
-                  }),
-              })
-              .strict(),
-            z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
-          ]),
-        })
-        .strict(),
-      // A layer is a row of the revision's outline, as its nodeId names it.
-      z
-        .object({
-          layer: revisionRefSchema.extend({ nodeId: outlineNodeIdSchema }),
-          change: z
-            .object({
-              kind: z.literal('move'),
-              parentId: outlineNodeIdSchema,
-              beforeId: outlineNodeIdSchema.nullable(),
-            })
-            .strict(),
-        })
-        .strict(),
-    ]),
-  })
-  .strict();
-
 export const revisionPageSchema = z
   .object({
     limit: z.number().int().min(1).max(CANVAS_LIMITS.maxRevisionPageSize),
@@ -428,7 +374,6 @@ export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
-export type EditElementInput = z.infer<typeof editElementInputSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type SwitchRevisionInput = z.infer<typeof switchRevisionInputSchema>;
 

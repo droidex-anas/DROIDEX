@@ -54,6 +54,22 @@ test('Ctrl+Shift+H hides or shows the row, Alt with Up or Down restacks it a row
   assert.deepEqual(moveRow(['a', 'b', 'c'], 2, 0), ['c', 'a', 'b']);
 });
 
+test('Delete and Backspace remove the layer and Ctrl+D duplicates it, without other modifiers', () => {
+  assert.deepEqual(layerKey(press('Delete'), 1, 3), { kind: 'remove' });
+  assert.deepEqual(layerKey(press('Backspace'), 1, 3), { kind: 'remove' });
+  // ⌘D on the Mac; the test runs off it.
+  assert.deepEqual(layerKey(press('d', { ctrlKey: true }), 1, 3), { kind: 'duplicate' });
+  assert.equal(layerKey(press('Backspace', { metaKey: true }), 1, 3), null);
+  assert.equal(layerKey(press('Delete', { shiftKey: true }), 1, 3), null);
+  assert.equal(layerKey(press('Backspace', { shiftKey: true }), 1, 3), null);
+  assert.equal(layerKey(press('d', { ctrlKey: true, shiftKey: true }), 1, 3), null);
+});
+
+test('Shift+F10 and the menu key open the row’s menu', () => {
+  assert.deepEqual(layerKey(press('F10', { shiftKey: true }), 1, 3), { kind: 'menu' });
+  assert.deepEqual(layerKey(press('ContextMenu'), 1, 3), { kind: 'menu' });
+  assert.equal(layerKey(press('F10'), 1, 3), null);
+});
 test('the keyboard row is where it moved to, else the first selected frame, else the first row', () => {
   const designIds = ['a', 'b', 'c'];
   assert.equal(activeRow(designIds, 'b', ['c']), 1);

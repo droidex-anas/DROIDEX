@@ -114,7 +114,7 @@ export type CompilerRequest =
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
 
-/** The files an edit changed, and the nodeId a moved layer has in them (null for any other edit). */
+/** The files an edit changed, and the nodeId of the row a layer edit lands on in them (null for any other edit). */
 export interface EditedSource {
   files: SourceFiles;
   landed: string | null;

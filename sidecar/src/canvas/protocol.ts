@@ -1,5 +1,5 @@
 // Canvas wire DTOs. Mutation inputs are defined once by the Zod parsers in
-// schema.ts and frameEditSchema.ts and re-exported here; the renderer keeps a
+// schema.ts, frameEditSchema.ts and elementEditSchema.ts and re-exported here; the renderer keeps a
 // hand-written mirror at src/features/canvas/protocol.ts, and schema.test.ts
 // stops compiling when the two drift.
 
@@ -18,7 +18,6 @@ import type {
   DesignSystemAdherence,
   DesignSystemRef,
   DesignSystemVersionRef,
-  EditElementInput,
   FrameRect,
   SwitchRevisionInput,
   RevisionPage,
@@ -26,6 +25,7 @@ import type {
   SourceFiles,
   WriteFilesInput,
 } from './schema.js';
+import type { EditElementInput } from './elementEditSchema.js';
 import type {
   AnnotateCanvasInput,
   Annotation,
@@ -49,6 +49,7 @@ export type {
   RenameFrameInput,
   UndoRemovalInput,
 } from './frameEditSchema.js';
+export type { EditElementInput } from './elementEditSchema.js';
 export type {
   CanvasTurnContext,
   CreateCanvasResult,
@@ -57,7 +58,6 @@ export type {
   DesignSystemAdherence,
   DesignSystemRef,
   DesignSystemVersionRef,
-  EditElementInput,
   ElementRef,
   FrameRect,
   SwitchRevisionInput,
@@ -686,7 +686,7 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  /** A direct edit's revision, and the nodeId a moved layer has in it; null for any other edit, or a replay. */
+  /** A direct edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
   | { kind: 'edited'; receipt: WriteReceipt; landed: string | null }
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }

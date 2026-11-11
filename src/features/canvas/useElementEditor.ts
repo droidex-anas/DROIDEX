@@ -4,10 +4,10 @@
 // board draws the outlines and the panel from what this returns.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { elementStep, historyStep } from './boardKeys';
+import { elementStep, historyStep, isDeleteKey } from './boardKeys';
 import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEdited } from './elementEditProtocol';
+import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
 import {
   commitStyles,
   commitText,
@@ -22,7 +22,7 @@ import {
   type CommitOutcome,
   type ElementEditDraft,
 } from './elementEditDraft';
-import { elementSite } from './pickedElement';
+import { elementSite, pickedLayer } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
@@ -70,6 +70,8 @@ export function useElementEditor({
   const picking = useRef<{ run: PreviewRun; sequence: number } | null>(null);
   /** Enter arrived while a pick was in flight, so it goes into the panel of what that finds. */
   const enterOnAnswer = useRef(false);
+  /** A board Delete is waiting for its answer. */
+  const removing = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
   const hover = useElementHover(
     hovering,
@@ -210,11 +212,6 @@ export function useElementEditor({
     return true;
   };
 
-  /** Drops the selection if it is in `designId`. */
-  const clearIn = (designId: string) => {
-    if (latest.current.selection?.draft.element.designId === designId) choose(null);
-  };
-
   /** Changes what the selected element previews, from what it draws now. */
   const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
@@ -254,6 +251,46 @@ export function useElementEditor({
   };
 
   /**
+   * Sends an edit of a layer of `layer.designId`'s outline. Once it answers, a
+   * pick in that design is dropped: the edit shifts the elements of its source,
+   * so the pick, made before or during the edit, would follow the wrong one.
+   */
+  const editLayer = async (layer: LayerRef, change: LayerChange): Promise<ElementEdited> => {
+    const input = { mutationId: crypto.randomUUID(), edit: { layer, change } };
+    const edited = await latest.current.onEditElement(input);
+    if (latest.current.selection?.draft.element.designId === layer.designId) choose(null);
+    return edited;
+  };
+
+  /**
+   * Delete in Edit: removes the selected element's layer, saying why where it
+   * cannot. A commit or a delete in flight edits the same revision, so it waits.
+   */
+  const removeSelected = ({ draft }: ElementSelection) => {
+    if (draft.pending !== null || removing.current) return;
+    const { designId, revisionId, elementId } = draft.element;
+    const frame = latest.current.frames.find((each) => each.designId === designId);
+    const picked = frame && pickedLayer(frame, revisionId, elementId);
+    if (!picked) {
+      setError('This design is still building. Pick the element again once it has.');
+      return;
+    }
+    if ('refusal' in picked) {
+      setError(picked.refusal);
+      return;
+    }
+    setError('');
+    removing.current = true;
+    editLayer({ designId, revisionId, nodeId: picked.row.nodeId }, { kind: 'remove' })
+      .catch((refusal: unknown) => {
+        setError(canvasMessage(refusal));
+      })
+      .finally(() => {
+        removing.current = false;
+      });
+  };
+
+  /**
    * Enter in Edit, or a double-click: into the panel when `designId` holds the
    * selected element, else its first element. While a pick in it is in
    * flight, into the panel of the element that pick finds.
@@ -269,12 +306,17 @@ export function useElementEditor({
   /**
    * Edit's keys on the board, for the frame `designId` the keyboard is on:
    * Enter as `enter`, and once an element is picked the arrows step through
-   * its design's elements. Without one the arrows stay the board's. The
-   * history's keys wait while a commit is saving, as they do in the panel.
+   * its design's elements and Delete removes it rather than its frame.
+   * Without one the arrows and Delete stay the board's. The history's keys,
+   * and Delete, wait while a commit is saving, as they do in the panel.
    */
   const runKey = (event: KeyboardEvent, designId: string | null): boolean => {
     const current = latest.current.selection;
     if (historyStep(event)) return current !== null && current.draft.pending !== null;
+    if (active && current && isDeleteKey(event)) {
+      if (!event.repeat) removeSelected(current);
+      return true;
+    }
     const step = active ? elementStep(event) : null;
     if (step === 'first') {
       const on = designId ?? current?.draft.element.designId;
@@ -297,7 +339,7 @@ export function useElementEditor({
     mode,
     pick,
     clear,
-    clearIn,
+    editLayer,
     preview: (property: string, value: string, element: ElementRef): boolean => {
       if (!selects(element)) return false;
       update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
