@@ -3,8 +3,8 @@
 // demos at a pinned commit. A demo is kept when it is one JSX return with no
 // handlers, importing only the registry's ui modules and icons the canvas's
 // lucide-react has, and naming nothing else; the demo's module is the file it
-// is named for. shadcn/ui is MIT licensed; NOTICE
-// carries its notice.
+// is named for. shadcn/ui is MIT licensed: its license text goes into the seeds,
+// for the notice file a seeded kit carries, and NOTICE carries it too.
 //
 //   node tools/extract-shadcn-catalog.mjs --shadcn <checkout of shadcn-ui/ui>
 
@@ -71,23 +71,28 @@ function seed(module, source) {
   let jsx = only.expression;
   while (ts.isParenthesizedExpression(jsx)) jsx = jsx.expression;
   if (!ts.isJsxElement(jsx) && !ts.isJsxSelfClosingElement(jsx) && !ts.isJsxFragment(jsx)) return { skip: 'returns no JSX' };
-  const free = freeName(jsx, new Set([...uses, ...icons]));
+  const named = new Set();
+  const free = freeName(jsx, new Set([...uses, ...icons]), named);
   if (free) return { skip: free };
-  for (const icon of icons) if (!LUCIDE.has(icon)) return { skip: `uses ${icon}, which the canvas's lucide-react lacks` };
+  // A demo may import what its JSX never names; an entry declares only what it uses.
+  const used = (names) => names.filter((name) => named.has(name));
+  for (const icon of used(icons)) if (!LUCIDE.has(icon)) return { skip: `uses ${icon}, which the canvas's lucide-react lacks` };
   const text = dedent(jsx.getText(file), file.getLineAndCharacterOfPosition(jsx.getStart(file)).character);
   if (Buffer.byteLength(text, 'utf8') > MAX_JSX_BYTES) return { skip: 'is over 4 KiB of JSX' };
-  return { seed: { name: label(module), module, uses, icons, jsx: text, note: null } };
+  return { seed: { name: label(module), module, uses: used(uses), icons: used(icons), jsx: text, note: null } };
 }
 
-/** Why the JSX cannot stand alone: a handler, or a name it does not import. */
-function freeName(jsx, imported) {
+/** Why the JSX cannot stand alone: a handler, or a name it does not import. Adds each name it does import to `named`. */
+function freeName(jsx, imported, named) {
   let problem = null;
   const visit = (node) => {
     if (problem) return;
     if (ts.isArrowFunction(node) || ts.isFunctionExpression(node)) problem = 'has a handler';
-    else if (ts.isIdentifier(node) && isReference(node) && !imported.has(node.text) && node.text !== 'undefined')
-      problem = `names ${node.text}, which it does not import`;
-    else ts.forEachChild(node, visit);
+    else if (ts.isIdentifier(node) && isReference(node) && node.text !== 'undefined') {
+      if (imported.has(node.text)) named.add(node.text);
+      else problem = `names ${node.text}, which it does not import`;
+      ts.forEachChild(node, visit);
+    } else ts.forEachChild(node, visit);
   };
   visit(jsx);
   return problem;
@@ -129,9 +134,10 @@ const json = JSON.stringify({
   source: 'https://github.com/shadcn-ui/ui',
   commit: SHADCN_COMMIT,
   path: EXAMPLES,
-  license: 'MIT',
+  license: readFileSync(join(values.shadcn, 'LICENSE.md'), 'utf8'),
   entries: seeds,
 });
-writeFileSync(OUTPUT, await prettier.format(json, { filepath: OUTPUT }));
+const config = await prettier.resolveConfig(OUTPUT);
+writeFileSync(OUTPUT, await prettier.format(json, { ...config, filepath: OUTPUT }));
 console.log(`${String(seeds.length)} seeds written to ${OUTPUT}; ${String(skipped.length)} demos left out:`);
 for (const line of skipped) console.log(`  ${line}`);
