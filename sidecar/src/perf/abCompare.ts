@@ -18,6 +18,8 @@ export interface AbProbeResult {
 export interface BaselineCache {
   baselineRef: string;
   baselineCommit: string;
+  /** The catalog's A/B metrics when the baseline was measured; another set is a stale cache. */
+  abMetricIds: string[];
   measuredAt: string;
   probes: AbProbeResult;
 }
