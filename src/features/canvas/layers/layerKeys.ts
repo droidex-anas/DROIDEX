@@ -33,6 +33,14 @@ export const HIDE_KEY_LABEL = formatChord(HIDE_CHORD);
 const DUPLICATE_CHORD = 'Meta+D';
 export const DUPLICATE_KEY_LABEL = formatChord(DUPLICATE_CHORD);
 
+const CHORD_KEYS: [string, LayerKey][] = [
+  [HIDE_CHORD, { kind: 'toggle-hidden' }],
+  [DUPLICATE_CHORD, { kind: 'duplicate' }],
+  ['Alt+ArrowLeft', { kind: 'outdent' }],
+  ['Alt+ArrowRight', { kind: 'indent' }],
+  ['Shift+F10', { kind: 'menu' }],
+];
+
 const PLAIN_KEYS = new Map<string, LayerKey>([
   ['ArrowRight', { kind: 'open' }],
   ['ArrowLeft', { kind: 'close' }],
@@ -49,19 +57,18 @@ type KeyPress = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'al
 
 /** `active` is the row the keyboard is on, of `count` rows. */
 export function layerKey(event: KeyPress, active: number, count: number): LayerKey | null {
-  if (matchesChord(event, HIDE_CHORD)) return { kind: 'toggle-hidden' };
-  if (matchesChord(event, DUPLICATE_CHORD)) return { kind: 'duplicate' };
+  const chord = CHORD_KEYS.find(([written]) => matchesChord(event, written));
+  if (chord) return chord[1];
   if (matchesChord(event, 'Alt+ArrowUp'))
     return active > 0 ? { kind: 'restack', index: active - 1 } : null;
   if (matchesChord(event, 'Alt+ArrowDown'))
     return active < count - 1 ? { kind: 'restack', index: active + 1 } : null;
-  if (matchesChord(event, 'Alt+ArrowLeft')) return { kind: 'outdent' };
-  if (matchesChord(event, 'Alt+ArrowRight')) return { kind: 'indent' };
-  if (matchesChord(event, 'Shift+F10')) return { kind: 'menu' };
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   const index = navigationIndex(event.key, active, count);
   if (index !== null) return { kind: 'move', index };
-  return PLAIN_KEYS.get(event.key) ?? null;
+  const plain = PLAIN_KEYS.get(event.key) ?? null;
+  // Delete removes a layer only when pressed alone.
+  return plain?.kind === 'remove' && event.shiftKey ? null : plain;
 }
 
 /**

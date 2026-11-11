@@ -60,29 +60,32 @@ function literalRanges(node: ts.Node): { start: number; end: number }[] {
 }
 
 /**
- * One level of indentation as the file writes JSX: a tab where the lines in
- * play use tabs, else the smallest step in spaces from a JSX parent's line to
- * a child on a line of its own, else two spaces.
+ * One level of indentation below a line indented `outer`, as the destination
+ * and the file write JSX: a tab where `outer` has one, else the smallest step
+ * in spaces from a JSX parent's line to a child on a line of its own, else a
+ * tab where the file steps in tabs, else two spaces.
  */
-export function indentUnit(source: ts.SourceFile, sample: string): string {
-  if (sample.includes('\t')) return '\t';
+export function indentUnit(source: ts.SourceFile, outer: string): string {
+  if (outer.includes('\t')) return '\t';
   const text = source.text;
-  let step = Infinity;
+  const steps: string[] = [];
   const visit = (node: ts.Node): void => {
     if (ts.isJsxElement(node) || ts.isJsxFragment(node)) {
-      const outer = lineIndent(text, node.getStart());
+      const parent = lineIndent(text, node.getStart());
       for (const child of node.children) {
         const start = child.getStart();
         if (ts.isJsxText(child) || !startsLine(text, start)) continue;
-        const difference = lineIndent(text, start).length - outer.length;
-        if (difference > 0 && !`${outer}${lineIndent(text, start)}`.includes('\t'))
-          step = Math.min(step, difference);
+        const indent = lineIndent(text, start);
+        if (indent.length > parent.length && indent.startsWith(parent))
+          steps.push(indent.slice(parent.length));
       }
     }
     node.forEachChild(visit);
   };
   visit(source);
-  return step === Infinity ? '  ' : ' '.repeat(step);
+  const spaces = steps.filter((step) => !step.includes('\t')).map((step) => step.length);
+  if (spaces.length > 0) return ' '.repeat(Math.min(...spaces));
+  return steps.length > 0 ? '\t' : '  ';
 }
 
 /** Applies non-overlapping replacements, the later one first so earlier offsets hold. */

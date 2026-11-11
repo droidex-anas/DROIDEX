@@ -69,19 +69,28 @@ test('Delete names the picked element’s row, or the usage of the component tha
     contentFromProps: false,
     hidden: false,
   });
-  // Where each element is written: Card's own, or the page's.
-  const writtenIn = { el_main: null, el_root: 'Card', el_title: 'Card', el_icon: null };
+  // Where each element is written: in Card, in card.tsx, or in the page's main.
+  const inCard = { file: 'card.tsx', start: 20, end: 60, component: 'Card' };
+  const inPage = { file: 'main.tsx', start: 40, end: 90, component: null };
+  const writtenIn = {
+    el_main: inPage,
+    el_root: inCard,
+    el_title: inCard,
+    el_icon: { ...inPage, start: 60, end: 70 },
+  };
   const outlined = (...nodes: OutlineNode[]) => ({
     build: {
       ...build,
-      elements: Object.entries(writtenIn).map(([elementId, component]) => ({
+      elements: Object.entries(writtenIn).map(([elementId, written]) => ({
         ...build.elements[0],
         elementId,
-        component,
+        ...written,
       })),
       outline: { nodes, truncated: false },
     },
   });
+  const named = (picked: ReturnType<typeof pickedLayer>) =>
+    picked && 'row' in picked ? picked.row.nodeId : picked;
   const page = row('main', null, 'element', 'main', 'el_main');
   const card = outlined(
     page,
@@ -90,11 +99,25 @@ test('Delete names the picked element’s row, or the usage of the component tha
     row('root', 'card', 'element', 'section', 'el_root'),
     row('title', 'root', 'element', 'h1', 'el_title'),
   );
-  assert.equal(pickedLayer(card, 'r2', 'el_title')?.nodeId, 'title');
-  assert.equal(pickedLayer(card, 'r2', 'el_root')?.nodeId, 'card');
+  assert.equal(named(pickedLayer(card, 'r2', 'el_title')), 'title');
+  assert.equal(named(pickedLayer(card, 'r2', 'el_root')), 'card');
   // JSX passed in Card's icon prop is the page's, so Delete names it, not the Card.
-  assert.equal(pickedLayer(card, 'r2', 'el_icon')?.nodeId, 'icon');
+  assert.equal(named(pickedLayer(card, 'r2', 'el_icon')), 'icon');
   assert.equal(pickedLayer(card, 'r1', 'el_title'), undefined);
+
+  // Card imported as C: the prop's JSX is written inside main, so it is still its own
+  // row; Card's section is not, and is refused rather than deleted from Card.
+  const aliased = outlined(
+    page,
+    row('card', 'main', 'instance', 'C'),
+    row('icon', 'card', 'element', 'em', 'el_icon'),
+    row('root', 'card', 'element', 'section', 'el_root'),
+  );
+  assert.equal(named(pickedLayer(aliased, 'r2', 'el_icon')), 'icon');
+  assert.deepEqual(pickedLayer(aliased, 'r2', 'el_root'), {
+    refusal:
+      'Can’t tell this element from the component that draws it. Delete it from the layers panel.',
+  });
 
   // Each of two Cards draws the section: Delete names a section row, which is
   // refused, never the first Card in place of the one picked.
@@ -105,5 +128,6 @@ test('Delete names the picked element’s row, or the usage of the component tha
     row('second', 'main', 'instance', 'Card'),
     { ...row('root2', 'second', 'element', 'section', 'el_root'), lock: 'shared' },
   );
-  assert.equal(pickedLayer(twice, 'r2', 'el_root')?.kind, 'element');
+  const picked = pickedLayer(twice, 'r2', 'el_root');
+  assert.equal(picked && 'row' in picked && picked.row.kind, 'element');
 });

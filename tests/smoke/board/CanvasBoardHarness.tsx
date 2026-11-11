@@ -127,7 +127,8 @@ interface BoardHarness {
    * Answers one edit with the revision it wrote, and builds that revision. A
    * layer's edit lands on `landed`, or else on its own row.
    */
-  answerEdit: (index: number, landed?: string) => void;
+  /** `landed` names the row the edit lands on; null for none, omitted for its own. */
+  answerEdit: (index: number, landed?: string | null) => void;
   refuseEdit: (index: number) => void;
   removeCalls: RemoveFramesInput[];
   /** Removes one delete's frames the way the sidecar does, answering `undo_<index>`. */
@@ -785,9 +786,10 @@ function Harness() {
       const { designId } = 'element' in edit ? edit.element : edit.layer;
       const revisionId = `rev_0${String(index + 2)}`;
       // Every revision's outline is the same, so a layer lands on its own row unless told otherwise.
+      const ownRow = 'layer' in edit ? edit.layer.nodeId : null;
       editReplies[index].resolve({
         receipt: { designId, revisionId, sequence: index + 2 },
-        landed: landed ?? ('layer' in edit ? edit.layer.nodeId : null),
+        landed: landed === undefined ? ownRow : landed,
       });
       setSnapshot((current) => ({
         ...current,
