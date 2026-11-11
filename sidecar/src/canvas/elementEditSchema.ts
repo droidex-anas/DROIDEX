@@ -1,7 +1,8 @@
 // The input of an edit the pane makes inside a design's source: an element's
-// text, styles or image, or a layer of its outline. canvasElementEdit applies it.
+// text, styles, image or path data, or a layer of its outline. canvasElementEdit applies it.
 
 import { z } from 'zod';
+import { isPathData } from './pathData.js';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
@@ -14,6 +15,8 @@ import {
 
 const STYLE_COUNT_MESSAGE = `One edit sets 1 to ${String(CANVAS_LIMITS.maxStylesPerEdit)} styles.`;
 const STYLE_REPEAT_MESSAGE = 'A style property can appear only once in an edit.';
+const PATH_DATA_MESSAGE =
+  'A path edit sets whole path data, with spaces or commas between its parts.';
 
 // A style's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
 // which the edit resolves to a kit token with that value when the kit has one.
@@ -44,6 +47,12 @@ export const editElementInputSchema = z
               })
               .strict(),
             z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
+            z
+              .object({
+                kind: z.literal('path'),
+                d: z.string().refine(isPathData, { message: PATH_DATA_MESSAGE }),
+              })
+              .strict(),
           ]),
         })
         .strict(),
