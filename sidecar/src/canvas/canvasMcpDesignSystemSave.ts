@@ -118,7 +118,8 @@ export async function saveKit(
   if (built.failures.length > 0)
     throw new KitBuildError(boundDiagnostics(built.failures.map(({ diagnostic }) => diagnostic)));
   const kit = { ...edited, files: built.files };
-  const reported = boundDiagnostics([...diagnostics, ...built.diagnostics]);
+  // The import's diagnostics alone can fill the cap, and these are about the kit as saved.
+  const reported = boundDiagnostics([...built.diagnostics, ...diagnostics]);
 
   const { appSessionId, beforePublish } = context;
   const { mutationId } = input;
