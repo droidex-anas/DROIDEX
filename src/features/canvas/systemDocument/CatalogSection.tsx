@@ -98,8 +98,6 @@ function EntryStage({
   return (
     <div
       id={id}
-      role="img"
-      aria-label={`${name} preview`}
       className="mx-3 mb-2 mt-1 overflow-hidden rounded-lg"
       style={{ ...specimen, background: 'var(--ds-canvas, var(--surface))' }}
     >
@@ -110,8 +108,12 @@ function EntryStage({
           aspectRatio: `${String(STAGE_WIDTH)} / ${String(STAGE_HEIGHT)}`,
         }}
       >
-        <div ref={fitRef} aria-hidden className="absolute inset-0">
-          <span className="flex size-full items-center justify-center text-label text-muted">
+        <div ref={fitRef} className="absolute inset-0">
+          <span
+            role="img"
+            aria-label={`${name} preview`}
+            className="flex size-full items-center justify-center text-label text-muted"
+          >
             {name}
           </span>
           {scale > 0 && (

@@ -88,8 +88,6 @@ export function KitPreviewTile({
   return (
     <div
       ref={observe(item)}
-      role="img"
-      aria-label={isSavedLook ? `${label}, saved version` : label}
       className="relative w-full overflow-hidden rounded-lg"
       style={{ ...specimen, background: 'var(--ds-canvas, var(--surface))' }}
     >
@@ -97,10 +95,16 @@ export function KitPreviewTile({
         className="relative mx-auto"
         style={{ maxWidth: width, aspectRatio: `${String(width)} / ${String(height)}` }}
       >
-        <div ref={fitRef} aria-hidden className="absolute inset-0">
-          {isNeverCaptured && placeholder}
-          {otherStill && <Still src={otherStill} className="opacity-50" />}
-          {still && <Still key={kit.mode} src={still} className="kit-tile-reveal" />}
+        <div ref={fitRef} className="absolute inset-0">
+          <div
+            role="img"
+            aria-label={isSavedLook ? `${label}, saved version` : label}
+            className="absolute inset-0"
+          >
+            {isNeverCaptured && placeholder}
+            {otherStill && <Still src={otherStill} className="opacity-50" />}
+            {still && <Still key={kit.mode} src={still} className="kit-tile-reveal" />}
+          </div>
           {isLive && scale > 0 && (
             <KitGuest
               key={JSON.stringify([kit.id, kit.version, proposalId, kit.mode, item])}
@@ -115,7 +119,11 @@ export function KitPreviewTile({
           )}
         </div>
       </div>
-      {isSavedLook && <Badge className="absolute right-2 top-2">Saved version</Badge>}
+      {isSavedLook && (
+        <Badge aria-hidden className="absolute right-2 top-2">
+          Saved version
+        </Badge>
+      )}
     </div>
   );
 }
@@ -297,10 +305,14 @@ export function KitGuest({
     runRef.current?.setTokens(shownTokens);
   }, [shownTokens]);
 
+  let note: string | null = null;
+  if (read.status === 'failed') note = read.message;
+  else if (phase === 'lost') note = 'This preview is no longer running.';
   return (
     <>
       <div
         ref={host}
+        aria-hidden
         className="kit-tile-fade absolute left-0 top-0 origin-top-left"
         style={{
           width,
@@ -309,8 +321,14 @@ export function KitGuest({
           opacity: phase === 'ready' ? 1 : 0,
         }}
       />
-      {read.status === 'failed' && <TileNote text={read.message} />}
-      {phase === 'lost' && <TileNote text="This preview is no longer running." />}
+      {/* Outside the image and the hidden guest, so assistive tech reads why it failed. */}
+      <div role="status" className="absolute inset-x-2 bottom-2">
+        {note !== null && (
+          <p className="line-clamp-2 rounded-md bg-raised px-2 py-1 text-caption text-secondary shadow-sm">
+            {note}
+          </p>
+        )}
+      </div>
     </>
   );
 }
@@ -323,13 +341,5 @@ function Still({ src, className }: { src: string; className: string }) {
       draggable={false}
       className={cn('absolute inset-0 size-full object-cover', className)}
     />
-  );
-}
-
-function TileNote({ text }: { text: string }) {
-  return (
-    <p className="absolute inset-x-2 bottom-2 line-clamp-2 rounded-md bg-raised px-2 py-1 text-caption text-secondary shadow-sm">
-      {text}
-    </p>
   );
 }
