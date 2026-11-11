@@ -16,6 +16,7 @@ import { readModules } from './compiler.js';
 import { readConfigBindings, type ConfigValue } from './configLiterals.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
+import type { LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
 import {
@@ -25,6 +26,7 @@ import {
   type LibraryAliases,
   type LibraryComponent,
 } from './libraryComponents.js';
+import { libraryReview } from './libraryReview.js';
 import { libraryStylesheet, libraryTheme, type LibraryFile } from './libraryTheme.js';
 import inter from './presets/fonts/inter.json' with { type: 'json' };
 import {
@@ -35,8 +37,11 @@ import {
 } from './projectPaths.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
-/** A kit holds 64 files; these many are the library's components, and the rest its own. */
-export const MAX_LIBRARY_COMPONENTS = 48;
+/**
+ * Of a kit's files, these many are the library's components, and the rest its
+ * own: half again shadcn/ui's 61-file ui folder.
+ */
+export const MAX_LIBRARY_COMPONENTS = 96;
 export const TAILWIND_4_REFUSAL =
   'This project uses Tailwind 4. The canvas builds with Tailwind 3.4, so its kit cannot be imported yet.';
 
@@ -70,6 +75,8 @@ interface LibraryRead {
   config: LibraryFile;
   utils: string;
   components: LibraryComponent[];
+  /** The ui folder's files left out before any was parsed. */
+  skipped: LibrarySkip[];
   aliases: LibraryAliases;
   diagnostics: CanvasDiagnostic[];
 }
@@ -89,7 +96,11 @@ export async function importLibraryDesignSystem(
   const theme = libraryTheme(read.config, kitNames, diagnostics);
   if ('problem' in theme) return refused(theme.problem, diagnostics);
   const stylesheet = libraryStylesheet(read.css, kitNames, diagnostics);
-  const library = kitComponents(read.components, read.aliases, kitNames, diagnostics);
+  const folderFiles = new Set([
+    ...read.components.map(({ file }) => file),
+    ...read.skipped.map(({ file }) => file),
+  ]);
+  const library = kitComponents(read.components, folderFiles, read.aliases, kitNames, diagnostics);
   if ('problem' in library) return refused(library.problem, diagnostics);
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
@@ -115,6 +126,7 @@ export async function importLibraryDesignSystem(
           tokens: Object.fromEntries(
             Object.entries(kitNames).map(([projectName, kitName]) => [kitName, projectName]),
           ),
+          ...libraryReview([...read.skipped, ...library.skipped]),
         },
       },
     },
@@ -156,24 +168,28 @@ async function readLibrary(
   const code = await readAliasedCode(root, base, settings.aliases);
   if ('problem' in code) return code;
   const diagnostics: CanvasDiagnostic[] = [];
-  const texts = await readComponents(root, code.uiFolder, diagnostics);
-  if ('problem' in texts) return texts;
+  const folder = await readComponents(root, code.uiFolder, diagnostics);
+  if ('problem' in folder) return folder;
   const [utilsModule, ...modules] = await readModules([
     code.utils.text,
-    ...texts.map((component) => component.text),
+    ...folder.components.map((component) => component.text),
   ]);
   const unknown = utilsModule.specifiers.find(
     (specifier) => specifier.loads && !DESIGN_PACKAGE_ENTRIES.has(specifier.text),
   );
   if (unknown !== undefined)
     return { problem: `${code.utils.file} imports ${unknown.text}, which the canvas cannot load.` };
-  const components = texts.map((component, index) => ({ ...component, module: modules[index] }));
+  const components = folder.components.map((component, index) => ({
+    ...component,
+    module: modules[index],
+  }));
   return {
     files: [configFile, css.file, config.file, code.tsconfig, code.utils.file],
     css,
     config,
     utils: code.utils.text,
     components,
+    skipped: folder.skipped,
     aliases: code.aliases,
     diagnostics,
   };
@@ -366,23 +382,32 @@ function entry(value: ConfigValue | null | undefined, key: string): ConfigValue 
   return value.entries.find((each) => each.key === key)?.value ?? null;
 }
 
-/** The ui folder's components, by name, up to the bound; one that cannot be read is left out. */
+/**
+ * The ui folder's components, by name, up to the bound, and the files left
+ * out: anything but a component file, one past the bound, one that cannot be read.
+ */
 async function readComponents(
   root: string,
   folder: string,
   diagnostics: CanvasDiagnostic[],
-): Promise<Omit<LibraryComponent, 'module'>[] | { problem: string }> {
-  let names: string[];
+): Promise<
+  { components: Omit<LibraryComponent, 'module'>[]; skipped: LibrarySkip[] } | { problem: string }
+> {
+  const names: string[] = [];
+  const skipped: LibrarySkip[] = [];
   try {
     const real = await realpath(path.join(root, ...folder.split('/')));
     if (!isInsideProject(root, real))
       return { problem: `${folder} leaves the project folder. Name a folder inside it.` };
-    const entries = await readdir(real, { withFileTypes: true });
-    names = entries
-      .filter((each) => each.isFile() && each.name.endsWith('.tsx'))
-      .map((each) => each.name.slice(0, -'.tsx'.length))
-      .filter((name) => COMPONENT_NAME.test(name))
-      .sort();
+    for (const each of await readdir(real, { withFileTypes: true })) {
+      // Hidden entries such as .DS_Store are the system's, not the library's.
+      if (each.name.startsWith('.')) continue;
+      const name = each.name.endsWith('.tsx') ? each.name.slice(0, -'.tsx'.length) : '';
+      if (each.isFile() && COMPONENT_NAME.test(name)) names.push(name);
+      else
+        skipped.push({ file: `${folder}/${each.name}`, reason: 'not_a_component', detail: null });
+    }
+    names.sort();
   } catch (error) {
     if (!isFileSystemError(error)) throw error;
     return { problem: `${folder} cannot be read as the library's ui folder.` };
@@ -393,19 +418,22 @@ async function readComponents(
       code: 'invalid_input',
       message: `${folder} has ${String(names.length)} components; a kit copies the first ${String(MAX_LIBRARY_COMPONENTS)} by name and leaves out ${names.slice(MAX_LIBRARY_COMPONENTS).join(', ')}.`,
     });
+  for (const name of names.slice(MAX_LIBRARY_COMPONENTS))
+    skipped.push({ file: `${folder}/${name}.tsx`, reason: 'over_limit', detail: null });
   const components: Omit<LibraryComponent, 'module'>[] = [];
   for (const name of names.slice(0, MAX_LIBRARY_COMPONENTS)) {
     const file = `${folder}/${name}.tsx`;
     const read = await readProjectText(root, file);
-    if ('problem' in read)
+    if ('problem' in read) {
       diagnostics.push({
         code: 'invalid_input',
         message: `${read.problem} It was left out.`,
         file,
       });
-    else components.push({ name, file, text: read.text });
+      skipped.push({ file, reason: 'unreadable', detail: null });
+    } else components.push({ name, file, text: read.text });
   }
-  return components;
+  return { components, skipped };
 }
 
 function refused(

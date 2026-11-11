@@ -28,6 +28,23 @@ const MAX_PROJECT_NAME_LENGTH = 255;
 const MAX_PROJECT_FILES = 8;
 const MAX_PROJECT_PATH_LENGTH = 1024;
 const MAX_LIBRARY_EXPORTS = 1024;
+const MAX_LIBRARY_SKIPS = 128;
+const SKIP_REASONS = new Set<unknown>([
+  'over_limit',
+  'unreadable',
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+  'no_exports',
+  'not_a_component',
+]);
+const DETAILED_SKIP_REASONS = new Set<unknown>([
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+]);
+const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export']);
+const HOST_PATH = /^(?:[\\/]|[a-z]:[\\/]|file:)/i;
 const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([
   'colors',
@@ -283,11 +300,50 @@ function isKitProvenance(value: unknown): boolean {
 
 function isLibraryProvenance(value: unknown): boolean {
   return (
-    hasOnlyKeys(value, ['kind', 'components', 'tokens']) &&
+    hasOnlyKeys(value, [
+      'kind',
+      'components',
+      'tokens',
+      'skipped',
+      'skippedCount',
+      'partialCount',
+    ]) &&
     value.kind === 'shadcn' &&
     isNameMap(value.components, MAX_LIBRARY_EXPORTS, isExportName, isProjectPath) &&
-    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName)
+    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName) &&
+    Array.isArray(value.skipped) &&
+    boundedList(value.skipped, MAX_LIBRARY_SKIPS, isLibrarySkip) &&
+    count(value.skippedCount) &&
+    count(value.partialCount) &&
+    listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount) &&
+    reviewsEachFileOnce(value.skipped)
   );
+}
+
+function isLibrarySkip(value: unknown): boolean {
+  if (!hasOnlyKeys(value, ['file', 'reason', 'detail'])) return false;
+  if (!isReviewText(value.file) || !SKIP_REASONS.has(value.reason)) return false;
+  if (DETAILED_SKIP_REASONS.has(value.reason)) return isReviewText(value.detail);
+  return value.detail === null;
+}
+
+function listsAtMostItsCounts(
+  skipped: readonly unknown[],
+  skippedCount: number,
+  partialCount: number,
+): boolean {
+  const kept = skipped.filter((skip) => record(skip) && KEPT_SKIP_REASONS.has(skip.reason)).length;
+  return kept <= partialCount && skipped.length - kept <= skippedCount;
+}
+
+function reviewsEachFileOnce(skipped: readonly unknown[]): boolean {
+  const files = skipped.map((skip) => (record(skip) ? skip.file : null));
+  return new Set(files).size === files.length;
+}
+
+/** A review record's file or detail: a project path or short text, never an absolute path. */
+function isReviewText(value: unknown): boolean {
+  return typeof value === 'string' && isProjectPath(value) && !HOST_PATH.test(value);
 }
 
 function isNameMap(
