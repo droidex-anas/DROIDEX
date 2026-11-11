@@ -1,7 +1,9 @@
 // The input of an edit the pane makes inside a design's source: an element's
-// text, styles or image, or a layer of its outline. canvasElementEdit applies it.
+// text, styles or image, or a layer of its outline, which a kit catalog entry
+// can also be added to. canvasElementEdit applies it.
 
 import { z } from 'zod';
+import { catalogNameSchema } from './kitCatalog.js';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
@@ -63,6 +65,9 @@ export const editElementInputSchema = z
               .strict(),
             z.object({ kind: z.literal('remove') }).strict(),
             z.object({ kind: z.literal('duplicate') }).strict(),
+            // Names an entry of the frame's pinned kit catalog, never JSX, so
+            // only what passed the kit check is written.
+            z.object({ kind: z.literal('insert'), entry: catalogNameSchema }).strict(),
           ]),
         })
         .strict(),

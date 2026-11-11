@@ -22,7 +22,7 @@ import {
 type LayerChange = Extract<ElementEdit, { layer: unknown }>['change'];
 
 /** The one changed file, complete, and a row of the edited source named by its nodeId. */
-interface EditedLayers {
+export interface EditedLayers {
   files: SourceFiles;
   /** Null where the row cannot be found. */
   landed: string | null;
@@ -40,19 +40,19 @@ export interface LayerMove {
 type JsxParent = ts.JsxElement | ts.JsxFragment;
 
 /** A layer as written: an outline row and the node it is written at. */
-interface Layer {
+export interface Layer {
   row: OutlineNode;
   at: ts.Node;
 }
 
 /** The JSX child that carries a layer in its parent, and so is what moves. */
-interface Anchor {
+export interface Anchor {
   node: ts.JsxChild;
   parent: JsxParent;
 }
 
 /** Where the moved text goes: `start`..`end` is replaced with `before`, the text and `after`. */
-interface Paste {
+export interface Paste {
   start: number;
   end: number;
   before: string;
@@ -89,6 +89,7 @@ const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = 
     root: "A frame's top layer can't be duplicated. Duplicate the frame instead.",
     action: 'duplicate',
   },
+  insert: { root: "This frame's top layer can't hold other layers.", action: 'add to' },
 };
 
 /**
@@ -96,7 +97,11 @@ const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = 
  * edited source, the moved layer, its copy, or the row beside a removed layer
  * that takes the keyboard in its place.
  */
-export function editLayer(files: SourceFiles, nodeId: string, change: LayerChange): EditedLayers {
+export function editLayer(
+  files: SourceFiles,
+  nodeId: string,
+  change: Exclude<LayerChange, { kind: 'insert' }>,
+): EditedLayers {
   if (change.kind === 'move')
     return moveLayer(files, { nodeId, parentId: change.parentId, beforeId: change.beforeId });
   return change.kind === 'remove' ? removeLayer(files, nodeId) : duplicateLayer(files, nodeId);
@@ -187,7 +192,7 @@ function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
 }
 
 /** The outline's rows by id, refusing an id the source no longer writes. */
-function layersIn(files: SourceFiles) {
+export function layersIn(files: SourceFiles) {
   const { uses, outline, written, checker } = sourceLayers(files);
   const rows = new Map(outline.nodes.map((row) => [row.nodeId, row]));
   const layer = (nodeId: string): Layer => {
@@ -200,7 +205,11 @@ function layersIn(files: SourceFiles) {
 }
 
 /** The subject's anchor, refused when it is not written as one JSX child that renders once. */
-function writtenOnceAnchor(subject: Layer, uses: ComponentUses, edit: LayerChange['kind']): Anchor {
+export function writtenOnceAnchor(
+  subject: Layer,
+  uses: ComponentUses,
+  edit: LayerChange['kind'],
+): Anchor {
   const anchor = anchorOf(subject.at);
   const { root, action } = REFUSALS[edit];
   if (!anchor && subject.row.parentId === null) throw invalid(root);
@@ -220,6 +229,16 @@ function writtenOnceAnchor(subject: Layer, uses: ComponentUses, edit: LayerChang
 
 /** The element the layer moves into: a native element that renders once and may hold children. */
 function holder(target: Layer, uses: ComponentUses): ElementNode {
+  const held = holdingElement(target, uses);
+  if ('refusal' in held) throw invalid(held.refusal);
+  return held.element;
+}
+
+/** The layer as an element other layers can go into, or why they can't. */
+export function holdingElement(
+  target: Layer,
+  uses: ComponentUses,
+): { element: ElementNode } | { refusal: string } {
   const { at } = target;
   if (
     target.row.kind === 'element' &&
@@ -228,10 +247,10 @@ function holder(target: Layer, uses: ComponentUses): ElementNode {
     uses.rendersOnce(at)
   ) {
     if (target.row.contentFromProps)
-      throw invalid("This layer's props may set its content, so it can't hold other layers.");
-    return at;
+      return { refusal: "This layer's props may set its content, so it can't hold other layers." };
+    return { element: at };
   }
-  throw invalid("This layer can't hold other layers.");
+  return { refusal: "This layer can't hold other layers." };
 }
 
 function checkPlace(anchor: Anchor, parent: ElementNode): void {
@@ -260,7 +279,7 @@ function siblingAnchor(sibling: Layer, parent: ElementNode, moving: Anchor): Anc
  * The direct JSX child that is or holds a written node: the node itself, or
  * the `{…}` it stands in, as `{open && <aside />}` or `{items.map(…)}`.
  */
-function anchorOf(at: ts.Node): Anchor | null {
+export function anchorOf(at: ts.Node): Anchor | null {
   if (isJsxParent(at.parent)) return { node: at as ts.JsxChild, parent: at.parent };
   let holding = at.parent;
   while (ts.isParenthesizedExpression(holding)) holding = holding.parent;
@@ -273,7 +292,7 @@ function isJsxParent(node: ts.Node): node is JsxParent {
   return ts.isJsxElement(node) || ts.isJsxFragment(node);
 }
 
-function tagOf(node: ElementNode): string {
+export function tagOf(node: ElementNode): string {
   return (ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName).getText();
 }
 
@@ -290,7 +309,7 @@ function enclosingBlock(node: ts.Node): ts.Node | undefined {
 }
 
 /** Whitespace that breaks a line is formatting JSX drops; any other text, spaces too, renders. */
-function hasText(parent: JsxParent | ElementNode): boolean {
+export function hasText(parent: JsxParent | ElementNode): boolean {
   if (ts.isJsxSelfClosingElement(parent)) return false;
   return parent.children.some(
     (child) => ts.isJsxText(child) && !child.containsOnlyTriviaWhiteSpaces,
@@ -320,7 +339,7 @@ function pasteBefore(text: string, sibling: ts.Node, eol: string): Paste {
  * when the closing tag has a line of its own, else one indent deeper than the
  * parent, with the closing tag moved to its own line. A self-closing parent opens.
  */
-function pasteAtEnd(
+export function pasteAtEnd(
   source: ts.SourceFile,
   parent: ElementNode,
   eol: string,
@@ -425,7 +444,7 @@ function writesSiblingKey(node: ts.Node): boolean {
 }
 
 /** The row of the edited source written at `position`, or whose anchor starts there. */
-function rowStartingAt(files: SourceFiles, file: string, position: number): string | null {
+export function rowStartingAt(files: SourceFiles, file: string, position: number): string | null {
   const { outline, written } = sourceLayers(files);
   for (const { nodeId } of outline.nodes) {
     const at = written.get(nodeId);
@@ -442,7 +461,7 @@ function staleReference(): SourceElementError {
   );
 }
 
-function invalid(message: string): SourceElementError {
+export function invalid(message: string): SourceElementError {
   return new SourceElementError('invalid_edit', message);
 }
 

@@ -38,9 +38,11 @@ export type LayerChange =
   | { kind: 'move'; parentId: string; beforeId: string | null }
   | { kind: 'remove' }
   /** A copy right after the layer. */
-  | { kind: 'duplicate' };
+  | { kind: 'duplicate' }
+  /** The kit catalog entry named `entry`, last inside the layer when it holds others, else after it. */
+  | { kind: 'insert'; entry: string };
 
-/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
+/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, the added element, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
 export interface ElementEdited {
   receipt: WriteReceipt;
   landed: string | null;

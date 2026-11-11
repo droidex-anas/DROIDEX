@@ -48,6 +48,35 @@ export function reindent(node: ts.Node, from: string, to: string): string {
     .join('\n');
 }
 
+/**
+ * JSX written from column 0 in two-space steps, as a kit catalog writes it,
+ * set at `indent` in a file that steps by `unit` and ends lines with `eol`;
+ * blank lines and lines inside a string or template stay as written.
+ */
+export function placeSnippet(jsx: string, indent: string, unit: string, eol: string): string {
+  const text = jsx.replaceAll('\r\n', '\n');
+  const snippet = ts.createSourceFile(
+    'snippet.tsx',
+    text,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const literals = literalRanges(snippet);
+  let lineStartsAt = 0;
+  return text
+    .split('\n')
+    .map((line, index) => {
+      const at = lineStartsAt;
+      lineStartsAt += line.length + 1;
+      const inLiteral = literals.some((literal) => literal.start < at && at < literal.end);
+      if (index === 0 || inLiteral || line.trim() === '') return line;
+      const steps = Math.floor((/^ */.exec(line)?.[0].length ?? 0) / 2);
+      return indent + unit.repeat(steps) + line.slice(steps * 2);
+    })
+    .join(eol);
+}
+
 function literalRanges(node: ts.Node): { start: number; end: number }[] {
   const ranges: { start: number; end: number }[] = [];
   const visit = (child: ts.Node): void => {

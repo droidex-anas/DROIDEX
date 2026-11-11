@@ -62,6 +62,7 @@ const LAYER_EDIT_VERBS: Record<LayerChange['kind'], string> = {
   move: 'move',
   remove: 'delete',
   duplicate: 'duplicate',
+  insert: 'add to',
 };
 
 export interface ShownDocument {
