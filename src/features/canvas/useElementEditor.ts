@@ -9,6 +9,7 @@ import { canvasMessage } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
 import {
+  commitPath,
   commitStyles,
   commitText,
   editDraft,
@@ -22,6 +23,7 @@ import {
   type CommitOutcome,
   type ElementEditDraft,
 } from './elementEditDraft';
+import { usePathShape } from './paths/usePathShape';
 import { elementSite, pickedLayer } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
@@ -78,6 +80,8 @@ export function useElementEditor({
     (designId, at) => runs.get(designId)?.run.hover(at) ?? Promise.resolve(null),
   );
   const { rerun } = hover;
+
+  const path = usePathShape(selection?.draft ?? null, runs);
 
   const { tokens, mode } = useEditTokens(
     selection
@@ -251,6 +255,17 @@ export function useElementEditor({
   };
 
   /**
+   * Draws `d` as the selected path's data, or its own again for null, leaving
+   * the draft alone: a drag previews each frame and commits once.
+   */
+  const previewPath = (d: string | null) => {
+    const current = latest.current.selection;
+    if (!current || !holder.current) return;
+    const shown = target(current.draft);
+    holder.current.select(d === null ? shown : { ...shown, d }, STYLE_PROPERTIES);
+  };
+
+  /**
    * Sends an edit of a layer of `layer.designId`'s outline. Once it answers, a
    * pick in that design is dropped: the edit shifts the elements of its source,
    * so the pick, made before or during the edit, would follow the wrong one.
@@ -365,6 +380,13 @@ export function useElementEditor({
     enter,
     runKey,
     hover,
+    path: {
+      ...path,
+      preview: previewPath,
+      commit: (d: string) => {
+        send((draft, mutationId) => commitPath(draft, mutationId, d));
+      },
+    },
   };
 }
 
@@ -372,7 +394,8 @@ export type ElementEditor = ReturnType<typeof useElementEditor>;
 
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
+  const shown = { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
+  return draft.d === null ? shown : { ...shown, d: draft.d };
 }
 
 /** The panel's first field that takes typing, else its first working button. */

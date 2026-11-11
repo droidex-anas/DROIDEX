@@ -420,6 +420,7 @@ export function CanvasBoard({
             runs={runs}
             readSource={readSource}
             selected={selected}
+            path={editor.path}
             hovered={editor.hover.hovered}
             hoveredComponent={picker.componentOf(editor.hover.hovered)}
             picks={picker.outlines}

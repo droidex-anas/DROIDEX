@@ -61,7 +61,7 @@ export async function openBoard(
  * Pick, select, probe and locate commands are recorded in `guestCommands` and
  * answered by `guestAnswer`: a pick or select as an element in a block parent
  * unless it names another, a probe directly with no text unless it says, a
- * locate directly with whatever it gives. A hover is
+ * locate or a shape directly with whatever it gives. A hover is
  * answered by `guestAnswer` directly, with nothing beside the element unless it
  * says, and not recorded; a tree page is answered by `guestAnswer('tree', { from })`
  * directly, or never while `guestTreeHeld` is set, and recorded.
@@ -115,9 +115,9 @@ export async function stubGuests(page: Page) {
               const element = window.guestAnswer('probe', argument);
               return JSON.stringify(element && { text: null, ...element });
             }
-            if (call?.[1] === 'locate') {
-              window.guestCommands.push({ command: 'locate', ...argument });
-              return JSON.stringify(window.guestAnswer('locate', argument));
+            if (call?.[1] === 'locate' || call?.[1] === 'shape') {
+              window.guestCommands.push({ command: call[1], ...argument });
+              return JSON.stringify(window.guestAnswer(call[1], argument));
             }
             if (call?.[1] === 'tree') {
               window.guestCommands.push({ command: 'tree', ...argument });

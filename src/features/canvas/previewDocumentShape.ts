@@ -7,7 +7,7 @@ import { jsonArgument, readAnswer, readRect, record, type PreviewNode } from './
 import type { FrameRect } from './protocol';
 
 /** Bytes a path's `d` may measure in an answer, as the reporter caps it. */
-const MAX_PREVIEW_PATH_DATA_BYTES = 16 * 1024;
+export const MAX_PREVIEW_PATH_DATA_BYTES = 16 * 1024;
 /** JSON escaping at most doubles the whitespace a `d` may carry. */
 const MAX_PREVIEW_SHAPE_ANSWER_BYTES = 2 * MAX_PREVIEW_PATH_DATA_BYTES + 1024;
 /** `unreadable`: the source's own `d` is not path data the board can edit. */

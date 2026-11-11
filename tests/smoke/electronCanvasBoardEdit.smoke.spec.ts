@@ -2,7 +2,7 @@
 // guest, the style panel, and the edit it sends.
 
 import { expect, test } from '@playwright/test';
-import { box, frame, openBoard, serveBoard, stubGuests } from './board/boardPage';
+import { box, frame, openBoard, serveBoard, stubGuests, zoomField } from './board/boardPage';
 
 serveBoard();
 
@@ -574,4 +574,100 @@ test('The Display row’s ⋯ menu sets a display its segments leave out, and a 
   });
   await expect(outline).toHaveCount(1);
   await expect(panel.locator('header')).toContainText('240 × 30');
+});
+
+test('Edit drags a picked path’s point, previewing each frame, commits it once, and Undo and Escape take it back', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const path = { elementId: 'el_path', instancePath: '0/1' };
+    Object.assign(window, { pathData: 'M10 10 L90 10 l0 50' });
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const rect = { x: 10, y: 10, width: 80, height: 50 };
+      if (command !== 'shape') return { ...path, rect, styles: {} };
+      const d = (window as unknown as { pathData: string }).pathData;
+      return { d, matrix: [1, 0, 0, 1, 0, 0], rect };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1&paths=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  // At 100% a design pixel is a screen pixel, so a drag's distance is the point's.
+  await zoomField(page).fill('100%');
+  await zoomField(page).press('Enter');
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  await page.mouse.click(sheet.x + 50, sheet.y + 30);
+  await page.clock.runFor(100);
+  await expect(page.getByRole('region', { name: 'Styles of the selected path' })).toBeVisible();
+
+  // An anchor for each point, drawn through the path's matrix, each a 28 px press.
+  const anchors = page.locator('[data-path-grip="anchor"]');
+  await expect(anchors).toHaveCount(3);
+  const corner = await box(anchors.nth(1));
+  expect(corner.width).toBeCloseTo(28, 0);
+  expect(corner.x + corner.width / 2).toBeCloseTo(sheet.x + 90, 0);
+  expect(corner.y + corner.height / 2).toBeCloseTo(sheet.y + 10, 0);
+  const drag = async (dx: number, dy: number) => {
+    await page.mouse.move(corner.x + 14, corner.y + 14);
+    await page.mouse.down();
+    await page.mouse.move(corner.x + 14 + dx, corner.y + 14 + dy, { steps: 4 });
+    await page.clock.runFor(32);
+  };
+  const lastSelect = () =>
+    page.evaluate(
+      () => window.guestCommands.findLast(({ command }) => command === 'select')?.target,
+    );
+  const edits = () =>
+    page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change));
+
+  // The drag previews in the guest; the relative segment after it keeps its own point where it was.
+  await drag(20, 10);
+  expect(await lastSelect()).toMatchObject({ elementId: 'el_path', d: 'M10 10 L110 20 l-20 40' });
+  // Escape takes the drag back, and keeps the path picked.
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await lastSelect()).not.toHaveProperty('d');
+  await expect(page.getByRole('region', { name: 'Styles of the selected path' })).toBeVisible();
+  expect(await edits()).toEqual([]);
+
+  // A release commits the drag as one edit, which Undo takes back.
+  await drag(20, 10);
+  await page.mouse.up();
+  expect(await edits()).toEqual([{ kind: 'path', d: 'M10 10 L110 20 l-20 40' }]);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L110 20 l-20 40' });
+    window.boardHarness.answerEdit(0);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 20, 0);
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await page.evaluate(() => window.boardHarness.switchCalls)).toMatchObject([
+    { designId: 'a', revisionId: 'rev_01', expectedRevisionId: 'rev_02' },
+  ]);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L90 10 l0 50' });
+    window.boardHarness.answerSwitch(0);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  // The guest draws the revision's own data again, not the committed preview.
+  expect(await lastSelect()).not.toHaveProperty('d');
+
+  // On a focused anchor a burst of arrows moves it by path units and commits once.
+  await anchors.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.clock.runFor(500);
+  expect((await edits()).slice(1)).toEqual([{ kind: 'path', d: 'M12 20 L90 10 l0 50' }]);
 });
