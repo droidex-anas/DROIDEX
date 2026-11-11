@@ -16,6 +16,7 @@ import type {
   EditToken,
   KitFontFace,
   KitPreview,
+  KitPreviewTarget,
 } from './protocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
 
@@ -176,16 +177,15 @@ export class DesignSystemRequests {
     return { ref, diagnostics };
   }
 
-  /** `item` is a preview's id or `cover`. */
   async readPreview(
     ref: DesignSystemRef | DesignSystemProposalRef,
-    item: string,
+    target: KitPreviewTarget,
   ): Promise<KitPreview> {
     const event = await this.send({
       type: 'canvas.readKitPreview',
       requestId: requestId(),
       ref,
-      item,
+      target,
     });
     return reply(event, 'kitPreview').preview;
   }

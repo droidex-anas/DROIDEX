@@ -23,9 +23,12 @@ const importNameSchema = z
   .regex(/^[A-Za-z_$][\w$]*$/, 'Name one export, such as Button')
   .max(CATALOG_LIMITS.maxNameLength);
 
+/** An entry's name, which is unique in its catalog. */
+export const catalogNameSchema = z.string().trim().min(1).max(CATALOG_LIMITS.maxNameLength);
+
 const entrySchema = z
   .object({
-    name: z.string().trim().min(1).max(CATALOG_LIMITS.maxNameLength),
+    name: catalogNameSchema,
     /** The kit file the entry shows, for grouping and search. */
     module: sourcePathSchema.nullable(),
     uses: z.array(importNameSchema).max(CATALOG_LIMITS.maxNamesPerEntry),

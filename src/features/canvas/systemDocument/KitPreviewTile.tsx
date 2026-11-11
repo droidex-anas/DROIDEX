@@ -30,7 +30,7 @@ import { keepKitCapture, useKitCapture } from '../kitCaptures';
 import { usePickedColor } from './pickedColor';
 import { createGuestElement } from '../previewGuestElement';
 import { startPreview, type PreviewRun } from '../previewRuntime';
-import type { DesignSystemRef } from '../protocol';
+import type { DesignSystemRef, KitPreviewTarget } from '../protocol';
 
 /** What every tile of one document shares. */
 export interface KitPreviewing {
@@ -82,6 +82,7 @@ export function KitPreviewTile({
   const isChanged = proposalId !== null || Object.keys(draftTokens).length > 0;
   const isSavedLook = !isLive && Boolean(still) && isChanged;
   const isNeverCaptured = still === null && otherStill === null;
+  const target = useMemo((): KitPreviewTarget => ({ kind: 'preview', item }), [item]);
   return (
     <div
       ref={observe(item)}
@@ -103,7 +104,7 @@ export function KitPreviewTile({
               key={JSON.stringify([kit.id, kit.version, proposalId, kit.mode, item])}
               kit={kit}
               proposalId={proposalId}
-              item={item}
+              target={target}
               width={width}
               height={height}
               scale={scale}
@@ -124,14 +125,14 @@ type ArtifactRead =
   | { status: 'failed'; message: string };
 
 /**
- * The live guest, keyed by kit version or proposal, mode and item. Pointer
+ * The live guest, keyed by kit version or proposal, mode and target. Pointer
  * events reach it, so hover and press show the kit's states, but Tab never
- * enters it.
+ * enters it. Only a preview is captured.
  */
 function KitGuest({
   kit,
   proposalId,
-  item,
+  target,
   width,
   height,
   scale,
@@ -140,15 +141,17 @@ function KitGuest({
 }: {
   kit: DesignSystemRef;
   proposalId: string | null;
-  item: string;
+  /** Kept stable while the guest lives: a new target is a new guest. */
+  target: KitPreviewTarget;
   width: number;
   height: number;
   scale: number;
   draftTokens: Readonly<Record<string, string>>;
-  /** The item has no capture in this mode yet, so its first render becomes one. */
+  /** The preview has no capture in this mode yet, so its first render becomes one. */
   wantsCapture: boolean;
 }) {
   const { id, version, mode } = kit;
+  const designId = target.kind === 'preview' ? target.item : target.entry;
   const host = useRef<HTMLDivElement>(null);
   const runRef = useRef<PreviewRun | null>(null);
   // A colour being chosen in the document shows live, like a draft value does.
@@ -169,7 +172,7 @@ function KitGuest({
   useEffect(() => {
     let wanted = true;
     const ref = proposalId === null ? { id, version, mode } : { id, proposalId, mode };
-    canvasClient.designSystems.readPreview(ref, item).then(
+    canvasClient.designSystems.readPreview(ref, target).then(
       (preview) => {
         if (!wanted) return;
         if (preview.status === 'ready') setRead({ status: 'ready', html: preview.artifact.html });
@@ -186,7 +189,7 @@ function KitGuest({
     return () => {
       wanted = false;
     };
-  }, [id, version, proposalId, mode, item]);
+  }, [id, version, proposalId, mode, target]);
 
   useEffect(() => {
     const container = host.current;
@@ -205,14 +208,15 @@ function KitGuest({
     // A capture keeps the saved look, so a guest showing draft values is not taken.
     const capture = () => {
       captureTimer = null;
-      if (!capturing.current || isDrafted()) return;
+      if (target.kind !== 'preview' || !capturing.current || isDrafted()) return;
+      const { item } = target;
       const requestId = crypto.randomUUID();
       captureId = requestId;
       captureCanvasPreview({
         requestId,
         guestId: guest.getWebContentsId(),
         canvasId: null,
-        designId: item,
+        designId,
         revisionId,
         generation,
         width,
@@ -248,7 +252,7 @@ function KitGuest({
       }
       run = startPreview({
         guest,
-        designId: item,
+        designId,
         revisionId,
         generation,
         html: source,
@@ -288,7 +292,7 @@ function KitGuest({
       run?.stop();
       guest.remove();
     };
-  }, [html, id, version, mode, item, width, height]);
+  }, [html, id, version, mode, target, designId, width, height]);
 
   useEffect(() => {
     runRef.current?.setTokens(shownTokens);

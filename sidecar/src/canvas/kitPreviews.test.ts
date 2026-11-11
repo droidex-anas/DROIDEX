@@ -64,7 +64,7 @@ const design = (html: string): CompiledDesign => ({
   outline: { nodes: [], truncated: false },
 });
 
-test("a kit's cover and previews compile into preview documents", async (t) => {
+test("a kit's cover, previews and catalog entries compile into preview documents", async (t) => {
   const previews = new KitPreviews();
   t.after(() => previews.close());
 
@@ -73,6 +73,8 @@ test("a kit's cover and previews compile into preview documents", async (t) => {
     assert.equal(preview.status, 'ready', item);
     assert.ok(preview.status === 'ready' && preview.artifact.html.includes('<html'), item);
   }
+  const entry = await previews.readCatalogEntry(DARK, 'Icon button');
+  assert.ok(entry.status === 'ready' && entry.artifact.html.includes('<html'));
 });
 
 test('a preview compiles once per version, mode and item while it is pending or kept', async () => {
@@ -186,6 +188,31 @@ test("a waiting proposal's previews build from its own examples, and a settled o
 
   await discardProposal('proposed', proposalId);
   await assert.rejects(previews.read(ref, 'sidebar'), { code: 'invalid_input' });
+  await previews.close();
+});
+
+test('a catalog entry compiles alone under its kit, apart from a preview of the same name', async () => {
+  const { previews, compiled } = countingPreviews((input) =>
+    design(input.kind === 'kitPreview' ? input.example : ''),
+  );
+  const entry = await previews.readCatalogEntry(LIGHT, 'Icon button');
+  assert.ok(entry.status === 'ready');
+  const module = entry.artifact.html;
+  assert.match(module, /^import \{ Button \} from '@droidex\/design-system';\n/);
+  assert.match(module, /export default function \(\) \{/);
+  assert.match(
+    module,
+    /<main style=\{\{"display":"flex".*\n<Button variant="ghost" icon="settings"/,
+  );
+
+  await previews.readCatalogEntry(LIGHT, 'Icon button');
+  await previews.readCatalogEntry(DARK, 'Icon button');
+  await previews.read(LIGHT, 'sidebar');
+  await previews.readCatalogEntry(LIGHT, 'sidebar').catch(() => undefined);
+  assert.equal(compiled.length, 3);
+  await assert.rejects(previews.readCatalogEntry(LIGHT, 'No such entry'), {
+    code: 'invalid_input',
+  });
   await previews.close();
 });
 

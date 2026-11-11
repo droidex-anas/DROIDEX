@@ -29,6 +29,11 @@ export interface DesignSystemProposalRef {
   mode: DesignSystemRef['mode'];
 }
 
+/** What a kit preview shows: a preview by its id or `cover`, or a catalog entry by its name. */
+export type KitPreviewTarget =
+  | { kind: 'preview'; item: string }
+  | { kind: 'catalog'; entry: string };
+
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
   id: string;
@@ -782,14 +787,14 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
-  // preview's id or `cover`. A capture is a base64 PNG the document took from a
-  // saved version's live preview; a later one replaces it.
+  // A kit version's previews in one mode, or a waiting proposal's. A capture is
+  // a base64 PNG the document took from a saved version's live preview; a later
+  // one replaces it, and `item` names its preview as a preview target does.
   | {
       type: 'canvas.readKitPreview';
       requestId: string;
       ref: DesignSystemRef | DesignSystemProposalRef;
-      item: string;
+      target: KitPreviewTarget;
     }
   | {
       type: 'canvas.saveKitCapture';
