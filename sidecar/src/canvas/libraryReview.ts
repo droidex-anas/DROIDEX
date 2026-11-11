@@ -14,6 +14,8 @@ import {
 import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 
 const MAX_DETAIL_LENGTH = 200;
+const LOCAL_FILE = 'a local file';
+const FILE_URL = /^file:/i;
 // The kit document holds at most 256 KiB; 128 real records take about 10 KiB.
 const MAX_LISTED_BYTES = 32 * 1024;
 
@@ -44,8 +46,24 @@ export function libraryReview(records: readonly LibrarySkip[]): LibraryReview {
 
 /** A detail as the kit keeps it: an absolute import by its last segment, and at most 200 characters. */
 function shownDetail(detail: string): string {
-  const shown = HOST_PATH.test(detail) ? `…/${detail.split(/[\\/]/).at(-1) ?? ''}` : detail;
+  const shown = HOST_PATH.test(detail) ? hostFileName(detail) : detail;
   const characters = Array.from(shown);
   if (characters.length <= MAX_DETAIL_LENGTH) return shown;
   return `${characters.slice(0, MAX_DETAIL_LENGTH - 1).join('')}…`;
+}
+
+// A file: URL can encode its slashes and carry a path in its query, so it is
+// decoded and cut to its path first; a name still encoded, or none, is
+// described instead of kept.
+function hostFileName(reference: string): string {
+  let path = reference;
+  if (FILE_URL.test(reference)) {
+    try {
+      path = decodeURIComponent(reference.slice('file:'.length)).replace(/[?#].*$/s, '');
+    } catch {
+      return LOCAL_FILE;
+    }
+  }
+  const name = path.split(/[\\/]/).at(-1) ?? '';
+  return name === '' || name.includes('%') ? LOCAL_FILE : `…/${name}`;
 }

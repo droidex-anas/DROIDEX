@@ -99,7 +99,11 @@ const libraryProvenanceSchema = z
   .refine((library) => {
     const kept = library.skipped.filter(({ reason }) => KEPT_SKIP_REASONS.has(reason)).length;
     return kept <= library.partialCount && library.skipped.length - kept <= library.skippedCount;
-  }, 'A library kit lists more review records than it counts.');
+  }, 'A library kit lists more review records than it counts.')
+  .refine(
+    (library) => new Set(library.skipped.map(({ file }) => file)).size === library.skipped.length,
+    'A library kit reviews a file more than once.',
+  );
 
 export const designSystemProvenanceSchema = z.union([
   z

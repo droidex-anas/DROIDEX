@@ -302,6 +302,11 @@ test('both boundaries accept a library kit provenance and refuse the same malfor
     ['more left-out files than counted', { ...library, skippedCount: 1 }, false],
     ['more files kept in part than counted', { ...library, partialCount: 0 }, false],
     [
+      'a file reviewed twice',
+      { ...library, skipped: [library.skipped[0], library.skipped[0]], skippedCount: 2 },
+      false,
+    ],
+    [
       'an absolute import',
       skip({ file: 'a.tsx', reason: 'unsupported_import', detail: '/Users/someone/a' }),
       false,
