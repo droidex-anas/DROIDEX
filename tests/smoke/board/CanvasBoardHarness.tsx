@@ -324,6 +324,28 @@ const OUTLINE: SourceOutline = {
   truncated: false,
 };
 
+// `?moves=1` writes a page whose layers move: main holding a title, a line, a section and an image.
+const movable = (nodeId: string, parentId: string | null, name: string, text: string | null) => ({
+  nodeId,
+  parentId,
+  kind: 'element' as const,
+  name,
+  text,
+  elementId: `el_${nodeId}`,
+  lock: null,
+  free: parentId !== null,
+});
+const MOVES: SourceOutline = {
+  nodes: [
+    movable('main', null, 'main', null),
+    movable('title', 'main', 'h1', 'Pricing'),
+    movable('line', 'main', 'p', 'Start free'),
+    movable('section', 'main', 'section', null),
+    movable('image', 'main', 'img', null),
+  ],
+  truncated: false,
+};
+
 function built(revisionId: string): CanvasFrame['build'] {
   return {
     status: 'ready',
@@ -331,7 +353,7 @@ function built(revisionId: string): CanvasFrame['build'] {
     revisionId,
     artifactId: 'a'.repeat(64),
     elements: ELEMENTS,
-    outline: OUTLINE,
+    outline: params.has('moves') ? MOVES : OUTLINE,
     diagnostics: [],
   };
 }
@@ -871,6 +893,19 @@ function Harness() {
               reorderCalls.push(designIds);
               setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
             }}
+            onMoveLayer={(layer, place) => {
+              const mutationId = `move_${String(editCalls.length)}`;
+              editCalls.push({ mutationId, edit: { layer, change: { kind: 'move', ...place } } });
+              return new Promise<WriteReceipt>((resolve, reject) =>
+                editReplies.push({ resolve, reject }),
+              ).then(
+                (receipt) => ({ receipt, landed: null }),
+                () => null,
+              );
+            }}
+            onHistory={(step) =>
+              step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
+            }
             onPick={(designId, additive) => {
               setInteraction(
                 reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),
