@@ -665,6 +665,24 @@ test('hiding adds the hidden class, or a className of its own, and showing takes
   roundTrip(lines.replaceAll('\n', '\r\n'), 'aside', hiddenLines.replaceAll('\n', '\r\n'));
 });
 
+test('a bare & in a class, as an arbitrary variant writes it, is read as the class it is', () => {
+  const page = (body: string) => `export default () => <main>${body}<hr /></main>;`;
+  roundTrip(
+    page('<ul className="[&>*]:p-2">L</ul>'),
+    'ul',
+    page('<ul className="[&>*]:p-2 hidden">L</ul>'),
+  );
+  const refused = (className: string, message: RegExp) => {
+    const files = { 'main.tsx': page(`<ul className="${className}">L</ul>`) };
+    assert.throws(() => editLayer(files, rowId(files, 'ul'), { kind: 'hide', hidden: true }), {
+      code: 'ambiguous_element',
+      message,
+    });
+  };
+  refused('[&:hover]:flex', /^Its classes or style set how it displays/);
+  refused('a&amp;b', /^Its classes or props are worked out in code/);
+});
+
 test('hiding is refused where something else may decide whether the layer shows, or it is not free to change', () => {
   const files = {
     'main.tsx': `import { cn } from './cn';
