@@ -214,7 +214,7 @@ export default ({ items, open }) => (
     [
       ['em', 'section', null],
       'ambiguous_element',
-      'This layer is written inside code (a list, a condition or a prop). Ask the agent to move it.',
+      'Used in several places. Ask the agent to change it.',
     ],
     [
       ['aside', 'section', null],
@@ -460,7 +460,7 @@ test('a removal or copy that is not of one JSX child written once is refused wit
   const files = {
     'main.tsx': `function Badge({ icon }) { return <span>{icon}</span>; }
 function Pair() { return <div><s>Twice</s></div>; }
-export default ({ items }) => (
+export default ({ items, open }) => (
   <main>
     <h1 id="title">Title</h1>
     <section><h2 id="more">More</h2></section>
@@ -468,6 +468,7 @@ export default ({ items }) => (
     <Pair />
     <Badge icon={<em>Tip</em>} />
     <ol>{items.map((item) => <li key={item}><u>{item}</u></li>)}</ol>
+    {open && <aside>Open</aside>}
   </main>
 );
 `,
@@ -492,17 +493,18 @@ export default ({ items }) => (
       "A frame's top layer can't be duplicated. Duplicate the frame instead.",
     ],
     [
-      'em',
+      'aside',
       'remove',
       'ambiguous_element',
       'This layer is written inside code (a list, a condition or a prop). Ask the agent to delete it.',
     ],
     [
-      'em',
+      'aside',
       'duplicate',
       'ambiguous_element',
       'This layer is written inside code (a list, a condition or a prop). Ask the agent to duplicate it.',
     ],
+    ['em', 'remove', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
     [
       'u',
       'remove',
@@ -510,6 +512,7 @@ export default ({ items }) => (
       'Written once and repeated for each item. Ask the agent to change it.',
     ],
     ['s', 'duplicate', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
+    ['div', 'remove', 'ambiguous_element', 'Used in several places. Ask the agent to change it.'],
     ['h1', 'duplicate', 'invalid_edit', 'This layer has an id, and a copy would repeat it.'],
     ['section', 'duplicate', 'invalid_edit', 'This layer has an id, and a copy would repeat it.'],
   ];

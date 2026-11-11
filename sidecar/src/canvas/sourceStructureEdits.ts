@@ -195,14 +195,18 @@ function writtenOnceAnchor(subject: Layer, uses: ComponentUses, edit: LayerChang
   const anchor = anchorOf(subject.at);
   const { root, action } = REFUSALS[edit];
   if (!anchor && subject.row.parentId === null) throw invalid(root);
+  // Refused as its row's lock says, whether or not code writes it.
+  if (!uses.rendersOnce(subject.at))
+    throw ambiguous(
+      subject.row.lock === 'repeated'
+        ? 'Written once and repeated for each item. Ask the agent to change it.'
+        : 'Used in several places. Ask the agent to change it.',
+    );
   if (!anchor)
     throw ambiguous(
       `This layer is written inside code (a list, a condition or a prop). Ask the agent to ${action} it.`,
     );
-  if (uses.rendersOnce(subject.at)) return anchor;
-  if (subject.row.lock === 'repeated')
-    throw ambiguous('Written once and repeated for each item. Ask the agent to change it.');
-  throw ambiguous('Used in several places. Ask the agent to change it.');
+  return anchor;
 }
 
 /** The element the layer moves into: a native element that renders once and may hold children. */
