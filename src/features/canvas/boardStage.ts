@@ -9,6 +9,7 @@ import type { Viewport } from './canvasGeometry';
 
 export class BoardStage {
   private node: HTMLElement | null = null;
+  private chromeHeld = false;
   private readonly listeners = new Set<() => void>();
 
   constructor(private current: Viewport) {}
@@ -22,6 +23,20 @@ export class BoardStage {
     this.current = next;
     this.write();
     for (const listener of this.listeners) listener();
+  }
+
+  /**
+   * Leaves `--board-scale` where it is until `releaseChrome`, so the frame
+   * chrome zooms with the frames. A wheel zoom asks for this: restyling every
+   * frame's chrome at each step costs more than a 120 Hz frame has.
+   */
+  holdChrome(): void {
+    this.chromeHeld = true;
+  }
+
+  releaseChrome(): void {
+    this.chromeHeld = false;
+    this.write();
   }
 
   /** The world layer's ref: the stage writes to it from the moment it mounts. */
@@ -43,7 +58,7 @@ export class BoardStage {
     const { x, y, scale } = this.current;
     this.node.style.transform = `translate(${String(x)}px, ${String(y)}px) scale(${String(scale)})`;
     // The board stylesheet divides frame chrome by this, so it keeps its size.
-    this.node.style.setProperty('--board-scale', String(scale));
+    if (!this.chromeHeld) this.node.style.setProperty('--board-scale', String(scale));
   }
 }
 

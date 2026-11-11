@@ -256,9 +256,10 @@ export function useBoardViewport(
     scroll.current.idle = setTimeout(() => {
       scroll.current = { active: false, suppressed: false, idle: null };
       setScrolling(false);
+      stage.releaseChrome();
       settle();
     }, SCROLL_IDLE_MS);
-  }, [settle]);
+  }, [settle, stage]);
 
   // Wheel has to be a non-passive listener of its own: React's root listener is
   // passive, so the default Electron page zoom could not be prevented there.
@@ -277,11 +278,12 @@ export function useBoardViewport(
       // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
       // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
       // same thing; both zoom under the pointer.
-      if (event.ctrlKey || event.metaKey)
+      if (event.ctrlKey || event.metaKey) {
+        stage.holdChrome();
         stage.moveTo(
           zoomAtPoint(current, pointer, wheelZoomScale(current.scale, delta.y, event.ctrlKey)),
         );
-      else stage.moveTo({ ...current, x: current.x - delta.x, y: current.y - delta.y });
+      } else stage.moveTo({ ...current, x: current.x - delta.x, y: current.y - delta.y });
     };
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => {
