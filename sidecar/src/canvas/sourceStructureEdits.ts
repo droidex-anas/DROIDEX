@@ -121,9 +121,7 @@ export function moveLayer(files: SourceFiles, move: LayerMove): EditedLayers {
   const eol = lineEnding(text);
   const movedIndent = lineIndent(text, anchor.node.getStart());
   const cut = cutRange(text, anchor.node);
-  const paste = before
-    ? pasteBefore(text, before.node, eol)
-    : pasteAtEnd(source, parent, eol, movedIndent);
+  const paste = before ? pasteBefore(text, before.node, eol) : pasteAtEnd(source, parent, eol);
   if (readsLaterBinding(anchor.node, paste.start, checker))
     throw ambiguous(
       'This layer uses a value the code sets further down, so it can’t go there. Ask the agent to move it.',
@@ -320,15 +318,10 @@ function pasteBefore(text: string, sibling: ts.Node, eol: string): Paste {
  * when the closing tag has a line of its own, else one indent deeper than the
  * parent, with the closing tag moved to its own line. A self-closing parent opens.
  */
-function pasteAtEnd(
-  source: ts.SourceFile,
-  parent: ElementNode,
-  eol: string,
-  sample: string,
-): Paste {
+function pasteAtEnd(source: ts.SourceFile, parent: ElementNode, eol: string): Paste {
   const text = source.text;
   const outer = lineIndent(text, parent.getStart());
-  const inner = outer + indentUnit(source, outer + sample);
+  const inner = outer + indentUnit(source, outer);
   if (ts.isJsxSelfClosingElement(parent))
     return {
       start: parent.attributes.end,

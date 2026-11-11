@@ -49,23 +49,33 @@ export function readsLaterBinding(
   return writes(scope ?? moved.getSourceFile());
 }
 
-/** The name an assignment (`x = …`, `x += …`) or an update (`x++`, `--x`) writes. */
+/**
+ * The name an assignment (`x = …`, `x.y += …`) or an update (`x++`, `--x[i]`)
+ * writes, or writes into: a property or index of a value changes what reads it.
+ */
 function assignedName(node: ts.Node): ts.Identifier | undefined {
+  let target: ts.Expression | undefined;
   if (
     ts.isBinaryExpression(node) &&
     node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-    node.operatorToken.kind <= ts.SyntaxKind.LastAssignment &&
-    ts.isIdentifier(node.left)
+    node.operatorToken.kind <= ts.SyntaxKind.LastAssignment
   )
-    return node.left;
-  if (
+    target = node.left;
+  else if (
     (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
     (node.operator === ts.SyntaxKind.PlusPlusToken ||
-      node.operator === ts.SyntaxKind.MinusMinusToken) &&
-    ts.isIdentifier(node.operand)
+      node.operator === ts.SyntaxKind.MinusMinusToken)
   )
-    return node.operand;
-  return undefined;
+    target = node.operand;
+  while (
+    target &&
+    (ts.isPropertyAccessExpression(target) ||
+      ts.isElementAccessExpression(target) ||
+      ts.isParenthesizedExpression(target) ||
+      ts.isNonNullExpression(target))
+  )
+    target = target.expression;
+  return target && ts.isIdentifier(target) ? target : undefined;
 }
 
 export function enclosingFunction(node: ts.Node): ts.Node | undefined {
