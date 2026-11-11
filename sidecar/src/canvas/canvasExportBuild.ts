@@ -15,7 +15,6 @@ import {
   packageName,
   RADIX_PRIMITIVE_SPECIFIERS,
 } from './designPackages.js';
-import { STYLESHEET_PREAMBLE } from './designStylesheet.js';
 
 /**
  * The export's package.json. The canvas toolchain and its fixed runtime
@@ -109,7 +108,7 @@ const tokens = ['light', 'dark'].map((mode) => {
   return selector + '{' + Object.entries(modes.modes[mode]).map(([key, value]) => key + ':' + value + ';').join('') + '}';
 }).join('\\n');
 const cssFiles = [...kit, ...source].filter((path) => path.endsWith('.css'));
-let css = ${JSON.stringify(STYLESHEET_PREAMBLE)} + tokens + '\\n';
+let css = '@tailwind base;\\n@tailwind components;\\n' + tokens + '\\n';
 for (const path of cssFiles) css += await readFile(path, 'utf8') + '\\n';
 css += '@tailwind utilities;\\n';
 const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));

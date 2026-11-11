@@ -456,7 +456,7 @@ function stockClass(prefix: string, key: string): string {
 }
 
 /** Splits at `separator` outside brackets, so `hover:[&>*]:p-4` keeps its arbitrary variant. */
-function splitOutside(text: string, separator: string): string[] {
+export function splitOutside(text: string, separator: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let start = 0;

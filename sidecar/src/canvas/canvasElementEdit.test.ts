@@ -184,6 +184,37 @@ test('a layer is duplicated through the same edit, answering the copy', async (t
   assert.equal(copied.landed, copies[1].nodeId);
 });
 
+test('a layer hides through the same edit, with the hidden class its new outline reads', async (t) => {
+  const main =
+    'export default function Hey(){return <main><h1>Hey</h1><p className="flex">Hi</p></main>}';
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const nodeId = build.outline.nodes.find((node) => node.name === 'p')?.nodeId;
+  const { designId, revisionId } = element;
+  await canvas.handle({
+    type: 'canvas.editElement',
+    requestId: 'req-hide',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-hide',
+      edit: { layer: { designId, revisionId, nodeId }, change: { kind: 'hide', hidden: true } },
+    },
+  });
+  const hidden = okReply(canvas, 'req-hide');
+  assert.ok(hidden.kind === 'edited');
+  assert.equal(hidden.landed, nodeId);
+  const files = await canvas.workspace.readFiles(canvasId, hidden.receipt);
+  assert.equal(
+    files['main.tsx'],
+    'export default function Hey(){return <main><h1>Hey</h1><p className="flex hidden">Hi</p></main>}',
+  );
+  const row = instrumentSource({ ...files }, hidden.receipt.revisionId).outline.nodes.find(
+    (node) => node.nodeId === nodeId,
+  );
+  assert.equal(row?.visibility, 'hidden');
+});
 /** Asks to move `subject` last into `target` and answers the refusal, checking the source stayed. */
 async function refusedMove(t: TestContext, main: string, subject: string, target: string) {
   const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });

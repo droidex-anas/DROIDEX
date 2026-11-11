@@ -16,8 +16,8 @@ function outlineOf(files: SourceFiles): string[] {
     const name = node.kind === 'element' ? `<${node.name}>` : node.name;
     const text = node.text === null ? '' : ` "${node.text}"`;
     const lock = node.lock === null ? '' : ` [${node.lock}]`;
-    const hidden = node.hidden ? ' hidden' : '';
-    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}${hidden}`;
+    const shown = node.visibility === 'shown' ? '' : ` ${node.visibility}`;
+    return `${'  '.repeat(level)}${name}${text}${lock}${node.free ? '' : ' fixed'}${shown}`;
   });
 }
 
@@ -263,9 +263,16 @@ test('JSX that renders through other forms still gets rows, and JSX that never r
     [
       {
         'main.tsx':
-          'export default ({ open }) => <main><aside hidden>A</aside><p hidden={open}>B</p><Card hidden /></main>;',
+          'export default ({ open }) => <main><aside className="flex hidden">A</aside><p hidden={open}>B</p><b className="hidden md:block">C</b><i className={open ? "hidden" : ""}>D</i><Card className="hidden" /></main>;',
       },
-      ['<main> fixed', '  <aside> "A" hidden', '  <p> "B"', '  Card'],
+      [
+        '<main> fixed',
+        '  <aside> "A" hidden',
+        '  <p> "B" attribute',
+        '  <b> "C" display',
+        '  <i> "D" [computed] computed',
+        '  Card',
+      ],
     ],
     [
       {
@@ -302,7 +309,7 @@ test('both validators take an outline only as a tree of bounded one-line rows', 
     lock: null,
     free: false,
     contentFromProps: false,
-    hidden: false,
+    visibility: 'shown',
   };
   const child = { ...root, nodeId: 'fedcba9876543210', parentId: root.nodeId };
   const accepts = (nodes: unknown[]) => {

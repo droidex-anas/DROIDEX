@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { COMPONENTS_JSON, LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
 import { kitModes } from './designSystemDocument.js';
-import { HIDDEN_RULE } from './designStylesheet.js';
 import { importProjectDesignSystem } from './designSystemProject.js';
 import type { DesignSystem } from './designSystems.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
@@ -112,17 +111,6 @@ export default function Hey() {
     /`canvas-export\/tokens\.css` sets\ntheir kit values, light on `:root` and dark on `\.dark`: `--ds-danger`, `--ds-fg`\./,
   );
   assert.doesNotMatch(readme, /design-system\/|npm install/);
-  assert.doesNotMatch(readme, /`hidden`/);
-
-  // A source that hides a layer says what keeps it hidden under the project's own Tailwind.
-  const hiding = await libraryExport(
-    root,
-    kit,
-    new Map([['main.tsx', 'export default () => <aside hidden className="flex">Side</aside>;\n']]),
-  );
-  assert.equal(hiding?.status, 'rewritten');
-  const hidingReadme = hiding.files.find((file) => file.path === 'README.md')?.content;
-  assert.ok(String(hidingReadme).includes(`\`\`\`css\n${HIDDEN_RULE}\`\`\``));
 });
 
 test('the export copies the kit and says why when the library is not as the kit found it', async (t) => {

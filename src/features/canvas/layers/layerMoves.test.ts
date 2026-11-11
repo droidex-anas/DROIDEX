@@ -19,7 +19,7 @@ const node = (
   lock: null,
   free: true,
   contentFromProps: false,
-  hidden: false,
+  visibility: 'shown',
   ...row,
 });
 
@@ -57,15 +57,16 @@ function rowsOf(build: CanvasFrame['build'], shown = outline): LayerEntry[] {
   return layerEntries([frame], () => layers, new Set(['a']), new Set());
 }
 
-const rows = rowsOf({
-  status: 'ready',
+const ready = {
+  status: 'ready' as const,
   generation: 1,
   revisionId: 'rev_01',
   artifactId: 'a'.repeat(64),
   elements: [],
   outline,
   diagnostics: [],
-});
+};
+const rows = rowsOf(ready);
 const at = (nodeId: string) => rows.findIndex((row) => row.key === `a#${nodeId}`);
 const drop = (subject: string, gap: number, level: number) =>
   dropLine(rows, at(subject), gap, level).drop;
@@ -75,11 +76,22 @@ test('the rows that move are those written once as a whole child of an element',
   assert.deepEqual(movable, ['h1', 'section', 'p', 'img', 'ul', 'repeat']);
 });
 
-test('the rows that hide are the elements among them, which take the hidden attribute', () => {
-  const hideable = rows.filter(isHideable).map((row) => row.node.nodeId);
+test('the rows that hide are the elements among them, and a top layer beside another that shows', () => {
+  const hideable = rows.filter((row) => isHideable(rows, row)).map((row) => row.node.nodeId);
   assert.deepEqual(hideable, ['h1', 'section', 'p', 'img', 'ul']);
-});
 
+  // A fragment's top layers: either hides while the other shows, and a hidden one always shows again.
+  const top = (nodes: OutlineNode[]) => {
+    const shown = { nodes, truncated: false };
+    const built = rowsOf({ ...ready, outline: shown }, shown);
+    return built.filter((row) => isHideable(built, row)).map((row) => row.key);
+  };
+  const header = node('header', null, 'header');
+  const footer = node('footer', null, 'footer');
+  assert.deepEqual(top([header, footer]), ['a#header', 'a#footer']);
+  assert.deepEqual(top([header, { ...footer, visibility: 'hidden' }]), ['a#footer']);
+  assert.deepEqual(top([header]), []);
+});
 test('a drop lands among the children of the row a level out above it, at the level the pointer asks', () => {
   // Below the section and its children, at the section's level, h1 goes before ul.
   assert.deepEqual(dropLine(rows, at('h1'), at('ul'), 3), {

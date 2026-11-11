@@ -11,7 +11,7 @@ import { functionName, type ComponentUses } from './componentUses.js';
 import type { OutlineNode, SourceOutline } from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 import type { Site } from './sourceElements.js';
-import { isHidden } from './sourceHiddenAttribute.js';
+import { visibility } from './sourceHiddenClass.js';
 import {
   assignedValues,
   childrenBindings,
@@ -163,7 +163,7 @@ export function sourceOutline(
           lock: lock[element.editability],
           free,
           contentFromProps: contentFromProps(node),
-          hidden: isHidden(node),
+          visibility: visibility(node),
         },
         place,
       );
@@ -182,7 +182,7 @@ export function sourceOutline(
         lock: isKit ? 'kit' : lockAt(node, place),
         free,
         contentFromProps: false,
-        hidden: false,
+        visibility: 'shown',
       },
       place,
     );
@@ -220,7 +220,7 @@ export function sourceOutline(
       text: null,
       elementId: null,
       contentFromProps: false,
-      hidden: false,
+      visibility: 'shown',
     } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, place, (inside) => {
       for (const branch of branches) content(branch, inside, false);
@@ -255,7 +255,7 @@ export function sourceOutline(
       text: null,
       elementId: null,
       contentFromProps: false,
-      hidden: false,
+      visibility: 'shown',
     } as const;
     addHolder(at, { ...row, lock: lockAt(at, place), free: isFreeChild(at) }, inner, (inside) => {
       returned(template, { ...inside, reason: 'repeated' });

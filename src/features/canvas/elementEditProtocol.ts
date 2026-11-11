@@ -39,7 +39,7 @@ export type LayerChange =
   | { kind: 'remove' }
   /** A copy right after the layer. */
   | { kind: 'duplicate' }
-  /** The element written with the `hidden` attribute, or without it to show again. */
+  /** The element given Tailwind's `hidden` class, or without it to show again. */
   | { kind: 'hide'; hidden: boolean };
 
 /** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */

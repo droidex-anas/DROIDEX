@@ -749,6 +749,8 @@ test('A layer’s eye and ⇧⌘H hide or show its element in its source, and a 
   await expect(lineEye).toHaveCSS('opacity', '0');
   await line.hover();
   await expect(lineEye).toHaveCSS('opacity', '1');
+  await lineEye.hover();
+  await expect(page.getByRole('tooltip')).toHaveText(/^Hide \(.+H\)$/);
   await lineEye.click();
   expect(await edits()).toEqual([{ layer: layer('line'), change: { kind: 'hide', hidden: true } }]);
   await expect(tree).toBeFocused();
@@ -762,6 +764,9 @@ test('A layer’s eye and ⇧⌘H hide or show its element in its source, and a 
     change: { kind: 'hide', hidden: false },
   });
   await expect(row('main').getByRole('button', { name: 'Hide' })).toHaveCount(0);
+  // The image's own classes decide its display, so its eye is locked and says why.
+  await expect(row('img').getByRole('button', { name: 'Hide' })).toHaveCount(0);
+  await expect(row('img')).toHaveAccessibleDescription(/^Its classes or style set how it displays/);
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');

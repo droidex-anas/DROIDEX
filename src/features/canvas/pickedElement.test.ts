@@ -67,7 +67,7 @@ test('Delete names the picked element’s row, or the usage of the component tha
     lock: null,
     free: true,
     contentFromProps: false,
-    hidden: false,
+    visibility: 'shown',
   });
   // Where each element is written: in Card, in card.tsx, or in the page's main.
   const inCard = { file: 'card.tsx', start: 20, end: 60, component: 'Card' };

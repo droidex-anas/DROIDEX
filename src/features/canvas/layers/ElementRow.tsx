@@ -2,9 +2,11 @@
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
 // here, which the row's description also says. A layer that can move has a
-// handle to drag it by, an element that can hide an eye, and a right-click
-// opens a written layer's menu. A hidden element's row is muted. A row
-// picks only its own drawn element, and otherwise says why it cannot. A note row says what an open frame's layers cannot show.
+// handle to drag it by, an element that can hide an eye, locked where something
+// else decides its display, and a right-click opens a written layer's menu. A
+// hidden element's row is muted. A row picks only its own drawn element, and
+// otherwise says why it cannot. A note row says what an open frame's layers
+// cannot show.
 
 import {
   useEffect,
@@ -22,6 +24,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { OutlineNode } from '../protocol';
 import type { Drawn } from './drawnLayers';
 import { layerKind } from './elementKind';
+import { HIDE_KEY_LABEL } from './layerKeys';
 import { rowInset, type LayerEntry } from './layerRows';
 
 const LOCK_REASONS: Record<NonNullable<OutlineNode['lock']>, string> = {
@@ -29,6 +32,16 @@ const LOCK_REASONS: Record<NonNullable<OutlineNode['lock']>, string> = {
   shared: 'Used in several places. Ask the agent to change it.',
   computed: 'This element’s styles are worked out in code. Ask the agent to change it.',
   kit: 'From the kit.',
+};
+
+type HideLock = Exclude<OutlineNode['visibility'], 'shown' | 'hidden'>;
+
+/** Why an element's eye can't hide or show it, as the sidecar refuses it. */
+const HIDE_LOCK_REASONS: Record<HideLock, string> = {
+  computed: 'Its classes or props are worked out in code. Ask the agent to hide or show it.',
+  display:
+    'Its classes or style set how it displays, which can win over hiding it. Ask the agent to hide or show it.',
+  attribute: 'Its hidden attribute decides whether it shows. Ask the agent to hide or show it.',
 };
 
 /** What an element row that cannot pick says: as a tooltip, and after its accessible name. */
@@ -91,6 +104,8 @@ export function ElementRow({
   const unpickable = drawn && drawn.state !== 'drawn' ? UNPICKABLE[drawn.state] : null;
   const { icon: KindIcon, label: kind } = layerKind(node);
   const lockId = `${id}-lock`;
+  const eyeLock = onSetHidden && hideLock(node);
+  const eyeLockId = `${id}-eye-lock`;
   const unlight = useEffectEvent(() => {
     onUnlight(entry.key);
   });
@@ -103,7 +118,9 @@ export function ElementRow({
   const row = (
     <Row
       icon={<KindIcon className="size-icon-md" />}
-      label={node.hidden ? <span className="text-muted">{entry.name}</span> : entry.name}
+      label={
+        node.visibility === 'hidden' ? <span className="text-muted">{entry.name}</span> : entry.name
+      }
       trailing={
         <ElementTools entry={entry} onToggle={onToggle} onGrab={onGrab} onSetHidden={onSetHidden} />
       }
@@ -125,7 +142,7 @@ export function ElementRow({
       aria-selected={selected}
       aria-expanded={entry.open ?? undefined}
       aria-label={accessibleName(entry, kind, unpickable?.said)}
-      aria-describedby={idList(node.lock && lockId, describedBy)}
+      aria-describedby={idList(node.lock && lockId, eyeLock && eyeLockId, describedBy)}
       className="group absolute inset-x-0 top-0"
       style={{ transform: `translateY(${String(top)}px)` }}
       onClick={() => {
@@ -144,12 +161,36 @@ export function ElementRow({
       }}
     >
       {unpickable ? <Unpickable tip={unpickable.tip}>{row}</Unpickable> : row}
-      {node.lock && (
+      <LockNotes lock={node.lock} lockId={lockId} eyeLock={eyeLock} eyeLockId={eyeLockId} />
+    </div>
+  );
+}
+
+/** The row's locks said for a screen reader, which the row's description points at. */
+function LockNotes({
+  lock,
+  lockId,
+  eyeLock,
+  eyeLockId,
+}: {
+  lock: OutlineNode['lock'];
+  lockId: string;
+  eyeLock: HideLock | null | undefined;
+  eyeLockId: string;
+}) {
+  return (
+    <>
+      {lock && (
         <span id={lockId} className="sr-only">
-          {LOCK_REASONS[node.lock]}
+          {LOCK_REASONS[lock]}
         </span>
       )}
-    </div>
+      {eyeLock && (
+        <span id={eyeLockId} className="sr-only">
+          {HIDE_LOCK_REASONS[eyeLock]}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -165,11 +206,14 @@ function ElementTools({
   onGrab: ((event: PointerEvent<HTMLElement>, entry: ElementEntry) => void) | undefined;
   onSetHidden: ((entry: ElementEntry, hidden: boolean) => void) | undefined;
 }) {
-  const { lock, hidden } = entry.node;
+  const { lock } = entry.node;
+  const hidden = entry.node.visibility === 'hidden';
+  const eyeLock = hideLock(entry.node);
   return (
     <>
-      {onSetHidden && (
-        <Tooltip label={hidden ? 'Show' : 'Hide'}>
+      {onSetHidden && eyeLock && <HideLockGlyph reason={HIDE_LOCK_REASONS[eyeLock]} />}
+      {onSetHidden && !eyeLock && (
+        <Tooltip label={`${hidden ? 'Show' : 'Hide'} (${HIDE_KEY_LABEL})`}>
           <Button
             variant="ghost"
             size="sm"
@@ -229,6 +273,22 @@ function LockGlyph({ lock, last }: { lock: NonNullable<OutlineNode['lock']>; las
   );
 }
 
+/** An eye that can't press: something other than its class decides whether the element shows. */
+function HideLockGlyph({ reason }: { reason: string }) {
+  return (
+    <Tooltip label={reason}>
+      <span className="canvas-layer-tool -my-1.5 flex size-control-sm items-center justify-center text-muted">
+        <Eye className="size-icon-md" />
+      </span>
+    </Tooltip>
+  );
+}
+
+/** What stops the eye: whatever else decides the element's display; null where its class does. */
+function hideLock({ visibility }: OutlineNode): HideLock | null {
+  return visibility === 'shown' || visibility === 'hidden' ? null : visibility;
+}
+
 function idList(...ids: (string | null | undefined)[]): string | undefined {
   return ids.filter((id) => id).join(' ') || undefined;
 }
@@ -236,7 +296,7 @@ function idList(...ids: (string | null | undefined)[]): string | undefined {
 /** The row's label, then its kind unless the label already names it, then what stops an edit or a pick. */
 function accessibleName(entry: ElementEntry, kind: string, unpickable: string | undefined): string {
   const parts = [entry.name === kind ? kind : `${entry.name}, ${kind}`];
-  if (entry.node.hidden) parts.push('hidden');
+  if (entry.node.visibility === 'hidden') parts.push('hidden');
   if (entry.node.lock) parts.push('locked');
   if (unpickable) parts.push(unpickable);
   return parts.join(', ');

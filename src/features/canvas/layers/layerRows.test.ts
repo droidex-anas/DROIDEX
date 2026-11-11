@@ -33,7 +33,7 @@ const node = (
   lock: null,
   free: true,
   contentFromProps: false,
-  hidden: false,
+  visibility: 'shown',
   ...row,
 });
 

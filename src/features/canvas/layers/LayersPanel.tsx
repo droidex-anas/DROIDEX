@@ -5,7 +5,7 @@
 // layer's element in Edit and the pointer outlines it on the board, and the board's own
 // pick and hover find their layer's row. A layer's handle, or ⌥ with the arrows, moves it
 // in its source; Delete removes it and ⌘D copies it, as its menu does, which a right-click
-// or ⇧F10 opens. An element's eye, or ⇧⌘H, hides it with the `hidden` attribute. The
+// or ⇧F10 opens. An element's eye, or ⇧⌘H, hides it with Tailwind's `hidden` class. The
 // tree is one tab stop whose rows the keyboard walks through aria-activedescendant, so a
 // canvas of any size mounts only its visible rows.
 
@@ -181,8 +181,8 @@ export function LayersPanel({
     else if (key.kind === 'indent') move.step(row, 'in');
     else if ((key.kind === 'remove' || key.kind === 'duplicate') && isOutlineRow(row))
       editLayer(row, { kind: key.kind });
-    else if (key.kind === 'toggle-hidden' && isHideable(row))
-      editLayer(row, { kind: 'hide', hidden: !row.node.hidden });
+    else if (key.kind === 'toggle-hidden' && isHideable(rows, row))
+      editLayer(row, { kind: 'hide', hidden: row.node.visibility !== 'hidden' });
     else if (key.kind === 'menu') openMenuBelow(row);
   };
   const openMenuBelow = (row: ElementEntry) => {
@@ -311,13 +311,14 @@ export function LayersPanel({
                     })
                   }
                   onSetElementHidden={
-                    onEditLayer &&
-                    ((row, hidden) => {
-                      // The keyboard stays on the tree, on this row, as a frame's eye leaves it.
-                      moveTo(row.key);
-                      tree.current?.focus({ preventScroll: true });
-                      editLayer(row, { kind: 'hide', hidden });
-                    })
+                    onEditLayer && isHideable(rows, row)
+                      ? (hiding, hidden) => {
+                          // The keyboard stays on the tree, on this row, as a frame's eye leaves it.
+                          moveTo(hiding.key);
+                          tree.current?.focus({ preventScroll: true });
+                          editLayer(hiding, { kind: 'hide', hidden });
+                        }
+                      : undefined
                   }
                   onPickElement={elementRows.pick}
                   onElementMenu={

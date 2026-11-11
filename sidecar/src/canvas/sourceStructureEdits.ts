@@ -7,7 +7,7 @@ import type { ComponentUses } from './componentUses.js';
 import type { ElementEdit, OutlineNode, SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
-import { hiddenEdit } from './sourceHiddenAttribute.js';
+import { hiddenClassEdit } from './sourceHiddenClass.js';
 import { enclosingFunction, readsLaterBinding } from './sourceLaterBindings.js';
 import {
   cutRange,
@@ -187,16 +187,23 @@ function duplicateLayer(files: SourceFiles, nodeId: string): EditedLayers {
   };
 }
 
-/** Hides the element with the `hidden` attribute, or takes it away to show it again. */
+/**
+ * Hides the element with Tailwind's `hidden` class, or takes the class away to
+ * show it again. A frame keeps a top layer that shows.
+ */
 function hideLayer(files: SourceFiles, nodeId: string, hidden: boolean): EditedLayers {
-  const { uses, layer } = layersIn(files);
+  const { uses, outline, layer } = layersIn(files);
   const subject = layer(nodeId);
-  writtenOnceAnchor(subject, uses, 'hide');
-  const { at } = subject;
-  if (subject.row.kind !== 'element' || !(ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)))
+  const { row, at } = subject;
+  if (row.kind !== 'element' || !(ts.isJsxElement(at) || ts.isJsxSelfClosingElement(at)))
     throw invalid('Only an element can be hidden.');
+  const isOtherShownTopLayer = (other: OutlineNode) =>
+    other.parentId === null && other !== row && other.visibility !== 'hidden';
+  if (hidden && row.parentId === null && !outline.nodes.some(isOtherShownTopLayer))
+    throw invalid(REFUSALS.hide.root);
+  writtenOnceAnchor(subject, uses, 'hide');
   const source = at.getSourceFile();
-  const edited = splice(source.text, [hiddenEdit(at, hidden)]);
+  const edited = splice(source.text, [hiddenClassEdit(at, hidden)]);
   // An edit inside the opening tag leaves the row its id.
   return { files: { [source.fileName]: edited }, landed: nodeId };
 }

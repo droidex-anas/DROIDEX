@@ -333,8 +333,12 @@ export interface OutlineNode {
   free: boolean;
   /** An element whose props set or may set its content, so it takes no written children. */
   contentFromProps: boolean;
-  /** An element written with the `hidden` attribute, so the design does not draw it. */
-  hidden: boolean;
+  /**
+   * An element hidden by Tailwind's `hidden` class or not, or why the layers
+   * panel can't tell or change that: classes or props from code, a class or
+   * style that decides its display, or a `hidden` attribute. Other kinds show.
+   */
+  visibility: 'shown' | 'hidden' | 'computed' | 'display' | 'attribute';
 }
 
 /** What a design's root renders, in reading order, and whether it stopped at a cap. */

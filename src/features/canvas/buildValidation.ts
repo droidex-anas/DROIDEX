@@ -56,6 +56,7 @@ function isSourceElement(value: unknown): boolean {
 
 const OUTLINE_KINDS = new Set(['element', 'instance', 'repeat', 'condition']);
 const OUTLINE_LOCKS = new Set(['repeated', 'shared', 'computed', 'kit']);
+const OUTLINE_VISIBILITIES = new Set(['shown', 'hidden', 'computed', 'display', 'attribute']);
 
 const MAX_OUTLINE_LABEL_CODE_POINTS = 64;
 
@@ -71,7 +72,7 @@ function isOutline(value: unknown): boolean {
   return true;
 }
 
-const OUTLINE_FLAGS = ['free', 'contentFromProps', 'hidden'] as const;
+const OUTLINE_FLAGS = ['free', 'contentFromProps'] as const;
 
 function isOutlineNode(value: unknown): boolean {
   return (
@@ -83,7 +84,8 @@ function isOutlineNode(value: unknown): boolean {
     (value.text === null || (value.kind === 'element' && isOutlineLabel(value.text))) &&
     (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
-    OUTLINE_FLAGS.every((flag) => typeof value[flag] === 'boolean')
+    OUTLINE_FLAGS.every((flag) => typeof value[flag] === 'boolean') &&
+    OUTLINE_VISIBILITIES.has(value.visibility as string)
   );
 }
 

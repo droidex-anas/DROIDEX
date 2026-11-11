@@ -13,7 +13,6 @@ import { readModules } from './compiler.js';
 import type { ModuleDeclarations } from './compilerModules.js';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
-import { HIDDEN_RULE } from './designStylesheet.js';
 import { isBareHsl } from './designSystemImport.js';
 import { aliasPath, readLibraryLayout } from './designSystemLibrary.js';
 import { bindingClause, entryExports, kitComponentPath, kitModule } from './libraryComponents.js';
@@ -57,8 +56,6 @@ const SCRIPT = /\.[jt]sx?$/;
 const TOKEN_REFERENCE = /(\bhsla?\(\s*)?var\(\s*(--[\w-]+)\s*([),])/g;
 const SINGLE_REFERENCE = /^var\(\s*(--[\w-]+)\s*\)$/;
 const MAX_REFERENCE_HOPS = 8;
-// A bare `hidden` attribute, as the layers panel writes one to hide a layer.
-const BARE_HIDDEN = /\shidden(?=[\s/>])/;
 
 /**
  * The export of `source` into the project at `projectFolder`, or null for a
@@ -103,8 +100,7 @@ export async function libraryExport(
   const css = tokens.unmappedCss();
   if (css !== '') files.push({ path: 'canvas-export/tokens.css', content: css });
   files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
-  const hides = scripts.some(([, text]) => BARE_HIDDEN.test(text));
-  files.push({ path: 'README.md', content: rewrittenReadme(found, components, tokens, hides) });
+  files.push({ path: 'README.md', content: rewrittenReadme(found, components, tokens) });
   return { status: 'rewritten', files };
 }
 
@@ -355,7 +351,6 @@ function rewrittenReadme(
   found: ProjectLibrary,
   components: ReadonlyMap<string, string>,
   tokens: ProjectTokens,
-  hides: boolean,
 ): string {
   const table = (header: string, rows: ReadonlyMap<string, string>) =>
     `${header}\n| --- | --- |\n${[...rows]
@@ -388,13 +383,6 @@ their kit values, light on \`:root\` and dark on \`.dark\`: ${[...tokens.unmappe
       .map((name) => `\`${name}\``)
       .join(', ')}.
 Import it into the project's stylesheet, or replace them with the project's own tokens.`);
-  if (hides)
-    sections.push(`It hides layers with the \`hidden\` attribute. Tailwind 3 lets a display class
-such as \`flex\` show such a layer anyway, so give the project's stylesheet this
-rule if it lacks it:
-
-\`\`\`css
-${HIDDEN_RULE}\`\`\``);
   sections.push(`The kit's guidance is in \`canvas-export/guidance.md\`. The images the source
 refers to are in \`assets/\`, named by their hash: serve them from the app and
 point the source's \`canvas-asset:\` and \`kit-asset:\` references at them.`);

@@ -145,7 +145,7 @@ test('an element picked on the board opens its frame, and rows its preview has n
       lock: null,
       free: true,
       contentFromProps: false,
-      hidden: false,
+      visibility: 'shown',
       ...row,
     }) satisfies OutlineNode;
   const pricing = frame('a', 'Pricing', { x: 0, y: 0, width: 400, height: 300 });

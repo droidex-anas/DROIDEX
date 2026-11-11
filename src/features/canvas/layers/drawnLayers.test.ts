@@ -20,7 +20,7 @@ const row = (
   lock: null,
   free: true,
   contentFromProps: false,
-  hidden: false,
+  visibility: 'shown',
 });
 
 /** The guest's marked elements, each as `instancePath elementId`, indented two spaces a level. */

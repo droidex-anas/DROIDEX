@@ -10,23 +10,23 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 
 after(stopCanvasRuntime);
 
-test('an element written with hidden stays hidden over a display utility', async () => {
+test('the hidden class comes after every plain display utility, so it wins on the same element', async () => {
   assert.equal(startCanvasRuntime(ownedCanvasRuntimeDir), null);
+  const displays = ['block', 'inline-block', 'inline', 'flex', 'inline-flex', 'grid', 'table'];
   const files = {
-    'main.tsx': 'export default () => <aside hidden className="flex">Side</aside>;\n',
+    'main.tsx': `export default () => <main className="hidden ${displays.join(' ')}" />;\n`,
   };
   const built = await buildDesignStylesheet(files, { files: {}, sections: [] });
   assert.ok(built.ok);
-  const display = new Map<string, string>();
+  const order: string[] = [];
   canvasRuntime()
     .postcss.parse(built.css)
-    .walkDecls('display', (declaration) => {
-      if (declaration.parent?.type === 'rule')
-        display.set(
-          declaration.parent.selector,
-          `${declaration.value}${declaration.important ? ' !important' : ''}`,
-        );
+    .walkRules((rule) => {
+      if (rule.parent?.type === 'root') order.push(rule.selector);
     });
-  assert.equal(display.get('[hidden]:where(:not([hidden="until-found"]))'), 'none !important');
-  assert.equal(display.get('.flex'), 'flex');
+  const hidden = order.indexOf('.hidden');
+  for (const display of displays) {
+    const at = order.indexOf(`.${display}`);
+    assert.ok(at !== -1 && at < hidden, display);
+  }
 });
