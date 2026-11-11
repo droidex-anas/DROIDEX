@@ -54,6 +54,19 @@ export function instrumentSource(
   };
 }
 
+/** The outline of a set of files with the node each row is written at; row ids do not depend on a revision. */
+export function sourceLayers(files: SourceFiles): {
+  uses: ComponentUses;
+  outline: SourceOutline;
+  written: Map<string, ts.Node>;
+} {
+  const program = parseProgram(files);
+  const uses = componentUses(program);
+  const written = new Map<string, ts.Node>();
+  const outline = sourceOutline(program, uses, programSites(program, uses, files, ''), written);
+  return { uses, outline, written };
+}
+
 export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   const program = parseProgram(files);
   return programSites(program, componentUses(program), files, revisionId);

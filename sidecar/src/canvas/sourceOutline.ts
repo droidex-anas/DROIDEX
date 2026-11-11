@@ -56,10 +56,12 @@ interface Slot extends ChildrenBinding {
   place: Place;
 }
 
+/** `written`, when given, is filled with the node each row is written at, by row id. */
 export function sourceOutline(
   program: ts.Program,
   uses: ComponentUses,
   sites: readonly Site[],
+  written?: Map<string, ts.Node>,
 ): SourceOutline {
   const checker = program.getTypeChecker();
   const elements = new Map(sites.map((site) => [site.node as ts.Node, site.element]));
@@ -88,6 +90,7 @@ export function sourceOutline(
     }
     bytes += size;
     nodes.push(node);
+    written?.set(node.nodeId, at);
     return node.nodeId;
   };
   /** Adds a row that only holds others, and takes it back if `fill` gives it none. */
@@ -99,6 +102,7 @@ export function sourceOutline(
     if (nodes.length > before.rows + 1) return;
     nodes.length = before.rows;
     bytes = before.bytes;
+    written?.delete(nodeId);
   };
   /** The place inside `node` as it opens; null where it is already open or too deep. */
   const enter = (node: ts.Node, place: Place): Place | null => {
