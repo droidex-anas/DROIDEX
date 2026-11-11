@@ -181,3 +181,20 @@ test('a class a kit theme colour key makes two utilities stays, and the edited p
     assert.deepEqual(edited, { 'main.tsx': `export default () => ${changed};\n` }, markup);
   }
 });
+
+test('an important class a kit theme key makes two utilities refuses the edit inline cannot win', () => {
+  const files = { 'main.tsx': 'export default () => <div className="!bg-cover">Box</div>;\n' };
+  const mapped = onlyElement(files);
+  assert.throws(
+    () =>
+      applyElementEdit(files, mapped.elements, {
+        element: reference(mapped.element),
+        change: {
+          kind: 'style',
+          styles: [{ property: 'backgroundColor', resolution: token('--ds-other') }],
+          theme: { colors: { cover: '#ff0000' } },
+        },
+      }),
+    (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+  );
+});

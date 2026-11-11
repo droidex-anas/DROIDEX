@@ -171,6 +171,7 @@ test('a kit colour key that is also another utility of its prefix reads as both,
     shared: true,
     scope: 'always',
   });
+  assert.equal(classStyle('!bg-cover', theme)?.important, true);
   assert.deepEqual(classStyle('text-brand', theme), {
     sets: ['fontSize', 'color'],
     shared: true,

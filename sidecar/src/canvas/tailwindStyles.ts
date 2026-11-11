@@ -46,6 +46,8 @@ export interface ClassStyle {
    * for one of them. An edit keeps it and writes inline instead.
    */
   shared?: true;
+  /** Written with `!`, so it wins over an inline style too. */
+  important?: true;
 }
 
 interface Utility {
@@ -288,13 +290,14 @@ function filterUtility(utility: string): Omit<ClassStyle, 'scope'> | null {
  */
 export function classStyle(token: string, theme: KitTheme = {}): ClassStyle | null {
   const variants = splitOutside(token, ':');
-  const utility = (variants.pop() ?? '').replace(/^!/, '');
+  const written = variants.pop() ?? '';
+  const utility = written.replace(/^!/, '');
   const read = withTheme(utility, utilityStyle(utility, theme), theme);
   if (!read) return null;
   let scope: ClassStyle['scope'] = 'always';
   if (variants.some((variant) => FRAME_VARIANT.test(variant))) scope = 'frame';
   else if (variants.length > 0) scope = 'state';
-  return { ...read, scope };
+  return written.startsWith('!') ? { ...read, scope, important: true } : { ...read, scope };
 }
 
 /**

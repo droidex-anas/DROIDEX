@@ -136,11 +136,17 @@ function setStyle(
   // A class that stays may be what this frame shows: a breakpoint or
   // colour-mode one, or one a kit theme key makes two utilities. Only the
   // style attribute is sure to win over it.
-  const outranked = live.some(
+  const outranking = live.filter(
     ({ read }) =>
       (read.scope === 'frame' || (read.scope === 'always' && read.shared)) &&
       read.sets.some((longhand) => own.includes(longhand)),
   );
+  if (outranking.some(({ read }) => read.scope === 'always' && read.important))
+    throw new SourceElementError(
+      'ambiguous_element',
+      `A class marked important sets this element's ${property}, so a value written here would not show. Ask the agent to change it.`,
+    );
+  const outranked = outranking.length > 0;
   // An inline shorthand that also sets this property would win over a class.
   const inlineShorthand = style.entries.some((entry) => {
     const sets = longhands(entry.name);
@@ -153,8 +159,7 @@ function setStyle(
   );
   keepFilter(property, name, dead, style);
   const first = dead.at(0)?.entry;
-  // A class that applies always has no variant, so its ! leads.
-  const important = dead.some(({ entry }) => entry.name?.startsWith('!') === true);
+  const important = dead.some(({ read }) => read.important);
   let lostLineHeight: string | undefined;
   for (const { entry, read } of dead) {
     lostLineHeight = read.lineHeight ?? lostLineHeight;
