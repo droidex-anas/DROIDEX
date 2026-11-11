@@ -1,7 +1,7 @@
 // The layers panel against the board harness: a row per frame, front to back,
 // with only the visible ones mounted, picking and lighting frames from
 // it, the keyboard's way to a frame and back, renaming, the rail's toggle,
-// and moving a layer in its source.
+// and moving, deleting and duplicating a layer in its source.
 
 import { expect, test } from '@playwright/test';
 import { box, boardUrl, serveBoard, stubGuests } from './board/boardPage';
@@ -625,4 +625,70 @@ test('A layer’s handle and ⌥ with the arrows move it in its source, and a dr
   await expect(tree).not.toHaveAttribute('data-dragging');
   await page.mouse.up();
   expect(await moves()).toHaveLength(2);
+});
+
+test('Delete, ⌘D and a layer’s menu remove or copy it in its source, and the keyboard follows', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&layers=1&moves=1'));
+  const tree = page.getByRole('tree', { name: 'Frames' });
+  const frameRow = tree.getByRole('treeitem', { name: 'Design A, Ready' });
+  await frameRow.getByRole('button', { name: 'Expand' }).click();
+  const row = (name: string) => tree.getByRole('treeitem', { name: new RegExp(`^${name},`) });
+  const keyboardOn = async (name: string) => {
+    await expect(tree).toHaveAttribute(
+      'aria-activedescendant',
+      (await row(name).getAttribute('id')) ?? '',
+    );
+  };
+  const edits = () => page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit));
+  const layer = (revisionId: string, nodeId: string) => ({ designId: 'a', revisionId, nodeId });
+
+  // Delete removes the line, and once that has built the keyboard goes to the row it answers.
+  // The caret left the keyboard on the frame's row: down past main and the title.
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowDown');
+  await keyboardOn('Start free');
+  await page.keyboard.press('Delete');
+  expect(await edits()).toEqual([{ layer: layer('rev_01', 'line'), change: { kind: 'remove' } }]);
+  await page.evaluate(() => window.boardHarness.answerEdit(0, 'section'));
+  await keyboardOn('section');
+
+  // ⌘D on a layer's row copies the layer and stays the panel's; on a frame's row it is the
+  // window's, which splits the chat. The image's row stands in for the copy.
+  await page.evaluate(() => {
+    window.addEventListener('keydown', (event) => {
+      if (event.key === 'd') document.body.dataset.windowDuplicates = event.code;
+    });
+  });
+  await page.keyboard.press('ControlOrMeta+d');
+  expect(await edits()).toHaveLength(2);
+  expect((await edits())[1]).toEqual({
+    layer: layer('rev_02', 'section'),
+    change: { kind: 'duplicate' },
+  });
+  await expect(page.locator('body')).not.toHaveAttribute('data-window-duplicates');
+  await page.evaluate(() => window.boardHarness.answerEdit(1, 'image'));
+  await keyboardOn('img');
+  await frameRow.click();
+  await page.keyboard.press('ControlOrMeta+d');
+  await expect(page.locator('body')).toHaveAttribute('data-window-duplicates', 'KeyD');
+  expect(await edits()).toHaveLength(2);
+
+  // A right-click opens the row's menu, whose Delete removes its layer; a refusal says why.
+  await row('img').click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: 'img layer' });
+  await expect(menu.getByRole('menuitem', { name: /^Duplicate/ })).toBeVisible();
+  await menu.getByRole('menuitem', { name: /^Delete/ }).click();
+  await expect(menu).toHaveCount(0);
+  expect((await edits())[2]).toEqual({
+    layer: layer('rev_03', 'image'),
+    change: { kind: 'remove' },
+  });
+  await page.evaluate(() => window.boardHarness.refuseEdit(2));
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.toasts()))
+    .toEqual(['This element changed. Pick it again.']);
 });

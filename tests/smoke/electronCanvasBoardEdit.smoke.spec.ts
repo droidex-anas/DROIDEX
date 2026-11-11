@@ -177,10 +177,23 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByTestId('canvas-board')).toBeFocused();
   await expect(title).toBeVisible();
 
+  // Delete removes the picked element's layer from its source rather than its frame.
+  await page.keyboard.press('Delete');
+  expect(await page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit))).toEqual([
+    {
+      layer: { designId: 'a', revisionId: 'rev_01', nodeId: '0000000000000003' },
+      change: { kind: 'remove' },
+    },
+  ]);
+  expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([]);
+  await page.evaluate(() => window.boardHarness.refuseEdit(0));
+  await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
+  await expect(title).toBeVisible();
+
   const fontSize = title.getByLabel('Font size', { exact: true });
   await fontSize.fill('30px');
   await fontSize.press('Enter');
-  await page.evaluate(() => window.boardHarness.refuseEdit(0));
+  await page.evaluate(() => window.boardHarness.refuseEdit(1));
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toHaveCount(0);
 });
