@@ -52,11 +52,11 @@ interface Reader {
 export function readPathData(d: string, spacing: PathSpacing): PathSegment[] | null {
   const reader = { d, at: 0 };
   read(reader, SPACES[spacing]);
-  if (d.charAt(reader.at).toUpperCase() !== 'M') return null;
+  if (upperCase(d.charAt(reader.at)) !== 'M') return null;
   const segments: PathSegment[] = [];
   while (reader.at < d.length) {
     let command = d.charAt(reader.at);
-    const count = COMMAND_NUMBERS.get(command.toUpperCase());
+    const count = COMMAND_NUMBERS.get(upperCase(command));
     if (count === undefined) return null;
     reader.at += 1;
     read(reader, SPACES[spacing]);
@@ -108,5 +108,10 @@ function isInRange(number: string, exponent: string | undefined): boolean {
 }
 
 function isCommand(character: string): boolean {
-  return COMMAND_NUMBERS.has(character.toUpperCase());
+  return COMMAND_NUMBERS.has(upperCase(character));
+}
+
+/** Only ASCII letters are commands, and `ſ` upper-cases to S. */
+function upperCase(character: string): string {
+  return /^[a-z]$/.test(character) ? character.toUpperCase() : character;
 }
