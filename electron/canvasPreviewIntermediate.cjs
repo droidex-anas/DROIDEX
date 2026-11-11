@@ -7,8 +7,8 @@ const {
   MAX_PREVIEW_SELECTION_BYTES,
   MAX_PREVIEW_TREE_BYTES,
   MAX_PREVIEW_TREE_NODES,
-  MAX_PREVIEW_VECTOR_BYTES,
 } = require('./canvasPreviewReporter.cjs');
+const { MAX_PREVIEW_VECTOR_BYTES } = require('./canvasPreviewSvg.cjs');
 
 /** One message from the generated frame, as JSON, except a selection, which has its own cap. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
