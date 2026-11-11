@@ -15,6 +15,7 @@ import { DESIGN_PACKAGE_ENTRIES, DESIGN_PACKAGE_LIST } from './designPackages.js
 import { KIT_ENTRY } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
+import { resolveRelative } from './relativeImport.js';
 
 /** The one package specifier that resolves to the pinned kit's own files. */
 export const KIT_SPECIFIER = '@droidex/design-system';
@@ -257,35 +258,6 @@ function loadVirtual(tree: SourceFiles, args: esbuild.OnLoadArgs): esbuild.OnLoa
   if (args.path.endsWith('.css'))
     return { contents: '', loader: 'js', resolveDir: VIRTUAL_DIRECTORY };
   return { contents: tree[args.path], loader: 'tsx', resolveDir: VIRTUAL_DIRECTORY };
-}
-
-type RelativeResolution =
-  | { kind: 'file'; path: string }
-  | { kind: 'missing' }
-  | { kind: 'escapes' };
-
-/** Walks a relative specifier inside `tree`, refusing to climb above its root. */
-export function resolveRelative(
-  tree: SourceFiles,
-  importer: string,
-  specifier: string,
-): RelativeResolution {
-  const segments = importer.includes('/')
-    ? importer.slice(0, importer.lastIndexOf('/')).split('/')
-    : [];
-  for (const segment of specifier.split('/')) {
-    if (segment === '' || segment === '.') continue;
-    if (segment === '..') {
-      if (segments.length === 0) return { kind: 'escapes' };
-      segments.pop();
-      continue;
-    }
-    segments.push(segment);
-  }
-  const base = segments.join('/');
-  const candidates = [base, `${base}.tsx`, `${base}.ts`, `${base}/index.tsx`, `${base}/index.ts`];
-  const found = candidates.find((candidate) => Object.hasOwn(tree, candidate));
-  return found === undefined ? { kind: 'missing' } : { kind: 'file', path: found };
 }
 
 function diagnosticsFrom(
