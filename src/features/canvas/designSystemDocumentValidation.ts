@@ -230,6 +230,7 @@ export function isKitDocument(value: unknown): boolean {
     isDocumentSections(value.sections) &&
     boundedList(value.examples, MAX_EXAMPLES, isSourcePath) &&
     boundedList(value.catalog, MAX_CATALOG_ENTRIES, isCatalogListing) &&
+    isUniqueBy(value.catalog, 'name') &&
     boundedList(value.unmapped, MAX_TOKENS, isTokenName) &&
     (value.provenance === null || isKitProvenance(value.provenance)) &&
     (value.savedAt === null || isTimestamp(value.savedAt)) &&
@@ -321,7 +322,7 @@ function isLibraryProvenance(value: unknown): boolean {
     count(value.skippedCount) &&
     count(value.partialCount) &&
     listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount) &&
-    reviewsEachFileOnce(value.skipped)
+    isUniqueBy(value.skipped, 'file')
   );
 }
 
@@ -341,9 +342,11 @@ function listsAtMostItsCounts(
   return kept <= partialCount && skipped.length - kept <= skippedCount;
 }
 
-function reviewsEachFileOnce(skipped: readonly unknown[]): boolean {
-  const files = skipped.map((skip) => (record(skip) ? skip.file : null));
-  return new Set(files).size === files.length;
+/** Whether no two records of a list share their value at `key`. */
+function isUniqueBy(list: unknown, key: string): boolean {
+  if (!Array.isArray(list)) return false;
+  const values = list.map((each: unknown) => (record(each) ? each[key] : null));
+  return new Set(values).size === values.length;
 }
 
 /** A review record's file or detail: a project path or short text, never an absolute path. */

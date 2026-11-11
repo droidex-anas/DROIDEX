@@ -255,6 +255,13 @@ test('the renderer accepts every design system reply and event the sidecar sends
     isCanvasEvent({ type: 'canvas.result', requestId: 'req_05', ok: true, reply }),
     false,
   );
+  // The sidecar refuses a catalog that names two entries alike.
+  const listing = { name: 'Button', module: 'index.tsx', note: null };
+  assert.equal(isKitDocument({ ...paper, catalog: [listing] }), true);
+  assert.equal(
+    isKitDocument({ ...paper, catalog: [listing, { ...listing, note: 'Twice' }] }),
+    false,
+  );
 });
 
 test('both boundaries accept a library kit provenance and refuse the same malformed ones', () => {
