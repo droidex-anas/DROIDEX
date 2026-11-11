@@ -3,9 +3,10 @@
 // kit's tokens and its "use client" directive gone, and an entry that exports
 // what each exports, as the compiler process reads them (moduleDeclarations.ts).
 
+import path from 'node:path';
 import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
-import { MAX_LIBRARY_EXPORTS } from './designSystemProvenance.js';
+import { MAX_LIBRARY_EXPORTS, type LibrarySkip } from './designSystemProvenance.js';
 import { withKitTokens } from './libraryTheme.js';
 import type { CanvasDiagnostic } from './protocol.js';
 
@@ -43,10 +44,10 @@ interface KitModule {
 }
 
 /**
- * The components as kit files and the entry that exports them. One that
- * imports what the canvas cannot load is left out, and so is one that needs a
- * component left out, until none does. A library none of whose components
- * export anything the kit can name is refused.
+ * The components as kit files and the entry that exports them, and what was
+ * left out. One that imports what the canvas cannot load is left out, and so is
+ * one that needs a component left out, until none does. A library none of
+ * whose components export anything the kit can name is refused.
  */
 export function kitComponents(
   library: readonly LibraryComponent[],
@@ -54,18 +55,29 @@ export function kitComponents(
   kitNames: Readonly<Record<string, string>>,
   diagnostics: CanvasDiagnostic[],
 ):
-  | { entry: string; files: [string, string][]; components: Record<string, string> }
+  | {
+      entry: string;
+      files: [string, string][];
+      components: Record<string, string>;
+      skipped: LibrarySkip[];
+    }
   | { problem: string } {
   const modules = new Map<string, KitModule>();
+  const skipped: LibrarySkip[] = [];
   for (const component of library) {
     const module = kitModule(component, aliases, kitNames);
-    if ('problem' in module)
+    if ('problem' in module) {
       diagnostics.push({
         code: 'unsupported_import',
         message: module.problem,
         file: component.file,
       });
-    else modules.set(component.name, module);
+      skipped.push({
+        file: component.file,
+        reason: 'unsupported_import',
+        detail: module.specifier,
+      });
+    } else modules.set(component.name, module);
   }
   for (let removed = true; removed; ) {
     removed = false;
@@ -76,6 +88,11 @@ export function kitComponents(
         code: 'unsupported_import',
         message: `${module.file} was left out: it imports ${missing}, which was left out.`,
         file: module.file,
+      });
+      skipped.push({
+        file: module.file,
+        reason: 'needs_left_out',
+        detail: path.posix.join(path.posix.dirname(module.file), `${missing}.tsx`),
       });
       modules.delete(name);
       removed = true;
@@ -95,6 +112,7 @@ export function kitComponents(
         message: `${module.file} exports ${exportedName}, as ${components[exportedName]} does; the kit exports the first.`,
         file: module.file,
       });
+      skipped.push({ file: module.file, reason: 'duplicate_export', detail: exportedName });
       return false;
     });
     for (const { exportedName } of exported) components[exportedName] = module.file;
@@ -109,6 +127,7 @@ export function kitComponents(
         message: `${module.file} exports nothing the kit recognises, so the kit's entry does not export it.`,
         file: module.file,
       });
+      skipped.push({ file: module.file, reason: 'no_exports', detail: null });
     }
     files.push([kitComponentPath(name), module.source]);
   }
@@ -116,7 +135,7 @@ export function kitComponents(
     return {
       problem: `No component in ${aliases.ui} exports anything the kit recognises${unnamed === null ? '' : `, starting with ${unnamed}`}.`,
     };
-  return { entry: `${lines.join('\n')}\n`, files, components };
+  return { entry: `${lines.join('\n')}\n`, files, components, skipped };
 }
 
 /**
@@ -159,7 +178,7 @@ export function kitModule(
   { file, text, module }: LibraryComponent,
   aliases: LibraryAliases,
   kitNames: Readonly<Record<string, string>>,
-): KitModule | { problem: string } {
+): KitModule | { problem: string; specifier: string } {
   const needs: string[] = [];
   const rewrites: { start: number; end: number; kitSpecifier: string }[] = [];
   for (const { text: specifier, start, end, loads } of module.specifiers) {
@@ -168,6 +187,7 @@ export function kitModule(
       if (!loads) continue;
       return {
         problem: `${file} was left out: it imports ${specifier}, which the canvas cannot load.`,
+        specifier,
       };
     }
     if (loads && kitSpecifier.startsWith('./')) needs.push(kitSpecifier.slice('./'.length));

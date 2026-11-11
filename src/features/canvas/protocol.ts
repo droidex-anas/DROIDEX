@@ -73,7 +73,29 @@ export interface LibraryProvenance {
   components: Record<string, string>;
   /** Each kit token, and the project token it was read from. */
   tokens: Record<string, string>;
+  /** The first files the import left out, by file; `skippedCount` counts them all. */
+  skipped: LibrarySkip[];
+  skippedCount: number;
 }
+
+/**
+ * A file, or one export of a file, a library import left out. `detail` names
+ * the import, the left-out sibling or the export for the three reasons that have one.
+ */
+export interface LibrarySkip {
+  file: string;
+  reason: LibrarySkipReason;
+  detail: string | null;
+}
+
+export type LibrarySkipReason =
+  | 'over_limit'
+  | 'unreadable'
+  | 'unsupported_import'
+  | 'needs_left_out'
+  | 'duplicate_export'
+  | 'no_exports'
+  | 'not_a_component';
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {

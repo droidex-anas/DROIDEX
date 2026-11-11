@@ -28,6 +28,21 @@ const MAX_PROJECT_NAME_LENGTH = 255;
 const MAX_PROJECT_FILES = 8;
 const MAX_PROJECT_PATH_LENGTH = 1024;
 const MAX_LIBRARY_EXPORTS = 1024;
+const MAX_LIBRARY_SKIPS = 128;
+const SKIP_REASONS = new Set<unknown>([
+  'over_limit',
+  'unreadable',
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+  'no_exports',
+  'not_a_component',
+]);
+const DETAILED_SKIP_REASONS = new Set<unknown>([
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+]);
 const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([
   'colors',
@@ -283,11 +298,22 @@ function isKitProvenance(value: unknown): boolean {
 
 function isLibraryProvenance(value: unknown): boolean {
   return (
-    hasOnlyKeys(value, ['kind', 'components', 'tokens']) &&
+    hasOnlyKeys(value, ['kind', 'components', 'tokens', 'skipped', 'skippedCount']) &&
     value.kind === 'shadcn' &&
     isNameMap(value.components, MAX_LIBRARY_EXPORTS, isExportName, isProjectPath) &&
-    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName)
+    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName) &&
+    Array.isArray(value.skipped) &&
+    boundedList(value.skipped, MAX_LIBRARY_SKIPS, isLibrarySkip) &&
+    count(value.skippedCount) &&
+    value.skippedCount >= value.skipped.length
   );
+}
+
+function isLibrarySkip(value: unknown): boolean {
+  if (!hasOnlyKeys(value, ['file', 'reason', 'detail'])) return false;
+  if (!isProjectPath(value.file) || !SKIP_REASONS.has(value.reason)) return false;
+  if (DETAILED_SKIP_REASONS.has(value.reason)) return isProjectPath(value.detail);
+  return value.detail === null;
 }
 
 function isNameMap(

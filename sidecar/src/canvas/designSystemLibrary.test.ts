@@ -6,6 +6,7 @@ import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './
 import { kitPrimitives } from './designSystemBrief.js';
 import { MAX_LIBRARY_COMPONENTS, TAILWIND_4_REFUSAL } from './designSystemLibrary.js';
 import { importProjectDesignSystem } from './designSystemProject.js';
+import { MAX_LIBRARY_SKIPS } from './designSystemProvenance.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { KitPreviews } from './kitPreviews.js';
 
@@ -41,6 +42,15 @@ test('a shadcn/ui library becomes a kit of its own components, tokens and theme 
   assert.equal(source.library?.components.DialogContent, 'components/ui/dialog.tsx');
   assert.equal(source.library?.tokens['--ds-primary'], '--primary');
   assert.equal(source.library?.tokens['--ds-radius'], '--radius');
+  assert.deepEqual(source.library?.skipped, [
+    {
+      file: 'components/ui/notice.tsx',
+      reason: 'needs_left_out',
+      detail: 'components/ui/sonner.tsx',
+    },
+    { file: 'components/ui/sonner.tsx', reason: 'unsupported_import', detail: 'next-themes' },
+  ]);
+  assert.equal(source.library?.skippedCount, 2);
 
   // Aliases point at the kit's own files, and the server directive is gone.
   const dialog = system.files['components/ui/dialog.tsx'];
@@ -161,16 +171,16 @@ const label = "import x from 'elsewhere'"
   );
 });
 
-test('a library past the component bound keeps the first by name and names the rest', async (t) => {
+test('a library past the component bound keeps the first by name and lists the rest, up to its bound', async (t) => {
   // Without the two components left out, every one past the bound is a part.
   const files = Object.fromEntries(
     Object.entries(LIBRARY).filter(([path]) => !/\/(?:sonner|notice)\.tsx$/.test(path)),
   );
-  for (let index = 0; index < MAX_LIBRARY_COMPONENTS + 2; index += 1) {
-    const name = `part-${String(index).padStart(2, '0')}`;
-    files[`components/ui/${name}.tsx`] =
+  const over = MAX_LIBRARY_SKIPS + 2;
+  const parts = MAX_LIBRARY_COMPONENTS - 3 + over;
+  for (let index = 0; index < parts; index += 1)
+    files[`components/ui/part-${String(index).padStart(3, '0')}.tsx`] =
       `export function Part${String(index)}() {\n  return <div />\n}\n`;
-  }
   const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
   assert.equal(imported.status, 'imported');
   const copied = Object.keys(imported.system.files).filter((path) =>
@@ -178,10 +188,55 @@ test('a library past the component bound keeps the first by name and names the r
   );
   assert.equal(copied.length, MAX_LIBRARY_COMPONENTS);
   assert.ok(copied.includes('components/ui/button.tsx'));
-  assert.match(
-    imported.diagnostics[0].message,
-    /leaves out part-45, part-46, part-47, part-48, part-49\.$/,
-  );
+  assert.match(imported.diagnostics[0].message, /leaves out part-\d+(?:, part-\d+)*\.$/);
+  const { project: source } = imported.system.provenance as Extract<
+    typeof imported.system.provenance,
+    { project: unknown }
+  >;
+  const firstOver = parts - over;
+  assert.equal(source.library?.skippedCount, over);
+  assert.equal(source.library?.skipped.length, MAX_LIBRARY_SKIPS);
+  assert.deepEqual(source.library?.skipped[0], {
+    file: `components/ui/part-${String(firstOver).padStart(3, '0')}.tsx`,
+    reason: 'over_limit',
+    detail: null,
+  });
+});
+
+test('a library import records each file it leaves out and why, the ones it never parses included', async (t) => {
+  const files = {
+    ...LIBRARY,
+    'components/ui/charts/bar.tsx': 'export function Bar() {\n  return <div />\n}\n',
+    'components/ui/use-toast.ts': 'export function useToast() {}\n',
+    'components/ui/date_picker.tsx': 'export function DatePicker() {\n  return <div />\n}\n',
+    'components/ui/.DS_Store': '',
+    'components/ui/huge.tsx': `// ${'x'.repeat(256 * 1024)}\n`,
+    'components/ui/hidden.tsx': 'const Hidden = () => <div />\n',
+    'components/ui/big-button.tsx': 'export function Button() {\n  return <button />\n}\n',
+  };
+  const imported = await importProjectDesignSystem(await project(t, files), SHADCN, KIT);
+  assert.equal(imported.status, 'imported');
+  const { project: source } = imported.system.provenance as Extract<
+    typeof imported.system.provenance,
+    { project: unknown }
+  >;
+  const skip = (file: string, reason: string, detail: string | null = null) => ({
+    file: `components/ui/${file}`,
+    reason,
+    detail,
+  });
+  assert.deepEqual(source.library?.skipped, [
+    skip('button.tsx', 'duplicate_export', 'Button'),
+    skip('charts', 'not_a_component'),
+    skip('date_picker.tsx', 'not_a_component'),
+    skip('hidden.tsx', 'no_exports'),
+    skip('huge.tsx', 'unreadable'),
+    skip('notice.tsx', 'needs_left_out', 'components/ui/sonner.tsx'),
+    skip('sonner.tsx', 'unsupported_import', 'next-themes'),
+    skip('use-toast.ts', 'not_a_component'),
+  ]);
+  assert.equal(source.library?.skippedCount, 8);
+  assert.equal(source.library?.components.Button, 'components/ui/big-button.tsx');
 });
 
 test('aliases map as TypeScript reads them, and theme values the kit cannot keep whole are reported', async (t) => {

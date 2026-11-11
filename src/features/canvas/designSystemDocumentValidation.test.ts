@@ -275,13 +275,36 @@ test('both boundaries accept a library kit provenance and refuse the same malfor
     kind: 'shadcn',
     components: { Button: 'components/ui/button.tsx', buttonVariants: 'components/ui/button.tsx' },
     tokens: { '--ds-accent': '--primary' },
+    skipped: [
+      {
+        file: 'components/ui/calendar.tsx',
+        reason: 'unsupported_import',
+        detail: 'react-day-picker',
+      },
+      { file: 'components/ui/use-toast.ts', reason: 'not_a_component', detail: null },
+    ],
+    skippedCount: 3,
   };
+  const skip = (each: object) => ({ ...library, skipped: [each] });
   const cases: [string, unknown, boolean][] = [
     ['a shadcn library', library, true],
     ['another library kind', { ...library, kind: 'mui' }, false],
     ['an export that is not an identifier', { ...library, components: { 'a-b': 'a.tsx' } }, false],
     ['a project token that is not a token name', { ...library, tokens: { '--ds-a': 'a' } }, false],
     ['an extra key', { ...library, version: '4' }, false],
+    ['no left-out files', { ...library, skipped: undefined }, false],
+    ['more left-out files than counted', { ...library, skippedCount: 1 }, false],
+    ['an unknown reason', skip({ file: 'a.tsx', reason: 'too_big', detail: null }), false],
+    [
+      'a reason without its detail',
+      skip({ file: 'a.tsx', reason: 'needs_left_out', detail: null }),
+      false,
+    ],
+    [
+      'a detail its reason has none of',
+      skip({ file: 'a.tsx', reason: 'unreadable', detail: 'a' }),
+      false,
+    ],
   ];
   for (const [name, value, accepted] of cases) {
     const project = { name: 'acme', files: ['components.json'], library: value };
