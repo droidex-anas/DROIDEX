@@ -411,6 +411,7 @@ export function heldText(
   return node.children.flatMap((child) => {
     if (ts.isJsxText(child)) return child.containsOnlyTriviaWhiteSpaces ? [] : [child.text];
     const value = ts.isJsxExpression(child) ? child.expression : undefined;
-    return value && ts.isStringLiteralLike(value) ? [value.text] : [];
+    // `{""}` renders nothing, so it is no text.
+    return value && ts.isStringLiteralLike(value) && value.text !== '' ? [value.text] : [];
   });
 }

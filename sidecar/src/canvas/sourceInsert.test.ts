@@ -134,6 +134,13 @@ test('a layer holding only a string in braces holds text, so the entry goes afte
   );
 });
 
+test('a layer holding only an empty string in braces holds no text, so the entry goes inside it', () => {
+  assert.equal(
+    inserted(`${KIT}export default () => <main><section>{""}</section></main>;`, 'section'),
+    `${KIT}export default () => <main><section>{""}\n  <Button>Continue</Button>\n</section></main>;`,
+  );
+});
+
 test('an element written inside a condition does not take the entry, though it could hold it', () => {
   assert.equal(
     refusal(`${KIT}export default () => <main>{true && <section />}</main>;`, 'section'),
@@ -152,6 +159,18 @@ test('an entry giving an element an id the frame already gives one is refused, n
     refusal('export default () => <main><input id="email" /></main>;', 'main', email),
     'This frame already has an element with id "email", and the entry would repeat it.',
   );
+  // The document reads the id, not how the source spells it.
+  for (const spelled of ['"em&#97;il"', '"em&#x61;il"', '{("email")}'])
+    assert.equal(
+      refusal(`export default () => <main><input id=${spelled} /></main>;`, 'main', email),
+      'This frame already has an element with id "email", and the entry would repeat it.',
+    );
+  assert.equal(
+    refusal('export default () => <main><input id="&eacute;mail" /></main>;', 'main', email),
+    "This frame writes an id the edit can't read, so the entry's id might repeat it.",
+  );
+  const files = { 'main.tsx': 'export default () => <main><input id="e&amp;mail" /></main>;' };
+  assert.ok(insertLayer(files, rowId(files, 'main'), email).landed);
 });
 
 test('a layer the edit cannot reach alone is refused with the reason', () => {
