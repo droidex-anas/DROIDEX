@@ -266,6 +266,8 @@ function isComputedAttribute(name: string, value: ts.Expression | undefined): bo
   if (name === 'style') return hasComputedStyle(value);
   if (PAINT_ATTRIBUTES.has(name))
     return value === undefined || !(isLiteral(value) || ts.isNumericLiteral(value));
+  // A path edit replaces its data, which it writes only over one quoted string.
+  if (name === 'd') return value !== undefined && !ts.isStringLiteral(value);
   return false;
 }
 
