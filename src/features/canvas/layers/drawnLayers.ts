@@ -121,24 +121,24 @@ export function drawnLayers(outline: SourceOutline, tree: PreviewTree): DrawnLay
    */
   function drawnWithin(holder: number, scope: string | null, elementIds: ReadonlySet<string>) {
     const found = new Map<string, number[]>();
-    const pending: { at: number; rowId: string | null }[] = [{ at: holder, rowId: scope }];
+    // Children go on the stack last first, so the walk takes elements in document order.
+    const childrenUnder = (at: number, rowId: string | null) =>
+      (childrenOf.get(at) ?? []).map((index) => ({ index, rowId })).reverse();
+    const pending = childrenUnder(holder, scope);
     for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
-      for (const index of childrenOf.get(next.at) ?? []) {
-        const node = nodes[index];
-        if (elementIds.has(node.elementId)) {
-          const same = found.get(node.elementId);
-          if (same) same.push(index);
-          else found.set(node.elementId, [index]);
-          continue;
-        }
-        const row = unwrittenRow(node, next.rowId);
-        unwritten.push(row);
-        drawn.set(row.nodeId, { state: 'drawn', node: previewNode(node) });
-        rowAt.set(node.instancePath, row.nodeId);
-        pending.push({ at: index, rowId: row.nodeId });
+      const node = nodes[next.index];
+      if (elementIds.has(node.elementId)) {
+        const same = found.get(node.elementId);
+        if (same) same.push(next.index);
+        else found.set(node.elementId, [next.index]);
+        continue;
       }
+      const row = unwrittenRow(node, next.rowId);
+      unwritten.push(row);
+      drawn.set(row.nodeId, { state: 'drawn', node: previewNode(node) });
+      rowAt.set(node.instancePath, row.nodeId);
+      pending.push(...childrenUnder(next.index, row.nodeId));
     }
-    for (const instances of found.values()) instances.sort((a, b) => a - b);
     return found;
   }
 }
