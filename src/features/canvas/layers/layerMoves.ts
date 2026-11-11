@@ -62,7 +62,8 @@ export function isHideable(rows: readonly LayerEntry[], row: LayerEntry): row is
       other !== row &&
       isOutlineRow(other) &&
       other.parentKey === row.parentKey &&
-      other.node.visibility !== 'hidden',
+      other.node.visibility !== 'hidden' &&
+      other.node.visibility !== 'attribute',
   );
 }
 
