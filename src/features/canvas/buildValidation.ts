@@ -85,8 +85,15 @@ function isOutlineNode(value: unknown): boolean {
     (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
     OUTLINE_FLAGS.every((flag) => typeof value[flag] === 'boolean') &&
-    OUTLINE_VISIBILITIES.has(value.visibility as string)
+    isRowVisibility(value.kind, value.visibility)
   );
+}
+
+/** Only an element can be hidden, or have its visibility decided where the eye can't edit it. */
+function isRowVisibility(kind: unknown, visibility: unknown): boolean {
+  return kind === 'element'
+    ? OUTLINE_VISIBILITIES.has(visibility as string)
+    : visibility === 'shown';
 }
 
 export function isOutlineNodeId(value: unknown): boolean {

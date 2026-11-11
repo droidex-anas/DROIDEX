@@ -239,7 +239,8 @@ export const sourceOutlineSchema = z
           .refine(
             (node) =>
               (node.kind === 'element') === (node.elementId !== null) &&
-              (node.text === null || node.kind === 'element'),
+              (node.text === null || node.kind === 'element') &&
+              (node.visibility === 'shown' || node.kind === 'element'),
           ),
       )
       .max(CANVAS_LIMITS.maxSourceElements)
