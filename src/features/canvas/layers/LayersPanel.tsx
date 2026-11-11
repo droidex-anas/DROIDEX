@@ -6,7 +6,7 @@
 // pick and hover find their layer's row. The tree is one tab stop whose rows the keyboard
 // walks through aria-activedescendant, so a canvas of any size mounts only its visible rows.
 
-import { useId, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, type KeyboardEvent } from 'react';
 import { isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
@@ -81,8 +81,19 @@ export function LayersPanel({
   const { virtualizer, revealRestacked } = useLayerList(tree, keys, ROW_PX, kept, movedTo);
   const shownRows = virtualizer.getVirtualItems().map((item) => ({ item, row: rows[item.index] }));
   // A row on show past what its frame's preview has read has the rest read.
-  for (const { row } of shownRows)
-    if (row.kind === 'element' && row.drawn?.state === 'unread') readRest(row.frame.designId);
+  const unreadShown = [
+    ...new Set(
+      shownRows.flatMap(({ row }) =>
+        row.kind === 'element' && row.drawn?.state === 'unread' ? [row.frame.designId] : [],
+      ),
+    ),
+  ].join(' ');
+  const readRestOf = useEffectEvent((designIds: string) => {
+    for (const designId of designIds.split(' ')) readRest(designId);
+  });
+  useEffect(() => {
+    if (unreadShown) readRestOf(unreadShown);
+  }, [unreadShown]);
   const selected = new Set(selectedFrameIds);
   const rowId = (key: string) => `${treeId}-${key}`;
   const helpId = `${treeId}-help`;
