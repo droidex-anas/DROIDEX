@@ -37,8 +37,11 @@ Chromium: pans, wheel zooms, frame drags, a marquee, Edit hover, Alt
 measurement, the Layers rows and a panel scrub. It writes
 `reports/perf/canvas.{json,md}`. `perf:gates` runs it once on the 30-frame
 board, and `perf:compare` once on each of the baseline and candidate trees.
-Without Playwright's Chromium, or on a tree without the harness, its gates are
-unmeasured; any other failure of the scenario fails the run.
+Without Playwright's Chromium its gates are unmeasured. Each tree is measured
+on its own: a baseline tree without the harness leaves only the baseline's
+canvas values absent, so the candidate's gates are still measured and compared
+with no baseline value; a candidate tree without it leaves the gates
+unmeasured. Any other failure of the scenario fails the run.
 
 Timing CPU and RSS from a shared CI runner are recorded and **warned**, never
 failed. Promote a timing metric to a hard gate only after variance on

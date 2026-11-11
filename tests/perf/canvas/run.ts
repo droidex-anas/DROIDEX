@@ -61,46 +61,57 @@ function parseArgs(argv: string[]): Options {
 
 async function runScenario(options: Options): Promise<CanvasReport> {
   const browser = await launchChromium();
-  const harness = await serveHarness(options.treeRoot);
-  const samples = new Map<string, GestureSample[]>();
   try {
-    for (let run = 1; run <= options.runs; run += 1) {
-      for (const frames of options.frames) {
-        for (const gesture of GESTURES.filter(({ name }) => options.gestures.includes(name))) {
-          console.error(
-            `run ${String(run)}/${String(options.runs)}: ${gesture.name} on ${String(frames)} frames`,
-          );
-          const key = `${String(frames)}/${gesture.name}`;
-          samples.set(key, [
-            ...(samples.get(key) ?? []),
-            await measureGesture(browser, harness.url, frames, gesture),
-          ]);
-        }
-      }
+    const harness = await serveHarness(options.treeRoot);
+    try {
+      return await measureBoards(browser, harness.url, options);
+    } finally {
+      await harness.close();
     }
-    const boards: CanvasReport['boards'] = {};
-    for (const [key, runs] of samples) {
-      const [frames, name] = key.split('/');
-      const gesture = GESTURES.find((each) => each.name === name);
-      boards[frames] ??= {};
-      boards[frames][name] = { description: gesture?.description ?? '', ...summarize(runs) };
-    }
-    return {
-      measuredAt: new Date().toISOString(),
-      treeRoot: options.treeRoot,
-      runs: options.runs,
-      environment: {
-        browser: `Chromium ${browser.version()} headless`,
-        platform: `${process.platform}/${process.arch}`,
-        cpu: cpus()[0]?.model ?? 'unknown',
-      },
-      boards,
-      metrics: gateMetrics(boards),
-    };
   } finally {
     await browser.close();
-    await harness.close();
   }
+}
+
+async function measureBoards(
+  browser: Browser,
+  harnessUrl: string,
+  options: Options,
+): Promise<CanvasReport> {
+  const samples = new Map<string, GestureSample[]>();
+  for (let run = 1; run <= options.runs; run += 1) {
+    for (const frames of options.frames) {
+      for (const gesture of GESTURES.filter(({ name }) => options.gestures.includes(name))) {
+        console.error(
+          `run ${String(run)}/${String(options.runs)}: ${gesture.name} on ${String(frames)} frames`,
+        );
+        const key = `${String(frames)}/${gesture.name}`;
+        samples.set(key, [
+          ...(samples.get(key) ?? []),
+          await measureGesture(browser, harnessUrl, frames, gesture),
+        ]);
+      }
+    }
+  }
+  const boards: CanvasReport['boards'] = {};
+  for (const [key, runs] of samples) {
+    const [frames, name] = key.split('/');
+    const gesture = GESTURES.find((each) => each.name === name);
+    boards[frames] ??= {};
+    boards[frames][name] = { description: gesture?.description ?? '', ...summarize(runs) };
+  }
+  return {
+    measuredAt: new Date().toISOString(),
+    treeRoot: options.treeRoot,
+    runs: options.runs,
+    environment: {
+      browser: `Chromium ${browser.version()} headless`,
+      platform: `${process.platform}/${process.arch}`,
+      cpu: cpus()[0]?.model ?? 'unknown',
+    },
+    boards,
+    metrics: gateMetrics(boards),
+  };
 }
 
 /** Exits with CHROMIUM_MISSING_EXIT when Playwright's Chromium is not installed. */
