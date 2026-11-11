@@ -21,10 +21,16 @@ export interface EditElementInput {
           | { kind: 'image'; assetId: string };
       }
     | {
-        /** A row of the revision's outline. */
-        layer: { designId: string; revisionId: string; nodeId: string };
+        layer: LayerRef;
         change: LayerChange;
       };
+}
+
+/** A row of a frame's revision's outline, as a layer edit names it. */
+export interface LayerRef {
+  designId: string;
+  revisionId: string;
+  nodeId: string;
 }
 
 export type LayerChange =

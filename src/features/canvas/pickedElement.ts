@@ -3,7 +3,7 @@
 // that picks, shows or sends an element uses this one shape.
 
 import type { PreviewFinding } from './previewDocument';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect, OutlineNode } from './protocol';
 
 export interface PickedElement {
   designId: string;
@@ -53,4 +53,24 @@ export function elementSite(
   const { build } = frame;
   if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
   return build.elements.find((element) => element.elementId === elementId);
+}
+
+/**
+ * The layer Delete removes for an element picked in the design's `revisionId`,
+ * once that revision has built: the element's own outline row, or for the root
+ * a component draws, the row of that component's usage. An element a component
+ * draws in several places has a row for each; any of them names it, since none
+ * can be removed alone.
+ */
+export function pickedLayer(
+  frame: Pick<CanvasFrame, 'build'>,
+  revisionId: string,
+  elementId: string,
+): OutlineNode | undefined {
+  const { build } = frame;
+  if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
+  const { nodes } = build.outline;
+  const row = nodes.find((node) => node.elementId === elementId);
+  const parent = row && nodes.find((node) => node.nodeId === row.parentId);
+  return parent?.kind === 'instance' ? parent : row;
 }

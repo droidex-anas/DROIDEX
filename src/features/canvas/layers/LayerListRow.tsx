@@ -6,7 +6,7 @@ import type { PreviewNode } from '../previewDocument';
 import type { FrameStatus } from '../previewLabels';
 import type { CanvasFrame } from '../protocol';
 import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
-import { isMovable } from './layerMoves';
+import { isMovable, isOutlineRow } from './layerMoves';
 import { LayerRow } from './LayerRow';
 import type { LayerEntry } from './layerRows';
 
@@ -29,6 +29,7 @@ export function LayerListRow({
   onGrab,
   onGrabElement,
   onPickElement,
+  onElementMenu,
   onLight,
   onUnlight,
 }: {
@@ -57,6 +58,8 @@ export function LayerListRow({
   onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
   onGrabElement: ((event: PointerEvent<HTMLElement>, row: ElementEntry) => void) | undefined;
   onPickElement: (row: ElementEntry) => void;
+  /** A right-click on an element row; undefined where layers cannot be edited. */
+  onElementMenu: ((event: MouseEvent<HTMLElement>, row: ElementEntry) => void) | undefined;
   /** The pointer came onto a row, whose key owns the light until it leaves. */
   onLight: (owner: string, designId: string, node: PreviewNode | null) => void;
   onUnlight: (owner: string) => void;
@@ -76,6 +79,7 @@ export function LayerListRow({
         onPick={onPickElement}
         onToggle={onToggle}
         onGrab={movable ? onGrabElement : undefined}
+        onMenu={isOutlineRow(row) ? onElementMenu : undefined}
         onLight={onLight}
         onUnlight={onUnlight}
       />

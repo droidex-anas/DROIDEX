@@ -4,7 +4,8 @@
 // them. Space toggles the row's frame in the selection, Enter takes the board
 // to it, F2 renames it, ⇧⌘H hides or shows it, ⌥↑ and ⌥↓ move it a row toward
 // the front or back, ⌥← moves a layer out of its parent and ⌥→ into the layer
-// above it, and Escape gives the keyboard back to the board.
+// above it, Delete removes a layer and ⌘D copies it, and Escape gives the
+// keyboard back to the board.
 
 import { navigationIndex } from '../../../components/ui/menuKeys';
 import { formatChord, matchesChord } from '../../../lib/shortcuts';
@@ -20,11 +21,16 @@ export type LayerKey =
   | { kind: 'focus' }
   | { kind: 'rename' }
   | { kind: 'toggle-hidden' }
+  | { kind: 'remove' }
+  | { kind: 'duplicate' }
   | { kind: 'leave' };
 
 /** ⇧⌘H, as in a design tool; Ctrl+Shift+H off the Mac. */
 const HIDE_CHORD = 'Meta+Shift+H';
 export const HIDE_KEY_LABEL = formatChord(HIDE_CHORD);
+/** ⌘D, as in a design tool; Ctrl+D off the Mac. */
+const DUPLICATE_CHORD = 'Meta+D';
+export const DUPLICATE_KEY_LABEL = formatChord(DUPLICATE_CHORD);
 
 const PLAIN_KEYS = new Map<string, LayerKey>([
   ['ArrowRight', { kind: 'open' }],
@@ -32,6 +38,8 @@ const PLAIN_KEYS = new Map<string, LayerKey>([
   [' ', { kind: 'pick' }],
   ['Enter', { kind: 'focus' }],
   ['F2', { kind: 'rename' }],
+  ['Backspace', { kind: 'remove' }],
+  ['Delete', { kind: 'remove' }],
   ['Escape', { kind: 'leave' }],
 ]);
 
@@ -40,6 +48,7 @@ type KeyPress = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'al
 /** `active` is the row the keyboard is on, of `count` rows. */
 export function layerKey(event: KeyPress, active: number, count: number): LayerKey | null {
   if (matchesChord(event, HIDE_CHORD)) return { kind: 'toggle-hidden' };
+  if (matchesChord(event, DUPLICATE_CHORD)) return { kind: 'duplicate' };
   if (matchesChord(event, 'Alt+ArrowUp'))
     return active > 0 ? { kind: 'restack', index: active - 1 } : null;
   if (matchesChord(event, 'Alt+ArrowDown'))
