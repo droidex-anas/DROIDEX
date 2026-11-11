@@ -271,7 +271,7 @@ export async function editableElement(
   const { canvas, canvasId, designId } = await frameHarness(t, { builds });
   const ready = new Promise<void>((resolve, reject) => {
     const unsubscribe = canvas.workspace.changes.subscribe((change) => {
-      const build = change.frames.find((frame) => frame.designId === designId)?.build;
+      const build = change.builds.find((entry) => entry.designId === designId)?.build;
       if (!build || build.status === 'pending' || build.status === 'building') return;
       unsubscribe();
       if (build.status === 'ready') resolve();

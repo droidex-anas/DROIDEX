@@ -24,7 +24,7 @@ export interface ComponentUses {
    * edit to such a node would also change copies the user did not pick.
    */
   rendersOnce: (node: ts.Node) => boolean;
-  /** The design component a JSX tag names; undefined for one from a package or not found. */
+  /** The design component a JSX tag names, as `Card` or `C.Card`; undefined for one from a package or not found. */
   componentOf: (tag: ts.JsxTagNameExpression) => ts.SignatureDeclaration | undefined;
   /** `main.tsx`'s default export, which renders the design. */
   root: ts.SignatureDeclaration | undefined;
@@ -147,7 +147,9 @@ export function componentUses(program: ts.Program): ComponentUses {
   return {
     rendersOnce,
     componentOf: (tag) =>
-      ts.isIdentifier(tag) ? componentOf(checker.getSymbolAtLocation(tag))?.fn : undefined,
+      ts.isIdentifier(tag) || ts.isPropertyAccessExpression(tag)
+        ? componentOf(checker.getSymbolAtLocation(tag))?.fn
+        : undefined,
     root: root?.fn,
   };
 }
@@ -188,8 +190,13 @@ function rendersChild(parent: ts.Node, child: ts.Node): boolean {
       !parent.dotDotDotToken && (ts.isJsxElement(parent.parent) || ts.isJsxFragment(parent.parent))
     );
   if (ts.isConditionalExpression(parent)) return child !== parent.condition;
-  if (ts.isBinaryExpression(parent))
-    return child === parent.right && LOGICAL_OPERATORS.has(parent.operatorToken.kind);
+  if (ts.isBinaryExpression(parent)) {
+    const operator = parent.operatorToken.kind;
+    if (operator === ts.SyntaxKind.AmpersandAmpersandToken) return child === parent.right;
+    return (
+      operator === ts.SyntaxKind.BarBarToken || operator === ts.SyntaxKind.QuestionQuestionToken
+    );
+  }
   if (ts.isIfStatement(parent)) return child !== parent.expression;
   if (ts.isCaseClause(parent)) return child !== parent.expression;
   if (ts.isSwitchStatement(parent)) return child === parent.caseBlock;
@@ -202,12 +209,6 @@ const PASSES_THROUGH = new Set<ts.SyntaxKind>([
   ts.SyntaxKind.Block,
   ts.SyntaxKind.CaseBlock,
   ts.SyntaxKind.DefaultClause,
-]);
-
-const LOGICAL_OPERATORS = new Set<ts.SyntaxKind>([
-  ts.SyntaxKind.AmpersandAmpersandToken,
-  ts.SyntaxKind.BarBarToken,
-  ts.SyntaxKind.QuestionQuestionToken,
 ]);
 
 interface Declared {

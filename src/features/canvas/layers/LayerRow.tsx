@@ -59,7 +59,7 @@ export function LayerRow({
   selected: boolean;
   /** The keyboard is on this row. */
   active: boolean;
-  /** Whether its layers show, or null where it has never built, so has none to show. */
+  /** Whether its layers show, or null where it has no ready build, so has none to show. */
   open: boolean | null;
   onToggle: () => void;
   /** The id of what tells how to restack the row from the keyboard. */

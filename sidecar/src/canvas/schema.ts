@@ -11,6 +11,8 @@ export const CANVAS_LIMITS = {
   maxFileBytes: 256 * 1024,
   /** Bounds instrumented markup and element-map transfer independently of source bytes. */
   maxSourceElements: 8192,
+  /** An outline row's name or text, in code points, on one line. */
+  maxOutlineLabelCodePoints: 64,
   maxFrameDimensionPx: 8192,
   maxIdentifierLength: 128,
   maxFrameNameLength: 120,
@@ -208,6 +210,15 @@ export const sourceElementSchema = z
   .refine((element) => element.end > element.start);
 
 const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
+// Each code point is at most two UTF-16 units, so the cheap length check comes first.
+const outlineLabelSchema = z
+  .string()
+  .min(1)
+  .max(CANVAS_LIMITS.maxOutlineLabelCodePoints * 2)
+  .refine(
+    (label) =>
+      !/[\r\n]/.test(label) && Array.from(label).length <= CANVAS_LIMITS.maxOutlineLabelCodePoints,
+  );
 
 export const sourceOutlineSchema = z
   .object({
@@ -218,19 +229,34 @@ export const sourceOutlineSchema = z
             nodeId: outlineNodeIdSchema,
             parentId: outlineNodeIdSchema.nullable(),
             kind: z.enum(['element', 'instance', 'repeat', 'condition']),
-            name: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
-            // 64 code points, each at most two UTF-16 units.
-            text: z.string().min(1).max(128).nullable(),
+            name: outlineLabelSchema,
+            text: outlineLabelSchema.nullable(),
             elementId: canvasIdentifierSchema.nullable(),
             lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
             free: z.boolean(),
           })
-          .strict(),
+          .strict()
+          .refine(
+            (node) =>
+              (node.kind === 'element') === (node.elementId !== null) &&
+              (node.text === null || node.kind === 'element'),
+          ),
       )
-      .max(CANVAS_LIMITS.maxSourceElements),
+      .max(CANVAS_LIMITS.maxSourceElements)
+      .refine(isForest, 'Each outline row needs its own id and must follow the row that holds it.'),
     truncated: z.boolean(),
   })
   .strict();
+
+/** Unique ids, each parent before its children, so the rows form a tree with no cycle. */
+function isForest(nodes: readonly { nodeId: string; parentId: string | null }[]): boolean {
+  const seen = new Set<string>();
+  for (const { nodeId, parentId } of nodes) {
+    if (seen.has(nodeId) || (parentId !== null && !seen.has(parentId))) return false;
+    seen.add(nodeId);
+  }
+  return true;
+}
 
 const sourceFileSchema = z
   .string()

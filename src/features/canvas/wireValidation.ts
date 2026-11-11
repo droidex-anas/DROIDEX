@@ -371,15 +371,12 @@ function isKitPreview(value: unknown): boolean {
   );
 }
 
-function isFrameProjection(value: unknown): value is Record<string, unknown> {
-  return (
-    record(value) && id(value.canvasId) && count(value.sequence) && list(value.frames, isFrame)
-  );
-}
-
 function isSnapshot(value: unknown): boolean {
   return (
-    isFrameProjection(value) &&
+    record(value) &&
+    id(value.canvasId) &&
+    count(value.sequence) &&
+    list(value.frames, isFrame) &&
     count(value.annotationsVersion) &&
     boundedList(value.annotations, MAX_ANNOTATIONS, isAnnotation)
   );
@@ -387,7 +384,11 @@ function isSnapshot(value: unknown): boolean {
 
 function isChange(value: unknown): boolean {
   return (
-    isFrameProjection(value) &&
+    record(value) &&
+    id(value.canvasId) &&
+    count(value.sequence) &&
+    list(value.frames, isChangedFrame) &&
+    list(value.builds, isFrameBuild) &&
     list(value.removedDesignIds, id) &&
     (value.annotations === undefined || isAnnotationChange(value.annotations)) &&
     (value.order === undefined || isStackingOrder(value.order))
@@ -448,6 +449,14 @@ function isEditToken(token: unknown): boolean {
 }
 
 function isFrame(value: unknown): boolean {
+  return isChangedFrame(value) && isBuild(value.build);
+}
+
+function isFrameBuild(value: unknown): boolean {
+  return record(value) && id(value.designId) && isBuild(value.build);
+}
+
+function isChangedFrame(value: unknown): value is Record<string, unknown> {
   return (
     record(value) &&
     id(value.designId) &&
@@ -459,8 +468,7 @@ function isFrame(value: unknown): boolean {
     isDesignSystem(value.designSystem) &&
     (value.variantOf === null || id(value.variantOf)) &&
     (value.seededRevisionId === null || id(value.seededRevisionId)) &&
-    typeof value.hidden === 'boolean' &&
-    isBuild(value.build)
+    typeof value.hidden === 'boolean'
   );
 }
 

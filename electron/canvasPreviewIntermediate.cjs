@@ -55,8 +55,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
  * `vector` with the design's root `<svg>` or why it has none, and `tree` with
- * the design's marked elements in document order; each of those waits for
- * its own answer.
+ * a page of the design's marked elements in document order, from the one it
+ * names; each of those waits for its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -195,10 +195,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
       ? { elementId: value.elementId, instancePath: value.instancePath }
       : null;
 
-  // The design's marked elements as the reporter walked them; one node that is
-  // not one refuses the whole answer.
-  const normalizeTree = (data) => {
+  // One page of the design's marked elements as the reporter walked them, the
+  // one asked for; one node that is not one refuses the whole answer.
+  const normalizeTree = (data, from) => {
     const given = data.nodes;
+    if (data.from !== from) return null;
     if (!Array.isArray(given) || given.length > ${String(MAX_PREVIEW_TREE_NODES)}) return null;
     if (data.cap !== ${String(MAX_PREVIEW_TREE_NODES)} || typeof data.truncated !== 'boolean') return null;
     const nodes = [];
@@ -207,7 +208,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (!node || !Number.isSafeInteger(entry.depth) || entry.depth < 0) return null;
       nodes.push(Object.assign(node, { tagName: text(entry.tagName), depth: entry.depth }));
     }
-    return { nodes, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: data.truncated };
+    return { nodes, from, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: data.truncated };
   };
 
   // Only these shapes leave the intermediate, rebuilt field by field so no
@@ -438,9 +439,11 @@ const INTERMEDIATE_SCRIPT = `(() => {
       };
       return askFrame({ command: 'vector' }, read, ${String(PREVIEW_VECTOR_DEADLINE_MS)});
     },
-    tree() {
+    tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
-      return askFrame({ command: 'tree' }, normalizeTree);
+      const from = request && typeof request === 'object' ? request.from : null;
+      if (!Number.isSafeInteger(from) || from < 0) return 'invalid_request';
+      return askFrame({ command: 'tree', from }, (data) => normalizeTree(data, from));
     },
     setTokens(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');

@@ -133,7 +133,7 @@ test('a frame that has built opens on its layers; one that never has has no care
   assert.equal([...markup.matchAll(/aria-label="Expand"/g)].length, 1);
 });
 
-test('an element picked on the board opens its frame, takes the keyboard to its row and selects it', () => {
+test('an element picked on the board opens its frame, and rows its preview has not been read for say so and stay unpicked', () => {
   const layer = (nodeId: string, parentId: string | null, row: Partial<OutlineNode>) =>
     ({
       nodeId,
@@ -159,7 +159,15 @@ test('an element picked on the board opens its frame, takes the keyboard to its 
     frames: [{ ...pricing, build: { ...pricing.build, outline } } as CanvasFrame],
     elements: {
       runs: new PreviewRuns(),
-      picked: { designId: 'a', revisionId: 'rev_01', elementId: 'el_title', instancePath: '0/0' },
+      picked: {
+        element: {
+          designId: 'a',
+          revisionId: 'rev_01',
+          elementId: 'el_title',
+          instancePath: '0/0',
+        },
+        pick: 1,
+      },
       hovered: {
         designId: 'a',
         element: {
@@ -179,17 +187,12 @@ test('an element picked on the board opens its frame, takes the keyboard to its 
     shown.map(({ label, selected }) => [label, selected]),
     [
       ['Pricing, Ready', false],
-      // No live preview has drawn this frame yet, so its elements cannot be picked from here.
-      ['section, Container, not drawn', false],
-      ['Simple plans, Text, not drawn', true],
+      // No live preview has said where it draws this frame's elements, so no row can be told
+      // for the picked or hovered element: the element id alone does not say which copy it is.
+      ['section, Container, not read', false],
+      ['Simple plans, Text, not read', false],
       ['Repeat, locked', false],
     ],
   );
-  assert.match(markup, new RegExp(`aria-activedescendant="${shown[2].id}"`));
-  // The element under the board's pointer lights its row.
-  const lit = markup
-    .split('role="treeitem"')
-    .slice(1)
-    .map((row) => / bg-elevated/.test(row));
-  assert.deepEqual(lit, [false, true, false, false]);
+  assert.doesNotMatch(markup, / bg-elevated/);
 });

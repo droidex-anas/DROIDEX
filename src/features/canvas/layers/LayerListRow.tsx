@@ -53,8 +53,9 @@ export function LayerListRow({
   onSetHidden: ((frame: CanvasFrame, hidden: boolean) => void) | undefined;
   onGrab: ((event: PointerEvent<HTMLElement>, designId: string) => void) | undefined;
   onPickElement: (row: ElementEntry) => void;
-  onLight: (designId: string, node?: PreviewNode | null) => void;
-  onUnlight: (designId: string, node?: PreviewNode | null) => void;
+  /** The pointer came onto a row, whose key owns the light until it leaves. */
+  onLight: (owner: string, designId: string, node: PreviewNode | null) => void;
+  onUnlight: (owner: string) => void;
 }) {
   if (row.kind === 'note') return <NoteRow id={id} top={top} active={active} entry={row} />;
   if (row.kind === 'element') {
@@ -97,8 +98,12 @@ export function LayerListRow({
       onDoubleClick={() => {
         onRenameStart(frame.designId);
       }}
-      onLight={onLight}
-      onUnlight={onUnlight}
+      onLight={(designId) => {
+        onLight(row.key, designId, null);
+      }}
+      onUnlight={() => {
+        onUnlight(row.key);
+      }}
       onToolPress={() => {
         onToolPress(frame.designId);
       }}

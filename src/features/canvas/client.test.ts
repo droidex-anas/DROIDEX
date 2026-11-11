@@ -42,7 +42,8 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
 }
 
 function change(sequence: number, frames: CanvasFrame[] = []): CanvasChange {
-  return { canvasId: CANVAS, sequence, frames, removedDesignIds: [] };
+  const builds = frames.map(({ designId, build }) => ({ designId, build }));
+  return { canvasId: CANVAS, sequence, frames, builds, removedDesignIds: [] };
 }
 
 /** A watched canvas seeded at `sequence`, plus the projections its listener saw. */
@@ -127,7 +128,7 @@ test('a change for a canvas this client does not watch is ignored', async () => 
   const { bridge, client } = await watching(4);
   bridge.deliver({
     type: 'canvas.change',
-    change: { canvasId: 'cv_other', sequence: 1, frames: [], removedDesignIds: [] },
+    change: { canvasId: 'cv_other', sequence: 1, frames: [], builds: [], removedDesignIds: [] },
   });
   await flush();
   assert.equal(client.snapshotOf(CANVAS)?.sequence, 4);

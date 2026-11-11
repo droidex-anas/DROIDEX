@@ -9,8 +9,8 @@ import type { HoveredElement } from '../useElementHover';
 export interface LayerElements {
   /** Each shown frame's live preview, which an open frame's elements are read from. */
   runs: PreviewRuns;
-  /** The element Edit has picked, whose row shows as selected. */
-  picked: ElementRef | null;
+  /** The element Edit has picked, whose row shows as selected, and which pick chose it, counting from the board's first. */
+  picked: { element: ElementRef; pick: number } | null;
   /** The element under the board's pointer, whose row lights. */
   hovered: HoveredElement | null;
   /** Picks the element in Edit, entering Edit from any other mode. */
@@ -28,7 +28,7 @@ export function layerElements(
 ): LayerElements {
   return {
     runs,
-    picked: editor.selection?.draft.element ?? null,
+    picked: editor.selection && { element: editor.selection.draft.element, pick: editor.picks },
     hovered: editor.hover.hovered,
     pick: (designId, node) => {
       if (interaction.mode !== 'edit')

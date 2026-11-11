@@ -63,7 +63,7 @@ export async function openBoard(
  * unless it names another, a probe directly with no text unless it says, a
  * locate directly with whatever it gives. A hover is
  * answered by `guestAnswer` directly, with nothing beside the element unless it
- * says, and not recorded; a tree is answered by `guestAnswer('tree', {})`
+ * says, and not recorded; a tree page is answered by `guestAnswer('tree', { from })`
  * directly, or never while `guestTreeHeld` is set, and recorded.
  */
 export async function stubGuests(page: Page) {
@@ -120,9 +120,10 @@ export async function stubGuests(page: Page) {
               return JSON.stringify(window.guestAnswer('locate', argument));
             }
             if (call?.[1] === 'tree') {
-              window.guestCommands.push({ command: 'tree' });
+              window.guestCommands.push({ command: 'tree', ...argument });
               if (window.guestTreeHeld) await new Promise(() => {});
-              return JSON.stringify(window.guestAnswer('tree', {}));
+              const page = window.guestAnswer('tree', argument);
+              return JSON.stringify(page && { from: argument.from, ...page });
             }
             if (call?.[1] === 'hover') {
               const element = window.guestAnswer('hover', argument);

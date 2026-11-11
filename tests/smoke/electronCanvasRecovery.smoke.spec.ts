@@ -8,7 +8,7 @@
 // revision arrives as a single commit whose revision, status and artifact ID are
 // exactly what the frame already had — and whose `generation` is the attempt that
 // produced the recovered document. That counter is the signal; `[C10]` holds the
-// other side of it, where an arrange re-sends a frame with its build unmoved.
+// other side of it, where an arrange moves a frame and leaves its build alone.
 //
 // Nothing here is added to production code. The probe is bundled from source with
 // the esbuild the sidecar declares, and evaluated in the page.
@@ -110,15 +110,16 @@ Object.assign(window, {
       show();
     },
     /**
-     * An arrange response: the sidecar re-sends the frame it moved, with a fresh
-     * frame object and the build exactly as it was.
+     * An arrange response: the sidecar sends the frame it moved as a fresh
+     * object, without its build, which the board keeps.
      */
     arrange(rect: { x: number; y: number; width: number; height: number }) {
-      const [held] = snapshot.frames;
+      const { build: _kept, ...held } = snapshot.frames[0];
       snapshot = applyCanvasChange(snapshot, {
         canvasId: snapshot.canvasId,
         sequence: snapshot.sequence + 1,
-        frames: [{ ...held, rect, layoutVersion: held.layoutVersion + 1, build: { ...held.build } }],
+        frames: [{ ...held, rect, layoutVersion: held.layoutVersion + 1 }],
+        builds: [],
         removedDesignIds: [],
       });
       show();

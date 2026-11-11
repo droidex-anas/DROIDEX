@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Annotation } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
-import type { CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasSnapshot, ChangedFrame } from './protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 
-function frame(designId: string, revisionId: string | null = null): CanvasFrame {
+function fields(designId: string, revisionId: string | null = null): ChangedFrame {
   return {
     designId,
     name: designId,
@@ -18,8 +18,11 @@ function frame(designId: string, revisionId: string | null = null): CanvasFrame 
     variantOf: null,
     seededRevisionId: null,
     hidden: false,
-    build: { status: 'pending' },
   };
+}
+
+function frame(designId: string, revisionId: string | null = null): CanvasFrame {
+  return { ...fields(designId, revisionId), build: { status: 'pending', generation: 0 } };
 }
 
 const snapshot: CanvasSnapshot = {
@@ -34,7 +37,8 @@ test('a change replaces frames in place, drops removals and appends new frames',
   const next = applyCanvasChange(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
-    frames: [frame('cards', 'rev_09'), frame('cta')],
+    frames: [fields('cards', 'rev_09'), fields('cta')],
+    builds: [{ designId: 'cta', build: { status: 'pending', generation: 0 } }],
     removedDesignIds: ['hey'],
   });
   assert.equal(next.sequence, 5);
@@ -52,11 +56,41 @@ test('a change replaces frames in place, drops removals and appends new frames',
   );
 });
 
+test('a frame keeps its build, the same object, until a change sends one, which can come alone', () => {
+  const moved = applyCanvasChange(snapshot, {
+    canvasId: 'cv_01',
+    sequence: 5,
+    frames: [{ ...fields('hey'), rect: { x: 40, y: 0, width: 720, height: 720 } }],
+    builds: [],
+    removedDesignIds: [],
+  });
+  assert.equal(moved.frames[0].rect.x, 40);
+  assert.equal(moved.frames[0].build, snapshot.frames[0].build);
+  const built = applyCanvasChange(moved, {
+    canvasId: 'cv_01',
+    sequence: 6,
+    frames: [],
+    builds: [
+      { designId: 'cards', build: { status: 'building', revisionId: 'rev_02', generation: 1 } },
+    ],
+    removedDesignIds: [],
+  });
+  assert.deepEqual(
+    built.frames.map((entry) => [entry.designId, entry.build.status]),
+    [
+      ['hey', 'pending'],
+      ['cards', 'building'],
+    ],
+  );
+  assert.equal(built.frames[0], moved.frames[0]);
+});
+
 test('a change that touches nothing still advances the sequence', () => {
   const next = applyCanvasChange(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
     frames: [],
+    builds: [],
     removedDesignIds: [],
   });
   assert.equal(next.sequence, 5);
@@ -67,7 +101,8 @@ test('a removed frame stays removed even when the change also reports it', () =>
   const next = applyCanvasChange(snapshot, {
     canvasId: 'cv_01',
     sequence: 5,
-    frames: [frame('hey', 'rev_09')],
+    frames: [fields('hey', 'rev_09')],
+    builds: [],
     removedDesignIds: ['hey'],
   });
   assert.deepEqual(
@@ -75,7 +110,6 @@ test('a removed frame stays removed even when the change also reports it', () =>
     ['cards'],
   );
 });
-
 test('an annotate change redraws in place, drops removals, stacks new marks and moves the version', () => {
   const mark = (id: string, color: 'ink' | 'red'): Annotation => ({
     id,
@@ -94,6 +128,7 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
     canvasId: 'cv_01',
     sequence: 5,
     frames: [],
+    builds: [],
     removedDesignIds: [],
     annotations: { version: 3, upserted: [mark('d', 'ink'), mark('b', 'red')], removedIds: ['a'] },
   });
@@ -106,7 +141,8 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
   const moved = applyCanvasChange(next, {
     canvasId: 'cv_01',
     sequence: 6,
-    frames: [frame('hey', 'rev_10')],
+    frames: [fields('hey', 'rev_10')],
+    builds: [],
     removedDesignIds: [],
   });
   assert.equal(moved.annotationsVersion, 3);
@@ -116,7 +152,14 @@ test('an annotate change redraws in place, drops removals, stacks new marks and 
 test('a reorder restacks the frames it names, back to front', () => {
   const next = applyCanvasChange(
     { ...snapshot, frames: [frame('hey'), frame('cards'), frame('cta')] },
-    { canvasId: 'cv_01', sequence: 5, frames: [], removedDesignIds: [], order: ['cta', 'hey'] },
+    {
+      canvasId: 'cv_01',
+      sequence: 5,
+      frames: [],
+      builds: [],
+      removedDesignIds: [],
+      order: ['cta', 'hey'],
+    },
   );
   // A frame the order does not name, such as one created since, keeps the front.
   assert.deepEqual(

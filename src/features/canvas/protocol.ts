@@ -326,8 +326,8 @@ export type CanvasBuildOutcome =
 /**
  * One design's build state and the attempt it belongs to. `generation` is the
  * per-design attempt counter, which only ever increases, so a reader can tell a
- * build that actually moved from a frame that was merely re-sent: an arrange
- * re-sends every frame it touches with its build untouched.
+ * build that actually moved from the same one read again, as a fresh snapshot
+ * reads every frame's.
  */
 export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
@@ -359,10 +359,20 @@ export interface CanvasSnapshot {
   annotations: Annotation[];
 }
 
+/** A frame as a change reports it: its build travels apart, and only when it changed. */
+export type ChangedFrame = Omit<CanvasFrame, 'build'>;
+
+interface FrameBuild {
+  designId: string;
+  build: CanvasBuildState;
+}
+
 export interface CanvasChange {
   canvasId: string;
   sequence: number;
-  frames: CanvasFrame[];
+  frames: ChangedFrame[];
+  /** The builds this change moved; a frame new to the canvas always has its build here. */
+  builds: FrameBuild[];
   removedDesignIds: string[];
   /** Present only on a change that touched the annotation layer. */
   annotations?: AnnotationChange;

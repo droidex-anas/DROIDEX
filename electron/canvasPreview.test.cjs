@@ -520,9 +520,10 @@ test('a pick or hover by path is passed on only for an element id and a path of 
 
 test('a tree answer has its own cap, and each node is rebuilt or the answer refused', async () => {
   const { preview, posted, reply } = runIntermediate();
-  const answer = (data) => {
-    const asked = preview.tree();
-    reply({ event: 'tree', sequence: posted.at(-1).sequence, ...data });
+  const answer = (data, from = 0) => {
+    const asked = preview.tree({ from });
+    assert.equal(posted.at(-1).from, from);
+    reply({ event: 'tree', sequence: posted.at(-1).sequence, from, ...data });
     return asked.then(JSON.parse);
   };
   const node = { elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 };
@@ -530,14 +531,14 @@ test('a tree answer has its own cap, and each node is rebuilt or the answer refu
   const nodes = Array.from({ length: 400 }, () => node);
   assert.deepEqual(await answer({ nodes, cap: 400, truncated: true }), {
     nodes,
+    from: 0,
     cap: 400,
     truncated: true,
   });
-  assert.deepEqual(await answer({ nodes: [{ ...node, style: 'x' }], cap: 400, truncated: false }), {
-    nodes: [node],
-    cap: 400,
-    truncated: false,
-  });
+  assert.deepEqual(
+    await answer({ nodes: [{ ...node, style: 'x' }], cap: 400, truncated: false }, 400),
+    { nodes: [node], from: 400, cap: 400, truncated: false },
+  );
   for (const refused of [
     { nodes: [...nodes, node], cap: 400, truncated: true },
     { nodes: [{ ...node, instancePath: '0/x' }], cap: 400, truncated: false },
@@ -546,8 +547,12 @@ test('a tree answer has its own cap, and each node is rebuilt or the answer refu
     // The cap is the reporter's to name, never the intermediate's to fill in.
     { nodes: [node], truncated: false },
     { nodes: [node], cap: 10, truncated: false },
+    // A page from somewhere else than asked.
+    { nodes: [node], from: 3, cap: 400, truncated: false },
   ])
     assert.equal(await answer(refused), null);
+  for (const from of [undefined, -1, 1.5, '0'])
+    assert.equal(preview.tree({ from }), 'invalid_request');
 });
 test('a guest is not attachable until the preview session is configured', async () => {
   // The module that configures the session is what reports readiness, so main

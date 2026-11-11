@@ -57,12 +57,18 @@ function isSourceElement(value: unknown): boolean {
 const OUTLINE_KINDS = new Set(['element', 'instance', 'repeat', 'condition']);
 const OUTLINE_LOCKS = new Set(['repeated', 'shared', 'computed', 'kit']);
 
+const MAX_OUTLINE_LABEL_CODE_POINTS = 64;
+
+/** Rows with unique ids, each after the row that holds it, so they form a tree with no cycle. */
 function isOutline(value: unknown): boolean {
-  return (
-    record(value) &&
-    typeof value.truncated === 'boolean' &&
-    boundedList(value.nodes, MAX_SOURCE_ELEMENTS, isOutlineNode)
-  );
+  if (!record(value) || typeof value.truncated !== 'boolean') return false;
+  if (!boundedList(value.nodes, MAX_SOURCE_ELEMENTS, isOutlineNode)) return false;
+  const seen = new Set<unknown>();
+  for (const { nodeId, parentId } of value.nodes as Record<string, unknown>[]) {
+    if (seen.has(nodeId) || (parentId !== null && !seen.has(parentId))) return false;
+    seen.add(nodeId);
+  }
+  return true;
 }
 
 function isOutlineNode(value: unknown): boolean {
@@ -71,9 +77,9 @@ function isOutlineNode(value: unknown): boolean {
     isOutlineNodeId(value.nodeId) &&
     (value.parentId === null || isOutlineNodeId(value.parentId)) &&
     OUTLINE_KINDS.has(value.kind as string) &&
-    boundedText(value.name, MAX_SOURCE_FILE_BYTES) &&
-    (value.text === null || boundedText(value.text, 128)) &&
-    (value.elementId === null || id(value.elementId)) &&
+    isOutlineLabel(value.name) &&
+    (value.text === null || (value.kind === 'element' && isOutlineLabel(value.text))) &&
+    (value.kind === 'element' ? id(value.elementId) : value.elementId === null) &&
     (value.lock === null || OUTLINE_LOCKS.has(value.lock as string)) &&
     typeof value.free === 'boolean'
   );
@@ -81,6 +87,16 @@ function isOutlineNode(value: unknown): boolean {
 
 function isOutlineNodeId(value: unknown): boolean {
   return typeof value === 'string' && /^[0-9a-f]{16}$/.test(value);
+}
+
+/** A row's name or text: one line of at most 64 code points, each at most two UTF-16 units. */
+function isOutlineLabel(value: unknown): boolean {
+  return (
+    typeof value === 'string' &&
+    boundedText(value, MAX_OUTLINE_LABEL_CODE_POINTS * 2) &&
+    !/[\r\n]/.test(value) &&
+    Array.from(value).length <= MAX_OUTLINE_LABEL_CODE_POINTS
+  );
 }
 
 /** An element's offsets and the 1-based line it starts on, all within one source file. */

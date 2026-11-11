@@ -428,7 +428,7 @@ export async function board(t: TestContext, options: BoardOptions = {}): Promise
     changes
       .slice(from)
       .some((change) =>
-        change.frames.some((frame) => frame.designId === designId && frame.build.status === status),
+        change.builds.some((entry) => entry.designId === designId && entry.build.status === status),
       );
   return {
     store,

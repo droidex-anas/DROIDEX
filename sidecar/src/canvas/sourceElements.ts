@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { componentUses, functionName, type ComponentUses } from './componentUses.js';
-import { resolveRelative } from './designBundle.js';
 import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
+import { resolveRelative } from './relativeImport.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';

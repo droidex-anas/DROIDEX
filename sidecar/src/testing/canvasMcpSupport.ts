@@ -92,7 +92,7 @@ export async function harness(
   // The open pane: it starts a preview of every build that lands and, a turn of
   // the event loop later, says what the design did.
   workspace.changes.subscribe((change) => {
-    for (const { designId, build } of change.frames) {
+    for (const { designId, build } of change.builds) {
       if (build.status !== 'ready') continue;
       const ran = { designId, revisionId: build.revisionId };
       workspace.previews.record(change.canvasId, { ...ran, outcome: 'loading', errors: [] });

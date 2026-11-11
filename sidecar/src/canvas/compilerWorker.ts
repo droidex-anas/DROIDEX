@@ -68,7 +68,7 @@ export async function compileDesign(
   } catch (error) {
     if (!(error instanceof SourceElementError)) throw error;
     if (error.code === 'selection_limit') {
-      instrumented = { files: input.files, elements: [], outline: { nodes: [], truncated: false } };
+      instrumented = { files: input.files, elements: [], outline: { nodes: [], truncated: true } };
       selectionDiagnostics.push({ code: 'selection_unavailable', message: error.message });
     } else {
       throw new CompileFailedError([

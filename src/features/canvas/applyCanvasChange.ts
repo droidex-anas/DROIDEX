@@ -6,7 +6,8 @@ import type { CanvasChange, CanvasFrame, CanvasSnapshot } from './protocol';
  * create added follow the ones the canvas already held, which is the order the
  * sidecar places them in. A reorder's `order` then restacks the frames.
  * Annotations follow the same rule, and only a change that carries them moves
- * the annotation layer.
+ * the annotation layer. A frame keeps the build it has, the same object, until
+ * a change sends a new one.
  *
  * The caller owns ordering: only a change whose sequence is exactly the
  * snapshot's plus one belongs here.
@@ -17,7 +18,12 @@ export function applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange
     canvasId: snapshot.canvasId,
     sequence: change.sequence,
     frames: stacked(
-      merged(snapshot.frames, change.frames, change.removedDesignIds, (frame) => frame.designId),
+      merged(
+        snapshot.frames,
+        changedFrames(snapshot.frames, change),
+        change.removedDesignIds,
+        (frame) => frame.designId,
+      ),
       change.order,
     ),
     annotationsVersion: layer ? layer.version : snapshot.annotationsVersion,
@@ -30,6 +36,23 @@ export function applyCanvasChange(snapshot: CanvasSnapshot, change: CanvasChange
         )
       : snapshot.annotations,
   };
+}
+
+/** The frames a change touched, each with the build it sent or else the one it had. */
+function changedFrames(current: readonly CanvasFrame[], change: CanvasChange): CanvasFrame[] {
+  const known = new Map(current.map((frame) => [frame.designId, frame]));
+  const builds = new Map(change.builds.map(({ designId, build }) => [designId, build]));
+  // The sidecar sends a frame new to the canvas with its build, so each has one.
+  const changed = change.frames.flatMap((fields) => {
+    const build = builds.get(fields.designId) ?? known.get(fields.designId)?.build;
+    return build ? [{ ...fields, build }] : [];
+  });
+  const named = new Set(change.frames.map((fields) => fields.designId));
+  for (const [designId, build] of builds) {
+    const frame = known.get(designId);
+    if (frame && !named.has(designId)) changed.push({ ...frame, build });
+  }
+  return changed;
 }
 
 function merged<Entry>(
