@@ -4,8 +4,8 @@ import { isTagKey } from '../boardKeys';
 /**
  * The match the keyboard is on, for a search field that keeps the keyboard:
  * the arrows walk the matches, Enter adds the one it is on, ⌥↓ opens its
- * variant menu, ⌘L tags it in the chat, and Escape clears the search, then
- * hands the keyboard back to the board.
+ * variant menu, ⌘L tags it in the chat where the rows can be tagged, and
+ * Escape clears the search, then hands the keyboard back to the board.
  */
 export function usePaletteKeys({
   query,
@@ -24,7 +24,8 @@ export function usePaletteKeys({
   optionId: (index: number) => string;
   onAdd: (index: number) => void;
   onMenu: (index: number) => void;
-  onTag: (index: number) => void;
+  /** Null where the rows cannot be tagged, so ⌘L stays the app's. */
+  onTag: ((index: number) => void) | null;
   onLeave: () => void;
 }) {
   const [active, setActive] = useState(0);
@@ -50,8 +51,10 @@ export function usePaletteKeys({
     } else if (event.key === 'Enter' && activeIndex >= 0) {
       event.preventDefault();
       if (!event.repeat) onAdd(activeIndex);
-    } else if (isTagKey(event)) {
+    } else if (isTagKey(event) && onTag !== null) {
+      // The search owns the key here, so the board does not tag its frames as well.
       event.preventDefault();
+      event.stopPropagation();
       if (activeIndex >= 0 && !event.repeat) onTag(activeIndex);
     } else if (event.key === 'Escape') {
       event.preventDefault();

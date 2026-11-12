@@ -73,10 +73,14 @@ export function ComponentsPanel({
     onMenu: (index) => {
       if (matches[index].props.length > 0) setMenuFor(matches[index].name);
     },
-    onTag: (index) => {
-      if (tagging)
-        toggleComponentPin(tagging.chatId, tagging.pinOf(matches[index], picksOf(matches[index])));
-    },
+    onTag: tagging
+      ? (index) => {
+          toggleComponentPin(
+            tagging.chatId,
+            tagging.pinOf(matches[index], picksOf(matches[index])),
+          );
+        }
+      : null,
     onLeave,
   });
   // The tab opens on its search, from the keyboard or a click.
