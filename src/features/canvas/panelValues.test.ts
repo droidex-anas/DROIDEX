@@ -100,6 +100,13 @@ test('typing what a field reads as previews what it stands for, and a token prev
   const radius = [{ value: '--ds-radius-md', label: 'radius-md', hint: '8px' }];
   assert.equal(typedLength('md', radius), '--ds-radius-md');
   assert.equal(typedLength('12px', radius), '12px');
+  // A token without a pixel value, or sharing one with another, is still the one its name reads as.
+  const leading = [
+    { value: '--ds-leading-snug', label: 'leading-snug', hint: '1.25' },
+    { value: '--ds-leading-tight', label: 'leading-tight', hint: '1.25' },
+  ];
+  assert.equal(typedLength('tight', leading), '--ds-leading-tight');
+  assert.equal(typedLength('leading-snug', leading), '--ds-leading-snug');
   assert.deepEqual(lengthFace('--ds-radius-md', radius), { text: 'md', placeholder: '' });
   const colours = [{ value: '--ds-ink', label: 'ink', hint: '#141414' }];
   assert.equal(typedColour('ink', colours), '--ds-ink');

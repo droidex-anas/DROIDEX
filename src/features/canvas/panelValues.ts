@@ -53,11 +53,13 @@ function tokenFace(name: string): LengthFace {
   return { text: step, placeholder: '' };
 }
 
-/** What typing in a length field previews: the token the text names as the field shows it, else the text. */
+/** What typing in a length field previews: the token the text names, whole or as the field shows it, else the text. */
 export function typedLength(text: string, tokens: readonly ValueOption[] = []): string {
   const trimmed = text.trim();
   if (trimmed === '') return text;
-  const token = tokens.find((option) => lengthFace(option.hint ?? '', tokens).text === trimmed);
+  const token = tokens.find(
+    (option) => option.label === trimmed || tokenFace(option.label).text === trimmed,
+  );
   return token?.value ?? text;
 }
 
