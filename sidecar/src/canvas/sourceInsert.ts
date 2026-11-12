@@ -140,13 +140,13 @@ function skipParentheses(expression: ts.Expression): ts.Expression {
   return inner;
 }
 
-const NAMED_REFERENCES: Record<string, string | undefined> = {
-  amp: '&',
-  lt: '<',
-  gt: '>',
-  quot: '"',
-  apos: "'",
-};
+const NAMED_REFERENCES = new Map([
+  ['amp', '&'],
+  ['lt', '<'],
+  ['gt', '>'],
+  ['quot', '"'],
+  ['apos', "'"],
+]);
 
 const CHARACTER_REFERENCE = /&(?:#(\d+)|#x([\da-f]+)|([a-z][a-z\d]*));/gi;
 
@@ -165,7 +165,7 @@ function withReferencesRead(raw: string): string | null {
 
 /** A matched reference's groups, the ones it did not match undefined. */
 function referenced([, decimal, hex, named]: (string | undefined)[]): string | null {
-  if (named !== undefined) return NAMED_REFERENCES[named] ?? null;
+  if (named !== undefined) return NAMED_REFERENCES.get(named) ?? null;
   const code = decimal === undefined ? Number.parseInt(hex ?? '', 16) : Number(decimal);
   return code <= 0x10ffff ? String.fromCodePoint(code) : null;
 }

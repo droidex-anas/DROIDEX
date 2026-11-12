@@ -7,8 +7,12 @@ const {
   MAX_PREVIEW_SELECTION_BYTES,
   MAX_PREVIEW_TREE_BYTES,
   MAX_PREVIEW_TREE_NODES,
-  MAX_PREVIEW_VECTOR_BYTES,
 } = require('./canvasPreviewReporter.cjs');
+const {
+  MAX_PREVIEW_SHAPE_EVENT_BYTES,
+  MAX_PREVIEW_VECTOR_BYTES,
+  SVG_INTERMEDIATE,
+} = require('./canvasPreviewSvg.cjs');
 
 /** One message from the generated frame, as JSON, except a selection, which has its own cap. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
@@ -54,7 +58,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * outside the queue, so the board's outline keeps up with the pointer.
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
- * `vector` with the design's root `<svg>` or why it has none, and `tree` with
+ * `vector` with the design's root `<svg>` or why it has none, `shape` with a
+ * named `<path>`'s data, matrix and box or why it has none, and `tree` with
  * a page of the design's marked elements in document order, from the one it
  * names; each of those waits for its own answer.
  */
@@ -102,6 +107,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
     }
     return rect.width < 0 || rect.height < 0 ? null : rect;
   };
+${SVG_INTERMEDIATE}
   const normalizeSelection = (data) => {
     if (!isSequence(data.sequence)) return null;
     const element = data.element;
@@ -275,7 +281,9 @@ const INTERMEDIATE_SCRIPT = `(() => {
           ? bytes(encoded) > ${String(MAX_PREVIEW_VECTOR_EVENT_BYTES)}
           : data.event === 'tree'
             ? bytes(encoded) > ${String(MAX_PREVIEW_TREE_BYTES)}
-            : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+            : data.event === 'shape'
+              ? bytes(encoded) > ${String(MAX_PREVIEW_SHAPE_EVENT_BYTES)}
+              : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -284,7 +292,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (['probe', 'locate', 'vector', 'tree'].includes(data.event)) {
+    if (['probe', 'locate', 'vector', 'shape', 'tree'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -366,7 +374,8 @@ const INTERMEDIATE_SCRIPT = `(() => {
         typeof target.elementId !== 'string' ||
         !isPath(target.instancePath) ||
         !target.styles ||
-        typeof target.styles !== 'object'
+        typeof target.styles !== 'object' ||
+        !(target.d === undefined || isPreviewPathData(target.d, 'board'))
       )
         return 'invalid_request';
       const styles = {};
@@ -380,6 +389,7 @@ const INTERMEDIATE_SCRIPT = `(() => {
           instancePath: target.instancePath,
           styles,
           text: whole(target.text),
+          d: target.d === undefined ? null : target.d,
         },
         properties,
       });
@@ -438,6 +448,12 @@ const INTERMEDIATE_SCRIPT = `(() => {
           : null;
       };
       return askFrame({ command: 'vector' }, read, ${String(PREVIEW_VECTOR_DEADLINE_MS)});
+    },
+    shape(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const node = request && typeof request === 'object' ? nodeOf(request) : null;
+      if (!node) return 'invalid_request';
+      return askFrame(Object.assign({ command: 'shape' }, node), (data) => normalizeShape(data.shape));
     },
     tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
