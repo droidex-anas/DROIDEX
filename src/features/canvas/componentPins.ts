@@ -97,6 +97,19 @@ export function unpinComponents(
 }
 
 /**
+ * Takes off the tags a prompt was composed with, as they were then: one tagged
+ * again while the prompt was being sent stays for the next prompt.
+ */
+export function unpinSentComponents(appSessionId: string, sent: readonly ComponentPin[]): void {
+  if (sent.length === 0) return;
+  const gone = new Set(sent);
+  publish(
+    appSessionId,
+    componentPins(appSessionId).filter((pin) => !gone.has(pin)),
+  );
+}
+
+/**
  * The tags as a prompt sends them: those of the request's kit follow it to its
  * current version and mode, so the agent reads the entry the frames build with.
  * When the request runs under the canvas's choice, they take its name too.
@@ -119,10 +132,19 @@ export function pinsUnderKit(
   );
 }
 
-/** Puts a queued prompt's components back beside the ones the draft has, as far as it has room. */
+/**
+ * Puts a queued prompt's components back beside the ones the draft has, as far
+ * as it has room. A queued tag of an entry the draft holds takes its place, so
+ * the prompt keeps the kit version it was queued with.
+ */
 export function restoreComponentPins(appSessionId: string, pins: readonly ComponentPin[]): void {
+  if (pins.length === 0) return;
+  const queued = new Map(pins.map((pin) => [componentPinKey(pin), pin]));
   const held = componentPins(appSessionId);
-  const keys = new Set(held.map(componentPinKey));
-  const added = pins.filter((pin) => !keys.has(componentPinKey(pin)));
-  if (added.length > 0) publish(appSessionId, [...held, ...added].slice(0, MAX_PINNED_COMPONENTS));
+  const heldKeys = new Set(held.map(componentPinKey));
+  const merged = [
+    ...held.map((pin) => queued.get(componentPinKey(pin)) ?? pin),
+    ...pins.filter((pin) => !heldKeys.has(componentPinKey(pin))),
+  ];
+  publish(appSessionId, merged.slice(0, MAX_PINNED_COMPONENTS));
 }

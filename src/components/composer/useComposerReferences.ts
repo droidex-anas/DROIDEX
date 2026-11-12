@@ -13,6 +13,7 @@ import {
   pinsUnderKit,
   restoreComponentPins,
   unpinComponents,
+  unpinSentComponents,
   useComponentPins,
   type ComponentPin,
 } from '../../features/canvas/componentPins';
@@ -83,9 +84,8 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const chosenKit = designSystem?.ref ?? null;
   const taggedComponents = useComponentPins(appSessionId);
   const requestKit = canvasKey === null ? null : requestDesignSystem(framePins, chosenKit);
-  const components = toChild
-    ? NO_COMPONENTS
-    : pinsUnderKit(taggedComponents, requestKit, designSystem);
+  const heldComponents = toChild ? NO_COMPONENTS : taggedComponents;
+  const components = pinsUnderKit(heldComponents, requestKit, designSystem);
   const queued = {
     ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
     ...(framePins.length > 0 ? { framePins } : {}),
@@ -176,7 +176,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       detachReplies();
       unpin(framePins);
       unpinPicked(elementPins);
-      untag(components);
+      if (appSessionId) unpinSentComponents(appSessionId, heldComponents);
     },
     /** Backspace on an empty draft takes the last chip off; false when there was none. */
     removeLast: (): boolean => {
