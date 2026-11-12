@@ -173,6 +173,14 @@ test('an entry giving an element an id the frame already gives one is refused, n
   assert.ok(insertLayer(files, rowId(files, 'main'), email).landed);
 });
 
+test('a reference named after an object property is an id the edit cannot read', () => {
+  const entry: CatalogEntry = { ...BUTTON, uses: [], jsx: "<input id={'&constructor;'} />" };
+  assert.equal(
+    refusal('export default () => <main><input id="&constructor;" /></main>;', 'main', entry),
+    "This frame writes an id the edit can't read, so the entry's id might repeat it.",
+  );
+});
+
 test('a layer the edit cannot reach alone is refused with the reason', () => {
   assert.equal(
     refusal(`${KIT}export default () => <h1>Pricing</h1>;`, 'h1'),
