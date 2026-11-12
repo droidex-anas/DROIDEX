@@ -113,6 +113,15 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     reactCommitsPerPanFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerPanFrame'),
     reactCommitsPerZoomFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerZoomFrame'),
     reactCommitsPerDragFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerDragFrame'),
+    reactCommitsPerMarqueeFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerMarqueeFrame'),
+    reactCommitsPerEditHoverFrame: metricValue(
+      candidateProbes,
+      'canvas.reactCommitsPerEditHoverFrame',
+    ),
+    reactCommitsPerLayersSweepFrame: metricValue(
+      candidateProbes,
+      'canvas.reactCommitsPerLayersSweepFrame',
+    ),
     layoutReadsPerPanFrame: metricValue(candidateProbes, 'canvas.layoutReadsPerPanFrame'),
     longTasksDuringGestures: metricValue(candidateProbes, 'canvas.longTasksDuringGestures'),
     panBusyP95Ms: metricValue(candidateProbes, 'canvas.panBusyP95Ms'),

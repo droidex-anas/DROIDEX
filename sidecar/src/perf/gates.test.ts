@@ -74,6 +74,9 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     reactCommitsPerPanFrame: 2,
     reactCommitsPerZoomFrame: 2,
     reactCommitsPerDragFrame: 1,
+    reactCommitsPerMarqueeFrame: 1,
+    reactCommitsPerEditHoverFrame: 1.3,
+    reactCommitsPerLayersSweepFrame: 1,
     layoutReadsPerPanFrame: 40,
     longTasksDuringGestures: 1,
     panBusyP95Ms: 30,
@@ -91,6 +94,9 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     reactCommitsPerPanFrame: 0.03,
     reactCommitsPerZoomFrame: 1,
     reactCommitsPerDragFrame: 0.05,
+    reactCommitsPerMarqueeFrame: 0.06,
+    reactCommitsPerEditHoverFrame: 0.49,
+    reactCommitsPerLayersSweepFrame: 0,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -113,6 +119,9 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
     reactCommitsPerPanFrame: 0.03,
     reactCommitsPerZoomFrame: 1,
     reactCommitsPerDragFrame: 0.05,
+    reactCommitsPerMarqueeFrame: 0.06,
+    reactCommitsPerEditHoverFrame: 0.49,
+    reactCommitsPerLayersSweepFrame: 0,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -123,6 +132,19 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
   assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerZoomFrame: 2 }).hardPassed, false);
   // One commit a frame is a drag drawn through React.
   assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerDragFrame: 1 }).hardPassed, false);
+  // So is a marquee band, an Edit outline or a Layers row that renders the board.
+  assert.equal(
+    evaluateProbeGates({ ...measured, reactCommitsPerMarqueeFrame: 1 }).hardPassed,
+    false,
+  );
+  assert.equal(
+    evaluateProbeGates({ ...measured, reactCommitsPerEditHoverFrame: 1 }).hardPassed,
+    false,
+  );
+  assert.equal(
+    evaluateProbeGates({ ...measured, reactCommitsPerLayersSweepFrame: 1 }).hardPassed,
+    false,
+  );
   assert.equal(evaluateProbeGates({ ...measured, longTasksDuringGestures: 1 }).hardPassed, false);
   // Slow frames warn and never fail.
   assert.equal(evaluateProbeGates({ ...measured, panBusyP95Ms: 30 }).hardPassed, true);
@@ -132,6 +154,9 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
     reactCommitsPerPanFrame: null,
     reactCommitsPerZoomFrame: null,
     reactCommitsPerDragFrame: null,
+    reactCommitsPerMarqueeFrame: null,
+    reactCommitsPerEditHoverFrame: null,
+    reactCommitsPerLayersSweepFrame: null,
     layoutReadsPerPanFrame: null,
     longTasksDuringGestures: null,
     panBusyP95Ms: null,
@@ -140,7 +165,7 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
   });
   assert.equal(withoutChromium.hardPassed, true);
   const canvas = withoutChromium.results.filter((result) => result.id.startsWith('canvas.'));
-  assert.equal(canvas.length, 8);
+  assert.equal(canvas.length, 11);
   assert.ok(canvas.every((result) => result.status === 'unmeasured'));
 });
 
@@ -154,6 +179,9 @@ test('a canvas run that measured its pan but lost its drags fails the drag gate'
     reactCommitsPerPanFrame: 0.03,
     reactCommitsPerZoomFrame: 1,
     reactCommitsPerDragFrame: null,
+    reactCommitsPerMarqueeFrame: 0.06,
+    reactCommitsPerEditHoverFrame: 0.49,
+    reactCommitsPerLayersSweepFrame: 0,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,

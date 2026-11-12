@@ -163,6 +163,24 @@ function gateMetrics(boards: CanvasReport['boards']): CanvasReport['metrics'] {
   const held = [board.moveOne, board.moveFive, board.resizeOne].flatMap((gesture) =>
     gesture ? [gesture.median.commitsPerFrame] : [],
   );
+  const overlays = (
+    [
+      ['canvas.reactCommitsPerMarqueeFrame', board.marquee, 'Shift marquee'],
+      ['canvas.reactCommitsPerEditHoverFrame', board.editHover, 'Edit hover sweep'],
+      ['canvas.reactCommitsPerLayersSweepFrame', board.layersSweep, 'Layers row sweep'],
+    ] as const
+  ).flatMap(([id, gesture, description]) =>
+    gesture
+      ? [
+          {
+            id,
+            value: gesture.median.commitsPerFrame,
+            unit: 'commits',
+            method: `30-frame board, ${description}, median of the runs`,
+          },
+        ]
+      : [],
+  );
   const method = '30-frame board, background pan, median of the runs';
   if (!pan) return [];
   return [
@@ -188,6 +206,7 @@ function gateMetrics(boards: CanvasReport['boards']): CanvasReport['metrics'] {
               '30-frame board, moving one or five frames or resizing one, the greatest median of the runs',
           },
         ]),
+    ...overlays,
     { id: 'canvas.layoutReadsPerPanFrame', value: pan.layoutReadsPerFrame, unit: 'reads', method },
     {
       id: 'canvas.longTasksDuringGestures',
