@@ -38,6 +38,8 @@ export interface DesignSystemBrief {
   catalog?: string[];
   /** Entry names left out to keep the brief bounded; canvas_theme catalog lists them all. */
   omittedCatalogNames?: number;
+  /** Why the kit's catalog.json is unusable, as canvas_theme catalog refuses it. */
+  catalogProblem?: string;
   guidance: string;
 }
 
@@ -83,7 +85,8 @@ export async function designSystemBrief(
     const listed = kindNames.filter((name, index) => names.fits(name, index === 0 ? keyBytes : 0));
     if (listed.length > 0) tokens[kind] = listed;
   }
-  // A pinned version's catalog was checked when it was saved.
+  // A saved version's catalog was checked when it was saved, but a v1.6
+  // version converted on read may hold a catalog.json that is not one.
   const read = readKitCatalog(system.files);
   const entryNames = nameBudget(CATALOG_NAME_BYTES);
   const catalogKeyBytes = '"catalog":[],'.length;
@@ -105,6 +108,7 @@ export async function designSystemBrief(
     ...(names.omitted() > 0 ? { omittedNames: names.omitted() } : {}),
     ...(catalog.length > 0 ? { catalog } : {}),
     ...(entryNames.omitted() > 0 ? { omittedCatalogNames: entryNames.omitted() } : {}),
+    ...('problem' in read ? { catalogProblem: read.problem } : {}),
     guidance: offer === null ? guidance : `${guidance}\n\n${offer}`,
   };
 }
