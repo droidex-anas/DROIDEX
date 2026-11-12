@@ -199,6 +199,11 @@ test('a token outside the property family and a value it cannot take are invalid
   ] satisfies Change[]) {
     assert.equal(refusal(change).code, 'invalid_edit', `${change.property}: ${change.value}`);
   }
+  // A property that takes only the kit's tokens points to them, not to another value.
+  assert.match(
+    refusal({ property: 'fontFamily', value: 'Comic Sans MS' }).message,
+    /Pick one of this kit’s font family tokens/,
+  );
 });
 
 test('a property outside the whitelist is unsupported by name', () => {

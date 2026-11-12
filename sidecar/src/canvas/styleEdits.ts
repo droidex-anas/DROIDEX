@@ -174,11 +174,16 @@ export function resolveStyleChange(
       );
     return stacked;
   }
-  if (!acceptsValue(rule.values, change.value))
+  if (!acceptsValue(rule.values, change.value)) {
+    const tokensOnly = typeof rule.values !== 'string' && rule.values.length === 0;
+    const instead = tokensOnly
+      ? `Pick one of this kit’s ${name} tokens, or ask the agent to change it.`
+      : 'Try another value, or ask the agent to change it.';
     throw new SourceElementError(
       'invalid_edit',
-      `Canvas can’t set the ${name} to ${change.value}. Try another value, or ask the agent to change it.`,
+      `Canvas can’t set the ${name} to ${change.value}. ${instead}`,
     );
+  }
   const wanted = canonicalCss(change.value);
   // A blur token holds the blur's length.
   const tokenCss = (value: string) => (rule.values === 'blur' ? `blur(${value})` : value);
