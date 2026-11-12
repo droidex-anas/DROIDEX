@@ -63,11 +63,15 @@ test('a chip names its kit only beside components of another kit', () => {
     'Card · Slate',
   ]);
 });
-test('tags of the request’s kit follow it to its current version and mode', () => {
+test('tags of the request’s kit follow it to its current version, mode and name', () => {
   const slate = pin('Card', { id: 'slate', version: 1, mode: 'dark' }, 'Slate');
   const pins = [pin('Button'), slate];
   const current = { ...ACME, version: 4, mode: 'dark' as const };
-  assert.deepEqual(pinsUnderKit(pins, current), [pin('Button', current), slate]);
-  assert.equal(pinsUnderKit(pins, ACME), pins);
-  assert.equal(pinsUnderKit(pins, null), pins);
+  assert.deepEqual(pinsUnderKit(pins, current, null), [pin('Button', current), slate]);
+  assert.deepEqual(pinsUnderKit(pins, current, 'Acme 2'), [
+    pin('Button', current, 'Acme 2'),
+    slate,
+  ]);
+  assert.equal(pinsUnderKit(pins, ACME, 'Acme'), pins);
+  assert.equal(pinsUnderKit(pins, null, null), pins);
 });
