@@ -6,7 +6,11 @@ import type {
   AnnotateCanvasInput,
 } from '../../../src/features/canvas/annotationProtocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
-import { BoardHistory, recordPlacements } from '../../../src/features/canvas/boardHistory';
+import {
+  BoardHistory,
+  recordPlacements,
+  revisionEntry,
+} from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
 import { CanvasBoard, type CanvasBoardHandle } from '../../../src/features/canvas/CanvasBoard';
@@ -276,7 +280,17 @@ const SEEDED: Annotation[] = [
 ];
 const seeded = params.has('marks') ? SEEDED : [];
 // `?edit=1` maps Design A's source to two elements Edit can pick, in the
-// build's order: by file, then by start.
+// build's order: by file, then by start; `?paths=1` adds a literal `<path>`.
+const PATH_ELEMENT: SourceElement = {
+  elementId: 'el_path',
+  file: 'main.tsx',
+  start: 100,
+  end: 140,
+  line: 4,
+  tagName: 'path',
+  component: 'Card',
+  editability: 'literal',
+};
 const ELEMENTS: SourceElement[] = params.has('edit')
   ? [
       {
@@ -299,6 +313,7 @@ const ELEMENTS: SourceElement[] = params.has('edit')
         component: 'Card',
         editability: 'literal',
       },
+      ...(params.has('paths') ? [PATH_ELEMENT] : []),
     ]
   : [];
 // Its source outline: an instance of Card, which renders the section holding the title.
@@ -614,9 +629,26 @@ function Harness() {
     runs,
     active: interaction.mode === 'edit',
     hovering: picksElements(interaction.mode),
-    onEditElement: (input) => {
+    onEditElement: async (input) => {
       editCalls.push(input);
-      return new Promise<ElementEdited>((resolve, reject) => editReplies.push({ resolve, reject }));
+      const edited = await new Promise<ElementEdited>((resolve, reject) =>
+        editReplies.push({ resolve, reject }),
+      );
+      // `?paths=1` makes each edit a step of the board's history, as the mount does.
+      const { designId, revisionId } =
+        'element' in input.edit ? input.edit.element : input.edit.layer;
+      const frame = shown.current.frames.find((each) => each.designId === designId);
+      if (params.has('paths') && frame)
+        history.record(
+          shown.current.canvasId,
+          revisionEntry(
+            askSwitch,
+            { designId, name: frame.name },
+            revisionId,
+            edited.receipt.revisionId,
+          ),
+        );
+      return edited;
     },
   });
   const elements = layerElements(runs, editor, interaction, setInteraction);

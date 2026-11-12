@@ -1,7 +1,7 @@
 // What the board draws over its frames in their own coordinates, inside the
 // world layer so pan and zoom carry it: the agents at work, Edit's and
-// Design's element outlines, the box around a multi-selection, and the marks,
-// in that order.
+// Design's element outlines, a picked path's points, the box around a
+// multi-selection, and the marks, in that order.
 
 import { AnnotationLayer, type AnnotationLayerProps } from './AnnotationLayer';
 import type { PlacedFrame } from './canvasGeometry';
@@ -11,10 +11,12 @@ import { CanvasPresenceLayer } from './CanvasPresenceLayer';
 import type { BoardInteraction } from './canvasState';
 import type { PickedOnBoard } from './elementOnBoard';
 import { ElementOutlines, type PickOutline } from './ElementOutlines';
+import { PathGrips } from './paths/PathGrips';
 import type { PreviewRuns } from './previewRuns';
 import type { CanvasFrame } from './protocol';
 import { SelectionBounds } from './SelectionBounds';
 import type { ReadSource } from './useChangeTours';
+import type { ElementEditor } from './useElementEditor';
 import type { HoveredElement } from './useElementHover';
 
 export function BoardOverlays({
@@ -28,6 +30,7 @@ export function BoardOverlays({
   runs,
   readSource,
   selected,
+  path,
   hovered,
   hoveredComponent,
   picks,
@@ -47,6 +50,8 @@ export function BoardOverlays({
   runs: PreviewRuns;
   readSource: ReadSource;
   selected: PickedOnBoard | null;
+  /** The picked path's points, and how a move of one previews and commits. */
+  path: ElementEditor['path'];
   hovered: HoveredElement | null;
   hoveredComponent: string | null;
   picks: readonly PickOutline[];
@@ -76,6 +81,17 @@ export function BoardOverlays({
         hoveredComponent={hoveredComponent}
         picks={picks}
       />
+      {selected && path.shape && (
+        // Its offset in the source holds while an edit rewrites its data, so a burst of nudges keeps focus.
+        <PathGrips
+          key={`${selected.selection.draft.site.file}:${String(selected.selection.draft.site.start)}`}
+          shape={path.shape}
+          frame={selected.frame}
+          scale={scale}
+          preview={path.preview}
+          commit={path.commit}
+        />
+      )}
       <SelectionBounds drawn={drawn} selectedFrameIds={interaction.selectedFrameIds} />
       <AnnotationLayer
         {...marks}

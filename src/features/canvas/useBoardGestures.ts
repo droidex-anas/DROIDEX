@@ -44,7 +44,7 @@ interface GestureInputs {
   selectedFrameIds: readonly string[];
   /** A hand gesture is about to take the viewport away from Fit and animation. */
   onStart: () => void;
-  /** A hand gesture is over, released or cancelled, so the view it moved settles. */
+  /** A gesture that called `onStart` is over, released or cancelled, so the view it moved settles. */
   onEnd: () => void;
   onPan: (delta: Point) => void;
   /** A background pan begins by clearing the selection, as a plain click does. */
@@ -101,7 +101,7 @@ export function useBoardGestures({
     setPanning(false);
     held.release();
     setBand(null);
-    latest.current.onEnd();
+    if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'frame') {
       // A cancelled re-drag restores acknowledged geometry, not its old hold.
       dropHolds(heldOf(active).map(({ designId }) => designId));
@@ -357,7 +357,7 @@ export function useBoardGestures({
     setPanning(false);
     held.release();
     setBand(null);
-    latest.current.onEnd();
+    if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'pan') return;
     if (active.kind === 'band') {
       latest.current.onBand(active.origin, active.current, event.shiftKey);
@@ -466,6 +466,14 @@ function heldOf({ drag, carried }: FrameGesture): HeldFrame[] {
     { designId: drag.designId, from: drag.startRect, rect: drag.rect },
     ...carried.map(({ designId, startRect, rect }) => ({ designId, from: startRect, rect })),
   ];
+}
+
+/**
+ * A pan and a frame drag take the viewport as they start; a rubber band never
+ * does, so its end must not settle a wheel or an animation still moving the view.
+ */
+function takesView(gesture: Gesture): boolean {
+  return gesture.kind !== 'band';
 }
 
 function boardCursor(panning: boolean, banding: boolean, spaceHeld: boolean): string {

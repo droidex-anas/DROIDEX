@@ -1,6 +1,7 @@
 /* What the board draws around a selection and while frames are moved: the
    selected frame's size, a multiple selection's box, the resize handles, the
-   rubber band, the snap guides and the elements Edit and Design hover and pick. It loads with
+   rubber band, the snap guides, the elements Edit and Design hover and pick,
+   and a picked path's points. It loads with
    canvasBoard.css, whose --board-scale and chrome font it uses.
 
    Chrome drawn inside the world layer divides by --board-scale, so it keeps
@@ -306,4 +307,106 @@
 .canvas-element-tag[data-side='below'] > span,
 .canvas-element-tag[data-side='inside'] > span {
   border-radius: 0 4px 4px;
+}
+
+/* The selected path's anchors and handles, from PathGrips: an anchor is a
+   small square, filled while selected, and a handle a round grip on a hairline
+   to the anchor it shapes. Each grip takes a small control's press at any
+   zoom, its mark drawn inside it. Presses fall through the layer everywhere else. */
+.canvas-path-grips {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.canvas-path-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  width: 1px;
+  height: 1px;
+}
+
+.canvas-path-lines > line {
+  stroke: var(--selection);
+  stroke-width: calc(1px / var(--board-scale));
+}
+
+.canvas-path-grip {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: theme('width.control-sm');
+  height: theme('height.control-sm');
+  margin: calc(theme('width.control-sm') / -2) 0 0 calc(theme('width.control-sm') / -2);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  transform: scale(calc(1 / var(--board-scale)));
+}
+
+/* Focus is drawn as the selected anchor's fill. */
+.canvas-path-grip:focus-visible {
+  outline: none;
+}
+
+.canvas-path-grip::before {
+  content: '';
+  width: theme('spacing.2');
+  height: theme('spacing.2');
+  border: 1.5px solid var(--selection);
+  /* Off the radius scale, like the resize handles: its smallest step
+     would round this mark into a handle's circle. */
+  border-radius: 2px;
+  background: var(--raised);
+  transition: background var(--duration-quick) var(--ease-smooth-out);
+}
+
+.canvas-path-grip[data-path-grip='handle']::before {
+  width: theme('spacing[1.5]');
+  height: theme('spacing[1.5]');
+  border-width: 1px;
+  border-radius: theme('borderRadius.full');
+}
+
+/* A point held on both axes by horizontal or vertical lines cannot move. */
+.canvas-path-grips:not([data-readonly]) .canvas-path-grip[aria-disabled]::before {
+  opacity: 0.55;
+}
+
+.canvas-path-grip[aria-disabled] {
+  cursor: default;
+}
+
+.canvas-path-grip:hover::before {
+  background: color-mix(in srgb, var(--selection) 50%, var(--raised));
+}
+
+.canvas-path-grip[data-selected]::before {
+  background: var(--selection);
+}
+
+.canvas-path-grips[data-dragging],
+.canvas-path-grips[data-dragging] .canvas-path-grip {
+  cursor: grabbing;
+}
+
+/* A path the board cannot write shows its points, quieter, and lets presses through. */
+.canvas-path-grips[data-readonly] {
+  opacity: 0.55;
+}
+
+.canvas-path-grips[data-readonly] .canvas-path-grip {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-path-grip::before {
+    transition: none;
+  }
 }

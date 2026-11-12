@@ -53,6 +53,8 @@ export interface ElementPanelProps {
   selection: ElementSelection;
   /** The name of the frame the element is in, which leads its breadcrumb. */
   frameName: string;
+  /** Why a picked path's points can't move on the board; null when they can, or it is no path. */
+  pathNote: string | null;
   /** The selected design's kit tokens by property; null until they load. */
   tokens: Record<string, EditToken[]> | null;
   /** The mode the selected design previews its kit in. */
@@ -74,6 +76,7 @@ export function ElementPanel({
   ref,
   selection,
   frameName,
+  pathNote,
   tokens,
   mode,
   onPreview,
@@ -88,6 +91,7 @@ export function ElementPanel({
   const { draft, shown } = selection;
   const editable = draft.site.editability === 'literal';
   const readOnly = !editable || draft.pending !== null;
+  const note = editable ? pathNote : agentRoute(draft.site.editability);
   const text = draft.text ?? shown.text;
   const { value, previewed, preview, revert, commit, pick, hover } = usePickPreview({
     draft,
@@ -220,9 +224,7 @@ export function ElementPanel({
           </span>
           <span className="ml-auto shrink-0 tabular-nums">{sizeText(shown.rect)}</span>
         </p>
-        {!editable && (
-          <p className="mt-1.5 text-caption text-secondary">{agentRoute(draft.site.editability)}</p>
-        )}
+        {note && <p className="mt-1.5 text-caption text-secondary">{note}</p>}
       </header>
       <div className="scroll-fade-y scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3">
         {text !== null && (
