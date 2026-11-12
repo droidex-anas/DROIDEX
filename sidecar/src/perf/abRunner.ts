@@ -111,6 +111,7 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
       candidateReplays.find((report) => report.scenario.kind === 'soak')?.sidecar.resources
         ?.livePrimarySessions ?? null,
     reactCommitsPerPanFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerPanFrame'),
+    reactCommitsPerZoomFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerZoomFrame'),
     layoutReadsPerPanFrame: metricValue(candidateProbes, 'canvas.layoutReadsPerPanFrame'),
     longTasksDuringGestures: metricValue(candidateProbes, 'canvas.longTasksDuringGestures'),
     panBusyP95Ms: metricValue(candidateProbes, 'canvas.panBusyP95Ms'),

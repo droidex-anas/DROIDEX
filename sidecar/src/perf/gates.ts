@@ -44,6 +44,9 @@ const FEED_REBUILT_EVENTS_PER_DELTA_BUDGET = 8;
 // pointer event, 2 events a frame (rects, offsets, client and scroll sizes and
 // computed style all count). Both budgets sit just above what was measured.
 const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 0.1;
+// A wheel zoom draws its stage once a frame and the board commits with it
+// (measured 0.98–1.00); two commits a frame is a wheel event drawn on its own.
+const CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET = 1.25;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
 // 120 Hz: the main-thread work one frame may take.
 const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
@@ -148,6 +151,7 @@ export function evaluateProbeGates(options: {
   terminalDeliveriesPerFlood: number | null;
   livePrimarySessionsAfterSoak: number | null;
   reactCommitsPerPanFrame: number | null;
+  reactCommitsPerZoomFrame: number | null;
   layoutReadsPerPanFrame: number | null;
   longTasksDuringGestures: number | null;
   panBusyP95Ms: number | null;
@@ -208,6 +212,15 @@ export function evaluateProbeGates(options: {
       budget: CANVAS_COMMITS_PER_PAN_FRAME_BUDGET,
       justification:
         'Pan moves the stage, not React: a 61-frame pan commits as it starts and ends (measured 0.03). 0.1 is 6 commits a pan, far from one a frame.',
+    }),
+    hard({
+      id: 'canvas.reactCommitsPerZoomFrame',
+      name: 'React commits per pinch or ⌘-wheel zoom frame, 30-frame board',
+      unit: 'commits',
+      actual: options.reactCommitsPerZoomFrame,
+      budget: CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET,
+      justification:
+        'Wheel events arrive about twice a frame and the stage draws them once (measured 0.98–1.00); 2 a frame means each event draws.',
     }),
     hard({
       id: 'canvas.layoutReadsPerPanFrame',

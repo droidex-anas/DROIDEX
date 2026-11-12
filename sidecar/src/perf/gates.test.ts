@@ -72,6 +72,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     terminalDeliveriesPerFlood: 1_000,
     livePrimarySessionsAfterSoak: 3,
     reactCommitsPerPanFrame: 2,
+    reactCommitsPerZoomFrame: 2,
     layoutReadsPerPanFrame: 40,
     longTasksDuringGestures: 1,
     panBusyP95Ms: 30,
@@ -87,6 +88,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     terminalDeliveriesPerFlood: 4,
     livePrimarySessionsAfterSoak: 0,
     reactCommitsPerPanFrame: 0.03,
+    reactCommitsPerZoomFrame: 1,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -99,7 +101,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
   }
 });
 
-test('canvas gates hold pan commits and long tasks, and a run without Chromium leaves them unmeasured', () => {
+test('canvas gates hold pan and zoom commits and long tasks, and a run without Chromium leaves them unmeasured', () => {
   const measured = {
     mountedRowsAt10k: 26,
     rowVisitsPerTailDeltaAt10k: 26,
@@ -107,6 +109,7 @@ test('canvas gates hold pan commits and long tasks, and a run without Chromium l
     terminalDeliveriesPerFlood: 4,
     livePrimarySessionsAfterSoak: 0,
     reactCommitsPerPanFrame: 0.03,
+    reactCommitsPerZoomFrame: 1,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -114,6 +117,7 @@ test('canvas gates hold pan commits and long tasks, and a run without Chromium l
     panRafP95Ms: 17,
   };
   assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerPanFrame: 1 }).hardPassed, false);
+  assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerZoomFrame: 2 }).hardPassed, false);
   assert.equal(evaluateProbeGates({ ...measured, longTasksDuringGestures: 1 }).hardPassed, false);
   // Slow frames warn and never fail.
   assert.equal(evaluateProbeGates({ ...measured, panBusyP95Ms: 30 }).hardPassed, true);
@@ -121,6 +125,7 @@ test('canvas gates hold pan commits and long tasks, and a run without Chromium l
   const withoutChromium = evaluateProbeGates({
     ...measured,
     reactCommitsPerPanFrame: null,
+    reactCommitsPerZoomFrame: null,
     layoutReadsPerPanFrame: null,
     longTasksDuringGestures: null,
     panBusyP95Ms: null,
@@ -129,7 +134,7 @@ test('canvas gates hold pan commits and long tasks, and a run without Chromium l
   });
   assert.equal(withoutChromium.hardPassed, true);
   const canvas = withoutChromium.results.filter((result) => result.id.startsWith('canvas.'));
-  assert.equal(canvas.length, 6);
+  assert.equal(canvas.length, 7);
   assert.ok(canvas.every((result) => result.status === 'unmeasured'));
 });
 

@@ -152,10 +152,23 @@ function gateMetrics(boards: CanvasReport['boards']): CanvasReport['metrics'] {
     (sum, gesture) => sum + gesture.median.longTasks,
     0,
   );
+  const zoom = [board.pinch, board.metaWheel].flatMap((gesture) =>
+    gesture ? [gesture.median.commitsPerFrame] : [],
+  );
   const method = '30-frame board, background pan, median of the runs';
   if (!pan) return [];
   return [
     { id: 'canvas.reactCommitsPerPanFrame', value: pan.commitsPerFrame, unit: 'commits', method },
+    ...(zoom.length === 0
+      ? []
+      : [
+          {
+            id: 'canvas.reactCommitsPerZoomFrame',
+            value: Math.max(...zoom),
+            unit: 'commits',
+            method: '30-frame board, pinch and ⌘-wheel zoom, the greater median of the runs',
+          },
+        ]),
     { id: 'canvas.layoutReadsPerPanFrame', value: pan.layoutReadsPerFrame, unit: 'reads', method },
     {
       id: 'canvas.longTasksDuringGestures',
