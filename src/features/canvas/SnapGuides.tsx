@@ -1,7 +1,9 @@
+import { useSyncExternalStore } from 'react';
 import { useStage, type BoardStage } from './boardStage';
 import { canvasToScreen, type Viewport } from './canvasGeometry';
 import { SIZE_ROOM_PX } from './ElementOutlines';
 import type { SnapGap, SnapGuide, SnapMarks } from './frameSnap';
+import type { HeldFrames } from './heldFrames';
 import { distanceLabel } from './measureDistances';
 import { useScreenSize } from './useScreenSize';
 
@@ -14,8 +16,20 @@ export interface GuideMarks extends SnapMarks {
   sizedBottom?: number;
 }
 
-/** SnapGuides over the live view, followed only while there is something to draw. */
-export function StageSnapGuides({ marks, stage }: { marks: GuideMarks; stage: BoardStage }) {
+/**
+ * SnapGuides over the live view: what the held frames snapped on while a hand
+ * holds any, else what Alt measured, followed only while there is something to draw.
+ */
+export function StageSnapGuides({
+  held,
+  measured,
+  stage,
+}: {
+  held: HeldFrames;
+  measured: GuideMarks;
+  stage: BoardStage;
+}) {
+  const marks = useSyncExternalStore(held.subscribe, held.readMarks, held.readMarks) ?? measured;
   const shows = marks.guides.length > 0 || marks.gaps.length > 0;
   const viewport = useStage(stage, (live) => live, shows);
   return <SnapGuides marks={marks} viewport={viewport} />;

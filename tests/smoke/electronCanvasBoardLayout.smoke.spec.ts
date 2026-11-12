@@ -173,6 +173,47 @@ test('a frame resizes from an edge or a corner, and the edges opposite stay put'
   ).toBe(4);
 });
 
+test('a wheel zoom during a frame drag moves the frame at the zoom the board shows', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
+  const origin = { x: Math.round(label.x + 30), y: Math.round(label.y + 8) };
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
+  await page.mouse.move(origin.x + 10, origin.y);
+  await page.clock.runFor(32);
+  await page.getByTestId('canvas-board').evaluate(
+    (root, point) => {
+      root.dispatchEvent(
+        new WheelEvent('wheel', {
+          ...point,
+          deltaY: -40,
+          ctrlKey: true,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    },
+    { clientX: origin.x, clientY: origin.y },
+  );
+  await page.clock.runFor(32);
+  // Still inside the wheel's quiet window, so only the stage has the new zoom.
+  const scale = await page
+    .locator('[data-testid="canvas-board"] > [style*="transform-origin"]')
+    .evaluate((stage) =>
+      Number(/scale\(([\d.]+)\)/.exec((stage as HTMLElement).style.transform)?.[1]),
+    );
+  // ⌘ held, so the frame does not snap.
+  await page.keyboard.down('Meta');
+  await page.mouse.move(origin.x + 200, origin.y);
+  await page.clock.runFor(32);
+  await page.mouse.up();
+  await page.keyboard.up('Meta');
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  expect((await arranged(page, 0)).a.x).toBe(Math.round(100 + 200 / scale));
+});
+
 test('the selected frame keeps its size and corners over a neighbour, and its edges leave the neighbour its presses', async ({
   page,
 }) => {

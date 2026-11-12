@@ -10,6 +10,7 @@ import { showsFrameTools, type BoardInteraction, type BoardInteractionEvent } fr
 import type { CanvasPresence } from './canvasPresence';
 import { DesignFrame, type DesignFrameProps } from './DesignFrame';
 import type { FrameActions } from './FrameToolbar';
+import type { HeldFrame } from './heldFrames';
 import type { CanvasFrame } from './protocol';
 import { toolbarRoom } from './toolbarPlacement';
 import type { useBoardPreviews } from './useBoardPreviews';
@@ -43,7 +44,8 @@ interface BoardWorldProps extends Pick<
   visible: string[];
   interaction: BoardInteraction;
   dispatch: (event: BoardInteractionEvent) => void;
-  heldDesignIds: string[];
+  /** The frames a hand gesture holds, each laid out where its hold began. */
+  heldFrames: readonly HeldFrame[];
   presence: CanvasPresence;
   previews: ReturnType<typeof useBoardPreviews>;
   editor: ElementEditor;
@@ -69,7 +71,7 @@ export function BoardWorld({
   visible,
   interaction,
   dispatch,
-  heldDesignIds,
+  heldFrames,
   presence,
   capturePointer,
   previews,
@@ -108,7 +110,7 @@ export function BoardWorld({
               : null
           }
           interacted={interaction.interactedFrameId === frame.designId}
-          held={heldDesignIds.includes(frame.designId)}
+          heldFrom={heldFrames.find(({ designId }) => designId === frame.designId)?.from ?? null}
           worker={presence.get(frame.designId)?.agent}
           capturePointer={capturePointer}
           shownRevisionId={previews.shown.get(frame.designId) ?? null}

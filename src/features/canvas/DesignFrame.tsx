@@ -78,8 +78,11 @@ export interface DesignFrameProps {
   toolbarRoom: ToolbarRoom | null;
   /** This is the frame Interact is driving. */
   interacted: boolean;
-  /** A hand gesture is holding this frame right now. */
-  held: boolean;
+  /**
+   * Where a hand gesture holding this frame right now began its hold, or null
+   * while none does.
+   */
+  heldFrom: FrameRect | null;
   /** The agent at work on this frame, if any. */
   worker: PresenceAgent | undefined;
   /**
@@ -126,8 +129,12 @@ export interface DesignFrameProps {
 }
 
 export function DesignFrame(props: DesignFrameProps) {
-  const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, held } = props;
+  const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, heldFrom } = props;
   const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
+  const held = heldFrom !== null;
+  // A held frame stays laid out where its hold began and a transform carries it,
+  // so a move only composites; a resize still lays it out at its new size.
+  const laidOutAt = heldFrom ?? rect;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
@@ -148,10 +155,13 @@ export function DesignFrame(props: DesignFrameProps) {
       data-selected={selected || undefined}
       className={`canvas-frame absolute ${animated ? 'canvas-frame-arrival' : ''}`}
       style={{
-        left: rect.x,
-        top: rect.y,
+        left: laidOutAt.x,
+        top: laidOutAt.y,
         width: rect.width,
         height: rect.height,
+        translate: heldFrom
+          ? `${String(rect.x - heldFrom.x)}px ${String(rect.y - heldFrom.y)}px`
+          : undefined,
         ...(animated ? arrival(motion) : {}),
       }}
     >
@@ -233,7 +243,7 @@ export function DesignFrame(props: DesignFrameProps) {
         <FrameBody {...props} />
         <FrameWorkingState {...props} />
         <RebuildBadge {...props} />
-        {capturePointer && <FrameInputOverlay {...props} press={press} click={click} />}
+        {capturePointer && <FrameInputOverlay {...props} held={held} press={press} click={click} />}
       </div>
 
       {selected && !props.multiSelect && (

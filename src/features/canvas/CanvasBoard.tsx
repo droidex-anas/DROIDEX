@@ -195,7 +195,7 @@ export function CanvasBoard({
   const gestures = useBoardGestures({
     board,
     frames,
-    scale: view.viewport.scale,
+    stage,
     mode: interaction.mode,
     selectedFrameIds: interaction.selectedFrameIds,
     onStart: () => {
@@ -353,7 +353,7 @@ export function CanvasBoard({
           visible={visible}
           interaction={interaction}
           dispatch={dispatch}
-          heldDesignIds={gestures.heldDesignIds}
+          heldFrames={gestures.heldFrames}
           presence={presence}
           capturePointer={overlayCapture}
           previews={previews}
@@ -397,7 +397,7 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
-        <StageSnapGuides marks={gestures.snapMarks ?? measured} stage={stage} />
+        <StageSnapGuides held={gestures.held} measured={measured} stage={stage} />
         {picker.prompt && (
           <DesignPickPrompt
             {...picker.prompt}
