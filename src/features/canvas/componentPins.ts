@@ -130,17 +130,24 @@ export function unpinComponents(
 
 /**
  * The tags as a prompt sends them: those of the request's kit follow it to its
- * current version and mode, so the agent reads the entry the frames build with.
+ * current version and mode, and its name when known, so the agent reads the
+ * entry the frames build with.
  */
 export function pinsUnderKit(
   pins: readonly ComponentPin[],
   kit: DesignSystemRef | null,
+  kitName: string | null,
 ): readonly ComponentPin[] {
   if (kit === null) return pins;
   const isBehind = (pin: ComponentPin) =>
-    pin.kit.id === kit.id && (pin.kit.version !== kit.version || pin.kit.mode !== kit.mode);
+    pin.kit.id === kit.id &&
+    (pin.kit.version !== kit.version ||
+      pin.kit.mode !== kit.mode ||
+      (kitName !== null && pin.kitName !== kitName));
   if (!pins.some(isBehind)) return pins;
-  return pins.map((pin) => (isBehind(pin) ? { ...pin, kit: { ...kit } } : pin));
+  return pins.map((pin) =>
+    isBehind(pin) ? { ...pin, kit: { ...kit }, kitName: kitName ?? pin.kitName } : pin,
+  );
 }
 
 /** Puts a queued prompt's components back beside the ones the draft has, as far as it has room. */

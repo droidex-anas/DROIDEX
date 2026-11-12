@@ -44,7 +44,7 @@ function componentLabels(records: readonly RegExpMatchArray[]): string[] {
   const kits = new Set(records.map(([, , kitId]) => kitId));
   return records.map((record) => {
     const [, kit, , , name] = record;
-    const named = unescapeText(name.replaceAll('&#13;', '\r').replaceAll('&#10;', '\n'));
+    const named = unescapeName(name);
     // Each pick is name=option, and neither half can hold a space or an =.
     const picked = (record.at(3) ?? '')
       .split(' ')
@@ -52,8 +52,13 @@ function componentLabels(records: readonly RegExpMatchArray[]): string[] {
       .map((pick) => unescapeText(pick.slice(pick.indexOf('=') + 1)))
       .join(', ');
     const entry = picked === '' ? named : `${named} (${picked})`;
-    return kits.size > 1 ? `${entry} · ${unescapeText(kit.replaceAll('&quot;', '"'))}` : entry;
+    return kits.size > 1 ? `${entry} · ${unescapeName(kit.replaceAll('&quot;', '"'))}` : entry;
   });
+}
+
+/** A kit's or entry's exact name, line breaks included. */
+function unescapeName(text: string): string {
+  return unescapeText(text.replaceAll('&#13;', '\r').replaceAll('&#10;', '\n'));
 }
 
 /** Where the elements block `text` ends with starts, when it holds at least one pick. */

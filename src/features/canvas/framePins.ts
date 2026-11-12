@@ -294,7 +294,7 @@ function componentLine({ kit, kitName, name, props }: ComponentPin): string {
   const ref = `ref-id="${escapeAttribute(kit.id)}" ref-version="${String(kit.version)}" ref-mode="${kit.mode}"`;
   const picks = props.map((pick) => `${pick.name}=${pick.value}`).join(' ');
   const picked = picks === '' ? '' : ` props="${escapeAttribute(picks)}"`;
-  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}${picked}>${escapeEntryName(name)}</component>`;
+  return `<component kit="${escapeName(kitName).replaceAll('"', '&quot;')}" ${ref}${picked}>${escapeName(name)}</component>`;
 }
 
 function frameLine(pin: FramePin): string {
@@ -319,8 +319,8 @@ function escapeText(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 }
 
-/** The entry's exact name, as the catalog read matches it; line breaks become references to keep one record per line. */
-function escapeEntryName(name: string): string {
+/** A kit's or entry's exact name, as the catalog read matches it; line breaks become references to keep one record per line. */
+function escapeName(name: string): string {
   return escapeText(name).replaceAll('\r', '&#13;').replaceAll('\n', '&#10;');
 }
 

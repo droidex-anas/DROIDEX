@@ -205,7 +205,12 @@ test('tagged kit components lead the frames, each named with the kit ref it is r
         { name: 'size', value: 'lg' },
       ],
     },
-    { kit: { ...kit, id: 'odd' }, kitName: 'Odd "kit"', name: 'Card <wide> & tall', props: [] },
+    {
+      kit: { ...kit, id: 'odd' },
+      kitName: 'Odd  "kit" & <co>',
+      name: 'Card <wide> & tall',
+      props: [],
+    },
     // The catalog reads an entry by its exact name, spaces and line breaks included.
     { kit, kitName: 'Acme', name: 'Two  spaces\nand a line', props: [] },
   ];
@@ -217,7 +222,7 @@ test('tagged kit components lead the frames, each named with the kit ref it is r
       '<canvas_components>',
       'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given, with each prop in its props set to the option named.',
       '<component kit="Acme" ref-id="acme" ref-version="3" ref-mode="light" props="variant=outline size=lg">Button / outline</component>',
-      '<component kit="Odd &quot;kit&quot;" ref-id="odd" ref-version="3" ref-mode="light">Card &lt;wide&gt; &amp; tall</component>',
+      '<component kit="Odd  &quot;kit&quot; &amp; &lt;co&gt;" ref-id="odd" ref-version="3" ref-mode="light">Card &lt;wide&gt; &amp; tall</component>',
       '<component kit="Acme" ref-id="acme" ref-version="3" ref-mode="light">Two  spaces&#10;and a line</component>',
       '</canvas_components>',
       '',

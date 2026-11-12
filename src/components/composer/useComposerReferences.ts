@@ -83,7 +83,10 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const chosenKit = designSystem?.ref ?? null;
   const taggedComponents = useComponentPins(appSessionId);
   const requestKit = canvasKey === null ? null : requestDesignSystem(framePins, chosenKit);
-  const components = toChild ? NO_COMPONENTS : pinsUnderKit(taggedComponents, requestKit);
+  // With a choice, the request runs under it, so its name is the request kit's.
+  const components = toChild
+    ? NO_COMPONENTS
+    : pinsUnderKit(taggedComponents, requestKit, designSystem?.name ?? null);
   const queued = {
     ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
     ...(framePins.length > 0 ? { framePins } : {}),
