@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SIZE_ROOM_PX } from './ElementOutlines';
-import { layOutGuides } from './SnapGuides';
+import { layOutGuides } from './snapGuideLayout';
 
 const viewport = { x: 0, y: 0, scale: 1 };
 const unmeasured = { width: 0, height: 0 };
