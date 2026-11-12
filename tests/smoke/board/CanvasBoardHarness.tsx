@@ -142,7 +142,8 @@ interface BoardHarness {
    */
   /** `landed` names the row the edit lands on; null for none, omitted for its own. */
   answerEdit: (index: number, landed?: string | null) => void;
-  refuseEdit: (index: number) => void;
+  /** Refuses one edit as stale, or with `unwritable` as one the source cannot write. */
+  refuseEdit: (index: number, unwritable?: string) => void;
   removeCalls: RemoveFramesInput[];
   /** Removes one delete's frames the way the sidecar does, answering `undo_<index>`. */
   answerRemove: (index: number) => void;
@@ -856,9 +857,11 @@ function Harness() {
         ),
       }));
     },
-    refuseEdit: (index) =>
+    refuseEdit: (index, unwritable) =>
       editReplies[index].reject(
-        new CanvasRequestError('stale_reference', 'This element changed. Pick it again.'),
+        unwritable === undefined
+          ? new CanvasRequestError('stale_reference', 'This element changed. Pick it again.')
+          : new CanvasRequestError('invalid_edit', unwritable),
       ),
     removeCalls,
     answerRemove: (index) => {

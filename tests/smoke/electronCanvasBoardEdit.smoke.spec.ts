@@ -65,6 +65,11 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await expect(fontSize).toHaveValue('24px');
   // The panel opens beside the board and nothing on the board moves for it.
   expect(await box(frame(page, 'A'))).toEqual(before);
+  // A focused field reads as it does at rest.
+  const colour = panel.getByLabel('Text colour', { exact: true });
+  const atRest = await colour.inputValue();
+  await colour.focus();
+  await expect(colour).toHaveValue(atRest);
 
   // The panel is a column beside the board: a wheel over it scrolls its fields
   // and leaves the board where it was.
@@ -77,7 +82,10 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
     .toBeGreaterThan(0);
   expect(await box(frame(page, 'A'))).toEqual(placed);
 
-  // Typing previews in the guest; Enter sends the canonical value, once.
+  // Typing previews in the guest; Enter sends the canonical value, once, and
+  // the fields keep their height while it saves.
+  const fields = panel.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
   await fontSize.fill(' 28PX ');
   await page.clock.runFor(100);
   expect(await page.evaluate(() => window.guestCommands.at(-1))).toMatchObject({
@@ -87,6 +95,7 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await fontSize.press('Enter');
   await fontSize.press('Enter');
   await expect(panel.getByRole('status')).toHaveText('Saving…');
+  expect((await box(fields)).height).toBe(fieldsHeight);
   // Delete on the board waits too: it would edit the revision the commit is replacing.
   await board.focus();
   await page.keyboard.press('Delete');
@@ -195,10 +204,16 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toBeVisible();
 
+  // An edit the source cannot write keeps the element picked and says why.
   const fontSize = title.getByLabel('Font size', { exact: true });
   await fontSize.fill('30px');
   await fontSize.press('Enter');
-  await page.evaluate(() => window.boardHarness.refuseEdit(1));
+  await page.evaluate(() => window.boardHarness.refuseEdit(1, 'fontSize takes a kit size.'));
+  await expect(title.getByRole('status')).toHaveText('fontSize takes a kit size.');
+  await expect(fontSize).toHaveValue('');
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  await page.evaluate(() => window.boardHarness.refuseEdit(2));
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toHaveCount(0);
 });

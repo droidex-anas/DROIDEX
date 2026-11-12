@@ -31,6 +31,7 @@ export function ElementColumn({
         frames.find((frame) => frame.designId === selection.draft.element.designId)?.name ?? ''
       }
       pathNote={editor.path.note}
+      refusal={editor.refusal}
       tokens={editor.tokens}
       mode={editor.mode}
       onPreview={editor.preview}

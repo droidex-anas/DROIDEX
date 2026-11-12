@@ -1,8 +1,26 @@
-// The rows the element panel lays its fields out in: a titled section, two
-// fields to a row, and a full-width control on the label column the segmented
-// controls share.
+// The rows the element panel lays its fields out in: the scrolling column, a
+// titled section, two fields to a row, and a full-width control on the label
+// column the segmented controls share.
 
 import type { ReactNode } from 'react';
+import { cn } from '../../components/ui/cn';
+
+/**
+ * The panel's scrolling fields. Locked ones read as disabled and only scroll;
+ * the panel's note says why.
+ */
+export function Fields({ locked, children }: { locked: boolean; children: ReactNode }) {
+  return (
+    <div
+      className={cn(
+        'scroll-fade-y scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3',
+        locked && 'cursor-not-allowed',
+      )}
+    >
+      <div className={cn(locked && 'pointer-events-none opacity-40')}>{children}</div>
+    </div>
+  );
+}
 
 export function Section({ title, children }: { title: string; children: ReactNode }) {
   return (

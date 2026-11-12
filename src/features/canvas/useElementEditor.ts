@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { elementStep, historyStep, isDeleteKey } from './boardKeys';
-import { canvasMessage } from './client';
+import { canvasMessage, CanvasRequestError } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
 import {
@@ -60,6 +60,7 @@ export function useElementEditor({
 }: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [error, setError] = useState('');
+  const [refused, setRefused] = useState<Refused | null>(null);
   /** Counts the picks answered, so a pick of the element already selected still reads as one. */
   const [picks, setPicks] = useState(0);
   const [seenFrames, setSeenFrames] = useState(frames);
@@ -235,6 +236,7 @@ export function useElementEditor({
     const mutationId = crypto.randomUUID();
     const committed = make(current.draft, mutationId);
     if (!committed) return;
+    setRefused(null);
     choose({ ...current, draft: committed.draft });
     const settle = (outcome: CommitOutcome) => {
       const now = latest.current.selection;
@@ -247,8 +249,14 @@ export function useElementEditor({
         settle({ status: 'edited', revisionId: receipt.revisionId });
       },
       (refusal: unknown) => {
-        if (latest.current.selection?.draft.pending?.mutationId === mutationId)
-          setError(canvasMessage(refusal));
+        const now = latest.current.selection;
+        if (now?.draft.pending?.mutationId !== mutationId) return;
+        if (isUnwritable(refusal)) {
+          setRefused({ element: now.draft.element, reason: refusal.message });
+          settle({ status: 'unwritable' });
+          return;
+        }
+        setError(canvasMessage(refusal));
         settle({ status: 'refused' });
       },
     );
@@ -355,8 +363,10 @@ export function useElementEditor({
     pick,
     clear,
     editLayer,
+    refusal: refusalOf(refused, selection),
     preview: (property: string, value: string, element: ElementRef): boolean => {
       if (!selects(element)) return false;
+      setRefused(null);
       update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
       return true;
     },
@@ -369,6 +379,7 @@ export function useElementEditor({
       if (selects(element)) send(commitStyles);
     },
     previewText: (text: string) => {
+      setRefused(null);
       update((draft) => previewText(draft, text));
     },
     revertText: () => {
@@ -396,6 +407,27 @@ function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
   const shown = { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
   return draft.d === null ? shown : { ...shown, d: draft.d };
+}
+
+/** Why the source could not take the last commit on an element, which stays selected. */
+interface Refused {
+  element: ElementRef;
+  reason: string;
+}
+
+/** The refusal's reason while its element is still the one selected. */
+function refusalOf(refused: Refused | null, selection: ElementSelection | null): string | null {
+  return refused !== null && refused.element === selection?.draft.element ? refused.reason : null;
+}
+
+/** The source cannot take the edit as written; nothing about the selection has gone stale. */
+function isUnwritable(refusal: unknown): refusal is CanvasRequestError {
+  return (
+    refusal instanceof CanvasRequestError &&
+    (refusal.code === 'invalid_edit' ||
+      refusal.code === 'unsupported_edit' ||
+      refusal.code === 'ambiguous_element')
+  );
 }
 
 /** The panel's first field that takes typing, else its first working button. */
