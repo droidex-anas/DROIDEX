@@ -695,6 +695,7 @@ function Card() { return <article>Card</article>; }
 export default ({ open, items, rest, style }) => (
   <main>
     <p hidden={open}>Attribute</p>
+    <p hidden={false} hidden>Twice</p>
     <p {...rest}>Spread</p>
     <p className={cn('flex')}>Joined</p>
     <p className={\`flex \${open}\`}>Template</p>
@@ -721,6 +722,7 @@ export default ({ open, items, rest, style }) => (
     'Its classes or style set how it displays, which can win over hiding it. Ask the agent to hide or show it.';
   const cases: [string, string, string][] = [
     ['Attribute', 'ambiguous_element', attribute],
+    ['Twice', 'ambiguous_element', attribute],
     ['Spread', 'ambiguous_element', code],
     ['Joined', 'ambiguous_element', code],
     ['Template', 'ambiguous_element', code],

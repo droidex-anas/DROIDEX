@@ -102,7 +102,7 @@ export function hiddenClassEdit(element: ElementNode, hidden: boolean): Replacem
 
 function readClasses(element: ElementNode): Classes {
   const opening = openingOf(element);
-  if (mayHide(attribute(opening, 'hidden'))) return { lock: 'attribute' };
+  if (mayHide(opening)) return { lock: 'attribute' };
   if (opening.attributes.properties.some(ts.isJsxSpreadAttribute)) return { lock: 'computed' };
   if (mayStyleDisplay(attribute(opening, 'style'))) return { lock: 'display' };
   const written = attribute(opening, 'className');
@@ -117,9 +117,16 @@ function readClasses(element: ElementNode): Classes {
   return { written, literal, raw };
 }
 
-/** Whether a `hidden` attribute hides the element, or may; `hidden={false}` is as good as none. */
-function mayHide(hidden: ts.JsxAttribute | undefined): boolean {
-  return hidden !== undefined && attributeValue(hidden)?.kind !== ts.SyntaxKind.FalseKeyword;
+/**
+ * Whether a `hidden` attribute hides the element, or may. A lone
+ * `hidden={false}` is as good as none; written twice, the last one wins.
+ */
+function mayHide(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement): boolean {
+  const written = opening.attributes.properties.filter(
+    (attr): attr is ts.JsxAttribute => ts.isJsxAttribute(attr) && attr.name.getText() === 'hidden',
+  );
+  if (written.length !== 1) return written.length > 1;
+  return attributeValue(written[0])?.kind !== ts.SyntaxKind.FalseKeyword;
 }
 
 /** Whether an inline style sets, or may set, `display`, which wins over any class. */
