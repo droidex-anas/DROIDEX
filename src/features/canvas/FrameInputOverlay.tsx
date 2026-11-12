@@ -18,7 +18,6 @@ type OverlayProps = Pick<
   DesignFrameProps,
   | 'frame'
   | 'mode'
-  | 'held'
   | 'elementHovered'
   | 'onPick'
   | 'onInteract'
@@ -27,6 +26,8 @@ type OverlayProps = Pick<
   | 'onHoverElement'
   | 'onEditEnter'
 > & {
+  /** A hand gesture is holding this frame right now. */
+  held: boolean;
   /** A press that picks the frame and starts dragging it, as on its label. */
   press: (event: PointerEvent<HTMLElement>) => void;
   click: (event: MouseEvent<HTMLElement>) => void;

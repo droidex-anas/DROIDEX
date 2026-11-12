@@ -3,13 +3,14 @@
 // the same space. The transform is the stage's to write, so a pan or a zoom
 // moves the layer without rendering it.
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { BoardStage } from './boardStage';
 import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction, type BoardInteractionEvent } from './canvasState';
 import type { CanvasPresence } from './canvasPresence';
 import { DesignFrame, type DesignFrameProps } from './DesignFrame';
 import type { FrameActions } from './FrameToolbar';
+import type { HeldFrames } from './heldFrames';
 import type { CanvasFrame } from './protocol';
 import { toolbarRoom } from './toolbarPlacement';
 import type { useBoardPreviews } from './useBoardPreviews';
@@ -43,7 +44,8 @@ interface BoardWorldProps extends Pick<
   visible: string[];
   interaction: BoardInteraction;
   dispatch: (event: BoardInteractionEvent) => void;
-  heldDesignIds: string[];
+  /** The frames a hand gesture holds, which it draws where the hand has them. */
+  held: HeldFrames;
   presence: CanvasPresence;
   previews: ReturnType<typeof useBoardPreviews>;
   editor: ElementEditor;
@@ -69,7 +71,7 @@ export function BoardWorld({
   visible,
   interaction,
   dispatch,
-  heldDesignIds,
+  held,
   presence,
   capturePointer,
   previews,
@@ -87,6 +89,17 @@ export function BoardWorld({
   onFocusLabel,
   children,
 }: BoardWorldProps) {
+  const heldIds = useSyncExternalStore(held.subscribe, held.readHeld, held.readHeld);
+  const handlers = useFrameHandlers({
+    dispatch,
+    editor,
+    focusBoard,
+    onDelete,
+    onHold,
+    onResize,
+    onDesignPress,
+    onFocusLabel,
+  });
   return (
     <div ref={stage.attach} className="absolute left-0 top-0" style={{ transformOrigin: '0 0' }}>
       {frames.map((frame, index) => (
@@ -108,47 +121,111 @@ export function BoardWorld({
               : null
           }
           interacted={interaction.interactedFrameId === frame.designId}
-          held={heldDesignIds.includes(frame.designId)}
+          held={heldIds.includes(frame.designId)}
           worker={presence.get(frame.designId)?.agent}
           capturePointer={capturePointer}
           shownRevisionId={previews.shown.get(frame.designId) ?? null}
           preview={previews.preview(frame)}
           released={previews.released.includes(frame.designId)}
-          onExitInteract={() => {
-            dispatch({ type: 'escape' });
-            focusBoard();
-          }}
+          onExitInteract={handlers.onExitInteract}
           onOpenSource={onOpenSource}
           tagged={pinnedIds?.has(frame.designId) ?? false}
           onTagFrames={onTagFrames}
           actions={frameActions}
-          onDelete={onDelete}
-          onHold={onHold}
-          onResize={onResize}
-          onPick={(picked, additive) => {
-            dispatch({ type: 'pick', designId: picked.designId, additive });
-          }}
-          onInteract={(picked) => {
-            dispatch({ type: 'interact', designId: picked.designId });
-          }}
-          onPickElement={(picked, at) => {
-            editor.pick(picked.designId, at);
-          }}
-          onDesignPress={onDesignPress}
-          onHoverElement={(hovered, at) => {
-            if (at) editor.hover.move(hovered.designId, at);
-            else editor.hover.clear();
-          }}
-          onEditEnter={(picked) => {
-            editor.enter(picked.designId);
-          }}
+          onDelete={handlers.onDelete}
+          onHold={handlers.onHold}
+          onResize={handlers.onResize}
+          onPick={handlers.onPick}
+          onInteract={handlers.onInteract}
+          onPickElement={handlers.onPickElement}
+          onDesignPress={handlers.onDesignPress}
+          onHoverElement={handlers.onHoverElement}
+          onEditEnter={handlers.onEditEnter}
           elementPicked={editor.selection?.draft.element.designId === frame.designId}
           elementHovered={editor.hover.hovered?.designId === frame.designId}
           tabStop={frame.designId === tabStopId}
-          onFocusLabel={onFocusLabel}
+          onFocusLabel={handlers.onFocusLabel}
         />
       ))}
       {children}
     </div>
   );
+}
+
+type FrameHandlers = Pick<
+  DesignFrameProps,
+  | 'onDelete'
+  | 'onHold'
+  | 'onResize'
+  | 'onPick'
+  | 'onInteract'
+  | 'onPickElement'
+  | 'onDesignPress'
+  | 'onHoverElement'
+  | 'onEditEnter'
+  | 'onFocusLabel'
+  | 'onExitInteract'
+>;
+
+/**
+ * The frames' handlers, the same functions for the board's life: DesignFrame
+ * is memoized, so a handler made anew each render would draw every frame again.
+ * Each calls what the latest render passed.
+ */
+function useFrameHandlers(
+  inputs: Pick<
+    BoardWorldProps,
+    | 'dispatch'
+    | 'editor'
+    | 'focusBoard'
+    | 'onDelete'
+    | 'onHold'
+    | 'onResize'
+    | 'onDesignPress'
+    | 'onFocusLabel'
+  >,
+): FrameHandlers {
+  const latest = useRef(inputs);
+  useLayoutEffect(() => {
+    latest.current = inputs;
+  });
+  return useMemo((): FrameHandlers => {
+    const now = () => latest.current;
+    return {
+      onDelete: () => {
+        now().onDelete();
+      },
+      onHold: (frame, handle, event) => {
+        now().onHold(frame, handle, event);
+      },
+      onResize: (frame, size) => {
+        now().onResize(frame, size);
+      },
+      onPick: (frame, additive) => {
+        now().dispatch({ type: 'pick', designId: frame.designId, additive });
+      },
+      onInteract: (frame) => {
+        now().dispatch({ type: 'interact', designId: frame.designId });
+      },
+      onPickElement: (frame, at) => {
+        now().editor.pick(frame.designId, at);
+      },
+      onDesignPress: (frame) => now().onDesignPress(frame),
+      onHoverElement: (frame, at) => {
+        const { hover } = now().editor;
+        if (at) hover.move(frame.designId, at);
+        else hover.clear();
+      },
+      onEditEnter: (frame) => {
+        now().editor.enter(frame.designId);
+      },
+      onFocusLabel: (frame) => {
+        now().onFocusLabel(frame);
+      },
+      onExitInteract: () => {
+        now().dispatch({ type: 'escape' });
+        now().focusBoard();
+      },
+    };
+  }, []);
 }

@@ -13,7 +13,7 @@ import type { PickedOnBoard } from './elementOnBoard';
 import { measureBetween } from './measureDistances';
 import { isDesignRoot } from './previewDocument';
 import type { FrameRect } from './protocol';
-import type { GuideMarks } from './SnapGuides';
+import type { GuideMarks } from './snapGuideLayout';
 import { isPicked, type HoveredElement } from './useElementHover';
 
 interface Hover {

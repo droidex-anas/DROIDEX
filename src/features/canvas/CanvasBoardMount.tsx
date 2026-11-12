@@ -33,7 +33,7 @@ import {
   type BoardInteraction,
 } from './canvasState';
 import type { AnnotateCanvasInput } from './annotationProtocol';
-import { DesignPreview } from './DesignPreview';
+import { DesignPreview, type PreviewSelections } from './DesignPreview';
 import type { EditElementInput, LayerChange, LayerRef } from './elementEditProtocol';
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
@@ -157,6 +157,19 @@ export function CanvasBoardMount({
       return edited;
     },
     [appSessionId, canvasId, frames, switchRevision],
+  );
+  const renderPreview = useCallback(
+    (frame: CanvasFrame, revisionId: string, selections: PreviewSelections) => (
+      <DesignPreview
+        canvasId={canvasId}
+        frame={frame}
+        revisionId={revisionId}
+        readArtifact={readArtifact}
+        reportPreview={reportPreview}
+        selections={selections}
+      />
+    ),
+    [canvasId],
   );
   const readSource = useCallback(
     (designId: string, revisionId: string) => canvas.source.read(canvasId, designId, revisionId),
@@ -423,16 +436,7 @@ export function CanvasBoardMount({
                   }
                 : undefined
             }
-            renderPreview={(frame, revisionId, selections) => (
-              <DesignPreview
-                canvasId={canvasId}
-                frame={frame}
-                revisionId={revisionId}
-                readArtifact={readArtifact}
-                reportPreview={reportPreview}
-                selections={selections}
-              />
-            )}
+            renderPreview={renderPreview}
           />
         )}
       </div>

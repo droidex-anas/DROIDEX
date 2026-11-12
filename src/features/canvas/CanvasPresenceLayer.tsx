@@ -188,6 +188,7 @@ function FramePresence({
   return (
     <animated.div
       aria-hidden
+      data-follows-frame={designId}
       className="canvas-presence"
       style={
         {

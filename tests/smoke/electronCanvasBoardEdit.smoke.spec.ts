@@ -714,4 +714,23 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.keyboard.press('ArrowLeft');
   await page.clock.runFor(500);
   expect(await edits()).toHaveLength(2);
+
+  // A drag of the frame carries its points, and letting go leaves them where they were carried.
+  const point = await box(anchors.nth(1));
+  const start = await box(frame(page, 'A'));
+  const header = await box(frame(page, 'A').locator('[data-frame-header]'));
+  await page.mouse.move(header.x + 30, header.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(header.x + 90, header.y + 48, { steps: 4 });
+  await page.clock.runFor(32);
+  const carried = await box(frame(page, 'A'));
+  expect(carried.x).toBeGreaterThan(start.x);
+  const held = await box(anchors.nth(1));
+  expect(held.x - point.x).toBeCloseTo(carried.x - start.x, 0);
+  expect(held.y - point.y).toBeCloseTo(carried.y - start.y, 0);
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  const released = await box(anchors.nth(1));
+  expect(released.x).toBeCloseTo(held.x, 0);
+  expect(released.y).toBeCloseTo(held.y, 0);
 });

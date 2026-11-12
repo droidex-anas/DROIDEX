@@ -22,7 +22,6 @@ const KEYS_HINT = 'Arrows move between frames; ⌥ and an arrow nudge it, ⇧ fo
 export function FrameLabel({
   ref,
   frame,
-  width,
   selected,
   interacted,
   held,
@@ -39,8 +38,6 @@ export function FrameLabel({
 }: {
   ref: Ref<HTMLDivElement>;
   frame: CanvasFrame;
-  /** Screen pixels the label may take, so a long name ellipsizes. */
-  width: number;
   selected: boolean;
   interacted: boolean;
   held: boolean;
@@ -67,7 +64,7 @@ export function FrameLabel({
   return (
     <div
       className="canvas-frame-label canvas-chrome"
-      style={{ cursor: held ? 'grabbing' : 'grab', width: Math.max(0, width) }}
+      style={{ cursor: held ? 'grabbing' : 'grab' }}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
         event.stopPropagation();

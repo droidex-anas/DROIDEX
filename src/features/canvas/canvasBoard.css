@@ -57,11 +57,13 @@
 
 /* The row above the sheet, which drags the frame: the name, then its kit notes
    and tag. Plain text on the board, its first letter on the sheet's left edge:
-   the inset that gives the focus line room is taken back by the margin. */
+   the inset that gives the focus line room is taken back by the margin. It is
+   as wide on screen as the frame, which a resize sets, so a long name ellipsizes. */
 .canvas-frame-label {
   position: absolute;
   bottom: 100%;
   left: 0;
+  width: calc(100% * var(--board-scale));
   display: flex;
   align-items: center;
   gap: 6px;

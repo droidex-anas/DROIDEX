@@ -2,10 +2,10 @@
 // named by its tag (and in Design its component), Edit's picked one with its
 // size, and the elements and text Design picked or is being dragged across.
 // They are drawn in the world layer
-// after the frames rather than inside a design or its sheet, so pan, zoom and
-// a frame's move or resize carry them at once, and a chip at the sheet's edge
-// is not cut off. Each box is trimmed to its frame, where the design is
-// visible, and glides when the element's own box changes.
+// after the frames rather than inside a design or its sheet, so pan and zoom
+// carry them at once, a held frame's move takes them along (HeldFrames), and a
+// chip at the sheet's edge is not cut off. Each box is trimmed to its frame,
+// where the design is visible, and glides when the element's own box changes.
 
 import type { ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
@@ -65,7 +65,7 @@ export function ElementOutlines({
     <>
       {hovered && hover && (
         // A new frame is a new outline, so it never glides across the board.
-        <AtFrame key={hovered.designId} frame={hover.frame}>
+        <AtFrame key={hovered.designId} designId={hovered.designId} frame={hover.frame}>
           <div
             aria-hidden
             data-element-hover={hovered.element.tagName}
@@ -90,7 +90,7 @@ export function ElementOutlines({
         </AtFrame>
       )}
       {selected && (
-        <AtFrame frame={selected.frame}>
+        <AtFrame designId={selected.selection.draft.element.designId} frame={selected.frame}>
           <div aria-hidden className="canvas-element-outline" style={selected.box}>
             <div className="canvas-frame-size canvas-chrome">
               <span ref={size}>
@@ -105,7 +105,7 @@ export function ElementOutlines({
         const shown = onBoard(drawn, pick.designId, pick.box);
         return (
           shown && (
-            <AtFrame key={pick.key} frame={shown.frame}>
+            <AtFrame key={pick.key} designId={pick.designId} frame={shown.frame}>
               <div
                 aria-hidden
                 data-design-pick
@@ -132,9 +132,17 @@ function TagName({ tagName, component }: { tagName: string; component: string | 
 }
 
 /** The frame's corner, which a dragged frame moves without the outline's glide. */
-function AtFrame({ frame, children }: { frame: FrameRect; children: ReactNode }) {
+function AtFrame({
+  designId,
+  frame,
+  children,
+}: {
+  designId: string;
+  frame: FrameRect;
+  children: ReactNode;
+}) {
   return (
-    <div className="absolute" style={{ left: frame.x, top: frame.y }}>
+    <div data-follows-frame={designId} className="absolute" style={{ left: frame.x, top: frame.y }}>
       {children}
     </div>
   );

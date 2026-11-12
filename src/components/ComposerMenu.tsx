@@ -11,7 +11,7 @@ import { Frame } from 'lucide-react';
 import { Check, FileText } from '@droidex/icons';
 
 import { CatalogRowIcon } from './composer/CatalogRowIcon';
-import { frameSize } from '../features/canvas/framePins';
+import { frameSizeLabel } from '../features/canvas/canvasGeometry';
 import { catalogLabel, rowScope, type MenuEntry, type MenuItem } from './composer/menuItems';
 import { inlineCardMotion } from './inlineCardMotion';
 import type { SkillInfo } from '../types/bridge';
@@ -133,7 +133,7 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       <>
         <Frame className={ICON} />
         <Name>{item.frame.name}</Name>
-        <Detail>{frameSize(item.frame)}</Detail>
+        <Detail>{frameSizeLabel(item.frame.rect)}</Detail>
       </>
     );
   }

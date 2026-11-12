@@ -9,6 +9,7 @@
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
 import {
+  memo,
   useRef,
   useState,
   type CSSProperties,
@@ -59,7 +60,7 @@ export interface DesignFrameProps {
   frame: CanvasFrame;
   /** Where the board draws it: under the hand, pending, or acknowledged. */
   rect: FrameRect;
-  /** The board's scale, so the frame's chrome can be laid out in screen pixels. */
+  /** The board's scale, so a sheet without a preview knows the room it has on screen. */
   scale: number;
   /** Spec §11's timings, resolved against the reduced-motion preference. */
   motion: CanvasMotion;
@@ -78,7 +79,10 @@ export interface DesignFrameProps {
   toolbarRoom: ToolbarRoom | null;
   /** This is the frame Interact is driving. */
   interacted: boolean;
-  /** A hand gesture is holding this frame right now. */
+  /**
+   * A hand gesture holds this frame, and draws it where the hand has it
+   * (HeldFrames); `rect` stays where the hold began.
+   */
   held: boolean;
   /** The agent at work on this frame, if any. */
   worker: PresenceAgent | undefined;
@@ -125,13 +129,13 @@ export interface DesignFrameProps {
   onDelete: () => void;
 }
 
-export function DesignFrame(props: DesignFrameProps) {
-  const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, held } = props;
+/** Memoized, so a board render that leaves a frame's props alone does not draw it again. */
+export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
+  const { frame, rect, motion, arriving, mode, selected, toolbarRoom, held } = props;
   const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
-  const screenWidth = rect.width * scale;
   const focusLabel = () => label.current?.focus({ preventScroll: true });
   // A press on a frame already selected keeps the selection, so all of it drags
   // together; a click that never became a drag then picks the frame alone.
@@ -156,10 +160,7 @@ export function DesignFrame(props: DesignFrameProps) {
       }}
     >
       {renaming ? (
-        <div
-          className="canvas-frame-label canvas-chrome"
-          style={{ width: Math.max(0, screenWidth) }}
-        >
+        <div className="canvas-frame-label canvas-chrome">
           <FrameNameField
             frame={frame}
             className="canvas-frame-name canvas-frame-name-field"
@@ -177,7 +178,6 @@ export function DesignFrame(props: DesignFrameProps) {
         <FrameLabel
           ref={label}
           frame={frame}
-          width={screenWidth}
           selected={selected}
           interacted={props.interacted}
           held={held}
@@ -233,7 +233,7 @@ export function DesignFrame(props: DesignFrameProps) {
         <FrameBody {...props} />
         <FrameWorkingState {...props} />
         <RebuildBadge {...props} />
-        {capturePointer && <FrameInputOverlay {...props} press={press} click={click} />}
+        {capturePointer && <FrameInputOverlay {...props} held={held} press={press} click={click} />}
       </div>
 
       {selected && !props.multiSelect && (
@@ -249,7 +249,7 @@ export function DesignFrame(props: DesignFrameProps) {
       )}
     </div>
   );
-}
+});
 
 /**
  * Spec §11: a new frame fades in with at most `frameArrivalTravelPx` of travel.
