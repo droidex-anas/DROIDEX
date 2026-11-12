@@ -9,6 +9,7 @@
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
 import {
+  memo,
   useRef,
   useState,
   type CSSProperties,
@@ -128,7 +129,8 @@ export interface DesignFrameProps {
   onDelete: () => void;
 }
 
-export function DesignFrame(props: DesignFrameProps) {
+/** Memoized, so a board render that leaves a frame's props alone does not draw it again. */
+export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
   const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, heldFrom } = props;
   const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
   const held = heldFrom !== null;
@@ -259,7 +261,7 @@ export function DesignFrame(props: DesignFrameProps) {
       )}
     </div>
   );
-}
+});
 
 /**
  * Spec §11: a new frame fades in with at most `frameArrivalTravelPx` of travel.

@@ -256,9 +256,7 @@ export function CanvasBoard({
   const selected = pickedOnBoard(drawn, editor.selection);
   const measured = useHoverMeasurements(board, drawn, interaction, selected, editor.hover);
   const visible = visibleDesignIds(drawn, view.viewport, view.size);
-  const previews = useBoardPreviews(frames, visible, interaction, (frame, revisionId) =>
-    renderPreview(frame, revisionId, editor.selections),
-  );
+  const previews = useBoardPreviews(frames, visible, interaction, renderPreview, editor.selections);
   const announcement = useBoardAnnouncer({
     frames: snapshot.frames,
     shown: previews.shown,
