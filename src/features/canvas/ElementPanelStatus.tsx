@@ -46,15 +46,14 @@ export function ElementPanelStatus({
         <br />
         {'\u00a0'}
       </span>
-      <div className="col-start-1 row-start-1 min-w-0">
-        {cut && refusal ? (
-          <Tooltip label={refusal} className="flex min-w-0">
-            {status}
-          </Tooltip>
-        ) : (
-          status
-        )}
-      </div>
+      {/* One wrapper whether or not the reason is cut, so the live region is never remounted. */}
+      <Tooltip
+        label={refusal ?? ''}
+        disabled={!cut || refusal === null}
+        className="col-start-1 row-start-1 flex min-w-0"
+      >
+        {status}
+      </Tooltip>
     </div>
   );
 }

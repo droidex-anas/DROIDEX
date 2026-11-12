@@ -222,9 +222,12 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await fontSize.press('Enter');
   const reason =
     'Canvas can’t write 30px as the font size of this element, because the kit sets its type sizes. Pick one of the kit’s sizes, or ask the agent to change it.';
-  await page.evaluate((reason) => window.boardHarness.refuseEdit(1, reason), reason);
   const status = title.getByRole('status');
+  // The live region stays the same node, so the reason is announced.
+  const region = await status.elementHandle();
+  await page.evaluate((reason) => window.boardHarness.refuseEdit(1, reason), reason);
   await expect(status).toHaveText(reason);
+  expect(await region?.evaluate((node) => node.isConnected)).toBe(true);
   expect((await box(fields)).height).toBe(fieldsHeight);
   await status.focus();
   await expect(page.getByRole('tooltip')).toHaveText(reason);
