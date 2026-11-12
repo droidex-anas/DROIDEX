@@ -23,7 +23,7 @@ export interface Gesture {
    * the warm-up stream, so a gesture that reaches nothing is not counted as
    * one that costs nothing.
    */
-  shows?: Watch;
+  shows: Watch;
   /** Readies the page once, before the first stream. */
   prepare?: (page: Page) => Promise<void>;
   stream: (page: Page) => Promise<void>;

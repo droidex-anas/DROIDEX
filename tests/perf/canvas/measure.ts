@@ -101,7 +101,7 @@ export async function measureGesture(
 
 /** One stream of the gesture, and what the probe kept from its start to the board settling after it. */
 async function stream(page: Page, gesture: Gesture, warm: boolean): Promise<ProbeWindow> {
-  const watch = warm ? (gesture.shows ?? null) : null;
+  const watch = warm ? gesture.shows : null;
   await page.evaluate(
     ({ warm, watch }) => {
       window.canvasProbe.begin(warm, watch);
