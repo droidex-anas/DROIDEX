@@ -9,6 +9,7 @@ import {
   tagComponent,
   toggleComponentPin,
   unpinComponents,
+  unpinSentComponents,
   type ComponentPin,
 } from './componentPins';
 
@@ -69,6 +70,21 @@ test('an edited queued prompt brings its components back beside the draft’s, a
     ['Button', ...Array.from({ length: 7 }, (_, i) => `Card ${String(i)}`)],
   );
   unpinComponents('chat-q');
+  // The queued tag takes the place of the draft's tag of the same entry.
+  tagComponent('chat-q', pin('Button', { ...ACME, version: 4 }));
+  restoreComponentPins('chat-q', [pin('Button')]);
+  assert.deepEqual(componentPins('chat-q'), [pin('Button')]);
+  unpinComponents('chat-q');
+});
+
+test('a sent prompt takes off only the tags it was composed with, not a tag made again since', () => {
+  tagComponent('chat-s', pin('Button'));
+  tagComponent('chat-s', pin('Card'));
+  const sent = componentPins('chat-s');
+  tagComponent('chat-s', pin('Button', { ...ACME, version: 4 }));
+  unpinSentComponents('chat-s', sent);
+  assert.deepEqual(componentPins('chat-s'), [pin('Button', { ...ACME, version: 4 })]);
+  unpinComponents('chat-s');
 });
 
 test('a chip names its picked options, and its kit only beside components of another kit', () => {
