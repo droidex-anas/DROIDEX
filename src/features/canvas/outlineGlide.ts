@@ -35,9 +35,8 @@ export class OutlineGlide {
       animations.push(
         run(element, { transform: [`translate(${String(dx)}px, ${String(dy)}px)`, 'none'] }),
       );
-    // An axis with no size has no line to scale, and the other still glides.
-    const sx = to.width === 0 ? 1 : from.width / to.width;
-    const sy = to.height === 0 ? 1 : from.height / to.height;
+    const sx = startScale(from.width, to.width);
+    const sy = startScale(from.height, to.height);
     if (sx !== 1 || sy !== 1) {
       animations.push(
         run(element, { transform: [`scale(${String(sx)}, ${String(sy)})`, 'none'] }, '::before'),
@@ -70,13 +69,22 @@ export class OutlineGlide {
     const progress = animations[0].effect?.getComputedTiming().progress;
     if (progress === null || progress === undefined) return null;
     const along = (start: number, end: number) => start + (end - start) * progress;
+    // The line is drawn at its end size, scaled as the glide scales it.
     return {
       left: along(from.left, to.left),
       top: along(from.top, to.top),
-      width: along(from.width, to.width),
-      height: along(from.height, to.height),
+      width: to.width * along(startScale(from.width, to.width), 1),
+      height: to.height * along(startScale(from.height, to.height), 1),
     };
   }
+}
+
+/**
+ * The scale a line `to` long starts a glide at, to look `from` long. An axis
+ * with no size has no line to scale, so it is drawn at none at once.
+ */
+function startScale(from: number, to: number): number {
+  return to === 0 ? 1 : from / to;
 }
 
 /** One part of a glide, added to the transform or translate the part is drawn at. */

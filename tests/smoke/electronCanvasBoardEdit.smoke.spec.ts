@@ -444,6 +444,8 @@ test('a pick that changes size mid-glide glides on from where it is shown, its s
     const sizes: Record<string, { width: number; height: number }> = {
       '40px': { width: 400, height: 300 },
       '20px': { width: 200, height: 150 },
+      '30px': { width: 0, height: 300 },
+      '50px': { width: 400, height: 0 },
     };
     window.guestAnswer = (command, argument) => {
       const target = argument.target as { styles?: Record<string, string> } | undefined;
@@ -501,39 +503,45 @@ test('a pick that changes size mid-glide glides on from where it is shown, its s
           .getAnimations()
           .filter((animation) => (animation.effect as KeyframeEffect).composite === 'add').length,
     );
-  await glidesAt('end');
+  const resize = async (fontSize: string, size: string) => {
+    await page.getByLabel('Font size', { exact: true }).fill(fontSize);
+    await page.clock.runFor(100);
+    await expect(chip).toHaveText(size);
+  };
 
-  await page.getByLabel('Font size', { exact: true }).fill('40px');
-  await page.clock.runFor(100);
-  await expect(chip).toHaveText('400 × 300');
-  await glidesAt(0);
-  expect(await drawn()).toMatchObject({
-    ...underLine,
-    line: { width: expect.closeTo(100 * scale, 0) },
-  });
-  await glidesAt(25);
-  const shown = await drawn();
-  expect(shown).toMatchObject(underLine);
-
-  // A new size mid-glide replaces the glide, starting from the line as shown.
-  await page.getByLabel('Font size', { exact: true }).fill('20px');
-  await page.clock.runFor(100);
-  await expect(chip).toHaveText('200 × 150');
-  await glidesAt(0);
-  // The line and its chip, and nothing left of the glide it replaced.
-  expect(await glides()).toBe(2);
-  const resumed = await drawn();
-  expect(resumed).toMatchObject(underLine);
-  for (const side of ['x', 'y', 'width', 'height'] as const)
-    expect(resumed.line[side]).toBeCloseTo(shown.line[side], 0);
-  for (const at of [25, 50, 'end'] as const) {
-    await glidesAt(at);
+  // Grown, or with an axis gone to no size, which is drawn at once rather than scaled to.
+  for (const [fontSize, size] of [
+    ['40px', '400 × 300'],
+    ['30px', '0 × 300'],
+    ['50px', '400 × 0'],
+  ] as const) {
+    await resize('24px', '100 × 50');
+    await glidesAt('end');
+    await resize(fontSize, size);
+    await glidesAt(0);
     expect(await drawn()).toMatchObject(underLine);
+    await glidesAt(25);
+    const shown = await drawn();
+    expect(shown).toMatchObject(underLine);
+
+    // A new size mid-glide replaces the glide, starting from the line as shown.
+    await resize('20px', '200 × 150');
+    await glidesAt(0);
+    // The line and its chip, and nothing left of the glide it replaced.
+    expect(await glides()).toBe(2);
+    const resumed = await drawn();
+    expect(resumed).toMatchObject(underLine);
+    for (const side of ['x', 'y', 'width', 'height'] as const)
+      expect(resumed.line[side]).toBeCloseTo(shown.line[side], 0);
+    for (const at of [25, 50, 'end'] as const) {
+      await glidesAt(at);
+      expect(await drawn()).toMatchObject(underLine);
+    }
+    expect((await drawn()).line).toMatchObject({
+      width: expect.closeTo(200 * scale, 0),
+      height: expect.closeTo(150 * scale, 0),
+    });
   }
-  expect((await drawn()).line).toMatchObject({
-    width: expect.closeTo(200 * scale, 0),
-    height: expect.closeTo(150 * scale, 0),
-  });
 });
 test('held Alt in Edit measures from the picked element to the one under the pointer, or to its frame', async ({
   page,
