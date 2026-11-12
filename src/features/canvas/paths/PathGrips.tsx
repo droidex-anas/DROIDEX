@@ -1,14 +1,24 @@
 // The selected path's anchors and handles on the board, over its frame: an
 // anchor is a small square, a handle a round grip on a thin line to the anchor
 // it shapes. A grip drags its point, previewing at most once a frame and
-// committing once on release, and Escape takes the drag back. On a focused
-// anchor the arrows nudge it, a burst of presses committing once, and Tab moves
-// between anchors. Every grip takes a 28px press at any zoom.
+// committing once on release. On a focused anchor the arrows nudge it, a burst
+// of presses committing once, and Tab moves between anchors. A move writes
+// only to the shape it started from: Escape, the window losing focus, a new
+// read of the shape or the grips going away take it back. Every grip takes a
+// small control's press at any zoom.
 
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import { MAX_PREVIEW_PATH_DATA_BYTES, type PreviewMatrix } from '../previewDocumentShape';
+import type { ElementRef } from '../protocol';
 import type { PathSegment } from './pathData';
-import { moveGrip, pathGrips, writePath, type PathGrip, type Point } from './pathModel';
+import { movedData, moveGrip, pathGrips, type PathGrip, type Point } from './pathModel';
 import type { PathShape } from './usePathShape';
 
 /** Screen pixels a press travels before it drags, so a shaky click never moves a point. */
@@ -24,6 +34,13 @@ interface Press {
   dragging: boolean;
 }
 
+/** A move under way: the shape it started from, the element it writes to, and the data it shows, null for the path's own. */
+interface Move {
+  from: PathSegment[];
+  element: ElementRef;
+  d: string | null;
+}
+
 export function PathGrips({
   shape,
   frame,
@@ -35,96 +52,113 @@ export function PathGrips({
   /** Where the path's frame is drawn on the board. */
   frame: Point;
   scale: number;
-  /** Draws data on the path, or its own for null. */
-  preview: (d: string | null) => void;
-  commit: (d: string) => void;
+  /** Draws data on `element`'s path, or its own for null. */
+  preview: (d: string | null, element: ElementRef) => void;
+  commit: (d: string, element: ElementRef) => void;
 }) {
   /** A move's segments, shown while `from` is still the shape read: until the next read after its commit. */
   const [moved, setMoved] = useState<{ from: PathSegment[]; segments: PathSegment[] } | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const press = useRef<Press | null>(null);
-  /** The data the next frame previews, and then the data a commit writes. */
-  const shown = useRef<string | null>(null);
+  const move = useRef<Move | null>(null);
   const frameRequest = useRef<number | null>(null);
   const nudgeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stopEscape = useRef<(() => void) | null>(null);
+  const stopListening = useRef<(() => void) | null>(null);
+  // A timer, a frame or a window key ends the move against the shape drawn now.
+  const latest = useRef({ shape, preview, commit });
+  latest.current = { shape, preview, commit };
 
   const segments = moved?.from === shape.segments ? moved.segments : shape.segments;
   const grips = pathGrips(segments);
   const { matrix } = shape;
 
-  useEffect(
-    () => () => {
-      if (frameRequest.current !== null) cancelAnimationFrame(frameRequest.current);
-      if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
-      stopEscape.current?.();
-    },
-    [],
-  );
-
-  const show = (next: PathSegment[]) => {
-    const d = writePath(next);
-    // Data past what the preview takes is never drawn, so the move holds where it last was.
-    if (d.length > MAX_PREVIEW_PATH_DATA_BYTES) return;
-    setMoved({ from: shape.segments, segments: next });
-    shown.current = d;
-    frameRequest.current ??= requestAnimationFrame(() => {
-      frameRequest.current = null;
-      if (shown.current !== null) preview(shown.current);
-    });
-  };
-
-  /** Ends a move: commits what it shows, or takes it back. */
+  /** Ends the move: commits what it shows while its shape is still the one to write, else takes it back. */
   const settle = (keep: boolean) => {
     if (frameRequest.current !== null) cancelAnimationFrame(frameRequest.current);
     frameRequest.current = null;
     if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
     nudgeTimer.current = null;
-    const d = shown.current;
-    shown.current = null;
-    if (d === null) return;
-    if (keep && d !== writePath(shape.segments)) {
-      commit(d);
+    stopListening.current?.();
+    stopListening.current = null;
+    const held = press.current;
+    press.current = null;
+    if (held) {
+      setDragging(false);
+      if (held.target.hasPointerCapture(held.pointerId))
+        held.target.releasePointerCapture(held.pointerId);
+    }
+    const ending = move.current;
+    move.current = null;
+    if (!ending) return;
+    const now = latest.current;
+    if (keep && ending.d !== null && isCurrent(now.shape, ending)) {
+      now.commit(ending.d, ending.element);
       return;
     }
-    preview(null);
+    now.preview(null, ending.element);
     setMoved(null);
   };
 
-  const endPress = (keep: boolean) => {
-    const held = press.current;
-    if (!held) return;
-    press.current = null;
-    stopEscape.current?.();
-    stopEscape.current = null;
-    setDragging(false);
-    if (held.dragging) settle(keep);
-  };
+  // A move whose shape is read again, from another revision or run, or stops being writable, is taken back.
+  useEffect(() => {
+    const held = move.current;
+    if (held && !isCurrent(shape, held)) settle(false);
+  });
+  const takeBack = useEffectEvent(() => {
+    settle(false);
+  });
+  useEffect(
+    () => () => {
+      takeBack();
+    },
+    [],
+  );
 
-  const startDrag = (held: Press) => {
-    held.dragging = true;
-    setDragging(true);
-    // The board's Escape would drop the selection, so a drag takes it first.
+  /** Starts a move from the shape as read, taking Escape and the window's blur until it ends. */
+  const begin = () => {
+    if (move.current) return;
+    move.current = { from: shape.segments, element: shape.element, d: null };
+    // The board's Escape would drop the selection, so a move takes it first, wherever focus is.
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       event.preventDefault();
       event.stopPropagation();
-      if (held.target.hasPointerCapture(held.pointerId))
-        held.target.releasePointerCapture(held.pointerId);
-      endPress(false);
+      settle(false);
+    };
+    const onBlur = () => {
+      settle(false);
     };
     window.addEventListener('keydown', onKey, true);
-    stopEscape.current = () => {
+    window.addEventListener('blur', onBlur);
+    stopListening.current = () => {
       window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('blur', onBlur);
     };
   };
 
+  /** Shows the move at `next`; a move past what path data or the preview takes holds where it last was. */
+  const show = (next: PathSegment[] | null) => {
+    const held = move.current;
+    if (!held || !next) return;
+    const d = movedData(held.from, next);
+    if (d !== null && d.length > MAX_PREVIEW_PATH_DATA_BYTES) return;
+    held.d = d;
+    setMoved({ from: held.from, segments: next });
+    frameRequest.current ??= requestAnimationFrame(() => {
+      frameRequest.current = null;
+      const live = move.current;
+      if (live) latest.current.preview(live.d, live.element);
+    });
+  };
+
+  const canMove = (grip: PathGrip) => shape.movable && (grip.axes.x || grip.axes.y);
+
   const onPointerDown = (event: PointerEvent, grip: PathGrip) => {
-    if (event.button !== 0 || !shape.movable) return;
+    if (event.button !== 0 || !canMove(grip)) return;
     event.stopPropagation();
     // A nudge still settling commits first; the next move waits for it to save.
-    if (nudgeTimer.current !== null) {
+    if (move.current) {
       settle(true);
       return;
     }
@@ -144,10 +178,21 @@ export function PathGrips({
     const screen = { x: event.clientX - held.start.x, y: event.clientY - held.start.y };
     if (!held.dragging) {
       if (Math.hypot(screen.x, screen.y) < DRAG_START_PX) return;
-      startDrag(held);
+      held.dragging = true;
+      setDragging(true);
+      begin();
     }
+    const from = move.current?.from;
+    if (!from) return;
     const delta = toPathUnits(matrix, { x: screen.x / scale, y: screen.y / scale });
-    show(moveGrip(shape.segments, held.grip, delta));
+    show(moveGrip(from, held.grip, delta));
+  };
+
+  const onPointerUp = (event: PointerEvent) => {
+    const held = press.current;
+    if (held?.pointerId !== event.pointerId) return;
+    if (held.dragging) settle(true);
+    else press.current = null;
   };
 
   const onKeyDown = (event: KeyboardEvent, grip: PathGrip) => {
@@ -155,17 +200,15 @@ export function PathGrips({
     if (step) {
       event.preventDefault();
       event.stopPropagation();
-      if (!shape.movable || press.current) return;
+      // A step along an axis the point is held on moves nothing.
+      const free = (step.x !== 0 && grip.axes.x) || (step.y !== 0 && grip.axes.y);
+      if (!canMove(grip) || press.current || !free) return;
+      begin();
       show(moveGrip(segments, grip, step));
       if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
       nudgeTimer.current = setTimeout(() => {
         settle(true);
       }, NUDGE_SETTLE_MS);
-      return;
-    }
-    if (event.key === 'Escape' && nudgeTimer.current !== null) {
-      event.stopPropagation();
-      settle(false);
       return;
     }
     // Removing a point is not offered, and the board's Delete would remove the whole path.
@@ -195,6 +238,7 @@ export function PathGrips({
       </svg>
       {grips.map((grip, index) => {
         const at = drawnAt(matrix, grip.point);
+        const fixed = !canMove(grip);
         if (grip.kind === 'anchor') anchor += 1;
         return (
           <button
@@ -202,8 +246,8 @@ export function PathGrips({
             type="button"
             data-path-grip={grip.kind}
             data-selected={focused === index || undefined}
-            aria-disabled={!shape.movable || undefined}
-            tabIndex={grip.kind === 'anchor' && shape.movable ? 0 : -1}
+            aria-disabled={fixed || undefined}
+            tabIndex={grip.kind === 'anchor' && !fixed ? 0 : -1}
             aria-label={
               grip.kind === 'anchor'
                 ? `Point ${String(anchor)} of ${String(anchors)}`
@@ -221,14 +265,12 @@ export function PathGrips({
               onPointerDown(event, grip);
             }}
             onPointerMove={onPointerMove}
-            onPointerUp={(event) => {
-              if (press.current?.pointerId === event.pointerId) endPress(true);
-            }}
+            onPointerUp={onPointerUp}
             onPointerCancel={() => {
-              endPress(false);
+              if (press.current) settle(false);
             }}
             onLostPointerCapture={() => {
-              endPress(false);
+              if (press.current) settle(false);
             }}
             onKeyDown={(event) => {
               onKeyDown(event, grip);
@@ -242,7 +284,8 @@ export function PathGrips({
 
 /** One path unit on the arrows, ten with Shift, in the path's own axes. */
 function arrowStep(event: KeyboardEvent): Point | null {
-  if (event.metaKey || event.ctrlKey || event.altKey) return null;
+  // While an input method composes, the arrows pick among its candidates.
+  if (event.nativeEvent.isComposing || event.metaKey || event.ctrlKey || event.altKey) return null;
   const size = event.shiftKey ? 10 : 1;
   if (event.key === 'ArrowLeft') return { x: -size, y: 0 };
   if (event.key === 'ArrowRight') return { x: size, y: 0 };
@@ -259,4 +302,9 @@ function drawnAt([a, b, c, d, e, f]: PreviewMatrix, { x, y }: Point): Point {
 function toPathUnits([a, b, c, d]: PreviewMatrix, { x, y }: Point): Point {
   const determinant = a * d - b * c;
   return { x: (d * x - c * y) / determinant, y: (a * y - b * x) / determinant };
+}
+
+/** Whether a move may still write: the shape it started from is the one read, for the element selected, and still movable. */
+function isCurrent(shape: PathShape, move: Move): boolean {
+  return shape.movable && shape.segments === move.from && shape.element === move.element;
 }

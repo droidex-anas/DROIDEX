@@ -670,4 +670,23 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.keyboard.press('Shift+ArrowDown');
   await page.clock.runFor(500);
   expect((await edits()).slice(1)).toEqual([{ kind: 'path', d: 'M12 20 L90 10 l0 50' }]);
+
+  // A nudge still settling when another revision lands is taken back, not written over it.
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M12 20 L90 10 l0 50' });
+    window.boardHarness.answerEdit(1);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(0))).x).toBeCloseTo(corner.x - 78, 0);
+  await anchors.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.clock.runFor(32);
+  expect(await lastSelect()).toMatchObject({ d: 'M13 20 L90 10 l0 50' });
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M12 20 L150 10 l0 50' });
+    window.boardHarness.editByUser('a');
+  });
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(2);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 60, 0);
 });

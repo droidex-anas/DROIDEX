@@ -1,7 +1,7 @@
 // The selected `<path>`'s geometry, read from its live preview when it is
-// picked and again in each revision the selection moves to, parsed once there.
-// It says why the points cannot move where they cannot, so no move starts that
-// the preview or the edit would refuse.
+// picked and again in each revision and run the selection moves to, parsed once
+// there. It says how the points move, or why they cannot, so no move starts
+// that the preview or the edit would refuse.
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ElementEditDraft } from '../elementEditDraft';
@@ -11,6 +11,7 @@ import {
   type PreviewShape,
 } from '../previewDocumentShape';
 import type { PreviewRuns } from '../previewRuns';
+import type { PreviewRun } from '../previewRuntime';
 import type { ElementRef } from '../protocol';
 import { readPathData, type PathSegment } from './pathData';
 import { writePath } from './pathModel';
@@ -25,14 +26,19 @@ export interface PathShape {
   segments: PathSegment[];
   /** From the path's units to its design's pixels. */
   matrix: PreviewMatrix;
-  /** A grip may start a move: the shape is this revision's, the path is the board's to write, and nothing is saving. */
+  /** The element the shape was read for, which a move writes to. */
+  element: ElementRef;
+  /**
+   * A grip may start a move: the shape is this revision's, read from the run
+   * now drawing it, the path is the board's to write, and nothing is saving.
+   */
   movable: boolean;
 }
 
 export interface SelectedPath {
   /** Null when there are no grips to draw. */
   shape: PathShape | null;
-  /** Why the points cannot move, in one sentence; null when they can or there is nothing to say. */
+  /** How the points move, or why they cannot; null when there is nothing to say. */
   note: string | null;
 }
 
@@ -40,6 +46,7 @@ type ReadShape = { segments: PathSegment[]; matrix: PreviewMatrix } | { note: st
 
 interface Read {
   element: ElementRef;
+  run: PreviewRun;
   shape: ReadShape;
 }
 
@@ -61,27 +68,38 @@ export function usePathShape(draft: ElementEditDraft | null, runs: PreviewRuns):
     const { elementId, instancePath } = element;
     void run.shape({ elementId, instancePath }).then((answer) => {
       // Another selection, or this one in another revision, has asked again.
-      if (live) setRead({ element, shape: readShape(answer) });
+      if (live) setRead({ element, run, shape: readShape(answer) });
     });
     return () => {
       live = false;
     };
   }, [element, run]);
 
-  // The draft keeps its element object until it moves to another revision, so
-  // a read for the same drawn path still shows, without moving, until the next answers.
+  // The draft keeps its element object until it moves to another revision. A
+  // read for the same drawn path from an older revision or run still shows, so
+  // a focused point keeps focus through a commit, but nothing moves by it.
   if (!draft || !element || !read || !sameNode(read.element, element)) return NO_PATH;
   if ('note' in read.shape) return { shape: null, note: read.shape.note };
   const { segments, matrix } = read.shape;
-  const note = isFlat(matrix)
-    ? 'This path is drawn flat, so its points can’t be moved here.'
-    : null;
+  const flat = isFlat(matrix);
   const movable =
-    note === null &&
+    !flat &&
     read.element === element &&
+    read.run === run &&
     draft.site.editability === 'literal' &&
     draft.pending === null;
-  return { shape: { segments, matrix, movable }, note };
+  return {
+    shape: { segments, matrix, element: read.element, movable },
+    note: flat ? FLAT : howPointsMove(segments),
+  };
+}
+
+/** The keys a point takes, and the lines that hold a point to their axis where the path has one. */
+function howPointsMove(segments: readonly PathSegment[]): string {
+  const keys =
+    'Drag a point, or press the arrows on one, with Shift for 10. Tab goes to the next point, and Escape takes a move back.';
+  const held = segments.some(({ command }) => /^[HVhv]$/.test(command));
+  return held ? `${keys} A point on a horizontal or vertical line moves only along it.` : keys;
 }
 
 function readShape(answer: PreviewShape | null): ReadShape {
@@ -98,6 +116,7 @@ function readShape(answer: PreviewShape | null): ReadShape {
   return { segments, matrix: answer.matrix };
 }
 
+const FLAT = 'This path is drawn flat, so its points can’t be moved here.';
 const TOO_LONG = 'This path’s data is too long to move its points here.';
 const UNREADABLE =
   'This path’s data has parts the board can’t read, so its points can’t be moved here.';

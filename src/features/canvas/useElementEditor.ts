@@ -255,12 +255,12 @@ export function useElementEditor({
   };
 
   /**
-   * Draws `d` as the selected path's data, or its own again for null, leaving
-   * the draft alone: a drag previews each frame and commits once.
+   * Draws `d` as the data of `element`, the selected path, or its own again for
+   * null, leaving the draft alone: a drag previews each frame and commits once.
    */
-  const previewPath = (d: string | null) => {
+  const previewPath = (d: string | null, element: ElementRef) => {
     const current = latest.current.selection;
-    if (!current || !holder.current) return;
+    if (!current || !selects(element) || !holder.current) return;
     const shown = target(current.draft);
     holder.current.select(d === null ? shown : { ...shown, d }, STYLE_PROPERTIES);
   };
@@ -383,8 +383,8 @@ export function useElementEditor({
     path: {
       ...path,
       preview: previewPath,
-      commit: (d: string) => {
-        send((draft, mutationId) => commitPath(draft, mutationId, d));
+      commit: (d: string, element: ElementRef) => {
+        if (selects(element)) send((draft, mutationId) => commitPath(draft, mutationId, d));
       },
     },
   };
