@@ -186,7 +186,8 @@ function unwrittenRow(node: PreviewTreeNode, parentId: string | null): OutlineNo
     lock: null,
     free: false,
     contentFromProps: false,
-    visibility: 'shown',
+    // The preview tree says nothing of how it displays, and its own source decides.
+    visibility: 'computed',
   };
 }
 

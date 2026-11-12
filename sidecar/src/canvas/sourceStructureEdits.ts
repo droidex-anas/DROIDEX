@@ -211,7 +211,9 @@ function hideLayer(files: SourceFiles, nodeId: string, hidden: boolean): EditedL
     other.visibility !== 'attribute';
   if (hidden && row.parentId === null && !outline.nodes.some(isOtherShownTopLayer))
     throw invalid(REFUSALS.hide.root);
-  writtenOnceAnchor(subject, uses, 'hide');
+  // Showing takes back only what hiding wrote in the opening tag, so it needs no place among siblings.
+  if (hidden) writtenOnceAnchor(subject, uses, 'hide');
+  else refuseUnlessRendersOnce(subject, uses);
   const source = at.getSourceFile();
   const edited = splice(source.text, [hiddenClassEdit(at, hidden)]);
   // An edit inside the opening tag leaves the row its id.
@@ -240,18 +242,22 @@ export function writtenOnceAnchor(
   const anchor = anchorOf(subject.at);
   const { root, action } = REFUSALS[edit];
   if (!anchor && subject.row.parentId === null) throw invalid(root);
-  // Refused as its row's lock says, whether or not code writes it.
-  if (!uses.rendersOnce(subject.at))
-    throw ambiguous(
-      subject.row.lock === 'repeated'
-        ? 'Written once and repeated for each item. Ask the agent to change it.'
-        : 'Used in several places. Ask the agent to change it.',
-    );
+  refuseUnlessRendersOnce(subject, uses);
   if (!anchor)
     throw ambiguous(
       `This layer is written inside code (a list, a condition or a prop). Ask the agent to ${action} it.`,
     );
   return anchor;
+}
+
+/** Refused as its row's lock says, whether or not code writes it. */
+function refuseUnlessRendersOnce(subject: Layer, uses: ComponentUses) {
+  if (uses.rendersOnce(subject.at)) return;
+  throw ambiguous(
+    subject.row.lock === 'repeated'
+      ? 'Written once and repeated for each item. Ask the agent to change it.'
+      : 'Used in several places. Ask the agent to change it.',
+  );
 }
 
 /** The element the layer moves into: a native element that renders once and may hold children. */

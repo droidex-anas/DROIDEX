@@ -4,6 +4,8 @@
 //
 // Kept free of `require('electron')` so it runs under plain Node.
 
+const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
+
 /**
  * The reporter that runs inside the generated frame: readiness once it has
  * painted, its content size, and its own uncaught failures as bounded
@@ -20,7 +22,8 @@
  * command selects nothing either: a `probe` event names the element at a point,
  * or the text between two points and the element that holds it, and a `locate`
  * event gives the box of the first drawn instance of each element it names; a
- * `vector` event carries the design's root `<svg>` as a standalone file, and a
+ * `vector` event carries the design's root `<svg>` as a standalone file, a
+ * `shape` event the data, matrix and box of the `<path>` a path names, and a
  * `tree` event one page of the marked elements in document order, starting
  * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
@@ -33,8 +36,6 @@
  * until its answer fits rather than let the intermediate drop it.
  */
 const MAX_PREVIEW_SELECTION_BYTES = 16384;
-/** Bytes a vector design's markup may measure; a larger one is refused, never cut. */
-const MAX_PREVIEW_VECTOR_BYTES = 256 * 1024;
 /** Elements one `tree` event may name, and the bytes it may measure; past either the walk stops. */
 const MAX_PREVIEW_TREE_NODES = 400;
 const MAX_PREVIEW_TREE_BYTES = 128 * 1024;
@@ -87,10 +88,10 @@ const GENERATED_FRAME_REPORTER = `(() => {
 
   // The element the board selected: its source marker, where it sits under
   // the body, its box, the computed values of the properties the board asked
-  // for and its text. The board's previews are inline styles on it and the
-  // text it holds, put back as soon as the selection moves. Commands come only
-  // from the intermediate, which is \`top\` here and, unlike \`parent\`, cannot
-  // be replaced by the design.
+  // for and its text. The board's previews are inline styles on it, the text
+  // it holds and a path's \`d\`, put back as soon as the selection moves.
+  // Commands come only from the intermediate, which is \`top\` here and,
+  // unlike \`parent\`, cannot be replaced by the design.
   const MARKER = 'data-droidex-element';
   const kebab = (name) => name.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
   const pathOf = (node) => {
@@ -117,6 +118,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
   let commandSequence = 0;
   let previewed = [];
   let previewedText = null;
+  let previewedPath = null;
   let lastSelection = '';
   let selectionQueued = false;
   // Text a direct edit can write is an element's one text node. It is offered
@@ -209,13 +211,16 @@ const GENERATED_FRAME_REPORTER = `(() => {
     });
   };
   const watchSelected = new ResizeObserver(reportSelection);
-  const select = (node, properties, styles, text, sequence) => {
+  const select = (node, properties, styles, text, d, sequence) => {
     commandSequence = sequence;
     for (const entry of previewed.reverse())
       entry.node.style.setProperty(entry.property, entry.value, entry.priority);
     previewed = [];
     if (previewedText) previewedText.node.data = previewedText.value;
     previewedText = null;
+    if (previewedPath?.value === null) previewedPath.node.removeAttribute('d');
+    else if (previewedPath) previewedPath.node.setAttribute('d', previewedPath.value);
+    previewedPath = null;
     if (selected) watchSelected.unobserve(selected.node);
     const elementId = node ? node.getAttribute(MARKER) : null;
     const instancePath = node ? pathOf(node) : null;
@@ -235,6 +240,10 @@ const GENERATED_FRAME_REPORTER = `(() => {
       if (shown && typeof text === 'string') {
         previewedText = { node: shown, value: shown.data };
         shown.data = text;
+      }
+      if (node instanceof SVGPathElement && typeof d === 'string') {
+        previewedPath = { node: node, value: node.getAttribute('d') };
+        node.setAttribute('d', d);
       }
       watchSelected.observe(node);
     }
@@ -280,72 +289,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
       text: spanned,
     };
   };
-  // A vector design is one <svg> under the root. Its copy carries the paint
-  // and type the page's CSS gave each element, its tokens resolved, as inline
-  // style, so the file draws the same on its own. An inherited property is
-  // written where it changes; the others where they leave their initial value.
-  const INHERITED_PAINT = [
-    'fill',
-    'fill-opacity',
-    'fill-rule',
-    'clip-rule',
-    'stroke',
-    'stroke-width',
-    'stroke-opacity',
-    'stroke-linecap',
-    'stroke-linejoin',
-    'stroke-miterlimit',
-    'stroke-dasharray',
-    'stroke-dashoffset',
-    'paint-order',
-    'visibility',
-    'color',
-    'font-family',
-    'font-size',
-    'font-style',
-    'font-variant',
-    'font-weight',
-    'letter-spacing',
-    'word-spacing',
-    'text-anchor',
-    'dominant-baseline',
-  ];
-  const OWN_PAINT = {
-    'stop-color': 'rgb(0, 0, 0)',
-    'stop-opacity': '1',
-    'flood-color': 'rgb(0, 0, 0)',
-    'flood-opacity': '1',
-    opacity: '1',
-    display: 'inline',
-  };
-  const vector = () => {
-    const svg = root.childElementCount === 1 ? root.firstElementChild : null;
-    if (!(svg instanceof SVGSVGElement)) return { refused: 'not_vector' };
-    const copy = svg.cloneNode(true);
-    const drawn = [svg, ...svg.querySelectorAll('*')];
-    const copied = [copy, ...copy.querySelectorAll('*')];
-    const computedOf = new Map();
-    drawn.forEach((node, index) => {
-      const computed = getComputedStyle(node);
-      computedOf.set(node, computed);
-      const inherited = index === 0 ? null : computedOf.get(node.parentElement);
-      const style = copied[index].style;
-      for (const name of INHERITED_PAINT) {
-        const value = computed.getPropertyValue(name);
-        if (!inherited || inherited.getPropertyValue(name) !== value) style.setProperty(name, value);
-      }
-      for (const [name, initial] of Object.entries(OWN_PAINT)) {
-        const value = computed.getPropertyValue(name);
-        if (value !== initial) style.setProperty(name, value);
-      }
-    });
-    // Page CSS can override even an absolute width or height, so the file gets the drawn size.
-    const box = svg.getBoundingClientRect();
-    copy.setAttribute('width', String(Math.ceil(box.width)));
-    copy.setAttribute('height', String(Math.ceil(box.height)));
-    const markup = new XMLSerializer().serializeToString(copy);
-    return bytes(markup) <= ${String(MAX_PREVIEW_VECTOR_BYTES)} ? { svg: markup } : { refused: 'too_large' };
-  };
+${SVG_REPORTER}
   // Each marked element's depth counts the marked elements that hold it. A
   // page starts \`from\` marked elements in, so a long tree is read a page at a
   // time. The budget leaves the event's own fields room under the
@@ -417,7 +361,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
         lastSelection = '';
         reportSelection();
       } else {
-        select(node || null, command.properties, {}, null, command.sequence);
+        select(node || null, command.properties, {}, null, null, command.sequence);
       }
     } else if (command.command === 'hover') {
       let node = null;
@@ -454,6 +398,9 @@ const GENERATED_FRAME_REPORTER = `(() => {
       post('locate', { sequence: command.sequence, rects: rects });
     } else if (command.command === 'vector') {
       post('vector', Object.assign({ sequence: command.sequence }, vector()));
+    } else if (command.command === 'shape') {
+      const node = markedAt(command.elementId, command.instancePath);
+      post('shape', { sequence: command.sequence, shape: shape(node) });
     } else if (command.command === 'tree') {
       post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {
@@ -463,6 +410,7 @@ const GENERATED_FRAME_REPORTER = `(() => {
         command.properties,
         target ? target.styles : {},
         target ? target.text : null,
+        target ? target.d : null,
         command.sequence,
       );
     }
@@ -474,5 +422,4 @@ module.exports = {
   MAX_PREVIEW_SELECTION_BYTES,
   MAX_PREVIEW_TREE_BYTES,
   MAX_PREVIEW_TREE_NODES,
-  MAX_PREVIEW_VECTOR_BYTES,
 };
