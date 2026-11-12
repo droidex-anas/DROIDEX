@@ -93,6 +93,9 @@ test('the rows that hide are the elements among them, and a top layer beside ano
   assert.deepEqual(top([header, { ...footer, visibility: 'attribute' }]), ['a#footer']);
   assert.deepEqual(top([header, { ...footer, visibility: 'display' }]), ['a#header', 'a#footer']);
   assert.deepEqual(top([header]), []);
+  // The root itself, held by no JSX, can't hide but shows again.
+  assert.deepEqual(top([{ ...header, free: false }]), []);
+  assert.deepEqual(top([{ ...header, free: false, visibility: 'hidden' }]), ['a#header']);
 });
 test('a drop lands among the children of the row a level out above it, at the level the pointer asks', () => {
   // Below the section and its children, at the section's level, h1 goes before ul.

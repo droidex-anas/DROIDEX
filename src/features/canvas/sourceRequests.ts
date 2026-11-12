@@ -4,6 +4,7 @@
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
 import type { EditElementInput, ElementEdited } from './elementEditProtocol';
+import { readPathData } from './paths/pathData';
 import type { CanvasCommand, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 export class SourceRequests {
@@ -42,6 +43,9 @@ export class SourceRequests {
     canvasId: string,
     input: EditElementInput,
   ): Promise<ElementEdited> {
+    const { edit } = input;
+    if ('element' in edit && edit.change.kind === 'path' && !readPathData(edit.change.d, 'board'))
+      throw new Error('This path data does not read as SVG path data.');
     const event = await this.send({
       type: 'canvas.editElement',
       requestId: requestId(),

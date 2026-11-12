@@ -463,3 +463,71 @@ test('an element of a component rendered once is edited in the file it is writte
     },
   );
 });
+
+test('a path edit writes its d where the source spells it as one string, and refuses any other path', async (t) => {
+  // CRLF and an expression string, which Undo must give back byte for byte.
+  const main = `const icon = { path: 'M1 1' };\r
+export default function Mark(){return <svg viewBox="0 0 24 24"><path d={'M0 0L24 24'} fill="none" /><path d={icon.path} /><path {...{ d: 'M2 2' }} /><path d={\`M3 3\`} /><circle r="2" /></svg>}`;
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const [literal, computed, spread, template] = build.elements.filter(
+    (site) => site.tagName === 'path',
+  );
+  const circle = build.elements.find((site) => site.tagName === 'circle');
+  const command = (requestId: string, elementId: string | undefined, d: string) => ({
+    type: 'canvas.editElement',
+    requestId,
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: requestId,
+      edit: { element: { ...element, elementId }, change: { kind: 'path', d } },
+    },
+  });
+
+  for (const [requestId, site] of [
+    ['req-computed-d', computed],
+    ['req-spread-d', spread],
+    ['req-template-d', template],
+    ['req-circle-d', circle],
+  ] as const) {
+    await canvas.handle(command(requestId, site?.elementId, 'M0 0'));
+    assert.equal(errorOf(canvas, requestId).code, 'ambiguous_element', requestId);
+  }
+  await canvas.handle(command('req-bad-d', literal?.elementId, 'M0 0"/><script>'));
+  assert.equal(errorOf(canvas, 'req-bad-d').code, 'invalid_input');
+  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], main);
+
+  await canvas.handle(command('req-path', literal?.elementId, 'M0 0 L12 12 Z'));
+  const edited = okReply(canvas, 'req-path');
+  assert.ok(edited.kind === 'edited');
+  assert.equal(edited.landed, null);
+  assert.equal(
+    (await canvas.workspace.readFiles(canvasId, edited.receipt))['main.tsx'],
+    main.replace("d={'M0 0L24 24'}", 'd={"M0 0 L12 12 Z"}'),
+  );
+  await canvas.handle({
+    ...command('req-path', literal?.elementId, 'M0 0 L12 12 Z'),
+    requestId: 'req-path-retry',
+  });
+  assert.deepEqual(okReply(canvas, 'req-path-retry'), edited);
+
+  // Undo, as the board runs it: the head goes back to the revision before.
+  await canvas.handle({
+    type: 'canvas.switchRevision',
+    requestId: 'req-undo',
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId: 'm-undo',
+      designId: element.designId,
+      revisionId: element.revisionId,
+      expectedRevisionId: edited.receipt.revisionId,
+    },
+  });
+  const undone = okReply(canvas, 'req-undo');
+  assert.ok(undone.kind === 'written');
+  assert.equal(undone.receipt.revisionId, element.revisionId);
+  assert.equal((await canvas.workspace.readFiles(canvasId, undone.receipt))['main.tsx'], main);
+});

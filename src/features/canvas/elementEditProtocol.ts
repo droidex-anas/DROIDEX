@@ -18,7 +18,9 @@ export interface EditElementInput {
         change:
           | { kind: 'text'; value: string }
           | { kind: 'style'; styles: StyleValue[] }
-          | { kind: 'image'; assetId: string };
+          | { kind: 'image'; assetId: string }
+          /** A literal `<path>`'s `d`, as SVG path data separated by spaces and commas only. */
+          | { kind: 'path'; d: string };
       }
     | {
         layer: LayerRef;
