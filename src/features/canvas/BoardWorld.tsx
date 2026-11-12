@@ -3,14 +3,14 @@
 // the same space. The transform is the stage's to write, so a pan or a zoom
 // moves the layer without rendering it.
 
-import { useMemo, useRef, type ReactNode } from 'react';
+import { useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { BoardStage } from './boardStage';
 import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction, type BoardInteractionEvent } from './canvasState';
 import type { CanvasPresence } from './canvasPresence';
 import { DesignFrame, type DesignFrameProps } from './DesignFrame';
 import type { FrameActions } from './FrameToolbar';
-import type { HeldFrame } from './heldFrames';
+import type { HeldFrames } from './heldFrames';
 import type { CanvasFrame } from './protocol';
 import { toolbarRoom } from './toolbarPlacement';
 import type { useBoardPreviews } from './useBoardPreviews';
@@ -44,8 +44,8 @@ interface BoardWorldProps extends Pick<
   visible: string[];
   interaction: BoardInteraction;
   dispatch: (event: BoardInteractionEvent) => void;
-  /** The frames a hand gesture holds, each laid out where its hold began. */
-  heldFrames: readonly HeldFrame[];
+  /** The frames a hand gesture holds, which it draws where the hand has them. */
+  held: HeldFrames;
   presence: CanvasPresence;
   previews: ReturnType<typeof useBoardPreviews>;
   editor: ElementEditor;
@@ -71,7 +71,7 @@ export function BoardWorld({
   visible,
   interaction,
   dispatch,
-  heldFrames,
+  held,
   presence,
   capturePointer,
   previews,
@@ -89,6 +89,7 @@ export function BoardWorld({
   onFocusLabel,
   children,
 }: BoardWorldProps) {
+  const heldIds = useSyncExternalStore(held.subscribe, held.readHeld, held.readHeld);
   const handlers = useFrameHandlers({
     dispatch,
     editor,
@@ -120,7 +121,7 @@ export function BoardWorld({
               : null
           }
           interacted={interaction.interactedFrameId === frame.designId}
-          heldFrom={heldFrames.find(({ designId }) => designId === frame.designId)?.from ?? null}
+          held={heldIds.includes(frame.designId)}
           worker={presence.get(frame.designId)?.agent}
           capturePointer={capturePointer}
           shownRevisionId={previews.shown.get(frame.designId) ?? null}

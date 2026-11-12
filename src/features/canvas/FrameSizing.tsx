@@ -3,7 +3,7 @@
 
 import { useRef, useState, type PointerEvent } from 'react';
 import { ChevronDown } from '@droidex/icons';
-import type { FrameHandle, ResizeHandle } from './canvasGeometry';
+import { frameSizeLabel, type FrameHandle, type ResizeHandle } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import { FrameSizeMenu, type FrameSize } from './FrameSizeMenu';
 import type { CanvasFrame, FrameRect } from './protocol';
@@ -48,7 +48,7 @@ export function FrameSizing({
 }) {
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
-  const size = `${String(Math.round(rect.width))} × ${String(Math.round(rect.height))}`;
+  const size = frameSizeLabel(rect);
   const resizable = mode === 'select';
   return (
     <>
@@ -80,7 +80,8 @@ export function FrameSizing({
                   setOpen((current) => !current);
                 }}
               >
-                {size}
+                {/* A held frame's resize redraws this text outside React. */}
+                <span data-frame-size-text>{size}</span>
                 <ChevronDown className="h-3 w-3" aria-hidden />
               </button>
               <FrameSizeMenu
@@ -96,7 +97,7 @@ export function FrameSizing({
               />
             </>
           ) : (
-            <span>{size}</span>
+            <span data-frame-size-text>{size}</span>
           )}
         </div>
       )}

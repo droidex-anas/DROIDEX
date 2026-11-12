@@ -60,7 +60,7 @@ export interface DesignFrameProps {
   frame: CanvasFrame;
   /** Where the board draws it: under the hand, pending, or acknowledged. */
   rect: FrameRect;
-  /** The board's scale, so the frame's chrome can be laid out in screen pixels. */
+  /** The board's scale, so a sheet without a preview knows the room it has on screen. */
   scale: number;
   /** Spec §11's timings, resolved against the reduced-motion preference. */
   motion: CanvasMotion;
@@ -80,10 +80,10 @@ export interface DesignFrameProps {
   /** This is the frame Interact is driving. */
   interacted: boolean;
   /**
-   * Where a hand gesture holding this frame right now began its hold, or null
-   * while none does.
+   * A hand gesture holds this frame, and draws it where the hand has it
+   * (HeldFrames); `rect` stays where the hold began.
    */
-  heldFrom: FrameRect | null;
+  held: boolean;
   /** The agent at work on this frame, if any. */
   worker: PresenceAgent | undefined;
   /**
@@ -131,16 +131,11 @@ export interface DesignFrameProps {
 
 /** Memoized, so a board render that leaves a frame's props alone does not draw it again. */
 export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
-  const { frame, rect, scale, motion, arriving, mode, selected, toolbarRoom, heldFrom } = props;
+  const { frame, rect, motion, arriving, mode, selected, toolbarRoom, held } = props;
   const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
-  const held = heldFrom !== null;
-  // A held frame stays laid out where its hold began and a transform carries it,
-  // so a move only composites; a resize still lays it out at its new size.
-  const laidOutAt = heldFrom ?? rect;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
-  const screenWidth = rect.width * scale;
   const focusLabel = () => label.current?.focus({ preventScroll: true });
   // A press on a frame already selected keeps the selection, so all of it drags
   // together; a click that never became a drag then picks the frame alone.
@@ -157,21 +152,15 @@ export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
       data-selected={selected || undefined}
       className={`canvas-frame absolute ${animated ? 'canvas-frame-arrival' : ''}`}
       style={{
-        left: laidOutAt.x,
-        top: laidOutAt.y,
+        left: rect.x,
+        top: rect.y,
         width: rect.width,
         height: rect.height,
-        translate: heldFrom
-          ? `${String(rect.x - heldFrom.x)}px ${String(rect.y - heldFrom.y)}px`
-          : undefined,
         ...(animated ? arrival(motion) : {}),
       }}
     >
       {renaming ? (
-        <div
-          className="canvas-frame-label canvas-chrome"
-          style={{ width: Math.max(0, screenWidth) }}
-        >
+        <div className="canvas-frame-label canvas-chrome">
           <FrameNameField
             frame={frame}
             className="canvas-frame-name canvas-frame-name-field"
@@ -189,7 +178,6 @@ export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
         <FrameLabel
           ref={label}
           frame={frame}
-          width={screenWidth}
           selected={selected}
           interacted={props.interacted}
           held={held}

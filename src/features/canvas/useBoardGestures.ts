@@ -4,18 +4,11 @@
 //
 // A frame under the hand carries the rest of the selection with it when it is
 // part of one, and snaps to the other frames (frameSnap.ts) unless ⌘ or Ctrl is
-// held; the frames under the hand and the lines they snapped on live in
-// HeldFrames, outside React. A release writes through useLayoutWrites, as a
+// held; HeldFrames draws the frames under the hand and the lines they snapped
+// on, outside React. A release writes through useLayoutWrites, as a
 // nudge, an align or a distribute does.
 
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type RefObject,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { boardPoint } from './boardCoordinates';
 import type { BoardStage } from './boardStage';
 import {
@@ -29,7 +22,7 @@ import {
   type Viewport,
 } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
-import { snapFrameRect, snapGroupMove, type SnapMarks } from './frameSnap';
+import { snapFrameRect, snapGroupMove } from './frameSnap';
 import { HeldFrames, type HeldFrame } from './heldFrames';
 import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
 import { useLayoutWrites } from './useLayoutWrites';
@@ -73,7 +66,6 @@ export function useBoardGestures({
 }: GestureInputs) {
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [held] = useState(() => new HeldFrames());
-  const heldFrames = useSyncExternalStore(held.subscribe, held.readFrames, held.readFrames);
   const [band, setBand] = useState<Band | null>(null);
   const [panning, setPanning] = useState(false);
   const writes = useLayoutWrites(frames, onArrangeFrames);
@@ -134,8 +126,9 @@ export function useBoardGestures({
     };
   }, [cancelGesture, loseFocus]);
 
-  const rectFor = (frame: CanvasFrame): FrameRect =>
-    heldFrames.find(({ designId }) => designId === frame.designId)?.rect ?? writes.rectFor(frame);
+  // A held frame is drawn where the hand has it outside React, so React keeps
+  // the rect its hold began at.
+  const { rectFor } = writes;
 
   const applyPointer = useCallback(
     (pointer: Point, snapping: boolean) => {
@@ -169,7 +162,7 @@ export function useBoardGestures({
       if (stepped.handle !== 'move') {
         const { rect, ...marks } = snapFrameRect(stepped.rect, stepped.handle, targets, scale);
         active.drag = { ...stepped, rect };
-        held.place(heldOf(active), marks);
+        held.move(heldOf(active), marks);
         return;
       }
       const { rects, ...marks } = snapGroupMove(
@@ -183,7 +176,7 @@ export function useBoardGestures({
         ...carried,
         rect: rects[index + 1],
       }));
-      held.place(heldOf(active), marks);
+      held.move(heldOf(active), marks);
     },
     [held, stage],
   );
@@ -298,7 +291,7 @@ export function useBoardGestures({
         .map((other) => rectFor(other)),
     };
     gesture.current = started;
-    held.place(heldOf(started), NO_MARKS);
+    held.hold(root, heldOf(started));
   };
 
   const onPointerMove = useCallback(
@@ -422,7 +415,6 @@ export function useBoardGestures({
     layoutError: writes.error,
     rectFor,
     held,
-    heldFrames,
     place,
     cancel: cancelGesture,
     onBackgroundPointerDown,
@@ -431,8 +423,6 @@ export function useBoardGestures({
     onBlur,
   };
 }
-
-const NO_MARKS: SnapMarks = { guides: [], gaps: [] };
 
 /** ⌘ or Ctrl held suspends snapping, so a frame can sit a pixel off its neighbours. */
 function snapsWith(event: { metaKey: boolean; ctrlKey: boolean }): boolean {

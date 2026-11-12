@@ -351,7 +351,7 @@ export function CanvasBoard({
           visible={visible}
           interaction={interaction}
           dispatch={dispatch}
-          heldFrames={gestures.heldFrames}
+          held={gestures.held}
           presence={presence}
           capturePointer={overlayCapture}
           previews={previews}

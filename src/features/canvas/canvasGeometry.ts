@@ -309,6 +309,11 @@ export function sameRect(left: FrameRect, right: FrameRect): boolean {
   );
 }
 
+/** A frame's size as its size chip reads it, in whole pixels. */
+export function frameSizeLabel({ width, height }: FrameRect): string {
+  return `${String(Math.round(width))} × ${String(Math.round(height))}`;
+}
+
 /** The edge or axis an align brings a selection onto (spec §4). */
 export type AlignEdge = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
 
