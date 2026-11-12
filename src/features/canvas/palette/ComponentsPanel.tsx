@@ -48,6 +48,7 @@ export function ComponentsPanel({
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const hintId = useId();
+  const variantsHintId = useId();
   const optionId = (index: number) => `${listId}-${String(index)}`;
   const matches = catalog?.state === 'ready' ? paletteRows(catalog.entries, query) : [];
   const menuEntry = matches.find((entry) => entry.name === menuFor);
@@ -105,6 +106,11 @@ export function ComponentsPanel({
       >
         {place.hint}
       </p>
+      {matches.some((entry) => entry.props.length > 0) && (
+        <span id={variantsHintId} className="sr-only">
+          Alt with Down picks its variants.
+        </span>
+      )}
       <CatalogState catalog={catalog} query={query} matches={matches.length} onRetry={retry} />
       {matches.length > 0 && (
         <div
@@ -119,6 +125,7 @@ export function ComponentsPanel({
               id={optionId(index)}
               entry={entry}
               picks={picksOf(entry)}
+              variantsHintId={variantsHintId}
               active={index === keys.activeIndex}
               canAdd={place.canAdd}
               menuOpen={entry === menuEntry}
@@ -158,6 +165,7 @@ function CatalogRow({
   id,
   entry,
   picks,
+  variantsHintId,
   active,
   canAdd,
   menuOpen,
@@ -169,6 +177,8 @@ function CatalogRow({
   entry: CatalogListing;
   /** The variants the row's menu picked, which the add writes. */
   picks: PropPick[];
+  /** What tells a row with variants how the keyboard opens its menu. */
+  variantsHintId: string;
   active: boolean;
   canAdd: boolean;
   menuOpen: boolean;
@@ -182,6 +192,7 @@ function CatalogRow({
       role="option"
       aria-selected={active}
       aria-disabled={!canAdd || undefined}
+      aria-describedby={entry.props.length > 0 ? variantsHintId : undefined}
       title={entry.note ?? undefined}
       className={cn(
         'flex select-none items-center gap-2.5 rounded-md px-3 py-1.5 text-body transition-colors duration-150 ease-out',
