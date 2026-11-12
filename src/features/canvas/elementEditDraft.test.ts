@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  commitPath,
   commitStyles,
   commitText,
   editDraft,
@@ -175,7 +176,7 @@ test('the selection follows its source site into the revision that built after i
   });
 });
 
-test('text commits apart from styles, and each keeps the other’s previews into its revision', () => {
+test('text, styles and a path commit apart, and each keeps the others’ previews into its revision', () => {
   const idle = editDraft('canvas', element, site);
   assert.equal(commitText(idle, 'm-none'), null);
   assert.equal(revertText(previewText(idle, 'Hi')).text, null);
@@ -198,6 +199,13 @@ test('text commits apart from styles, and each keeps the other’s previews into
   const afterStyles = followRevision(settleCommit(styles.draft, 'm-gap', edited), built);
   assert.equal(afterStyles?.text, 'Welcome & bye');
   assert.deepEqual(afterStyles?.values, {});
+  // A path's commit keeps both, and drops only the data it previewed while it saved.
+  const path = commitPath(typed, 'm-path', 'M0 0 L1 1');
+  assert.ok(path);
+  const afterPath = followRevision(settleCommit(path.draft, 'm-path', edited), built);
+  assert.equal(afterPath?.text, 'Welcome & bye');
+  assert.deepEqual(afterPath?.values, { gap: '4px' });
+  assert.equal(afterPath?.d, null);
   // A revision this draft did not commit, the agent's or an undo, leaves no preview standing,
   // even while its own commit is still waiting for the reply that names its revision.
   for (const draft of [typed, styles.draft]) {

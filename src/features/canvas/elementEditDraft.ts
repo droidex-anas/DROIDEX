@@ -212,7 +212,7 @@ export function settleCommit(
  * older one is still on show and the draft stays on it. Once it has built, the
  * selection moves to the element written at the same place. The previews its
  * own commit carried are dropped because the source now says what they said;
- * the other kind's stay only on the revision that commit made. When
+ * the other kinds' stay only on the revision that commit made. When
  * nothing is written there any more, or the revision did not build, the draft
  * goes.
  */
@@ -233,13 +233,14 @@ export function followRevision(
     if (!site) return null;
     const committed =
       draft.pending?.revisionId === build.revisionId ? draft.pending.change : undefined;
+    const keeps = (change: 'style' | 'text') => committed !== undefined && committed !== change;
     return {
       ...draft,
       element: { ...draft.element, revisionId: build.revisionId, elementId: site.elementId },
       site,
-      values: committed === 'text' ? draft.values : {},
-      drawn: committed === 'text' ? draft.drawn : {},
-      text: committed === 'style' ? draft.text : null,
+      values: keeps('style') ? draft.values : {},
+      drawn: keeps('style') ? draft.drawn : {},
+      text: keeps('text') ? draft.text : null,
       // A path's data is only ever previewed while its own commit saves.
       d: null,
       pending: null,
