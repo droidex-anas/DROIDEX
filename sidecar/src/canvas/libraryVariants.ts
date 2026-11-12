@@ -146,8 +146,12 @@ function tablesUsed(
       return;
     }
     const names = nonValueNames(node);
-    if (BINDINGS.some((binds) => binds(node)))
-      for (const { text } of names) if (tables.has(text)) shadowed.add(text);
+    // In `{ buttonVariants: supplied }` only `supplied` is declared; the key names a property.
+    const declared = BINDINGS.some((binds) => binds(node))
+      ? (node as ts.NamedDeclaration).name
+      : undefined;
+    if (declared !== undefined && ts.isIdentifier(declared) && tables.has(declared.text))
+      shadowed.add(declared.text);
     ts.forEachChild(node, (child) => {
       if (!names.some((name) => name === child)) visit(child);
     });

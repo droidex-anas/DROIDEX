@@ -145,6 +145,18 @@ test('variants come only from the table the exported component itself uses, in t
     assert.equal(catalogOf({ ...files, ...unused.files })[0].props, undefined, body);
   }
 
+  // A destructured key of the table's name declares only the name it binds.
+  const renamed = buttonSource('default: "a", outline: "b"').replace(
+    'export function Button()',
+    'export function Button({ buttonVariants: supplied })',
+  );
+  const used = seeded(files, [component('button', renamed)]);
+  assert.deepEqual(used.skipped, []);
+  assert.deepEqual(
+    catalogOf({ ...files, ...used.files })[0].props?.map(({ name }) => name),
+    ['variant', 'size'],
+  );
+
   // A file the kit does not export Button from, listed first, gives it nothing.
   const elsewhere = [
     component('fancy', lacksOutline),
