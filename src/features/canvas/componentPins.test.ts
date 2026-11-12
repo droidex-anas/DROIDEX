@@ -13,8 +13,13 @@ import {
 
 const ACME = { id: 'acme', version: 3, mode: 'light' as const };
 
-function pin(name: string, kit = ACME, kitName = 'Acme'): ComponentPin {
-  return { kit, kitName, name };
+function pin(
+  name: string,
+  kit = ACME,
+  kitName = 'Acme',
+  props: ComponentPin['props'] = [],
+): ComponentPin {
+  return { kit, kitName, name, props };
 }
 
 test('a component is tagged once per kit, by the chat that tagged it, up to eight', () => {
@@ -55,8 +60,12 @@ test('an edited queued prompt brings its components back beside the draft’s, a
   unpinComponents('chat-q');
 });
 
-test('a chip names its kit only beside components of another kit', () => {
-  assert.deepEqual(componentLabels([pin('Button'), pin('Card')]), ['Button', 'Card']);
+test('a chip names its picked options, and its kit only beside components of another kit', () => {
+  const outline = pin('Button', ACME, 'Acme', [
+    { name: 'variant', value: 'outline' },
+    { name: 'size', value: 'lg' },
+  ]);
+  assert.deepEqual(componentLabels([outline, pin('Card')]), ['Button (outline, lg)', 'Card']);
   const slate = { id: 'slate', version: 1, mode: 'dark' as const };
   assert.deepEqual(componentLabels([pin('Button'), pin('Card', slate, 'Slate')]), [
     'Button · Acme',

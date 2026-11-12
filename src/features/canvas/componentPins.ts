@@ -5,6 +5,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
+import type { PropPick } from './elementEditProtocol';
 import type { DesignSystemRef } from './protocol';
 
 /** A prompt names a few components; past that it is asking for a whole kit. */
@@ -16,6 +17,8 @@ export interface ComponentPin {
   kitName: string;
   /** The catalog entry's name. */
   name: string;
+  /** The options picked for the entry's props where they differ from its defaults. */
+  props: readonly PropPick[];
 }
 
 const NONE: readonly ComponentPin[] = [];
@@ -50,18 +53,22 @@ export function componentPinKey({ kit, name }: ComponentPin): string {
 }
 
 /**
- * What the chips call the tags: each entry's name, and its kit's name beside
- * it once the tags come from more than one kit. Mirrored by
- * sidecar/src/canvas/canvasPinsPrompt.ts for the sent prompt's bubble.
+ * What the chips call the tags: each entry's name with its picked options, and
+ * its kit's name beside it once the tags come from more than one kit. Mirrored
+ * by sidecar/src/canvas/canvasPinsPrompt.ts for the sent prompt's bubble.
  */
 export function componentLabels(pins: readonly ComponentPin[]): string[] {
   const kits = new Set(pins.map((pin) => pin.kit.id));
-  return pins.map((pin) => (kits.size > 1 ? `${pin.name} · ${pin.kitName}` : pin.name));
+  return pins.map((pin) => {
+    const picked = pin.props.map(({ value }) => value).join(', ');
+    const entry = picked === '' ? pin.name : `${pin.name} (${picked})`;
+    return kits.size > 1 ? `${entry} · ${pin.kitName}` : entry;
+  });
 }
 
 /**
  * Tags the entry in the chat's next prompt beside the ones it has, while it has
- * room. An entry tagged already takes this tag's kit version and mode.
+ * room. An entry tagged already takes this tag's kit version, mode and options.
  */
 export function tagComponent(appSessionId: string, pin: ComponentPin): void {
   const held = componentPins(appSessionId);

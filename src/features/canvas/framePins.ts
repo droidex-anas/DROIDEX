@@ -266,7 +266,7 @@ const ELEMENTS_OPEN =
   '<canvas_elements>\nThe user picked these elements for this request; change them, not the rest of their designs.';
 const ELEMENTS_CLOSE = '</canvas_elements>';
 const COMPONENTS_OPEN =
-  '<canvas_components>\nThe user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given.';
+  '<canvas_components>\nThe user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given, with each prop in its props set to the option named.';
 const COMPONENTS_CLOSE = '</canvas_components>';
 
 /**
@@ -290,9 +290,11 @@ export function promptWithCanvasPins(
   return blocks.filter(Boolean).join('\n\n');
 }
 
-function componentLine({ kit, kitName, name }: ComponentPin): string {
+function componentLine({ kit, kitName, name, props }: ComponentPin): string {
   const ref = `ref-id="${escapeAttribute(kit.id)}" ref-version="${String(kit.version)}" ref-mode="${kit.mode}"`;
-  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}>${escapeEntryName(name)}</component>`;
+  const picks = props.map((pick) => `${pick.name}=${pick.value}`).join(' ');
+  const picked = picks === '' ? '' : ` props="${escapeAttribute(picks)}"`;
+  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}${picked}>${escapeEntryName(name)}</component>`;
 }
 
 function frameLine(pin: FramePin): string {

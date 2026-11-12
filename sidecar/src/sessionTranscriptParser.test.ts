@@ -210,13 +210,13 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   assert.deepEqual(app?.canvasFrames, ['Pricing · Compact']);
 });
 
-test('a stored prompt shows its tagged kit components as chips, their kit named once there are two', () => {
-  const component = (kit: string, id: string, name: string) =>
-    `<component kit="${kit}" ref-id="${id}" ref-version="3" ref-mode="light">${name}</component>`;
+test('a stored prompt shows its tagged kit components as chips, with their options and their kit named once there are two', () => {
+  const component = (kit: string, id: string, name: string, props = '') =>
+    `<component kit="${kit}" ref-id="${id}" ref-version="3" ref-mode="light"${props && ` props="${props}"`}>${name}</component>`;
   const block = (...lines: string[]) =>
     [
       '<canvas_components>',
-      'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given.',
+      'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given, with each prop in its props set to the option named.',
       ...lines,
       '</canvas_components>',
     ].join('\n');
@@ -233,13 +233,17 @@ test('a stored prompt shows its tagged kit components as chips, their kit named 
     '</canvas_elements>',
   ].join('\n');
   const oneKit = block(
-    component('Acme', 'acme', 'Button'),
+    component('Acme', 'acme', 'Button', 'variant=outline size=lg'),
     component('Acme', 'acme', 'Card &lt;wide&gt;'),
     component('Acme', 'acme', 'Two  spaces&#10;&amp;#10;'),
   );
   const [tagged] = replay(userText(`Use these\n\n${oneKit}\n\n${frames}\n\n${elements}`));
   assert.equal(tagged?.text, 'Use these');
-  assert.deepEqual(tagged?.canvasComponents, ['Button', 'Card <wide>', 'Two  spaces\n&#10;']);
+  assert.deepEqual(tagged?.canvasComponents, [
+    'Button (outline, lg)',
+    'Card <wide>',
+    'Two  spaces\n&#10;',
+  ]);
   assert.deepEqual(tagged?.canvasFrames, ['Pricing']);
 
   const twoKits = block(
