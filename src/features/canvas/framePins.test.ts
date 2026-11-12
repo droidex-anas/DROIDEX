@@ -4,6 +4,7 @@ import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import {
   canvasContextOf,
   framePins,
+  pinOf,
   promptWithCanvasPins,
   restoreFramePins,
   syncFramePins,
@@ -188,6 +189,31 @@ test('a queued request keeps the revisions it was sent with when the pins move o
       '<element id="e2" design="d1" revision="r1" source="main.tsx:7" tag="section"></element>',
       '<element id="e3" design="d1" revision="r1" source="ui/&quot;odd&lt;name&gt;.tsx:7" tag="h1" component="Hero">Say &lt;/element&gt; &amp; go</element>',
       '</canvas_elements>',
+    ].join('\n'),
+  );
+});
+
+test('tagged kit components lead the frames, each named with the kit ref it is read from', () => {
+  const kit = { id: 'acme', version: 3, mode: 'light' as const };
+  const components = [
+    { kit, kitName: 'Acme', name: 'Button / outline' },
+    { kit: { ...kit, id: 'odd' }, kitName: 'Odd "kit"', name: 'Card <wide> & tall' },
+  ];
+  assert.equal(
+    promptWithCanvasPins('Use these', [pinOf('cv_1', frame('d1', 'r1'))], [], components),
+    [
+      'Use these',
+      '',
+      '<canvas_components>',
+      'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given.',
+      '<component kit="Acme" ref-id="acme" ref-version="3" ref-mode="light">Button / outline</component>',
+      '<component kit="Odd &quot;kit&quot;" ref-id="odd" ref-version="3" ref-mode="light">Card &lt;wide&gt; &amp; tall</component>',
+      '</canvas_components>',
+      '',
+      '<canvas_frames>',
+      'The user pinned these canvas frames to this request; "this" and "it" mean them.',
+      '<frame id="d1">Design d1</frame>',
+      '</canvas_frames>',
     ].join('\n'),
   );
 });

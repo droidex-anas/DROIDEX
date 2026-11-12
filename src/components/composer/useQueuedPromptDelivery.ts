@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
+import { componentLabels } from '../../features/canvas/componentPins';
 import { promptWithCanvasPins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
@@ -125,6 +126,9 @@ export function useQueuedPromptDelivery({
               files: head.files,
               ...(head.sideChatReplies ? { sideChatReplies: head.sideChatReplies } : {}),
               ...(head.framePins ? { canvasFrames: head.framePins.map((pin) => pin.name) } : {}),
+              ...(head.componentPins
+                ? { canvasComponents: componentLabels(head.componentPins) }
+                : {}),
             },
           });
         }
@@ -187,6 +191,7 @@ export function queuedSend(
     ),
     head.framePins,
     head.elementPins,
+    head.componentPins,
   );
   return {
     text,

@@ -1,12 +1,20 @@
 // What the next prompt carries beside its words: answers picked in a side chat,
-// and frames and elements added from the chat's canvas. All sit as chips on the draft's
-// first line, go with the prompt however it is sent, and come back when a
+// frames and elements added from the chat's canvas, and components of its kit.
+// All sit as chips on the draft's first line, go with the prompt however it is sent, and come back when a
 // queued prompt is edited. A prompt on a canvas also carries the design system
 // chosen for it. A prompt to a child carries none of these.
 
 import { createElement } from 'react';
 import { Frame } from 'lucide-react';
-import { MessageThread, MousePointerSquareDashed } from '@droidex/icons';
+import { Component, MessageThread, MousePointerSquareDashed } from '@droidex/icons';
+import {
+  componentLabels,
+  componentPinKey,
+  restoreComponentPins,
+  unpinComponents,
+  useComponentPins,
+  type ComponentPin,
+} from '../../features/canvas/componentPins';
 import { NEW_CANVAS_KEY, useDesignSystemChoice } from '../../features/canvas/designSystemChoices';
 import { ElementCrop } from '../../features/canvas/ElementCrop';
 import {
@@ -34,6 +42,7 @@ import type { DraftSelection } from './DraftSelections';
 const NO_REPLIES: string[] = [];
 const NO_PINS: readonly FramePin[] = [];
 const NO_ELEMENTS: readonly ElementPin[] = [];
+const NO_COMPONENTS: readonly ComponentPin[] = [];
 
 /**
  * The canvas a composer's prompt works on: a chat's attached canvas, or the one
@@ -43,6 +52,16 @@ export function composerCanvasKey(state: AppState, appSessionId: string | null):
   if (appSessionId) return state.canvasAttachments[appSessionId] ?? null;
   const canvas = state.draftChat?.canvas;
   return canvas ? (canvas.canvasId ?? NEW_CANVAS_KEY) : null;
+}
+
+function repliesChip(count: number, onRemove: () => void): DraftSelection {
+  return {
+    key: 'side-chat-replies',
+    icon: MessageThread,
+    label: count === 1 ? '1 message' : `${String(count)} messages`,
+    removeLabel: 'Remove side chat answers',
+    onRemove,
+  };
 }
 
 export function useComposerReferences(appSessionId: string | null, toChild: boolean) {
@@ -59,6 +78,9 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const framePins = toChild ? NO_PINS : pinned;
   const pickedElements = useElementPins(appSessionId);
   const elementPins = toChild ? NO_ELEMENTS : pickedElements;
+  const taggedComponents = useComponentPins(appSessionId);
+  const components = toChild ? NO_COMPONENTS : taggedComponents;
+  const labels = componentLabels(components);
 
   const detachReplies = () => {
     if (!appSessionId || sideChatReplies.length === 0) return;
@@ -73,6 +95,9 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   };
   const unpinPicked = (pins: readonly ElementPin[]) => {
     if (appSessionId) unpinElements(appSessionId, pins);
+  };
+  const untag = (pins: readonly ComponentPin[]) => {
+    if (appSessionId) unpinComponents(appSessionId, pins);
   };
 
   const chips: DraftSelection[] = framePins.map((pin) => ({
@@ -97,15 +122,18 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       },
     });
   }
-  if (sideChatReplies.length > 0)
-    chips.unshift({
-      key: 'side-chat-replies',
-      icon: MessageThread,
-      label:
-        sideChatReplies.length === 1 ? '1 message' : `${String(sideChatReplies.length)} messages`,
-      removeLabel: 'Remove side chat answers',
-      onRemove: detachReplies,
+  components.forEach((pin, index) => {
+    chips.push({
+      key: `component:${componentPinKey(pin)}`,
+      icon: Component,
+      label: labels[index],
+      removeLabel: `Remove ${labels[index]}`,
+      onRemove: () => {
+        untag([pin]);
+      },
     });
+  });
+  if (sideChatReplies.length > 0) chips.unshift(repliesChip(sideChatReplies.length, detachReplies));
 
   return {
     chips,
@@ -117,6 +145,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
       ...(framePins.length > 0 ? { framePins } : {}),
       ...(elementPins.length > 0 ? { elementPins } : {}),
+      ...(components.length > 0 ? { componentPins: components } : {}),
     } satisfies Partial<QueuedPrompt>,
     /** The turn context this prompt is pinned to, with the canvas images it imported. */
     canvasContext: (imageAssetIds: readonly string[]) =>
@@ -131,11 +160,13 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
         promptWithSideChatReplies(prompt, sideChatReplies),
         framePins,
         elementPins,
+        components,
       ),
     /** The fields the sent prompt's bubble shows them from. */
     transcript: {
       ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
       ...(framePins.length > 0 ? { canvasFrames: framePins.map((pin) => pin.name) } : {}),
+      ...(labels.length > 0 ? { canvasComponents: labels } : {}),
     },
     /** Takes only the side chat answers off, for a design prompt that carries no frames. */
     detachReplies,
@@ -144,12 +175,15 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
       detachReplies();
       unpin(framePins);
       unpinPicked(elementPins);
+      untag(components);
     },
     /** Backspace on an empty draft takes the last chip off; false when there was none. */
     removeLast: (): boolean => {
+      const lastComponent = components.at(-1);
       const lastElement = elementPins.at(-1);
       const lastFrame = framePins.at(-1);
-      if (lastElement) unpinPicked([lastElement]);
+      if (lastComponent) untag([lastComponent]);
+      else if (lastElement) unpinPicked([lastElement]);
       else if (lastFrame) unpin([lastFrame]);
       else if (sideChatReplies.length > 0) detachReplies();
       else return false;
@@ -161,6 +195,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
         dispatch({ type: 'ATTACH_SIDE_CHAT_REPLY', sourceAppSessionId: appSessionId, reply });
       if (prompt.framePins) restoreFramePins(appSessionId, prompt.framePins);
       if (prompt.elementPins) restoreElementPins(appSessionId, prompt.elementPins);
+      if (prompt.componentPins) restoreComponentPins(appSessionId, prompt.componentPins);
     },
   };
 }

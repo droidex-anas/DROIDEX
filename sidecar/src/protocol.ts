@@ -315,6 +315,8 @@ export interface TranscriptEvent {
   sideChatReplies?: string[];
   // Names of the canvas frames the user pinned to this prompt.
   canvasFrames?: string[];
+  // What the chips call the kit components the user tagged in this prompt.
+  canvasComponents?: string[];
   steered?: boolean;
   // Links the delivered user row to its pending steer, including ordinary-turn fallback.
   steerId?: string;

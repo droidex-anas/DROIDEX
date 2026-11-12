@@ -3,7 +3,7 @@ import test from 'node:test';
 import { chipNamedBy, composerMenu, composerTrigger, type MenuEntry } from './menuItems';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import type { SlashCommand } from '../ComposerMenu';
-import type { CanvasFrame } from '../../features/canvas/protocol';
+import type { CanvasFrame, CatalogListing } from '../../features/canvas/protocol';
 import type { ProviderKind, SkillInfo } from '../../types/bridge';
 
 const command = (cmd: string): SlashCommand => ({
@@ -43,6 +43,8 @@ const painted = (entries: MenuEntry[]) =>
         return entry.item.path;
       case 'frame':
         return entry.item.frame.name;
+      case 'component':
+        return entry.item.entry.name;
     }
   });
 
@@ -51,10 +53,11 @@ const menuFor = (
   catalog: SkillInfo[] = [],
   files: string[] = [],
   frames: CanvasFrame[] = [],
+  components: CatalogListing[] = [],
 ) => {
   const trigger = composerTrigger(text, text.length);
   assert.ok(trigger, `expected a trigger in ${JSON.stringify(text)}`);
-  return composerMenu(trigger, { commands, catalog, files, frames });
+  return composerMenu(trigger, { commands, catalog, files, frames, components });
 };
 
 const rowsFor = (...args: Parameters<typeof menuFor>) =>
@@ -121,6 +124,7 @@ test('a fully typed name narrows the menu to it, and a space stages a named skil
       catalog,
       files: [],
       frames: [],
+      components: [],
     });
     return chipNamedBy(trigger, menu);
   };
@@ -200,6 +204,21 @@ test("in a chat on a canvas, mentions lead with the canvas's frames, matched by 
   // A query puts the better match first: a file named for it leads a frame that only contains it.
   assert.deepEqual(rowsFor('@ro', [], ['src/roadmap.md'], frames), ['src/roadmap.md', 'Hero']);
   assert.deepEqual(rowsFor('@pri', [], [], frames), ['Pricing']);
+});
+
+test("the kit's components follow the frames, matched by name", () => {
+  const entry = (name: string): CatalogListing => ({ name, module: null, note: null, props: [] });
+  const components = [entry('Button'), entry('Pricing card'), entry('Badge')];
+  assert.deepEqual(
+    painted(menuFor('@', [], ['src/a.ts'], [frame('d1', 'Hero')], components).entries),
+    ['Frames:', 'Hero', 'Components:', 'Button', 'Pricing card', 'Badge', 'Files:', 'src/a.ts'],
+  );
+  assert.deepEqual(rowsFor('@card', [], [], [frame('d1', 'Hero')], components), ['Pricing card']);
+  // A kit with no catalog, or one still loading, offers no section.
+  assert.deepEqual(painted(menuFor('@', [], [], [frame('d1', 'Hero')], []).entries), [
+    'Frames:',
+    'Hero',
+  ]);
 });
 
 test('a query that matches nothing offers no rows, which closes the menu', () => {

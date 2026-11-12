@@ -1,6 +1,13 @@
 import { useState } from 'react';
 import { Frame } from 'lucide-react';
-import { GripVertical, ListPlus, MousePointerSquareDashed, Pencil, X } from '@droidex/icons';
+import {
+  Component,
+  GripVertical,
+  ListPlus,
+  MousePointerSquareDashed,
+  Pencil,
+  X,
+} from '@droidex/icons';
 import type { QueuedPrompt } from '../../lib/promptQueue';
 import { formatResetTime } from '../../lib/usageLimit';
 import type { UsageLimit } from '../../types/bridge';
@@ -93,6 +100,14 @@ export function QueuedPrompts({
                   {p.framePins.length === 1
                     ? p.framePins[0].name
                     : `${String(p.framePins.length)} frames`}
+                </span>
+              )}
+              {p.componentPins && p.componentPins.length > 0 && (
+                <span className="mt-1 inline-flex items-center gap-1 rounded-md bg-active px-1.5 py-0.5 text-caption text-muted">
+                  <Component className="size-3" />
+                  {p.componentPins.length === 1
+                    ? p.componentPins[0].name
+                    : `${String(p.componentPins.length)} components`}
                 </span>
               )}
             </PendingPromptPreview>

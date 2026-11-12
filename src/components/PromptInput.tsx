@@ -110,6 +110,7 @@ import {
 import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import { useComposerReferences } from './composer/useComposerReferences';
+import { useComponentMentions } from './composer/useComponentMentions';
 import { useFrameMentions } from './composer/useFrameMentions';
 import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
 import { CanvasImageChip } from './composer/CanvasImageChip';
@@ -860,6 +861,11 @@ export default function PromptInput({
     references.canvasKey,
     trigger?.kind === 'file',
   );
+  const componentMentions = useComponentMentions(
+    appSessionId,
+    references.canvasKey,
+    trigger?.kind === 'file',
+  );
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -970,9 +976,10 @@ export default function PromptInput({
             catalog,
             files,
             frames: frameMentions.frames,
+            components: componentMentions.components,
           })
         : EMPTY_COMPOSER_MENU,
-    [trigger, files, catalog, slashCommands, frameMentions.frames],
+    [trigger, files, catalog, slashCommands, frameMentions.frames, componentMentions.components],
   );
 
   const menuOpen = !!trigger && menu.rows.length > 0;
@@ -983,8 +990,9 @@ export default function PromptInput({
         ...activeSkills.map((item) => menuRowKey({ type: 'catalog', item })),
         ...attachedFiles.map((path) => menuRowKey({ type: 'file', path })),
         ...frameMentions.taggedRowKeys,
+        ...componentMentions.taggedRowKeys,
       ]),
-    [activeSkills, attachedFiles, frameMentions.taggedRowKeys],
+    [activeSkills, attachedFiles, frameMentions.taggedRowKeys, componentMentions.taggedRowKeys],
   );
   // The highlight follows the row rather than its position, so a row landing
   // while the menu is open never moves it. No row named means the first one.
@@ -1243,6 +1251,9 @@ export default function PromptInput({
     } else if (item.type === 'catalog') runCatalogRow(item.item);
     else if (item.type === 'frame') {
       frameMentions.tag(item.frame);
+      replaceTrigger('');
+    } else if (item.type === 'component') {
+      componentMentions.tag(item.entry);
       replaceTrigger('');
     } else addFile(item.path);
   };

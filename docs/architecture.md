@@ -545,7 +545,10 @@ guidance (`designSystemBrief.ts`, under 21 KiB), its catalog's entry names (1 Ki
 and the canvas's rule; under Auto, before a project chat's first design, that guidance
 also asks the agent to offer a kit from the project. `canvas_theme` reads full kits, and
 reads a kit's catalog entries by name with their JSX, imports and props (`kitCatalog.ts`)
-so the agent writes a component the user names or tags as its entry gives it. Once the build is ready, the write waits 1.5 s for
+so the agent writes a component the user names or tags as its entry gives it. A component
+tagged from the composer's `@` menu (`componentPins.ts`) reaches the agent as a
+`<canvas_components>` block naming the entry and its kit's ref; the sidecar strips that
+block from the replayed bubble and keeps its names as chips. Once the build is ready, the write waits 1.5 s for
 an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
 `loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
 keeps the latest per design, so a design that compiles and then throws reaches the

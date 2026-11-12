@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import { frameSizeLabel } from './canvasGeometry';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
+import type { ComponentPin } from './componentPins';
 import type { ElementPin } from './elementPins';
 import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
@@ -256,29 +257,42 @@ export function canvasContextOf(
 }
 
 // Mirrored by sidecar/src/canvas/canvasPinsPrompt.ts, which strips the blocks
-// back out of a stored prompt so the bubble shows the frames as chips.
+// back out of a stored prompt so the bubble shows the components and frames as
+// chips.
 const FRAMES_OPEN =
   '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.';
 const FRAMES_CLOSE = '</canvas_frames>';
 const ELEMENTS_OPEN =
   '<canvas_elements>\nThe user picked these elements for this request; change them, not the rest of their designs.';
 const ELEMENTS_CLOSE = '</canvas_elements>';
+const COMPONENTS_OPEN =
+  '<canvas_components>\nThe user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given.';
+const COMPONENTS_CLOSE = '</canvas_components>';
 
 /**
- * The prompt with its pinned frames, then its picked elements, named after the
- * user's words. The turn's lease already holds them, but a model that acts
- * before it reads would not know which frame or element "this one" is.
+ * The prompt with its tagged kit components, its pinned frames, then its
+ * picked elements, named after the user's words. The turn's lease already
+ * holds the frames and elements, but a model that acts before it reads would
+ * not know which frame or element "this one" is.
  */
 export function promptWithCanvasPins(
   prompt: string,
   pins: readonly FramePin[] = NONE,
   elements: readonly ElementPin[] = [],
+  components: readonly ComponentPin[] = [],
 ): string {
   const blocks = [prompt];
+  if (components.length > 0)
+    blocks.push([COMPONENTS_OPEN, ...components.map(componentLine), COMPONENTS_CLOSE].join('\n'));
   if (pins.length > 0) blocks.push([FRAMES_OPEN, ...pins.map(frameLine), FRAMES_CLOSE].join('\n'));
   if (elements.length > 0)
     blocks.push([ELEMENTS_OPEN, ...elements.map(elementLine), ELEMENTS_CLOSE].join('\n'));
   return blocks.filter(Boolean).join('\n\n');
+}
+
+function componentLine({ kit, kitName, name }: ComponentPin): string {
+  const ref = `ref-id="${escapeAttribute(kit.id)}" ref-version="${String(kit.version)}" ref-mode="${kit.mode}"`;
+  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}>${escapeText(oneLine(name))}</component>`;
 }
 
 function frameLine(pin: FramePin): string {

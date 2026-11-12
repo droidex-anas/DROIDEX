@@ -220,8 +220,8 @@ function nonAssistantBlockEvent(
 }
 
 // A stored prompt as the chat shows it: plain text, never a runnable App, and
-// without the pinned frames and elements, the side-chat answers or the branch,
-// design, app and side-chat framing it was sent with.
+// without the canvas pins, the side-chat answers or the branch, design, app and
+// side-chat framing it was sent with.
 export function userPromptDisplay(storedText: string) {
   const outer = attachedToPrompt(storedText);
   // A branch prompt carries a whole copied conversation after its request; it
@@ -242,18 +242,20 @@ export function userPromptDisplay(storedText: string) {
     sideChatReplies:
       outer.sideChatReplies ?? inner.sideChatReplies ?? designDisplay?.sideChatReplies,
     canvasFrames: outer.canvasFrames ?? inner.canvasFrames,
+    canvasComponents: outer.canvasComponents ?? inner.canvasComponents,
   };
 }
 
-// The pinned frames, picked elements and side-chat answers at the end of a
-// composed prompt, split off the words they were sent with.
+// The canvas pins and side-chat answers at the end of a composed prompt, split
+// off the words they were sent with.
 function attachedToPrompt(text: string) {
-  const withFrames = canvasPinsFromPrompt(text);
-  const withReplies = sideChatRepliesFromPrompt(withFrames?.text ?? text);
+  const withPins = canvasPinsFromPrompt(text);
+  const withReplies = sideChatRepliesFromPrompt(withPins?.text ?? text);
   return {
-    text: withReplies?.text ?? withFrames?.text ?? text,
+    text: withReplies?.text ?? withPins?.text ?? text,
     sideChatReplies: withReplies?.sideChatReplies,
-    canvasFrames: withFrames?.canvasFrames,
+    canvasFrames: withPins?.canvasFrames,
+    canvasComponents: withPins?.canvasComponents,
   };
 }
 

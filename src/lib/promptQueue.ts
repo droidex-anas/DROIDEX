@@ -1,3 +1,4 @@
+import type { ComponentPin } from '../features/canvas/componentPins';
 import type { ElementPin } from '../features/canvas/elementPins';
 import type { FramePin } from '../features/canvas/framePins';
 import type { CanvasTurnContext } from '../features/canvas/protocol';
@@ -27,6 +28,8 @@ export interface QueuedPrompt {
   framePins?: readonly FramePin[];
   /** The elements Design pointed it at, as they were when it was queued. */
   elementPins?: readonly ElementPin[];
+  /** The kit components it tags, as they were when it was queued. */
+  componentPins?: readonly ComponentPin[];
   /** What it runs under, fixed when it was queued: a later kit choice reaches only later prompts. */
   canvasContext?: CanvasTurnContext;
   design?: QueuedDesignContext;

@@ -390,6 +390,14 @@ test('transient transcript events accept only the literal true or an absent flag
   for (const canvasFrames of ['Pricing · Wide', [1], [null], {}]) {
     assertRejected({ type: 'event.appended', event: { ...event, canvasFrames } });
   }
+  // Its tagged components are chip labels, checked the same way.
+  assertAccepted({
+    type: 'event.appended',
+    event: { ...event, canvasComponents: ['Button · Acme'] },
+  });
+  for (const canvasComponents of ['Button', [1], [null], {}]) {
+    assertRejected({ type: 'event.appended', event: { ...event, canvasComponents } });
+  }
   // An artifact card opens the canvas and frame its activity names.
   const canvasActivity = {
     toolUseId: 'call-1',
