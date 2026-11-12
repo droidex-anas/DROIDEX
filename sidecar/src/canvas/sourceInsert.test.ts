@@ -203,6 +203,27 @@ test('picked props are written on the first element written with a used componen
     'This entry writes variant in code, so it cannot be picked.',
   );
 });
+
+test('a pick is refused where it would repeat an id or the entry writes its prop twice', () => {
+  const badge: CatalogEntry = {
+    ...BUTTON,
+    jsx: '<Button id="new" title="alpha" title="beta">Hi</Button>',
+    props: [
+      { name: 'id', options: ['new', 'email'], default: 'new' },
+      { name: 'title', options: ['alpha', 'beta', 'gamma'], default: 'alpha' },
+    ],
+  };
+  const main = 'export default () => <main><input id="email" /></main>;';
+  assert.equal(
+    refusal(main, 'main', badge, [{ name: 'id', value: 'email' }]),
+    'This frame already has an element with id "email", and the entry would repeat it.',
+  );
+  assert.equal(
+    refusal(main, 'main', badge, [{ name: 'title', value: 'gamma' }]),
+    'This entry writes title more than once, so it cannot be picked.',
+  );
+});
+
 test('a reference named after an object property is an id the edit cannot read', () => {
   const entry: CatalogEntry = { ...BUTTON, uses: [], jsx: "<input id={'&constructor;'} />" };
   assert.equal(

@@ -45,7 +45,8 @@ export function insertLayer(
   const { text } = source;
   const eol = lineEnding(text);
   const paste = landing(target, uses, eol);
-  checkIds(files, entry.jsx);
+  const picked = withPicks(entry, picks);
+  checkIds(files, picked);
   const imports = importEdits(
     source,
     [
@@ -54,12 +55,7 @@ export function insertLayer(
     ],
     eol,
   );
-  const jsx = placeSnippet(
-    withPicks(entry, picks),
-    paste.indent,
-    indentUnit(source, paste.indent),
-    eol,
-  );
+  const jsx = placeSnippet(picked, paste.indent, indentUnit(source, paste.indent), eol);
   const edited = splice(text, [
     ...imports,
     { start: paste.start, end: paste.end, replacement: paste.before + jsx + paste.after },
@@ -106,7 +102,8 @@ function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
 /**
  * The entry's JSX with each pick written on its first element written with a
  * component it uses: in place of the quoted value it writes, else added after
- * the tag name. A value the entry writes in code is left alone and refused.
+ * the tag name. A value the entry writes in code, or writes more than once,
+ * is left alone and refused.
  */
 function withPicks(entry: CatalogEntry, picks: readonly PropPick[]): string {
   if (picks.length === 0) return entry.jsx;
@@ -127,13 +124,17 @@ function withPicks(entry: CatalogEntry, picks: readonly PropPick[]): string {
     const prop = entry.props?.find((each) => each.name === name);
     if (!prop?.options.includes(value))
       throw invalid(`This entry has no option ${value} for ${name}. Pick one it lists.`);
-    const attribute = element.attributes.properties.find(
+    const written = element.attributes.properties.filter(
       (each): each is ts.JsxAttribute => ts.isJsxAttribute(each) && each.name.getText() === name,
     );
-    const written = `${name}="${value}"`;
-    if (attribute === undefined) added += ` ${written}`;
+    // The last one written wins, so rewriting one of several would not apply the pick.
+    if (written.length > 1)
+      throw invalid(`This entry writes ${name} more than once, so it cannot be picked.`);
+    const attribute = written.at(0);
+    const quoted = `${name}="${value}"`;
+    if (attribute === undefined) added += ` ${quoted}`;
     else if (attribute.initializer !== undefined && ts.isStringLiteral(attribute.initializer))
-      edits.push({ start: attribute.getStart(), end: attribute.end, replacement: written });
+      edits.push({ start: attribute.getStart(), end: attribute.end, replacement: quoted });
     else throw invalid(`This entry writes ${name} in code, so it cannot be picked.`);
   }
   return splice(entry.jsx, [...edits, { start: afterTag, end: afterTag, replacement: added }]);
