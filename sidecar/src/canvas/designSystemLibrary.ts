@@ -116,13 +116,7 @@ export async function importLibraryDesignSystem(
     [KIT_UTILS_FILE]: read.utils,
     ...Object.fromEntries(library.files),
   };
-  const catalog = libraryCatalogFiles(
-    files,
-    read.components,
-    library.components,
-    read.demos,
-    diagnostics,
-  );
+  const catalog = libraryCatalogFiles(files, read.components, library.components, read.demos);
   Object.assign(files, catalog.files);
   // The review holds one record per file; a file already reviewed keeps its record, and the diagnostic tells of the demo.
   const reviewed = new Set(library.skipped.map(({ file }) => file));
@@ -153,7 +147,8 @@ export async function importLibraryDesignSystem(
   return {
     status: 'imported',
     system: parsed.data,
-    diagnostics: boundDiagnostics(diagnostics),
+    // The components' diagnostics alone can fill the cap, and these tell what the kit's catalog left out.
+    diagnostics: boundDiagnostics([...catalog.diagnostics, ...diagnostics]),
     kitNames,
   };
 }

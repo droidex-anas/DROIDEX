@@ -42,7 +42,8 @@ type VariantProps = ComponentVariants['props'];
 
 /**
  * The catalog file and its notice for a library kit's files, none when no
- * demo fits the kit, and a review record for each demo left out for a variant.
+ * demo fits the kit, and a review record and diagnostic for each demo left out
+ * for a variant.
  * `exported` names the component file the kit entry exports each name from,
  * and `demos` holds the elements each of LIBRARY_DEMOS writes.
  */
@@ -51,12 +52,12 @@ export function libraryCatalogFiles(
   components: readonly LibraryComponent[],
   exported: Readonly<Record<string, string>>,
   demos: readonly ModuleElement[][],
-  diagnostics: CanvasDiagnostic[],
-): { files: SourceFiles; skipped: LibrarySkip[] } {
+): { files: SourceFiles; skipped: LibrarySkip[]; diagnostics: CanvasDiagnostic[] } {
   const exports = new Set(kitPrimitives({ files }));
   const variants = exportedVariants(components, exported);
   const catalog: CatalogEntry[] = [];
   const skipped: LibrarySkip[] = [];
+  const diagnostics: CanvasDiagnostic[] = [];
   seeds.entries.forEach((seed, index) => {
     const module = kitComponentPath(seed.module);
     const component = components.find(({ name }) => name === seed.module);
@@ -78,10 +79,11 @@ export function libraryCatalogFiles(
     const props = entryProps(used.at(0), variants);
     catalog.push({ ...seed, module, ...(props.length > 0 ? { props } : {}) });
   });
-  if (catalog.length === 0) return { files: {}, skipped };
+  if (catalog.length === 0) return { files: {}, skipped, diagnostics };
   return {
     files: { [KIT_CATALOG_FILE]: catalogFile(catalog), [LIBRARY_CATALOG_NOTICE]: NOTICE },
     skipped,
+    diagnostics,
   };
 }
 

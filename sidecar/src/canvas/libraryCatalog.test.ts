@@ -11,7 +11,6 @@ import {
 import seeds from './libraryCatalogSeeds.json' with { type: 'json' };
 import type { LibraryComponent } from './libraryComponents.js';
 import { moduleDeclarations } from './moduleDeclarations.js';
-import type { CanvasDiagnostic } from './protocol.js';
 
 const BUTTON = 'components/ui/button.tsx';
 const SEPARATOR = 'components/ui/separator.tsx';
@@ -38,8 +37,7 @@ function seeded(
   files: Record<string, string>,
   library = [component('button'), component('separator')],
 ) {
-  const diagnostics: CanvasDiagnostic[] = [];
-  return { ...libraryCatalogFiles(files, library, EXPORTED, DEMOS, diagnostics), diagnostics };
+  return libraryCatalogFiles(files, library, EXPORTED, DEMOS);
 }
 
 function catalogOf(files: Record<string, string>) {
