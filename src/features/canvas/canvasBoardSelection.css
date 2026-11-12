@@ -145,8 +145,8 @@
 }
 
 /* What a snapped drag lined up on and the spaces it measured, in screen space
-   above the frames. They come and go with the snap, with no motion, so they
-   never trail the hand. */
+   above the frames, each placed by translate. They come and go with the snap,
+   with no motion, so they never trail the hand. */
 .canvas-snap {
   position: absolute;
   inset: 0;
@@ -160,6 +160,13 @@
 .canvas-snap-gap::after {
   position: absolute;
   background: var(--selection);
+}
+
+.canvas-snap-line,
+.canvas-snap-gap,
+.canvas-snap-pill {
+  top: 0;
+  left: 0;
 }
 
 .canvas-snap-gap::before,
