@@ -64,9 +64,7 @@ function literalVariants(config: ts.Expression | undefined): VariantTable['props
   if (fields === null) return null;
   const variants = literalObject(fields.get('variants'));
   if (variants === null) return null;
-  const defaults = fields.has('defaultVariants')
-    ? literalObject(fields.get('defaultVariants'))
-    : new Map<string, ts.Expression>();
+  const defaults = literalDefaults(fields);
   if (defaults === null) return null;
   const props: VariantTable['props'] = [];
   for (const [name, value] of variants) {
@@ -84,6 +82,12 @@ function literalVariants(config: ts.Expression | undefined): VariantTable['props
     });
   }
   return props;
+}
+
+/** A cva config's defaultVariants, empty when it gives none, or null when they are not an object literal. */
+function literalDefaults(fields: ReadonlyMap<string, ts.Expression>) {
+  if (!fields.has('defaultVariants')) return new Map<string, ts.Expression>();
+  return literalObject(fields.get('defaultVariants'));
 }
 
 /** An object literal's properties by name, or null for anything else or a property it computes or spreads. */
