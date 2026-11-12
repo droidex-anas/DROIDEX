@@ -360,6 +360,8 @@
   width: theme('spacing.2');
   height: theme('spacing.2');
   border: 1.5px solid var(--selection);
+  /* Off the radius scale, like the resize handles: its smallest step
+     would round this mark into a handle's circle. */
   border-radius: 2px;
   background: var(--raised);
   transition: background var(--duration-quick) var(--ease-smooth-out);
