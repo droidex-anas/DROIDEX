@@ -47,6 +47,9 @@ const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 0.1;
 // A wheel zoom draws its stage once a frame and the board commits with it
 // (measured 0.98–1.00); two commits a frame is a wheel event drawn on its own.
 const CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET = 1.25;
+// Only the held frames and the board's own chrome render while a hand drags
+// frames (measured 61–152); drawing every frame again is 440–490.
+const CANVAS_RENDERS_PER_DRAG_FRAME_BUDGET = 200;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
 // 120 Hz: the main-thread work one frame may take.
 const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
@@ -152,6 +155,7 @@ export function evaluateProbeGates(options: {
   livePrimarySessionsAfterSoak: number | null;
   reactCommitsPerPanFrame: number | null;
   reactCommitsPerZoomFrame: number | null;
+  reactRendersPerDragFrame: number | null;
   layoutReadsPerPanFrame: number | null;
   longTasksDuringGestures: number | null;
   panBusyP95Ms: number | null;
@@ -221,6 +225,15 @@ export function evaluateProbeGates(options: {
       budget: CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET,
       justification:
         'Wheel events arrive about twice a frame and the stage draws them once (measured 0.98–1.00); 2 a frame means each event draws.',
+    }),
+    hard({
+      id: 'canvas.reactRendersPerDragFrame',
+      name: 'components rendered per frame of a frame drag or resize, 30-frame board',
+      unit: 'components',
+      actual: options.reactRendersPerDragFrame,
+      budget: CANVAS_RENDERS_PER_DRAG_FRAME_BUDGET,
+      justification:
+        'The frame layer is memoized, so a drag renders the held frames and the board chrome (measured 61–152); drawing every frame again is 440–490.',
     }),
     hard({
       id: 'canvas.layoutReadsPerPanFrame',

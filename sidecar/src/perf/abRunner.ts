@@ -112,6 +112,7 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
         ?.livePrimarySessions ?? null,
     reactCommitsPerPanFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerPanFrame'),
     reactCommitsPerZoomFrame: metricValue(candidateProbes, 'canvas.reactCommitsPerZoomFrame'),
+    reactRendersPerDragFrame: metricValue(candidateProbes, 'canvas.reactRendersPerDragFrame'),
     layoutReadsPerPanFrame: metricValue(candidateProbes, 'canvas.layoutReadsPerPanFrame'),
     longTasksDuringGestures: metricValue(candidateProbes, 'canvas.longTasksDuringGestures'),
     panBusyP95Ms: metricValue(candidateProbes, 'canvas.panBusyP95Ms'),

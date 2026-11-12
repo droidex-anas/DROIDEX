@@ -73,6 +73,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     livePrimarySessionsAfterSoak: 3,
     reactCommitsPerPanFrame: 2,
     reactCommitsPerZoomFrame: 2,
+    reactRendersPerDragFrame: 500,
     layoutReadsPerPanFrame: 40,
     longTasksDuringGestures: 1,
     panBusyP95Ms: 30,
@@ -89,6 +90,7 @@ test('probe gates fail unbounded mounted rows and pass the measured 10k window',
     livePrimarySessionsAfterSoak: 0,
     reactCommitsPerPanFrame: 0.03,
     reactCommitsPerZoomFrame: 1,
+    reactRendersPerDragFrame: 80,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -110,6 +112,7 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
     livePrimarySessionsAfterSoak: 0,
     reactCommitsPerPanFrame: 0.03,
     reactCommitsPerZoomFrame: 1,
+    reactRendersPerDragFrame: 80,
     layoutReadsPerPanFrame: 6,
     longTasksDuringGestures: 0,
     panBusyP95Ms: 3,
@@ -118,6 +121,10 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
   };
   assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerPanFrame: 1 }).hardPassed, false);
   assert.equal(evaluateProbeGates({ ...measured, reactCommitsPerZoomFrame: 2 }).hardPassed, false);
+  assert.equal(
+    evaluateProbeGates({ ...measured, reactRendersPerDragFrame: 460 }).hardPassed,
+    false,
+  );
   assert.equal(evaluateProbeGates({ ...measured, longTasksDuringGestures: 1 }).hardPassed, false);
   // Slow frames warn and never fail.
   assert.equal(evaluateProbeGates({ ...measured, panBusyP95Ms: 30 }).hardPassed, true);
@@ -126,6 +133,7 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
     ...measured,
     reactCommitsPerPanFrame: null,
     reactCommitsPerZoomFrame: null,
+    reactRendersPerDragFrame: null,
     layoutReadsPerPanFrame: null,
     longTasksDuringGestures: null,
     panBusyP95Ms: null,
@@ -134,7 +142,7 @@ test('canvas gates hold pan and zoom commits and long tasks, and a run without C
   });
   assert.equal(withoutChromium.hardPassed, true);
   const canvas = withoutChromium.results.filter((result) => result.id.startsWith('canvas.'));
-  assert.equal(canvas.length, 7);
+  assert.equal(canvas.length, 8);
   assert.ok(canvas.every((result) => result.status === 'unmeasured'));
 });
 

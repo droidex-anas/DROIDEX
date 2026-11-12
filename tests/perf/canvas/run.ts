@@ -155,6 +155,9 @@ function gateMetrics(boards: CanvasReport['boards']): CanvasReport['metrics'] {
   const zoom = [board.pinch, board.metaWheel].flatMap((gesture) =>
     gesture ? [gesture.median.commitsPerFrame] : [],
   );
+  const held = [board.moveOne, board.moveFive, board.resizeOne].flatMap((gesture) =>
+    gesture ? [gesture.median.rendersPerFrame] : [],
+  );
   const method = '30-frame board, background pan, median of the runs';
   if (!pan) return [];
   return [
@@ -167,6 +170,17 @@ function gateMetrics(boards: CanvasReport['boards']): CanvasReport['metrics'] {
             value: Math.max(...zoom),
             unit: 'commits',
             method: '30-frame board, pinch and ⌘-wheel zoom, the greater median of the runs',
+          },
+        ]),
+    ...(held.length === 0
+      ? []
+      : [
+          {
+            id: 'canvas.reactRendersPerDragFrame',
+            value: Math.max(...held),
+            unit: 'components',
+            method:
+              '30-frame board, moving one or five frames or resizing one, the greatest median of the runs',
           },
         ]),
     { id: 'canvas.layoutReadsPerPanFrame', value: pan.layoutReadsPerFrame, unit: 'reads', method },

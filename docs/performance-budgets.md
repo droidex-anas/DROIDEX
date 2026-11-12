@@ -63,6 +63,7 @@ dedicated hardware is understood.
 | Live primary sessions after soak cleanup | 0 | 12 create/close cycles must release every session. |
 | React commits per pan frame, 30-frame board | 0.1 commits | Pan moves the board's stage, not React; a 61-frame pan commits only as it starts and ends (0.03). |
 | React commits per zoom frame, 30-frame board | 1.25 commits | Pinch and ⌘-wheel events arrive about twice a frame and the stage draws them once (0.98–1.00); 2 means each event draws. |
+| Components rendered per frame of a frame drag or resize, 30-frame board | 200 components | The frame layer is memoized, so moving one or five frames or resizing one renders the held frames and the board chrome (61–152); drawing every frame again is 440–490. |
 | Layout reads per pan frame, 30-frame board | 6.5 reads | Rects, offset, client and scroll geometry and computed style, 3 per pointer event at 2 events a frame today. |
 | Long tasks during canvas gestures, 30-frame board | 0 | A task over 50 ms drops at least 5 frames at 120 Hz. |
 | History worker third-party modules | 0 | `historyWorkerBundle.test.ts`. Both worker isolates compile this graph; a value import of the Droid SDK once cost ~83 MiB of sidecar RSS. |
