@@ -61,7 +61,8 @@ dedicated hardware is understood.
 | Transport pending estimated bytes | 32 MiB | Product cap of the replay buffer. |
 | Persistence overflow on a normal replay | 0 failures | Write-behind is capped at 50k rows / 64 MiB; overflow is explicit, not unbounded growth. |
 | Live primary sessions after soak cleanup | 0 | 12 create/close cycles must release every session. |
-| React commits per pan frame, 30-frame board | 1.1 commits | The board commits its viewport on every pan frame today; the ratchet drops to 0 when pan leaves React. |
+| React commits per pan frame, 30-frame board | 0.1 commits | Pan moves the board's stage, not React; a 61-frame pan commits only as it starts and ends (0.03). |
+| React commits per zoom frame, 30-frame board | 1.25 commits | Pinch and ⌘-wheel events arrive about twice a frame and the stage draws them once (0.98–1.00); 2 means each event draws. |
 | Layout reads per pan frame, 30-frame board | 6.5 reads | Rects, offset, client and scroll geometry and computed style, 3 per pointer event at 2 events a frame today. |
 | Long tasks during canvas gestures, 30-frame board | 0 | A task over 50 ms drops at least 5 frames at 120 Hz. |
 | History worker third-party modules | 0 | `historyWorkerBundle.test.ts`. Both worker isolates compile this graph; a value import of the Droid SDK once cost ~83 MiB of sidecar RSS. |

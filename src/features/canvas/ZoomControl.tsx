@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { ChevronUp, Minus, Plus } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { Menu } from '../../components/ui/Menu';
+import { useStage, type BoardStage } from './boardStage';
 import { Tool } from './BoardTool';
 import { MAX_SCALE, MIN_SCALE } from './canvasGeometry';
 
@@ -20,20 +21,21 @@ const ZOOM_ACTIONS: { command: ZoomCommand; label: string; hint: string }[] = [
 ];
 
 export function ZoomControl({
-  scale,
+  stage,
   hasFrames,
   hasSelection,
   onZoom,
   onZoomTo,
   focusBoard,
 }: {
-  scale: number;
+  stage: BoardStage;
   hasFrames: boolean;
   hasSelection: boolean;
   onZoom: (command: ZoomCommand) => void;
   onZoomTo: (scale: number) => void;
   focusBoard: () => void;
 }) {
+  const scale = useStage(stage, (live) => live.scale);
   const [open, setOpen] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   const enabled: Record<ZoomCommand, boolean> = {

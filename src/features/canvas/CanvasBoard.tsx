@@ -18,6 +18,7 @@ import { AnnotationTools } from './AnnotationTools';
 import { boardCommands } from './boardCommands';
 import { BoardControls, type LayersToggle } from './BoardControls';
 import { BoardOverlays } from './BoardOverlays';
+import { BoardWorld } from './BoardWorld';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
@@ -28,9 +29,8 @@ import {
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import { showsFrameTools, type BoardInteraction } from './canvasState';
+import type { BoardInteraction } from './canvasState';
 import type { CanvasPresence, LandedWrites } from './canvasPresence';
-import { DesignFrame } from './DesignFrame';
 import { DesignPickPrompt } from './DesignPickPrompt';
 import type { PreviewSelections } from './DesignPreview';
 import { pickedOnBoard } from './elementOnBoard';
@@ -40,8 +40,7 @@ import type { PreviewRuns } from './previewRuns';
 import { useCanvasMotion } from './useCanvasMotion';
 import type { ReadSource } from './useChangeTours';
 import { RubberBand } from './RubberBand';
-import { SnapGuides } from './SnapGuides';
-import { toolbarRoom } from './toolbarPlacement';
+import { StageSnapGuides } from './SnapGuides';
 import { useAnnotationEditor } from './useAnnotationEditor';
 import { useBoardGestures } from './useBoardGestures';
 import { useBoardPreviews } from './useBoardPreviews';
@@ -156,34 +155,30 @@ export function CanvasBoard({
   const [openedWith] = useState(() => new Set(frames.map((frame) => frame.designId)));
 
   const view = useBoardViewport(board, frames, motion, restoredViewport, rightInset);
-  const { fitTo } = view;
+  const { fitTo, stage } = view;
   useBoardToastPlacement(board, rightInset, interaction.selectedFrameIds.length >= 2);
   // What the callbacks the gesture machine holds read, since they cannot close
   // over the render that registered them. Filled in below, once the rects the
   // board actually draws are known.
-  const latest = useRef<{ drawn: PlacedFrame[]; viewport: Viewport }>({
-    drawn: [],
-    viewport: view.viewport,
-  });
+  const latest = useRef<PlacedFrame[]>([]);
   const canDesign = design !== undefined;
   const dispatch = useInteractionDispatch(interaction, onInteractionChange, frames, canDesign);
 
   const pickBand = useCallback(
     (origin: Point, current: Point, additive: boolean) => {
-      const { drawn, viewport } = latest.current;
       dispatch({
         type: 'pick-band',
-        designIds: framesInBand(drawn, viewport, origin, current),
+        designIds: framesInBand(latest.current, stage.viewport, origin, current),
         additive,
       });
     },
-    [dispatch],
+    [dispatch, stage],
   );
 
   const annotation = useAnnotationEditor({
     board,
     snapshot,
-    viewport: view.viewport,
+    stage,
     interaction,
     dispatch,
     onAnnotate,
@@ -203,7 +198,12 @@ export function CanvasBoard({
     scale: view.viewport.scale,
     mode: interaction.mode,
     selectedFrameIds: interaction.selectedFrameIds,
-    onStart: view.takeOver,
+    onStart: () => {
+      view.takeOver();
+      // A hand that lands just after a wheel starts from the view it sees.
+      view.settle();
+    },
+    onEnd: view.settle,
     onPan: view.panByScreen,
     onClear: () => {
       annotation.clearSelection();
@@ -220,7 +220,7 @@ export function CanvasBoard({
     designId: frame.designId,
     rect: gestures.rectFor(frame),
   }));
-  latest.current = { drawn, viewport: view.viewport };
+  latest.current = drawn;
 
   const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
     board,
@@ -244,12 +244,12 @@ export function CanvasBoard({
     onRemoveFrames,
   });
 
-  useEffect(() => {
-    const reads = latest;
-    return () => {
-      onLeave?.(reads.current.viewport);
-    };
-  }, [onLeave]);
+  useEffect(
+    () => () => {
+      onLeave?.(stage.viewport);
+    },
+    [onLeave, stage],
+  );
 
   useImperativeHandle(ref, () => ({ focusFrame, focusLabel }), [focusFrame, focusLabel]);
 
@@ -325,6 +325,7 @@ export function CanvasBoard({
             pan: (delta) => {
               view.takeOver();
               view.panByScreen(delta);
+              view.settle();
             },
             nudge: commands.nudge,
             removeSelection,
@@ -339,76 +340,36 @@ export function CanvasBoard({
         }}
         onBlur={gestures.onBlur}
       >
-        <div
-          className="absolute left-0 top-0"
-          style={
-            {
-              transform: `translate(${String(view.viewport.x)}px, ${String(view.viewport.y)}px) scale(${String(scale)})`,
-              transformOrigin: '0 0',
-              // The board stylesheet divides frame chrome by this, so it keeps its size.
-              '--board-scale': String(scale),
-            } as React.CSSProperties
-          }
+        <BoardWorld
+          canvasId={snapshot.canvasId}
+          frames={frames}
+          drawn={drawn}
+          stage={stage}
+          viewport={view.viewport}
+          size={view.size}
+          scale={scale}
+          motion={motion}
+          openedWith={openedWith}
+          visible={visible}
+          interaction={interaction}
+          dispatch={dispatch}
+          heldDesignIds={gestures.heldDesignIds}
+          presence={presence}
+          capturePointer={overlayCapture}
+          previews={previews}
+          editor={editor}
+          pinnedIds={pinnedIds}
+          frameActions={frameActions}
+          tabStopId={tabStopId}
+          focusBoard={focusBoard}
+          onOpenSource={onOpenSource}
+          onTagFrames={onTagFrames}
+          onDelete={removeSelection}
+          onHold={gestures.onFramePointerDown}
+          onResize={commands.resize}
+          onDesignPress={picker.press}
+          onFocusLabel={onFocusLabel}
         >
-          {frames.map((frame, index) => (
-            <DesignFrame
-              key={frame.designId}
-              canvasId={snapshot.canvasId}
-              frame={frame}
-              rect={drawn[index].rect}
-              scale={scale}
-              motion={motion}
-              arriving={!openedWith.has(frame.designId)}
-              visible={visible.includes(frame.designId)}
-              mode={interaction.mode}
-              selected={interaction.selectedFrameIds.includes(frame.designId)}
-              multiSelect={interaction.selectedFrameIds.length > 1}
-              toolbarRoom={
-                showsFrameTools(interaction, frame.designId)
-                  ? toolbarRoom(view.viewport, drawn, frame.designId, view.size)
-                  : null
-              }
-              interacted={interaction.interactedFrameId === frame.designId}
-              held={gestures.heldDesignIds.includes(frame.designId)}
-              worker={presence.get(frame.designId)?.agent}
-              capturePointer={overlayCapture}
-              shownRevisionId={previews.shown.get(frame.designId) ?? null}
-              preview={previews.preview(frame)}
-              released={previews.released.includes(frame.designId)}
-              onExitInteract={() => {
-                dispatch({ type: 'escape' });
-                focusBoard();
-              }}
-              onOpenSource={onOpenSource}
-              tagged={pinnedIds?.has(frame.designId) ?? false}
-              onTagFrames={onTagFrames}
-              actions={frameActions}
-              onDelete={removeSelection}
-              onHold={gestures.onFramePointerDown}
-              onResize={commands.resize}
-              onPick={(picked, additive) => {
-                dispatch({ type: 'pick', designId: picked.designId, additive });
-              }}
-              onInteract={(picked) => {
-                dispatch({ type: 'interact', designId: picked.designId });
-              }}
-              onPickElement={(picked, at) => {
-                editor.pick(picked.designId, at);
-              }}
-              onDesignPress={picker.press}
-              onHoverElement={(hovered, at) => {
-                if (at) editor.hover.move(hovered.designId, at);
-                else editor.hover.clear();
-              }}
-              onEditEnter={(picked) => {
-                editor.enter(picked.designId);
-              }}
-              elementPicked={editor.selection?.draft.element.designId === frame.designId}
-              elementHovered={editor.hover.hovered?.designId === frame.designId}
-              tabStop={frame.designId === tabStopId}
-              onFocusLabel={onFocusLabel}
-            />
-          ))}
           <BoardOverlays
             frames={frames}
             drawn={drawn}
@@ -428,7 +389,7 @@ export function CanvasBoard({
             marks={annotation.layer}
             pointerTaken={annotation.tool !== null || gestures.spaceHeld}
           />
-        </div>
+        </BoardWorld>
 
         {annotation.tool && (
           <DrawSurface
@@ -437,12 +398,12 @@ export function CanvasBoard({
           />
         )}
         {gestures.band && <RubberBand band={gestures.band} />}
-        <SnapGuides marks={gestures.snapMarks ?? measured} viewport={view.viewport} />
+        <StageSnapGuides marks={gestures.snapMarks ?? measured} stage={stage} />
         {picker.prompt && (
           <DesignPickPrompt
             {...picker.prompt}
             drawn={drawn}
-            viewport={view.viewport}
+            stage={stage}
             size={view.size}
             motion={motion}
             focusBoard={focusBoard}
@@ -450,7 +411,7 @@ export function CanvasBoard({
         )}
 
         <BoardControls
-          scale={scale}
+          stage={stage}
           motion={motion}
           mode={interaction.mode}
           selectedCount={interaction.selectedFrameIds.length}

@@ -34,6 +34,8 @@ interface GestureInputs {
   selectedFrameIds: readonly string[];
   /** A hand gesture is about to take the viewport away from Fit and animation. */
   onStart: () => void;
+  /** A gesture that called `onStart` is over, released or cancelled, so the view it moved settles. */
+  onEnd: () => void;
   onPan: (delta: Point) => void;
   /** A background pan begins by clearing the selection, as a plain click does. */
   onClear: () => void;
@@ -50,6 +52,7 @@ export function useBoardGestures({
   mode,
   selectedFrameIds,
   onStart,
+  onEnd,
   onPan,
   onClear,
   onBand,
@@ -67,8 +70,8 @@ export function useBoardGestures({
     snapping: true,
     frame: null,
   });
-  const latest = useRef({ scale, onPan, onBand });
-  latest.current = { scale, onPan, onBand };
+  const latest = useRef({ scale, onEnd, onPan, onBand });
+  latest.current = { scale, onEnd, onPan, onBand };
 
   const stopCoalescing = useCallback(() => {
     if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
@@ -87,6 +90,7 @@ export function useBoardGestures({
     setPanning(false);
     setDrag(null);
     setBand(null);
+    if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'frame') {
       // A cancelled re-drag restores acknowledged geometry, not its old hold.
       dropHolds(placedOf(active).map(({ designId }) => designId));
@@ -338,6 +342,7 @@ export function useBoardGestures({
     setPanning(false);
     setDrag(null);
     setBand(null);
+    if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'pan') return;
     if (active.kind === 'band') {
       latest.current.onBand(active.origin, active.current, event.shiftKey);
@@ -452,6 +457,14 @@ function placedOf({ drag, carried }: FrameGesture): PlacedFrame[] {
     { designId: drag.designId, rect: drag.rect },
     ...carried.map(({ designId, rect }) => ({ designId, rect })),
   ];
+}
+
+/**
+ * A pan and a frame drag take the viewport as they start; a rubber band never
+ * does, so its end must not settle a wheel or an animation still moving the view.
+ */
+function takesView(gesture: Gesture): boolean {
+  return gesture.kind !== 'band';
 }
 
 function boardCursor(panning: boolean, banding: boolean, spaceHeld: boolean): string {

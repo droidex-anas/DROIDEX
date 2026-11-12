@@ -1,3 +1,4 @@
+import { useStage, type BoardStage } from './boardStage';
 import { canvasToScreen, type Viewport } from './canvasGeometry';
 import { SIZE_ROOM_PX } from './ElementOutlines';
 import type { SnapGap, SnapGuide, SnapMarks } from './frameSnap';
@@ -11,6 +12,13 @@ const TICK_CLEARANCE_PX = 4;
 export interface GuideMarks extends SnapMarks {
   /** For Alt's distances, the bottom edge of the box they leave, which its size chip hangs under. */
   sizedBottom?: number;
+}
+
+/** SnapGuides over the live view, followed only while there is something to draw. */
+export function StageSnapGuides({ marks, stage }: { marks: GuideMarks; stage: BoardStage }) {
+  const shows = marks.guides.length > 0 || marks.gaps.length > 0;
+  const viewport = useStage(stage, (live) => live, shows);
+  return <SnapGuides marks={marks} viewport={viewport} />;
 }
 
 /**

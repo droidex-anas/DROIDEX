@@ -5,11 +5,14 @@
 // needs because it has no end event.
 //
 // The board owns the pointer gesture machine and pans through `panByScreen`
-// from it. Nothing here knows about frames beyond the rects it is asked to fit.
+// from it. Every move goes through the stage, and the viewport React renders
+// takes it once the move settles. Nothing here knows about frames beyond the
+// rects it is asked to fit.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
 import { boardPoint, boardWheelDelta } from './boardCoordinates';
+import { BoardStage } from './boardStage';
 import type { CanvasMotion } from './canvasMotion';
 import {
   fitFrames,
@@ -32,7 +35,12 @@ const SCROLL_IDLE_MS = 140;
 const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
 
 export interface BoardViewport {
+  /** Where the view last settled; mid-gesture, the stage is ahead of it. */
   viewport: Viewport;
+  /** The live view, which moves the world layer while a gesture lasts. */
+  stage: BoardStage;
+  /** Hands the live view to React, as a pointer gesture does once it is over. */
+  settle: () => void;
   /** The part of the board's box no panel is docked over, in board-local pixels. */
   size: Point;
   panByScreen: (screenDelta: Point) => void;
@@ -64,7 +72,8 @@ export function useBoardViewport(
   /** Screen pixels along the board's right edge that a docked panel covers. */
   rightInset: number,
 ): BoardViewport {
-  const [viewport, setViewport] = useState<Viewport>(restored ?? IDENTITY);
+  const [stage] = useState(() => new BoardStage(restored ?? IDENTITY));
+  const [viewport, setViewport] = useState(stage.viewport);
   const [scrolling, setScrolling] = useState(false);
   const [box, setBox] = useState<Point>({ x: 0, y: 0 });
 
@@ -80,8 +89,8 @@ export function useBoardViewport(
   // What the listeners below need from the current render. They are registered
   // once, or run from an animation frame, so they cannot close over it. The
   // frames are also how a resize finds something to fit.
-  const latest = useRef({ viewport, frames, rightInset });
-  latest.current = { viewport, frames, rightInset };
+  const latest = useRef({ frames, rightInset });
+  latest.current = { frames, rightInset };
   const visibleBox = useCallback(
     () => visiblePart(measured.current, latest.current.rightInset),
     [],
@@ -93,18 +102,47 @@ export function useBoardViewport(
     heading.current = null;
   }, []);
 
-  const takeOver = useCallback(() => {
+  const navigate = useCallback(() => {
     stopAnimating();
     opening.current.navigated = true;
   }, [stopAnimating]);
 
-  const panByScreen = useCallback((screenDelta: Point) => {
-    setViewport((current) => ({
-      ...current,
-      x: current.x + screenDelta.x,
-      y: current.y + screenDelta.y,
-    }));
-  }, []);
+  const settle = useCallback(() => {
+    stage.flush();
+    setViewport(stage.viewport);
+  }, [stage]);
+
+  /** Ends the wheel gesture in flight, if any, giving the chrome back its scale. */
+  const endScroll = useCallback(() => {
+    if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
+    if (scroll.current.active) setScrolling(false);
+    scroll.current = { active: false, suppressed: false, idle: null };
+    stage.releaseChrome();
+  }, [stage]);
+
+  // The hand ends a wheel gesture still in its quiet window, so that wheel's
+  // idle cannot settle the hand's pan halfway through.
+  const takeOver = useCallback(() => {
+    navigate();
+    endScroll();
+  }, [endScroll, navigate]);
+
+  /** A move that is over once made, so React takes it at once. */
+  const jumpTo = useCallback(
+    (target: Viewport) => {
+      stage.moveTo(target);
+      settle();
+    },
+    [settle, stage],
+  );
+
+  const panByScreen = useCallback(
+    (screenDelta: Point) => {
+      const current = stage.viewport;
+      stage.moveTo({ ...current, x: current.x + screenDelta.x, y: current.y + screenDelta.y });
+    },
+    [stage],
+  );
 
   /** Every programmatic move: fit, focus and the zoom commands. */
   const animateTo = useCallback(
@@ -115,21 +153,24 @@ export function useBoardViewport(
       stopAnimating();
       opening.current.navigated = true;
       if (motion.focusMs === 0) {
-        setViewport(target);
+        jumpTo(target);
         return;
       }
-      const from = latest.current.viewport;
+      const from = stage.viewport;
       const started = performance.now();
       heading.current = target;
       const step = () => {
         const progress = Math.min(1, (performance.now() - started) / motion.focusMs);
-        setViewport(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
+        stage.moveTo(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
         animation.current = progress < 1 ? requestAnimationFrame(step) : null;
-        if (progress === 1) heading.current = null;
+        if (progress === 1) {
+          heading.current = null;
+          settle();
+        }
       };
       animation.current = requestAnimationFrame(step);
     },
-    [motion, stopAnimating],
+    [jumpTo, motion, settle, stage, stopAnimating],
   );
 
   const fitTo = useCallback(
@@ -143,24 +184,24 @@ export function useBoardViewport(
     (scale: number) => {
       const visible = visibleBox();
       const centre = { x: visible.x / 2, y: visible.y / 2 };
-      animateTo(zoomAtPoint(heading.current ?? latest.current.viewport, centre, scale));
+      animateTo(zoomAtPoint(heading.current ?? stage.viewport, centre, scale));
     },
-    [animateTo, visibleBox],
+    [animateTo, stage, visibleBox],
   );
 
   const reveal = useCallback(
     (rect: FrameRect) => {
-      const target = revealRect(heading.current ?? latest.current.viewport, rect, visibleBox());
+      const target = revealRect(heading.current ?? stage.viewport, rect, visibleBox());
       if (target) animateTo(target);
     },
-    [animateTo, visibleBox],
+    [animateTo, stage, visibleBox],
   );
 
   const stepZoom = useCallback(
     (direction: 1 | -1) => {
-      zoomTo(zoomStep((heading.current ?? latest.current.viewport).scale, direction));
+      zoomTo(zoomStep((heading.current ?? stage.viewport).scale, direction));
     },
-    [zoomTo],
+    [stage, zoomTo],
   );
 
   /** Spec §4: the board may fit once, before the user has navigated. */
@@ -170,13 +211,13 @@ export function useBoardViewport(
     if (opening.current.fitted || opening.current.navigated) return;
     if (held.length === 0 || visible.x === 0) return;
     opening.current.fitted = true;
-    setViewport(
+    jumpTo(
       fitFrames(
         held.map((frame) => frame.rect),
         visible,
       ),
     );
-  }, [visibleBox]);
+  }, [jumpTo, visibleBox]);
 
   useEffect(() => {
     fitOnce();
@@ -187,17 +228,20 @@ export function useBoardViewport(
    * it room, moves the board's edge but not the canvas: the view pans by as much
    * in the same frame, so no frame moves on screen, as in a design tool.
    */
-  const holdCanvasInPlace = useCallback((root: HTMLElement) => {
-    const box = root.getBoundingClientRect();
-    const previous = leftEdge.current;
-    leftEdge.current = box.left;
-    if (previous === null || previous === box.left || box.width === 0) return;
-    const shift = ((box.left - previous) * root.offsetWidth) / box.width;
-    // Before the next paint, or the board would show one frame in the old place.
-    flushSync(() => {
-      setViewport((current) => ({ ...current, x: current.x - shift }));
-    });
-  }, []);
+  const holdCanvasInPlace = useCallback(
+    (root: HTMLElement) => {
+      const box = root.getBoundingClientRect();
+      const previous = leftEdge.current;
+      leftEdge.current = box.left;
+      if (previous === null || previous === box.left || box.width === 0) return;
+      const shift = ((box.left - previous) * root.offsetWidth) / box.width;
+      const current = stage.viewport;
+      stage.moveTo({ ...current, x: current.x - shift });
+      // Before the next paint, or the chrome drawn over the board would show one frame in the old place.
+      flushSync(settle);
+    },
+    [settle, stage],
+  );
 
   useEffect(() => {
     const root = board.current;
@@ -226,10 +270,10 @@ export function useBoardViewport(
       setScrolling(true);
     }
     scroll.current.idle = setTimeout(() => {
-      scroll.current = { active: false, suppressed: false, idle: null };
-      setScrolling(false);
+      endScroll();
+      settle();
     }, SCROLL_IDLE_MS);
-  }, []);
+  }, [endScroll, settle]);
 
   // Wheel has to be a non-passive listener of its own: React's root listener is
   // passive, so the default Electron page zoom could not be prevented there.
@@ -241,28 +285,25 @@ export function useBoardViewport(
       markScrolling();
       // Fit owns the rest of this wheel gesture, even after its animation ends.
       if (scroll.current.suppressed) return;
-      takeOver();
+      navigate();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       const delta = boardWheelDelta(root, event);
-      setViewport((current) => {
-        // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
-        // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
-        // same thing; both zoom under the pointer.
-        if (event.ctrlKey || event.metaKey) {
-          return zoomAtPoint(
-            current,
-            pointer,
-            wheelZoomScale(current.scale, delta.y, event.ctrlKey),
-          );
-        }
-        return { ...current, x: current.x - delta.x, y: current.y - delta.y };
-      });
+      const current = stage.viewport;
+      // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
+      // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
+      // same thing; both zoom under the pointer.
+      if (event.ctrlKey || event.metaKey) {
+        stage.holdChrome();
+        stage.moveSoon(
+          zoomAtPoint(current, pointer, wheelZoomScale(current.scale, delta.y, event.ctrlKey)),
+        );
+      } else stage.moveSoon({ ...current, x: current.x - delta.x, y: current.y - delta.y });
     };
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       root.removeEventListener('wheel', onWheel);
     };
-  }, [board, markScrolling, takeOver]);
+  }, [board, markScrolling, navigate, stage]);
 
   useEffect(
     () => () => {
@@ -274,6 +315,8 @@ export function useBoardViewport(
 
   return {
     viewport,
+    stage,
+    settle,
     size: visiblePart(box, rightInset),
     panByScreen,
     fitTo,

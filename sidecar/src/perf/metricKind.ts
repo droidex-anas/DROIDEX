@@ -83,6 +83,7 @@ export const METRIC_CATALOG: readonly MetricDefinition[] = [
   },
   ...[
     ['canvas.reactCommitsPerPanFrame', 'commits'],
+    ['canvas.reactCommitsPerZoomFrame', 'commits'],
     ['canvas.layoutReadsPerPanFrame', 'reads'],
     ['canvas.longTasksDuringGestures', 'tasks'],
     ['canvas.panBusyP95Ms', 'ms'],

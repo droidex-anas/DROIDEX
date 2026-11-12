@@ -8,7 +8,8 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { CompactComposer } from '../../components/composer/CompactComposer';
-import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
+import { useStage, type BoardStage } from './boardStage';
+import type { PlacedFrame, Point } from './canvasGeometry';
 import { revealStyle, type CanvasMotion } from './canvasMotion';
 import { elementName, elementPinKey, type ElementPin } from './elementPins';
 
@@ -30,7 +31,7 @@ interface ScreenBox {
 export function DesignPickPrompt({
   anchor,
   drawn,
-  viewport,
+  stage,
   size,
   motion,
   text,
@@ -42,7 +43,8 @@ export function DesignPickPrompt({
   anchor: ElementPin;
   /** Where the board draws each frame. */
   drawn: PlacedFrame[];
-  viewport: Viewport;
+  /** The live view, which the prompt follows through a pan or a zoom. */
+  stage: BoardStage;
   /** The part of the board that is visible. */
   size: Point;
   motion: CanvasMotion;
@@ -52,6 +54,7 @@ export function DesignPickPrompt({
   onClose: () => void;
   focusBoard: () => void;
 }) {
+  const viewport = useStage(stage, (live) => live);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
   // In layout pixels, as the placement is: the UI zoom scales a bounding rect.
