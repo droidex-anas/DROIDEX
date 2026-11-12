@@ -156,7 +156,7 @@ export function catalogListing(files: SourceFiles): CatalogListing[] {
   }));
 }
 
-/** The entries a catalog read names, in catalog order, and the names past its byte budget. */
+/** The entries a catalog read names, and the names past its byte budget. */
 export interface CatalogRead {
   entries: CatalogEntryRead[];
   /** Entries left out to keep the read bounded, to ask for by name. */
@@ -177,7 +177,9 @@ const OMITTED_KEY_BYTES = ',"omitted":[]'.length;
 /**
  * The entries of a kit's catalog that `names` asks for, or all of them. A name
  * matches the entry of that name, ignoring case, and the entries filed under
- * it: "Button" also matches "Button / outline", never "Button group".
+ * it: "Button" also matches "Button / outline", never "Button group". Entries
+ * named exactly come first, then those named but for case, then those filed
+ * under a name, each in catalog order, so an entry's own name always reads it.
  */
 export function readCatalogEntries(
   files: SourceFiles,
@@ -186,16 +188,24 @@ export function readCatalogEntries(
   const read = readKitCatalog(files);
   if ('problem' in read) throw canvasError('invalid_source', read.problem);
   const { catalog } = read;
-  const missing = names?.find((name) => !catalog.some((entry) => isNamedBy(entry.name, name)));
+  if (names === undefined) return withinBudget(catalog);
+  const missing = names.find((name) =>
+    catalog.every((entry) => matchRank(entry.name, [name]) === null),
+  );
   if (missing !== undefined)
     throw canvasError(
       'invalid_input',
       `This kit has no component called ${missing}. Read the catalog without entries to see its components.`,
     );
-  const asked =
-    names === undefined
-      ? catalog
-      : catalog.filter((entry) => names.some((name) => isNamedBy(entry.name, name)));
+  const ranked = catalog.flatMap((entry) => {
+    const rank = matchRank(entry.name, names);
+    return rank === null ? [] : [{ entry, rank }];
+  });
+  return withinBudget(ranked.sort((a, b) => a.rank - b.rank).map(({ entry }) => entry));
+}
+
+/** The entries in order until the budget is spent, and the names of the rest. */
+function withinBudget(asked: readonly CatalogEntry[]): CatalogRead {
   let used = '{"entries":[]}'.length;
   // What naming every entry after this one in `omitted` would cost.
   let restNameBytes = asked.reduce((sum, { name }) => sum + listedNameBytes(name), 0);
@@ -222,10 +232,14 @@ function listedNameBytes(name: string): number {
   return Buffer.byteLength(JSON.stringify(name), 'utf8') + 1;
 }
 
-function isNamedBy(entryName: string, name: string): boolean {
+/** How closely one of `names` names the entry: 0 exactly, 1 but for case, 2 as filed under it. */
+function matchRank(entryName: string, names: readonly string[]): number | null {
+  if (names.includes(entryName)) return 0;
   const entry = entryName.toLowerCase();
-  const asked = name.toLowerCase();
-  return entry === asked || entry.startsWith(`${asked} / `);
+  const asked = names.map((name) => name.toLowerCase());
+  if (asked.includes(entry)) return 1;
+  if (asked.some((name) => entry.startsWith(`${name} / `))) return 2;
+  return null;
 }
 
 /** Why the kit's catalog file is unusable, or null when it is usable or absent. */

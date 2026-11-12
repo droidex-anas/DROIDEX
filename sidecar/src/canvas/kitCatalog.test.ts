@@ -290,3 +290,19 @@ test('a catalog read keeps the names it leaves out within its budget', () => {
   assert.equal(read.entries.length + read.omitted.length, many.length);
   assert.ok(Buffer.byteLength(JSON.stringify(read), 'utf8') <= 16 * 1024);
 });
+test('a catalog read leads with the entry named exactly, so its variants never crowd it out', () => {
+  const big = (name: string) => entry(name, `<Button>${'x'.repeat(4000)}</Button>`);
+  const catalog = [
+    ...['0', '1', '2', '3'].map((index) => big(`Button / variant ${index}`)),
+    big('BUTTON'),
+    entry('Button', '<Button>Go</Button>'),
+  ];
+  const files = starterWith(catalogFile(catalog)).files;
+  const read = readCatalogEntries(files, ['Button']);
+  assert.deepEqual(
+    read.entries.map(({ name }) => name),
+    ['Button', 'BUTTON', 'Button / variant 0', 'Button / variant 1'],
+  );
+  assert.deepEqual(read.omitted, ['Button / variant 2', 'Button / variant 3']);
+  assert.equal(readCatalogEntries(files, ['BUTTON']).entries[0].name, 'BUTTON');
+});
