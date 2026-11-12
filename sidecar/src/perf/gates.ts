@@ -47,9 +47,9 @@ const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 0.1;
 // A wheel zoom draws its stage once a frame and the board commits with it
 // (measured 0.98–1.00); two commits a frame is a wheel event drawn on its own.
 const CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET = 1.25;
-// Only the held frames and the board's own chrome render while a hand drags
-// frames (measured 61–152); drawing every frame again is 440–490.
-const CANVAS_RENDERS_PER_DRAG_FRAME_BUDGET = 200;
+// A hand drags frames outside React, which commits as the hold begins, as it
+// ends and as its write lands (3–5 commits over 61 frames, measured 0.05–0.08).
+const CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET = 0.1;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
 // 120 Hz: the main-thread work one frame may take.
 const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
@@ -155,7 +155,7 @@ export function evaluateProbeGates(options: {
   livePrimarySessionsAfterSoak: number | null;
   reactCommitsPerPanFrame: number | null;
   reactCommitsPerZoomFrame: number | null;
-  reactRendersPerDragFrame: number | null;
+  reactCommitsPerDragFrame: number | null;
   layoutReadsPerPanFrame: number | null;
   longTasksDuringGestures: number | null;
   panBusyP95Ms: number | null;
@@ -226,15 +226,18 @@ export function evaluateProbeGates(options: {
       justification:
         'Wheel events arrive about twice a frame and the stage draws them once (measured 0.98–1.00); 2 a frame means each event draws.',
     }),
-    hard({
-      id: 'canvas.reactRendersPerDragFrame',
-      name: 'components rendered per frame of a frame drag or resize, 30-frame board',
-      unit: 'components',
-      actual: options.reactRendersPerDragFrame,
-      budget: CANVAS_RENDERS_PER_DRAG_FRAME_BUDGET,
-      justification:
-        'The frame layer is memoized, so a drag renders the held frames and the board chrome (measured 61–152); drawing every frame again is 440–490.',
-    }),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerDragFrame',
+        name: 'React commits per frame of a frame drag or resize, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerDragFrame,
+        budget: CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET,
+        justification:
+          'A drag draws the held frames outside React and commits as it starts, ends and lands (measured 0.05–0.08). 0.1 is 6 commits a drag, far from one a frame.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
     hard({
       id: 'canvas.layoutReadsPerPanFrame',
       name: 'layout reads per background-pan frame, 30-frame board',
@@ -299,6 +302,18 @@ function wrap(results: GateResult[]): GateEvaluation {
 
 function hard(fields: Omit<GateResult, 'status' | 'mode'>): GateResult {
   return gateResult({ ...fields, mode: 'hard' });
+}
+
+/**
+ * A hard gate on a gesture the canvas run streams with its pan: once the pan
+ * was measured, a missing value is a gesture the run lost, which fails.
+ */
+function measuredWithPan(
+  fields: Omit<GateResult, 'status' | 'mode'>,
+  panMeasured: boolean,
+): GateResult {
+  const result = hard(fields);
+  return panMeasured && result.status === 'unmeasured' ? { ...result, status: 'fail' } : result;
 }
 
 function warn(fields: Omit<GateResult, 'status' | 'mode'>): GateResult {
