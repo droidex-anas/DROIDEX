@@ -103,9 +103,34 @@ test('tags of the request’s kit follow it to its current version, mode and nam
   const slate = pin('Card', { id: 'slate', version: 1, mode: 'dark' }, 'Slate');
   const pins = [pin('Button'), slate];
   const current = { ...ACME, version: 4, mode: 'dark' as const };
-  assert.deepEqual(pinsUnderKit(pins, current, null), [pin('Button', current), slate]);
+  assert.deepEqual(pinsUnderKit(pins, current, null, null), [pin('Button', current), slate]);
   const renamed = { ref: current, name: 'Acme 2' };
-  assert.deepEqual(pinsUnderKit(pins, current, renamed), [pin('Button', current, 'Acme 2'), slate]);
-  assert.equal(pinsUnderKit(pins, ACME, { ref: ACME, name: 'Acme' }), pins);
-  assert.equal(pinsUnderKit(pins, null, null), pins);
+  assert.deepEqual(pinsUnderKit(pins, current, renamed, null), [
+    pin('Button', current, 'Acme 2'),
+    slate,
+  ]);
+  assert.equal(pinsUnderKit(pins, ACME, { ref: ACME, name: 'Acme' }, null), pins);
+  assert.equal(pinsUnderKit(pins, null, null, null), pins);
+});
+
+test('a tag that follows its kit to a new version keeps only the options that version offers', () => {
+  const picks = [
+    { name: 'variant', value: 'outline' },
+    { name: 'size', value: 'xl' },
+  ];
+  const current = { ...ACME, version: 4 };
+  const catalog = [
+    {
+      name: 'Button',
+      module: null,
+      note: null,
+      props: [
+        { name: 'variant', options: ['default', 'outline'], default: 'default' },
+        { name: 'size', options: ['sm', 'lg'], default: 'sm' },
+      ],
+    },
+  ];
+  assert.deepEqual(pinsUnderKit([pin('Button', ACME, 'Acme', picks)], current, null, catalog), [
+    pin('Button', current, 'Acme', [picks[0]]),
+  ]);
 });
