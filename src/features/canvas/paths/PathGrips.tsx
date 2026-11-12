@@ -62,9 +62,10 @@ export function PathGrips({
   scale: number;
   /** Draws data on `element`'s path, or its own for null. */
   preview: (d: string | null, element: ElementRef) => void;
-  commit: (d: string, element: ElementRef) => void;
+  /** Resolves whether the source wrote `d`. */
+  commit: (d: string, element: ElementRef) => Promise<boolean>;
 }) {
-  /** A move's segments, shown while `from` is still the shape read: until the next read after its commit. */
+  /** A move's segments, shown while `from` is still the shape read: until the next read after its commit, or its refusal. */
   const [moved, setMoved] = useState<{ from: PathSegment[]; segments: PathSegment[] } | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -101,7 +102,9 @@ export function PathGrips({
     if (!ending) return;
     const now = latest.current;
     if (keep && ending.d !== null && isCurrent(now.shape, ending)) {
-      now.commit(ending.d, ending.element);
+      void now.commit(ending.d, ending.element).then((written) => {
+        if (!written) setMoved((current) => (current?.from === ending.from ? null : current));
+      });
       return;
     }
     now.preview(null, ending.element);

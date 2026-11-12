@@ -1,8 +1,8 @@
 // A colour: its swatch and value, then a popover that lists the kit's colour
-// tokens first and picks any colour after them. At rest it reads as its
-// token's name, else hex with any opacity, else None. Typing previews; a token
-// or swatch pick commits at once; a custom drag previews and commits as the
-// popover closes.
+// tokens first and picks any colour after them. It reads as its token's name,
+// else hex with any opacity, else None, focused or not: typing starts from
+// what it reads as, and previews; a token or swatch pick commits at once; a
+// custom drag previews and commits as the popover closes.
 
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { ChevronDown } from '@droidex/icons';
@@ -10,7 +10,7 @@ import { ColorPicker } from '../../components/ColorPicker';
 import { Input } from '../../components/ui/Field';
 import { Popover } from '../../components/ui/Popover';
 import { cn } from '../../components/ui/cn';
-import { colourFace } from './panelValues';
+import { colourFace, typedColour } from './panelValues';
 import { OptionList, Swatch, type ValueOption } from './ValuePickerField';
 
 const HEX = /^#(?:[0-9a-f]{3}){1,2}$/i;
@@ -59,8 +59,13 @@ export function ColourField({
   const [open, setOpen] = useState(false);
   /** The picker was dragged since the popover opened, so closing it commits the colour. */
   const dragged = useRef(false);
-  const [editing, setEditing] = useState(false);
-  const face = editing || previewed ? value : colourFace(value, tokens).text;
+  /** The text last typed and the value it previewed; null once the field reads its value again. */
+  const [typed, setTyped] = useState<{ text: string; value: string } | null>(null);
+  // As a number field's: typing shows as typed only while it is still the preview.
+  const face =
+    typed !== null && previewed && typed.value === value
+      ? typed.text
+      : colourFace(value, tokens).text;
   const close = () => {
     setOpen(false);
     if (!dragged.current) return;
@@ -70,9 +75,11 @@ export function ColourField({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
+      setTyped(null);
       onCommit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      setTyped(null);
       // While saving, the preview is what is being written, so it stays.
       if (previewed && !disabled) onRevert();
       else onLeave();
@@ -84,7 +91,6 @@ export function ColourField({
         variant="compact"
         aria-label={label}
         value={face}
-        title={value}
         readOnly={disabled}
         spellCheck={false}
         className={cn(previewed && 'bg-active')}
@@ -110,14 +116,13 @@ export function ColourField({
             <ChevronDown aria-hidden className="size-icon-sm" />
           </button>
         }
-        onFocus={() => {
-          setEditing(true);
-        }}
         onBlur={() => {
-          setEditing(false);
+          setTyped(null);
         }}
         onChange={(event) => {
-          onPreview(event.target.value);
+          const next = typedColour(event.target.value, tokens);
+          setTyped({ text: event.target.value, value: next });
+          onPreview(next);
         }}
         onKeyDown={onKeyDown}
       />

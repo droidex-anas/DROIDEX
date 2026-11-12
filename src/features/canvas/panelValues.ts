@@ -21,8 +21,6 @@ const KEYWORD_PLACEHOLDERS: Record<string, string> = {
 export interface LengthFace {
   text: string;
   placeholder: string;
-  /** The whole name of the token whose step alone is the text. */
-  token?: string;
 }
 
 /**
@@ -36,8 +34,9 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
   if (keyword) return { text: '', placeholder: keyword };
   const px = pixelsOf(trimmed);
   if (px === 0) return { text: '', placeholder: '0' };
-  const token =
-    px === null ? undefined : tokens.find((option) => pixelsOf(option.hint ?? '') === px);
+  const token = tokens.find(
+    (option) => option.value === trimmed || (px !== null && pixelsOf(option.hint ?? '') === px),
+  );
   if (token) return tokenFace(token.label);
   return { text: roundedPixels(trimmed), placeholder: '' };
 }
@@ -51,7 +50,17 @@ export function lengthFace(value: string, tokens: readonly ValueOption[] = []): 
 function tokenFace(name: string): LengthFace {
   const step = name.slice(name.indexOf('-') + 1);
   if (step === name || /^(?:[\d-]+|px)$/.test(step)) return { text: name, placeholder: '' };
-  return { text: step, placeholder: '', token: name };
+  return { text: step, placeholder: '' };
+}
+
+/** What typing in a length field previews: the token the text names, whole or as the field shows it, else the text. */
+export function typedLength(text: string, tokens: readonly ValueOption[] = []): string {
+  const trimmed = text.trim();
+  if (trimmed === '') return text;
+  const token = tokens.find(
+    (option) => option.label === trimmed || tokenFace(option.label).text === trimmed,
+  );
+  return token?.value ?? text;
 }
 
 /**
@@ -91,12 +100,28 @@ export function colourFace(value: string, tokens: readonly ValueOption[] = []): 
   const colour = parseColour(trimmed);
   // An SVG paint of none draws nothing, as a see-through colour does.
   if (trimmed.toLowerCase() === 'none' || colour?.alpha === 0) return { text: 'None', none: true };
-  const token = tokens.find((option) => sameColour(option.hint ?? '', trimmed));
+  const token = tokens.find(
+    (option) => option.value === trimmed || sameColour(option.hint ?? '', trimmed),
+  );
   if (token) return { text: token.label, none: false };
   if (colour?.space !== 'rgb') return { text: trimmed, none: false };
   const hex = `#${colour.channels.map(channelHex).join('')}`;
   const opacity = colour.alpha < 1 ? ` ${String(Math.round(colour.alpha * 100))}%` : '';
   return { text: hex + opacity, none: false };
+}
+
+/**
+ * What typing in a colour field previews: the token the text names, or the
+ * hex the `#rrggbb NN%` a colour reads as at rest stands for, else the text.
+ */
+export function typedColour(text: string, tokens: readonly ValueOption[] = []): string {
+  const trimmed = text.trim();
+  const token = tokens.find((option) => option.label === trimmed);
+  if (token) return token.value;
+  const translucent = /^(#[0-9a-f]{6})\s+(\d{1,3})%$/i.exec(trimmed);
+  if (!translucent) return text;
+  const alpha = Math.round((Math.min(100, Number(translucent[2])) * 255) / 100);
+  return translucent[1] + channelHex(alpha);
 }
 
 /**

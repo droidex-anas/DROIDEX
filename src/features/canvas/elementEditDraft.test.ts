@@ -109,6 +109,17 @@ test('every refusal drops the draft, and a reply for another mutation changes no
   });
 });
 
+test('a commit the source cannot take keeps the selection and drops only what it carried', () => {
+  let draft = previewText(editDraft('canvas', element, site), 'Hello');
+  draft = previewStyle(draft, 'display', 'inline-grid', 'inline');
+  const commit = commitStyles(draft, 'm-display');
+  assert.ok(commit);
+  assert.deepEqual(settleCommit(commit.draft, 'm-display', { status: 'unwritable' }), {
+    ...editDraft('canvas', element, site),
+    text: 'Hello',
+  });
+});
+
 test('one commit at a time, and only with a previewed whitelisted property', () => {
   const { draft } = committed([['gap', '4px']], 'm-gap');
   assert.equal(commitStyles(previewStyle(draft, 'width', '1px', ''), 'm-width'), null);

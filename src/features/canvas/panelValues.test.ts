@@ -9,6 +9,8 @@ import {
   sameFontStack,
   sameValue,
   shadowTokens,
+  typedColour,
+  typedLength,
 } from './panelValues';
 
 const spacing = [
@@ -34,12 +36,8 @@ test('a token whose step is a word reads as the step, which keeps a half-width f
     { value: '--ds-radius-md', label: 'radius-md', hint: '8px' },
     { value: '--ds-radius-2xl', label: 'radius-2xl', hint: '1.5rem' },
   ];
-  assert.deepEqual(lengthFace('8px', radius), { text: 'md', placeholder: '', token: 'radius-md' });
-  assert.deepEqual(lengthFace('24px', radius), {
-    text: '2xl',
-    placeholder: '',
-    token: 'radius-2xl',
-  });
+  assert.deepEqual(lengthFace('8px', radius), { text: 'md', placeholder: '' });
+  assert.deepEqual(lengthFace('24px', radius), { text: '2xl', placeholder: '' });
   // A numbered step alone would read as a length, so it keeps its scale.
   const half = [{ value: '--ds-space-2-5', label: 'space-2-5', hint: '10px' }];
   assert.deepEqual(lengthFace('10px', half), { text: 'space-2-5', placeholder: '' });
@@ -96,6 +94,25 @@ test('a colour token in any form the style edits accept matches what Chromium co
     text: 'oklch(0.6 0.2 251)',
     none: false,
   });
+});
+
+test('typing what a field reads as previews what it stands for, and a token preview reads the same', () => {
+  const radius = [{ value: '--ds-radius-md', label: 'radius-md', hint: '8px' }];
+  assert.equal(typedLength('md', radius), '--ds-radius-md');
+  assert.equal(typedLength('12px', radius), '12px');
+  // A token without a pixel value, or sharing one with another, is still the one its name reads as.
+  const leading = [
+    { value: '--ds-leading-snug', label: 'leading-snug', hint: '1.25' },
+    { value: '--ds-leading-tight', label: 'leading-tight', hint: '1.25' },
+  ];
+  assert.equal(typedLength('tight', leading), '--ds-leading-tight');
+  assert.equal(typedLength('leading-snug', leading), '--ds-leading-snug');
+  assert.deepEqual(lengthFace('--ds-radius-md', radius), { text: 'md', placeholder: '' });
+  const colours = [{ value: '--ds-ink', label: 'ink', hint: '#141414' }];
+  assert.equal(typedColour('ink', colours), '--ds-ink');
+  assert.equal(typedColour('#3366ff 50%'), '#3366ff80');
+  assert.equal(typedColour('#3366ff'), '#3366ff');
+  assert.deepEqual(colourFace('--ds-ink', colours), { text: 'ink', none: false });
 });
 
 test('a token as the kit wrote it is the computed value when it is the same colour, length or text', () => {

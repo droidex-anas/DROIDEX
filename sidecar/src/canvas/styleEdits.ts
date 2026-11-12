@@ -102,7 +102,16 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   opacity: { tokens: '--ds-opacity-', values: 'fraction' },
   display: {
     tokens: null,
-    values: ['block', 'inline-block', 'inline', 'flex', 'inline-flex', 'grid', 'none'],
+    values: [
+      'block',
+      'inline-block',
+      'inline',
+      'flex',
+      'inline-flex',
+      'grid',
+      'inline-grid',
+      'none',
+    ],
   },
   flexWrap: { tokens: null, values: ['nowrap', 'wrap', 'wrap-reverse'] },
   flexGrow: { tokens: null, values: 'unitless' },
@@ -144,11 +153,8 @@ export function resolveStyleChange(
   const rule = Object.hasOwn(STYLE_PROPERTIES, change.property)
     ? STYLE_PROPERTIES[change.property]
     : undefined;
-  if (!rule)
-    throw new SourceElementError(
-      'unsupported_edit',
-      `${change.property} is not a style Canvas can edit directly.`,
-    );
+  if (!rule) throw unsupportedStyle(change.property);
+  const name = styleName(change.property);
   const inFamily = (name: string) =>
     Object.hasOwn(tokens, name) && isFamilyToken(rule, name, tokens);
   if (change.value.startsWith('--')) {
@@ -157,22 +163,27 @@ export function resolveStyleChange(
     if (outside !== undefined)
       throw new SourceElementError(
         'invalid_edit',
-        `${outside} is not a ${change.property} token in this design’s pinned kit.`,
+        `${outside} isn’t one of this kit’s ${name} tokens. Pick one from the list, or ask the agent to change it.`,
       );
     if (names.length === 1) return { kind: 'token', token: change.value.trim() };
     const stacked = { kind: 'tokens', tokens: names } as const;
     if (styleValue(change.property, stacked).length > MAX_STACKED_VALUE)
       throw new SourceElementError(
         'invalid_edit',
-        `${String(names.length)} ${change.property} tokens are too many to stack in one value. Stack fewer, or give the kit one token that holds them all.`,
+        `${String(names.length)} ${name} tokens are too many to stack in one value. Stack fewer, or ask the agent to add a kit token that holds them all.`,
       );
     return stacked;
   }
-  if (!acceptsValue(rule.values, change.value))
+  if (!acceptsValue(rule.values, change.value)) {
+    const tokensOnly = typeof rule.values !== 'string' && rule.values.length === 0;
+    const instead = tokensOnly
+      ? `Pick one of this kit’s ${name} tokens, or ask the agent to change it.`
+      : 'Try another value, or ask the agent to change it.';
     throw new SourceElementError(
       'invalid_edit',
-      `${change.value} is not a ${change.property} value Canvas can write.`,
+      `Canvas can’t set the ${name} to ${change.value}. ${instead}`,
     );
+  }
   const wanted = canonicalCss(change.value);
   // A blur token holds the blur's length.
   const tokenCss = (value: string) => (rule.values === 'blur' ? `blur(${value})` : value);
@@ -180,6 +191,30 @@ export function resolveStyleChange(
     .sort((a, b) => NAME_ORDER.compare(a, b))
     .find((name) => inFamily(name) && canonicalCss(tokenCss(tokens[name] ?? '')) === wanted);
   return token ? { kind: 'token', token } : { kind: 'raw', value: change.value };
+}
+
+/** How the element panel names a style property, which is how a refusal names it too. */
+const PANEL_NAMES: Readonly<Record<string, string>> = {
+  color: 'text colour',
+  backgroundColor: 'fill',
+  borderRadius: 'corner radius',
+  boxShadow: 'shadow',
+  filter: 'layer blur',
+  backdropFilter: 'background blur',
+};
+
+export function styleName(property: string): string {
+  if (Object.hasOwn(PANEL_NAMES, property)) return PANEL_NAMES[property];
+  return property
+    .replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)
+    .replace('color', 'colour');
+}
+
+export function unsupportedStyle(property: string): SourceElementError {
+  return new SourceElementError(
+    'unsupported_edit',
+    `Canvas can’t change the ${styleName(property)} directly. Ask the agent to change it.`,
+  );
 }
 
 /** One kit token a property's edit may name, with its value in each mode. */

@@ -1,7 +1,8 @@
 // What a direct edit has previewed on one selected element but not yet
 // committed. A preview only means something against the revision it was drawn
 // on, so a refused commit drops the draft, and a newer revision of the design
-// takes the selection along without the previews it made stale.
+// takes the selection along without the previews it made stale. A commit the
+// source cannot take leaves the revision as it was, so only its previews go.
 
 import type { EditElementInput } from './elementEditProtocol';
 import type { CanvasFrame, ElementRef, SourceElement } from './protocol';
@@ -188,7 +189,11 @@ export function commitPath(
   };
 }
 
-export type CommitOutcome = { status: 'edited'; revisionId: string } | { status: 'refused' };
+export type CommitOutcome =
+  | { status: 'edited'; revisionId: string }
+  /** The source cannot take this edit, so the revision stands as it was. */
+  | { status: 'unwritable' }
+  | { status: 'refused' };
 
 /**
  * Settles the pending commit; a reply for any other mutation changes nothing.
@@ -203,8 +208,20 @@ export function settleCommit(
 ): ElementEditDraft | null {
   if (draft?.pending?.mutationId !== mutationId) return draft;
   if (outcome.status === 'refused') return null;
+  if (outcome.status === 'unwritable') return withoutCommitted(draft, draft.pending.change);
   if (outcome.revisionId === draft.element.revisionId) return { ...draft, pending: null };
   return { ...draft, pending: { ...draft.pending, revisionId: outcome.revisionId } };
+}
+
+/** The draft without the previews of the change it committed. */
+function withoutCommitted(
+  draft: ElementEditDraft,
+  change: 'style' | 'text' | 'path',
+): ElementEditDraft {
+  const settled = { ...draft, pending: null };
+  if (change === 'style') return { ...settled, values: {}, drawn: {} };
+  if (change === 'text') return { ...settled, text: null };
+  return { ...settled, d: null };
 }
 
 /**

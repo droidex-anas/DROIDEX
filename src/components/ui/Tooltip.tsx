@@ -24,6 +24,8 @@ interface TooltipProps {
   placement?: Side;
   /** Layout of the wrapper around `children` (shrink, min-width, flex). */
   className?: string;
+  /** Shows nothing for now, keeping the wrapper so the control is not remounted when it shows again. */
+  disabled?: boolean;
 }
 
 // Wraps one control and describes it on hover or keyboard focus.
@@ -32,11 +34,13 @@ export function Tooltip({
   children,
   placement = 'top',
   className = 'shrink-0',
+  disabled = false,
 }: TooltipProps) {
   const id = useId();
   const anchorRef = useRef<HTMLSpanElement>(null);
   const timerRef = useRef<number | undefined>(undefined);
-  const [open, setOpen] = useState(false);
+  const [wanted, setWanted] = useState(false);
+  const open = wanted && !disabled;
   const { setFloating, floatingStyles, side, isPositioned } = usePopoverPosition({
     open,
     anchorRef,
@@ -49,11 +53,11 @@ export function Tooltip({
   };
   const close = () => {
     clearTimer();
-    setOpen(false);
+    setWanted(false);
   };
   const show = () => {
     clearTimer();
-    setOpen(true);
+    setWanted(true);
   };
   const scheduleShow = () => {
     clearTimer();
@@ -71,7 +75,7 @@ export function Tooltip({
     hideShown?.();
     const hideThis = () => {
       window.clearTimeout(timerRef.current);
-      setOpen(false);
+      setWanted(false);
     };
     hideShown = hideThis;
     return () => {

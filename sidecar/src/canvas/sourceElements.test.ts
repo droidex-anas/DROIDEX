@@ -112,6 +112,11 @@ test('a style edit writes the class that says it in place of the classes it make
       changed: '<h1 className="flex flex-col">Hi</h1>',
     },
     {
+      markup: '<b className="inline-flex">Hi</b>',
+      styles: [{ property: 'display', resolution: raw('inline-grid') }],
+      changed: '<b className="inline-grid">Hi</b>',
+    },
+    {
       markup: '<h1 style={{ color: "var(--ds-fg)", gap: 4 }}>Hi</h1>',
       styles: [{ property: 'color', resolution: token('--ds-accent') }],
       changed: '<h1 className="text-[color:var(--ds-accent)]" style={{ gap: 4 }}>Hi</h1>',
@@ -213,12 +218,12 @@ test('a style no class can say, or one a class would not win for, is written inl
 });
 
 test('a blur that would drop the rest of a filter set another way is left to the agent', () => {
-  for (const markup of [
-    '<div className="md:blur-sm">Hi</div>',
-    '<div className="md:filter-none">Hi</div>',
-    '<div className="[filter:grayscale(1)_blur(2px)]">Hi</div>',
-    '<div style={{ filter: "grayscale(1)" }}>Hi</div>',
-  ]) {
+  for (const [markup, reason] of [
+    ['<div className="md:blur-sm">Hi</div>', /some screens, states or themes/],
+    ['<div className="md:filter-none">Hi</div>', /some screens, states or themes/],
+    ['<div className="[filter:grayscale(1)_blur(2px)]">Hi</div>', /whole filter/],
+    ['<div style={{ filter: "grayscale(1)" }}>Hi</div>', /whole filter/],
+  ] as const) {
     const files = { 'main.tsx': `export default () => ${markup};\n` };
     const mapped = onlyElement(files);
     assert.throws(
@@ -227,7 +232,10 @@ test('a blur that would drop the rest of a filter set another way is left to the
           element: reference(mapped.element),
           change: { kind: 'style', styles: [{ property: 'filter', resolution: raw('blur(8px)') }] },
         }),
-      (error: unknown) => error instanceof SourceElementError && error.code === 'ambiguous_element',
+      (error: unknown) =>
+        error instanceof SourceElementError &&
+        error.code === 'ambiguous_element' &&
+        reason.test(error.message),
       markup,
     );
   }

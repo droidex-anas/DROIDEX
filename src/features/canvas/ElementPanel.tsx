@@ -34,7 +34,8 @@ import {
   WEIGHTS,
   WRAP,
 } from './elementPanelChoices';
-import { Labelled, Pair, Section } from './ElementPanelRows';
+import { Fields, Labelled, Pair, Section } from './ElementPanelRows';
+import { ElementPanelStatus } from './ElementPanelStatus';
 import { ElementTextField } from './ElementTextField';
 import { ElementVectorPaint } from './ElementVectorPaint';
 import { NumberField } from './NumberField';
@@ -55,6 +56,8 @@ export interface ElementPanelProps {
   frameName: string;
   /** Why a picked path's points can't move on the board; null when they can, or it is no path. */
   pathNote: string | null;
+  /** Why the source could not take the last commit on the element; null otherwise. */
+  refusal: string | null;
   /** The selected design's kit tokens by property; null until they load. */
   tokens: Record<string, EditToken[]> | null;
   /** The mode the selected design previews its kit in. */
@@ -77,6 +80,7 @@ export function ElementPanel({
   selection,
   frameName,
   pathNote,
+  refusal,
   tokens,
   mode,
   onPreview,
@@ -226,7 +230,7 @@ export function ElementPanel({
         </p>
         {note && <p className="mt-1.5 text-caption text-secondary">{note}</p>}
       </header>
-      <div className="scroll-fade-y scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3">
+      <Fields locked={!editable}>
         {text !== null && (
           <Section title="Content">
             <ElementTextField
@@ -446,10 +450,8 @@ export function ElementPanel({
             })}
           </Pair>
         </ElementEffects>
-      </div>
-      <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-secondary">
-        {status(draft, editable)}
-      </p>
+      </Fields>
+      <ElementPanelStatus draft={draft} editable={editable} refusal={refusal} />
     </div>
   );
 }
@@ -481,12 +483,6 @@ function agentRoute(editability: SourceElement['editability']): string {
   return editability === 'shared'
     ? 'This element is written once and used in several places. Ask the agent to change it.'
     : 'This element’s styles are worked out in code. Ask the agent to change it.';
-}
-
-function status(draft: ElementSelection['draft'], editable: boolean): string {
-  if (!editable) return 'Read only.';
-  if (draft.pending !== null) return 'Saving…';
-  return 'Enter saves your changes; Escape takes one back.';
 }
 
 function sizeText(rect: FrameRect): string {

@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { elementStep, historyStep, isDeleteKey } from './boardKeys';
-import { canvasMessage } from './client';
+import { canvasMessage, CanvasRequestError } from './client';
 import type { PreviewSelections } from './DesignPreview';
 import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
 import {
@@ -60,6 +60,7 @@ export function useElementEditor({
 }: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [error, setError] = useState('');
+  const [refused, setRefused] = useState<Refused | null>(null);
   /** Counts the picks answered, so a pick of the element already selected still reads as one. */
   const [picks, setPicks] = useState(0);
   const [seenFrames, setSeenFrames] = useState(frames);
@@ -228,13 +229,14 @@ export function useElementEditor({
    */
   const selects = (element: ElementRef) => latest.current.selection?.draft.element === element;
 
-  /** Sends the commit `make` draws from the draft, if it has one to send. */
-  const send = (make: typeof commitStyles) => {
+  /** Sends the commit `make` draws from the draft, if it has one to send; resolves whether the source wrote it. */
+  const send = (make: typeof commitStyles): Promise<boolean> => {
     const current = latest.current.selection;
-    if (!current) return;
+    if (!current) return Promise.resolve(false);
     const mutationId = crypto.randomUUID();
     const committed = make(current.draft, mutationId);
-    if (!committed) return;
+    if (!committed) return Promise.resolve(false);
+    setRefused(null);
     choose({ ...current, draft: committed.draft });
     const settle = (outcome: CommitOutcome) => {
       const now = latest.current.selection;
@@ -242,14 +244,22 @@ export function useElementEditor({
       const settled = settleCommit(now.draft, mutationId, outcome);
       choose(settled && { ...now, draft: settled });
     };
-    latest.current.onEditElement(committed.input).then(
+    return latest.current.onEditElement(committed.input).then(
       ({ receipt }) => {
         settle({ status: 'edited', revisionId: receipt.revisionId });
+        return true;
       },
       (refusal: unknown) => {
-        if (latest.current.selection?.draft.pending?.mutationId === mutationId)
-          setError(canvasMessage(refusal));
+        const now = latest.current.selection;
+        if (now?.draft.pending?.mutationId !== mutationId) return false;
+        if (isUnwritable(refusal)) {
+          setRefused({ element: now.draft.element, reason: refusal.message });
+          settle({ status: 'unwritable' });
+          return false;
+        }
+        setError(canvasMessage(refusal));
         settle({ status: 'refused' });
+        return false;
       },
     );
   };
@@ -355,8 +365,10 @@ export function useElementEditor({
     pick,
     clear,
     editLayer,
+    refusal: refusalOf(refused, selection),
     preview: (property: string, value: string, element: ElementRef): boolean => {
       if (!selects(element)) return false;
+      setRefused(null);
       update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
       return true;
     },
@@ -366,16 +378,17 @@ export function useElementEditor({
       return true;
     },
     commit: (element: ElementRef) => {
-      if (selects(element)) send(commitStyles);
+      if (selects(element)) void send(commitStyles);
     },
     previewText: (text: string) => {
+      setRefused(null);
       update((draft) => previewText(draft, text));
     },
     revertText: () => {
       update(revertText);
     },
     commitText: () => {
-      send(commitText);
+      void send(commitText);
     },
     enter,
     runKey,
@@ -383,8 +396,9 @@ export function useElementEditor({
     path: {
       ...path,
       preview: previewPath,
-      commit: (d: string, element: ElementRef) => {
-        if (selects(element)) send((draft, mutationId) => commitPath(draft, mutationId, d));
+      commit: (d: string, element: ElementRef): Promise<boolean> => {
+        if (!selects(element)) return Promise.resolve(false);
+        return send((draft, mutationId) => commitPath(draft, mutationId, d));
       },
     },
   };
@@ -396,6 +410,27 @@ function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
   const shown = { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
   return draft.d === null ? shown : { ...shown, d: draft.d };
+}
+
+/** Why the source could not take the last commit on an element, which stays selected. */
+interface Refused {
+  element: ElementRef;
+  reason: string;
+}
+
+/** The refusal's reason while its element is still the one selected. */
+function refusalOf(refused: Refused | null, selection: ElementSelection | null): string | null {
+  return refused !== null && refused.element === selection?.draft.element ? refused.reason : null;
+}
+
+/** The source cannot take the edit as written; nothing about the selection has gone stale. */
+function isUnwritable(refusal: unknown): refusal is CanvasRequestError {
+  return (
+    refusal instanceof CanvasRequestError &&
+    (refusal.code === 'invalid_edit' ||
+      refusal.code === 'unsupported_edit' ||
+      refusal.code === 'ambiguous_element')
+  );
 }
 
 /** The panel's first field that takes typing, else its first working button. */

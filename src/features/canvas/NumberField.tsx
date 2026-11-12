@@ -1,16 +1,16 @@
 // A number, usually with a unit: typing previews (a bare number gains the
 // field's unit), the arrow keys step it (Shift by the large step), dragging
 // its short name scrubs it, Enter commits and Escape takes it back. A button
-// lists the kit's tokens for the property when it has any. At rest it reads
-// as the token it matches or with its fraction rounded, and zero or a keyword
-// as a muted placeholder; its tooltip keeps the exact value.
+// lists the kit's tokens for the property when it has any. It reads as the
+// token it matches or with its fraction rounded, and zero or a keyword as a
+// muted placeholder, focused or not: typing starts from what it reads as.
 
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { Hash } from '@droidex/icons';
 import { Input } from '../../components/ui/Field';
 import { cn } from '../../components/ui/cn';
 import { Tooltip } from '../../components/ui/Tooltip';
-import { lengthFace, type LengthFace } from './panelValues';
+import { lengthFace, typedLength, type LengthFace } from './panelValues';
 import { ValuePickerButton, type ValueOption } from './ValuePickerField';
 
 // The unit group wraps the choice so a bare number still yields a string.
@@ -51,12 +51,6 @@ function parseNumber(value: string): { amount: number; unit: string } | null {
   return { amount: Number(match[1]), unit: match[2] };
 }
 
-/** The exact value, after the token the face names, when it names one. */
-function faceTitle(face: LengthFace, value: string): string {
-  const named = face.token ?? face.text;
-  return named && named !== value ? `${named} · ${value}` : value;
-}
-
 /** A stepped amount without float dust. */
 function amountText(amount: number): string {
   return String(Math.round(amount * 1000) / 1000);
@@ -85,19 +79,26 @@ export function NumberField({
   const input = useRef<HTMLInputElement>(null);
   /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
   const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
-  const [editing, setEditing] = useState(false);
-  // What it reads as at rest; typing, and a preview, always show the value itself.
+  /** The text last typed and the value it previewed; null once the field reads its value again. */
+  const [typed, setTyped] = useState<{ text: string; value: string } | null>(null);
+  // Typing shows as typed only while it is still the preview: a pick, or a
+  // revision that drops the preview, has the field read the value again.
   const face: LengthFace =
-    editing || previewed ? { text: value, placeholder: '' } : lengthFace(value, tokens);
+    typed !== null && previewed && typed.value === value
+      ? { text: typed.text, placeholder: '' }
+      : lengthFace(value, tokens);
+  /** Steps and scrubs move what the field shows, so a rounded length stays rounded. */
+  const shownNumber = () => parseNumber(face.text) ?? parseNumber(value);
   const clamp = (amount: number): number => {
     if (min !== undefined) amount = Math.max(min, amount);
     if (max !== undefined) amount = Math.min(max, amount);
     return amount;
   };
   const stepBy = (delta: number) => {
-    const parsed = parseNumber(value);
+    const parsed = shownNumber();
     if (!parsed) return;
     const next = clamp(parsed.amount + delta);
+    setTyped(null);
     onPreview(`${amountText(next)}${parsed.unit || (unit ?? '')}`);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -106,9 +107,11 @@ export function NumberField({
       // A bare number commits with the field's unit, the way it steps.
       const trimmed = value.trim();
       if (unit !== null && /^-?\d*\.?\d+$/.test(trimmed)) onPreview(`${trimmed}${unit}`);
+      setTyped(null);
       onCommit();
     } else if (event.key === 'Escape') {
       event.preventDefault();
+      setTyped(null);
       // While saving, the preview is what is being written, so it stays.
       if (previewed && !disabled) onRevert();
       else onLeave();
@@ -121,9 +124,10 @@ export function NumberField({
   };
   const startScrub = (event: PointerEvent<HTMLSpanElement>) => {
     if (disabled || event.button !== 0) return;
-    const start = parseNumber(value);
+    const start = shownNumber();
     if (!start) return;
     event.preventDefault();
+    setTyped(null);
     input.current?.focus();
     event.currentTarget.setPointerCapture(event.pointerId);
     scrub.current = { startX: event.clientX, start };
@@ -160,15 +164,11 @@ export function NumberField({
         aria-label={label}
         value={face.text}
         placeholder={face.placeholder}
-        title={faceTitle(face, value)}
         readOnly={disabled}
         spellCheck={false}
         inputMode="decimal"
-        onFocus={() => {
-          setEditing(true);
-        }}
         onBlur={() => {
-          setEditing(false);
+          setTyped(null);
         }}
         className={cn('group tabular-nums', previewed && 'bg-active')}
         leading={short === label ? shortName : <Tooltip label={label}>{shortName}</Tooltip>}
@@ -197,7 +197,9 @@ export function NumberField({
           ) : undefined
         }
         onChange={(event) => {
-          onPreview(event.target.value);
+          const next = typedLength(event.target.value, tokens);
+          setTyped({ text: event.target.value, value: next });
+          onPreview(next);
         }}
         onKeyDown={onKeyDown}
       />

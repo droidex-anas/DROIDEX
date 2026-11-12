@@ -65,6 +65,11 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await expect(fontSize).toHaveValue('24px');
   // The panel opens beside the board and nothing on the board moves for it.
   expect(await box(frame(page, 'A'))).toEqual(before);
+  // A focused field reads as it does at rest.
+  const colour = panel.getByLabel('Text colour', { exact: true });
+  const atRest = await colour.inputValue();
+  await colour.focus();
+  await expect(colour).toHaveValue(atRest);
 
   // The panel is a column beside the board: a wheel over it scrolls its fields
   // and leaves the board where it was.
@@ -77,7 +82,10 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
     .toBeGreaterThan(0);
   expect(await box(frame(page, 'A'))).toEqual(placed);
 
-  // Typing previews in the guest; Enter sends the canonical value, once.
+  // Typing previews in the guest; Enter sends the canonical value, once, and
+  // the fields keep their height while it saves.
+  const fields = panel.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
   await fontSize.fill(' 28PX ');
   await page.clock.runFor(100);
   expect(await page.evaluate(() => window.guestCommands.at(-1))).toMatchObject({
@@ -87,6 +95,7 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await fontSize.press('Enter');
   await fontSize.press('Enter');
   await expect(panel.getByRole('status')).toHaveText('Saving…');
+  expect((await box(fields)).height).toBe(fieldsHeight);
   // Delete on the board waits too: it would edit the revision the commit is replacing.
   await board.focus();
   await page.keyboard.press('Delete');
@@ -114,6 +123,15 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await expect
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { elementId: 'el_title', styles: {} } });
+
+  // Typing that another revision replaces reads as the element's value again,
+  // so Enter has nothing to send.
+  await fontSize.fill('32px');
+  await page.evaluate(() => window.boardHarness.editByUser('a'));
+  await page.clock.runFor(240);
+  await expect(fontSize).toHaveValue('24px');
+  await fontSize.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.editCalls)).toHaveLength(1);
 
   // A shared element is the agent's to change, and Escape steps out one level at a time.
   const card = await box(frame(page, 'A').locator('.canvas-sheet'));
@@ -195,10 +213,28 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toBeVisible();
 
+  // An edit the source cannot write keeps the element picked and says why, in
+  // the room the status always takes, with the whole reason in its tooltip.
   const fontSize = title.getByLabel('Font size', { exact: true });
+  const fields = title.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
   await fontSize.fill('30px');
   await fontSize.press('Enter');
-  await page.evaluate(() => window.boardHarness.refuseEdit(1));
+  const reason =
+    'Canvas can’t write 30px as the font size of this element, because the kit sets its type sizes. Pick one of the kit’s sizes, or ask the agent to change it.';
+  const status = title.getByRole('status');
+  // The live region stays the same node, so the reason is announced.
+  const region = await status.elementHandle();
+  await page.evaluate((reason) => window.boardHarness.refuseEdit(1, reason), reason);
+  await expect(status).toHaveText(reason);
+  expect(await region?.evaluate((node) => node.isConnected)).toBe(true);
+  expect((await box(fields)).height).toBe(fieldsHeight);
+  await status.focus();
+  await expect(page.getByRole('tooltip')).toHaveText(reason);
+  await expect(fontSize).toHaveValue('');
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  await page.evaluate(() => window.boardHarness.refuseEdit(2));
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toHaveCount(0);
 });
@@ -823,6 +859,27 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.keyboard.press('ArrowLeft');
   await page.clock.runFor(500);
   expect(await edits()).toHaveLength(2);
+
+  // A move the source cannot write puts the point back where the path still draws it.
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(3);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 10, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(2, 'Canvas can’t write this path.'));
+  await page.clock.runFor(32);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  expect(await lastSelect()).not.toHaveProperty('d');
+  // It stays back while a later style edit saves.
+  const fontSize = page
+    .getByRole('region', { name: 'Styles of the selected path' })
+    .getByLabel('Font size', { exact: true });
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  expect(await edits()).toHaveLength(4);
+  await page.clock.runFor(32);
+  expect((await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(3, 'Canvas can’t set the font size.'));
+  await page.clock.runFor(32);
 
   // A drag of the frame carries its points, and letting go leaves them where they were carried.
   const point = await box(anchors.nth(1));
