@@ -3,7 +3,7 @@
 // the same space. The transform is the stage's to write, so a pan or a zoom
 // moves the layer without rendering it.
 
-import { useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { BoardStage } from './boardStage';
 import type { PlacedFrame, Point, Viewport } from './canvasGeometry';
 import { showsFrameTools, type BoardInteraction, type BoardInteractionEvent } from './canvasState';
@@ -186,7 +186,9 @@ function useFrameHandlers(
   >,
 ): FrameHandlers {
   const latest = useRef(inputs);
-  latest.current = inputs;
+  useLayoutEffect(() => {
+    latest.current = inputs;
+  });
   return useMemo((): FrameHandlers => {
     const now = () => latest.current;
     return {
