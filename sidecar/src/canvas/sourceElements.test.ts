@@ -301,6 +301,7 @@ test('shared and computed sites report their scope and refuse direct edits', () 
     ['export default () => <h1 className={cn("p-2", active && "on")}>Hello</h1>', 'computed'],
     ['export default () => <path fill={active ? "#fff" : "#000"} />', 'computed'],
     ['export default () => <path stroke-width={width} />', 'computed'],
+    ['export default () => <path d={icon.path} />', 'computed'],
     ['export default () => <h1 style={{...styles, color:"var(--ds-text)"}}>Hello</h1>', 'computed'],
     [
       'export default () => <h1 style={{color:"var(--ds-text)", color:"var(--ds-accent)"}}>Hello</h1>',

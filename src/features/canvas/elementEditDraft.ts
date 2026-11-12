@@ -25,11 +25,17 @@ export interface ElementEditDraft {
   drawn: Readonly<Record<string, string>>;
   /** The previewed text, or null while the element shows its own. */
   text: string | null;
+  /** A path's moved data, which commits as it is previewed; null while it draws its own. */
+  d: string | null;
   /**
    * The one commit awaiting its reply and what it carries; each edit moves the
    * revision on, to the one its reply names.
    */
-  pending: { mutationId: string; change: 'style' | 'text'; revisionId: string | null } | null;
+  pending: {
+    mutationId: string;
+    change: 'style' | 'text' | 'path';
+    revisionId: string | null;
+  } | null;
 }
 
 export function editDraft(
@@ -37,12 +43,12 @@ export function editDraft(
   element: ElementRef,
   site: SourceElement,
 ): ElementEditDraft {
-  return { canvasId, element, site, values: {}, drawn: {}, text: null, pending: null };
+  return { canvasId, element, site, values: {}, drawn: {}, text: null, d: null, pending: null };
 }
 
 /** Something typed or picked here is not saved yet. */
 export function hasPreviews(draft: ElementEditDraft): boolean {
-  return draft.text !== null || Object.keys(draft.values).length > 0;
+  return draft.text !== null || draft.d !== null || Object.keys(draft.values).length > 0;
 }
 
 /**
@@ -165,6 +171,23 @@ export function commitText(
   };
 }
 
+/**
+ * The edit that writes `d`, a moved path's data, as the path's own. It
+ * previews from the moment it is sent, so the path holds still while it saves;
+ * null while another commit is pending.
+ */
+export function commitPath(
+  draft: ElementEditDraft,
+  mutationId: string,
+  d: string,
+): { draft: ElementEditDraft; input: EditElementInput } | null {
+  if (draft.pending !== null) return null;
+  return {
+    draft: { ...draft, d, pending: { mutationId, change: 'path', revisionId: null } },
+    input: { mutationId, edit: { element: draft.element, change: { kind: 'path', d } } },
+  };
+}
+
 export type CommitOutcome = { status: 'edited'; revisionId: string } | { status: 'refused' };
 
 /**
@@ -189,7 +212,7 @@ export function settleCommit(
  * older one is still on show and the draft stays on it. Once it has built, the
  * selection moves to the element written at the same place. The previews its
  * own commit carried are dropped because the source now says what they said;
- * the other kind's stay only on the revision that commit made. When
+ * the other kinds' stay only on the revision that commit made. When
  * nothing is written there any more, or the revision did not build, the draft
  * goes.
  */
@@ -210,13 +233,16 @@ export function followRevision(
     if (!site) return null;
     const committed =
       draft.pending?.revisionId === build.revisionId ? draft.pending.change : undefined;
+    const keeps = (change: 'style' | 'text') => committed !== undefined && committed !== change;
     return {
       ...draft,
       element: { ...draft.element, revisionId: build.revisionId, elementId: site.elementId },
       site,
-      values: committed === 'text' ? draft.values : {},
-      drawn: committed === 'text' ? draft.drawn : {},
-      text: committed === 'style' ? draft.text : null,
+      values: keeps('style') ? draft.values : {},
+      drawn: keeps('style') ? draft.drawn : {},
+      text: keeps('text') ? draft.text : null,
+      // A path's data is only ever previewed while its own commit saves.
+      d: null,
       pending: null,
     };
   }
