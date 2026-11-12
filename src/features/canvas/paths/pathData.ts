@@ -40,7 +40,7 @@ const NUMBER = /[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE]([+-]?\d+))?/y;
 // An arc's large-arc and sweep flags are one digit each, which may touch what follows.
 const FLAG = /[01]/y;
 // Chromium reads a path's numbers as floats, and refuses one past this or a larger exponent.
-const MAX_NUMBER = 1e38;
+export const MAX_NUMBER = 1e38;
 const MAX_EXPONENT = 38;
 
 interface Reader {

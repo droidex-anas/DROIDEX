@@ -119,7 +119,8 @@ function readClasses(element: ElementNode): Classes {
 
 /**
  * Whether a `hidden` attribute hides the element, or may. A lone
- * `hidden={false}` is as good as none; written twice, the last one wins.
+ * `hidden={false}` is as good as none; one written twice locks the eye,
+ * whatever the values.
  */
 function mayHide(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement): boolean {
   const written = opening.attributes.properties.filter(
