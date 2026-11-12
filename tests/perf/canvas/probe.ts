@@ -2,7 +2,13 @@
 // scripts. Between begin() and end() it keeps every animation frame, long task
 // and long animation frame; between streamStart() and streamEnd() it counts
 // React commits, the components they rendered (when asked) and layout reads,
-// and keeps each frame's inline style of the element a gesture should move.
+// and keeps each frame's value of the attribute a gesture should change.
+
+/** An attribute of the first element a selector matches, read every frame. */
+export interface Watch {
+  selector: string;
+  attribute: string;
+}
 
 export interface ProbeWindow {
   /** rAF timestamps while the input stream ran. */
@@ -15,8 +21,8 @@ export interface ProbeWindow {
    * getComputedStyle, and each read of an offset, client or scroll getter.
    */
   layoutReads: number;
-  /** Distinct inline styles the watched element showed across the stream's frames. */
-  watchedStyles: number;
+  /** Distinct values the watched attribute showed across the stream's frames, absent not counted. */
+  watchedValues: number;
   /** Durations of long tasks (over 50 ms) anywhere in the window. */
   longTasks: number[];
   /** Durations of long animation frames (over 50 ms) anywhere in the window. */
@@ -24,7 +30,7 @@ export interface ProbeWindow {
 }
 
 interface CanvasProbe {
-  begin: (countRenders: boolean, watch: string | null) => void;
+  begin: (countRenders: boolean, watch: Watch | null) => void;
   streamStart: () => void;
   streamEnd: () => void;
   end: () => ProbeWindow;
@@ -72,10 +78,10 @@ export function installProbe(frameMark: string) {
     endedAt: 0,
     streaming: false,
     countRenders: false,
-    watch: null as string | null,
+    watch: null as Watch | null,
   };
   let counts = { frameTimes: [] as number[], commits: 0, renders: 0, layoutReads: 0 };
-  let watchedStyles = new Set<string | null>();
+  let watchedValues = new Set<string>();
   const longTasks: { startTime: number; duration: number }[] = [];
   const longFrames: { startTime: number; duration: number }[] = [];
 
@@ -147,8 +153,9 @@ export function installProbe(frameMark: string) {
     if (window_.streaming) {
       counts.frameTimes.push(time);
       performance.mark(frameMark);
-      if (window_.watch)
-        watchedStyles.add(document.querySelector(window_.watch)?.getAttribute('style') ?? null);
+      const { watch } = window_;
+      const value = watch && document.querySelector(watch.selector)?.getAttribute(watch.attribute);
+      if (typeof value === 'string') watchedValues.add(value);
     }
     requestAnimationFrame(tick);
   };
@@ -175,7 +182,7 @@ export function installProbe(frameMark: string) {
         watch,
       };
       counts = { frameTimes: [], commits: 0, renders: 0, layoutReads: 0 };
-      watchedStyles = new Set();
+      watchedValues = new Set();
     },
     streamStart: () => {
       window_.streaming = true;
@@ -187,7 +194,7 @@ export function installProbe(frameMark: string) {
       window_.endedAt = performance.now();
       return {
         ...counts,
-        watchedStyles: watchedStyles.size,
+        watchedValues: watchedValues.size,
         longTasks: within(longTasks),
         longFrames: within(longFrames),
       };

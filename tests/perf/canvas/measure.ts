@@ -101,7 +101,7 @@ export async function measureGesture(
 
 /** One stream of the gesture, and what the probe kept from its start to the board settling after it. */
 async function stream(page: Page, gesture: Gesture, warm: boolean): Promise<ProbeWindow> {
-  const watch = warm ? (gesture.moves ?? null) : null;
+  const watch = warm ? (gesture.shows ?? null) : null;
   await page.evaluate(
     ({ warm, watch }) => {
       window.canvasProbe.begin(warm, watch);
@@ -118,7 +118,8 @@ async function stream(page: Page, gesture: Gesture, warm: boolean): Promise<Prob
   if (kept.frameTimes.length < 2)
     throw new Error(`${gesture.name} streamed fewer than two frames.`);
   // The stream ends where it began, so only its frames between show it moved.
-  if (watch && kept.watchedStyles < 2) throw new Error(`${gesture.name} did not move ${watch}.`);
+  if (watch && kept.watchedValues < 2)
+    throw new Error(`${gesture.name} did not change ${watch.attribute} of ${watch.selector}.`);
   return kept;
 }
 
