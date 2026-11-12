@@ -3,6 +3,7 @@
 // added to. The landing is read off the outline the way the sidecar writes the
 // entry, so the line says so before Enter; the sidecar still has the last word.
 
+import type { PropPick } from '../elementEditProtocol';
 import { holdsLayers } from '../layers/layerMoves';
 import type { CatalogListing, OutlineNode } from '../protocol';
 
@@ -36,6 +37,21 @@ function matchRank(entry: CatalogListing, needle: string): number | null {
     text?.toLowerCase().includes(needle),
   );
   return elsewhere ? 3 : null;
+}
+
+/** The options a row's variant menu has picked, by prop name. */
+export type ChosenProps = Readonly<Partial<Record<string, string>>>;
+
+/**
+ * The props an insert writes for a row's picks: each picked option the entry
+ * still lists, where it differs from what the entry writes anyway.
+ */
+export function propPicks(entry: CatalogListing, chosen: ChosenProps): PropPick[] {
+  return entry.props.flatMap(({ name, options, default: written }) => {
+    const value = chosen[name];
+    if (value === undefined || value === written || !options.includes(value)) return [];
+    return [{ name, value }];
+  });
 }
 
 /** components/ui/alert-dialog.tsx is alert-dialog: the folder and extension match every entry. */

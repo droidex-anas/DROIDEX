@@ -2,8 +2,9 @@ import { useState, type KeyboardEvent } from 'react';
 
 /**
  * The match the keyboard is on, for a search field that keeps the keyboard:
- * the arrows walk the matches, Enter adds the one it is on, and Escape clears
- * the search, then hands the keyboard back to the board.
+ * the arrows walk the matches, Enter adds the one it is on, ⌥↓ opens its
+ * variant menu, and Escape clears the search, then hands the keyboard back to
+ * the board.
  */
 export function usePaletteKeys({
   query,
@@ -11,6 +12,7 @@ export function usePaletteKeys({
   count,
   optionId,
   onAdd,
+  onMenu,
   onLeave,
 }: {
   query: string;
@@ -19,6 +21,7 @@ export function usePaletteKeys({
   count: number;
   optionId: (index: number) => string;
   onAdd: (index: number) => void;
+  onMenu: (index: number) => void;
   onLeave: () => void;
 }) {
   const [active, setActive] = useState(0);
@@ -35,7 +38,10 @@ export function usePaletteKeys({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (step !== undefined && count > 0) {
+    if (event.key === 'ArrowDown' && event.altKey) {
+      event.preventDefault();
+      if (activeIndex >= 0) onMenu(activeIndex);
+    } else if (step !== undefined && count > 0) {
       event.preventDefault();
       moveTo((activeIndex + step + count) % count);
     } else if (event.key === 'Enter' && activeIndex >= 0) {
