@@ -142,7 +142,7 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       <>
         <Component className={ICON} />
         <Name>{item.entry.name}</Name>
-        <Detail>{item.entry.note ?? item.entry.module ?? ''}</Detail>
+        <Detail>{item.entry.note}</Detail>
       </>
     );
   }
