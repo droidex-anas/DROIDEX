@@ -857,6 +857,16 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.clock.runFor(500);
   expect(await edits()).toHaveLength(2);
 
+  // A move the source cannot write puts the point back where the path still draws it.
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(3);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 10, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(2, 'Canvas can’t write this path.'));
+  await page.clock.runFor(32);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  expect(await lastSelect()).not.toHaveProperty('d');
+
   // A drag of the frame carries its points, and letting go leaves them where they were carried.
   const point = await box(anchors.nth(1));
   const start = await box(frame(page, 'A'));

@@ -64,8 +64,16 @@ export function PathGrips({
   preview: (d: string | null, element: ElementRef) => void;
   commit: (d: string, element: ElementRef) => void;
 }) {
-  /** A move's segments, shown while `from` is still the shape read: until the next read after its commit. */
-  const [moved, setMoved] = useState<{ from: PathSegment[]; segments: PathSegment[] } | null>(null);
+  /**
+   * A move's segments, shown while `from` is still the shape read: until the
+   * next read after its commit, or until a refused commit leaves the shape
+   * movable again as it was.
+   */
+  const [moved, setMoved] = useState<{
+    from: PathSegment[];
+    segments: PathSegment[];
+    committed: boolean;
+  } | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const press = useRef<Press | null>(null);
@@ -77,7 +85,8 @@ export function PathGrips({
   const latest = useRef({ shape, preview, commit });
   latest.current = { shape, preview, commit };
 
-  const segments = moved?.from === shape.segments ? moved.segments : shape.segments;
+  const showsMove = moved?.from === shape.segments && !(moved.committed && shape.movable);
+  const segments = showsMove ? moved.segments : shape.segments;
   const grips = pathGrips(segments);
   const { matrix } = shape;
 
@@ -102,6 +111,7 @@ export function PathGrips({
     const now = latest.current;
     if (keep && ending.d !== null && isCurrent(now.shape, ending)) {
       now.commit(ending.d, ending.element);
+      setMoved((current) => current && { ...current, committed: true });
       return;
     }
     now.preview(null, ending.element);
@@ -156,7 +166,7 @@ export function PathGrips({
     const d = movedData(held.from, next);
     if (d !== null && d.length > MAX_PREVIEW_PATH_DATA_BYTES) return;
     held.d = d;
-    setMoved({ from: held.from, segments: next });
+    setMoved({ from: held.from, segments: next, committed: false });
     frameRequest.current ??= requestAnimationFrame(() => {
       frameRequest.current = null;
       const live = move.current;
