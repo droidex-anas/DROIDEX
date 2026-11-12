@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { kitSaveShape } from './canvasMcpDesignSystemSave.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { arrangeFramesInputSchema } from './frameEditSchema.js';
+import { catalogNameSchema } from './kitCatalog.js';
 import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import {
   canvasIdentifierSchema,
@@ -30,6 +31,8 @@ const scopeShape = {
 const mutationScopeShape = { scopeId: scopeIdSchema };
 export const scopeArgumentSchema = z.object(scopeShape).passthrough();
 export const pageSchema = z.number().int().min(0).max(100_000);
+/** The catalog entries one canvas_theme catalog read names. */
+export const entryNamesSchema = z.array(catalogNameSchema).min(1).max(16);
 export const readSchema = z
   .object({
     ...scopeShape,
@@ -70,6 +73,14 @@ export const themeSchema = z.discriminatedUnion('operation', [
     })
     .strict(),
   z.object({ ...scopeShape, operation: z.literal('read'), ref: designSystemRefSchema }).strict(),
+  z
+    .object({
+      ...scopeShape,
+      operation: z.literal('catalog'),
+      ref: designSystemRefSchema.optional(),
+      entries: entryNamesSchema.optional(),
+    })
+    .strict(),
   z
     .object({
       ...mutationScopeShape,

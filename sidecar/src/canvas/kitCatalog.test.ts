@@ -10,6 +10,7 @@ import {
   entryFailure,
   KIT_CATALOG_FILE,
   kitFailureSchema,
+  readCatalogEntries,
   type CatalogEntry,
 } from './kitCatalog.js';
 import { KitPreviews } from './kitPreviews.js';
@@ -201,4 +202,43 @@ export const Bar = () => null, Foo = () => null;
       ['Second', 'catalog.json, Second: lucide-react has no icon NoSuchIcon.'],
     ],
   );
+});
+
+test('a catalog read finds an entry by its name and the entries filed under it, within its byte budget', () => {
+  const files = (catalog: CatalogEntry[]) => starterWith(catalogFile(catalog)).files;
+  const named = [
+    entry('Button', '<Button>Go</Button>'),
+    entry('Button / outline', '<Button variant="outline">Go</Button>'),
+    entry('Button group', '<Button>One</Button>'),
+    entry('Badge', '<Badge>New</Badge>', ['Badge']),
+  ];
+  const read = readCatalogEntries(files(named), ['button']);
+  assert.deepEqual(
+    read.entries.map(({ name }) => name),
+    ['Button', 'Button / outline'],
+  );
+  assert.deepEqual(read.entries[1], {
+    name: 'Button / outline',
+    uses: ['Button'],
+    icons: [],
+    jsx: '<Button variant="outline">Go</Button>',
+    note: null,
+    props: [],
+  });
+  assert.equal(read.omitted, undefined);
+  assert.throws(
+    () => readCatalogEntries(files(named), ['Badge', 'Card']),
+    /This kit has no component called Card any more\./,
+  );
+  // Entries past the budget are named, never cut short, so a later read can ask for them.
+  const large = Array.from({ length: 8 }, (_, index) =>
+    entry(`Big ${String(index)}`, `<Button>${'x'.repeat(3 * 1024)}</Button>`),
+  );
+  const all = readCatalogEntries(files(large), undefined);
+  assert.deepEqual(
+    all.entries.map(({ name }) => name),
+    ['Big 0', 'Big 1', 'Big 2', 'Big 3', 'Big 4'],
+  );
+  assert.deepEqual(all.omitted, ['Big 5', 'Big 6', 'Big 7']);
+  assert.ok(all.entries.every(({ jsx }) => jsx.endsWith('</Button>')));
 });

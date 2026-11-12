@@ -1,11 +1,13 @@
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
 // like its project theme. Each entry is one JSX element a palette inserts
-// into a frame, with the kit exports and lucide-react icons it names and the
-// props a palette lets the user pick before it inserts. The compiler checks
+// into a frame, or an agent writes after canvas_theme catalog reads it, with
+// the kit exports and lucide-react icons it names and the props a palette lets
+// the user pick before it inserts. The compiler checks
 // that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
 import { canvasDiagnosticSchema, truncateDiagnosticText } from './canvasDiagnostics.js';
+import { canvasError } from './canvasError.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { hasDuplicate, sourcePathSchema, type SourceFiles } from './schema.js';
 
@@ -152,6 +154,67 @@ export function catalogListing(files: SourceFiles): CatalogListing[] {
     note,
     props: props ?? [],
   }));
+}
+
+/** The entries a catalog read names, in catalog order, and the names past its byte budget. */
+export interface CatalogRead {
+  entries: CatalogEntryRead[];
+  /** Entries left out to keep the read bounded, to ask for by name. */
+  omitted?: string[];
+}
+
+/** An entry as an agent writes it into a design. */
+export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
+
+/** What one catalog read returns at most; one entry, at most 4 KiB of JSX, always fits. */
+const CATALOG_READ_BYTES = 16 * 1024;
+
+export function missingEntryMessage(name: string): string {
+  return `This kit has no component called ${name} any more.`;
+}
+
+/**
+ * The entries of a kit's catalog that `names` asks for, or all of them. A name
+ * matches the entry of that name, ignoring case, and the entries filed under
+ * it: "Button" also matches "Button / outline", never "Button group".
+ */
+export function readCatalogEntries(
+  files: SourceFiles,
+  names: readonly string[] | undefined,
+): CatalogRead {
+  const read = readKitCatalog(files);
+  if ('problem' in read) throw canvasError('invalid_source', read.problem);
+  const { catalog } = read;
+  const missing = names?.find((name) => !catalog.some((entry) => isNamedBy(entry.name, name)));
+  if (missing !== undefined)
+    throw canvasError(
+      'invalid_input',
+      `${missingEntryMessage(missing)} Read the catalog without entries to see its components.`,
+    );
+  const asked =
+    names === undefined
+      ? catalog
+      : catalog.filter((entry) => names.some((name) => isNamedBy(entry.name, name)));
+  let budget = CATALOG_READ_BYTES;
+  const entries: CatalogEntryRead[] = [];
+  const omitted: string[] = [];
+  for (const { name, uses, icons, jsx, note, props } of asked) {
+    const entry = { name, uses, icons, jsx, note, props: props ?? [] };
+    const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8');
+    if (omitted.length > 0 || cost > budget) {
+      omitted.push(name);
+      continue;
+    }
+    budget -= cost;
+    entries.push(entry);
+  }
+  return omitted.length > 0 ? { entries, omitted } : { entries };
+}
+
+function isNamedBy(entryName: string, name: string): boolean {
+  const entry = entryName.toLowerCase();
+  const asked = name.toLowerCase();
+  return entry === asked || entry.startsWith(`${asked} / `);
 }
 
 /** Why the kit's catalog file is unusable, or null when it is usable or absent. */

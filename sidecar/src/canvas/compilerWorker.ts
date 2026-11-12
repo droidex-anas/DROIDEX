@@ -37,6 +37,7 @@ import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
 import {
   KIT_CATALOG_FILE,
+  missingEntryMessage,
   readKitCatalog,
   type CatalogEntry,
   type KitFailure,
@@ -344,11 +345,7 @@ async function runEdit(
 async function catalogEntry(name: string, designSystem: DesignSystemRef): Promise<CatalogEntry> {
   const read = readKitCatalog((await readDesignSystem(designSystem)).files);
   const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
-  if (!entry)
-    throw new SourceElementError(
-      'invalid_edit',
-      `This kit has no component called ${name} any more.`,
-    );
+  if (!entry) throw new SourceElementError('invalid_edit', missingEntryMessage(name));
   return entry;
 }
 
