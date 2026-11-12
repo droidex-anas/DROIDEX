@@ -19,11 +19,14 @@ import {
 import { boardPoint } from './boardCoordinates';
 import type { BoardStage } from './boardStage';
 import {
+  canvasToScreen,
   reduceFrameDrag,
   sameRect,
+  screenToCanvas,
   type FrameDrag,
   type FrameHandle,
   type Point,
+  type Viewport,
 } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import { snapFrameRect, snapGroupMove, type SnapMarks } from './frameSnap';
@@ -148,13 +151,17 @@ export function useBoardGestures({
         setBand({ origin: active.origin, current: pointer });
         return;
       }
-      // The live scale, since a wheel zoom mid-drag settles only once the wheel goes quiet.
-      const { scale } = stage.viewport;
+      // The live view, since a wheel zoom mid-drag settles only once the wheel
+      // goes quiet. The pointer is taken back to where the view the drag began
+      // in would show the board point under it now, so a zoom or a pan mid-drag
+      // never rescales the distance the hand had already covered.
+      const live = stage.viewport;
+      const { scale } = live;
       const stepped = reduceFrameDrag(active.drag, {
         type: 'move',
         pointerId: active.drag.pointerId,
-        pointer,
-        scale,
+        pointer: canvasToScreen(active.view, screenToCanvas(live, pointer)),
+        scale: active.view.scale,
       }).drag;
       if (stepped === null) return;
       // With ⌘ or Ctrl held there is nothing to snap to.
@@ -267,6 +274,7 @@ export function useBoardGestures({
     const started: FrameGesture = {
       kind: 'frame',
       pointerId: event.pointerId,
+      view: stage.viewport,
       drag: {
         designId: frame.designId,
         pointerId: event.pointerId,
@@ -449,6 +457,8 @@ type Gesture =
 interface FrameGesture {
   kind: 'frame';
   pointerId: number;
+  /** The view the press landed in, which the drag's origin is a point of. */
+  view: Viewport;
   drag: FrameDrag;
   carried: CarriedFrame[];
   others: FrameRect[];

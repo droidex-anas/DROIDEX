@@ -173,47 +173,79 @@ test('a frame resizes from an edge or a corner, and the edges opposite stay put'
   ).toBe(4);
 });
 
-test('a wheel zoom during a frame drag moves the frame at the zoom the board shows', async ({
-  page,
-}) => {
-  await openBoard(page);
-  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
-  const origin = { x: Math.round(label.x + 30), y: Math.round(label.y + 8) };
-  await page.mouse.move(origin.x, origin.y);
-  await page.mouse.down();
-  await page.mouse.move(origin.x + 10, origin.y);
-  await page.clock.runFor(32);
-  await page.getByTestId('canvas-board').evaluate(
-    (root, point) => {
-      root.dispatchEvent(
-        new WheelEvent('wheel', {
-          ...point,
-          deltaY: -40,
-          ctrlKey: true,
-          bubbles: true,
-          cancelable: true,
-        }),
-      );
-    },
-    { clientX: origin.x, clientY: origin.y },
-  );
-  await page.clock.runFor(32);
-  // Still inside the wheel's quiet window, so only the stage has the new zoom.
-  const scale = await page
+/** The board's zoom as drawn, which only the stage has until a wheel goes quiet. */
+const liveScale = (page: Page) =>
+  page
     .locator('[data-testid="canvas-board"] > [style*="transform-origin"]')
     .evaluate((stage) =>
       Number(/scale\(([\d.]+)\)/.exec((stage as HTMLElement).style.transform)?.[1]),
     );
-  // ⌘ held, so the frame does not snap.
+
+/**
+ * Presses at `origin`, travels `travel` screen pixels right, pinches in at the
+ * pointer, moves one pixel more and lets go, with ⌘ held so nothing snaps.
+ * Answers the zoom before and after the pinch.
+ */
+async function dragThroughPinch(page: Page, origin: { x: number; y: number }, travel: number) {
+  await page.mouse.move(origin.x, origin.y);
+  await page.mouse.down();
   await page.keyboard.down('Meta');
-  await page.mouse.move(origin.x + 200, origin.y);
+  const pointer = { x: origin.x + travel, y: origin.y };
+  await page.mouse.move(pointer.x, pointer.y);
+  await page.clock.runFor(32);
+  const before = await liveScale(page);
+  await page.getByTestId('canvas-board').evaluate((root, { x, y }) => {
+    root.dispatchEvent(
+      new WheelEvent('wheel', {
+        clientX: x,
+        clientY: y,
+        deltaY: -40,
+        ctrlKey: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  }, pointer);
+  await page.clock.runFor(32);
+  const after = await liveScale(page);
+  await page.mouse.move(pointer.x + 1, pointer.y);
   await page.clock.runFor(32);
   await page.mouse.up();
   await page.keyboard.up('Meta');
-  await expect.poll(() => arrangeCount(page)).toBe(1);
-  expect((await arranged(page, 0)).a.x).toBe(Math.round(100 + 200 / scale));
-});
+  return { before, after };
+}
 
+test('a pinch at the pointer mid-drag keeps the distance already dragged, for a move and a resize', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
+  const move = await dragThroughPinch(
+    page,
+    { x: Math.round(label.x + 30), y: Math.round(label.y + 8) },
+    180,
+  );
+  expect(move.after).toBeGreaterThan(move.before);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  // The 180 pixels in board units at the zoom they were dragged at, and the last one at the new zoom.
+  const moved = (await arranged(page, 0)).a.x;
+  expect(Math.abs(moved - (100 + 180 / move.before + 1 / move.after))).toBeLessThanOrEqual(1);
+
+  await page.evaluate(() => {
+    window.boardHarness.answer(0);
+    window.boardHarness.select(['a']);
+  });
+  await page.clock.runFor(32);
+  const grip = await box(page.locator('[data-handle="southeast"]'));
+  const resize = await dragThroughPinch(
+    page,
+    { x: grip.x + grip.width / 2, y: grip.y + grip.height / 2 },
+    90,
+  );
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  const width = (await arranged(page, 1)).a.width;
+  expect(Math.abs(width - (400 + 90 / resize.before + 1 / resize.after))).toBeLessThanOrEqual(1);
+});
 test('the selected frame keeps its size and corners over a neighbour, and its edges leave the neighbour its presses', async ({
   page,
 }) => {
