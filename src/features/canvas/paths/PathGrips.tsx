@@ -34,11 +34,16 @@ interface Press {
   dragging: boolean;
 }
 
-/** A move under way: the shape it started from, the element it writes to, and the data it shows, null for the path's own. */
+/**
+ * A move under way, from a press or the first nudge of a burst: the shape it
+ * started from, the element it writes to, the data it shows (null for the
+ * path's own), and each nudged grip's total step, by its index.
+ */
 interface Move {
   from: PathSegment[];
   element: ElementRef;
   d: string | null;
+  nudges: Map<number, Point>;
 }
 
 export function PathGrips({
@@ -118,7 +123,7 @@ export function PathGrips({
   /** Starts a move from the shape as read, taking Escape and the window's blur until it ends. */
   const begin = () => {
     if (move.current) return;
-    move.current = { from: shape.segments, element: shape.element, d: null };
+    move.current = { from: shape.segments, element: shape.element, d: null, nudges: new Map() };
     // The board's Escape would drop the selection, so a move takes it first, wherever focus is.
     const onKey = (event: globalThis.KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -141,6 +146,10 @@ export function PathGrips({
   const show = (next: PathSegment[] | null) => {
     const held = move.current;
     if (!held || !next) return;
+    if (!isCurrent(latest.current.shape, held)) {
+      settle(false);
+      return;
+    }
     const d = movedData(held.from, next);
     if (d !== null && d.length > MAX_PREVIEW_PATH_DATA_BYTES) return;
     held.d = d;
@@ -173,6 +182,8 @@ export function PathGrips({
       start: { x: event.clientX, y: event.clientY },
       dragging: false,
     };
+    // The press is the move's start, so a new read before it drags takes it back too.
+    begin();
   };
 
   const onPointerMove = (event: PointerEvent) => {
@@ -183,7 +194,6 @@ export function PathGrips({
       if (Math.hypot(screen.x, screen.y) < DRAG_START_PX) return;
       held.dragging = true;
       setDragging(true);
-      begin();
     }
     const from = move.current?.from;
     if (!from) return;
@@ -199,11 +209,10 @@ export function PathGrips({
   const onPointerUp = (event: PointerEvent) => {
     const held = press.current;
     if (held?.pointerId !== event.pointerId) return;
-    if (held.dragging) settle(true);
-    else press.current = null;
+    settle(held.dragging);
   };
 
-  const onKeyDown = (event: KeyboardEvent, grip: PathGrip) => {
+  const onKeyDown = (event: KeyboardEvent, grip: PathGrip, index: number) => {
     const step = arrowStep(event);
     if (step) {
       event.preventDefault();
@@ -212,7 +221,16 @@ export function PathGrips({
       const free = (step.x !== 0 && grip.axes.x) || (step.y !== 0 && grip.axes.y);
       if (!canMove(grip) || press.current || !free) return;
       begin();
-      show(moveGrip(segments, grip, step));
+      const held = move.current;
+      if (!held) return;
+      // Each grip moves by its burst's total from where the burst started, so
+      // presses that cancel out leave its numbers as written.
+      const total = held.nudges.get(index) ?? { x: 0, y: 0 };
+      held.nudges.set(index, { x: total.x + step.x, y: total.y + step.y });
+      const started = pathGrips(held.from);
+      let next: PathSegment[] | null = held.from;
+      for (const [at, delta] of held.nudges) if (next) next = moveGrip(next, started[at], delta);
+      show(next);
       if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
       nudgeTimer.current = setTimeout(() => {
         settle(true);
@@ -282,7 +300,7 @@ export function PathGrips({
             onPointerCancel={onPointerLost}
             onLostPointerCapture={onPointerLost}
             onKeyDown={(event) => {
-              onKeyDown(event, grip);
+              onKeyDown(event, grip, index);
             }}
           />
         );

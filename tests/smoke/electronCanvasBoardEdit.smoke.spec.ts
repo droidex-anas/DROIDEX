@@ -689,4 +689,29 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.clock.runFor(500);
   expect(await edits()).toHaveLength(2);
   await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 60, 0);
+
+  // So is a press that has not dragged yet: its drag writes nothing on the revision read since.
+  const landed = await box(anchors.nth(1));
+  await page.mouse.move(landed.x + 14, landed.y + 14);
+  await page.mouse.down();
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await page.evaluate(() => window.boardHarness.switchCalls)).toHaveLength(2);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L90.005 10 l0 50' });
+    window.boardHarness.answerSwitch(1);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  await page.mouse.move(landed.x + 34, landed.y + 24, { steps: 4 });
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await edits()).toHaveLength(2);
+
+  // Nudges that cancel out write nothing, a half-hundredth number included.
+  await anchors.nth(1).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(2);
 });
