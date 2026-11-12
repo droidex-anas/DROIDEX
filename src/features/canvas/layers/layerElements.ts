@@ -1,5 +1,6 @@
 import { picksElements, reduceBoardInteraction, type BoardInteraction } from '../canvasState';
 import type { PreviewNode } from '../previewDocument';
+import type { OverlayStore } from '../overlayStore';
 import type { PreviewRuns } from '../previewRuns';
 import type { ElementRef } from '../protocol';
 import type { ElementEditor } from '../useElementEditor';
@@ -12,7 +13,7 @@ export interface LayerElements {
   /** The element Edit has picked, whose row shows as selected, and which pick chose it, counting from the board's first. */
   picked: { element: ElementRef; pick: number } | null;
   /** The element under the board's pointer, whose row lights. */
-  hovered: HoveredElement | null;
+  hovered: OverlayStore<HoveredElement | null>;
   /** Picks the element in Edit, entering Edit from any other mode. */
   pick: (designId: string, node: PreviewNode) => void;
   /** Outlines the element on the board as the pointer over it would; null puts that out. */

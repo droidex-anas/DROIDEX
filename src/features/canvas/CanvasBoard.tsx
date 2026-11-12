@@ -381,7 +381,7 @@ export function CanvasBoard({
             selected={selected}
             path={editor.path}
             hovered={editor.hover.hovered}
-            hoveredComponent={picker.componentOf(editor.hover.hovered)}
+            componentOf={picker.componentOf}
             picks={picker.outlines}
             interaction={interaction}
             marks={annotation.layer}
@@ -395,7 +395,7 @@ export function CanvasBoard({
             onPointerDown={annotation.onSurfacePointerDown}
           />
         )}
-        {gestures.band && <RubberBand band={gestures.band} />}
+        <RubberBand band={gestures.band} />
         <StageSnapGuides held={gestures.held} measured={measured} stage={stage} />
         {picker.prompt && (
           <DesignPickPrompt

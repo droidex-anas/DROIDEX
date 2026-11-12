@@ -5,9 +5,14 @@
 // A design whose preview run changes is asked again where the pointer was, so
 // no outline outlives the run that drew it. The layers panel asks the same way
 // for the element under its pointer, by that element's path instead of a point.
+//
+// The answer is kept in an OverlayStore that only what draws it subscribes to
+// (the outline, Alt's distances, the hovered frame and its Layers row), so a
+// pointer sweeping a design renders those and not the board.
 
-import { useEffect, useState } from 'react';
+import { useLayoutEffect, useState } from 'react';
 import type { Point } from './canvasGeometry';
+import { OverlayStore } from './overlayStore';
 import type { PreviewHover, PreviewNode } from './previewDocument';
 import type { ElementRef } from './protocol';
 
@@ -32,8 +37,8 @@ type HoverTarget = Point | PreviewNode;
 export type HoverQuestion = (designId: string, at: HoverTarget) => Promise<PreviewHover | null>;
 
 export function useElementHover(active: boolean, ask: HoverQuestion) {
-  const [hovered, setHovered] = useState<HoveredElement | null>(null);
   const [hover] = useState(() => {
+    const hovered = new OverlayStore<HoveredElement | null>(null);
     let question = ask;
     let wanted: { designId: string; at: HoverTarget } | null = null;
     let asked: { designId: string; at: HoverTarget } | null = null;
@@ -42,6 +47,12 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
     // Bumped by every clear and changed run, so an answer from before it is dropped.
     let generation = 0;
 
+    // An answer that draws what is already drawn renders nothing.
+    const show = (next: HoveredElement | null) => {
+      const current = hovered.read();
+      if (next && current && sameHover(next, current)) return;
+      hovered.set(next);
+    };
     const askNext = () => {
       const next = wanted;
       if (next === null || asking) return;
@@ -51,7 +62,7 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
       const askedIn = generation;
       void question(next.designId, next.at).then((element) => {
         asking = false;
-        if (askedIn === generation) setHovered(element && { designId: next.designId, element });
+        if (askedIn === generation) show(element && { designId: next.designId, element });
         askNext();
       });
     };
@@ -63,6 +74,7 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
       });
     };
     return {
+      hovered,
       setQuestion: (next: HoverQuestion) => {
         question = next;
       },
@@ -73,7 +85,7 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
         asked = null;
         if (frame !== null) cancelAnimationFrame(frame);
         frame = null;
-        setHovered(null);
+        hovered.set(null);
       },
       /** A design's preview run attached or went, so what its last one answered no longer holds. */
       rerun: (designId: string) => {
@@ -85,13 +97,32 @@ export function useElementHover(active: boolean, ask: HoverQuestion) {
   });
   hover.setQuestion(ask);
 
-  // Turning hovering on or off, or leaving the board, drops the hover and any question for it.
-  useEffect(() => hover.clear, [active, hover]);
+  // Turning hovering on or off, or leaving the board, drops the hover and any
+  // question for it, before the change paints.
+  useLayoutEffect(() => hover.clear, [active, hover]);
 
   return {
-    hovered: active ? hovered : null,
+    /** What is under the pointer while hovering is on; subscribe to draw it. */
+    hovered: hover.hovered,
     move: hover.move,
     clear: hover.clear,
     rerun: hover.rerun,
   };
+}
+
+function sameHover(a: HoveredElement, b: HoveredElement): boolean {
+  const { element: left } = a;
+  const { element: right } = b;
+  return (
+    a.designId === b.designId &&
+    left.elementId === right.elementId &&
+    left.instancePath === right.instancePath &&
+    left.tagName === right.tagName &&
+    left.rect.x === right.rect.x &&
+    left.rect.y === right.rect.y &&
+    left.rect.width === right.rect.width &&
+    left.rect.height === right.rect.height &&
+    left.room.above === right.room.above &&
+    left.room.below === right.room.below
+  );
 }

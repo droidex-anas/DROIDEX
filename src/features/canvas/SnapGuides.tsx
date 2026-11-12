@@ -1,8 +1,9 @@
 // The lines a snapped drag lined up on and the spaces it measured, or the
 // distances Alt measures under the pointer, drawn in screen space above the
 // board's world layer so they stay hairlines at any zoom. They are drawn
-// outside React: a held frame's marks change with every move of the hand, and
-// both kinds follow the live view.
+// outside React: a held frame's marks change with every move of the hand, Alt's
+// in Edit with every element the pointer crosses, and both kinds follow the
+// live view.
 
 import { useLayoutEffect, useState } from 'react';
 import type { BoardStage } from './boardStage';
@@ -10,6 +11,7 @@ import type { Viewport } from './canvasGeometry';
 import type { HeldFrames } from './heldFrames';
 import { distanceLabel } from './measureDistances';
 import { layOutGuides, type Box, type GuideMarks, type Size } from './snapGuideLayout';
+import type { AltMarks } from './useHoverMeasurements';
 
 /** What the held frames snapped on while a hand holds any, else what Alt measured. */
 export function StageSnapGuides({
@@ -18,23 +20,29 @@ export function StageSnapGuides({
   stage,
 }: {
   held: HeldFrames;
-  measured: GuideMarks;
+  measured: AltMarks;
   stage: BoardStage;
 }) {
   const [layer] = useState(() => new SnapGuideLayer());
   useLayoutEffect(() => {
+    let altMarks = measured.read();
     const draw = () => {
-      layer.draw(held.readMarks() ?? measured, stage.viewport);
+      layer.draw(held.readMarks() ?? altMarks, stage.viewport);
     };
     draw();
     // A distance is measured once a hold, so a font or zoom changed since is read anew.
     const stopHold = held.subscribe(layer.forgetSizes);
     const stopHeld = held.onMarks(draw);
     const stopStage = stage.subscribe(draw);
+    const stopAlt = measured.subscribe(() => {
+      altMarks = measured.read();
+      draw();
+    });
     return () => {
       stopHold();
       stopHeld();
       stopStage();
+      stopAlt();
     };
   }, [held, layer, measured, stage]);
   return <div aria-hidden className="canvas-snap" ref={layer.attach} />;
@@ -94,8 +102,9 @@ class SnapGuideLayer {
     laidOut.gaps.forEach(({ line, pill, beside }, index) => {
       const nodes = this.gaps[index];
       place(nodes.line, line);
-      nodes.pill.style.left = `${String(pill.left)}px`;
-      nodes.pill.style.top = `${String(pill.top)}px`;
+      // By translate, so the pill's own centring transform still applies, and at
+      // whole pixels as left and top laid it out, since a fractional one blurs its edges.
+      nodes.pill.style.translate = `${String(Math.round(pill.left))}px ${String(Math.round(pill.top))}px`;
       nodes.pill.toggleAttribute('data-beside', beside);
     });
   }
@@ -123,8 +132,7 @@ function span(className: string): HTMLElement {
 }
 
 function place(element: HTMLElement, box: Box): void {
-  element.style.left = `${String(box.left)}px`;
-  element.style.top = `${String(box.top)}px`;
+  element.style.translate = `${String(box.left)}px ${String(box.top)}px`;
   element.style.width = `${String(box.width)}px`;
   element.style.height = `${String(box.height)}px`;
 }

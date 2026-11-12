@@ -50,6 +50,15 @@ const CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET = 1.25;
 // A hand drags frames outside React, which commits as the hold begins, as it
 // ends and as its write lands (3–5 commits over 61 frames, measured 0.05–0.08).
 const CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET = 0.1;
+// A marquee draws its band outside React and commits as it starts and ends
+// (4 commits over 62 frames, measured 0.06).
+const CANVAS_COMMITS_PER_MARQUEE_FRAME_BUDGET = 0.1;
+// An Edit hover renders only its outline, as the element under the pointer
+// changes. The sweep leaves and re-enters the design at every row's end, and
+// each outline shown or hidden is 2–3 commits with its tag (measured 0.49).
+const CANVAS_COMMITS_PER_EDIT_HOVER_FRAME_BUDGET = 0.6;
+// A pointer down the Layers rows lights each frame without React (measured 0).
+const CANVAS_COMMITS_PER_LAYERS_SWEEP_FRAME_BUDGET = 0.1;
 const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
 // 120 Hz: the main-thread work one frame may take.
 const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
@@ -156,6 +165,9 @@ export function evaluateProbeGates(options: {
   reactCommitsPerPanFrame: number | null;
   reactCommitsPerZoomFrame: number | null;
   reactCommitsPerDragFrame: number | null;
+  reactCommitsPerMarqueeFrame: number | null;
+  reactCommitsPerEditHoverFrame: number | null;
+  reactCommitsPerLayersSweepFrame: number | null;
   layoutReadsPerPanFrame: number | null;
   longTasksDuringGestures: number | null;
   panBusyP95Ms: number | null;
@@ -235,6 +247,42 @@ export function evaluateProbeGates(options: {
         budget: CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET,
         justification:
           'A drag draws the held frames outside React and commits as it starts, ends and lands (measured 0.05–0.08). 0.1 is 6 commits a drag, far from one a frame.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerMarqueeFrame',
+        name: 'React commits per frame of a Shift marquee, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerMarqueeFrame,
+        budget: CANVAS_COMMITS_PER_MARQUEE_FRAME_BUDGET,
+        justification:
+          'The band is drawn outside React, which commits as the marquee starts and ends (measured 0.06). 0.1 is 6 commits a marquee, far from one a frame.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerEditHoverFrame',
+        name: 'React commits per frame of an Edit hover sweep, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerEditHoverFrame,
+        budget: CANVAS_COMMITS_PER_EDIT_HOVER_FRAME_BUDGET,
+        justification:
+          'Only the outline renders, as the element under the pointer changes; the sweep leaves and re-enters the design at each row (measured 0.49). At one commit a frame, every hover would draw the board.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerLayersSweepFrame',
+        name: 'React commits per frame of a pointer sweep down the Layers rows, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerLayersSweepFrame,
+        budget: CANVAS_COMMITS_PER_LAYERS_SWEEP_FRAME_BUDGET,
+        justification:
+          'A row lights its frame without React (measured 0). 0.1 is 6 commits a sweep, far from one a row.',
       },
       options.reactCommitsPerPanFrame !== null,
     ),

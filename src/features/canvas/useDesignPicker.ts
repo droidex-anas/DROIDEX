@@ -205,8 +205,8 @@ export function useDesignPicker({ frames, runs, active, design }: DesignPickerIn
   };
 
   /** The component the hovered element is written in, which its tag names in Design. */
-  const componentOf = (hovered: HoveredElement | null): string | null => {
-    if (!active || !hovered) return null;
+  const componentOf = (hovered: HoveredElement): string | null => {
+    if (!active) return null;
     const frame = frames.find((each) => each.designId === hovered.designId);
     const held = runs.get(hovered.designId);
     if (!frame || !held) return null;

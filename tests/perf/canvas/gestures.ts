@@ -4,6 +4,7 @@
 
 import type { Page } from '@playwright/test';
 import type { BoardTool } from './board';
+import type { Watch } from './probe';
 import { PacedInput, type Point } from './input';
 
 /** Events each way: half a second out, half a second back. */
@@ -17,11 +18,20 @@ export interface Gesture {
   name: string;
   description: string;
   tool: BoardTool;
-  /** The element whose inline style the gesture changes, checked in the warm-up stream. */
-  moves?: string;
+  /**
+   * What the gesture visibly changes, which must take two values or more in
+   * the warm-up stream, so a gesture that reaches nothing is not counted as
+   * one that costs nothing.
+   */
+  shows: Watch;
   /** Readies the page once, before the first stream. */
   prepare?: (page: Page) => Promise<void>;
   stream: (page: Page) => Promise<void>;
+}
+
+/** The element's inline style, which a move rewrites. */
+function moves(selector: string): Watch {
+  return { selector, attribute: 'style' };
 }
 
 /** Where a trip from `from` by `by` and back is, `index` events in. */
@@ -135,7 +145,7 @@ export const GESTURES: Gesture[] = [
     name: 'pan',
     description: 'Background press-drag pan, 240 px across and back',
     tool: 'board',
-    moves: STAGE,
+    shows: moves(STAGE),
     stream: async (page) => {
       const from = await background(page);
       await drag(await PacedInput.open(page), from, (index) =>
@@ -147,42 +157,42 @@ export const GESTURES: Gesture[] = [
     name: 'wheelPan',
     description: 'Two-finger scroll pan, 60 wheel events of 6 px down and 60 up',
     tool: 'board',
-    moves: STAGE,
+    shows: moves(STAGE),
     stream: (page) => wheel(page, 6, null),
   },
   {
     name: 'pinch',
     description: 'Trackpad pinch (Ctrl+wheel), 60 events in and 60 out',
     tool: 'board',
-    moves: STAGE,
+    shows: moves(STAGE),
     stream: (page) => wheel(page, -3, 'Control'),
   },
   {
     name: 'metaWheel',
     description: '⌘-wheel zoom, 60 events in and 60 out',
     tool: 'board',
-    moves: STAGE,
+    shows: moves(STAGE),
     stream: (page) => wheel(page, -4, 'Meta'),
   },
   {
     name: 'moveOne',
     description: 'Drag one frame by its label, out and back',
     tool: 'board',
-    moves: FRAME_A,
+    shows: moves(FRAME_A),
     stream: (page) => moveFrames(page, ['a']),
   },
   {
     name: 'moveFive',
     description: 'Drag five selected frames by one label, out and back',
     tool: 'board',
-    moves: FRAME_A,
+    shows: moves(FRAME_A),
     stream: (page) => moveFrames(page, ['a', 'b', 'x0', 'x1', 'x2']),
   },
   {
     name: 'resizeOne',
     description: 'Resize one frame from its south-east corner, out and back',
     tool: 'board',
-    moves: FRAME_A,
+    shows: moves(FRAME_A),
     prepare: selectFrameA,
     stream: async (page) => {
       const handle = await rectOf(page, '[data-design-frame="a"] [data-handle="southeast"]');
@@ -197,6 +207,7 @@ export const GESTURES: Gesture[] = [
     name: 'marquee',
     description: 'Shift-drag rubber band from the margin until it holds every frame',
     tool: 'board',
+    shows: moves('.canvas-band'),
     stream: async (page) => {
       const board = await rectOf(page, '[data-testid="canvas-board"]');
       // From the top margin, right of the tool rail, to past the last frame.
@@ -216,6 +227,7 @@ export const GESTURES: Gesture[] = [
     name: 'editHover',
     description: 'Edit mode pointer sweep over a design, element outlines following',
     tool: 'edit',
+    shows: { selector: '[data-element-hover]', attribute: 'data-element-hover' },
     prepare: editFrameA,
     stream: async (page) => {
       const sheet = await rectOf(page, '[data-design-frame="a"] .canvas-sheet');
@@ -227,6 +239,7 @@ export const GESTURES: Gesture[] = [
     description:
       'Held Alt over the board, distances from the selection to the frame under the pointer',
     tool: 'board',
+    shows: moves('.canvas-snap-pill'),
     prepare: selectFrameA,
     stream: async (page) => {
       const board = await rectOf(page, '[data-testid="canvas-board"]');
@@ -240,6 +253,7 @@ export const GESTURES: Gesture[] = [
     name: 'layersSweep',
     description: 'Pointer sweep down the Layers rows and back, lighting each frame',
     tool: 'layers',
+    shows: { selector: '[data-layer-hover]', attribute: 'data-design-frame' },
     stream: async (page) => {
       const tree = await rectOf(page, '[role="tree"]');
       const from = { x: tree.x + tree.width / 2, y: tree.y + 8 };
@@ -252,6 +266,7 @@ export const GESTURES: Gesture[] = [
     name: 'panelScrub',
     description: 'Scrub the picked title’s Font size by its short name, out and back',
     tool: 'edit',
+    shows: { selector: 'input[aria-label="Font size"]', attribute: 'value' },
     prepare: async (page) => {
       await editFrameA(page);
       const sheet = await rectOf(page, '[data-design-frame="a"] .canvas-sheet');

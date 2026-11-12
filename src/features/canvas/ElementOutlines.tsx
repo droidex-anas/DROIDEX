@@ -6,10 +6,14 @@
 // carry them at once, a held frame's move takes them along (HeldFrames), and a
 // chip at the sheet's edge is not cut off. Each box is trimmed to its frame,
 // where the design is visible, and glides when the element's own box changes.
+// The hovered element is read from its store here, so a hover renders this
+// layer and not the board.
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
 import { onBoard, type Box, type PickedOnBoard } from './elementOnBoard';
+import { OutlineGlide, type GlideAnchor } from './outlineGlide';
+import type { OverlayStore } from './overlayStore';
 import type { PreviewHover } from './previewDocument';
 import type { FrameRect } from './protocol';
 import { isPicked, type HoveredElement } from './useElementHover';
@@ -33,8 +37,8 @@ export function ElementOutlines({
   drawn,
   scale,
   selected,
-  hovered,
-  hoveredComponent,
+  hovered: hover,
+  componentOf,
   picks,
 }: {
   /** Where the board draws each frame. */
@@ -43,17 +47,18 @@ export function ElementOutlines({
   scale: number;
   /** Where Edit's picked element shows, which its outline and size chip are drawn from. */
   selected: PickedOnBoard | null;
-  hovered: HoveredElement | null;
-  /** The component the hovered element is written in, which Design names before its tag. */
-  hoveredComponent: string | null;
+  hovered: OverlayStore<HoveredElement | null>;
+  /** The component an element is written in, which Design names before its tag. */
+  componentOf: (hovered: HoveredElement) => string | null;
   /** Design's picks, outlined where each was picked, and the text being dragged across. */
   picks: readonly PickOutline[];
 }) {
+  const hovered = useSyncExternalStore(hover.subscribe, hover.read, hover.read);
   const [tag, tagOnScreen] = useScreenSize();
   const [size, sizeOnScreen] = useScreenSize();
   const picked = selected?.selection.draft.element;
   // The picked element's own outline already says where it is.
-  const hover =
+  const shown =
     hovered &&
     !(picked && isPicked(picked, hovered)) &&
     onBoard(drawn, hovered.designId, hovered.element.rect);
@@ -61,57 +66,65 @@ export function ElementOutlines({
     selected && picked?.designId === hovered?.designId
       ? sizeChipOf(selected.box, sizeOnScreen.width / scale, scale)
       : null;
+  const side =
+    hovered && shown
+      ? tagSide(
+          shown.box,
+          shown.frame.height,
+          { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
+          hovered.element.room,
+          sizeChip,
+        )
+      : null;
   return (
     <>
-      {hovered && hover && (
+      {hovered && shown && (
         // A new frame is a new outline, so it never glides across the board.
-        <AtFrame key={hovered.designId} designId={hovered.designId} frame={hover.frame}>
-          <div
-            aria-hidden
-            data-element-hover={hovered.element.tagName}
+        <AtFrame key={hovered.designId} designId={hovered.designId} frame={shown.frame}>
+          <Outline
+            box={shown.box}
+            glides
             className="canvas-element-hover"
-            style={hover.box}
+            data={{ 'data-element-hover': hovered.element.tagName }}
           >
             <div
               className="canvas-element-tag canvas-chrome"
-              data-side={tagSide(
-                hover.box,
-                hover.frame.height,
-                { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
-                hovered.element.room,
-                sizeChip,
-              )}
+              data-side={side}
+              data-glide-anchor={side === 'below' ? ('bottom' satisfies GlideAnchor) : undefined}
             >
               <span ref={tag}>
-                <TagName tagName={hovered.element.tagName} component={hoveredComponent} />
+                <TagName tagName={hovered.element.tagName} component={componentOf(hovered)} />
               </span>
             </div>
-          </div>
+          </Outline>
         </AtFrame>
       )}
       {selected && (
         <AtFrame designId={selected.selection.draft.element.designId} frame={selected.frame}>
-          <div aria-hidden className="canvas-element-outline" style={selected.box}>
-            <div className="canvas-frame-size canvas-chrome">
+          <Outline box={selected.box} glides className="canvas-element-outline">
+            <div
+              className="canvas-frame-size canvas-chrome"
+              data-glide-anchor={'bottom-centre' satisfies GlideAnchor}
+            >
               <span ref={size}>
                 {Math.round(selected.selection.shown.rect.width)} ×{' '}
                 {Math.round(selected.selection.shown.rect.height)}
               </span>
             </div>
-          </div>
+          </Outline>
         </AtFrame>
       )}
       {picks.map((pick) => {
-        const shown = onBoard(drawn, pick.designId, pick.box);
+        const placed = onBoard(drawn, pick.designId, pick.box);
         return (
-          shown && (
-            <AtFrame key={pick.key} designId={pick.designId} frame={shown.frame}>
-              <div
-                aria-hidden
-                data-design-pick
-                data-dragging={pick.dragging || undefined}
+          placed && (
+            <AtFrame key={pick.key} designId={pick.designId} frame={placed.frame}>
+              {/* Text being dragged across follows the pointer, so it never glides behind it. */}
+              <Outline
+                box={placed.box}
+                glides={!pick.dragging}
                 className="canvas-element-outline"
-                style={shown.box}
+                data={{ 'data-design-pick': '', 'data-dragging': pick.dragging || undefined }}
               />
             </AtFrame>
           )
@@ -142,7 +155,57 @@ function AtFrame({
   children: ReactNode;
 }) {
   return (
-    <div data-follows-frame={designId} className="absolute" style={{ left: frame.x, top: frame.y }}>
+    <div
+      data-follows-frame={designId}
+      className="absolute left-0 top-0"
+      style={{ transform: `translate(${String(frame.x)}px, ${String(frame.y)}px)` }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** One outline, placed by `transform`, which glides when its box changes (OutlineGlide). */
+function Outline({
+  box,
+  glides,
+  className,
+  data,
+  children,
+}: {
+  box: Box;
+  glides: boolean;
+  className: string;
+  /** Its `data-` attributes. */
+  data?: Record<string, string | boolean | undefined>;
+  children?: ReactNode;
+}) {
+  const node = useRef<HTMLDivElement>(null);
+  const last = useRef<Box | null>(null);
+  const [motion] = useState(() => new OutlineGlide());
+  const { left, top, width, height } = box;
+  useLayoutEffect(() => {
+    const from = last.current;
+    const to = { left, top, width, height };
+    last.current = to;
+    if (!node.current || !from) return;
+    if (glides) motion.glide(node.current, from, to);
+    else motion.stop();
+  }, [glides, motion, left, top, width, height]);
+  useLayoutEffect(
+    () => () => {
+      motion.stop();
+    },
+    [motion],
+  );
+  return (
+    <div
+      ref={node}
+      aria-hidden
+      className={className}
+      style={{ transform: `translate(${String(left)}px, ${String(top)}px)`, width, height }}
+      {...data}
+    >
       {children}
     </div>
   );

@@ -135,9 +135,11 @@
   cursor: nwse-resize;
 }
 
-/* The rubber band, in screen space above the world layer. */
+/* The rubber band, in screen space above the world layer, placed by transform. */
 .canvas-band {
   position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: none;
   border-radius: 2px;
   border: 1px solid var(--selection);
@@ -145,8 +147,8 @@
 }
 
 /* What a snapped drag lined up on and the spaces it measured, in screen space
-   above the frames. They come and go with the snap, with no motion, so they
-   never trail the hand. */
+   above the frames, each placed by translate. They come and go with the snap,
+   with no motion, so they never trail the hand. */
 .canvas-snap {
   position: absolute;
   inset: 0;
@@ -160,6 +162,13 @@
 .canvas-snap-gap::after {
   position: absolute;
   background: var(--selection);
+}
+
+.canvas-snap-line,
+.canvas-snap-gap,
+.canvas-snap-pill {
+  top: 0;
+  left: 0;
 }
 
 .canvas-snap-gap::before,
@@ -214,24 +223,35 @@
 
 /* Edit's and Design's outlines over the guest, drawn like a frame's: the element
    under the pointer as a 1px line named by its tag, each pick at 1.5px. Outside any
-   frame, so they set the chrome font themselves. A changed box glides there,
-   and a new hover fades in. Each is its own stacking context at 0, so the
-   picked one's size badge stays under a sheet's notices and the selected
-   frame's toolbar, size and corners. */
+   frame, so they set the chrome font themselves. Each is placed by transform
+   and its line drawn by ::before, so a changed box glides there by transform
+   and scale alone (ElementOutlines), and a new hover fades in. Each is its own
+   stacking context at 0, so the picked one's size badge stays under a sheet's
+   notices and the selected frame's toolbar, size and corners. */
 .canvas-element-hover,
 .canvas-element-outline {
   --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
   position: absolute;
+  top: 0;
+  left: 0;
   z-index: 0;
   pointer-events: none;
-  transition-property: left, top, width, height;
-  transition-duration: var(--duration-quick);
-  transition-timing-function: var(--ease-smooth-out);
+}
+
+.canvas-element-hover::before,
+.canvas-element-outline::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
 }
 
 .canvas-element-hover {
-  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
   animation: canvas-element-hover-in var(--duration-quick) var(--ease-smooth-out);
+}
+
+.canvas-element-hover::before {
+  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
 }
 
 @keyframes canvas-element-hover-in {
@@ -240,7 +260,7 @@
   }
 }
 
-.canvas-element-outline {
+.canvas-element-outline::before {
   box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
   background: color-mix(in srgb, var(--selection) 6%, transparent);
 }
@@ -250,15 +270,8 @@
   animation-name: canvas-popover-drop;
 }
 
-/* Text being dragged across follows the pointer, so it never glides behind it. */
-.canvas-element-outline[data-dragging] {
-  transition: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .canvas-element-hover,
-  .canvas-element-outline {
-    transition: none;
+  .canvas-element-hover {
     animation: none;
   }
 }
