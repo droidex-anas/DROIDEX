@@ -10,6 +10,7 @@ import {
   entryFailure,
   KIT_CATALOG_FILE,
   kitFailureSchema,
+  readCatalogEntries,
   type CatalogEntry,
 } from './kitCatalog.js';
 import { KitPreviews } from './kitPreviews.js';
@@ -201,4 +202,113 @@ export const Bar = () => null, Foo = () => null;
       ['Second', 'catalog.json, Second: lucide-react has no icon NoSuchIcon.'],
     ],
   );
+});
+
+test('a catalog read finds an entry by its name and the entries filed under it, within its byte budget', () => {
+  const files = (catalog: CatalogEntry[]) => starterWith(catalogFile(catalog)).files;
+  const named = [
+    entry('Button', '<Button>Go</Button>'),
+    entry('Button / outline', '<Button variant="outline">Go</Button>'),
+    entry('Button group', '<Button>One</Button>'),
+    entry('Badge', '<Badge>New</Badge>', ['Badge']),
+  ];
+  const read = readCatalogEntries(files(named), ['button']);
+  assert.deepEqual(
+    read.entries.map(({ name }) => name),
+    ['Button', 'Button / outline'],
+  );
+  assert.deepEqual(read.entries[1], {
+    name: 'Button / outline',
+    uses: ['Button'],
+    icons: [],
+    jsx: '<Button variant="outline">Go</Button>',
+    note: null,
+    props: [],
+  });
+  assert.equal(read.omitted, undefined);
+  assert.throws(
+    () => readCatalogEntries(files(named), ['Badge', 'Card']),
+    /This kit has no component called Card\. Read the catalog without entries/,
+  );
+  // Entries past the budget are named, never cut short, so a later read can ask for them.
+  const large = Array.from({ length: 8 }, (_, index) =>
+    entry(`Big ${String(index)}`, `<Button>${'x'.repeat(3 * 1024)}</Button>`),
+  );
+  const all = readCatalogEntries(files(large), undefined);
+  assert.deepEqual(
+    all.entries.map(({ name }) => name),
+    ['Big 0', 'Big 1', 'Big 2', 'Big 3', 'Big 4'],
+  );
+  assert.deepEqual(all.omitted, ['Big 5', 'Big 6', 'Big 7']);
+  assert.ok(all.entries.every(({ jsx }) => jsx.endsWith('</Button>')));
+});
+
+test('a catalog read always returns its first entry, and counts brackets and commas against the rest', () => {
+  const files = (catalog: CatalogEntry[]) => starterWith(catalogFile(catalog)).files;
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+  // Quotes double when escaped, and eight props of 32 options add about 11 KB.
+  const option = (index: number) => `${'o'.repeat(38)}${String(index).padStart(2, '0')}`;
+  const options = Array.from({ length: 32 }, (_, index) => option(index));
+  const huge: CatalogEntry = {
+    ...entry('Huge', `<Button>${'"'.repeat(4000)}</Button>`),
+    props: Array.from({ length: 8 }, (_, index) => ({
+      name: `p${String(index)}`,
+      options,
+      default: options[0],
+    })),
+  };
+  const first = readCatalogEntries(
+    files([huge, entry('Button', '<Button>Go</Button>')]),
+    undefined,
+  );
+  assert.ok(bytes(first.entries) > 16 * 1024);
+  assert.deepEqual(
+    first.entries.map(({ name }) => name),
+    ['Huge'],
+  );
+  assert.deepEqual(first.omitted, ['Button']);
+
+  // Four entries of 4096 bytes each come to 16,389 bytes as a list.
+  const four = ['Fit 0', 'Fit 1', 'Fit 2', 'Fit 3'].map((name) => {
+    const jsx = '<Button></Button>';
+    const rest = bytes({ name, uses: ['Button'], icons: [], jsx, note: null, props: [] });
+    return entry(name, `<Button>${'x'.repeat(4096 - rest)}</Button>`);
+  });
+  const read = readCatalogEntries(files(four), undefined);
+  assert.ok(read.entries.every((one) => bytes(one) === 4096));
+  assert.deepEqual(read.omitted, ['Fit 3']);
+  assert.ok(bytes(read.entries) <= 16 * 1024);
+});
+
+test('a catalog read keeps the names it leaves out within its budget, and counts the rest', () => {
+  // 80 characters of three bytes each: the names alone come to 30 KB.
+  const name = (index: number) => `${'界'.repeat(76)} ${String(index).padStart(3, '0')}`;
+  const many = Array.from({ length: 128 }, (_, index) => entry(name(index), '<Button />'));
+  const read = readCatalogEntries(starterWith(catalogFile(many)).files, undefined);
+  assert.ok(read.omitted && read.moreOmitted);
+  assert.equal(read.entries.length + read.omitted.length + read.moreOmitted, many.length);
+  assert.deepEqual(
+    read.omitted,
+    many
+      .slice(read.entries.length)
+      .map(({ name }) => name)
+      .slice(0, read.omitted.length),
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(read), 'utf8') <= 16 * 1024);
+});
+test('a catalog read leads with the entry named exactly, so its variants never crowd it out', () => {
+  const big = (name: string) => entry(name, `<Button>${'x'.repeat(4000)}</Button>`);
+  const catalog = [
+    ...['0', '1', '2', '3'].map((index) => big(`Button / variant ${index}`)),
+    big('BUTTON'),
+    entry('Button', '<Button>Go</Button>'),
+  ];
+  const files = starterWith(catalogFile(catalog)).files;
+  const read = readCatalogEntries(files, ['Button']);
+  assert.deepEqual(
+    read.entries.map(({ name }) => name),
+    ['Button', 'BUTTON', 'Button / variant 0', 'Button / variant 1'],
+  );
+  assert.deepEqual(read.omitted, ['Button / variant 2', 'Button / variant 3']);
+  assert.equal(readCatalogEntries(files, ['BUTTON']).entries[0].name, 'BUTTON');
 });

@@ -45,6 +45,7 @@ export interface Reply {
   systems?: { id: string; version: number; proposal: boolean }[];
   status?: string;
   ref?: { id: string; version: number };
+  entries?: { name: string; jsx: string }[];
   id?: string;
   baseVersion?: number;
   latestVersion?: number;

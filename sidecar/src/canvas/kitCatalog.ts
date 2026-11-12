@@ -1,11 +1,13 @@
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
 // like its project theme. Each entry is one JSX element a palette inserts
-// into a frame, with the kit exports and lucide-react icons it names and the
-// props a palette lets the user pick before it inserts. The compiler checks
+// into a frame, or an agent writes after canvas_theme catalog reads it, with
+// the kit exports and lucide-react icons it names and the props a palette lets
+// the user pick before it inserts. The compiler checks
 // that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
 import { canvasDiagnosticSchema, truncateDiagnosticText } from './canvasDiagnostics.js';
+import { canvasError } from './canvasError.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { hasDuplicate, sourcePathSchema, type SourceFiles } from './schema.js';
 
@@ -152,6 +154,103 @@ export function catalogListing(files: SourceFiles): CatalogListing[] {
     note,
     props: props ?? [],
   }));
+}
+
+/** The entries a catalog read names, and the names past its byte budget. */
+export interface CatalogRead {
+  entries: CatalogEntryRead[];
+  /** Entries left out to keep the read bounded, to ask for by name. */
+  omitted?: string[];
+  /** How many more were left out than `omitted` has room to name. */
+  moreOmitted?: number;
+}
+
+/** An entry as an agent writes it into a design. */
+type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
+
+/**
+ * What a catalog read may cost as JSON, the names it leaves out included. The
+ * first entry asked for always comes back, whatever its size, so none is out
+ * of reach; the budget bounds the entries after it.
+ */
+const CATALOG_READ_BYTES = 16 * 1024;
+/** What the names of the entries left out may cost, whatever the first entry did. */
+const OMITTED_NAME_BYTES = 4 * 1024;
+const OMITTED_KEY_BYTES = ',"omitted":[],"moreOmitted":128'.length;
+
+/**
+ * The entries of a kit's catalog that `names` asks for, or all of them. A name
+ * matches the entry of that name, ignoring case, and the entries filed under
+ * it: "Button" also matches "Button / outline", never "Button group". Entries
+ * named exactly come first, then those named but for case, then those filed
+ * under a name, each in catalog order, so an entry's own name always reads it.
+ */
+export function readCatalogEntries(
+  files: SourceFiles,
+  names: readonly string[] | undefined,
+): CatalogRead {
+  const read = readKitCatalog(files);
+  if ('problem' in read) throw canvasError('invalid_source', read.problem);
+  const { catalog } = read;
+  if (names === undefined) return withinBudget(catalog);
+  const missing = names.find((name) =>
+    catalog.every((entry) => matchRank(entry.name, [name]) === null),
+  );
+  if (missing !== undefined)
+    throw canvasError(
+      'invalid_input',
+      `This kit has no component called ${missing}. Read the catalog without entries to see its components.`,
+    );
+  const ranked = catalog.flatMap((entry) => {
+    const rank = matchRank(entry.name, names);
+    return rank === null ? [] : [{ entry, rank }];
+  });
+  return withinBudget(ranked.sort((a, b) => a.rank - b.rank).map(({ entry }) => entry));
+}
+
+/** The entries in order until the budget is spent, and as many names of the rest as fit. */
+function withinBudget(asked: readonly CatalogEntry[]): CatalogRead {
+  let used = '{"entries":[]}'.length;
+  // What naming every entry after this one in `omitted` would cost.
+  let restNameBytes = asked.reduce((sum, { name }) => sum + listedNameBytes(name), 0);
+  const entries: CatalogEntryRead[] = [];
+  for (const { name, uses, icons, jsx, note, props } of asked) {
+    restNameBytes -= listedNameBytes(name);
+    const entry = { name, uses, icons, jsx, note, props: props ?? [] };
+    const separator = entries.length > 0 ? 1 : 0;
+    const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8') + separator;
+    const rest =
+      restNameBytes > 0 ? OMITTED_KEY_BYTES + Math.min(restNameBytes, OMITTED_NAME_BYTES) : 0;
+    if (entries.length > 0 && used + cost + rest > CATALOG_READ_BYTES) break;
+    used += cost;
+    entries.push(entry);
+  }
+  const left = asked.slice(entries.length);
+  if (left.length === 0) return { entries };
+  const omitted: string[] = [];
+  let nameBytes = 0;
+  for (const { name } of left) {
+    nameBytes += listedNameBytes(name);
+    if (nameBytes > OMITTED_NAME_BYTES) break;
+    omitted.push(name);
+  }
+  const moreOmitted = left.length - omitted.length;
+  return moreOmitted > 0 ? { entries, omitted, moreOmitted } : { entries, omitted };
+}
+
+/** A name as a JSON list writes it, escapes, quotes and its comma included. */
+function listedNameBytes(name: string): number {
+  return Buffer.byteLength(JSON.stringify(name), 'utf8') + 1;
+}
+
+/** How closely one of `names` names the entry: 0 exactly, 1 but for case, 2 as filed under it. */
+function matchRank(entryName: string, names: readonly string[]): number | null {
+  if (names.includes(entryName)) return 0;
+  const entry = entryName.toLowerCase();
+  const asked = names.map((name) => name.toLowerCase());
+  if (asked.includes(entry)) return 1;
+  if (asked.some((name) => entry.startsWith(`${name} / `))) return 2;
+  return null;
 }
 
 /** Why the kit's catalog file is unusable, or null when it is usable or absent. */

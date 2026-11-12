@@ -182,12 +182,15 @@ test('HTTP Canvas calls strictly validate raw arguments and return payload-free 
   assert.deepEqual(h.workspace.listCanvases(), []);
 });
 
-test('theme listing is bounded and saving requires a client mutation ID', async (t) => {
+test('theme listing is bounded, a catalog read defaults to the turn’s kit, and saving requires a client mutation ID', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
   assert.equal((await h.call('canvas_read', { unknown: 'secret' })).code, 'invalid_input');
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
+  // With no ref it reads the turn's kit, Auto, whose catalog the shared primitives fill.
+  const catalog = await h.call('canvas_theme', { operation: 'catalog', entries: ['button'] });
+  assert.equal(catalog.entries?.map(({ name }) => name).join(), 'Button');
   const save = {
     scopeId,
     operation: 'save',
