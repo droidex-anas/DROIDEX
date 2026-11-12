@@ -4,7 +4,7 @@
 // queued prompt is edited. A prompt on a canvas also carries the design system
 // chosen for it. A prompt to a child carries none of these.
 
-import { createElement } from 'react';
+import { createElement, lazy, Suspense } from 'react';
 import { Frame } from 'lucide-react';
 import { Component, MessageThread, MousePointerSquareDashed } from '@droidex/icons';
 import {
@@ -22,7 +22,6 @@ import {
   useDesignSystemChoice,
   type DesignSystemChoice,
 } from '../../features/canvas/designSystemChoices';
-import { ElementCrop } from '../../features/canvas/ElementCrop';
 import {
   elementLabel,
   elementName,
@@ -52,6 +51,11 @@ const NO_REPLIES: string[] = [];
 const NO_PINS: readonly FramePin[] = [];
 const NO_ELEMENTS: readonly ElementPin[] = [];
 const NO_COMPONENTS: readonly ComponentPin[] = [];
+
+// An element is picked on the canvas, so its crop loads with the canvas code, not the entry.
+const ElementCrop = lazy(() =>
+  import('../../features/canvas/ElementCrop').then((module) => ({ default: module.ElementCrop })),
+);
 
 /**
  * The canvas a composer's prompt works on: a chat's attached canvas, or the one
@@ -150,7 +154,11 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
     chips.push({
       key: `element:${elementPinKey(pin)}`,
       icon: MousePointerSquareDashed,
-      thumbnail: createElement(ElementCrop, { pin }),
+      thumbnail: createElement(
+        Suspense,
+        { fallback: createElement(MousePointerSquareDashed, { className: 'h-4 w-4' }) },
+        createElement(ElementCrop, { pin }),
+      ),
       label: elementLabel(pin),
       removeLabel: `Remove ${name}`,
       onRemove: () => {
