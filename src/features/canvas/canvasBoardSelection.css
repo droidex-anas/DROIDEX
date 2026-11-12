@@ -321,6 +321,8 @@
 
 .canvas-path-lines {
   position: absolute;
+  top: 0;
+  left: 0;
   overflow: visible;
   width: 1px;
   height: 1px;
