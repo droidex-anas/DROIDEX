@@ -36,6 +36,11 @@ test('the Design brief and its MCP instructions name the user’s design-system 
 
 test('the Design brief and its MCP instructions stay within what every turn can afford', () => {
   // Both ride every Design turn, so each paragraph added is paid for on every request.
-  assert.ok(Buffer.byteLength(DESIGN_SESSION_GUIDANCE) <= 13 * 1024);
-  assert.ok(Buffer.byteLength(DESIGN_CANVAS_MCP_INSTRUCTIONS) <= 5.5 * 1024);
+  assert.ok(Buffer.byteLength(DESIGN_SESSION_GUIDANCE) <= 13.5 * 1024);
+  assert.ok(Buffer.byteLength(DESIGN_CANVAS_MCP_INSTRUCTIONS) <= 5.75 * 1024);
+});
+
+test('the Design brief and its MCP instructions send a named or tagged kit component through its catalog entry', () => {
+  for (const copy of [DESIGN_SESSION_GUIDANCE, DESIGN_CANVAS_MCP_INSTRUCTIONS])
+    assert.match(copy, /names or tags a component of [^.]*canvas_theme catalog and write its jsx/);
 });

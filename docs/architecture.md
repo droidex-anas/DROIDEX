@@ -541,9 +541,11 @@ column header's canvas menu offer the three rules (`designSystemRule.ts`); a fra
 whose ready build carries findings shows a kit notes badge on its label, which opens
 its source, and a build the strict rule failed says so on the frame. A turn's
 opening `canvas_read` carries the pinned kit's name, mode, token and primitive names and
-guidance (`designSystemBrief.ts`, under 21 KiB) and the canvas's rule; under Auto,
-before a project chat's first design, that guidance also asks the agent to offer a kit
-from the project. `canvas_theme` reads full kits. Once the build is ready, the write waits 1.5 s for
+guidance (`designSystemBrief.ts`, under 21 KiB), its catalog's entry names (1 KiB more)
+and the canvas's rule; under Auto, before a project chat's first design, that guidance
+also asks the agent to offer a kit from the project. `canvas_theme` reads full kits, and
+reads a kit's catalog entries by name with their JSX, imports and props (`kitCatalog.ts`)
+so the agent writes a component the user names or tags as its entry gives it. Once the build is ready, the write waits 1.5 s for
 an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
 `loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
 keeps the latest per design, so a design that compiles and then throws reaches the
