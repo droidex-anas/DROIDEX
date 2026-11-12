@@ -9,6 +9,7 @@
 
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
+import { truncateDiagnosticText } from './canvasDiagnostics.js';
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, type TokenSectionKind } from './designSystemDocument.js';
 import {
@@ -25,6 +26,8 @@ import type { DesignSystemRef } from './protocol.js';
 const NAME_LIST_BYTES = 4 * 1024;
 /** What the catalog's entry names may cost, apart from the other names. */
 const CATALOG_NAME_BYTES = 1024;
+/** Enough to say why the catalog is unusable, never a parser's quote of the file. */
+const CATALOG_PROBLEM_LENGTH = 240;
 
 export interface DesignSystemBrief {
   ref: DesignSystemRef;
@@ -108,7 +111,9 @@ export async function designSystemBrief(
     ...(names.omitted() > 0 ? { omittedNames: names.omitted() } : {}),
     ...(catalog.length > 0 ? { catalog } : {}),
     ...(entryNames.omitted() > 0 ? { omittedCatalogNames: entryNames.omitted() } : {}),
-    ...('problem' in read ? { catalogProblem: read.problem } : {}),
+    ...('problem' in read
+      ? { catalogProblem: truncateDiagnosticText(read.problem, CATALOG_PROBLEM_LENGTH) }
+      : {}),
     guidance: offer === null ? guidance : `${guidance}\n\n${offer}`,
   };
 }
