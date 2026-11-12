@@ -1,5 +1,6 @@
-// The catalog of the kit version a frame pins, read from the kit's document
-// once per version and kept for the session: a saved version never changes.
+// The catalog of a kit version, for the palette the frame's kit and for `@` the
+// request's, read from the kit's document with the kit's name once per version
+// and kept for the session: a saved version never changes.
 
 import { useEffect, useState } from 'react';
 import { canvasClient } from '../canvasClient';
@@ -11,10 +12,10 @@ const SKELETON_DELAY_MS = 300;
 
 export type KitCatalog =
   | { state: 'loading'; slow: boolean }
-  | { state: 'ready'; entries: CatalogListing[] }
+  | { state: 'ready'; kitName: string; entries: CatalogListing[] }
   | { state: 'failed'; message: string };
 
-const catalogs = new Map<string, CatalogListing[]>();
+const catalogs = new Map<string, { kitName: string; entries: CatalogListing[] }>();
 
 export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
   const id = kit?.id;
@@ -36,9 +37,9 @@ export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
     void canvasClient.designSystems
       .read({ id, version })
       .then(
-        ({ catalog }): KitCatalog => {
-          catalogs.set(key, catalog);
-          return { state: 'ready', entries: catalog };
+        ({ name, catalog }): KitCatalog => {
+          catalogs.set(key, { kitName: name, entries: catalog });
+          return { state: 'ready', kitName: name, entries: catalog };
         },
         (error: unknown): KitCatalog => ({ state: 'failed', message: canvasMessage(error) }),
       )
@@ -60,7 +61,7 @@ export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
   };
   const cached = key === null ? undefined : catalogs.get(key);
   let catalog: KitCatalog | null = null;
-  if (cached) catalog = { state: 'ready', entries: cached };
+  if (cached) catalog = { state: 'ready', ...cached };
   else if (reading !== null)
     catalog =
       settled?.reading === reading ? settled.catalog : { state: 'loading', slow: slow === reading };

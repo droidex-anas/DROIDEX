@@ -14,6 +14,7 @@ import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
   createPromptQueueDeliveryGuard,
+  promptChips,
   type QueuedPrompt,
 } from '../../lib/promptQueue';
 import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
@@ -92,20 +93,14 @@ export function useQueuedPromptDelivery({
         // A design prompt goes with its own snapshots of its marks, which hold
         // all it needs even once the browser they were picked in has closed.
         if (head.design) {
-          sendDesignPrompt(
-            head.design.browserKey,
-            text,
-            head.design.references,
-            options.responseFormat,
-            options.mentions,
-          );
+          sendDesignPrompt(head.design.browserKey, text, head.design.references, options);
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: createLocalDesignTranscriptEvent(
               appSessionId,
               head.text,
               browserTranscriptReferencesFromDesignReferences(head.design.references),
-              { skills: head.skills, files: head.files, sideChatReplies: head.sideChatReplies },
+              { skills: head.skills, files: head.files, ...promptChips(head) },
             ),
           });
         } else {
@@ -123,8 +118,7 @@ export function useQueuedPromptDelivery({
               author: 'user',
               skills: head.skills,
               files: head.files,
-              ...(head.sideChatReplies ? { sideChatReplies: head.sideChatReplies } : {}),
-              ...(head.framePins ? { canvasFrames: head.framePins.map((pin) => pin.name) } : {}),
+              ...promptChips(head),
             },
           });
         }
@@ -187,6 +181,7 @@ export function queuedSend(
     ),
     head.framePins,
     head.elementPins,
+    head.componentPins,
   );
   return {
     text,

@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createPromptQueueDeliveryGuard } from './promptQueue';
+import {
+  createLocalDesignTranscriptEvent,
+  createPromptQueueDeliveryGuard,
+  promptChips,
+} from './promptQueue';
 
 test('queued prompt delivery coalesces overlap into one trailing retry', async () => {
   const guard = createPromptQueueDeliveryGuard();
@@ -28,4 +32,30 @@ test('queued prompt delivery coalesces overlap into one trailing retry', async (
     deliveries += 1;
   });
   assert.equal(deliveries, 3);
+});
+test('a design prompt’s bubble shows the frames and components it carried', () => {
+  const kit = { id: 'acme', version: 3, mode: 'light' as const };
+  const queued = {
+    sideChatReplies: ['Keep it short.'],
+    framePins: [
+      {
+        canvasId: 'cv_1',
+        designId: 'd1',
+        revisionId: 'r1',
+        name: 'Hero',
+        size: '480 × 320',
+        designSystem: kit,
+      },
+    ],
+    componentPins: [{ kit, kitName: 'Acme', name: 'Button' }],
+  };
+  const event = createLocalDesignTranscriptEvent('chat', 'Use these', [], {
+    skills: [],
+    files: [],
+    ...promptChips(queued),
+  });
+  assert.deepEqual(event.sideChatReplies, ['Keep it short.']);
+  assert.deepEqual(event.canvasFrames, ['Hero']);
+  assert.deepEqual(event.canvasComponents, ['Button']);
+  assert.deepEqual(promptChips({}), {});
 });

@@ -210,6 +210,53 @@ test('a prompt wrapped in DROIDEX guidance, side-chat answers or pinned frames r
   assert.deepEqual(app?.canvasFrames, ['Pricing · Compact']);
 });
 
+test('a stored prompt shows its tagged kit components as chips, their kit named once there are two', () => {
+  const component = (kit: string, id: string, name: string) =>
+    `<component kit="${kit}" ref-id="${id}" ref-version="3" ref-mode="light">${name}</component>`;
+  const block = (...lines: string[]) =>
+    [
+      '<canvas_components>',
+      'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given.',
+      ...lines,
+      '</canvas_components>',
+    ].join('\n');
+  const frames = [
+    '<canvas_frames>',
+    'The user pinned these canvas frames to this request; "this" and "it" mean them.',
+    '<frame id="d1">Pricing</frame>',
+    '</canvas_frames>',
+  ].join('\n');
+  const elements = [
+    '<canvas_elements>',
+    'The user picked these elements for this request; change them, not the rest of their designs.',
+    '<element id="e1" design="d1" revision="r1" source="main.tsx:7" tag="h1">Ship</element>',
+    '</canvas_elements>',
+  ].join('\n');
+  const oneKit = block(
+    component('Acme', 'acme', 'Button'),
+    component('Acme', 'acme', 'Card &lt;wide&gt;'),
+    component('Acme', 'acme', 'Two  spaces&#10;&amp;#10;'),
+  );
+  const [tagged] = replay(userText(`Use these\n\n${oneKit}\n\n${frames}\n\n${elements}`));
+  assert.equal(tagged?.text, 'Use these');
+  assert.deepEqual(tagged?.canvasComponents, ['Button', 'Card <wide>', 'Two  spaces\n&#10;']);
+  assert.deepEqual(tagged?.canvasFrames, ['Pricing']);
+
+  const twoKits = block(
+    component('Acme', 'acme', 'Button'),
+    component('Odd  &quot;kit&quot; &amp; &lt;co&gt;&#10;&amp;quot;', 'odd', 'Card'),
+  );
+  const [mixed] = replay(userText(`Use these\n\n${twoKits}`));
+  assert.equal(mixed?.text, 'Use these');
+  assert.deepEqual(mixed?.canvasComponents, ['Button · Acme', 'Card · Odd  "kit" & <co>\n&quot;']);
+  assert.equal(mixed?.canvasFrames, undefined);
+  // A user who only writes the tags, or writes a record the app never would, keeps every word of it.
+  const typed = `Explain this:\n\n${block()}`;
+  assert.equal(replay(userText(typed))[0]?.text, typed);
+  const malformed = `Why is this malformed?\n\n${block('<component kit="Acme" ref-id="a" ref-version="4 ref-mode="dark">Button</component>')}`;
+  assert.equal(replay(userText(malformed))[0]?.text, malformed);
+});
+
 test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {
   for (const notice of [
     { kind: 'status', modelSwitch: { from: 'old-model', to: 'new-model' } },

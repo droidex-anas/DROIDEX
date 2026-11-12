@@ -522,6 +522,7 @@ function isTranscriptEvent(value: unknown): boolean {
     isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
     (value.canvasFrames === undefined || stringArray(value.canvasFrames)) &&
+    (value.canvasComponents === undefined || stringArray(value.canvasComponents)) &&
     (value.canvasActivity === undefined || isCanvasActivity(value.canvasActivity))
   );
 }

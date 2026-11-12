@@ -1,4 +1,4 @@
-import type { CanvasFrame } from '../../features/canvas/protocol';
+import type { CanvasFrame, CatalogListing } from '../../features/canvas/protocol';
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import { catalogRowKey } from './composerCatalog';
@@ -33,12 +33,16 @@ export function composerTrigger(text: string, caret: number): ComposerTrigger | 
   };
 }
 
-/** A row the menu offers: an app command, a harness catalog entry, a file, or a canvas frame. */
+/**
+ * A row the menu offers: an app command, a harness catalog entry, a file, a
+ * canvas frame, or a component of the request kit's catalog.
+ */
 export type MenuItem =
   | { type: 'command'; command: SlashCommand }
   | { type: 'catalog'; item: SkillInfo }
   | { type: 'file'; path: string }
-  | { type: 'frame'; frame: CanvasFrame };
+  | { type: 'frame'; frame: CanvasFrame }
+  | { type: 'component'; entry: CatalogListing };
 
 /**
  * What the open menu paints, in order. Section and group headings are text (a
@@ -64,11 +68,16 @@ export function menuRowKey(item: MenuItem): string {
   if (item.type === 'command') return `command:${item.command.cmd}`;
   if (item.type === 'file') return `file:${item.path}`;
   if (item.type === 'frame') return frameRowKey(item.frame.designId);
+  if (item.type === 'component') return componentRowKey(item.entry.name);
   return `catalog:${catalogRowKey(item.item)}`;
 }
 
 export function frameRowKey(designId: string): string {
   return `frame:${designId}`;
+}
+
+export function componentRowKey(name: string): string {
+  return `component:${name}`;
 }
 
 const LOCATION_SCOPE = { project: 'repo', personal: 'user', builtin: 'system' } as const;
@@ -165,6 +174,7 @@ function bestRank(query: string, rows: MenuItem[]): number {
   if (!first) return Number.POSITIVE_INFINITY;
   if (first.type === 'file') return fileRank(query, first.path);
   if (first.type === 'frame') return menuMatchRank(query, { name: first.frame.name });
+  if (first.type === 'component') return menuMatchRank(query, { name: first.entry.name });
   if (first.type === 'command') return menuMatchRank(query, { name: first.command.cmd.slice(1) });
   return menuMatchRank(query, { name: first.item.name, description: first.item.description });
 }
@@ -257,6 +267,8 @@ export interface ComposerMenuSources {
   files: string[];
   /** The frames of the chat's canvas, which `@` tags in the next prompt. */
   frames: readonly CanvasFrame[];
+  /** The catalog of the kit the next request runs under, which `@` tags too. */
+  components: readonly CatalogListing[];
 }
 
 /**
@@ -265,10 +277,11 @@ export interface ComposerMenuSources {
  */
 export function composerMenu(
   trigger: ComposerTrigger,
-  { commands, catalog, files, frames }: ComposerMenuSources,
+  { commands, catalog, files, frames, components }: ComposerMenuSources,
 ): ComposerMenu {
   const { query } = trigger;
-  if (trigger.kind === 'file') return flatten(mentionSections(query, catalog, files, frames));
+  if (trigger.kind === 'file')
+    return flatten(mentionSections(query, catalog, files, frames, components));
   const named = exactlyNamed(query, commands, catalog);
   return flatten(slashSections(query, named.commands, named.catalog));
 }
@@ -328,17 +341,20 @@ function slashSections(query: string, commands: SlashCommand[], catalog: SkillIn
   ]);
 }
 
-// A chat on a canvas reads its frames first: there, `@` most often means one.
+// A chat on a canvas reads its frames first: there, `@` most often means one,
+// and then a component of its kit.
 function mentionSections(
   query: string,
   catalog: SkillInfo[],
   files: string[],
   frames: readonly CanvasFrame[],
+  components: readonly CatalogListing[],
 ): Section[] {
   const byKind = (kind: SkillInfo['kind']) =>
     group(catalogRows(rankCatalog(query, offerable(catalog, kind))), query);
   return orderByRank(query, [
     ...section('Frames', [group(frameRows(query, frames), query)], query),
+    ...section('Components', [group(componentRows(query, components), query)], query),
     ...section('Files', [group(fileRows(query, files), query)], query),
     ...section('Apps', [byKind('app')], query),
     ...section('Plugins', [byKind('plugin')], query),
@@ -349,6 +365,12 @@ function frameRows(query: string, frames: readonly CanvasFrame[]): MenuItem[] {
   return rankMenuCandidates(query, frames, (frame) => ({ name: frame.name }))
     .items.slice(0, CATALOG_LIMIT)
     .map((frame) => ({ type: 'frame', frame }));
+}
+
+function componentRows(query: string, components: readonly CatalogListing[]): MenuItem[] {
+  return rankMenuCandidates(query, components, (entry) => ({ name: entry.name }))
+    .items.slice(0, CATALOG_LIMIT)
+    .map((entry) => ({ type: 'component', entry }));
 }
 
 function fileRows(query: string, files: string[]): MenuItem[] {

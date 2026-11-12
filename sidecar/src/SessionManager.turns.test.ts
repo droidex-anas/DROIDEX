@@ -793,3 +793,34 @@ test('desktop browser answers settle only the request they answer, and late answ
     timeouts.restore();
   }
 });
+
+test('a browser design prompt runs under the canvas context it was sent with', async (t) => {
+  const turns = new CanvasTurns(new CanvasScopes(), () => null);
+  const h = createSessionManagerTestContext({ canvasTurns: turns });
+  const canvasContext = {
+    designs: [{ designId: 'dsg_pinned', revisionId: null }],
+    elements: [],
+    designSystem: { id: 'acme', version: 4, mode: 'dark' as const },
+  };
+  t.mock.method(h.browsers, 'designPrompt', async () => ({ path: 'pack', prompt: 'the pack' }));
+  try {
+    await createSession(h);
+    const stream = h.provider.deferNextStream('provider-1');
+    const sending = h.handle({
+      type: 'browser.design.sendPrompt',
+      appSessionId: 'provider-1',
+      instruction: 'restyle it',
+      references: [],
+      canvasContext,
+    });
+    await h.provider.waitForPrompts('provider-1', 2);
+    const scope = turns.activeScope('provider-1');
+    assert.ok(scope?.origin === 'turn');
+    assert.deepEqual(scope.context, canvasContext);
+    assert.deepEqual(scope.allowedDesignIds, ['dsg_pinned']);
+    stream.resolve();
+    await sending;
+  } finally {
+    await h.dispose();
+  }
+});
