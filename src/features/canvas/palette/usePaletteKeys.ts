@@ -1,10 +1,11 @@
 import { useState, type KeyboardEvent } from 'react';
+import { isTagKey } from '../boardKeys';
 
 /**
  * The match the keyboard is on, for a search field that keeps the keyboard:
  * the arrows walk the matches, Enter adds the one it is on, ⌥↓ opens its
- * variant menu, and Escape clears the search, then hands the keyboard back to
- * the board.
+ * variant menu, ⌘L tags it in the chat, and Escape clears the search, then
+ * hands the keyboard back to the board.
  */
 export function usePaletteKeys({
   query,
@@ -13,6 +14,7 @@ export function usePaletteKeys({
   optionId,
   onAdd,
   onMenu,
+  onTag,
   onLeave,
 }: {
   query: string;
@@ -22,6 +24,7 @@ export function usePaletteKeys({
   optionId: (index: number) => string;
   onAdd: (index: number) => void;
   onMenu: (index: number) => void;
+  onTag: (index: number) => void;
   onLeave: () => void;
 }) {
   const [active, setActive] = useState(0);
@@ -38,13 +41,7 @@ export function usePaletteKeys({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    const opensMenu =
-      event.key === 'ArrowDown' &&
-      event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.shiftKey;
-    if (opensMenu) {
+    if (isVariantsKey(event)) {
       event.preventDefault();
       if (activeIndex >= 0) onMenu(activeIndex);
     } else if (step !== undefined && count > 0) {
@@ -53,6 +50,9 @@ export function usePaletteKeys({
     } else if (event.key === 'Enter' && activeIndex >= 0) {
       event.preventDefault();
       if (!event.repeat) onAdd(activeIndex);
+    } else if (isTagKey(event)) {
+      event.preventDefault();
+      if (activeIndex >= 0 && !event.repeat) onTag(activeIndex);
     } else if (event.key === 'Escape') {
       event.preventDefault();
       event.stopPropagation();
@@ -61,4 +61,10 @@ export function usePaletteKeys({
     }
   };
   return { activeIndex, setActive, search, onKeyDown };
+}
+
+function isVariantsKey(event: KeyboardEvent): boolean {
+  return (
+    event.key === 'ArrowDown' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+  );
 }

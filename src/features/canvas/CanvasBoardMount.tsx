@@ -25,6 +25,7 @@ import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } fr
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
 import { canvasMessage } from './client';
+import { TaggingChat } from './componentPins';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
 import {
   lacksCanvasTools,
@@ -383,6 +384,7 @@ export function CanvasBoardMount({
           ) : (
             <ComponentsPanel
               kit={palette.kit}
+              chatId={pinnable ? appSessionId : null}
               place={palette.place}
               onAdd={palette.add}
               onLeave={() => {
@@ -459,20 +461,22 @@ export function DocumentMount({
   return (
     <div className="min-h-0 flex-1">
       <Suspense fallback={null}>
-        <LazyDesignSystemDocument
-          appSessionId={appSessionId}
-          canvasKey={canvasId}
-          system={shown}
-          onBack={() => {
-            dispatch({
-              type: 'OPEN_UTILITY_TOOL',
-              tool: 'canvas',
-              appSessionId,
-              designSystemId: null,
-              designSystemVersion: null,
-            });
-          }}
-        />
+        <TaggingChat value={appSessionId}>
+          <LazyDesignSystemDocument
+            appSessionId={appSessionId}
+            canvasKey={canvasId}
+            system={shown}
+            onBack={() => {
+              dispatch({
+                type: 'OPEN_UTILITY_TOOL',
+                tool: 'canvas',
+                appSessionId,
+                designSystemId: null,
+                designSystemVersion: null,
+              });
+            }}
+          />
+        </TaggingChat>
       </Suspense>
     </div>
   );

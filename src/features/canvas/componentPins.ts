@@ -3,7 +3,7 @@
 // composer shows them as chips, writes them into the prompt and clears them, as
 // framePins.ts does for frames, by chat.
 
-import { useSyncExternalStore } from 'react';
+import { createContext, useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import type { PropPick } from './elementEditProtocol';
 import type { DesignSystemRef } from './protocol';
@@ -20,6 +20,9 @@ export interface ComponentPin {
   /** The options picked for the entry's props where they differ from its defaults. */
   props: readonly PropPick[];
 }
+
+/** The chat a kit document's catalog tags entries in, where the document has one. */
+export const TaggingChat = createContext<string | null>(null);
 
 const NONE: readonly ComponentPin[] = [];
 // Only chats holding pins have an entry, so this never grows with the chats visited.
@@ -87,6 +90,29 @@ export function tagComponent(appSessionId: string, pin: ComponentPin): void {
     return;
   }
   publish(appSessionId, [...held, pin]);
+}
+
+/** How the chat's next prompt holds an entry: with these options, with others, or not at all. */
+export type ComponentTag = 'tagged' | 'other-options' | 'untagged';
+
+export function componentTag(pins: readonly ComponentPin[], pin: ComponentPin): ComponentTag {
+  const key = componentPinKey(pin);
+  const held = pins.find((each) => componentPinKey(each) === key);
+  if (!held) return 'untagged';
+  // An entry's picks always come in the order its props are listed.
+  const sameOptions =
+    held.props.length === pin.props.length &&
+    held.props.every(
+      (pick, index) => pick.name === pin.props[index].name && pick.value === pin.props[index].value,
+    );
+  return sameOptions ? 'tagged' : 'other-options';
+}
+
+/** Tags the entry with these options, or takes it off when the prompt tags it with them already. */
+export function toggleComponentPin(appSessionId: string, pin: ComponentPin): void {
+  if (componentTag(componentPins(appSessionId), pin) === 'tagged')
+    unpinComponents(appSessionId, [pin]);
+  else tagComponent(appSessionId, pin);
 }
 
 /** Takes these components off the chat's next prompt, or all of them. */
