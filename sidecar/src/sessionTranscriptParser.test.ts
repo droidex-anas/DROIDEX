@@ -244,11 +244,11 @@ test('a stored prompt shows its tagged kit components as chips, their kit named 
 
   const twoKits = block(
     component('Acme', 'acme', 'Button'),
-    component('Odd &quot;kit&quot;', 'odd', 'Card'),
+    component('Odd  &quot;kit&quot; &amp; &lt;co&gt;&#10;&amp;quot;', 'odd', 'Card'),
   );
   const [mixed] = replay(userText(`Use these\n\n${twoKits}`));
   assert.equal(mixed?.text, 'Use these');
-  assert.deepEqual(mixed?.canvasComponents, ['Button · Acme', 'Card · Odd "kit"']);
+  assert.deepEqual(mixed?.canvasComponents, ['Button · Acme', 'Card · Odd  "kit" & <co>\n&quot;']);
   assert.equal(mixed?.canvasFrames, undefined);
   // A user who only writes the tags keeps every word of it.
   const typed = `Explain this:\n\n${block()}`;

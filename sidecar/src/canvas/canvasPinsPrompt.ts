@@ -42,9 +42,14 @@ export function canvasPinsFromPrompt(
 function componentLabels(records: readonly RegExpMatchArray[]): string[] {
   const kits = new Set(records.map(([, , kitId]) => kitId));
   return records.map(([, kit, , name]) => {
-    const entry = unescapeText(name.replaceAll('&#13;', '\r').replaceAll('&#10;', '\n'));
-    return kits.size > 1 ? `${entry} · ${unescapeText(kit.replaceAll('&quot;', '"'))}` : entry;
+    const entry = unescapeName(name);
+    return kits.size > 1 ? `${entry} · ${unescapeName(kit.replaceAll('&quot;', '"'))}` : entry;
   });
+}
+
+/** A kit's or entry's exact name, line breaks included. */
+function unescapeName(text: string): string {
+  return unescapeText(text.replaceAll('&#13;', '\r').replaceAll('&#10;', '\n'));
 }
 
 /** Where the elements block `text` ends with starts, when it holds at least one pick. */
