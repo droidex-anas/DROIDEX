@@ -157,7 +157,10 @@ export function PathGrips({
   const onPointerDown = (event: PointerEvent, grip: PathGrip) => {
     if (event.button !== 0 || !canMove(grip)) return;
     event.stopPropagation();
-    // A nudge still settling commits first; the next move waits for it to save.
+    // One pointer moves a point at a time.
+    if (press.current) return;
+    // A nudge still settling commits first. No move starts on a shape whose
+    // commit is saving: it waits for the revision that commit builds.
     if (move.current) {
       settle(true);
       return;
@@ -188,6 +191,11 @@ export function PathGrips({
     show(moveGrip(from, held.grip, delta));
   };
 
+  /** The pressing pointer was cancelled or lost its capture: its drag is taken back. */
+  const onPointerLost = (event: PointerEvent) => {
+    if (press.current?.pointerId === event.pointerId) settle(false);
+  };
+
   const onPointerUp = (event: PointerEvent) => {
     const held = press.current;
     if (held?.pointerId !== event.pointerId) return;
@@ -215,8 +223,18 @@ export function PathGrips({
     if (event.key === 'Delete' || event.key === 'Backspace') event.stopPropagation();
   };
 
-  const anchors = grips.filter(({ kind }) => kind === 'anchor').length;
-  let anchor = 0;
+  // Points are numbered in path order, each by the segment it ends.
+  const points = new Map(
+    grips.filter(({ kind }) => kind === 'anchor').map(({ segment }, at) => [segment, at + 1]),
+  );
+  const pointLabel = (grip: PathGrip) => {
+    if (grip.kind === 'anchor')
+      return `Point ${String(points.get(grip.segment))} of ${String(points.size)}`;
+    const shaped = grip.anchors.map(({ segment }) => String(points.get(segment)));
+    return shaped.length === 1
+      ? `Handle of point ${shaped[0]}`
+      : `Handle of points ${shaped.join(' and ')}`;
+  };
   return (
     <div
       data-path-grips
@@ -227,9 +245,9 @@ export function PathGrips({
     >
       <svg aria-hidden className="canvas-path-lines">
         {grips.flatMap((grip, index) =>
-          grip.anchors.map((to, end) => {
+          grip.anchors.map(({ point }, end) => {
             const a = drawnAt(matrix, grip.point);
-            const b = drawnAt(matrix, to);
+            const b = drawnAt(matrix, point);
             return (
               <line key={`${String(index)}:${String(end)}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} />
             );
@@ -239,7 +257,6 @@ export function PathGrips({
       {grips.map((grip, index) => {
         const at = drawnAt(matrix, grip.point);
         const fixed = !canMove(grip);
-        if (grip.kind === 'anchor') anchor += 1;
         return (
           <button
             key={index}
@@ -248,11 +265,7 @@ export function PathGrips({
             data-selected={focused === index || undefined}
             aria-disabled={fixed || undefined}
             tabIndex={grip.kind === 'anchor' && !fixed ? 0 : -1}
-            aria-label={
-              grip.kind === 'anchor'
-                ? `Point ${String(anchor)} of ${String(anchors)}`
-                : `Handle of point ${String(anchor + 1)}`
-            }
+            aria-label={pointLabel(grip)}
             className="canvas-path-grip"
             style={{ left: at.x, top: at.y }}
             onFocus={() => {
@@ -266,12 +279,8 @@ export function PathGrips({
             }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            onPointerCancel={() => {
-              if (press.current) settle(false);
-            }}
-            onLostPointerCapture={() => {
-              if (press.current) settle(false);
-            }}
+            onPointerCancel={onPointerLost}
+            onLostPointerCapture={onPointerLost}
             onKeyDown={(event) => {
               onKeyDown(event, grip);
             }}

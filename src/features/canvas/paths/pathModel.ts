@@ -20,8 +20,8 @@ export interface PathGrip {
   /** For a handle, which of the segment's written control points; -1 for an anchor. */
   control: number;
   point: Point;
-  /** What a handle's line runs to: the anchor or anchors it shapes. */
-  anchors: Point[];
+  /** What a handle's line runs to: the anchor or anchors it shapes, each by the segment it ends. */
+  anchors: { segment: number; point: Point }[];
   /**
    * The axes the grip may move along. A horizontal or vertical line keeps the
    * other coordinate of the point it ends at or starts from, so that point
@@ -61,15 +61,17 @@ export function pathGrips(segments: readonly PathSegment[]): PathGrip[] {
   placed.forEach(({ from }, at) => {
     if (from >= 0) startingAt[from].push(at);
   });
-  placed.forEach(({ start, end, controls }, segment) => {
+  placed.forEach(({ start, end, controls, from }, segment) => {
     const kind = kindOf(segments[segment]);
     if (kind === 'Z') return;
+    const leaves = { segment: from, point: start };
+    const reaches = { segment, point: end };
     controls.forEach((point, control) => {
       // A cubic's first control shapes the anchor it leaves, its last the one it
       // reaches; a quadratic's one control shapes both.
-      let anchors = [end];
-      if (kind === 'Q') anchors = [start, end];
-      else if (kind === 'C' && control === 0) anchors = [start];
+      let anchors = [reaches];
+      if (kind === 'Q') anchors = [leaves, reaches];
+      else if (kind === 'C' && control === 0) anchors = [leaves];
       grips.push({ kind: 'handle', segment, control, point, anchors, axes: BOTH_AXES });
     });
     const lines = [segment, ...startingAt[segment]].map((at) => kindOf(segments[at]));

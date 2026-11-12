@@ -52,7 +52,7 @@ test('a moved path is written spaced for an edit, its numbers as written; one mo
 test('a path has an anchor at each segment end and a handle at each control point it writes', () => {
   const grips = pathGrips(segments('M0 0 C1 2 3 4 5 6 Q7 8 9 10 Z'));
   assert.deepEqual(
-    grips.map(({ kind, point, anchors }) => [kind, point, anchors]),
+    grips.map(({ kind, point, anchors }) => [kind, point, anchors.map((anchor) => anchor.point)]),
     [
       ['anchor', { x: 0, y: 0 }, []],
       ['handle', { x: 1, y: 2 }, [{ x: 0, y: 0 }]],
@@ -68,6 +68,14 @@ test('a path has an anchor at each segment end and a handle at each control poin
       ],
       ['anchor', { x: 9, y: 10 }, []],
     ],
+  );
+  // A cubic after a close leaves its subpath's first point, which its first handle shapes.
+  const handles = pathGrips(segments('M0 0 L5 5 Z C1 1 2 2 3 3')).filter(
+    ({ kind }) => kind === 'handle',
+  );
+  assert.deepEqual(
+    handles.map(({ anchors }) => anchors.map(({ segment }) => segment)),
+    [[0], [3]],
   );
   // An arc, a horizontal and a vertical line move by their end alone.
   assert.deepEqual(
