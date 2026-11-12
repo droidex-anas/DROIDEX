@@ -102,14 +102,30 @@ export function useBoardViewport(
     heading.current = null;
   }, []);
 
-  const takeOver = useCallback(() => {
+  const navigate = useCallback(() => {
     stopAnimating();
     opening.current.navigated = true;
   }, [stopAnimating]);
 
   const settle = useCallback(() => {
+    stage.flush();
     setViewport(stage.viewport);
   }, [stage]);
+
+  /** Ends the wheel gesture in flight, if any, giving the chrome back its scale. */
+  const endScroll = useCallback(() => {
+    if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
+    if (scroll.current.active) setScrolling(false);
+    scroll.current = { active: false, suppressed: false, idle: null };
+    stage.releaseChrome();
+  }, [stage]);
+
+  // The hand ends a wheel gesture still in its quiet window, so that wheel's
+  // idle cannot settle the hand's pan halfway through.
+  const takeOver = useCallback(() => {
+    navigate();
+    endScroll();
+  }, [endScroll, navigate]);
 
   /** A move that is over once made, so React takes it at once. */
   const jumpTo = useCallback(
@@ -254,12 +270,10 @@ export function useBoardViewport(
       setScrolling(true);
     }
     scroll.current.idle = setTimeout(() => {
-      scroll.current = { active: false, suppressed: false, idle: null };
-      setScrolling(false);
-      stage.releaseChrome();
+      endScroll();
       settle();
     }, SCROLL_IDLE_MS);
-  }, [settle, stage]);
+  }, [endScroll, settle]);
 
   // Wheel has to be a non-passive listener of its own: React's root listener is
   // passive, so the default Electron page zoom could not be prevented there.
@@ -271,7 +285,7 @@ export function useBoardViewport(
       markScrolling();
       // Fit owns the rest of this wheel gesture, even after its animation ends.
       if (scroll.current.suppressed) return;
-      takeOver();
+      navigate();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       const delta = boardWheelDelta(root, event);
       const current = stage.viewport;
@@ -280,16 +294,16 @@ export function useBoardViewport(
       // same thing; both zoom under the pointer.
       if (event.ctrlKey || event.metaKey) {
         stage.holdChrome();
-        stage.moveTo(
+        stage.moveSoon(
           zoomAtPoint(current, pointer, wheelZoomScale(current.scale, delta.y, event.ctrlKey)),
         );
-      } else stage.moveTo({ ...current, x: current.x - delta.x, y: current.y - delta.y });
+      } else stage.moveSoon({ ...current, x: current.x - delta.x, y: current.y - delta.y });
     };
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       root.removeEventListener('wheel', onWheel);
     };
-  }, [board, markScrolling, stage, takeOver]);
+  }, [board, markScrolling, navigate, stage]);
 
   useEffect(
     () => () => {

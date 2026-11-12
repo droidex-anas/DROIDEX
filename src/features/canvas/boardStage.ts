@@ -10,19 +10,37 @@ import type { Viewport } from './canvasGeometry';
 export class BoardStage {
   private node: HTMLElement | null = null;
   private chromeHeld = false;
+  private frame: number | null = null;
   private readonly listeners = new Set<() => void>();
 
   constructor(private current: Viewport) {}
 
-  /** Where the view is now, mid-gesture included. */
+  /** Where the view is now, mid-gesture included, drawn or not. */
   get viewport(): Viewport {
     return this.current;
   }
 
+  /** Moves and draws the view now, for a caller that already runs once a frame or a move over once made. */
   moveTo(next: Viewport): void {
     this.current = next;
-    this.write();
-    for (const listener of this.listeners) listener();
+    this.draw();
+  }
+
+  /**
+   * Moves the view now and draws it in the next animation frame, so input that
+   * arrives several times a frame, as the wheel's does, is drawn once.
+   */
+  moveSoon(next: Viewport): void {
+    this.current = next;
+    this.frame ??= requestAnimationFrame(() => {
+      this.frame = null;
+      this.draw();
+    });
+  }
+
+  /** Draws a move `moveSoon` still has waiting, as a view settling needs before React takes it. */
+  flush(): void {
+    if (this.frame !== null) this.draw();
   }
 
   /**
@@ -42,7 +60,8 @@ export class BoardStage {
   /** The world layer's ref: the stage writes to it from the moment it mounts. */
   attach = (node: HTMLElement | null): void => {
     this.node = node;
-    this.write();
+    if (node) this.write();
+    else this.cancelFrame();
   };
 
   /** Calls `listener` after each move; the call returned stops it. */
@@ -52,6 +71,17 @@ export class BoardStage {
       this.listeners.delete(listener);
     };
   };
+
+  private draw(): void {
+    this.cancelFrame();
+    this.write();
+    for (const listener of this.listeners) listener();
+  }
+
+  private cancelFrame(): void {
+    if (this.frame !== null) cancelAnimationFrame(this.frame);
+    this.frame = null;
+  }
 
   private write(): void {
     if (!this.node) return;
