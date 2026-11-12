@@ -186,26 +186,53 @@ test('the brief charges catalog names as JSON writes them, escapes included', as
   assert.ok(Buffer.byteLength(JSON.stringify(brief.catalog), 'utf8') <= 1024);
   assert.equal(brief.catalog.length + brief.omittedCatalogNames, names.length);
 });
-test('the brief says why a converted v1.6 kit’s catalog.json is unusable', async () => {
-  const directory = join(canvasDir(), 'design-systems', 'old-catalog');
+/** The opening brief of a v1.6 version file holding this catalog.json, as converted on read. */
+async function briefOfOldKit(id: string, catalogJson: string) {
+  const directory = join(canvasDir(), 'design-systems', id);
   await mkdir(directory, { recursive: true });
   const mode = { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8' };
   const swatch = { surface: '#ffffff', accent: '#1d4ed8' };
-  const header = { id: 'old-catalog', version: 1, name: 'Old' };
+  const header = { id, version: 1, name: 'Old' };
   const summary = { ...header, kind: 'user', swatches: { light: swatch, dark: swatch } };
   const system = {
     ...header,
     modes: { light: mode, dark: mode },
-    files: { ...SAMPLE_KIT.files, 'catalog.json': '{}' },
+    files: { ...SAMPLE_KIT.files, 'catalog.json': catalogJson },
     guidance: '',
     examples: SAMPLE_KIT.examples,
   };
   await writeFile(join(directory, '1.json'), JSON.stringify({ summary, system }));
   const brief = await designSystemBrief(
-    { id: 'old-catalog', version: 1, mode: 'light' },
+    { id, version: 1, mode: 'light' },
     { projectFolder: null, hasDesigns: false },
   );
   assert.ok(!('unavailable' in brief));
+  return brief;
+}
+
+test('the brief says why a converted v1.6 kit’s catalog.json is unusable', async () => {
+  const brief = await briefOfOldKit('old-catalog', '{}');
   assert.equal(brief.catalog, undefined);
-  assert.match(brief.catalogProblem ?? '', /^catalog\.json is not a catalog/);
+  assert.equal(
+    brief.catalogProblem,
+    'catalog.json is not a catalog: Expected array, received object.',
+  );
+});
+
+test('the brief says it in a sentence, not the parser’s quote of the file', async () => {
+  const button = {
+    name: 'Button',
+    module: 'index.tsx',
+    uses: ['Button'],
+    icons: [],
+    jsx: '<Button />',
+    note: null,
+  };
+  const brief = await briefOfOldKit(
+    'odd-key',
+    JSON.stringify([{ ...button, ['x'.repeat(30_000)]: true }]),
+  );
+  assert.match(brief.catalogProblem ?? '', /^catalog\.json is not a catalog at 0: /);
+  assert.ok(Buffer.byteLength(JSON.stringify(brief), 'utf8') < 21 * 1024);
+  assert.ok((brief.catalogProblem ?? '').length <= 240);
 });
