@@ -169,10 +169,6 @@ export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props:
 /** What one catalog read returns at most; one entry, at most 4 KiB of JSX, always fits. */
 const CATALOG_READ_BYTES = 16 * 1024;
 
-export function missingEntryMessage(name: string): string {
-  return `This kit has no component called ${name} any more.`;
-}
-
 /**
  * The entries of a kit's catalog that `names` asks for, or all of them. A name
  * matches the entry of that name, ignoring case, and the entries filed under
@@ -189,7 +185,7 @@ export function readCatalogEntries(
   if (missing !== undefined)
     throw canvasError(
       'invalid_input',
-      `${missingEntryMessage(missing)} Read the catalog without entries to see its components.`,
+      `This kit has no component called ${missing}. Read the catalog without entries to see its components.`,
     );
   const asked =
     names === undefined

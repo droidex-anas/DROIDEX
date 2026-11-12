@@ -228,7 +228,7 @@ test('a catalog read finds an entry by its name and the entries filed under it, 
   assert.equal(read.omitted, undefined);
   assert.throws(
     () => readCatalogEntries(files(named), ['Badge', 'Card']),
-    /This kit has no component called Card any more\./,
+    /This kit has no component called Card\. Read the catalog without entries/,
   );
   // Entries past the budget are named, never cut short, so a later read can ask for them.
   const large = Array.from({ length: 8 }, (_, index) =>
