@@ -35,7 +35,7 @@ import {
   type FramePin,
 } from '../../features/canvas/framePins';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
-import type { QueuedPrompt } from '../../lib/promptQueue';
+import { promptChips, type QueuedPrompt } from '../../lib/promptQueue';
 import { promptWithSideChatReplies, sideChatPanel } from '../../lib/sideChats';
 import type { DraftSelection } from './DraftSelections';
 
@@ -80,6 +80,12 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const elementPins = toChild ? NO_ELEMENTS : pickedElements;
   const taggedComponents = useComponentPins(appSessionId);
   const components = toChild ? NO_COMPONENTS : taggedComponents;
+  const queued = {
+    ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+    ...(framePins.length > 0 ? { framePins } : {}),
+    ...(elementPins.length > 0 ? { elementPins } : {}),
+    ...(components.length > 0 ? { componentPins: components } : {}),
+  } satisfies Partial<QueuedPrompt>;
   const labels = componentLabels(components);
 
   const detachReplies = () => {
@@ -141,12 +147,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
     /** The canvas whose design-system choice this prompt runs under, or null off a canvas. */
     canvasKey,
     /** The fields a queued prompt keeps them in. */
-    queued: {
-      ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-      ...(framePins.length > 0 ? { framePins } : {}),
-      ...(elementPins.length > 0 ? { elementPins } : {}),
-      ...(components.length > 0 ? { componentPins: components } : {}),
-    } satisfies Partial<QueuedPrompt>,
+    queued,
     /** The turn context this prompt is pinned to, with the canvas images it imported. */
     canvasContext: (imageAssetIds: readonly string[]) =>
       canvasContextOf(
@@ -163,13 +164,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
         components,
       ),
     /** The fields the sent prompt's bubble shows them from. */
-    transcript: {
-      ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-      ...(framePins.length > 0 ? { canvasFrames: framePins.map((pin) => pin.name) } : {}),
-      ...(labels.length > 0 ? { canvasComponents: labels } : {}),
-    },
-    /** Takes only the side chat answers off, for a design prompt that carries no frames. */
-    detachReplies,
+    transcript: promptChips(queued),
     /** Takes them off the draft once its prompt has gone. */
     detach: () => {
       detachReplies();

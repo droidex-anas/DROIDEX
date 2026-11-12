@@ -1,4 +1,4 @@
-import type { ComponentPin } from '../features/canvas/componentPins';
+import { componentLabels, type ComponentPin } from '../features/canvas/componentPins';
 import type { ElementPin } from '../features/canvas/elementPins';
 import type { FramePin } from '../features/canvas/framePins';
 import type { CanvasTurnContext } from '../features/canvas/protocol';
@@ -69,12 +69,26 @@ export function createPromptQueueDeliveryGuard(): PromptQueueDeliveryGuard {
   };
 }
 
+/** The chips a prompt's bubble shows for what it carries beside its skills and files. */
+export function promptChips(
+  prompt: Pick<QueuedPrompt, 'sideChatReplies' | 'framePins' | 'componentPins'>,
+): Pick<TranscriptEvent, 'sideChatReplies' | 'canvasFrames' | 'canvasComponents'> {
+  return {
+    ...(prompt.sideChatReplies ? { sideChatReplies: prompt.sideChatReplies } : {}),
+    ...(prompt.framePins ? { canvasFrames: prompt.framePins.map((pin) => pin.name) } : {}),
+    ...(prompt.componentPins ? { canvasComponents: componentLabels(prompt.componentPins) } : {}),
+  };
+}
+
 /** A design prompt's bubble: its text, marks, and the skills, files and side-chat replies it carried. */
 export function createLocalDesignTranscriptEvent(
   appSessionId: string,
   text: string,
   browserRefs: BrowserTranscriptReference[],
-  carried: Pick<TranscriptEvent, 'skills' | 'files' | 'sideChatReplies'>,
+  carried: Pick<
+    TranscriptEvent,
+    'skills' | 'files' | 'sideChatReplies' | 'canvasFrames' | 'canvasComponents'
+  >,
 ): TranscriptEvent {
   return {
     id: `local-design-${String(Date.now())}`,
@@ -88,6 +102,8 @@ export function createLocalDesignTranscriptEvent(
     skills: carried.skills,
     files: carried.files,
     ...(carried.sideChatReplies?.length ? { sideChatReplies: carried.sideChatReplies } : {}),
+    ...(carried.canvasFrames?.length ? { canvasFrames: carried.canvasFrames } : {}),
+    ...(carried.canvasComponents?.length ? { canvasComponents: carried.canvasComponents } : {}),
     browserRefs: browserRefs.length ? browserRefs : undefined,
   };
 }

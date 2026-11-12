@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
-import { componentLabels } from '../../features/canvas/componentPins';
 import { promptWithCanvasPins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import { sendDesignPrompt, sendToSession } from '../../lib/commands';
@@ -15,6 +14,7 @@ import { promptWithSideChatReplies } from '../../lib/sideChats';
 import {
   createLocalDesignTranscriptEvent,
   createPromptQueueDeliveryGuard,
+  promptChips,
   type QueuedPrompt,
 } from '../../lib/promptQueue';
 import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
@@ -106,7 +106,7 @@ export function useQueuedPromptDelivery({
               appSessionId,
               head.text,
               browserTranscriptReferencesFromDesignReferences(head.design.references),
-              { skills: head.skills, files: head.files, sideChatReplies: head.sideChatReplies },
+              { skills: head.skills, files: head.files, ...promptChips(head) },
             ),
           });
         } else {
@@ -124,11 +124,7 @@ export function useQueuedPromptDelivery({
               author: 'user',
               skills: head.skills,
               files: head.files,
-              ...(head.sideChatReplies ? { sideChatReplies: head.sideChatReplies } : {}),
-              ...(head.framePins ? { canvasFrames: head.framePins.map((pin) => pin.name) } : {}),
-              ...(head.componentPins
-                ? { canvasComponents: componentLabels(head.componentPins) }
-                : {}),
+              ...promptChips(head),
             },
           });
         }

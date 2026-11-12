@@ -1751,11 +1751,11 @@ export default function PromptInput({
             files: allFiles,
             ...(mentions.length > 0 ? { mentions } : {}),
             ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
-            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            ...references.queued,
             design,
           },
         });
-        if (sideChatReplies.length > 0) references.detachReplies();
+        references.detach();
         clearDesign();
         return;
       }
@@ -1771,10 +1771,10 @@ export default function PromptInput({
               appSessionId,
               displayText,
               browserTranscriptReferencesFromDesignReferences(design.references),
-              { skills: skillNames, files: allFiles, sideChatReplies },
+              { skills: skillNames, files: allFiles, ...references.transcript },
             ),
           });
-          if (sideChatReplies.length > 0) references.detachReplies();
+          references.detach();
         },
         resetComposer: () => {
           const draftKept = composerRevisionRef.current !== composerRevision;
