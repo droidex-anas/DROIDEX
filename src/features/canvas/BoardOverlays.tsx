@@ -86,6 +86,7 @@ export function BoardOverlays({
         <PathGrips
           key={`${selected.selection.draft.site.file}:${String(selected.selection.draft.site.start)}`}
           shape={path.shape}
+          designId={selected.selection.draft.element.designId}
           frame={selected.frame}
           scale={scale}
           preview={path.preview}

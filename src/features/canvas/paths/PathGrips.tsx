@@ -48,12 +48,15 @@ interface Move {
 
 export function PathGrips({
   shape,
+  designId,
   frame,
   scale,
   preview,
   commit,
 }: {
   shape: PathShape;
+  /** The path's frame, whose drag carries the grips (HeldFrames). */
+  designId: string;
   /** Where the path's frame is drawn on the board. */
   frame: Point;
   scale: number;
@@ -262,6 +265,7 @@ export function PathGrips({
   return (
     <div
       data-path-grips
+      data-follows-frame={designId}
       data-dragging={dragging || undefined}
       data-readonly={!shape.movable || undefined}
       className="canvas-path-grips"
