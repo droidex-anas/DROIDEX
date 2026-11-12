@@ -212,6 +212,27 @@ export function PathGrips({
     settle(held.dragging);
   };
 
+  /** Moves the grip at `index` one step further in the burst, which commits once it rests. */
+  const nudge = (index: number, step: Point) => {
+    begin();
+    const held = move.current;
+    if (!held) return;
+    // Each grip moves by its burst's total from where the burst started, so
+    // presses that cancel out leave its numbers as written.
+    const total = held.nudges.get(index) ?? { x: 0, y: 0 };
+    held.nudges.set(index, { x: total.x + step.x, y: total.y + step.y });
+    const started = pathGrips(held.from);
+    let next: PathSegment[] | null = held.from;
+    for (const [at, delta] of held.nudges) if (next) next = moveGrip(next, started[at], delta);
+    show(next);
+    // Showing it may have found the burst's shape read again and taken it back.
+    if (move.current !== held) return;
+    if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
+    nudgeTimer.current = setTimeout(() => {
+      if (move.current === held) settle(true);
+    }, NUDGE_SETTLE_MS);
+  };
+
   const onKeyDown = (event: KeyboardEvent, grip: PathGrip, index: number) => {
     const step = arrowStep(event);
     if (step) {
@@ -219,22 +240,7 @@ export function PathGrips({
       event.stopPropagation();
       // A step along an axis the point is held on moves nothing.
       const free = (step.x !== 0 && grip.axes.x) || (step.y !== 0 && grip.axes.y);
-      if (!canMove(grip) || press.current || !free) return;
-      begin();
-      const held = move.current;
-      if (!held) return;
-      // Each grip moves by its burst's total from where the burst started, so
-      // presses that cancel out leave its numbers as written.
-      const total = held.nudges.get(index) ?? { x: 0, y: 0 };
-      held.nudges.set(index, { x: total.x + step.x, y: total.y + step.y });
-      const started = pathGrips(held.from);
-      let next: PathSegment[] | null = held.from;
-      for (const [at, delta] of held.nudges) if (next) next = moveGrip(next, started[at], delta);
-      show(next);
-      if (nudgeTimer.current !== null) clearTimeout(nudgeTimer.current);
-      nudgeTimer.current = setTimeout(() => {
-        settle(true);
-      }, NUDGE_SETTLE_MS);
+      if (canMove(grip) && !press.current && free) nudge(index, step);
       return;
     }
     // Removing a point is not offered, and the board's Delete would remove the whole path.
