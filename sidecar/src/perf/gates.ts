@@ -270,7 +270,7 @@ export function evaluateProbeGates(options: {
         actual: options.reactCommitsPerEditHoverFrame,
         budget: CANVAS_COMMITS_PER_EDIT_HOVER_FRAME_BUDGET,
         justification:
-          'Only the outline renders, as the element under the pointer changes; the sweep leaves and re-enters the design at each row (measured 0.49). One a frame is a hover drawn through the board.',
+          'Only the outline renders, as the element under the pointer changes; the sweep leaves and re-enters the design at each row (measured 0.49). At one commit a frame, every hover would draw the board.',
       },
       options.reactCommitsPerPanFrame !== null,
     ),
