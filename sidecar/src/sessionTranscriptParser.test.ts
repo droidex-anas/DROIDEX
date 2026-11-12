@@ -250,9 +250,11 @@ test('a stored prompt shows its tagged kit components as chips, their kit named 
   assert.equal(mixed?.text, 'Use these');
   assert.deepEqual(mixed?.canvasComponents, ['Button · Acme', 'Card · Odd  "kit" & <co>\n&quot;']);
   assert.equal(mixed?.canvasFrames, undefined);
-  // A user who only writes the tags keeps every word of it.
+  // A user who only writes the tags, or writes a record the app never would, keeps every word of it.
   const typed = `Explain this:\n\n${block()}`;
   assert.equal(replay(userText(typed))[0]?.text, typed);
+  const malformed = `Why is this malformed?\n\n${block('<component kit="Acme" ref-id="a" ref-version="4 ref-mode="dark">Button</component>')}`;
+  assert.equal(replay(userText(malformed))[0]?.text, malformed);
 });
 
 test('a stored model-switch or usage-limit notice replays exactly as it was written', () => {

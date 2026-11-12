@@ -13,7 +13,9 @@ const FRAMES_CLOSE = '</canvas_frames>';
 const ELEMENTS_OPEN =
   '<canvas_elements>\nThe user picked these elements for this request; change them, not the rest of their designs.';
 const ELEMENTS_CLOSE = '</canvas_elements>';
-const COMPONENT = /<component kit="([^"\n]*)" ref-id="([^"\n]*)"[^>\n]*>([^\n]*?)<\/component>/g;
+// Only a whole line as componentLine writes it: quoted attributes, escaped values.
+const COMPONENT =
+  /^<component kit="([^"<>\n]*)" ref-id="([^"<>\n]*)" ref-version="\d+" ref-mode="(?:light|dark)">([^<>\n]*)<\/component>$/gm;
 const FRAME = /<frame id="[^"\n]*">([^\n]*?)<\/frame>/g;
 const ELEMENT = /^<element id="[^"\n]*"[^\n]*<\/element>$/m;
 
