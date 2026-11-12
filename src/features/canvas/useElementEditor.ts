@@ -229,13 +229,13 @@ export function useElementEditor({
    */
   const selects = (element: ElementRef) => latest.current.selection?.draft.element === element;
 
-  /** Sends the commit `make` draws from the draft, if it has one to send. */
-  const send = (make: typeof commitStyles) => {
+  /** Sends the commit `make` draws from the draft, if it has one to send; resolves whether the source wrote it. */
+  const send = (make: typeof commitStyles): Promise<boolean> => {
     const current = latest.current.selection;
-    if (!current) return;
+    if (!current) return Promise.resolve(false);
     const mutationId = crypto.randomUUID();
     const committed = make(current.draft, mutationId);
-    if (!committed) return;
+    if (!committed) return Promise.resolve(false);
     setRefused(null);
     choose({ ...current, draft: committed.draft });
     const settle = (outcome: CommitOutcome) => {
@@ -244,20 +244,22 @@ export function useElementEditor({
       const settled = settleCommit(now.draft, mutationId, outcome);
       choose(settled && { ...now, draft: settled });
     };
-    latest.current.onEditElement(committed.input).then(
+    return latest.current.onEditElement(committed.input).then(
       ({ receipt }) => {
         settle({ status: 'edited', revisionId: receipt.revisionId });
+        return true;
       },
       (refusal: unknown) => {
         const now = latest.current.selection;
-        if (now?.draft.pending?.mutationId !== mutationId) return;
+        if (now?.draft.pending?.mutationId !== mutationId) return false;
         if (isUnwritable(refusal)) {
           setRefused({ element: now.draft.element, reason: refusal.message });
           settle({ status: 'unwritable' });
-          return;
+          return false;
         }
         setError(canvasMessage(refusal));
         settle({ status: 'refused' });
+        return false;
       },
     );
   };
@@ -376,7 +378,7 @@ export function useElementEditor({
       return true;
     },
     commit: (element: ElementRef) => {
-      if (selects(element)) send(commitStyles);
+      if (selects(element)) void send(commitStyles);
     },
     previewText: (text: string) => {
       setRefused(null);
@@ -386,7 +388,7 @@ export function useElementEditor({
       update(revertText);
     },
     commitText: () => {
-      send(commitText);
+      void send(commitText);
     },
     enter,
     runKey,
@@ -394,8 +396,9 @@ export function useElementEditor({
     path: {
       ...path,
       preview: previewPath,
-      commit: (d: string, element: ElementRef) => {
-        if (selects(element)) send((draft, mutationId) => commitPath(draft, mutationId, d));
+      commit: (d: string, element: ElementRef): Promise<boolean> => {
+        if (!selects(element)) return Promise.resolve(false);
+        return send((draft, mutationId) => commitPath(draft, mutationId, d));
       },
     },
   };

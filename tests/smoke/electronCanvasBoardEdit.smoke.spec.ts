@@ -866,6 +866,17 @@ test('Edit drags a picked path’s point, previewing each frame, commits it once
   await page.clock.runFor(32);
   await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
   expect(await lastSelect()).not.toHaveProperty('d');
+  // It stays back while a later style edit saves.
+  const fontSize = page
+    .getByRole('region', { name: 'Styles of the selected path' })
+    .getByLabel('Font size', { exact: true });
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  expect(await edits()).toHaveLength(4);
+  await page.clock.runFor(32);
+  expect((await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(3, 'Canvas can’t set the font size.'));
+  await page.clock.runFor(32);
 
   // A drag of the frame carries its points, and letting go leaves them where they were carried.
   const point = await box(anchors.nth(1));

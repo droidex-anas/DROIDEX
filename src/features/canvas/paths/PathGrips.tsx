@@ -62,18 +62,11 @@ export function PathGrips({
   scale: number;
   /** Draws data on `element`'s path, or its own for null. */
   preview: (d: string | null, element: ElementRef) => void;
-  commit: (d: string, element: ElementRef) => void;
+  /** Resolves whether the source wrote `d`. */
+  commit: (d: string, element: ElementRef) => Promise<boolean>;
 }) {
-  /**
-   * A move's segments, shown while `from` is still the shape read: until the
-   * next read after its commit, or until a refused commit leaves the shape
-   * movable again as it was.
-   */
-  const [moved, setMoved] = useState<{
-    from: PathSegment[];
-    segments: PathSegment[];
-    committed: boolean;
-  } | null>(null);
+  /** A move's segments, shown while `from` is still the shape read: until the next read after its commit, or its refusal. */
+  const [moved, setMoved] = useState<{ from: PathSegment[]; segments: PathSegment[] } | null>(null);
   const [focused, setFocused] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const press = useRef<Press | null>(null);
@@ -85,8 +78,7 @@ export function PathGrips({
   const latest = useRef({ shape, preview, commit });
   latest.current = { shape, preview, commit };
 
-  const showsMove = moved?.from === shape.segments && !(moved.committed && shape.movable);
-  const segments = showsMove ? moved.segments : shape.segments;
+  const segments = moved?.from === shape.segments ? moved.segments : shape.segments;
   const grips = pathGrips(segments);
   const { matrix } = shape;
 
@@ -110,8 +102,9 @@ export function PathGrips({
     if (!ending) return;
     const now = latest.current;
     if (keep && ending.d !== null && isCurrent(now.shape, ending)) {
-      now.commit(ending.d, ending.element);
-      setMoved((current) => current && { ...current, committed: true });
+      void now.commit(ending.d, ending.element).then((written) => {
+        if (!written) setMoved((current) => (current?.from === ending.from ? null : current));
+      });
       return;
     }
     now.preview(null, ending.element);
@@ -166,7 +159,7 @@ export function PathGrips({
     const d = movedData(held.from, next);
     if (d !== null && d.length > MAX_PREVIEW_PATH_DATA_BYTES) return;
     held.d = d;
-    setMoved({ from: held.from, segments: next, committed: false });
+    setMoved({ from: held.from, segments: next });
     frameRequest.current ??= requestAnimationFrame(() => {
       frameRequest.current = null;
       const live = move.current;
