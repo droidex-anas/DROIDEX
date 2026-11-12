@@ -25,13 +25,8 @@ import {
   type ShownMark,
 } from './annotationWrites';
 import { boardPoint } from './boardCoordinates';
-import {
-  arrowDirection,
-  nudgeStep,
-  screenToCanvas,
-  type Point,
-  type Viewport,
-} from './canvasGeometry';
+import type { BoardStage } from './boardStage';
+import { arrowDirection, nudgeStep, screenToCanvas, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent } from './canvasState';
 import type { CanvasSnapshot, FrameRect } from './protocol';
 import {
@@ -52,7 +47,8 @@ export type MarkGrip = AnnotationHandle | 'move';
 interface AnnotationInputs {
   board: RefObject<HTMLDivElement | null>;
   snapshot: Pick<CanvasSnapshot, 'annotations' | 'annotationsVersion'>;
-  viewport: Viewport;
+  /** The live view, which a press is placed through even mid-wheel. */
+  stage: BoardStage;
   /**
    * The frames' mode and selection. A mark and frames are never selected
    * together, and arming a tool leaves Interact, since marks are drawn in Select.
@@ -88,7 +84,7 @@ type Gesture =
 export function useAnnotationEditor({
   board,
   snapshot: { annotations, annotationsVersion },
-  viewport,
+  stage,
   interaction,
   dispatch,
   onAnnotate,
@@ -121,16 +117,8 @@ export function useAnnotationEditor({
   const selected = marks.find((mark) => mark.draft.id === selectedId) ?? null;
   const { order: markOrder, tabStopId } = markFocusOrder(marks, selectedId);
 
-  const latest = useRef({
-    viewport,
-    marks,
-    annotationsVersion,
-    unanswered,
-    tool,
-    color,
-    onAnnotate,
-  });
-  latest.current = { viewport, marks, annotationsVersion, unanswered, tool, color, onAnnotate };
+  const latest = useRef({ marks, annotationsVersion, unanswered, tool, color, onAnnotate });
+  latest.current = { marks, annotationsVersion, unanswered, tool, color, onAnnotate };
 
   useEffect(() => {
     setPending((held) => {
@@ -173,9 +161,9 @@ export function useAnnotationEditor({
     (event: { clientX: number; clientY: number }) => {
       const root = board.current;
       const screen = root ? boardPoint(root, { x: event.clientX, y: event.clientY }) : null;
-      return screen && { screen, at: screenToCanvas(latest.current.viewport, screen) };
+      return screen && { screen, at: screenToCanvas(stage.viewport, screen) };
     },
-    [board],
+    [board, stage],
   );
 
   const cancelGesture = useCallback(() => {
@@ -188,21 +176,24 @@ export function useAnnotationEditor({
   }, []);
 
   /** The mark the gesture is drawing or reshaping, at the pointer's last place. */
-  const drafted = useCallback((active: Gesture, to: Point): AnnotationDraft | null => {
-    if (active.kind === 'edit') {
-      const delta = { x: to.x - active.origin.x, y: to.y - active.origin.y };
-      return active.grip === 'move'
-        ? movedDraft(active.start, delta)
-        : resizedDraft(active.start, active.grip, delta);
-    }
-    const { scale } = latest.current.viewport;
-    if (active.tool === 'draw')
-      return active.points.length < 2
-        ? null
-        : { id: 'drawing', color: latest.current.color, kind: 'path', points: active.points };
-    const mark = { id: 'drawing', color: latest.current.color };
-    return draggedDraft(active.tool, mark, active.origin, to, scale);
-  }, []);
+  const drafted = useCallback(
+    (active: Gesture, to: Point): AnnotationDraft | null => {
+      if (active.kind === 'edit') {
+        const delta = { x: to.x - active.origin.x, y: to.y - active.origin.y };
+        return active.grip === 'move'
+          ? movedDraft(active.start, delta)
+          : resizedDraft(active.start, active.grip, delta);
+      }
+      const { scale } = stage.viewport;
+      if (active.tool === 'draw')
+        return active.points.length < 2
+          ? null
+          : { id: 'drawing', color: latest.current.color, kind: 'path', points: active.points };
+      const mark = { id: 'drawing', color: latest.current.color };
+      return draggedDraft(active.tool, mark, active.origin, to, scale);
+    },
+    [stage],
+  );
 
   useEffect(() => {
     let last: Point | null = null;
@@ -235,7 +226,8 @@ export function useAnnotationEditor({
         return;
       }
       const id = crypto.randomUUID();
-      const { color: drawn, viewport: view } = latest.current;
+      const { color: drawn } = latest.current;
+      const view = stage.viewport;
       if (active.tool === 'draw') {
         const points = active.moved ? extendStroke(active.points, to) : active.points;
         if (points.length >= 2) write([{ id, color: drawn, kind: 'path', points }], []);
@@ -272,7 +264,7 @@ export function useAnnotationEditor({
       window.removeEventListener('blur', onBlur);
       cancelGesture();
     };
-  }, [cancelGesture, drafted, toBoard, write]);
+  }, [cancelGesture, drafted, stage, toBoard, write]);
 
   const takePointer = (event: React.PointerEvent) => {
     event.stopPropagation();

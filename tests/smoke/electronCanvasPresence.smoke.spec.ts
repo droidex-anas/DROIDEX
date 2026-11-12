@@ -57,6 +57,8 @@ test('an agent draws nothing over a frame panned off screen', async ({ page }) =
   await expect(presences(page)).toHaveCount(2);
   await page.mouse.move(600, 500);
   await page.mouse.wheel(-900, 0);
+  // The board culls on the view the wheel settles on once it goes quiet.
+  await page.clock.runFor(200);
   await page.clock.runFor(400);
   await expect(presences(page)).toHaveCount(1);
   await expect(presences(page).getByText('Kairo', { exact: true })).toBeAttached();
