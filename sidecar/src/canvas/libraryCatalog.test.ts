@@ -131,12 +131,19 @@ test("a demo giving a variant the library's cva does not define is left out, wit
 test('variants come only from the table the exported component itself uses, in the file the kit exports it from', () => {
   const files = libraryFiles(`export { Button } from './components/ui/button';\n`, [BUTTON]);
   const lacksOutline = buttonSource('default: "a", ghost: "c"');
-  const unusedTable = [
-    component('button', lacksOutline.replace('return buttonVariants();', 'return null;')),
+  // Bodies that only spell the table's name: none, a local that shadows it, and a property.
+  const bodies = [
+    'return null;',
+    'const buttonVariants = ({ variant }) => (variant === "outline" ? "border" : "plain");\n  return buttonVariants({ variant: "outline" });',
+    'const labels = { buttonVariants: "local label" };\n  return labels.buttonVariants;',
   ];
-  const unused = seeded(files, unusedTable);
-  assert.deepEqual(unused.skipped, []);
-  assert.equal(catalogOf({ ...files, ...unused.files })[0].props, undefined);
+  for (const body of bodies) {
+    const unused = seeded(files, [
+      component('button', lacksOutline.replace('return buttonVariants();', body)),
+    ]);
+    assert.deepEqual(unused.skipped, [], body);
+    assert.equal(catalogOf({ ...files, ...unused.files })[0].props, undefined, body);
+  }
 
   // A file the kit does not export Button from, listed first, gives it nothing.
   const elsewhere = [

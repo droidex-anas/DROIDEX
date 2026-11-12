@@ -127,21 +127,52 @@ function namedExports(
   });
 }
 
-/** The literal tables a declaration refers to by name. */
+/**
+ * The literal tables a declaration refers to as values, and none when it
+ * declares a binding of a table's name anywhere, since it cannot be told
+ * which one a reference means.
+ */
 function tablesUsed(
   declaration: ts.Node,
   tables: ReadonlyMap<string, VariantProps>,
 ): Set<VariantProps> {
   const used = new Set<VariantProps>();
+  const shadowed = new Set<string>();
   const visit = (node: ts.Node): void => {
-    const props = ts.isIdentifier(node) ? tables.get(node.text) : undefined;
-    if (props !== undefined) used.add(props);
-    // In `props.buttonVariants` the name is a property's, not the table's.
-    else if (ts.isPropertyAccessExpression(node)) visit(node.expression);
-    else ts.forEachChild(node, visit);
+    if (ts.isTypeNode(node)) return;
+    if (ts.isIdentifier(node)) {
+      const props = tables.get(node.text);
+      if (props !== undefined) used.add(props);
+      return;
+    }
+    const names = nonValueNames(node);
+    if (BINDINGS.some((binds) => binds(node)))
+      for (const { text } of names) if (tables.has(text)) shadowed.add(text);
+    ts.forEachChild(node, (child) => {
+      if (!names.some((name) => name === child)) visit(child);
+    });
   };
   visit(declaration);
-  return used;
+  return shadowed.size > 0 ? new Set() : used;
+}
+
+const BINDINGS: ((node: ts.Node) => boolean)[] = [
+  ts.isVariableDeclaration,
+  ts.isParameter,
+  ts.isBindingElement,
+  ts.isFunctionDeclaration,
+  ts.isFunctionExpression,
+  ts.isClassDeclaration,
+  ts.isClassExpression,
+];
+
+/** The identifiers of a node that name a declaration or a property, not a value it refers to. */
+function nonValueNames(node: ts.Node): ts.Identifier[] {
+  // A shorthand property's name is also the value it passes.
+  if (ts.isShorthandPropertyAssignment(node)) return [];
+  const { name } = node as { name?: ts.Node };
+  const slots = ts.isBindingElement(node) ? [name, node.propertyName] : [name];
+  return slots.filter((slot) => slot !== undefined && ts.isIdentifier(slot));
 }
 
 /**
