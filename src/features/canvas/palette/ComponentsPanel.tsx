@@ -9,6 +9,7 @@ import { Search } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Input } from '../../../components/ui/Field';
+import type { PropPick } from '../elementEditProtocol';
 import type { CatalogListing, DesignSystemVersionRef } from '../protocol';
 import { paletteRows } from './paletteRows';
 import type { PalettePlace } from './useComponentInsert';
@@ -26,7 +27,7 @@ export function ComponentsPanel({
   /** The kit version whose catalog is listed: the target frame's, else the board's first frame's. */
   kit: DesignSystemVersionRef | undefined;
   place: PalettePlace;
-  onAdd: (entry: string) => void;
+  onAdd: (entry: string, props: PropPick[]) => void;
   /** Escape on an empty search: the keyboard goes back to the board. */
   onLeave: () => void;
 }) {
@@ -43,7 +44,7 @@ export function ComponentsPanel({
     count: matches.length,
     optionId,
     onAdd: (index) => {
-      onAdd(matches[index].name);
+      onAdd(matches[index].name, []);
     },
     onLeave,
   });
@@ -99,7 +100,7 @@ export function ComponentsPanel({
               canAdd={place.canAdd}
               onAdd={() => {
                 keys.setActive(index);
-                onAdd(entry.name);
+                onAdd(entry.name, []);
               }}
             />
           ))}

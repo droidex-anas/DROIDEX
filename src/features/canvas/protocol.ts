@@ -145,6 +145,15 @@ export interface CatalogListing {
   /** The kit file it shows, for grouping and search. */
   module: string | null;
   note: string | null;
+  /** The props a palette lets the user pick before it inserts the entry. */
+  props: CatalogProp[];
+}
+
+/** An attribute of an entry's element and the options it can take, `default` the one it writes. */
+export interface CatalogProp {
+  name: string;
+  options: string[];
+  default: string;
 }
 
 /** A kit version as its document shows it: everything but its source. */

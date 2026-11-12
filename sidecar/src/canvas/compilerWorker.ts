@@ -298,7 +298,7 @@ async function runEdit(
       if (change.kind === 'insert') {
         const entry = await catalogEntry(change.entry, designSystem);
         stopIfCancelled(signal);
-        edited = insertLayer(files, edit.layer.nodeId, entry);
+        edited = insertLayer(files, edit.layer.nodeId, entry, change.props);
       } else edited = editLayer(files, edit.layer.nodeId, change);
     } else {
       const change = await sourceChange(edit.change, designSystem);

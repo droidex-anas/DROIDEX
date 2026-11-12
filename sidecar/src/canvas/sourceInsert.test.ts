@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CatalogEntry } from './kitCatalog.js';
+import type { CatalogEntry, PropPick } from './kitCatalog.js';
 import type { SourceFiles } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
@@ -37,7 +37,7 @@ function rowId(files: SourceFiles, name: string): string {
 /** Adds `entry` to the row named `target` and returns main.tsx, checking it still maps with the added rows and lands on the entry. */
 function inserted(main: string, target: string, entry = BUTTON): string {
   const files = { 'main.tsx': main };
-  const result = insertLayer(files, rowId(files, target), entry);
+  const result = insertLayer(files, rowId(files, target), entry, []);
   const after = instrumentSource({ ...files, ...result.files }, 'r2').outline.nodes;
   const before = instrumentSource(files, 'r1').outline.nodes;
   assert.ok(after.length > before.length);
@@ -45,10 +45,10 @@ function inserted(main: string, target: string, entry = BUTTON): string {
   return result.files['main.tsx'];
 }
 
-function refusal(main: string, target: string, entry = BUTTON): string {
+function refusal(main: string, target: string, entry = BUTTON, picks: PropPick[] = []): string {
   const files = { 'main.tsx': main };
   try {
-    insertLayer(files, rowId(files, target), entry);
+    insertLayer(files, rowId(files, target), entry, picks);
   } catch (error) {
     assert.ok(error instanceof SourceElementError);
     return error.message;
@@ -170,9 +170,39 @@ test('an entry giving an element an id the frame already gives one is refused, n
     "This frame writes an id the edit can't read, so the entry's id might repeat it.",
   );
   const files = { 'main.tsx': 'export default () => <main><input id="e&amp;mail" /></main>;' };
-  assert.ok(insertLayer(files, rowId(files, 'main'), email).landed);
+  assert.ok(insertLayer(files, rowId(files, 'main'), email, []).landed);
 });
 
+test('picked props are written on the first element written with a used component', () => {
+  const toggle: CatalogEntry = {
+    ...BUTTON,
+    name: 'Toggle',
+    jsx: '<div>\n  <p>Bold</p>\n  <Button variant="outline" onClick={undefined}>B</Button>\n  <Button>I</Button>\n</div>',
+    props: [
+      { name: 'variant', options: ['default', 'outline', 'ghost'], default: 'outline' },
+      { name: 'size', options: ['default', 'sm'], default: 'default' },
+    ],
+  };
+  const picks = [
+    { name: 'variant', value: 'ghost' },
+    { name: 'size', value: 'sm' },
+  ];
+  const main = `${KIT}export default () => <main />;\n`;
+  const files = { 'main.tsx': main };
+  assert.equal(
+    insertLayer(files, rowId(files, 'main'), toggle, picks).files['main.tsx'],
+    `${KIT}export default () => <main>\n  <div>\n    <p>Bold</p>\n    <Button size="sm" variant="ghost" onClick={undefined}>B</Button>\n    <Button>I</Button>\n  </div>\n</main>;\n`,
+  );
+  assert.equal(
+    refusal(main, 'main', toggle, [{ name: 'variant', value: 'link' }]),
+    'This entry has no option link for variant. Pick one it lists.',
+  );
+  const written = { ...toggle, jsx: '<Button variant={"outline"}>B</Button>' };
+  assert.equal(
+    refusal(main, 'main', written, [{ name: 'variant', value: 'ghost' }]),
+    'This entry writes variant in code, so it cannot be picked.',
+  );
+});
 test('a reference named after an object property is an id the edit cannot read', () => {
   const entry: CatalogEntry = { ...BUTTON, uses: [], jsx: "<input id={'&constructor;'} />" };
   assert.equal(

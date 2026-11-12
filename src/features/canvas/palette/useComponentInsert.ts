@@ -5,6 +5,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import type { CanvasPresence } from '../canvasPresence';
+import type { PropPick } from '../elementEditProtocol';
 import type { LayerElements } from '../layers/layerElements';
 import { drawnLayers } from '../layers/drawnLayers';
 import type { EditLayer } from '../layers/useLayerEdit';
@@ -66,13 +67,13 @@ export function useComponentInsert({
   const place = placeOf(target, { adding, presence, canEdit: onEditLayer !== undefined });
   usePickAdded(added, frames, elements);
 
-  const add = (entry: string) => {
+  const add = (entry: string, props: PropPick[]) => {
     if (!target?.layer || !('row' in target.layer) || !onEditLayer || !place.canAdd) return;
     const { designId } = target.frame;
     setAdding(true);
     const layer = { designId, revisionId: target.revisionId, nodeId: target.layer.row.nodeId };
     const pick = picked?.pick ?? null;
-    void onEditLayer(layer, { kind: 'insert', entry }).then((edited) => {
+    void onEditLayer(layer, { kind: 'insert', entry, props }).then((edited) => {
       setAdding(false);
       if (edited?.landed)
         setAdded({ designId, revisionId: edited.receipt.revisionId, nodeId: edited.landed, pick });

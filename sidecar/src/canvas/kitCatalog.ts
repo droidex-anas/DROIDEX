@@ -1,12 +1,13 @@
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
 // like its project theme. Each entry is one JSX element a palette inserts
-// into a frame, with the kit exports and lucide-react icons it names. The
-// compiler checks that each stands alone and builds (catalogCheck.ts).
+// into a frame, with the kit exports and lucide-react icons it names and the
+// props a palette lets the user pick before it inserts. The compiler checks
+// that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
 import { canvasDiagnosticSchema, truncateDiagnosticText } from './canvasDiagnostics.js';
 import type { CanvasDiagnostic } from './protocol.js';
-import { sourcePathSchema, type SourceFiles } from './schema.js';
+import { hasDuplicate, sourcePathSchema, type SourceFiles } from './schema.js';
 
 export const KIT_CATALOG_FILE = 'catalog.json';
 
@@ -16,6 +17,8 @@ const CATALOG_LIMITS = {
   maxNameLength: 80,
   maxNoteLength: 200,
   maxNamesPerEntry: 64,
+  maxPropsPerEntry: 8,
+  maxOptionsPerProp: 32,
 } as const;
 
 const importNameSchema = z
@@ -25,6 +28,37 @@ const importNameSchema = z
 
 /** An entry's name, which is unique in its catalog. */
 export const catalogNameSchema = z.string().trim().min(1).max(CATALOG_LIMITS.maxNameLength);
+
+/** A value an attribute carries in quotes, as `outline` in `variant="outline"`. */
+const propOptionSchema = z
+  .string()
+  .regex(/^[A-Za-z0-9][\w-]*$/, 'Name an option with letters, digits, - and _, such as outline')
+  .max(40);
+
+/** An attribute a palette lets the user pick a value of before it inserts the entry. */
+export const catalogPropSchema = z
+  .object({
+    name: importNameSchema,
+    options: z.array(propOptionSchema).min(2).max(CATALOG_LIMITS.maxOptionsPerProp),
+    default: propOptionSchema,
+  })
+  .strict()
+  .refine((prop) => !hasDuplicate(prop.options), { message: 'A prop lists each option once' })
+  .refine((prop) => prop.options.includes(prop.default), {
+    message: "A prop's default is one of its options",
+  });
+
+export type CatalogProp = z.infer<typeof catalogPropSchema>;
+
+/** The values an insert picks for an entry's props, each prop at most once. */
+export const propPicksSchema = z
+  .array(z.object({ name: importNameSchema, value: propOptionSchema }).strict())
+  .max(CATALOG_LIMITS.maxPropsPerEntry)
+  .refine((picks) => !hasDuplicate(picks.map((pick) => pick.name)), {
+    message: 'An insert picks each prop once',
+  });
+
+export type PropPick = z.infer<typeof propPicksSchema>[number];
 
 const entrySchema = z
   .object({
@@ -41,6 +75,18 @@ const entrySchema = z
         message: 'An entry holds at most 4 KiB of JSX',
       }),
     note: z.string().trim().min(1).max(CATALOG_LIMITS.maxNoteLength).nullable(),
+    /**
+     * The props of its first element written with a component it uses, as
+     * that component's variants define them; the default is the value the
+     * element writes, else the variant's own default.
+     */
+    props: z
+      .array(catalogPropSchema)
+      .max(CATALOG_LIMITS.maxPropsPerEntry)
+      .refine((props) => !hasDuplicate(props.map((prop) => prop.name)), {
+        message: 'An entry lists each prop once',
+      })
+      .optional(),
   })
   .strict();
 
@@ -89,13 +135,23 @@ export function catalogFile(catalog: readonly CatalogEntry[]): string {
 }
 
 /** What the kit document lists of an entry; its JSX stays in the sidecar. */
-export type CatalogListing = Pick<CatalogEntry, 'name' | 'module' | 'note'>;
+export interface CatalogListing {
+  name: string;
+  module: string | null;
+  note: string | null;
+  props: CatalogProp[];
+}
 
 /** The listing of a saved version's catalog, which was checked when it was saved. */
 export function catalogListing(files: SourceFiles): CatalogListing[] {
   const read = readKitCatalog(files);
   if ('problem' in read) throw new Error(read.problem);
-  return read.catalog.map(({ name, module, note }) => ({ name, module, note }));
+  return read.catalog.map(({ name, module, note, props }) => ({
+    name,
+    module,
+    note,
+    props: props ?? [],
+  }));
 }
 
 /** Why the kit's catalog file is unusable, or null when it is usable or absent. */
