@@ -27,9 +27,12 @@ export function StageSnapGuides({
       layer.draw(held.readMarks() ?? measured, stage.viewport);
     };
     draw();
+    // A distance is measured once a hold, so a font or zoom changed since is read anew.
+    const stopHold = held.subscribe(layer.forgetSizes);
     const stopHeld = held.onMarks(draw);
     const stopStage = stage.subscribe(draw);
     return () => {
+      stopHold();
       stopHeld();
       stopStage();
     };
@@ -55,6 +58,10 @@ class SnapGuideLayer {
     this.node = node;
     this.lines = [];
     this.gaps = [];
+  };
+
+  forgetSizes = (): void => {
+    for (const nodes of this.gaps) nodes.size = null;
   };
 
   draw(marks: GuideMarks, viewport: Viewport): void {
