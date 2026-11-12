@@ -1122,6 +1122,8 @@ export type ClientCommand =
       references: DesignReference[];
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
+      // What the prompt pinned, as `session.send` carries it.
+      canvasContext?: CanvasTurnContext;
     }
   | { type: 'sidebar.result'; result: SidebarResult };
 

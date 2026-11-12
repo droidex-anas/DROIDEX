@@ -573,9 +573,13 @@ export const sendDesignPrompt = (
   appSessionId: string,
   instruction: string,
   references: DesignReference[],
-  responseFormat?: ResponseFormat,
-  mentions?: ProviderMention[],
+  options: {
+    responseFormat?: ResponseFormat;
+    mentions?: ProviderMention[];
+    canvasContext?: CanvasTurnContext;
+  } = {},
 ) => {
+  const { responseFormat, mentions, canvasContext } = options;
   requireAgentWorkAvailable();
   bridge.send({
     type: 'browser.design.sendPrompt',
@@ -584,6 +588,7 @@ export const sendDesignPrompt = (
     references,
     ...(mentions?.length ? { mentions } : {}),
     ...(responseFormat ? { responseFormat } : {}),
+    ...(canvasContext ? { canvasContext } : {}),
   });
 };
 

@@ -1752,6 +1752,7 @@ export default function PromptInput({
             ...(mentions.length > 0 ? { mentions } : {}),
             ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
             ...references.queued,
+            ...(canvasContext ? { canvasContext } : {}),
             design,
           },
         });
@@ -1789,7 +1790,11 @@ export default function PromptInput({
         },
         sendCommand: () => {
           try {
-            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            sendDesignPrompt(appSessionId, composed, design.references, {
+              responseFormat,
+              mentions,
+              canvasContext,
+            });
             armTurnStartingTimeout();
           } catch (err) {
             stopTurnStarting();
