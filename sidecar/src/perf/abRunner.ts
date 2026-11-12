@@ -59,13 +59,13 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     : '';
   const candidateCommit = git(candidateRoot, ['rev-parse', 'HEAD']).trim();
   const cache = options.includeBaseline ? readCache(baselineCachePath(candidateRoot)) : null;
-  const cacheHit =
-    options.includeBaseline &&
-    !options.refreshBaseline &&
+  // A cache that measured another commit, ref or set of A/B metrics is stale.
+  const cacheMatches =
     cache !== null &&
     cache.baselineCommit === baselineCommit &&
     cache.baselineRef === options.baselineRef &&
     JSON.stringify(cache.abMetricIds) === JSON.stringify(abMetricIds());
+  const cacheHit = options.includeBaseline && !options.refreshBaseline && cacheMatches;
 
   let baselineProbes: AbProbeResult | null = cacheHit ? cache.probes : null;
   if (options.includeBaseline && !cacheHit) {
@@ -125,8 +125,7 @@ export async function runComparison(options: CompareOptions): Promise<Comparison
     baselineCommit,
     candidateCommit,
     candidateTree: candidateRoot,
-    baselineStale:
-      options.includeBaseline && cache !== null && cache.baselineCommit !== baselineCommit,
+    baselineStale: options.includeBaseline && cache !== null && !cacheMatches,
     measuredAt: new Date().toISOString(),
     environment: { node: process.version, platform: `${process.platform}/${process.arch}` },
     probes: { baseline: baselineProbes, candidate: candidateProbes },
