@@ -1,5 +1,6 @@
 // What a module imports and exports, read with the TypeScript parser so
-// comments, strings and type-only declarations are never taken for either.
+// comments, strings and type-only declarations are never taken for either,
+// with its literal cva variants and the elements it writes (libraryVariants.ts).
 // Only the compiler process loads the parser, so only it imports this module.
 
 import ts from 'typescript';
@@ -9,6 +10,7 @@ import type {
   ModuleImport,
   ModuleSpecifier,
 } from './compilerModules.js';
+import { moduleElements, variantTables } from './libraryVariants.js';
 
 export function moduleDeclarations(source: string): ModuleDeclarations {
   const file = ts.createSourceFile(
@@ -60,7 +62,13 @@ export function moduleDeclarations(source: string): ModuleDeclarations {
       },
     ];
   });
-  return { specifiers, imports, exports: file.statements.flatMap(exportsOf) };
+  return {
+    specifiers,
+    imports,
+    exports: file.statements.flatMap(exportsOf),
+    variants: variantTables(file),
+    elements: moduleElements(file),
+  };
 }
 
 function namedValues(clause: ts.ImportClause | undefined): ModuleImport['names'] {
