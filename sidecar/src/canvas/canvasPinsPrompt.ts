@@ -42,7 +42,7 @@ export function canvasPinsFromPrompt(
 function componentLabels(records: readonly RegExpMatchArray[]): string[] {
   const kits = new Set(records.map(([, , kitId]) => kitId));
   return records.map(([, kit, , name]) => {
-    const entry = unescapeText(name);
+    const entry = unescapeText(name.replaceAll('&#13;', '\r').replaceAll('&#10;', '\n'));
     return kits.size > 1 ? `${entry} · ${unescapeText(kit.replaceAll('&quot;', '"'))}` : entry;
   });
 }

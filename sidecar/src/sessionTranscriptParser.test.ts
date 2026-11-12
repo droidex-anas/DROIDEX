@@ -235,10 +235,11 @@ test('a stored prompt shows its tagged kit components as chips, their kit named 
   const oneKit = block(
     component('Acme', 'acme', 'Button'),
     component('Acme', 'acme', 'Card &lt;wide&gt;'),
+    component('Acme', 'acme', 'Two  spaces&#10;&amp;#10;'),
   );
   const [tagged] = replay(userText(`Use these\n\n${oneKit}\n\n${frames}\n\n${elements}`));
   assert.equal(tagged?.text, 'Use these');
-  assert.deepEqual(tagged?.canvasComponents, ['Button', 'Card <wide>']);
+  assert.deepEqual(tagged?.canvasComponents, ['Button', 'Card <wide>', 'Two  spaces\n&#10;']);
   assert.deepEqual(tagged?.canvasFrames, ['Pricing']);
 
   const twoKits = block(

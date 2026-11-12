@@ -292,7 +292,7 @@ export function promptWithCanvasPins(
 
 function componentLine({ kit, kitName, name }: ComponentPin): string {
   const ref = `ref-id="${escapeAttribute(kit.id)}" ref-version="${String(kit.version)}" ref-mode="${kit.mode}"`;
-  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}>${escapeText(oneLine(name))}</component>`;
+  return `<component kit="${escapeAttribute(oneLine(kitName))}" ${ref}>${escapeEntryName(name)}</component>`;
 }
 
 function frameLine(pin: FramePin): string {
@@ -315,6 +315,11 @@ function oneLine(text: string): string {
 /** Escaped so a name or picked words can never close or forge a record. */
 function escapeText(text: string): string {
   return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** The entry's exact name, as the catalog read matches it; line breaks become references to keep one record per line. */
+function escapeEntryName(name: string): string {
+  return escapeText(name).replaceAll('\r', '&#13;').replaceAll('\n', '&#10;');
 }
 
 function escapeAttribute(value: string): string {
