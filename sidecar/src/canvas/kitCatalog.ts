@@ -166,7 +166,7 @@ export interface CatalogRead {
 }
 
 /** An entry as an agent writes it into a design. */
-export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
+type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
 
 /**
  * What a catalog read may cost as JSON, the names it leaves out included. The
