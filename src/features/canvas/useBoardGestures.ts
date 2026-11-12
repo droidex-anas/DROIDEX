@@ -380,16 +380,17 @@ export function useBoardGestures({
       pointerId: active.drag.pointerId,
     });
     if (rect === null) return;
+    // A hold outlives newer layout only when it leaves the frames where the hold
+    // found them, as the answer to the write it began on does: it places from that.
+    const versionNow = (designId: string, read: number) =>
+      frames.find((frame) => frame.designId === designId)?.layoutVersion ?? read;
+    const { designId, expectedLayoutVersion } = active.drag;
     writes.commit([
-      {
-        designId: active.drag.designId,
-        expectedLayoutVersion: active.drag.expectedLayoutVersion,
-        rect,
-      },
-      ...active.carried.map(({ designId, expectedLayoutVersion, rect: carriedRect }) => ({
-        designId,
-        expectedLayoutVersion,
-        rect: carriedRect,
+      { designId, expectedLayoutVersion: versionNow(designId, expectedLayoutVersion), rect },
+      ...active.carried.map((carried) => ({
+        designId: carried.designId,
+        expectedLayoutVersion: versionNow(carried.designId, carried.expectedLayoutVersion),
+        rect: carried.rect,
       })),
     ]);
   };

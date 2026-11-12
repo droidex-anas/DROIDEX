@@ -186,6 +186,30 @@ test('a frame resizes from an edge or a corner, and the edges opposite stay put'
   ).toBe(4);
 });
 
+test('a re-drag held while the write it started on is answered is written at the version that answer left', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await dragLabel(page, 'A', 45, 45);
+  await expect.poll(() => arrangeCount(page)).toBe(1);
+  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
+  await page.mouse.move(label.x + 30, label.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(label.x + 75, label.y + 8);
+  await page.clock.runFor(32);
+  // The answer draws A where the hold found it, so the hold goes on.
+  await page.evaluate(() => window.boardHarness.answer(0));
+  await page.clock.runFor(32);
+  await page.mouse.move(label.x + 90, label.y + 8);
+  await page.clock.runFor(32);
+  await page.mouse.up();
+  await expect.poll(() => arrangeCount(page)).toBe(2);
+  const versions = await page.evaluate(() =>
+    window.boardHarness.calls.map((call) => call.frames[0].expectedLayoutVersion),
+  );
+  expect(versions).toEqual([3, 4]);
+});
+
 /** The board's zoom as drawn, which only the stage has until a wheel goes quiet. */
 const liveScale = (page: Page) =>
   page
