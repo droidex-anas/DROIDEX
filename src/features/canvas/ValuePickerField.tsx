@@ -74,7 +74,6 @@ export function ValuePickerField({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-disabled={disabled || undefined}
-        title={current ? `${current.label} (${current.hint ?? current.value})` : value}
         onClick={() => {
           if (!disabled) setOpen((was) => !was);
         }}
