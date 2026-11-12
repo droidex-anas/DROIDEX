@@ -11,7 +11,7 @@ import { hasDuplicate, sourcePathSchema, type SourceFiles } from './schema.js';
 
 export const KIT_CATALOG_FILE = 'catalog.json';
 
-const CATALOG_LIMITS = {
+export const CATALOG_LIMITS = {
   maxEntries: 128,
   maxJsxBytes: 4 * 1024,
   maxNameLength: 80,

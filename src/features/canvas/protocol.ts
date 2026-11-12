@@ -86,14 +86,18 @@ export interface LibraryProvenance {
   skipped: LibrarySkip[];
   /** Files the import left out of the kit. */
   skippedCount: number;
-  /** Files it kept whose exports the kit entry does not all re-export (no_exports, duplicate_export). */
+  /**
+   * Files it kept whose exports the kit entry does not all re-export
+   * (no_exports, duplicate_export) or whose catalog demo it left out (demo_left_out).
+   */
   partialCount: number;
 }
 
 /**
  * A file a library import left out, or kept with exports the kit entry does
- * not take. `detail` names the import, the left-out sibling or the exports
- * another file gave the entry, for the three reasons that have one.
+ * not take or without its catalog demo. `detail` names the import, the
+ * left-out sibling, the exports another file gave the entry or the variant
+ * the library lacks, for the four reasons that have one.
  */
 export interface LibrarySkip {
   file: string;
@@ -108,7 +112,8 @@ export type LibrarySkipReason =
   | 'needs_left_out'
   | 'duplicate_export'
   | 'no_exports'
-  | 'not_a_component';
+  | 'not_a_component'
+  | 'demo_left_out';
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {

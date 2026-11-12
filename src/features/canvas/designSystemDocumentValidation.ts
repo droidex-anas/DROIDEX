@@ -45,13 +45,15 @@ const SKIP_REASONS = new Set<unknown>([
   'duplicate_export',
   'no_exports',
   'not_a_component',
+  'demo_left_out',
 ]);
 const DETAILED_SKIP_REASONS = new Set<unknown>([
   'unsupported_import',
   'needs_left_out',
   'duplicate_export',
+  'demo_left_out',
 ]);
-const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export']);
+const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export', 'demo_left_out']);
 const HOST_PATH = /^(?:[\\/]|[a-z]:[\\/]|file:)/i;
 const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([

@@ -19,9 +19,11 @@ export const MAX_LIBRARY_SKIPS = 128;
 /**
  * Why a library import left a file out of the kit, or, for no_exports and
  * duplicate_export, kept a file whose exports the kit entry does not all
- * re-export. `detail` names the import for unsupported_import, the left-out
- * sibling for needs_left_out and the exports another file gave the entry for
- * duplicate_export; it is null otherwise.
+ * re-export, and for demo_left_out kept a file whose catalog demo it left out.
+ * `detail` names the import for unsupported_import, the left-out sibling for
+ * needs_left_out, the exports another file gave the entry for
+ * duplicate_export and the variant the library lacks for demo_left_out; it is
+ * null otherwise.
  */
 const LIBRARY_SKIP_REASONS = [
   'over_limit',
@@ -31,16 +33,22 @@ const LIBRARY_SKIP_REASONS = [
   'duplicate_export',
   'no_exports',
   'not_a_component',
+  'demo_left_out',
 ] as const;
 
 const DETAILED_SKIP_REASONS = new Set<string>([
   'unsupported_import',
   'needs_left_out',
   'duplicate_export',
+  'demo_left_out',
 ]);
 
 /** The reasons whose file the kit kept; every other reason's file is left out. */
-export const KEPT_SKIP_REASONS = new Set<string>(['no_exports', 'duplicate_export']);
+export const KEPT_SKIP_REASONS = new Set<string>([
+  'no_exports',
+  'duplicate_export',
+  'demo_left_out',
+]);
 
 /** An absolute path or file: URL, which would carry a folder outside the project into the kit. */
 export const HOST_PATH = /^(?:[\\/]|[a-z]:[\\/]|file:)/i;
@@ -80,7 +88,8 @@ export type LibrarySkip = z.infer<typeof librarySkipSchema>;
  * project token it was read from, so an export back to that project can use
  * the project's own names. It also reviews the import, one record per file:
  * `skippedCount` counts the files it left out and `partialCount` the files it
- * kept whose exports the entry does not all re-export, listed or not.
+ * kept whose exports the entry does not all re-export or whose catalog demo it
+ * left out, listed or not.
  */
 const libraryProvenanceSchema = z
   .object({
