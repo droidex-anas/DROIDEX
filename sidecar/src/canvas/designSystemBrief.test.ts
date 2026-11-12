@@ -158,3 +158,30 @@ test('the brief names the kit’s catalog entries within their own 1 KiB, and co
   // The primitives keep their own budget.
   assert.deepEqual(brief.primitives, ['Button', 'Card', 'Badge', 'Input', 'Tabs', 'Dialog']);
 });
+
+test('the brief charges catalog names as JSON writes them, escapes included', async () => {
+  const names = Array.from({ length: 12 }, (_, index) => `${'"'.repeat(70)} ${String(index)}`);
+  const catalog = names.map((name) => ({
+    name,
+    module: 'index.tsx',
+    uses: ['Button'],
+    icons: [],
+    jsx: '<Button>Go</Button>',
+    note: null,
+  }));
+  const ref = await saveDesignSystem(
+    {
+      ...SAMPLE_KIT,
+      id: 'quoted',
+      files: { ...SAMPLE_KIT.files, 'catalog.json': catalogFile(catalog) },
+    },
+    { mutationId: 'quoted-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  const brief = await designSystemBrief(
+    { ...ref, mode: 'light' },
+    { projectFolder: null, hasDesigns: false },
+  );
+  assert.ok(!('unavailable' in brief) && brief.catalog && brief.omittedCatalogNames);
+  assert.ok(Buffer.byteLength(JSON.stringify(brief.catalog), 'utf8') <= 1024);
+  assert.equal(brief.catalog.length + brief.omittedCatalogNames, names.length);
+});

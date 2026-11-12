@@ -86,9 +86,12 @@ export async function designSystemBrief(
   // A pinned version's catalog was checked when it was saved.
   const read = readKitCatalog(system.files);
   const entryNames = nameBudget(CATALOG_NAME_BYTES);
+  const catalogKeyBytes = '"catalog":[],'.length;
   const catalog =
     'catalog' in read
-      ? read.catalog.map(({ name }) => name).filter((name) => entryNames.fits(name))
+      ? read.catalog
+          .map(({ name }) => name)
+          .filter((name, index) => entryNames.fits(name, index === 0 ? catalogKeyBytes : 0))
       : [];
   const guidance = kitGuidance(system.name, system.sections);
   let offer: string | null = null;
@@ -113,7 +116,8 @@ function nameBudget(bytes: number) {
   return {
     /** Whether the name is listed; `keyBytes` is what its list's key costs with it. */
     fits(name: string, keyBytes = 0): boolean {
-      const cost = Buffer.byteLength(name, 'utf8') + 3 + keyBytes;
+      // The name as JSON writes it, escapes and quotes included, and its comma.
+      const cost = Buffer.byteLength(JSON.stringify(name), 'utf8') + 1 + keyBytes;
       if (omitted > 0 || cost > left) {
         omitted += 1;
         return false;
