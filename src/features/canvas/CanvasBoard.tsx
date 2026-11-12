@@ -203,6 +203,7 @@ export function CanvasBoard({
       // A hand that lands just after a wheel starts from the view it sees.
       view.settle();
     },
+    onEnd: view.settle,
     onPan: view.panByScreen,
     onClear: () => {
       annotation.clearSelection();
@@ -300,15 +301,12 @@ export function CanvasBoard({
         onPointerDown={gestures.onBackgroundPointerDown}
         onPointerUp={(event) => {
           gestures.endGesture(event, true);
-          view.settle();
         }}
         onPointerCancel={(event) => {
           gestures.endGesture(event, false);
-          view.settle();
         }}
         onLostPointerCapture={(event) => {
           gestures.endGesture(event, false);
-          view.settle();
         }}
         onKeyDown={(event) => {
           onBoardKeyDown(event, {

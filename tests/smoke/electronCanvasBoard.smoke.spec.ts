@@ -451,6 +451,23 @@ test('at most four previews stay mounted and the interacted frame keeps its slot
   expect(panned).toContain('a');
 });
 
+test('a pan Escape cancels settles where it stopped, so the previews follow the view', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const previews = page.locator('[data-harness-preview]');
+  await expect(previews).toHaveCount(2);
+  await page.mouse.move(250, 140);
+  await page.mouse.down();
+  await page.mouse.move(1150, 140);
+  await page.clock.runFor(32);
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(32);
+  // Design B is panned off the board while the button is still down.
+  await expect(previews).toHaveCount(1);
+  await page.mouse.up();
+});
+
 test('Interact gives the pointer to the preview and two Escapes undo mode then selection', async ({
   page,
 }) => {
