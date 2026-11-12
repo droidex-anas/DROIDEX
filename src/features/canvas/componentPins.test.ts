@@ -4,6 +4,7 @@ import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import {
   componentLabels,
   componentPins,
+  pinsUnderKit,
   restoreComponentPins,
   tagComponent,
   unpinComponents,
@@ -22,12 +23,9 @@ test('a component is tagged once per kit, by the chat that tagged it, up to eigh
     shown = toasts;
   });
   tagComponent('chat-a', pin('Button'));
-  // A later version of the kit names the same entry.
+  // Choosing it again from a later version of the kit moves the tag there.
   tagComponent('chat-a', pin('Button', { ...ACME, version: 4 }));
-  assert.deepEqual(
-    componentPins('chat-a').map((each) => each.name),
-    ['Button'],
-  );
+  assert.deepEqual(componentPins('chat-a'), [pin('Button', { ...ACME, version: 4 })]);
   assert.equal(componentPins('chat-b').length, 0);
 
   for (let index = 0; index < 8; index += 1) tagComponent('chat-a', pin(`Card ${String(index)}`));
@@ -64,4 +62,12 @@ test('a chip names its kit only beside components of another kit', () => {
     'Button · Acme',
     'Card · Slate',
   ]);
+});
+test('tags of the request’s kit follow it to its current version and mode', () => {
+  const slate = pin('Card', { id: 'slate', version: 1, mode: 'dark' }, 'Slate');
+  const pins = [pin('Button'), slate];
+  const current = { ...ACME, version: 4, mode: 'dark' as const };
+  assert.deepEqual(pinsUnderKit(pins, current), [pin('Button', current), slate]);
+  assert.equal(pinsUnderKit(pins, ACME), pins);
+  assert.equal(pinsUnderKit(pins, null), pins);
 });

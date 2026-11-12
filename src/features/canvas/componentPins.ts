@@ -59,11 +59,20 @@ export function componentLabels(pins: readonly ComponentPin[]): string[] {
   return pins.map((pin) => (kits.size > 1 ? `${pin.name} · ${pin.kitName}` : pin.name));
 }
 
-/** Tags the entry in the chat's next prompt beside the ones it has, while it has room. */
+/**
+ * Tags the entry in the chat's next prompt beside the ones it has, while it has
+ * room. An entry tagged already takes this tag's kit version and mode.
+ */
 export function tagComponent(appSessionId: string, pin: ComponentPin): void {
   const held = componentPins(appSessionId);
   const key = componentPinKey(pin);
-  if (held.some((each) => componentPinKey(each) === key)) return;
+  if (held.some((each) => componentPinKey(each) === key)) {
+    publish(
+      appSessionId,
+      held.map((each) => (componentPinKey(each) === key ? pin : each)),
+    );
+    return;
+  }
   if (held.length >= MAX_PINNED_COMPONENTS) {
     toast.error(
       `A prompt tags at most ${String(MAX_PINNED_COMPONENTS)} components, so this one wasn’t added.`,
@@ -84,6 +93,21 @@ export function unpinComponents(
     appSessionId,
     componentPins(appSessionId).filter((pin) => !gone.has(componentPinKey(pin))),
   );
+}
+
+/**
+ * The tags as a prompt sends them: those of the request's kit follow it to its
+ * current version and mode, so the agent reads the entry the frames build with.
+ */
+export function pinsUnderKit(
+  pins: readonly ComponentPin[],
+  kit: DesignSystemRef | null,
+): readonly ComponentPin[] {
+  if (kit === null) return pins;
+  const isBehind = (pin: ComponentPin) =>
+    pin.kit.id === kit.id && (pin.kit.version !== kit.version || pin.kit.mode !== kit.mode);
+  if (!pins.some(isBehind)) return pins;
+  return pins.map((pin) => (isBehind(pin) ? { ...pin, kit: { ...kit } } : pin));
 }
 
 /** Puts a queued prompt's components back beside the ones the draft has, as far as it has room. */

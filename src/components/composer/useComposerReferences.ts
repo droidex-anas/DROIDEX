@@ -10,6 +10,7 @@ import { Component, MessageThread, MousePointerSquareDashed } from '@droidex/ico
 import {
   componentLabels,
   componentPinKey,
+  pinsUnderKit,
   restoreComponentPins,
   unpinComponents,
   useComponentPins,
@@ -29,6 +30,7 @@ import {
 import {
   canvasContextOf,
   promptWithCanvasPins,
+  requestDesignSystem,
   restoreFramePins,
   unpinFrames,
   useFramePins,
@@ -78,8 +80,10 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const framePins = toChild ? NO_PINS : pinned;
   const pickedElements = useElementPins(appSessionId);
   const elementPins = toChild ? NO_ELEMENTS : pickedElements;
+  const chosenKit = designSystem?.ref ?? null;
   const taggedComponents = useComponentPins(appSessionId);
-  const components = toChild ? NO_COMPONENTS : taggedComponents;
+  const requestKit = canvasKey === null ? null : requestDesignSystem(framePins, chosenKit);
+  const components = toChild ? NO_COMPONENTS : pinsUnderKit(taggedComponents, requestKit);
   const queued = {
     ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
     ...(framePins.length > 0 ? { framePins } : {}),
@@ -152,7 +156,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
     canvasContext: (imageAssetIds: readonly string[]) =>
       canvasContextOf(
         framePins,
-        canvasKey === null ? null : { designSystem: designSystem?.ref ?? null, imageAssetIds },
+        canvasKey === null ? null : { designSystem: chosenKit, imageAssetIds },
         elementPins,
       ),
     /** The text the agent receives: the user's words, then what goes with them. */
