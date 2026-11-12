@@ -90,6 +90,10 @@ export function BoardWorld({
   children,
 }: BoardWorldProps) {
   const heldIds = useSyncExternalStore(held.subscribe, held.readHeld, held.readHeld);
+  // Only which frame the hover is in, so a hover moving within one renders no frame.
+  const { hovered } = editor.hover;
+  const hoveredFrameId = () => hovered.read()?.designId ?? null;
+  const hoveredId = useSyncExternalStore(hovered.subscribe, hoveredFrameId, hoveredFrameId);
   const handlers = useFrameHandlers({
     dispatch,
     editor,
@@ -142,7 +146,7 @@ export function BoardWorld({
           onHoverElement={handlers.onHoverElement}
           onEditEnter={handlers.onEditEnter}
           elementPicked={editor.selection?.draft.element.designId === frame.designId}
-          elementHovered={editor.hover.hovered?.designId === frame.designId}
+          elementHovered={hoveredId === frame.designId}
           tabStop={frame.designId === tabStopId}
           onFocusLabel={handlers.onFocusLabel}
         />

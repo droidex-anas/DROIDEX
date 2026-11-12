@@ -6,8 +6,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { OverlayStore } from '../overlayStore';
 import { PreviewRuns } from '../previewRuns';
 import type { CanvasFrame, FrameRect, OutlineNode } from '../protocol';
+import type { HoveredElement } from '../useElementHover';
 import { LayersPanel, type LayersPanelProps } from './LayersPanel';
 
 function frame(designId: string, name: string, rect: FrameRect): CanvasFrame {
@@ -43,7 +45,7 @@ function panel(props: Partial<LayersPanelProps>): string {
       elements: {
         runs: new PreviewRuns(),
         picked: null,
-        hovered: null,
+        hovered: new OverlayStore(null),
         pick: () => undefined,
         hover: () => undefined,
       },
@@ -170,7 +172,7 @@ test('an element picked on the board opens its frame, and rows its preview has n
         },
         pick: 1,
       },
-      hovered: {
+      hovered: new OverlayStore<HoveredElement | null>({
         designId: 'a',
         element: {
           elementId: 'el_section',
@@ -179,7 +181,7 @@ test('an element picked on the board opens its frame, and rows its preview has n
           tagName: 'section',
           room: { above: null, below: null },
         },
-      },
+      }),
       pick: () => undefined,
       hover: () => undefined,
     },

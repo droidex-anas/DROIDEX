@@ -6,10 +6,12 @@
 // carry them at once, a held frame's move takes them along (HeldFrames), and a
 // chip at the sheet's edge is not cut off. Each box is trimmed to its frame,
 // where the design is visible, and glides when the element's own box changes.
+// Only this layer reads the hovered element, so a hover renders nothing else.
 
-import type { ReactNode } from 'react';
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
 import { onBoard, type Box, type PickedOnBoard } from './elementOnBoard';
+import type { OverlayStore } from './overlayStore';
 import type { PreviewHover } from './previewDocument';
 import type { FrameRect } from './protocol';
 import { isPicked, type HoveredElement } from './useElementHover';
@@ -33,8 +35,8 @@ export function ElementOutlines({
   drawn,
   scale,
   selected,
-  hovered,
-  hoveredComponent,
+  hovered: hover,
+  componentOf,
   picks,
 }: {
   /** Where the board draws each frame. */
@@ -43,17 +45,18 @@ export function ElementOutlines({
   scale: number;
   /** Where Edit's picked element shows, which its outline and size chip are drawn from. */
   selected: PickedOnBoard | null;
-  hovered: HoveredElement | null;
-  /** The component the hovered element is written in, which Design names before its tag. */
-  hoveredComponent: string | null;
+  hovered: OverlayStore<HoveredElement | null>;
+  /** The component an element is written in, which Design names before its tag. */
+  componentOf: (hovered: HoveredElement) => string | null;
   /** Design's picks, outlined where each was picked, and the text being dragged across. */
   picks: readonly PickOutline[];
 }) {
+  const hovered = useSyncExternalStore(hover.subscribe, hover.read, hover.read);
   const [tag, tagOnScreen] = useScreenSize();
   const [size, sizeOnScreen] = useScreenSize();
   const picked = selected?.selection.draft.element;
   // The picked element's own outline already says where it is.
-  const hover =
+  const shown =
     hovered &&
     !(picked && isPicked(picked, hovered)) &&
     onBoard(drawn, hovered.designId, hovered.element.rect);
@@ -63,55 +66,55 @@ export function ElementOutlines({
       : null;
   return (
     <>
-      {hovered && hover && (
+      {hovered && shown && (
         // A new frame is a new outline, so it never glides across the board.
-        <AtFrame key={hovered.designId} designId={hovered.designId} frame={hover.frame}>
-          <div
-            aria-hidden
-            data-element-hover={hovered.element.tagName}
+        <AtFrame key={hovered.designId} designId={hovered.designId} frame={shown.frame}>
+          <Outline
+            box={shown.box}
+            glides
             className="canvas-element-hover"
-            style={hover.box}
+            data={{ 'data-element-hover': hovered.element.tagName }}
           >
             <div
               className="canvas-element-tag canvas-chrome"
               data-side={tagSide(
-                hover.box,
-                hover.frame.height,
+                shown.box,
+                shown.frame.height,
                 { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
                 hovered.element.room,
                 sizeChip,
               )}
             >
               <span ref={tag}>
-                <TagName tagName={hovered.element.tagName} component={hoveredComponent} />
+                <TagName tagName={hovered.element.tagName} component={componentOf(hovered)} />
               </span>
             </div>
-          </div>
+          </Outline>
         </AtFrame>
       )}
       {selected && (
         <AtFrame designId={selected.selection.draft.element.designId} frame={selected.frame}>
-          <div aria-hidden className="canvas-element-outline" style={selected.box}>
+          <Outline box={selected.box} glides className="canvas-element-outline">
             <div className="canvas-frame-size canvas-chrome">
               <span ref={size}>
                 {Math.round(selected.selection.shown.rect.width)} ×{' '}
                 {Math.round(selected.selection.shown.rect.height)}
               </span>
             </div>
-          </div>
+          </Outline>
         </AtFrame>
       )}
       {picks.map((pick) => {
-        const shown = onBoard(drawn, pick.designId, pick.box);
+        const placed = onBoard(drawn, pick.designId, pick.box);
         return (
-          shown && (
-            <AtFrame key={pick.key} designId={pick.designId} frame={shown.frame}>
-              <div
-                aria-hidden
-                data-design-pick
-                data-dragging={pick.dragging || undefined}
+          placed && (
+            <AtFrame key={pick.key} designId={pick.designId} frame={placed.frame}>
+              {/* Text being dragged across follows the pointer, so it never glides behind it. */}
+              <Outline
+                box={placed.box}
+                glides={!pick.dragging}
                 className="canvas-element-outline"
-                style={shown.box}
+                data={{ 'data-design-pick': '', 'data-dragging': pick.dragging || undefined }}
               />
             </AtFrame>
           )
@@ -142,10 +145,93 @@ function AtFrame({
   children: ReactNode;
 }) {
   return (
-    <div data-follows-frame={designId} className="absolute" style={{ left: frame.x, top: frame.y }}>
+    <div
+      data-follows-frame={designId}
+      className="absolute left-0 top-0"
+      style={{ transform: `translate(${String(frame.x)}px, ${String(frame.y)}px)` }}
+    >
       {children}
     </div>
   );
+}
+
+/**
+ * One outline, placed by `transform`. When its box changes it glides there by
+ * transform alone: the box slides from where it was, and its line, drawn by
+ * `::before`, scales from the size it had. Each glide adds to any still
+ * running, so a box that changes mid-glide carries on from where it is shown.
+ */
+function Outline({
+  box,
+  glides,
+  className,
+  data,
+  children,
+}: {
+  box: Box;
+  glides: boolean;
+  className: string;
+  /** Its `data-` attributes. */
+  data?: Record<string, string | boolean | undefined>;
+  children?: ReactNode;
+}) {
+  const node = useRef<HTMLDivElement>(null);
+  const last = useRef<Box | null>(null);
+  // Whole pixels, as left and top were laid out, so its line is not smeared across two.
+  const left = Math.round(box.left);
+  const top = Math.round(box.top);
+  const { width, height } = box;
+  useLayoutEffect(() => {
+    const from = last.current;
+    const to = { left, top, width, height };
+    last.current = to;
+    if (node.current && from && glides) glide(node.current, from, to);
+  }, [glides, left, top, width, height]);
+  return (
+    <div
+      ref={node}
+      aria-hidden
+      className={className}
+      style={{ transform: `translate(${String(left)}px, ${String(top)}px)`, width, height }}
+      {...data}
+    >
+      {children}
+    </div>
+  );
+}
+
+function glide(element: HTMLElement, from: Box, to: Box) {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const timing = { ...glideTiming(), composite: 'add' as const };
+  const dx = from.left - to.left;
+  const dy = from.top - to.top;
+  if (dx !== 0 || dy !== 0)
+    element.animate(
+      [{ transform: `translate(${String(dx)}px, ${String(dy)}px)` }, { transform: 'none' }],
+      timing,
+    );
+  if (to.width === 0 || to.height === 0) return;
+  const sx = from.width / to.width;
+  const sy = from.height / to.height;
+  if (sx !== 1 || sy !== 1)
+    element.animate([{ transform: `scale(${String(sx)}, ${String(sy)})` }, { transform: 'none' }], {
+      ...timing,
+      pseudoElement: '::before',
+    });
+}
+
+let timingTokens: { duration: number; easing: string } | null = null;
+
+/** The quick duration and smooth easing tokens, read once: they never change while the app runs. */
+function glideTiming(): { duration: number; easing: string } {
+  if (timingTokens) return timingTokens;
+  const tokens = getComputedStyle(document.documentElement);
+  // The duration token is written in milliseconds.
+  timingTokens = {
+    duration: parseFloat(tokens.getPropertyValue('--duration-quick')),
+    easing: tokens.getPropertyValue('--ease-smooth-out').trim(),
+  };
+  return timingTokens;
 }
 
 /** What a picked element's size chip covers: centred under its box, with the gap above it. */

@@ -4,7 +4,7 @@
 // frame's empty space, the design's root or the picked element itself. Every
 // rect comes from what the board already draws, so measuring asks the guest nothing.
 
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useState, useSyncExternalStore, type RefObject } from 'react';
 import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boardPoint } from './boardCoordinates';
 import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
@@ -12,12 +12,13 @@ import type { BoardInteraction } from './canvasState';
 import type { PickedOnBoard } from './elementOnBoard';
 import { measureBetween } from './measureDistances';
 import { isDesignRoot } from './previewDocument';
+import type { OverlayStore } from './overlayStore';
 import type { FrameRect } from './protocol';
 import type { GuideMarks } from './snapGuideLayout';
 import { isPicked, type HoveredElement } from './useElementHover';
 
 interface Hover {
-  hovered: HoveredElement | null;
+  hovered: OverlayStore<HoveredElement | null>;
   move: HoverAt;
 }
 
@@ -43,11 +44,18 @@ export function useHoverMeasurements(
     board,
     interaction.mode === 'edit' ? hover.move : null,
   );
+  // Only distances measured to elements follow the hover, so a plain hover renders no board.
+  const measuresElements = frameId !== null && interaction.mode === 'edit';
+  const hovered = useSyncExternalStore(
+    measuresElements ? hover.hovered.subscribe : stayStill,
+    hover.hovered.read,
+    hover.hovered.read,
+  );
   let measured: Measured | null = null;
   if (frameId !== null && interaction.mode === 'select')
     measured = framesToMeasure(drawn, interaction.selectedFrameIds, frameId);
   if (frameId !== null && interaction.mode === 'edit')
-    measured = elementsToMeasure(frameId, selected, hover.hovered);
+    measured = elementsToMeasure(frameId, selected, hovered);
   const gaps = measured ? measureBetween(measured.from, measured.to) : [];
   const measuring = gaps.length > 0;
   // Shown distances are the topmost thing Escape closes, so no layer under them swallows it.
@@ -135,6 +143,10 @@ function useAltHoveredFrame(board: RefObject<HTMLElement | null>, hoverAt: Hover
     };
   }, [board, alt]);
   return { frameId, letGo: alt.letGo };
+}
+
+function stayStill(): () => void {
+  return () => undefined;
 }
 
 function frameOf(target: EventTarget | null): string | null {

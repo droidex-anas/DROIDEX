@@ -17,6 +17,7 @@ import type { CanvasFrame } from './protocol';
 import { SelectionBounds } from './SelectionBounds';
 import type { ReadSource } from './useChangeTours';
 import type { ElementEditor } from './useElementEditor';
+import type { OverlayStore } from './overlayStore';
 import type { HoveredElement } from './useElementHover';
 
 export function BoardOverlays({
@@ -32,7 +33,7 @@ export function BoardOverlays({
   selected,
   path,
   hovered,
-  hoveredComponent,
+  componentOf,
   picks,
   interaction,
   marks,
@@ -52,8 +53,8 @@ export function BoardOverlays({
   selected: PickedOnBoard | null;
   /** The picked path's points, and how a move of one previews and commits. */
   path: ElementEditor['path'];
-  hovered: HoveredElement | null;
-  hoveredComponent: string | null;
+  hovered: OverlayStore<HoveredElement | null>;
+  componentOf: (hovered: HoveredElement) => string | null;
   picks: readonly PickOutline[];
   interaction: BoardInteraction;
   /** What the annotation editor draws and the presses it takes back. */
@@ -78,7 +79,7 @@ export function BoardOverlays({
         scale={scale}
         selected={selected}
         hovered={hovered}
-        hoveredComponent={hoveredComponent}
+        componentOf={componentOf}
         picks={picks}
       />
       {selected && path.shape && (

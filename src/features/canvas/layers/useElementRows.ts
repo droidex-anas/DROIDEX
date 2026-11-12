@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import type { PreviewNode } from '../previewDocument';
 import type { ElementEntry } from './ElementRow';
 import type { LayerElements } from './layerElements';
@@ -17,7 +17,12 @@ export function useElementRows(
   reveal: (designId: string, node: PreviewNode) => RowSearch,
   moveTo: (key: string) => void,
 ) {
-  const { picked, hovered } = elements;
+  const { picked } = elements;
+  const hovered = useSyncExternalStore(
+    elements.hovered.subscribe,
+    elements.hovered.read,
+    elements.hovered.read,
+  );
   // Null at first, so a pick made before the panel opened is revealed as it opens.
   const [revealed, setRevealed] = useState<number | null>(null);
   if (picked && picked.pick !== revealed) {

@@ -381,7 +381,7 @@ export function CanvasBoard({
             selected={selected}
             path={editor.path}
             hovered={editor.hover.hovered}
-            hoveredComponent={picker.componentOf(editor.hover.hovered)}
+            componentOf={picker.componentOf}
             picks={picker.outlines}
             interaction={interaction}
             marks={annotation.layer}
