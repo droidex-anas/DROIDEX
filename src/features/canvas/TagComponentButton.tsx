@@ -32,13 +32,10 @@ export function TagComponentButton({
   className?: string;
 }) {
   const tag = componentTag(useComponentPins(appSessionId), pin);
-  const { tooltip, label } = {
-    tagged: { tooltip: 'Tagged in chat. Untag', label: `Untag ${pin.name} from the chat` },
-    'other-options': {
-      tooltip: 'Tagged with other options. Tag these',
-      label: `Tag ${pin.name} in the chat with these options`,
-    },
-    untagged: { tooltip: 'Tag in chat', label: `Tag ${pin.name} in the chat` },
+  const tooltip = {
+    tagged: 'Tagged in chat. Untag',
+    'other-options': 'Tagged with other options. Tag these',
+    untagged: 'Tag in chat',
   }[tag];
   return (
     <Tooltip label={shortcut ? `${tooltip}  ${shortcut}` : tooltip} className={className}>
@@ -46,7 +43,7 @@ export function TagComponentButton({
         variant="ghost"
         size="sm"
         icon={tag === 'tagged' ? Check : MessageThread}
-        aria-label={label}
+        aria-label={`Tag ${pin.name} in the chat`}
         aria-pressed={tag === 'tagged'}
         tabIndex={tabIndex}
         className={cn(
