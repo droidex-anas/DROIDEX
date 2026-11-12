@@ -12,6 +12,7 @@ import {
   type DocumentSection,
 } from './designSystemDocument.js';
 import { AUTO_DESIGN_SYSTEM_REF, DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
+import { catalogFile } from './kitCatalog.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 pinScratchProfile();
@@ -126,4 +127,34 @@ test('under Auto, the opening read before a project chat’s first design offers
     { mutationId: 'chosen-kit', baseVersion: null, savedBy: { actor: 'user' } },
   );
   assert.doesNotMatch(await guidance({ ...kit, mode: 'light' }, folder, false), offer);
+});
+
+test('the brief names the kit’s catalog entries within their own 1 KiB, and counts the rest', async () => {
+  const names = Array.from({ length: 40 }, (_, index) => `Marketing hero banner ${String(index)}`);
+  const catalog = names.map((name) => ({
+    name,
+    module: 'index.tsx',
+    uses: ['Button'],
+    icons: [],
+    jsx: '<Button>Go</Button>',
+    note: null,
+  }));
+  const ref = await saveDesignSystem(
+    {
+      ...SAMPLE_KIT,
+      id: 'catalogued',
+      files: { ...SAMPLE_KIT.files, 'catalog.json': catalogFile(catalog) },
+    },
+    { mutationId: 'catalogued-kit', baseVersion: null, savedBy: { actor: 'user' } },
+  );
+  const brief = await designSystemBrief(
+    { ...ref, mode: 'light' },
+    { projectFolder: null, hasDesigns: false },
+  );
+  assert.ok(!('unavailable' in brief) && brief.catalog && brief.omittedCatalogNames);
+  assert.ok(Buffer.byteLength(JSON.stringify(brief.catalog), 'utf8') <= 1024);
+  assert.deepEqual(brief.catalog, names.slice(0, brief.catalog.length));
+  assert.equal(brief.catalog.length + brief.omittedCatalogNames, names.length);
+  // The primitives keep their own budget.
+  assert.deepEqual(brief.primitives, ['Button', 'Card', 'Badge', 'Input', 'Tabs', 'Dialog']);
 });

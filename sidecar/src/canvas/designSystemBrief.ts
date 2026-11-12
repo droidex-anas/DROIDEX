@@ -1,10 +1,11 @@
 // The pinned kit as a turn's first canvas_read carries it, so the agent can
 // follow the kit without fetching it: name, mode, token names by section kind,
-// the primitives its entry exports and its guidance. Token values, files and
-// examples stay with canvas_theme. The kit schema caps the notes and usage notes
-// the guidance carries at 16 KiB, not counting its headings, and the name lists
-// share 4 KiB. Under Auto, before a project chat's first design, it also asks
-// the agent to offer a kit from the project.
+// the primitives its entry exports, its catalog's entry names and its guidance.
+// Token values, files, examples and entry JSX stay with canvas_theme. The kit
+// schema caps the notes and usage notes the guidance carries at 16 KiB, not
+// counting its headings, and the name lists share 4 KiB; the catalog's entry
+// names have 1 KiB of their own. Under Auto, before a project chat's first
+// design, it also asks the agent to offer a kit from the project.
 
 import { lstat } from 'node:fs/promises';
 import path from 'node:path';
@@ -16,11 +17,14 @@ import {
   readDesignSystem,
   type DesignSystem,
 } from './designSystems.js';
+import { readKitCatalog } from './kitCatalog.js';
 import { isFileSystemError } from './projectPaths.js';
 import type { DesignSystemRef } from './protocol.js';
 
 /** What the name lists may cost, counting the JSON quotes, commas and keys around them. */
 const NAME_LIST_BYTES = 4 * 1024;
+/** What the catalog's entry names may cost, apart from the other names. */
+const CATALOG_NAME_BYTES = 1024;
 
 export interface DesignSystemBrief {
   ref: DesignSystemRef;
@@ -30,6 +34,10 @@ export interface DesignSystemBrief {
   tokens: Partial<Record<TokenSectionKind, string[]>>;
   /** Names left out to keep the brief bounded; canvas_theme read lists them all. */
   omittedNames?: number;
+  /** The names of the kit's catalog entries, whose JSX canvas_theme catalog reads. */
+  catalog?: string[];
+  /** Entry names left out to keep the brief bounded; canvas_theme catalog lists them all. */
+  omittedCatalogNames?: number;
   guidance: string;
 }
 
@@ -65,27 +73,23 @@ export async function designSystemBrief(
     if (error instanceof CanvasCommandError) return { ref, unavailable: error.message };
     throw error;
   }
-  // Names are listed in order until one does not fit, primitives first: they
-  // are what a design builds with.
-  let budget = NAME_LIST_BYTES;
-  let omittedNames = 0;
-  const fits = (name: string, keyBytes = 0): boolean => {
-    const cost = Buffer.byteLength(name, 'utf8') + 3 + keyBytes;
-    if (omittedNames > 0 || cost > budget) {
-      omittedNames += 1;
-      return false;
-    }
-    budget -= cost;
-    return true;
-  };
-  const primitives = kitPrimitives(system).filter((name) => fits(name));
+  // Primitives come first: they are what a design builds with.
+  const names = nameBudget(NAME_LIST_BYTES);
+  const primitives = kitPrimitives(system).filter((name) => names.fits(name));
   const tokens: DesignSystemBrief['tokens'] = {};
-  for (const [kind, names] of tokenNamesByKind(system.sections)) {
+  for (const [kind, kindNames] of tokenNamesByKind(system.sections)) {
     // A kind's first name also pays for its key: `"kind":[],`.
     const keyBytes = Buffer.byteLength(kind, 'utf8') + 6;
-    const listed = names.filter((name, index) => fits(name, index === 0 ? keyBytes : 0));
+    const listed = kindNames.filter((name, index) => names.fits(name, index === 0 ? keyBytes : 0));
     if (listed.length > 0) tokens[kind] = listed;
   }
+  // A pinned version's catalog was checked when it was saved.
+  const read = readKitCatalog(system.files);
+  const entryNames = nameBudget(CATALOG_NAME_BYTES);
+  const catalog =
+    'catalog' in read
+      ? read.catalog.map(({ name }) => name).filter((name) => entryNames.fits(name))
+      : [];
   const guidance = kitGuidance(system.name, system.sections);
   let offer: string | null = null;
   if (designSystemKind(ref.id) === 'auto' && board.projectFolder !== null && !board.hasDesigns)
@@ -95,8 +99,29 @@ export async function designSystemBrief(
     name: system.name,
     primitives,
     tokens,
-    ...(omittedNames > 0 ? { omittedNames } : {}),
+    ...(names.omitted() > 0 ? { omittedNames: names.omitted() } : {}),
+    ...(catalog.length > 0 ? { catalog } : {}),
+    ...(entryNames.omitted() > 0 ? { omittedCatalogNames: entryNames.omitted() } : {}),
     guidance: offer === null ? guidance : `${guidance}\n\n${offer}`,
+  };
+}
+
+/** Admits names in order until one does not fit in `bytes`, then only counts the rest. */
+function nameBudget(bytes: number) {
+  let left = bytes;
+  let omitted = 0;
+  return {
+    /** Whether the name is listed; `keyBytes` is what its list's key costs with it. */
+    fits(name: string, keyBytes = 0): boolean {
+      const cost = Buffer.byteLength(name, 'utf8') + 3 + keyBytes;
+      if (omitted > 0 || cost > left) {
+        omitted += 1;
+        return false;
+      }
+      left -= cost;
+      return true;
+    },
+    omitted: () => omitted,
   };
 }
 
