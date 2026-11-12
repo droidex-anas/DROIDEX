@@ -161,6 +161,8 @@ export interface CatalogRead {
   entries: CatalogEntryRead[];
   /** Entries left out to keep the read bounded, to ask for by name. */
   omitted?: string[];
+  /** How many more were left out than `omitted` has room to name. */
+  moreOmitted?: number;
 }
 
 /** An entry as an agent writes it into a design. */
@@ -172,7 +174,9 @@ export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props:
  * of reach; the budget bounds the entries after it.
  */
 const CATALOG_READ_BYTES = 16 * 1024;
-const OMITTED_KEY_BYTES = ',"omitted":[]'.length;
+/** What the names of the entries left out may cost, whatever the first entry did. */
+const OMITTED_NAME_BYTES = 4 * 1024;
+const OMITTED_KEY_BYTES = ',"omitted":[],"moreOmitted":128'.length;
 
 /**
  * The entries of a kit's catalog that `names` asks for, or all of them. A name
@@ -204,27 +208,34 @@ export function readCatalogEntries(
   return withinBudget(ranked.sort((a, b) => a.rank - b.rank).map(({ entry }) => entry));
 }
 
-/** The entries in order until the budget is spent, and the names of the rest. */
+/** The entries in order until the budget is spent, and as many names of the rest as fit. */
 function withinBudget(asked: readonly CatalogEntry[]): CatalogRead {
   let used = '{"entries":[]}'.length;
   // What naming every entry after this one in `omitted` would cost.
   let restNameBytes = asked.reduce((sum, { name }) => sum + listedNameBytes(name), 0);
   const entries: CatalogEntryRead[] = [];
-  const omitted: string[] = [];
   for (const { name, uses, icons, jsx, note, props } of asked) {
     restNameBytes -= listedNameBytes(name);
     const entry = { name, uses, icons, jsx, note, props: props ?? [] };
     const separator = entries.length > 0 ? 1 : 0;
     const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8') + separator;
-    const rest = restNameBytes > 0 ? OMITTED_KEY_BYTES + restNameBytes : 0;
-    if (omitted.length > 0 || (entries.length > 0 && used + cost + rest > CATALOG_READ_BYTES)) {
-      omitted.push(name);
-      continue;
-    }
+    const rest =
+      restNameBytes > 0 ? OMITTED_KEY_BYTES + Math.min(restNameBytes, OMITTED_NAME_BYTES) : 0;
+    if (entries.length > 0 && used + cost + rest > CATALOG_READ_BYTES) break;
     used += cost;
     entries.push(entry);
   }
-  return omitted.length > 0 ? { entries, omitted } : { entries };
+  const left = asked.slice(entries.length);
+  if (left.length === 0) return { entries };
+  const omitted: string[] = [];
+  let nameBytes = 0;
+  for (const { name } of left) {
+    nameBytes += listedNameBytes(name);
+    if (nameBytes > OMITTED_NAME_BYTES) break;
+    omitted.push(name);
+  }
+  const moreOmitted = left.length - omitted.length;
+  return moreOmitted > 0 ? { entries, omitted, moreOmitted } : { entries, omitted };
 }
 
 /** A name as a JSON list writes it, escapes, quotes and its comma included. */

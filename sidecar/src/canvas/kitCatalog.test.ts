@@ -280,14 +280,20 @@ test('a catalog read always returns its first entry, and counts brackets and com
   assert.ok(bytes(read.entries) <= 16 * 1024);
 });
 
-test('a catalog read keeps the names it leaves out within its budget', () => {
-  const name = (index: number) => `${'n'.repeat(76)} ${String(index).padStart(3, '0')}`;
-  const many = Array.from({ length: 100 }, (_, index) =>
-    entry(name(index), `<Button>${'x'.repeat(400)}</Button>`),
-  );
+test('a catalog read keeps the names it leaves out within its budget, and counts the rest', () => {
+  // 80 characters of three bytes each: the names alone come to 30 KB.
+  const name = (index: number) => `${'界'.repeat(76)} ${String(index).padStart(3, '0')}`;
+  const many = Array.from({ length: 128 }, (_, index) => entry(name(index), '<Button />'));
   const read = readCatalogEntries(starterWith(catalogFile(many)).files, undefined);
-  assert.ok(read.omitted && read.omitted.length > 50);
-  assert.equal(read.entries.length + read.omitted.length, many.length);
+  assert.ok(read.omitted && read.moreOmitted);
+  assert.equal(read.entries.length + read.omitted.length + read.moreOmitted, many.length);
+  assert.deepEqual(
+    read.omitted,
+    many
+      .slice(read.entries.length)
+      .map(({ name }) => name)
+      .slice(0, read.omitted.length),
+  );
   assert.ok(Buffer.byteLength(JSON.stringify(read), 'utf8') <= 16 * 1024);
 });
 test('a catalog read leads with the entry named exactly, so its variants never crowd it out', () => {
