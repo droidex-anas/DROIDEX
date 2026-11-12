@@ -22,7 +22,11 @@ import {
   SELECT_MODE,
   type BoardInteraction,
 } from '../../../src/features/canvas/canvasState';
-import { isBoardEditor, isLayersKey } from '../../../src/features/canvas/boardKeys';
+import {
+  isBoardEditor,
+  sidePanelKey,
+  type SidePanelTab,
+} from '../../../src/features/canvas/boardKeys';
 import { canvasMessage, CanvasRequestError } from '../../../src/features/canvas/client';
 import { DesignPreview } from '../../../src/features/canvas/DesignPreview';
 import { ExportToProjectDialog } from '../../../src/features/canvas/ExportToProjectDialog';
@@ -34,6 +38,9 @@ import {
 import { FrameRemovals } from '../../../src/features/canvas/frameRemovals';
 import { layerElements } from '../../../src/features/canvas/layers/layerElements';
 import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
+import { SidePanel } from '../../../src/features/canvas/layers/SidePanel';
+import { ComponentsPanel } from '../../../src/features/canvas/palette/ComponentsPanel';
+import { useComponentInsert } from '../../../src/features/canvas/palette/useComponentInsert';
 import { PreviewRuns } from '../../../src/features/canvas/previewRuns';
 import { useElementEditor } from '../../../src/features/canvas/useElementEditor';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
@@ -45,6 +52,8 @@ import { variantSetSource, VariantSets } from '../../../src/features/canvas/vari
 import type {
   EditElementInput,
   ElementEdited,
+  LayerChange,
+  LayerRef,
 } from '../../../src/features/canvas/elementEditProtocol';
 import {
   elementPins,
@@ -193,7 +202,7 @@ const RIGHT_INSET = Number(params.get('inset') ?? 0);
 
 // Two frames by default, which is what the geometry cases are measured against.
 // `?frames=n` adds more in a row below them for the preview-slot budget.
-// `?navigator=1` puts the chat column's Components tab beside the board.
+// `?navigator=1` puts the chat column's Frames tab beside the board.
 // `?layers=1` gives the board its Layers tool, with the panel open at its left.
 const PLACED: { designId: string; name: string; rect: FrameRect }[] = [
   { designId: 'a', name: 'Design A', rect: { x: 100, y: 50, width: 400, height: 300 } },
@@ -596,6 +605,7 @@ function Harness() {
   const [sourceOpen, setSourceOpen] = useState<string | null>(null);
   const [exporting, setExporting] = useState<CanvasFrame | null>(null);
   const [layersOpen, setLayersOpen] = useState(params.has('layers'));
+  const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
   const [runs] = useState(() => new PreviewRuns());
   const shownFrames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot]);
   const editor = useElementEditor({
@@ -608,6 +618,20 @@ function Harness() {
       editCalls.push(input);
       return new Promise<ElementEdited>((resolve, reject) => editReplies.push({ resolve, reject }));
     },
+  });
+  const elements = layerElements(runs, editor, interaction, setInteraction);
+  const editLayer = (layer: LayerRef, change: LayerChange) =>
+    editor.editLayer(layer, change).catch((refusal: unknown) => {
+      toast.error(canvasMessage(refusal));
+      return null;
+    });
+  // The harness reads no kit, so the tab lists nothing; its target and adds are the board's own.
+  const palette = useComponentInsert({
+    frames: shownFrames,
+    selectedFrameIds: interaction.selectedFrameIds,
+    elements,
+    presence,
+    onEditLayer: editLayer,
   });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
@@ -883,6 +907,14 @@ function Harness() {
     },
     toasts: () => toasts.map((shown) => shown.message),
   };
+  // As the app's mount does: the keyboard goes back to the frame's label, else the board.
+  const focusBoard = (designId: string | undefined) => {
+    if (designId !== undefined && shownFrames.some((frame) => frame.designId === designId)) {
+      board.current?.focusLabel(designId);
+      return;
+    }
+    document.querySelector<HTMLElement>('[data-board-mode]')?.focus();
+  };
   return (
     <div style={{ padding: 24 }}>
       <button type="button" id="outside" aria-pressed={interaction.selectedFrameIds.length > 0}>
@@ -892,55 +924,77 @@ function Harness() {
         data-canvas-board
         style={{ position: 'relative', display: 'flex', width, height: 800, marginTop: 12 }}
         onKeyDown={(event) => {
-          if (!isLayersKey(event) || isBoardEditor(event.target)) return;
+          const tab = sidePanelKey(event);
+          if (!tab || isBoardEditor(event.target)) return;
           event.preventDefault();
-          setLayersOpen(!layersOpen);
+          setLayersOpen(!layersOpen || sideTab !== tab);
+          setSideTab(tab);
         }}
       >
         {layersOpen && (
-          <LayersPanel
-            frames={snapshot.frames}
-            selectedFrameIds={interaction.selectedFrameIds}
-            agentWorking={presence.size > 0}
-            elements={layerElements(runs, editor, interaction, setInteraction)}
-            onRename={frameActions.rename}
-            onSetHidden={(frame, hidden) => {
-              hideCalls.push({ designId: frame.designId, hidden });
-              setSnapshot(apply(shown.current, change([{ ...frame, hidden }], [])));
-            }}
-            onReorder={(designIds) => {
-              reorderCalls.push(designIds);
-              setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
-            }}
-            onEditLayer={(layer, change) =>
-              editor.editLayer(layer, change).catch((refusal: unknown) => {
-                toast.error(canvasMessage(refusal));
-                return null;
-              })
-            }
-            onHistory={(step) =>
-              step === 'undo' ? history.undo(snapshot.canvasId) : history.redo(snapshot.canvasId)
-            }
-            onPick={(designId, additive) => {
-              setInteraction(
-                reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),
-              );
-            }}
-            onFocusFrame={(designId) => board.current?.focusFrame(designId)}
-            onLeave={(designId) => board.current?.focusLabel(designId)}
+          <SidePanel
+            tab={sideTab}
+            onTab={setSideTab}
             onClose={() => {
+              focusBoard(interaction.selectedFrameIds.at(0));
               setLayersOpen(false);
             }}
-          />
+          >
+            {sideTab === 'components' ? (
+              <ComponentsPanel
+                kit={undefined}
+                place={palette.place}
+                onAdd={palette.add}
+                onLeave={() => {
+                  focusBoard(
+                    interaction.selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId,
+                  );
+                }}
+              />
+            ) : (
+              <LayersPanel
+                frames={snapshot.frames}
+                selectedFrameIds={interaction.selectedFrameIds}
+                agentWorking={presence.size > 0}
+                elements={elements}
+                onRename={frameActions.rename}
+                onSetHidden={(frame, hidden) => {
+                  hideCalls.push({ designId: frame.designId, hidden });
+                  setSnapshot(apply(shown.current, change([{ ...frame, hidden }], [])));
+                }}
+                onReorder={(designIds) => {
+                  reorderCalls.push(designIds);
+                  setSnapshot(apply(shown.current, { ...change([], []), order: designIds }));
+                }}
+                onEditLayer={editLayer}
+                onHistory={(step) =>
+                  step === 'undo'
+                    ? history.undo(snapshot.canvasId)
+                    : history.redo(snapshot.canvasId)
+                }
+                onPick={(designId, additive) => {
+                  setInteraction(
+                    reduceBoardInteraction(interaction, { type: 'pick', designId, additive }),
+                  );
+                }}
+                onFocusFrame={(designId) => board.current?.focusFrame(designId)}
+                onLeave={(designId) => board.current?.focusLabel(designId)}
+                onClose={() => {
+                  setLayersOpen(false);
+                }}
+              />
+            )}
+          </SidePanel>
         )}
         <CanvasBoard
           ref={board}
           layers={
             params.has('layers')
               ? {
-                  open: layersOpen,
+                  open: layersOpen && sideTab === 'layers',
                   onToggle: () => {
-                    setLayersOpen(!layersOpen);
+                    setLayersOpen(!layersOpen || sideTab !== 'layers');
+                    setSideTab('layers');
                   },
                 }
               : undefined
