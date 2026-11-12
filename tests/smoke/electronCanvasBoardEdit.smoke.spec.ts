@@ -434,18 +434,21 @@ test('the hover tag keeps off other content and off the picked size chip', async
   expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });
 
-test('a pick that grows glides its outline, and its size chip stays under the line as drawn', async ({
+test('a pick that changes size mid-glide glides on from where it is shown, its size chip under the line', async ({
   page,
 }) => {
   await stubGuests(page);
   await page.addInitScript(() => {
     const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    // A previewed font size resizes the title.
+    const sizes: Record<string, { width: number; height: number }> = {
+      '40px': { width: 400, height: 300 },
+      '20px': { width: 200, height: 150 },
+    };
     window.guestAnswer = (command, argument) => {
       const target = argument.target as { styles?: Record<string, string> } | undefined;
-      // A previewed font size grows the title.
-      const rect = target?.styles?.fontSize
-        ? { x: 8, y: 8, width: 350, height: 250 }
-        : { x: 8, y: 8, width: 240, height: 30 };
+      const size = sizes[target?.styles?.fontSize ?? ''] ?? { width: 100, height: 50 };
+      const rect = { x: 20, y: 20, ...size };
       if (command === 'hover') return { ...title, rect };
       return { ...title, rect, styles: { fontSize: '24px', ...target?.styles } };
     };
@@ -456,52 +459,80 @@ test('a pick that grows glides its outline, and its size chip stays under the li
   });
   await page.clock.runFor(240);
   await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
-  const board = page.getByTestId('canvas-board');
-  await board.focus();
+  await page.getByTestId('canvas-board').focus();
   await page.keyboard.press('e');
   const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
   const scale = sheet.width / 400;
-  await page.mouse.click(sheet.x + 20 * scale, sheet.y + 20 * scale);
+  await page.mouse.click(sheet.x + 30 * scale, sheet.y + 30 * scale);
   await page.clock.runFor(100);
   const chip = page.locator('.canvas-element-outline .canvas-frame-size > span');
-  await expect(chip).toHaveText('240 × 30');
-  const glides = (step: 'start' | 'finish') =>
+  await expect(chip).toHaveText('100 × 50');
+  // Every glide frozen at one time; a glide's animations are the ones it adds.
+  const glidesAt = (step: number | 'end') =>
     page.evaluate((step) => {
       for (const animation of document.getAnimations()) {
-        if (step === 'finish') animation.finish();
-        else if ((animation.effect as KeyframeEffect).composite === 'add') {
+        if ((animation.effect as KeyframeEffect).composite !== 'add') continue;
+        if (step === 'end') animation.finish();
+        else {
           animation.pause();
-          animation.currentTime = 0;
+          animation.currentTime = step;
         }
       }
     }, step);
-  /** The chip's offset from the middle of the bottom of a box at x 8, y 8 in the design. */
-  const chipFrom = async (width: number, height: number) => {
-    const drawn = await box(chip);
-    return {
-      across: drawn.x + drawn.width / 2 - (sheet.x + (8 + width / 2) * scale),
-      below: drawn.y - (sheet.y + (8 + height) * scale),
-    };
-  };
-  await glides('finish');
-  expect(await chipFrom(240, 30)).toEqual({
-    across: expect.closeTo(0, 0),
-    below: expect.closeTo(8, 0),
-  });
+  /** The line as drawn, with its `::before` scale, and where the chip sits from its bottom middle. */
+  const drawn = () =>
+    page.evaluate(() => {
+      const outline = document.querySelector<HTMLElement>('.canvas-element-outline')!;
+      const box = outline.getBoundingClientRect();
+      const { a, d } = new DOMMatrix(getComputedStyle(outline, '::before').transform);
+      const line = { x: box.x, y: box.y, width: box.width * a, height: box.height * d };
+      const chip = outline.querySelector('.canvas-frame-size > span')!.getBoundingClientRect();
+      return {
+        line,
+        across: chip.x + chip.width / 2 - (line.x + line.width / 2),
+        below: chip.y - (line.y + line.height),
+      };
+    });
+  const underLine = { across: expect.closeTo(0, 0), below: expect.closeTo(8, 0) };
+  const glides = () =>
+    page.evaluate(
+      () =>
+        document
+          .getAnimations()
+          .filter((animation) => (animation.effect as KeyframeEffect).composite === 'add').length,
+    );
+  await glidesAt('end');
 
-  // At the start of the glide the line is still 240 × 30, and the chip with it.
   await page.getByLabel('Font size', { exact: true }).fill('40px');
   await page.clock.runFor(100);
-  await expect(chip).toHaveText('350 × 250');
-  await glides('start');
-  expect(await chipFrom(240, 30)).toEqual({
-    across: expect.closeTo(0, 0),
-    below: expect.closeTo(8, 0),
+  await expect(chip).toHaveText('400 × 300');
+  await glidesAt(0);
+  expect(await drawn()).toMatchObject({
+    ...underLine,
+    line: { width: expect.closeTo(100 * scale, 0) },
   });
-  await glides('finish');
-  expect(await chipFrom(350, 250)).toEqual({
-    across: expect.closeTo(0, 0),
-    below: expect.closeTo(8, 0),
+  await glidesAt(25);
+  const shown = await drawn();
+  expect(shown).toMatchObject(underLine);
+
+  // A new size mid-glide replaces the glide, starting from the line as shown.
+  await page.getByLabel('Font size', { exact: true }).fill('20px');
+  await page.clock.runFor(100);
+  await expect(chip).toHaveText('200 × 150');
+  await glidesAt(0);
+  // The line and its chip, and nothing left of the glide it replaced.
+  expect(await glides()).toBe(2);
+  const resumed = await drawn();
+  expect(resumed).toMatchObject(underLine);
+  for (const side of ['x', 'y', 'width', 'height'] as const)
+    expect(resumed.line[side]).toBeCloseTo(shown.line[side], 0);
+  for (const at of [25, 50, 'end'] as const) {
+    await glidesAt(at);
+    expect(await drawn()).toMatchObject(underLine);
+  }
+  expect((await drawn()).line).toMatchObject({
+    width: expect.closeTo(200 * scale, 0),
+    height: expect.closeTo(150 * scale, 0),
   });
 });
 test('held Alt in Edit measures from the picked element to the one under the pointer, or to its frame', async ({
