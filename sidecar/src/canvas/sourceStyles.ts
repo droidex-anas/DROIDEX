@@ -153,7 +153,7 @@ function setStyle(
   const dead = live.filter(
     ({ read }) => read.scope === 'always' && !read.shared && within(read.sets),
   );
-  keepFilter(property, name, dead, style);
+  keepFilter(property, name, outranked, dead, style);
   const first = dead.at(0)?.entry;
   const important = dead.some(({ read }) => read.important);
   let lostLineHeight: string | undefined;
@@ -182,18 +182,29 @@ function setStyle(
 function keepFilter(
   property: string,
   name: string | null,
+  outranked: boolean,
   dead: readonly { entry: ClassEntry }[],
   style: InlineStyle,
 ) {
   if (!FILTERS.has(property)) return;
+  const blur = styleName(property);
+  if (outranked)
+    throw new SourceElementError(
+      'ambiguous_element',
+      `A class for some screens, states or themes also sets this element’s ${blur}, so a change here would not show everywhere. Ask the agent to change it.`,
+    );
   if (
-    name === null ||
     dead.some(({ entry }) => !BLUR_OR_RESET_CLASS.test(entry.name ?? '')) ||
     style.entries.some((entry) => !entry.removed && entry.name === property)
   )
     throw new SourceElementError(
       'ambiguous_element',
-      `This element has other filters beside its ${styleName(property)}, so changing it here would drop them. Ask the agent to change it.`,
+      `This element sets its whole filter in one place, so changing its ${blur} here would drop the rest. Ask the agent to change it.`,
+    );
+  if (name === null)
+    throw new SourceElementError(
+      'ambiguous_element',
+      `Canvas can set the ${blur} only to a standard blur size or one of this kit’s blur tokens. Ask the agent for another size.`,
     );
 }
 
