@@ -4,7 +4,7 @@
 // frame's empty space, the design's root or the picked element itself. Every
 // rect comes from what the board already draws, so measuring asks the guest nothing.
 
-import { useEffect, useState, useSyncExternalStore, type RefObject } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { pushEscapeLayer } from '../../components/ui/escapeStack';
 import { boardPoint } from './boardCoordinates';
 import { boundsOf, type PlacedFrame, type Point } from './canvasGeometry';
@@ -33,35 +33,51 @@ interface Measured {
   sizedBottom: number;
 }
 
+/**
+ * The distances Alt shows, read when they are drawn. In Edit they follow the
+ * element under the pointer, which only the guides subscribe to, so a hover
+ * with Alt held renders the guides and not the board.
+ */
+export interface AltMarks {
+  read: () => GuideMarks;
+  subscribe: (onChange: () => void) => () => void;
+}
+
+const NO_MARKS: GuideMarks = { guides: [], gaps: [] };
+
 export function useHoverMeasurements(
   board: RefObject<HTMLElement | null>,
   drawn: readonly PlacedFrame[],
   interaction: BoardInteraction,
   selected: PickedOnBoard | null,
   hover: Hover,
-): GuideMarks {
+): AltMarks {
   const { frameId, letGo } = useAltHoveredFrame(
     board,
     interaction.mode === 'edit' ? hover.move : null,
   );
-  // Only distances measured to elements follow the hover, so a plain hover renders no board.
-  const measuresElements = frameId !== null && interaction.mode === 'edit';
-  const hovered = useSyncExternalStore(
-    measuresElements ? hover.hovered.subscribe : stayStill,
-    hover.hovered.read,
-    hover.hovered.read,
-  );
-  let measured: Measured | null = null;
-  if (frameId !== null && interaction.mode === 'select')
-    measured = framesToMeasure(drawn, interaction.selectedFrameIds, frameId);
-  if (frameId !== null && interaction.mode === 'edit')
-    measured = elementsToMeasure(frameId, selected, hovered);
-  const gaps = measured ? measureBetween(measured.from, measured.to) : [];
-  const measuring = gaps.length > 0;
-  // Shown distances are the topmost thing Escape closes, so no layer under them swallows it.
+  let marks: AltMarks = { read: () => NO_MARKS, subscribe: stayStill };
+  if (frameId !== null && interaction.mode === 'select') {
+    const shown = marksOf(framesToMeasure(drawn, interaction.selectedFrameIds, frameId));
+    marks = { read: () => shown, subscribe: stayStill };
+  }
+  const picked =
+    interaction.mode === 'edit' && selected?.selection.draft.element.designId === frameId
+      ? selected
+      : null;
+  if (picked) {
+    const { hovered } = hover;
+    marks = {
+      read: () => marksOf(elementsToMeasure(picked, hovered.read())),
+      subscribe: hovered.subscribe,
+    };
+  }
+  // Shown distances are the topmost thing Escape closes, so no layer under them
+  // swallows it. Edit's follow the hover outside React, so there they count as
+  // shown while Alt measures from a pick.
+  const measuring = picked !== null || marks.read().gaps.length > 0;
   useEffect(() => (measuring ? pushEscapeLayer(letGo) : undefined), [measuring, letGo]);
-  if (!measured) return { guides: [], gaps };
-  return { guides: [], gaps, sizedBottom: measured.sizedBottom };
+  return marks;
 }
 
 /**
@@ -168,13 +184,9 @@ function framesToMeasure(
   return { from: selected, to: hovered, sizedBottom: selected.y + selected.height };
 }
 
-function elementsToMeasure(
-  frameId: string,
-  selected: PickedOnBoard | null,
-  hovered: HoveredElement | null,
-): Measured | null {
-  if (selected?.selection.draft.element.designId !== frameId) return null;
-  const { selection, frame, box } = selected;
+function elementsToMeasure(picked: PickedOnBoard, hovered: HoveredElement | null): Measured {
+  const { selection, frame, box } = picked;
+  const frameId = selection.draft.element.designId;
   const from = inWorld(frame, selection.shown.rect);
   // The size chip hangs under the box trimmed to the frame, not under the element's own.
   const sizedBottom = frame.y + box.top + box.height;
@@ -185,6 +197,15 @@ function elementsToMeasure(
   )
     return { from, to: inWorld(frame, hovered.element.rect), sizedBottom };
   return { from, to: frame, sizedBottom };
+}
+
+function marksOf(measured: Measured | null): GuideMarks {
+  if (!measured) return NO_MARKS;
+  return {
+    guides: [],
+    gaps: measureBetween(measured.from, measured.to),
+    sizedBottom: measured.sizedBottom,
+  };
 }
 
 /** An element's box on the board: the sheet lays the design out one pixel to a world unit. */

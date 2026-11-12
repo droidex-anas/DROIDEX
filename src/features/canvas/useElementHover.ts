@@ -6,8 +6,9 @@
 // no outline outlives the run that drew it. The layers panel asks the same way
 // for the element under its pointer, by that element's path instead of a point.
 //
-// The answer is kept in an OverlayStore, read only by what draws it, so a
-// pointer sweeping a design renders the outline and not the board.
+// The answer is kept in an OverlayStore that only what draws it subscribes to
+// (the outline, Alt's distances, the hovered frame and its Layers row), so a
+// pointer sweeping a design renders those and not the board.
 
 import { useLayoutEffect, useState } from 'react';
 import type { Point } from './canvasGeometry';
