@@ -434,6 +434,76 @@ test('the hover tag keeps off other content and off the picked size chip', async
   expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
 });
 
+test('a pick that grows glides its outline, and its size chip stays under the line as drawn', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    window.guestAnswer = (command, argument) => {
+      const target = argument.target as { styles?: Record<string, string> } | undefined;
+      // A previewed font size grows the title.
+      const rect = target?.styles?.fontSize
+        ? { x: 8, y: 8, width: 350, height: 250 }
+        : { x: 8, y: 8, width: 240, height: 30 };
+      if (command === 'hover') return { ...title, rect };
+      return { ...title, rect, styles: { fontSize: '24px', ...target?.styles } };
+    };
+  });
+  await openBoard(page, 14, 'no-preference', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const scale = sheet.width / 400;
+  await page.mouse.click(sheet.x + 20 * scale, sheet.y + 20 * scale);
+  await page.clock.runFor(100);
+  const chip = page.locator('.canvas-element-outline .canvas-frame-size > span');
+  await expect(chip).toHaveText('240 × 30');
+  const glides = (step: 'start' | 'finish') =>
+    page.evaluate((step) => {
+      for (const animation of document.getAnimations()) {
+        if (step === 'finish') animation.finish();
+        else if ((animation.effect as KeyframeEffect).composite === 'add') {
+          animation.pause();
+          animation.currentTime = 0;
+        }
+      }
+    }, step);
+  /** The chip's offset from the middle of the bottom of a box at x 8, y 8 in the design. */
+  const chipFrom = async (width: number, height: number) => {
+    const drawn = await box(chip);
+    return {
+      across: drawn.x + drawn.width / 2 - (sheet.x + (8 + width / 2) * scale),
+      below: drawn.y - (sheet.y + (8 + height) * scale),
+    };
+  };
+  await glides('finish');
+  expect(await chipFrom(240, 30)).toEqual({
+    across: expect.closeTo(0, 0),
+    below: expect.closeTo(8, 0),
+  });
+
+  // At the start of the glide the line is still 240 × 30, and the chip with it.
+  await page.getByLabel('Font size', { exact: true }).fill('40px');
+  await page.clock.runFor(100);
+  await expect(chip).toHaveText('350 × 250');
+  await glides('start');
+  expect(await chipFrom(240, 30)).toEqual({
+    across: expect.closeTo(0, 0),
+    below: expect.closeTo(8, 0),
+  });
+  await glides('finish');
+  expect(await chipFrom(350, 250)).toEqual({
+    across: expect.closeTo(0, 0),
+    below: expect.closeTo(8, 0),
+  });
+});
 test('held Alt in Edit measures from the picked element to the one under the pointer, or to its frame', async ({
   page,
 }) => {

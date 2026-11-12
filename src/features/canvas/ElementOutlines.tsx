@@ -6,11 +6,13 @@
 // carry them at once, a held frame's move takes them along (HeldFrames), and a
 // chip at the sheet's edge is not cut off. Each box is trimmed to its frame,
 // where the design is visible, and glides when the element's own box changes.
-// Only this layer reads the hovered element, so a hover renders nothing else.
+// The hovered element is read from its store here, so a hover renders this
+// layer and not the board.
 
-import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from 'react';
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { PlacedFrame } from './canvasGeometry';
 import { onBoard, type Box, type PickedOnBoard } from './elementOnBoard';
+import { OutlineGlide, type GlideAnchor } from './outlineGlide';
 import type { OverlayStore } from './overlayStore';
 import type { PreviewHover } from './previewDocument';
 import type { FrameRect } from './protocol';
@@ -64,6 +66,16 @@ export function ElementOutlines({
     selected && picked?.designId === hovered?.designId
       ? sizeChipOf(selected.box, sizeOnScreen.width / scale, scale)
       : null;
+  const side =
+    hovered && shown
+      ? tagSide(
+          shown.box,
+          shown.frame.height,
+          { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
+          hovered.element.room,
+          sizeChip,
+        )
+      : null;
   return (
     <>
       {hovered && shown && (
@@ -77,13 +89,8 @@ export function ElementOutlines({
           >
             <div
               className="canvas-element-tag canvas-chrome"
-              data-side={tagSide(
-                shown.box,
-                shown.frame.height,
-                { width: tagOnScreen.width / scale, height: TAG_HEIGHT_PX / scale },
-                hovered.element.room,
-                sizeChip,
-              )}
+              data-side={side}
+              data-glide-anchor={side === 'below' ? ('bottom' satisfies GlideAnchor) : undefined}
             >
               <span ref={tag}>
                 <TagName tagName={hovered.element.tagName} component={componentOf(hovered)} />
@@ -95,7 +102,10 @@ export function ElementOutlines({
       {selected && (
         <AtFrame designId={selected.selection.draft.element.designId} frame={selected.frame}>
           <Outline box={selected.box} glides className="canvas-element-outline">
-            <div className="canvas-frame-size canvas-chrome">
+            <div
+              className="canvas-frame-size canvas-chrome"
+              data-glide-anchor={'bottom-centre' satisfies GlideAnchor}
+            >
               <span ref={size}>
                 {Math.round(selected.selection.shown.rect.width)} ×{' '}
                 {Math.round(selected.selection.shown.rect.height)}
@@ -155,12 +165,7 @@ function AtFrame({
   );
 }
 
-/**
- * One outline, placed by `transform`. When its box changes it glides there by
- * transform alone: the box slides from where it was, and its line, drawn by
- * `::before`, scales from the size it had. Each glide adds to any still
- * running, so a box that changes mid-glide carries on from where it is shown.
- */
+/** One outline, placed by `transform`, which glides when its box changes (OutlineGlide). */
 function Outline({
   box,
   glides,
@@ -177,16 +182,22 @@ function Outline({
 }) {
   const node = useRef<HTMLDivElement>(null);
   const last = useRef<Box | null>(null);
-  // Whole pixels, as left and top were laid out, so its line is not smeared across two.
-  const left = Math.round(box.left);
-  const top = Math.round(box.top);
-  const { width, height } = box;
+  const [motion] = useState(() => new OutlineGlide());
+  const { left, top, width, height } = box;
   useLayoutEffect(() => {
     const from = last.current;
     const to = { left, top, width, height };
     last.current = to;
-    if (node.current && from && glides) glide(node.current, from, to);
-  }, [glides, left, top, width, height]);
+    if (!node.current || !from) return;
+    if (glides) motion.glide(node.current, from, to);
+    else motion.stop();
+  }, [glides, motion, left, top, width, height]);
+  useLayoutEffect(
+    () => () => {
+      motion.stop();
+    },
+    [motion],
+  );
   return (
     <div
       ref={node}
@@ -198,40 +209,6 @@ function Outline({
       {children}
     </div>
   );
-}
-
-function glide(element: HTMLElement, from: Box, to: Box) {
-  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const timing = { ...glideTiming(), composite: 'add' as const };
-  const dx = from.left - to.left;
-  const dy = from.top - to.top;
-  if (dx !== 0 || dy !== 0)
-    element.animate(
-      [{ transform: `translate(${String(dx)}px, ${String(dy)}px)` }, { transform: 'none' }],
-      timing,
-    );
-  if (to.width === 0 || to.height === 0) return;
-  const sx = from.width / to.width;
-  const sy = from.height / to.height;
-  if (sx !== 1 || sy !== 1)
-    element.animate([{ transform: `scale(${String(sx)}, ${String(sy)})` }, { transform: 'none' }], {
-      ...timing,
-      pseudoElement: '::before',
-    });
-}
-
-let timingTokens: { duration: number; easing: string } | null = null;
-
-/** The quick duration and smooth easing tokens, read once: they never change while the app runs. */
-function glideTiming(): { duration: number; easing: string } {
-  if (timingTokens) return timingTokens;
-  const tokens = getComputedStyle(document.documentElement);
-  // The duration token is written in milliseconds.
-  timingTokens = {
-    duration: parseFloat(tokens.getPropertyValue('--duration-quick')),
-    easing: tokens.getPropertyValue('--ease-smooth-out').trim(),
-  };
-  return timingTokens;
 }
 
 /** What a picked element's size chip covers: centred under its box, with the gap above it. */
