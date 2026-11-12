@@ -256,8 +256,24 @@ test('the selected frame keeps its size and corners over a neighbour, and its ed
     window.boardHarness.select(['a']);
   });
   await page.clock.runFor(32);
-  expect(await isOnTop(page.getByRole('button', { name: 'Size 400 × 300' }))).toBe(true);
-  expect(await isOnTop(page.locator('[data-handle="southeast"]'))).toBe(true);
+  const size = page.getByRole('button', { name: 'Size 400 × 300' });
+  const corner = page.locator('[data-handle="southeast"]');
+  expect(await isOnTop(size)).toBe(true);
+  expect(await isOnTop(corner)).toBe(true);
+
+  // Held mid-move, A still draws its size and corners over B.
+  const before = await box(frame(page, 'A'));
+  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
+  await page.mouse.move(label.x + 30, label.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(label.x + 50, label.y + 18);
+  await page.clock.runFor(32);
+  expect((await box(frame(page, 'A'))).x).toBeGreaterThan(before.x);
+  expect(await isOnTop(size)).toBe(true);
+  expect(await isOnTop(corner)).toBe(true);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
 
   // The corner resizes A, not B; 45 screen pixels at about 90% are 50 board pixels.
   await dragHandle(page, 'southeast', 45, 45);
