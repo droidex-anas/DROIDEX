@@ -327,7 +327,14 @@ export function CanvasBoardMount({
   ]);
 
   if (shownDocument)
-    return <DocumentMount appSessionId={appSessionId} canvasId={canvasId} shown={shownDocument} />;
+    return (
+      <DocumentMount
+        appSessionId={appSessionId}
+        canvasId={canvasId}
+        pinnable={pinnable}
+        shown={shownDocument}
+      />
+    );
 
   return (
     <div
@@ -451,17 +458,20 @@ export function CanvasBoardMount({
 export function DocumentMount({
   appSessionId,
   canvasId,
+  pinnable,
   shown,
 }: {
   appSessionId: string;
   canvasId: string | null;
+  /** Its catalog can tag entries in the chat's next prompt, as on the chat's own canvas. */
+  pinnable: boolean;
   shown: ShownDocument;
 }) {
   const dispatch = useStoreDispatch();
   return (
     <div className="min-h-0 flex-1">
       <Suspense fallback={null}>
-        <TaggingChat value={appSessionId}>
+        <TaggingChat value={pinnable ? appSessionId : null}>
           <LazyDesignSystemDocument
             appSessionId={appSessionId}
             canvasKey={canvasId}

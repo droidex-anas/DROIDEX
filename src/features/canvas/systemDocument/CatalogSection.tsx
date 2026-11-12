@@ -9,8 +9,8 @@ import { useContext, useId, useMemo, useRef, useState, type KeyboardEvent } from
 import { Row, RowCaret, SectionHeader } from '../../../components/ui/Row';
 import type { CatalogListing, KitPreviewTarget } from '../protocol';
 import { TaggingChat } from '../componentPins';
+import { useKitCatalog } from '../palette/useKitCatalog';
 import { TagComponentButton } from '../TagComponentButton';
-import { useKitList } from '../useKitList';
 import { KitGuest, type KitPreviewing } from './KitPreviewTile';
 import { useFitScale } from './useFitScale';
 
@@ -28,10 +28,10 @@ export function CatalogSection({
   const [openName, setOpenName] = useState<string | null>(null);
   const listId = useId();
   const chatId = useContext(TaggingChat);
-  const { list } = useKitList();
   const { kit } = previewing;
-  const kitName =
-    list.status === 'listed' ? list.systems.find((each) => each.id === kit.id)?.name : undefined;
+  // The name a tag sends is the shown version's, which a later version may have changed.
+  const { catalog } = useKitCatalog(chatId === null ? undefined : kit);
+  const kitName = catalog?.state === 'ready' ? catalog.kitName : undefined;
   // An entry searched away closes, as it does when search hides its whole section.
   if (openName !== null && !entries.some((entry) => entry.name === openName)) setOpenName(null);
   if (entries.length === 0) return null;

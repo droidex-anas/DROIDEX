@@ -370,7 +370,14 @@ function CanvasBody({
       );
     case 'unattached':
       if (shownDocument)
-        return <DocumentMount appSessionId={appSessionId} canvasId={null} shown={shownDocument} />;
+        return (
+          <DocumentMount
+            appSessionId={appSessionId}
+            canvasId={null}
+            pinnable={pinnable}
+            shown={shownDocument}
+          />
+        );
       if (toolsMissing) return <CanvasToolsMissing canvasId={null} />;
       return (
         <CanvasEmptyState
