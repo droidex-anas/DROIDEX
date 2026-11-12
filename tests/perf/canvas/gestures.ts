@@ -239,6 +239,7 @@ export const GESTURES: Gesture[] = [
     description:
       'Held Alt over the board, distances from the selection to the frame under the pointer',
     tool: 'board',
+    shows: moves('.canvas-snap-pill'),
     prepare: selectFrameA,
     stream: async (page) => {
       const board = await rectOf(page, '[data-testid="canvas-board"]');
@@ -265,6 +266,7 @@ export const GESTURES: Gesture[] = [
     name: 'panelScrub',
     description: 'Scrub the picked title’s Font size by its short name, out and back',
     tool: 'edit',
+    shows: { selector: 'input[aria-label="Font size"]', attribute: 'value' },
     prepare: async (page) => {
       await editFrameA(page);
       const sheet = await rectOf(page, '[data-design-frame="a"] .canvas-sheet');
