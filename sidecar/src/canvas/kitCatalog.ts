@@ -166,7 +166,11 @@ export interface CatalogRead {
 /** An entry as an agent writes it into a design. */
 export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
 
-/** What one catalog read returns at most; one entry, at most 4 KiB of JSX, always fits. */
+/**
+ * What a catalog read's entries may cost as JSON, brackets and commas included.
+ * The first entry asked for always comes back, whatever its size, so none is
+ * out of reach; the budget bounds the entries after it.
+ */
 const CATALOG_READ_BYTES = 16 * 1024;
 
 /**
@@ -191,17 +195,18 @@ export function readCatalogEntries(
     names === undefined
       ? catalog
       : catalog.filter((entry) => names.some((name) => isNamedBy(entry.name, name)));
-  let budget = CATALOG_READ_BYTES;
+  let used = '[]'.length;
   const entries: CatalogEntryRead[] = [];
   const omitted: string[] = [];
   for (const { name, uses, icons, jsx, note, props } of asked) {
     const entry = { name, uses, icons, jsx, note, props: props ?? [] };
-    const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8');
-    if (omitted.length > 0 || cost > budget) {
+    const separator = entries.length > 0 ? 1 : 0;
+    const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8') + separator;
+    if (omitted.length > 0 || (entries.length > 0 && used + cost > CATALOG_READ_BYTES)) {
       omitted.push(name);
       continue;
     }
-    budget -= cost;
+    used += cost;
     entries.push(entry);
   }
   return omitted.length > 0 ? { entries, omitted } : { entries };

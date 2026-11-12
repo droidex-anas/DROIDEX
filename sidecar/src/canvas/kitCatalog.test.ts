@@ -242,3 +242,40 @@ test('a catalog read finds an entry by its name and the entries filed under it, 
   assert.deepEqual(all.omitted, ['Big 5', 'Big 6', 'Big 7']);
   assert.ok(all.entries.every(({ jsx }) => jsx.endsWith('</Button>')));
 });
+
+test('a catalog read always returns its first entry, and counts brackets and commas against the rest', () => {
+  const files = (catalog: CatalogEntry[]) => starterWith(catalogFile(catalog)).files;
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value), 'utf8');
+  // Quotes double when escaped, and eight props of 32 options add about 11 KB.
+  const option = (index: number) => `${'o'.repeat(38)}${String(index).padStart(2, '0')}`;
+  const options = Array.from({ length: 32 }, (_, index) => option(index));
+  const huge: CatalogEntry = {
+    ...entry('Huge', `<Button>${'"'.repeat(4000)}</Button>`),
+    props: Array.from({ length: 8 }, (_, index) => ({
+      name: `p${String(index)}`,
+      options,
+      default: options[0],
+    })),
+  };
+  const first = readCatalogEntries(
+    files([huge, entry('Button', '<Button>Go</Button>')]),
+    undefined,
+  );
+  assert.ok(bytes(first.entries) > 16 * 1024);
+  assert.deepEqual(
+    first.entries.map(({ name }) => name),
+    ['Huge'],
+  );
+  assert.deepEqual(first.omitted, ['Button']);
+
+  // Four entries of 4096 bytes each come to 16,389 bytes as a list.
+  const four = ['Fit 0', 'Fit 1', 'Fit 2', 'Fit 3'].map((name) => {
+    const jsx = '<Button></Button>';
+    const rest = bytes({ name, uses: ['Button'], icons: [], jsx, note: null, props: [] });
+    return entry(name, `<Button>${'x'.repeat(4096 - rest)}</Button>`);
+  });
+  const read = readCatalogEntries(files(four), undefined);
+  assert.ok(read.entries.every((one) => bytes(one) === 4096));
+  assert.deepEqual(read.omitted, ['Fit 3']);
+  assert.ok(bytes(read.entries) <= 16 * 1024);
+});
