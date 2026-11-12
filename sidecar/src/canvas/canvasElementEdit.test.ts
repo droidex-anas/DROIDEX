@@ -198,7 +198,10 @@ test('a kit catalog entry is added to a layer in one revision, answering its row
     canvasId,
     input: {
       mutationId,
-      edit: { layer: { designId, revisionId, nodeId }, change: { kind: 'insert', entry } },
+      edit: {
+        layer: { designId, revisionId, nodeId },
+        change: { kind: 'insert', entry, props: [] },
+      },
     },
   });
   await canvas.handle(command('req-insert-gone', 'm-insert-gone', 'Alert dialog'));

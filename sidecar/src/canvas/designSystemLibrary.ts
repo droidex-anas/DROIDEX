@@ -13,13 +13,14 @@ import postcss from 'postcss';
 import { z } from 'zod';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { readModules } from './compiler.js';
+import type { ModuleElement } from './compilerModules.js';
 import { readConfigBindings, type ConfigValue } from './configLiterals.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
 import type { LibrarySkip } from './designSystemProvenance.js';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
-import { libraryCatalogFiles } from './libraryCatalog.js';
+import { LIBRARY_DEMOS, libraryCatalogFiles } from './libraryCatalog.js';
 import {
   COMPONENT_NAME,
   KIT_UTILS_FILE,
@@ -79,6 +80,8 @@ interface LibraryRead {
   components: LibraryComponent[];
   /** The ui folder's files left out before any was parsed. */
   skipped: LibrarySkip[];
+  /** The elements each catalog demo writes, in LIBRARY_DEMOS order. */
+  demos: ModuleElement[][];
   aliases: LibraryAliases;
   diagnostics: CanvasDiagnostic[];
 }
@@ -113,7 +116,11 @@ export async function importLibraryDesignSystem(
     [KIT_UTILS_FILE]: read.utils,
     ...Object.fromEntries(library.files),
   };
-  Object.assign(files, libraryCatalogFiles(files));
+  const catalog = libraryCatalogFiles(files, read.components, library.components, read.demos);
+  Object.assign(files, catalog.files);
+  // The review holds one record per file; a file already reviewed keeps its record, and the diagnostic tells of the demo.
+  const reviewed = new Set(library.skipped.map(({ file }) => file));
+  const demosLeftOut = catalog.skipped.filter(({ file }) => !reviewed.has(file));
   const parsed = designSystemSchema.safeParse({
     ...imported.system,
     // The shared primitives are not this kit's, so neither are their notes and previews.
@@ -130,7 +137,7 @@ export async function importLibraryDesignSystem(
           tokens: Object.fromEntries(
             Object.entries(kitNames).map(([projectName, kitName]) => [kitName, projectName]),
           ),
-          ...libraryReview([...read.skipped, ...library.skipped]),
+          ...libraryReview([...read.skipped, ...library.skipped, ...demosLeftOut]),
         },
       },
     },
@@ -140,7 +147,8 @@ export async function importLibraryDesignSystem(
   return {
     status: 'imported',
     system: parsed.data,
-    diagnostics: boundDiagnostics(diagnostics),
+    // The components' diagnostics alone can fill the cap, and these tell what the kit's catalog left out.
+    diagnostics: boundDiagnostics([...catalog.diagnostics, ...diagnostics]),
     kitNames,
   };
 }
@@ -177,7 +185,9 @@ async function readLibrary(
   const [utilsModule, ...modules] = await readModules([
     code.utils.text,
     ...folder.components.map((component) => component.text),
+    ...LIBRARY_DEMOS,
   ]);
+  const demos = modules.splice(folder.components.length).map((module) => module.elements);
   const unknown = utilsModule.specifiers.find(
     (specifier) => specifier.loads && !DESIGN_PACKAGE_ENTRIES.has(specifier.text),
   );
@@ -194,6 +204,7 @@ async function readLibrary(
     utils: code.utils.text,
     components,
     skipped: folder.skipped,
+    demos,
     aliases: code.aliases,
     diagnostics,
   };

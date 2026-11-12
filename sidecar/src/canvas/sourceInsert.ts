@@ -1,11 +1,12 @@
 // Adds a kit catalog entry to a frame's source where the picked layer is
 // written: last inside it when it holds other layers, else right after it,
-// with the kit and icon names the entry uses imported once into that file.
+// with the kit and icon names the entry uses imported once into that file and
+// the options picked for its props written on its element.
 
 import ts from 'typescript';
 import type { ComponentUses } from './componentUses.js';
 import { KIT_SPECIFIER } from './designBundle.js';
-import type { CatalogEntry } from './kitCatalog.js';
+import type { CatalogEntry, PropPick } from './kitCatalog.js';
 import type { SourceFiles } from './protocol.js';
 import { ICON_SPECIFIER, importEdits } from './sourceImports.js';
 import {
@@ -31,15 +32,21 @@ import {
   type Paste,
 } from './sourceStructureEdits.js';
 
-/** The entry written into the layer `nodeId`, and the row of the element it adds. */
-export function insertLayer(files: SourceFiles, nodeId: string, entry: CatalogEntry): EditedLayers {
+/** The entry, with its picked props, written into the layer `nodeId`, and the row of the element it adds. */
+export function insertLayer(
+  files: SourceFiles,
+  nodeId: string,
+  entry: CatalogEntry,
+  picks: readonly PropPick[],
+): EditedLayers {
   const { uses, layer } = layersIn(files);
   const target = layer(nodeId);
   const source = target.at.getSourceFile();
   const { text } = source;
   const eol = lineEnding(text);
   const paste = landing(target, uses, eol);
-  checkIds(files, entry.jsx);
+  const picked = withPicks(entry, picks);
+  checkIds(files, picked);
   const imports = importEdits(
     source,
     [
@@ -48,7 +55,7 @@ export function insertLayer(files: SourceFiles, nodeId: string, entry: CatalogEn
     ],
     eol,
   );
-  const jsx = placeSnippet(entry.jsx, paste.indent, indentUnit(source, paste.indent), eol);
+  const jsx = placeSnippet(picked, paste.indent, indentUnit(source, paste.indent), eol);
   const edited = splice(text, [
     ...imports,
     { start: paste.start, end: paste.end, replacement: paste.before + jsx + paste.after },
@@ -90,6 +97,63 @@ function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
   const indent = lineIndent(text, node.getStart());
   const before = standsAlone(text, node) ? eol + indent : '';
   return { start: node.end, end: node.end, before, after: '', indent };
+}
+
+/**
+ * The entry's JSX with each pick written on its first element written with a
+ * component it uses: in place of the quoted value it writes, else added after
+ * the tag name. A value the entry writes in code, or writes more than once,
+ * is left alone and refused.
+ */
+function withPicks(entry: CatalogEntry, picks: readonly PropPick[]): string {
+  if (picks.length === 0) return entry.jsx;
+  const source = ts.createSourceFile(
+    'entry.tsx',
+    entry.jsx,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
+  );
+  const element = firstUsedElement(source, entry.uses);
+  if (element === undefined || element.attributes.properties.some(ts.isJsxSpreadAttribute))
+    throw invalid('This entry has no element to give the picked options to.');
+  const afterTag = element.attributes.pos;
+  const edits: { start: number; end: number; replacement: string }[] = [];
+  let added = '';
+  for (const { name, value } of picks) {
+    const prop = entry.props?.find((each) => each.name === name);
+    if (!prop?.options.includes(value))
+      throw invalid(`This entry has no option ${value} for ${name}. Pick one it lists.`);
+    const written = element.attributes.properties.filter(
+      (each): each is ts.JsxAttribute => ts.isJsxAttribute(each) && each.name.getText() === name,
+    );
+    // The last one written wins, so rewriting one of several would not apply the pick.
+    if (written.length > 1)
+      throw invalid(`This entry writes ${name} more than once, so it cannot be picked.`);
+    const attribute = written.at(0);
+    const quoted = `${name}="${value}"`;
+    if (attribute === undefined) added += ` ${quoted}`;
+    else if (attribute.initializer !== undefined && ts.isStringLiteral(attribute.initializer))
+      edits.push({ start: attribute.getStart(), end: attribute.end, replacement: quoted });
+    else throw invalid(`This entry writes ${name} in code, so it cannot be picked.`);
+  }
+  return splice(entry.jsx, [...edits, { start: afterTag, end: afterTag, replacement: added }]);
+}
+
+function firstUsedElement(
+  source: ts.SourceFile,
+  uses: readonly string[],
+): ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined {
+  const visit = (node: ts.Node): ts.JsxOpeningElement | ts.JsxSelfClosingElement | undefined => {
+    if (
+      (ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
+      ts.isIdentifier(node.tagName) &&
+      uses.includes(node.tagName.text)
+    )
+      return node;
+    return ts.forEachChild(node, visit);
+  };
+  return visit(source);
 }
 
 /** Refuses an entry that gives an element an `id` the frame already gives one: a document holds each id once. */

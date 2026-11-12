@@ -1,19 +1,24 @@
 // The Components tab beside the board: the entries of the kit catalog the
 // target frame pins, searchable, each added with Enter or a click to the layer
-// the line under the search names. The search keeps the keyboard and the
-// arrows walk the matches through aria-activedescendant, as the frame
-// navigator does; a catalog holds at most 128 entries, so every row mounts.
+// the line under the search names, with the variants its menu picked. The
+// search keeps the keyboard and the arrows walk the matches through
+// aria-activedescendant, as the frame navigator does; a catalog holds at most
+// 128 entries, so every row mounts.
 
-import { useEffect, useId, useRef, useState } from 'react';
-import { Search } from '@droidex/icons';
+import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { ChevronDown, Search } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Input } from '../../../components/ui/Field';
+import { Tooltip } from '../../../components/ui/Tooltip';
+import { ALT_MODIFIER_LABEL } from '../../../lib/shortcuts';
+import type { PropPick } from '../elementEditProtocol';
 import type { CatalogListing, DesignSystemVersionRef } from '../protocol';
-import { paletteRows } from './paletteRows';
+import { paletteRows, propPicks, type ChosenProps } from './paletteRows';
 import type { PalettePlace } from './useComponentInsert';
 import { useKitCatalog, type KitCatalog } from './useKitCatalog';
 import { usePaletteKeys } from './usePaletteKeys';
+import { VariantMenu } from './VariantMenu';
 
 const SKELETON_WIDTHS = ['w-24', 'w-32', 'w-20', 'w-28', 'w-16', 'w-24'];
 
@@ -26,24 +31,38 @@ export function ComponentsPanel({
   /** The kit version whose catalog is listed: the target frame's, else the board's first frame's. */
   kit: DesignSystemVersionRef | undefined;
   place: PalettePlace;
-  onAdd: (entry: string) => void;
+  onAdd: (entry: string, props: PropPick[]) => void;
   /** Escape on an empty search: the keyboard goes back to the board. */
   onLeave: () => void;
 }) {
   const { catalog, retry } = useKitCatalog(kit);
   const [query, setQuery] = useState('');
+  // Each row's picks last while the tab is open on one kit version; nothing keeps them past it.
+  const kitKey = kit && `${kit.id}:${String(kit.version)}`;
+  const [picked, setPicked] = useState<{ kitKey?: string; rows: Record<string, ChosenProps> }>({
+    rows: {},
+  });
+  const chosen = picked.kitKey === kitKey ? picked.rows : {};
+  const [menuFor, setMenuFor] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
   const hintId = useId();
+  const variantsHintId = useId();
   const optionId = (index: number) => `${listId}-${String(index)}`;
   const matches = catalog?.state === 'ready' ? paletteRows(catalog.entries, query) : [];
+  const menuEntry = matches.find((entry) => entry.name === menuFor);
+  const picksOf = (entry: CatalogListing) => propPicks(entry, chosen[entry.name] ?? {});
   const keys = usePaletteKeys({
     query,
     onQuery: setQuery,
     count: matches.length,
     optionId,
     onAdd: (index) => {
-      onAdd(matches[index].name);
+      onAdd(matches[index].name, picksOf(matches[index]));
+    },
+    onMenu: (index) => {
+      if (matches[index].props.length > 0) setMenuFor(matches[index].name);
     },
     onLeave,
   });
@@ -65,6 +84,7 @@ export function ComponentsPanel({
           aria-expanded
           aria-describedby={hintId}
           aria-activedescendant={keys.activeIndex >= 0 ? optionId(keys.activeIndex) : undefined}
+          aria-keyshortcuts="Alt+ArrowDown"
           placeholder="Search components"
           spellCheck={false}
           leading={<Search className="size-icon-sm" />}
@@ -73,6 +93,10 @@ export function ComponentsPanel({
             keys.search(event.target.value);
           }}
           onKeyDown={keys.onKeyDown}
+          // A press on the search is not outside the menu it anchors, so focus closes it.
+          onFocus={() => {
+            setMenuFor(null);
+          }}
         />
       </div>
       <p
@@ -82,6 +106,11 @@ export function ComponentsPanel({
       >
         {place.hint}
       </p>
+      {matches.some((entry) => entry.props.length > 0) && (
+        <span id={variantsHintId} className="sr-only">
+          Alt with Down picks its variants.
+        </span>
+      )}
       <CatalogState catalog={catalog} query={query} matches={matches.length} onRetry={retry} />
       {matches.length > 0 && (
         <div
@@ -95,16 +124,39 @@ export function ComponentsPanel({
               key={entry.name}
               id={optionId(index)}
               entry={entry}
+              picks={picksOf(entry)}
+              variantsHintId={variantsHintId}
               active={index === keys.activeIndex}
               canAdd={place.canAdd}
+              menuOpen={entry === menuEntry}
+              triggerRef={trigger}
               onAdd={() => {
                 keys.setActive(index);
-                onAdd(entry.name);
+                setMenuFor(null);
+                onAdd(entry.name, picksOf(entry));
+              }}
+              onMenu={() => {
+                keys.setActive(index);
+                setMenuFor(entry === menuEntry ? null : entry.name);
               }}
             />
           ))}
         </div>
       )}
+      <VariantMenu
+        entry={menuEntry}
+        chosen={(menuEntry && chosen[menuEntry.name]) ?? {}}
+        searchRef={field}
+        triggerRef={trigger}
+        onClose={() => {
+          setMenuFor(null);
+        }}
+        onPick={(prop, option) => {
+          if (!menuEntry) return;
+          const { name } = menuEntry;
+          setPicked({ kitKey, rows: { ...chosen, [name]: { ...chosen[name], [prop]: option } } });
+        }}
+      />
     </div>
   );
 }
@@ -112,15 +164,27 @@ export function ComponentsPanel({
 function CatalogRow({
   id,
   entry,
+  picks,
+  variantsHintId,
   active,
   canAdd,
+  menuOpen,
+  triggerRef,
   onAdd,
+  onMenu,
 }: {
   id: string;
   entry: CatalogListing;
+  /** The variants the row's menu picked, which the add writes. */
+  picks: PropPick[];
+  /** What tells a row with variants how the keyboard opens its menu. */
+  variantsHintId: string;
   active: boolean;
   canAdd: boolean;
+  menuOpen: boolean;
+  triggerRef: RefObject<HTMLButtonElement | null>;
   onAdd: () => void;
+  onMenu: () => void;
 }) {
   return (
     <div
@@ -128,6 +192,7 @@ function CatalogRow({
       role="option"
       aria-selected={active}
       aria-disabled={!canAdd || undefined}
+      aria-describedby={entry.props.length > 0 ? variantsHintId : undefined}
       title={entry.note ?? undefined}
       className={cn(
         'flex select-none items-center gap-2.5 rounded-md px-3 py-1.5 text-body transition-colors duration-150 ease-out',
@@ -141,11 +206,37 @@ function CatalogRow({
       onClick={onAdd}
     >
       <span className="min-w-0 truncate text-primary">{entry.name}</span>
+      {picks.length > 0 && (
+        <span className="shrink-0 text-caption text-secondary">
+          {picks.map(({ value }) => value).join(' · ')}
+        </span>
+      )}
       {entry.module !== null && (
         // The name keeps its width; the file gives way, and its folder repeats on every row.
         <span className="min-w-0 flex-1 truncate text-right text-caption text-muted">
           {entry.module.split('/').at(-1)}
         </span>
+      )}
+      {entry.props.length > 0 && (
+        <Tooltip
+          label={`Variants  ${ALT_MODIFIER_LABEL}↓`}
+          className="-my-1.5 -mr-2 ml-auto flex shrink-0"
+        >
+          <Button
+            ref={menuOpen ? triggerRef : undefined}
+            variant="ghost"
+            size="sm"
+            icon={ChevronDown}
+            aria-label={`${entry.name} variants`}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            tabIndex={-1}
+            onClick={(event) => {
+              event.stopPropagation();
+              onMenu();
+            }}
+          />
+        </Tooltip>
       )}
     </div>
   );

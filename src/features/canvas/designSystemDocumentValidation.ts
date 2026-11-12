@@ -26,6 +26,10 @@ const MAX_EXAMPLES = 64;
 const MAX_CATALOG_ENTRIES = 128;
 const MAX_CATALOG_NAME_LENGTH = 80;
 const MAX_CATALOG_NOTE_LENGTH = 200;
+const MAX_CATALOG_PROPS = 8;
+const MAX_PROP_OPTIONS = 32;
+const PROP_NAME = /^[A-Za-z_$][\w$]{0,79}$/;
+const PROP_OPTION = /^[A-Za-z0-9][\w-]{0,39}$/;
 // The project fields of the sidecar's designSystemProvenance.ts: the files a
 // kit was read from, and a library kit's exports and token names.
 const MAX_PROJECT_NAME_LENGTH = 255;
@@ -41,13 +45,15 @@ const SKIP_REASONS = new Set<unknown>([
   'duplicate_export',
   'no_exports',
   'not_a_component',
+  'demo_left_out',
 ]);
 const DETAILED_SKIP_REASONS = new Set<unknown>([
   'unsupported_import',
   'needs_left_out',
   'duplicate_export',
+  'demo_left_out',
 ]);
-const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export']);
+const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export', 'demo_left_out']);
 const HOST_PATH = /^(?:[\\/]|[a-z]:[\\/]|file:)/i;
 const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([
@@ -384,11 +390,31 @@ function isTimestamp(value: unknown): boolean {
 
 function isCatalogListing(value: unknown): boolean {
   return (
-    hasOnlyKeys(value, ['name', 'module', 'note']) &&
+    hasOnlyKeys(value, ['name', 'module', 'note', 'props']) &&
     boundedText(value.name, MAX_CATALOG_NAME_LENGTH) &&
     (value.module === null || isSourcePath(value.module)) &&
-    (value.note === null || boundedText(value.note, MAX_CATALOG_NOTE_LENGTH))
+    (value.note === null || boundedText(value.note, MAX_CATALOG_NOTE_LENGTH)) &&
+    boundedList(value.props, MAX_CATALOG_PROPS, isCatalogProp) &&
+    isUniqueBy(value.props, 'name')
   );
+}
+
+function isCatalogProp(value: unknown): boolean {
+  if (!hasOnlyKeys(value, ['name', 'options', 'default'])) return false;
+  const { name, options } = value;
+  return (
+    typeof name === 'string' &&
+    PROP_NAME.test(name) &&
+    Array.isArray(options) &&
+    options.length >= 2 &&
+    boundedList(options, MAX_PROP_OPTIONS, isPropOption) &&
+    new Set(options).size === options.length &&
+    options.includes(value.default)
+  );
+}
+
+function isPropOption(value: unknown): boolean {
+  return typeof value === 'string' && PROP_OPTION.test(value);
 }
 
 /** A kit file's or example's name, held to the sidecar's `sourcePathSchema`. */

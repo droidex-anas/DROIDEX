@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { CatalogListing, OutlineNode } from '../protocol';
-import { landingHint, landingOf, paletteRows } from './paletteRows';
+import { landingHint, landingOf, paletteRows, propPicks } from './paletteRows';
 
 const entry = (name: string, module: string | null = null, note: string | null = null) => ({
   name,
   module,
   note,
+  props: [],
 });
 
 const CATALOG: CatalogListing[] = [
@@ -105,4 +106,21 @@ test('an entry goes last inside a layer that holds others, else right after it',
   );
   const imageTop = [node('top', null, 'img')];
   assert.equal(hint('top', imageTop), 'This frame’s top layer can’t hold other layers.');
+});
+
+test('a row sends the picks that change what its entry writes, and none the entry no longer lists', () => {
+  const button: CatalogListing = {
+    ...entry('Button'),
+    props: [
+      { name: 'variant', options: ['default', 'outline', 'ghost'], default: 'outline' },
+      { name: 'size', options: ['default', 'sm'], default: 'default' },
+    ],
+  };
+  assert.deepEqual(propPicks(button, {}), []);
+  assert.deepEqual(propPicks(button, { size: 'sm', variant: 'ghost' }), [
+    { name: 'variant', value: 'ghost' },
+    { name: 'size', value: 'sm' },
+  ]);
+  // The entry's own default, and an option a re-read catalog dropped, send nothing.
+  assert.deepEqual(propPicks(button, { variant: 'outline', size: 'lg' }), []);
 });

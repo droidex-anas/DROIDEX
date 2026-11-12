@@ -4,7 +4,7 @@ import test from 'node:test';
 import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
 import { designSystemProvenanceSchema } from '../../../sidecar/src/canvas/designSystemProvenance.js';
-import { catalogListing } from '../../../sidecar/src/canvas/kitCatalog.js';
+import { catalogListing, catalogPropSchema } from '../../../sidecar/src/canvas/kitCatalog.js';
 import { STARTER_FILES, STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
 import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
@@ -256,12 +256,17 @@ test('the renderer accepts every design system reply and event the sidecar sends
     false,
   );
   // The sidecar refuses a catalog that names two entries alike.
-  const listing = { name: 'Button', module: 'index.tsx', note: null };
+  const variant = { name: 'variant', options: ['default', 'outline'], default: 'outline' };
+  const listing = { name: 'Button', module: 'index.tsx', note: null, props: [variant] };
   assert.equal(isKitDocument({ ...paper, catalog: [listing] }), true);
   assert.equal(
     isKitDocument({ ...paper, catalog: [listing, { ...listing, note: 'Twice' }] }),
     false,
   );
+  // A prop's default is one of its options, as the sidecar's catalog schema requires.
+  const unlisted = { ...variant, default: 'ghost' };
+  assert.equal(isKitDocument({ ...paper, catalog: [{ ...listing, props: [unlisted] }] }), false);
+  assert.equal(catalogPropSchema.safeParse(unlisted).success, false);
 });
 
 test('both boundaries accept a library kit provenance and refuse the same malformed ones', () => {

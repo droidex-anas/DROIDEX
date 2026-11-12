@@ -1,6 +1,7 @@
 // A library import's review (design system documents spec §12), as the kit
 // document shows it: the files it left out, then the files it kept whose
-// exports the kit entry does not all take, grouped by reason in plain words.
+// exports the kit entry does not all take or whose catalog demo it left out,
+// grouped by reason in plain words.
 
 import type { LibraryProvenance, LibrarySkipReason } from '../protocol';
 
@@ -30,6 +31,7 @@ const TITLES: Record<LibrarySkipReason, string> = {
   not_a_component: 'Not a component file',
   duplicate_export: 'Kept; the kit entry takes these names from another file',
   no_exports: 'Kept; the kit entry exports nothing from it',
+  demo_left_out: 'Kept; its catalog demo was left out',
 };
 
 /** The review of a library kit's import, or null when it has nothing to say. */

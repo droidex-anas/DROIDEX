@@ -37,7 +37,17 @@ test('a catalog file outside its bounds is refused, naming what it breaks', () =
       /at most 128/,
     ],
     ['long JSX', [entry('Long', `<Button>${'x'.repeat(4 * 1024)}</Button>`)], /at 0\.jsx: .*4 KiB/],
-    ['unknown field', [{ ...button, props: {} }], /Unrecognized key/],
+    ['unknown field', [{ ...button, variants: {} }], /Unrecognized key/],
+    [
+      'prop default not an option',
+      [
+        {
+          ...button,
+          props: [{ name: 'variant', options: ['default', 'outline'], default: 'ghost' }],
+        },
+      ],
+      /at 0\.props\.0: A prop's default is one of its options/,
+    ],
     ['not a name', [entry('Pair', '<Button />', ['Button Card'])], /at 0\.uses\.0/],
     ['twice', [button, button], /names two entries Button/],
     [
