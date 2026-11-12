@@ -19,6 +19,7 @@ export class HeldFrames {
   private frames: readonly HeldFrame[] = NOTHING_HELD;
   private marks: SnapMarks | null = null;
   private readonly listeners = new Set<() => void>();
+  private readonly markListeners = new Set<() => void>();
 
   /** The frames held now: the same array until the hand moves them. */
   readFrames = (): readonly HeldFrame[] => this.frames;
@@ -46,7 +47,16 @@ export class HeldFrames {
     };
   };
 
+  /** Calls `listener` whenever the marks change; the call returned stops it. */
+  onMarks = (listener: () => void): (() => void) => {
+    this.markListeners.add(listener);
+    return () => {
+      this.markListeners.delete(listener);
+    };
+  };
+
   private notify(): void {
     for (const listener of this.listeners) listener();
+    for (const listener of this.markListeners) listener();
   }
 }
