@@ -52,11 +52,14 @@ export function isMovable(row: LayerEntry): row is ElementEntry {
 
 /**
  * An element written once, as a whole JSX child, so its eye can hide it by its
- * class. As the sidecar holds, a frame keeps a top layer that shows.
+ * class; one hidden by its class shows again wherever it is written, as long as
+ * it renders once. As the sidecar holds, a frame keeps a top layer that shows.
  */
 export function isHideable(rows: readonly LayerEntry[], row: LayerEntry): row is ElementEntry {
-  if (row.kind !== 'element' || row.node.kind !== 'element' || !isWrittenOnce(row)) return false;
-  if (row.node.parentId !== null || row.node.visibility === 'hidden') return true;
+  if (row.kind !== 'element' || row.node.kind !== 'element') return false;
+  if (row.node.visibility === 'hidden') return rendersOnce(row);
+  if (!isWrittenOnce(row)) return false;
+  if (row.node.parentId !== null) return true;
   return rows.some(
     (other) =>
       other !== row &&
@@ -67,8 +70,12 @@ export function isHideable(rows: readonly LayerEntry[], row: LayerEntry): row is
   );
 }
 
-function isWrittenOnce({ node }: ElementEntry): boolean {
-  return node.free && node.lock !== 'repeated' && node.lock !== 'shared';
+function isWrittenOnce(row: ElementEntry): boolean {
+  return row.node.free && rendersOnce(row);
+}
+
+function rendersOnce({ node }: ElementEntry): boolean {
+  return node.lock !== 'repeated' && node.lock !== 'shared';
 }
 
 /** A row of the frame's outline, which an edit can name; a drawn element the outline does not write has none. */

@@ -148,6 +148,8 @@ export interface PreviewTarget {
   instancePath: string;
   styles: Record<string, string>;
   text: string | null;
+  /** Path data a selected `<path>` previews as its `d`, with spaces and commas only. */
+  d?: string;
 }
 
 /** One drained queue, with how many messages the guest dropped under its cap. */
@@ -236,7 +238,7 @@ export function previewSetTokensScript(tokens: Readonly<Record<string, string>>)
  * A JSON literal that is also a safe JS expression: escaping `<` means no
  * artifact can close an element or open a tag wherever the code is placed.
  */
-function jsonArgument(value: unknown): string {
+export function jsonArgument(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c');
 }
 
@@ -421,7 +423,7 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
 }
 
 /** A box in the design's own pixels, which may start above or left of its viewport. */
-function readRect(value: unknown): FrameRect | null {
+export function readRect(value: unknown): FrameRect | null {
   if (!record(value)) return null;
   const { x, y, width, height } = value;
   if (!finite(x) || !finite(y) || !finite(width) || !finite(height)) return null;

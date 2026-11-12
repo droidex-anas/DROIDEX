@@ -2,7 +2,7 @@
 // label (an element's text, an instance's component, else its tag), indented
 // by how many rows hold it, and a quiet lock saying why it cannot be edited
 // here, which the row's description also says. A layer that can move has a
-// handle to drag it by, an element that can hide an eye, locked where something
+// handle to drag it by, an eye that can hide it, locked where something
 // else decides its display, and a right-click opens a written layer's menu. A
 // hidden element's row is muted. A row picks only its own drawn element, and
 // otherwise says why it cannot. A note row says what an open frame's layers
@@ -84,7 +84,7 @@ export function ElementRow({
   selected: boolean;
   /** The pointer is over this row's element on the board. */
   lit: boolean;
-  /** The id of what tells how to move the layer from the keyboard, where it can move. */
+  /** The ids of what tell how to move or hide the layer from the keyboard, where it can. */
   describedBy: string | undefined;
   onPick: (entry: ElementEntry) => void;
   onToggle: (entry: ElementEntry) => void;

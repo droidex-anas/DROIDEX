@@ -635,6 +635,11 @@ test('hiding adds the hidden class, or a className of its own, and showing takes
     page('<aside className="flex  gap-2 hidden ">Side</aside>'),
   );
   roundTrip(page(`<p className={'a'}>B</p>`), 'p', page(`<p className={'a hidden'}>B</p>`));
+  roundTrip(
+    page('<p hidden={false}>B</p>'),
+    'p',
+    page('<p hidden={false} className="hidden">B</p>'),
+  );
   // A comment beside the attributes stays, whichever way the eye goes.
   roundTrip(
     page('<p title="a" /* keep */>B</p>'),
@@ -690,6 +695,7 @@ function Card() { return <article>Card</article>; }
 export default ({ open, items, rest, style }) => (
   <main>
     <p hidden={open}>Attribute</p>
+    <p hidden={false} hidden>Twice</p>
     <p {...rest}>Spread</p>
     <p className={cn('flex')}>Joined</p>
     <p className={\`flex \${open}\`}>Template</p>
@@ -716,6 +722,7 @@ export default ({ open, items, rest, style }) => (
     'Its classes or style set how it displays, which can win over hiding it. Ask the agent to hide or show it.';
   const cases: [string, string, string][] = [
     ['Attribute', 'ambiguous_element', attribute],
+    ['Twice', 'ambiguous_element', attribute],
     ['Spread', 'ambiguous_element', code],
     ['Joined', 'ambiguous_element', code],
     ['Template', 'ambiguous_element', code],
@@ -774,5 +781,10 @@ test('a frame keeps a top layer that shows: one of a fragment’s top layers hid
   assert.equal(
     hidden('export default () => <><p>Hi</p><footer /></>;', 'p'),
     'export default () => <><p className="hidden">Hi</p><footer /></>;',
+  );
+  // The root itself, written where no JSX holds it, shows again.
+  assert.equal(
+    hidden('export default () => <main className="hidden">M</main>;', 'main', false),
+    'export default () => <main>M</main>;',
   );
 });

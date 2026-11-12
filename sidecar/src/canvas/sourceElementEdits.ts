@@ -14,7 +14,7 @@ import { styleReplacements, type ResolvedStyle } from './sourceStyles.js';
  * against the kit, and the kit's Tailwind theme its classes compile with.
  */
 export type SourceChange =
-  | Extract<ElementEdit['change'], { kind: 'text' | 'image' }>
+  | Extract<ElementEdit['change'], { kind: 'text' | 'image' | 'path' }>
   | { kind: 'style'; styles: ResolvedStyle[]; theme?: KitTheme };
 
 export interface SourceEdit {
@@ -62,6 +62,9 @@ export function applyElementEdit(
       break;
     case 'style':
       replacements = styleReplacements(opening, source, edit.change.styles, edit.change.theme);
+      break;
+    case 'path':
+      replacements = [replacePath(opening, source, edit.change.d)];
       break;
   }
   return { [source.fileName]: replace(source.text, replacements) };
@@ -120,6 +123,18 @@ function replaceImage(
     end: src.end,
     replacement: JSON.stringify(`canvas-asset:${assetId}`),
   };
+}
+
+/** A `<path>`'s own `d`, where it is written as one quoted string; the schema has checked the new one. */
+function replacePath(
+  opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement,
+  source: ts.SourceFile,
+  d: string,
+): SourceReplacement {
+  const written = attributeValue(attribute(opening, 'd'));
+  if (opening.tagName.getText(source) !== 'path' || !written || !ts.isStringLiteral(written))
+    throw ambiguous();
+  return { start: written.getStart(source), end: written.end, replacement: JSON.stringify(d) };
 }
 
 function staleReference(): SourceElementError {
