@@ -7,12 +7,8 @@ import { Check, MessageThread } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
 import { Tooltip } from '../../components/ui/Tooltip';
-import {
-  componentTag,
-  toggleComponentPin,
-  useComponentPins,
-  type ComponentPin,
-} from './componentPins';
+import { useComponentPins, type ComponentPin } from './componentPins';
+import { componentTag, toggleComponentPin } from './componentTagging';
 
 export function TagComponentButton({
   appSessionId,

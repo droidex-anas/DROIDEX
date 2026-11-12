@@ -25,7 +25,7 @@ import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } fr
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
 import { canvasMessage } from './client';
-import { TaggingChat } from './componentPins';
+import { TaggingChat } from './componentTagging';
 import { CanvasInvitation, CanvasToolsMissing } from './CanvasPaneStates';
 import {
   lacksCanvasTools,

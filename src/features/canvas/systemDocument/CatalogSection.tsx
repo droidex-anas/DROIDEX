@@ -8,7 +8,7 @@
 import { useContext, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { Row, RowCaret, SectionHeader } from '../../../components/ui/Row';
 import type { CatalogListing, KitPreviewTarget } from '../protocol';
-import { TaggingChat } from '../componentPins';
+import { TaggingChat } from '../componentTagging';
 import { useKitCatalog } from '../palette/useKitCatalog';
 import { TagComponentButton } from '../TagComponentButton';
 import { KitGuest, type KitPreviewing } from './KitPreviewTile';
