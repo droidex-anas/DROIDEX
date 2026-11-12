@@ -135,9 +135,11 @@
   cursor: nwse-resize;
 }
 
-/* The rubber band, in screen space above the world layer. */
+/* The rubber band, in screen space above the world layer, placed by transform. */
 .canvas-band {
   position: absolute;
+  top: 0;
+  left: 0;
   pointer-events: none;
   border-radius: 2px;
   border: 1px solid var(--selection);

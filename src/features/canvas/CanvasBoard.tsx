@@ -395,7 +395,7 @@ export function CanvasBoard({
             onPointerDown={annotation.onSurfacePointerDown}
           />
         )}
-        {gestures.band && <RubberBand band={gestures.band} />}
+        <RubberBand band={gestures.band} />
         <StageSnapGuides held={gestures.held} measured={measured} stage={stage} />
         {picker.prompt && (
           <DesignPickPrompt

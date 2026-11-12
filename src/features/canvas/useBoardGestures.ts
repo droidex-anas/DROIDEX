@@ -24,6 +24,7 @@ import {
 import type { BoardMode } from './canvasState';
 import { snapFrameRect, snapGroupMove } from './frameSnap';
 import { HeldFrames, type DrawnAt, type HeldFrame } from './heldFrames';
+import { OverlayStore } from './overlayStore';
 import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
 import { useLayoutWrites } from './useLayoutWrites';
 
@@ -66,7 +67,8 @@ export function useBoardGestures({
 }: GestureInputs) {
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [held] = useState(() => new HeldFrames());
-  const [band, setBand] = useState<Band | null>(null);
+  const [band] = useState(() => new OverlayStore<Band | null>(null));
+  const [banding, setBanding] = useState(false);
   const [panning, setPanning] = useState(false);
   const writes = useLayoutWrites(frames, onArrangeFrames);
   const { supersede, dropHolds } = writes;
@@ -97,14 +99,15 @@ export function useBoardGestures({
     if (root?.hasPointerCapture(active.pointerId)) root.releasePointerCapture(active.pointerId);
     setPanning(false);
     held.release(drawnAt.current);
-    setBand(null);
+    band.set(null);
+    setBanding(false);
     if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'frame') {
       // A cancelled re-drag restores acknowledged geometry, not its old hold.
       dropHolds(heldOf(active).map(({ designId }) => designId));
     }
     return true;
-  }, [board, dropHolds, held, stopCoalescing, supersede]);
+  }, [band, board, dropHolds, held, stopCoalescing, supersede]);
 
   /**
    * Space is released in whichever app holds the keyboard, which sends the board
@@ -152,7 +155,7 @@ export function useBoardGestures({
       }
       if (active.kind === 'band') {
         active.current = pointer;
-        setBand({ origin: active.origin, current: pointer });
+        band.set({ origin: active.origin, current: pointer });
         return;
       }
       // The live view, since a wheel zoom mid-drag settles only once the wheel
@@ -189,7 +192,7 @@ export function useBoardGestures({
       }));
       held.move(heldOf(active), marks);
     },
-    [held, stage],
+    [band, held, stage],
   );
 
   useEffect(() => {
@@ -242,7 +245,8 @@ export function useBoardGestures({
         origin: pointer,
         current: pointer,
       };
-      setBand({ origin: pointer, current: pointer });
+      band.set({ origin: pointer, current: pointer });
+      setBanding(true);
       return;
     }
     onClear();
@@ -368,7 +372,8 @@ export function useBoardGestures({
     if (root?.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
     setPanning(false);
     held.release(drawnAt.current);
-    setBand(null);
+    band.set(null);
+    setBanding(false);
     if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'pan') return;
     if (active.kind === 'band') {
@@ -420,7 +425,7 @@ export function useBoardGestures({
   };
 
   return {
-    cursor: boardCursor(panning, band !== null, spaceHeld),
+    cursor: boardCursor(panning, banding, spaceHeld),
     band,
     spaceHeld,
     holdSpace: setSpaceHeld,
