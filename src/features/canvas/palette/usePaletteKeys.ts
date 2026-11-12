@@ -38,7 +38,13 @@ export function usePaletteKeys({
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
     const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (event.key === 'ArrowDown' && event.altKey) {
+    const opensMenu =
+      event.key === 'ArrowDown' &&
+      event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.shiftKey;
+    if (opensMenu) {
       event.preventDefault();
       if (activeIndex >= 0) onMenu(activeIndex);
     } else if (step !== undefined && count > 0) {
