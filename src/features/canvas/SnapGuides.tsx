@@ -94,8 +94,9 @@ class SnapGuideLayer {
     laidOut.gaps.forEach(({ line, pill, beside }, index) => {
       const nodes = this.gaps[index];
       place(nodes.line, line);
-      // By translate, so the pill's own centring transform still applies.
-      nodes.pill.style.translate = wholePixels(pill.left, pill.top);
+      // By translate, so the pill's own centring transform still applies, and at
+      // whole pixels as left and top laid it out, since a fractional one blurs its edges.
+      nodes.pill.style.translate = `${String(Math.round(pill.left))}px ${String(Math.round(pill.top))}px`;
       nodes.pill.toggleAttribute('data-beside', beside);
     });
   }
@@ -116,11 +117,6 @@ class SnapGuideLayer {
   }
 }
 
-/** A translate to whole pixels, as left and top were laid out, so a 1px line is not smeared across two. */
-function wholePixels(left: number, top: number): string {
-  return `${String(Math.round(left))}px ${String(Math.round(top))}px`;
-}
-
 function span(className: string): HTMLElement {
   const element = document.createElement('span');
   element.className = className;
@@ -128,7 +124,7 @@ function span(className: string): HTMLElement {
 }
 
 function place(element: HTMLElement, box: Box): void {
-  element.style.translate = wholePixels(box.left, box.top);
+  element.style.translate = `${String(box.left)}px ${String(box.top)}px`;
   element.style.width = `${String(box.width)}px`;
   element.style.height = `${String(box.height)}px`;
 }
