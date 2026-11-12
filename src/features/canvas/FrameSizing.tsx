@@ -68,7 +68,6 @@ export function FrameSizing({
                 type="button"
                 aria-haspopup="dialog"
                 aria-expanded={open}
-                aria-label={`Size ${size}`}
                 title="Set size"
                 onKeyDown={(event) => {
                   if (event.key !== 'Escape') return;
@@ -80,7 +79,8 @@ export function FrameSizing({
                   setOpen((current) => !current);
                 }}
               >
-                {/* A held frame's resize redraws this text outside React. */}
+                {/* A held frame's resize redraws this text outside React, so it names the button too. */}
+                <span className="sr-only">Size </span>
                 <span data-frame-size-text>{size}</span>
                 <ChevronDown className="h-3 w-3" aria-hidden />
               </button>
