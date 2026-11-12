@@ -116,7 +116,13 @@ export async function importLibraryDesignSystem(
     [KIT_UTILS_FILE]: read.utils,
     ...Object.fromEntries(library.files),
   };
-  const catalog = libraryCatalogFiles(files, read.components, read.demos, diagnostics);
+  const catalog = libraryCatalogFiles(
+    files,
+    read.components,
+    library.components,
+    read.demos,
+    diagnostics,
+  );
   Object.assign(files, catalog.files);
   // The review holds one record per file; a file already reviewed keeps its record, and the diagnostic tells of the demo.
   const reviewed = new Set(library.skipped.map(({ file }) => file));

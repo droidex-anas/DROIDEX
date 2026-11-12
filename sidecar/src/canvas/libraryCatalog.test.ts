@@ -29,12 +29,17 @@ function component(name: string, text = 'export {};\n'): LibraryComponent {
   return { name, file: `src/components/ui/${name}.tsx`, text, module: moduleDeclarations(text) };
 }
 
+const EXPORTED = {
+  Button: 'src/components/ui/button.tsx',
+  Separator: 'src/components/ui/separator.tsx',
+};
+
 function seeded(
   files: Record<string, string>,
   library = [component('button'), component('separator')],
 ) {
   const diagnostics: CanvasDiagnostic[] = [];
-  return { ...libraryCatalogFiles(files, library, DEMOS, diagnostics), diagnostics };
+  return { ...libraryCatalogFiles(files, library, EXPORTED, DEMOS, diagnostics), diagnostics };
 }
 
 function catalogOf(files: Record<string, string>) {
@@ -91,7 +96,7 @@ const buttonVariants = cva("inline-flex", {
 });
 
 export function Button() {
-  return null;
+  return buttonVariants();
 }
 
 export { buttonVariants };
@@ -123,6 +128,29 @@ test("a demo giving a variant the library's cva does not define is left out, wit
       file: KIT_CATALOG_FILE,
     },
   ]);
+});
+
+test('variants come only from the table the exported component itself uses, in the file the kit exports it from', () => {
+  const files = libraryFiles(`export { Button } from './components/ui/button';\n`, [BUTTON]);
+  const lacksOutline = buttonSource('default: "a", ghost: "c"');
+  const unusedTable = [
+    component('button', lacksOutline.replace('return buttonVariants();', 'return null;')),
+  ];
+  const unused = seeded(files, unusedTable);
+  assert.deepEqual(unused.skipped, []);
+  assert.equal(catalogOf({ ...files, ...unused.files })[0].props, undefined);
+
+  // A file the kit does not export Button from, listed first, gives it nothing.
+  const elsewhere = [
+    component('fancy', lacksOutline),
+    component('button', buttonSource('default: "a", outline: "b"')),
+  ];
+  const kept = seeded(files, elsewhere);
+  assert.deepEqual(kept.skipped, []);
+  assert.deepEqual(
+    catalogOf({ ...files, ...kept.files })[0].props?.map(({ name }) => name),
+    ['variant', 'size'],
+  );
 });
 
 test('a seed that does not build is left out with a diagnostic, and the catalog and notice go with the last one', () => {

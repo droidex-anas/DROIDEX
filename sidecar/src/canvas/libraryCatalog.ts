@@ -8,7 +8,7 @@
 // its first used component's variants as props (libraryVariants.ts). One that
 // then does not build is left out with a diagnostic, not refused.
 
-import type { ModuleElement, VariantTable } from './compilerModules.js';
+import type { ComponentVariants, ModuleElement } from './compilerModules.js';
 import { kitPrimitives } from './designSystemBrief.js';
 import type { LibrarySkip } from './designSystemProvenance.js';
 import type { DesignSystem } from './designSystems.js';
@@ -38,21 +38,23 @@ const NOTICE = `The demos in ${KIT_CATALOG_FILE} are taken from the component de
 ${seeds.license}`;
 
 type SeededKit = Pick<DesignSystem, 'files'>;
-type VariantProps = VariantTable['props'];
+type VariantProps = ComponentVariants['props'];
 
 /**
  * The catalog file and its notice for a library kit's files, none when no
  * demo fits the kit, and a review record for each demo left out for a variant.
- * `demos` holds the elements each of LIBRARY_DEMOS writes.
+ * `exported` names the component file the kit entry exports each name from,
+ * and `demos` holds the elements each of LIBRARY_DEMOS writes.
  */
 export function libraryCatalogFiles(
   files: SourceFiles,
   components: readonly LibraryComponent[],
+  exported: Readonly<Record<string, string>>,
   demos: readonly ModuleElement[][],
   diagnostics: CanvasDiagnostic[],
 ): { files: SourceFiles; skipped: LibrarySkip[] } {
   const exports = new Set(kitPrimitives({ files }));
-  const variants = componentVariants(components);
+  const variants = exportedVariants(components, exported);
   const catalog: CatalogEntry[] = [];
   const skipped: LibrarySkip[] = [];
   seeds.entries.forEach((seed, index) => {
@@ -83,18 +85,17 @@ export function libraryCatalogFiles(
   };
 }
 
-/**
- * Each kit export's variants: the table its module names after it, as
- * shadcn/ui names `buttonVariants` for Button. The first module to export a
- * name gives it, as the kit entry takes it.
- */
-function componentVariants(components: readonly LibraryComponent[]): Map<string, VariantProps> {
+/** Each kit export's variants, as the component file the kit entry exports it from reads them. */
+function exportedVariants(
+  components: readonly LibraryComponent[],
+  exported: Readonly<Record<string, string>>,
+): Map<string, VariantProps> {
   const variants = new Map<string, VariantProps>();
-  for (const { name, module } of components)
-    for (const { exportedName } of entryExports(module.exports, name)) {
-      const tableName = `${exportedName.charAt(0).toLowerCase()}${exportedName.slice(1)}Variants`;
-      const table = module.variants.find((each) => each.name === tableName);
-      if (table && !variants.has(exportedName)) variants.set(exportedName, table.props);
+  for (const { name, file, module } of components)
+    for (const { exportedName, binding } of entryExports(module.exports, name)) {
+      if (exported[exportedName] !== file) continue;
+      const own = module.variants.find(({ component }) => component === binding);
+      if (own !== undefined) variants.set(exportedName, own.props);
     }
   return variants;
 }

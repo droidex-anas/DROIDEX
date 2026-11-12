@@ -28,9 +28,13 @@ const moduleImportSchema = z.object({
   names: z.array(z.object({ imported: z.string(), local: z.string() })).nullable(),
 });
 
-/** A `const name = cva(...)` and the enum props its variants define (libraryVariants.ts). */
-const variantTableSchema = z.object({
-  name: z.string(),
+/**
+ * A component a module exports, by the name it exports it as (`default` for
+ * its default export), and the enum props of the one literal cva table its own
+ * declaration uses (libraryVariants.ts).
+ */
+const componentVariantsSchema = z.object({
+  component: z.string(),
   props: z.array(
     z.object({
       name: z.string(),
@@ -50,19 +54,19 @@ const moduleElementSchema = z.object({
 
 /**
  * Every module specifier a source names, in source order, its imports, what
- * it exports, its literal cva variant tables and the elements it writes.
+ * it exports, the variants of each component it exports and the elements it writes.
  */
 export const moduleDeclarationsSchema = z.object({
   specifiers: z.array(moduleSpecifierSchema),
   imports: z.array(moduleImportSchema),
   exports: z.array(moduleExportSchema),
-  variants: z.array(variantTableSchema),
+  variants: z.array(componentVariantsSchema),
   elements: z.array(moduleElementSchema),
 });
 
 export type ModuleSpecifier = z.infer<typeof moduleSpecifierSchema>;
 export type ModuleImport = z.infer<typeof moduleImportSchema>;
 export type ModuleExport = z.infer<typeof moduleExportSchema>;
-export type VariantTable = z.infer<typeof variantTableSchema>;
+export type ComponentVariants = z.infer<typeof componentVariantsSchema>;
 export type ModuleElement = z.infer<typeof moduleElementSchema>;
 export type ModuleDeclarations = z.infer<typeof moduleDeclarationsSchema>;

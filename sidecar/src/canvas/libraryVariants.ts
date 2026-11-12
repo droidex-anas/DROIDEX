@@ -1,19 +1,39 @@
-// The variants a library component's cva() call defines, read only where its
-// every key and value is a literal, and the attributes JSX elements write
-// with a quoted value. Together they let a palette offer an entry's variants
-// and leave out a catalog demo that names one the project's component lacks.
+// The variants each component a library module exports takes from the one
+// cva() table its own declaration uses, read only where the table's every key
+// and value is a literal, and the attributes JSX elements write with a quoted
+// value. Together they let a palette offer an entry's variants and leave out a
+// catalog demo that names one the project's component lacks.
 // Only the compiler process loads the parser, so only it imports this module.
 
 import ts from 'typescript';
-import type { ModuleElement, VariantTable } from './compilerModules.js';
+import type { ComponentVariants, ModuleElement } from './compilerModules.js';
 
 const CVA_MODULE = 'class-variance-authority';
 
-/** Each `const name = cva(base, { variants, defaultVariants })` whose config is all literal. */
-export function variantTables(file: ts.SourceFile): VariantTable[] {
+type VariantProps = ComponentVariants['props'];
+
+/**
+ * Each component the module exports, by the name it exports it as (`default`
+ * for its default export), with the props of the literal table its own
+ * declaration uses. One that uses no literal table, or two, has none.
+ */
+export function componentVariants(file: ts.SourceFile): ComponentVariants[] {
+  const tables = literalTables(file);
+  if (tables.size === 0) return [];
+  const variants: ComponentVariants[] = [];
+  for (const [component, declaration] of exportedDeclarations(file)) {
+    const used = tablesUsed(declaration, tables);
+    const [props] = used;
+    if (used.size === 1) variants.push({ component, props });
+  }
+  return variants;
+}
+
+/** Each `const name = cva(base, { variants, defaultVariants })` whose config is all literal, by name. */
+function literalTables(file: ts.SourceFile): Map<string, VariantProps> {
+  const tables = new Map<string, VariantProps>();
   const cva = cvaBinding(file);
-  if (cva === null) return [];
-  const tables: VariantTable[] = [];
+  if (cva === null) return tables;
   for (const statement of file.statements) {
     if (!ts.isVariableStatement(statement)) continue;
     const list = statement.declarationList;
@@ -29,7 +49,7 @@ export function variantTables(file: ts.SourceFile): VariantTable[] {
       )
         continue;
       const props = literalVariants(call.arguments.at(1));
-      if (props !== null) tables.push({ name: declaration.name.text, props });
+      if (props !== null) tables.set(declaration.name.text, props);
     }
   }
   return tables;
@@ -44,7 +64,9 @@ function cvaBinding(file: ts.SourceFile): string | null {
       statement.moduleSpecifier.text !== CVA_MODULE
     )
       continue;
-    const bindings = statement.importClause?.namedBindings;
+    const clause = statement.importClause;
+    if (clause === undefined || clause.phaseModifier === ts.SyntaxKind.TypeKeyword) continue;
+    const bindings = clause.namedBindings;
     if (bindings === undefined || !ts.isNamedImports(bindings)) continue;
     const named = bindings.elements.find(
       (element) => !element.isTypeOnly && (element.propertyName ?? element.name).text === 'cva',
@@ -54,19 +76,87 @@ function cvaBinding(file: ts.SourceFile): string | null {
   return null;
 }
 
+/** Each export the module declares itself, by the name it exports it as, with the declaration that gives its value. */
+function exportedDeclarations(file: ts.SourceFile): [string, ts.Node][] {
+  const declarations = new Map<string, ts.Node>();
+  const exported: [string, ts.Node][] = [];
+  for (const statement of file.statements) {
+    const modifiers = ts.canHaveModifiers(statement) ? (ts.getModifiers(statement) ?? []) : [];
+    const has = (kind: ts.SyntaxKind) => modifiers.some((modifier) => modifier.kind === kind);
+    const isExported = has(ts.SyntaxKind.ExportKeyword) && !has(ts.SyntaxKind.DeclareKeyword);
+    for (const [name, declaration] of declaredValues(statement)) {
+      if (name !== null) declarations.set(name, declaration);
+      if (!isExported) continue;
+      if (has(ts.SyntaxKind.DefaultKeyword)) exported.push(['default', declaration]);
+      else if (name !== null) exported.push([name, declaration]);
+    }
+  }
+  for (const statement of file.statements) exported.push(...namedExports(statement, declarations));
+  return exported;
+}
+
+/** The values a function, class or variable statement declares, by name; null for an anonymous default. */
+function declaredValues(statement: ts.Statement): [string | null, ts.Node][] {
+  if (ts.isFunctionDeclaration(statement) || ts.isClassDeclaration(statement))
+    return [[statement.name?.text ?? null, statement]];
+  if (!ts.isVariableStatement(statement)) return [];
+  return statement.declarationList.declarations.flatMap(
+    ({ name, initializer }): [string, ts.Node][] =>
+      ts.isIdentifier(name) && initializer !== undefined ? [[name.text, initializer]] : [],
+  );
+}
+
+/** What `export { Local as Name }` and `export default Local` export, from a declaration anywhere in the module. */
+function namedExports(
+  statement: ts.Statement,
+  declarations: ReadonlyMap<string, ts.Node>,
+): [string, ts.Node][] {
+  if (ts.isExportAssignment(statement)) {
+    if (statement.isExportEquals) return [];
+    const { expression } = statement;
+    const local = ts.isIdentifier(expression) ? declarations.get(expression.text) : expression;
+    return local === undefined ? [] : [['default', local]];
+  }
+  if (!ts.isExportDeclaration(statement) || statement.isTypeOnly || statement.moduleSpecifier)
+    return [];
+  const clause = statement.exportClause;
+  if (clause === undefined || !ts.isNamedExports(clause)) return [];
+  return clause.elements.flatMap((element): [string, ts.Node][] => {
+    const local = declarations.get((element.propertyName ?? element.name).text);
+    return element.isTypeOnly || local === undefined ? [] : [[element.name.text, local]];
+  });
+}
+
+/** The literal tables a declaration refers to by name. */
+function tablesUsed(
+  declaration: ts.Node,
+  tables: ReadonlyMap<string, VariantProps>,
+): Set<VariantProps> {
+  const used = new Set<VariantProps>();
+  const visit = (node: ts.Node): void => {
+    const props = ts.isIdentifier(node) ? tables.get(node.text) : undefined;
+    if (props !== undefined) used.add(props);
+    // In `props.buttonVariants` the name is a property's, not the table's.
+    else if (ts.isPropertyAccessExpression(node)) visit(node.expression);
+    else ts.forEachChild(node, visit);
+  };
+  visit(declaration);
+  return used;
+}
+
 /**
  * The enum props a cva config defines, or null when any of its variants or
  * defaults is not written as a literal. A variant whose options are `true`
  * and `false` is a boolean, which an attribute in quotes cannot carry.
  */
-function literalVariants(config: ts.Expression | undefined): VariantTable['props'] | null {
+function literalVariants(config: ts.Expression | undefined): VariantProps | null {
   const fields = literalObject(config);
   if (fields === null) return null;
   const variants = literalObject(fields.get('variants'));
   if (variants === null) return null;
   const defaults = literalDefaults(fields);
   if (defaults === null) return null;
-  const props: VariantTable['props'] = [];
+  const props: VariantProps = [];
   for (const [name, value] of variants) {
     const options = literalObject(value);
     if (options === null || ![...options.values()].every(isClassValue)) return null;

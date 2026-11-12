@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import ts from 'typescript';
-import { moduleElements, variantTables } from './libraryVariants.js';
+import { componentVariants, moduleElements } from './libraryVariants.js';
 
 function parsed(source: string): ts.SourceFile {
   return ts.createSourceFile(
@@ -25,12 +25,16 @@ const buttonVariants = cva("inline-flex", {
   compoundVariants: [{ variant: "outline", size: "sm", className: someClass }],
   defaultVariants: { variant: "default", size: "sm", inset: false },
 });
+
+export function Button() {
+  return <button className={buttonVariants()} />;
+}
 `;
 
-test('a literal cva reads as enum props, its booleans left out', () => {
-  assert.deepEqual(variantTables(parsed(BUTTON)), [
+test('a literal cva reads as enum props of the component that uses it, its booleans left out', () => {
+  assert.deepEqual(componentVariants(parsed(BUTTON)), [
     {
-      name: 'buttonVariants',
+      component: 'Button',
       props: [
         { name: 'variant', options: ['default', 'outline', 'icon-sm'], default: 'default' },
         { name: 'size', options: ['default', 'sm'], default: 'sm' },
@@ -40,7 +44,7 @@ test('a literal cva reads as enum props, its booleans left out', () => {
   ]);
 });
 
-test('a cva with any variant or default written in code reads as none', () => {
+test('a cva with any variant or default written in code, or cva imported as a type, reads as none', () => {
   const written = [
     BUTTON.replace('variants: {', 'variants: { ...shared,'),
     BUTTON.replace('sm: "h-8"', 'sm: small'),
@@ -49,8 +53,34 @@ test('a cva with any variant or default written in code reads as none', () => {
     BUTTON.replace('variants: {\n', 'variants: theme.variants, unused: {\n'),
     BUTTON.replace('const buttonVariants', 'let buttonVariants'),
     BUTTON.replace('"class-variance-authority"', '"./cva"'),
+    BUTTON.replace('import { cva, type VariantProps }', 'import type { cva, VariantProps }'),
   ];
-  for (const source of written) assert.deepEqual(variantTables(parsed(source)), [], source);
+  for (const source of written) assert.deepEqual(componentVariants(parsed(source)), [], source);
+});
+
+test('a component takes the variants of the one literal table its own declaration uses, by the name it is exported as', () => {
+  const source = `${BUTTON.replace('export function Button', 'function Base')}
+const linkVariants = cva("underline", { variants: { tone: { muted: "a", loud: "b" } } });
+const Link = forwardRef(() => <a className={linkVariants()} />);
+export function Both() {
+  return buttonVariants() + linkVariants();
+}
+export function Neither(props) {
+  return props.buttonVariants;
+}
+export { Base as Button };
+export default Link;
+`;
+  assert.deepEqual(
+    componentVariants(parsed(source)).map(({ component, props }) => [
+      component,
+      props.map(({ name }) => name),
+    ]),
+    [
+      ['Button', ['variant', 'size', 'tone']],
+      ['default', ['tone']],
+    ],
+  );
 });
 
 test("an element's quoted attributes read as text and any other value as null", () => {
