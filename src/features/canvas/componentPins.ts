@@ -100,11 +100,11 @@ export function componentTag(pins: readonly ComponentPin[], pin: ComponentPin): 
   const key = componentPinKey(pin);
   const held = pins.find((each) => componentPinKey(each) === key);
   if (!held) return 'untagged';
-  // An entry's picks always come in the order its props are listed.
+  // Kit versions may list an entry's props in different orders, so picks match by name.
   const sameOptions =
     held.props.length === pin.props.length &&
-    held.props.every(
-      (pick, index) => pick.name === pin.props[index].name && pick.value === pin.props[index].value,
+    held.props.every((pick) =>
+      pin.props.some((each) => each.name === pick.name && each.value === pick.value),
     );
   return sameOptions ? 'tagged' : 'other-options';
 }

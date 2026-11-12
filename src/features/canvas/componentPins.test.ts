@@ -61,6 +61,14 @@ test('the Tag in chat toggle takes off its own options, and swaps in its options
   assert.equal(componentPins('chat-t').length, 0);
 });
 
+test('the toggle takes off the same options when a later kit version lists the props in another order', () => {
+  const variant = { name: 'variant', value: 'outline' };
+  const size = { name: 'size', value: 'lg' };
+  toggleComponentPin('chat-o', pin('Button', ACME, 'Acme', [variant, size]));
+  toggleComponentPin('chat-o', pin('Button', { ...ACME, version: 4 }, 'Acme', [size, variant]));
+  assert.equal(componentPins('chat-o').length, 0);
+});
+
 test('an edited queued prompt brings its components back beside the draft’s, as far as it has room', () => {
   tagComponent('chat-q', pin('Button'));
   const queued = [pin('Button'), ...Array.from({ length: 8 }, (_, i) => pin(`Card ${String(i)}`))];
