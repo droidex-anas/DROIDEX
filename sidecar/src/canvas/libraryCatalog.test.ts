@@ -131,11 +131,12 @@ test("a demo giving a variant the library's cva does not define is left out, wit
 test('variants come only from the table the exported component itself uses, in the file the kit exports it from', () => {
   const files = libraryFiles(`export { Button } from './components/ui/button';\n`, [BUTTON]);
   const lacksOutline = buttonSource('default: "a", ghost: "c"');
-  // Bodies that only spell the table's name: none, a local that shadows it, and a property.
+  // Bodies that only spell the table's name: none, locals that shadow it, and a property.
   const bodies = [
     'return null;',
     'const buttonVariants = ({ variant }) => (variant === "outline" ? "border" : "plain");\n  return buttonVariants({ variant: "outline" });',
     'const labels = { buttonVariants: "local label" };\n  return labels.buttonVariants;',
+    'enum buttonVariants { outline = "border" }\n  return buttonVariants.outline;',
   ];
   for (const body of bodies) {
     const unused = seeded(files, [

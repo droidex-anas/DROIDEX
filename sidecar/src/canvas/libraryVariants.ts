@@ -168,6 +168,7 @@ const BINDINGS: ((node: ts.Node) => boolean)[] = [
   ts.isFunctionExpression,
   ts.isClassDeclaration,
   ts.isClassExpression,
+  ts.isEnumDeclaration,
 ];
 
 /** The identifiers of a node that name a declaration or a property, not a value it refers to. */
