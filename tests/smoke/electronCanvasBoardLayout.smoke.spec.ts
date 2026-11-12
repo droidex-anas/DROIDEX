@@ -129,19 +129,20 @@ test('held Alt measures from the selection to the frame under the pointer, only 
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await expect(pills).toHaveCount(0);
   await page.keyboard.up('Alt');
+
+  // A distance with room sits on its line; five board pixels have none, so it sits beside.
+  await page.keyboard.down('Alt');
+  await expect(pills.first()).toHaveText('350');
+  await expect(pills.first()).not.toHaveAttribute('data-beside');
+  await page.evaluate(() => {
+    window.boardHarness.publish('b', { x: 505, y: 300, width: 300, height: 200 }, 5);
+  });
+  await page.clock.runFor(32);
+  await page.mouse.move(1100, 900);
+  await overFrame('B');
+  await expect(pills.filter({ hasText: /^5$/ })).toHaveAttribute('data-beside', '');
+  await page.keyboard.up('Alt');
 });
-// A distance with room sits on its line; five board pixels have none, so it sits beside.
-await page.keyboard.down('Alt');
-await expect(pills.first()).toHaveText('350');
-await expect(pills.first()).not.toHaveAttribute('data-beside');
-await page.evaluate(() => {
-  window.boardHarness.publish('b', { x: 505, y: 300, width: 300, height: 200 }, 5);
-});
-await page.clock.runFor(32);
-await page.mouse.move(1100, 900);
-await overFrame('B');
-await expect(pills.filter({ hasText: /^5$/ })).toHaveAttribute('data-beside', '');
-await page.keyboard.up('Alt');
 
 test('Escape lets go of the distances held Alt shows before it closes a menu under them', async ({
   page,
