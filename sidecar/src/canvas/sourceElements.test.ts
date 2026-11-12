@@ -112,6 +112,11 @@ test('a style edit writes the class that says it in place of the classes it make
       changed: '<h1 className="flex flex-col">Hi</h1>',
     },
     {
+      markup: '<b className="inline-flex">Hi</b>',
+      styles: [{ property: 'display', resolution: raw('inline-grid') }],
+      changed: '<b className="inline-grid">Hi</b>',
+    },
+    {
       markup: '<h1 style={{ color: "var(--ds-fg)", gap: 4 }}>Hi</h1>',
       styles: [{ property: 'color', resolution: token('--ds-accent') }],
       changed: '<h1 className="text-[color:var(--ds-accent)]" style={{ gap: 4 }}>Hi</h1>',

@@ -108,6 +108,7 @@ export const KEYWORD_CLASSES: Readonly<Record<string, Readonly<Record<string, st
     flex: 'flex',
     'inline-flex': 'inline-flex',
     grid: 'grid',
+    'inline-grid': 'inline-grid',
     none: 'hidden',
   },
   flexWrap: { nowrap: 'flex-nowrap', wrap: 'flex-wrap', 'wrap-reverse': 'flex-wrap-reverse' },

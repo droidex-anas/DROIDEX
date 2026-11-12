@@ -102,7 +102,16 @@ export const STYLE_PROPERTIES: Readonly<Record<string, StyleRule>> = {
   opacity: { tokens: '--ds-opacity-', values: 'fraction' },
   display: {
     tokens: null,
-    values: ['block', 'inline-block', 'inline', 'flex', 'inline-flex', 'grid', 'none'],
+    values: [
+      'block',
+      'inline-block',
+      'inline',
+      'flex',
+      'inline-flex',
+      'grid',
+      'inline-grid',
+      'none',
+    ],
   },
   flexWrap: { tokens: null, values: ['nowrap', 'wrap', 'wrap-reverse'] },
   flexGrow: { tokens: null, values: 'unitless' },

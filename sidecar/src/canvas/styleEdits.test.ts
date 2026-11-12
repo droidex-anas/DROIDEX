@@ -32,6 +32,7 @@ test('a style writes the kit token with its value, and the raw value only when t
     [{ property: 'fontSize', value: '1rem' }, 'var(--ds-text-base)'],
     [{ property: 'fontWeight', value: '600' }, '600'],
     [{ property: 'justifyContent', value: 'space-between' }, 'space-between'],
+    [{ property: 'display', value: 'inline-grid' }, 'inline-grid'],
     [{ property: 'opacity', value: '0.5' }, '0.5'],
     [{ property: 'width', value: 'fit-content' }, 'fit-content'],
     [{ property: 'height', value: 'auto' }, 'auto'],
