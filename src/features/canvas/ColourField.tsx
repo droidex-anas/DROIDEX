@@ -59,9 +59,13 @@ export function ColourField({
   const [open, setOpen] = useState(false);
   /** The picker was dragged since the popover opened, so closing it commits the colour. */
   const dragged = useRef(false);
-  /** The text typed since the field last read its value, shown as typed; null while it reads the value. */
-  const [typed, setTyped] = useState<string | null>(null);
-  const face = typed ?? colourFace(value, tokens).text;
+  /** The text last typed and the value it previewed; null once the field reads its value again. */
+  const [typed, setTyped] = useState<{ text: string; value: string } | null>(null);
+  // As a number field's: typing shows as typed only while it is still the preview.
+  const face =
+    typed !== null && previewed && typed.value === value
+      ? typed.text
+      : colourFace(value, tokens).text;
   const close = () => {
     setOpen(false);
     if (!dragged.current) return;
@@ -116,8 +120,9 @@ export function ColourField({
           setTyped(null);
         }}
         onChange={(event) => {
-          setTyped(event.target.value);
-          onPreview(typedColour(event.target.value, tokens));
+          const next = typedColour(event.target.value, tokens);
+          setTyped({ text: event.target.value, value: next });
+          onPreview(next);
         }}
         onKeyDown={onKeyDown}
       />

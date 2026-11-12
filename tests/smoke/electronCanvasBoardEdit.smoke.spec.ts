@@ -124,6 +124,15 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { elementId: 'el_title', styles: {} } });
 
+  // Typing that another revision replaces reads as the element's value again,
+  // so Enter has nothing to send.
+  await fontSize.fill('32px');
+  await page.evaluate(() => window.boardHarness.editByUser('a'));
+  await page.clock.runFor(240);
+  await expect(fontSize).toHaveValue('24px');
+  await fontSize.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.editCalls)).toHaveLength(1);
+
   // A shared element is the agent's to change, and Escape steps out one level at a time.
   const card = await box(frame(page, 'A').locator('.canvas-sheet'));
   await page.mouse.click(card.x + 300 * scale, card.y + 200 * scale);

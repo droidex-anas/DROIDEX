@@ -79,10 +79,14 @@ export function NumberField({
   const input = useRef<HTMLInputElement>(null);
   /** The drag in progress, held by pointer capture so it ends with the pointer or the field. */
   const scrub = useRef<{ startX: number; start: { amount: number; unit: string } } | null>(null);
-  /** The text typed since the field last read its value, shown as typed; null while it reads the value. */
-  const [typed, setTyped] = useState<string | null>(null);
+  /** The text last typed and the value it previewed; null once the field reads its value again. */
+  const [typed, setTyped] = useState<{ text: string; value: string } | null>(null);
+  // Typing shows as typed only while it is still the preview: a pick, or a
+  // revision that drops the preview, has the field read the value again.
   const face: LengthFace =
-    typed === null ? lengthFace(value, tokens) : { text: typed, placeholder: '' };
+    typed !== null && previewed && typed.value === value
+      ? { text: typed.text, placeholder: '' }
+      : lengthFace(value, tokens);
   /** Steps and scrubs move what the field shows, so a rounded length stays rounded. */
   const shownNumber = () => parseNumber(face.text) ?? parseNumber(value);
   const clamp = (amount: number): number => {
@@ -193,8 +197,9 @@ export function NumberField({
           ) : undefined
         }
         onChange={(event) => {
-          setTyped(event.target.value);
-          onPreview(typedLength(event.target.value, tokens));
+          const next = typedLength(event.target.value, tokens);
+          setTyped({ text: event.target.value, value: next });
+          onPreview(next);
         }}
         onKeyDown={onKeyDown}
       />
