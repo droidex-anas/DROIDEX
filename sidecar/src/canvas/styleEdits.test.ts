@@ -69,12 +69,12 @@ test('a blur takes none, a stock step or a kit blur token, and shadow tokens sta
   assert.equal(styleValue('boxShadow', stacked), 'var(--ds-shadow-sm),var(--ds-shadow-md)');
   assert.match(
     refusal({ property: 'boxShadow', value: '--ds-shadow-sm,--ds-accent' }).message,
-    /^--ds-accent is not a boxShadow token/,
+    /^--ds-accent isn’t one of this kit’s shadow tokens/,
   );
   const seven = Array.from({ length: 7 }, () => '--ds-shadow-md').join(',');
   assert.match(
     refusal({ property: 'boxShadow', value: seven }).message,
-    /^7 boxShadow tokens are too many to stack/,
+    /^7 shadow tokens are too many to stack/,
   );
   assert.equal(
     refusal({ property: 'padding', value: '--ds-space-2,--ds-space-4' }).code,
@@ -202,13 +202,13 @@ test('a token outside the property family and a value it cannot take are invalid
 });
 
 test('a property outside the whitelist is unsupported by name', () => {
-  for (const change of [
-    { property: 'backgroundImage', value: '#fff' },
-    { property: 'constructor', value: '1px' },
-  ] satisfies Change[]) {
+  for (const [change, name] of [
+    [{ property: 'backgroundImage', value: '#fff' }, 'background image'],
+    [{ property: 'constructor', value: '1px' }, 'constructor'],
+  ] satisfies [Change, string][]) {
     const error = refusal(change);
     assert.equal(error.code, 'unsupported_edit');
-    assert.match(error.message, new RegExp(`^${change.property} `));
+    assert.match(error.message, new RegExp(`change the ${name} `));
   }
 });
 

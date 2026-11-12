@@ -321,7 +321,7 @@ function isNumber(node: ts.Expression): boolean {
 export function ambiguous(): SourceElementError {
   return new SourceElementError(
     'ambiguous_element',
-    'This source is computed or shared. Ask the agent to edit the selected scope.',
+    'This element is worked out in code or used in several places, so Canvas can’t change it here. Ask the agent to change it.',
   );
 }
 function comparePaths(left: string, right: string): number {

@@ -10,7 +10,13 @@ import type { KitTheme } from './kitTailwindTheme.js';
 import type { SourceReplacement } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { ambiguous, classLiterals } from './sourceElements.js';
-import { STYLE_PROPERTIES, styleValue, type StyleResolution } from './styleEdits.js';
+import {
+  STYLE_PROPERTIES,
+  styleName,
+  styleValue,
+  unsupportedStyle,
+  type StyleResolution,
+} from './styleEdits.js';
 import { classStyle, longhands, styleClass } from './tailwindStyles.js';
 
 export interface ResolvedStyle {
@@ -71,11 +77,7 @@ export function styleReplacements(
 ): SourceReplacement[] {
   // A property becomes source text, so only a whitelisted name may reach it.
   for (const { property } of styles)
-    if (!Object.hasOwn(STYLE_PROPERTIES, property))
-      throw new SourceElementError(
-        'unsupported_edit',
-        `${property} is not a style Canvas can edit.`,
-      );
+    if (!Object.hasOwn(STYLE_PROPERTIES, property)) throw unsupportedStyle(property);
   const slots = readClasses(opening, source);
   const style = readStyle(opening);
   for (const change of styles) setStyle(slots, style, change, theme);
@@ -138,7 +140,7 @@ function setStyle(
   if (outranking.some(({ read }) => read.important))
     throw new SourceElementError(
       'ambiguous_element',
-      `A class marked important sets this element's ${property}, so a value written here would not show. Ask the agent to change it.`,
+      `A class that overrides everything else sets this element’s ${styleName(property)}, so a change here would not show. Ask the agent to change it.`,
     );
   const outranked = outranking.length > 0;
   // An inline shorthand that also sets this property would win over a class.
@@ -191,7 +193,7 @@ function keepFilter(
   )
     throw new SourceElementError(
       'ambiguous_element',
-      `This element sets its ${property} another way too, so a blur written here would drop the rest. Ask the agent to change its blur.`,
+      `This element has other filters beside its ${styleName(property)}, so changing it here would drop them. Ask the agent to change it.`,
     );
 }
 
