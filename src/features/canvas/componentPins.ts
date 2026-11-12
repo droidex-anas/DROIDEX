@@ -5,6 +5,7 @@
 
 import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
+import type { DesignSystemChoice } from './designSystemChoices';
 import type { DesignSystemRef } from './protocol';
 
 /** A prompt names a few components; past that it is asking for a whole kit. */
@@ -97,15 +98,16 @@ export function unpinComponents(
 
 /**
  * The tags as a prompt sends them: those of the request's kit follow it to its
- * current version and mode, and its name when known, so the agent reads the
- * entry the frames build with.
+ * current version and mode, so the agent reads the entry the frames build with.
+ * When the request runs under the canvas's choice, they take its name too.
  */
 export function pinsUnderKit(
   pins: readonly ComponentPin[],
   kit: DesignSystemRef | null,
-  kitName: string | null,
+  choice: DesignSystemChoice | null,
 ): readonly ComponentPin[] {
   if (kit === null) return pins;
+  const kitName = choice?.ref.id === kit.id ? choice.name : null;
   const isBehind = (pin: ComponentPin) =>
     pin.kit.id === kit.id &&
     (pin.kit.version !== kit.version ||
