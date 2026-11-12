@@ -544,7 +544,7 @@ opening `canvas_read` carries the pinned kit's name, mode, token and primitive n
 guidance (`designSystemBrief.ts`, under 21 KiB), its catalog's entry names (1 KiB more)
 and the canvas's rule; under Auto, before a project chat's first design, that guidance
 also asks the agent to offer a kit from the project. `canvas_theme` reads full kits, and
-reads a kit's catalog entries by name with their JSX, imports and props (`kitCatalog.ts`)
+reads a kit's catalog entries by name with their JSX, kit and icon imports, notes and props (`kitCatalog.ts`)
 so the agent writes a component the user names or tags as its entry gives it. A component
 tagged from the composer's `@` menu (`componentPins.ts`) reaches the agent as a
 `<canvas_components>` block naming the entry and its kit's ref; the sidecar strips that

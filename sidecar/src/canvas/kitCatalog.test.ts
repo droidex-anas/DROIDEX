@@ -279,3 +279,14 @@ test('a catalog read always returns its first entry, and counts brackets and com
   assert.deepEqual(read.omitted, ['Fit 3']);
   assert.ok(bytes(read.entries) <= 16 * 1024);
 });
+
+test('a catalog read keeps the names it leaves out within its budget', () => {
+  const name = (index: number) => `${'n'.repeat(76)} ${String(index).padStart(3, '0')}`;
+  const many = Array.from({ length: 100 }, (_, index) =>
+    entry(name(index), `<Button>${'x'.repeat(400)}</Button>`),
+  );
+  const read = readCatalogEntries(starterWith(catalogFile(many)).files, undefined);
+  assert.ok(read.omitted && read.omitted.length > 50);
+  assert.equal(read.entries.length + read.omitted.length, many.length);
+  assert.ok(Buffer.byteLength(JSON.stringify(read), 'utf8') <= 16 * 1024);
+});

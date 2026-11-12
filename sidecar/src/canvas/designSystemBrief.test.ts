@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { canvasDir } from '../droidexPaths.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { designSystemBrief } from './designSystemBrief.js';
 import {
@@ -184,4 +185,27 @@ test('the brief charges catalog names as JSON writes them, escapes included', as
   assert.ok(!('unavailable' in brief) && brief.catalog && brief.omittedCatalogNames);
   assert.ok(Buffer.byteLength(JSON.stringify(brief.catalog), 'utf8') <= 1024);
   assert.equal(brief.catalog.length + brief.omittedCatalogNames, names.length);
+});
+test('the brief says why a converted v1.6 kit’s catalog.json is unusable', async () => {
+  const directory = join(canvasDir(), 'design-systems', 'old-catalog');
+  await mkdir(directory, { recursive: true });
+  const mode = { '--ds-canvas': '#ffffff', '--ds-accent': '#1d4ed8' };
+  const swatch = { surface: '#ffffff', accent: '#1d4ed8' };
+  const header = { id: 'old-catalog', version: 1, name: 'Old' };
+  const summary = { ...header, kind: 'user', swatches: { light: swatch, dark: swatch } };
+  const system = {
+    ...header,
+    modes: { light: mode, dark: mode },
+    files: { ...SAMPLE_KIT.files, 'catalog.json': '{}' },
+    guidance: '',
+    examples: SAMPLE_KIT.examples,
+  };
+  await writeFile(join(directory, '1.json'), JSON.stringify({ summary, system }));
+  const brief = await designSystemBrief(
+    { id: 'old-catalog', version: 1, mode: 'light' },
+    { projectFolder: null, hasDesigns: false },
+  );
+  assert.ok(!('unavailable' in brief));
+  assert.equal(brief.catalog, undefined);
+  assert.match(brief.catalogProblem ?? '', /^catalog\.json is not a catalog/);
 });

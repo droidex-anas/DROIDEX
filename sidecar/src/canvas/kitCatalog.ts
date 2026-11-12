@@ -167,11 +167,12 @@ export interface CatalogRead {
 export type CatalogEntryRead = Omit<CatalogEntry, 'module' | 'props'> & { props: CatalogProp[] };
 
 /**
- * What a catalog read's entries may cost as JSON, brackets and commas included.
- * The first entry asked for always comes back, whatever its size, so none is
- * out of reach; the budget bounds the entries after it.
+ * What a catalog read may cost as JSON, the names it leaves out included. The
+ * first entry asked for always comes back, whatever its size, so none is out
+ * of reach; the budget bounds the entries after it.
  */
 const CATALOG_READ_BYTES = 16 * 1024;
+const OMITTED_KEY_BYTES = ',"omitted":[]'.length;
 
 /**
  * The entries of a kit's catalog that `names` asks for, or all of them. A name
@@ -195,14 +196,18 @@ export function readCatalogEntries(
     names === undefined
       ? catalog
       : catalog.filter((entry) => names.some((name) => isNamedBy(entry.name, name)));
-  let used = '[]'.length;
+  let used = '{"entries":[]}'.length;
+  // What naming every entry after this one in `omitted` would cost.
+  let restNameBytes = asked.reduce((sum, { name }) => sum + listedNameBytes(name), 0);
   const entries: CatalogEntryRead[] = [];
   const omitted: string[] = [];
   for (const { name, uses, icons, jsx, note, props } of asked) {
+    restNameBytes -= listedNameBytes(name);
     const entry = { name, uses, icons, jsx, note, props: props ?? [] };
     const separator = entries.length > 0 ? 1 : 0;
     const cost = Buffer.byteLength(JSON.stringify(entry), 'utf8') + separator;
-    if (omitted.length > 0 || (entries.length > 0 && used + cost > CATALOG_READ_BYTES)) {
+    const rest = restNameBytes > 0 ? OMITTED_KEY_BYTES + restNameBytes : 0;
+    if (omitted.length > 0 || (entries.length > 0 && used + cost + rest > CATALOG_READ_BYTES)) {
       omitted.push(name);
       continue;
     }
@@ -210,6 +215,11 @@ export function readCatalogEntries(
     entries.push(entry);
   }
   return omitted.length > 0 ? { entries, omitted } : { entries };
+}
+
+/** A name as a JSON list writes it, escapes, quotes and its comma included. */
+function listedNameBytes(name: string): number {
+  return Buffer.byteLength(JSON.stringify(name), 'utf8') + 1;
 }
 
 function isNamedBy(entryName: string, name: string): boolean {
