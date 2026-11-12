@@ -394,12 +394,24 @@ function label(text: string): string {
 
 /** The literal text an element holds directly, one line, clamped. */
 function textOf(node: ts.JsxElement | ts.JsxSelfClosingElement): string | null {
-  if (!ts.isJsxElement(node)) return null;
-  const parts = node.children.flatMap((child) => {
-    if (ts.isJsxText(child)) return [child.text];
-    const value = ts.isJsxExpression(child) ? child.expression : undefined;
-    return value && ts.isStringLiteralLike(value) ? [value.text] : [];
-  });
-  const text = label(parts.join(' '));
+  const text = label(heldText(node).join(' '));
   return text === '' ? null : text;
+}
+
+/**
+ * The literal text JSX holds directly: written text, and strings in braces
+ * such as `{"Hello"}`. Whitespace that breaks a line is formatting JSX drops;
+ * other text, spaces too, renders. The outline's `text` and every edit that
+ * refuses a layer inside text read this one rule.
+ */
+export function heldText(
+  node: ts.JsxElement | ts.JsxSelfClosingElement | ts.JsxFragment,
+): string[] {
+  if (ts.isJsxSelfClosingElement(node)) return [];
+  return node.children.flatMap((child) => {
+    if (ts.isJsxText(child)) return child.containsOnlyTriviaWhiteSpaces ? [] : [child.text];
+    const value = ts.isJsxExpression(child) ? child.expression : undefined;
+    // `{""}` renders nothing, so it is no text.
+    return value && ts.isStringLiteralLike(value) && value.text !== '' ? [value.text] : [];
+  });
 }

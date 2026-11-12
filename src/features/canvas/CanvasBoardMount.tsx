@@ -17,7 +17,7 @@ import {
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { toast } from '../../lib/toast';
-import { isBoardEditor, isLayersKey } from './boardKeys';
+import { isBoardEditor, sidePanelKey, type SidePanelTab } from './boardKeys';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
 import { recordPlacements, revisionEntry, type HistoryStep } from './boardHistory';
@@ -39,6 +39,9 @@ import { pickElement, syncElementPins, unpinElements, useElementPins } from './e
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
 import { layerElements } from './layers/layerElements';
 import { LayersPanel } from './layers/LayersPanel';
+import { SidePanel } from './layers/SidePanel';
+import { ComponentsPanel } from './palette/ComponentsPanel';
+import { useComponentInsert } from './palette/useComponentInsert';
 import { PreviewRuns } from './previewRuns';
 import type {
   ArrangeFramesInput,
@@ -62,6 +65,7 @@ const LAYER_EDIT_VERBS: Record<Exclude<LayerChange['kind'], 'hide'>, string> = {
   move: 'move',
   remove: 'delete',
   duplicate: 'duplicate',
+  insert: 'add to',
 };
 
 function layerEditVerb(change: LayerChange): string {
@@ -104,7 +108,7 @@ export function CanvasBoardMount({
   onInteractionChange: (next: BoardInteraction) => void;
   boardRef: RefObject<CanvasBoardHandle | null>;
   onOpenSource: (designId: string) => void;
-  /** The layers panel stands at the board's left. */
+  /** The side panel, on Layers or Components, stands at the board's left. */
   layersOpen: boolean;
   onShowLayers: (shown: boolean) => void;
 }) {
@@ -236,6 +240,35 @@ export function CanvasBoardMount({
     }
   };
   const { selectedFrameIds } = interaction;
+  const layerEdits = frameActions.actions.canEdit ? editLayer : undefined;
+  const elements = layerElements(runs, editor, interaction, onInteractionChange);
+  const palette = useComponentInsert({
+    frames: shownFrames,
+    selectedFrameIds,
+    elements,
+    presence,
+    onEditLayer: layerEdits,
+  });
+  const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
+  /** Opens the side panel on `tab`, or closes it when it already shows that tab. */
+  const showSide = (tab: SidePanelTab) => {
+    if (layersOpen && sideTab === tab) {
+      onShowLayers(false);
+      return;
+    }
+    setSideTab(tab);
+    onShowLayers(true);
+  };
+  /** The keyboard goes back to the board: on the frame's label where it has one, else the board itself. */
+  const focusBoard = (designId: string | undefined) => {
+    if (designId !== undefined && isShown(designId)) {
+      boardRef.current?.focusLabel(designId);
+      return;
+    }
+    // An empty canvas has no board: its invitation's first action takes the keyboard.
+    const board = boardArea.current?.querySelector<HTMLElement>('[data-board-mode]');
+    (board ?? boardArea.current?.querySelector('button'))?.focus();
+  };
   useBoardPaste(boardArea, {
     appSessionId,
     canvasId,
@@ -287,43 +320,64 @@ export function CanvasBoardMount({
       data-canvas-board
       className="flex min-h-0 flex-1"
       onKeyDown={(event) => {
-        // A field takes ⌥1 as the character it types.
-        if (!isLayersKey(event) || isBoardEditor(event.target)) return;
+        // A field takes ⌥1 and ⌥2 as the characters they type.
+        const tab = sidePanelKey(event);
+        if (!tab || isBoardEditor(event.target)) return;
         event.preventDefault();
-        onShowLayers(!layersOpen);
+        showSide(tab);
       }}
     >
       {layersOpen && (
-        <LayersPanel
-          frames={frames}
-          selectedFrameIds={selectedFrameIds}
-          agentWorking={agentWorking}
-          elements={layerElements(runs, editor, interaction, onInteractionChange)}
-          onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
-          onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
-          onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}
-          onEditLayer={frameActions.actions.canEdit ? editLayer : undefined}
-          onHistory={stepHistory}
-          onPick={(designId, additive) => {
-            // A hidden frame is off the board, so it cannot be picked or gone to.
-            if (!isShown(designId)) return;
-            const next = reduceBoardInteraction(interaction, { type: 'pick', designId, additive });
-            if (next !== interaction) onInteractionChange(next);
-          }}
-          onFocusFrame={(designId) => {
-            if (isShown(designId)) boardRef.current?.focusFrame(designId);
-          }}
-          onLeave={(designId) => {
-            // A hidden frame has no label on the board, so the board itself takes the keyboard.
-            if (isShown(designId)) boardRef.current?.focusLabel(designId);
-            else boardArea.current?.querySelector<HTMLElement>('[data-board-mode]')?.focus();
-          }}
+        <SidePanel
+          tab={sideTab}
+          onTab={setSideTab}
           onClose={() => {
-            // An empty canvas has no frame to hand the keyboard to: its invitation's first action takes it.
-            if (frames.length === 0) boardArea.current?.querySelector('button')?.focus();
+            focusBoard(selectedFrameIds.at(0));
             onShowLayers(false);
           }}
-        />
+        >
+          {sideTab === 'layers' ? (
+            <LayersPanel
+              frames={frames}
+              selectedFrameIds={selectedFrameIds}
+              agentWorking={agentWorking}
+              elements={elements}
+              onRename={frameActions.actions.canEdit ? frameActions.actions.rename : undefined}
+              onSetHidden={frameActions.actions.canEdit ? setFrameHidden : undefined}
+              onReorder={frameActions.actions.canEdit ? reorderFrames : undefined}
+              onEditLayer={layerEdits}
+              onHistory={stepHistory}
+              onPick={(designId, additive) => {
+                // A hidden frame is off the board, so it cannot be picked or gone to.
+                if (!isShown(designId)) return;
+                const next = reduceBoardInteraction(interaction, {
+                  type: 'pick',
+                  designId,
+                  additive,
+                });
+                if (next !== interaction) onInteractionChange(next);
+              }}
+              onFocusFrame={(designId) => {
+                if (isShown(designId)) boardRef.current?.focusFrame(designId);
+              }}
+              onLeave={focusBoard}
+              onClose={() => {
+                // The panel hands the keyboard to its row's frame; an empty canvas has none.
+                if (frames.length === 0) focusBoard(undefined);
+                onShowLayers(false);
+              }}
+            />
+          ) : (
+            <ComponentsPanel
+              kit={palette.kit}
+              place={palette.place}
+              onAdd={palette.add}
+              onLeave={() => {
+                focusBoard(selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId);
+              }}
+            />
+          )}
+        </SidePanel>
       )}
       <div ref={boardArea} className="min-h-0 min-w-0 flex-1">
         {snapshot.frames.length === 0 ? (
@@ -336,9 +390,9 @@ export function CanvasBoardMount({
           <CanvasBoard
             ref={boardRef}
             layers={{
-              open: layersOpen,
+              open: layersOpen && sideTab === 'layers',
               onToggle: () => {
-                onShowLayers(!layersOpen);
+                showSide('layers');
               },
             }}
             snapshot={snapshot}

@@ -1,4 +1,4 @@
-// What a key means on the board: the zoom, mode, tag, layers and annotation tool shortcuts, Edit's element keys, which elements
+// What a key means on the board: the zoom, mode, tag, side panel and annotation tool shortcuts, Edit's element keys, which elements
 // keep their own keys, and how focus moves between frames and between marks.
 // The board reads these; nothing here touches React state.
 
@@ -93,12 +93,24 @@ export function isTagKey(event: KeyboardEvent): boolean {
   return matchesChord(event, TAG_CHORD);
 }
 
-/** ⌥1 shows or hides the layers panel beside the board, as in a design tool. */
+/** The tabs of the panel beside the board. */
+export type SidePanelTab = 'layers' | 'components';
+
+/** ⌥1 shows the layers beside the board and ⌥2 the components, or hides the tab showing, as in a design tool. */
 const LAYERS_CHORD = 'Alt+1';
+const COMPONENTS_CHORD = 'Alt+2';
 export const LAYERS_KEY_LABEL = formatChord(LAYERS_CHORD);
+export const COMPONENTS_KEY_LABEL = formatChord(COMPONENTS_CHORD);
 
 export function isLayersKey(event: KeyboardEvent): boolean {
   return matchesChord(event, LAYERS_CHORD);
+}
+
+/** The side panel tab a key goes to, or null for any other key. */
+export function sidePanelKey(event: KeyboardEvent): SidePanelTab | null {
+  if (isLayersKey(event)) return 'layers';
+  if (matchesChord(event, COMPONENTS_CHORD)) return 'components';
+  return null;
 }
 
 /** ⌘A, or Ctrl+A off the Mac. */

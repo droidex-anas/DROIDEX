@@ -184,6 +184,47 @@ test('a layer is duplicated through the same edit, answering the copy', async (t
   assert.equal(copied.landed, copies[1].nodeId);
 });
 
+test('a kit catalog entry is added to a layer in one revision, answering its row; its retry answers without one', async (t) => {
+  const main = 'export default function Hey(){return <main><h1>Hey</h1></main>}';
+  const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });
+  const build = canvas.builds.stateOf(canvasId, element.designId);
+  assert.ok(build.status === 'ready');
+  const nodeId = build.outline.nodes.find((node) => node.name === 'main')?.nodeId;
+  const { designId, revisionId } = element;
+  const command = (requestId: string, mutationId: string, entry: string) => ({
+    type: 'canvas.editElement',
+    requestId,
+    appSessionId: APP,
+    canvasId,
+    input: {
+      mutationId,
+      edit: { layer: { designId, revisionId, nodeId }, change: { kind: 'insert', entry } },
+    },
+  });
+  await canvas.handle(command('req-insert-gone', 'm-insert-gone', 'Alert dialog'));
+  assert.deepEqual(errorOf(canvas, 'req-insert-gone'), {
+    code: 'invalid_edit',
+    message: 'This kit has no component called Alert dialog any more.',
+  });
+
+  await canvas.handle(command('req-insert', 'm-insert', 'Badge'));
+  const added = okReply(canvas, 'req-insert');
+  assert.ok(added.kind === 'edited');
+  const files = await canvas.workspace.readFiles(canvasId, added.receipt);
+  assert.equal(
+    files['main.tsx'],
+    "import { Badge } from '@droidex/design-system';\n\nexport default function Hey(){return <main><h1>Hey</h1>\n  <Badge>In review</Badge>\n</main>}",
+  );
+  const landed = instrumentSource({ ...files }, added.receipt.revisionId).outline.nodes.find(
+    (node) => node.nodeId === added.landed,
+  );
+  assert.equal(landed?.name, 'Badge');
+  assert.equal((await canvas.workspace.readFiles(canvasId, element))['main.tsx'], main);
+
+  await canvas.handle(command('req-insert-retry', 'm-insert', 'Badge'));
+  assert.deepEqual(okReply(canvas, 'req-insert-retry'), { ...added, landed: null });
+});
+
 test('a layer hides through the same edit, with the hidden class its new outline reads', async (t) => {
   const main =
     'export default function Hey(){return <main><h1>Hey</h1><p className="flex">Hi</p></main>}';
@@ -256,6 +297,7 @@ test('a class literal spelled with a character reference is worked out, not read
   assert.equal(error.code, 'ambiguous_element');
   assert.match(error.message, /^Its classes or props are worked out in code/);
 });
+
 /** Asks to move `subject` last into `target` and answers the refusal, checking the source stayed. */
 async function refusedMove(t: TestContext, main: string, subject: string, target: string) {
   const { canvas, canvasId, element } = await editableElement(t, { 'main.tsx': main });

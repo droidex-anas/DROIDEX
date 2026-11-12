@@ -1,4 +1,4 @@
-// Spec §4's Components tab: every frame on the canvas the board is showing,
+// Spec §4's Frames tab: every frame on the canvas the board is showing,
 // searchable, with its last picture and the stage the board shows for it.
 // Enter or a click focuses the frame on the board. The search field keeps the
 // keyboard and the arrows walk the matches, so a canvas of any size is one tab

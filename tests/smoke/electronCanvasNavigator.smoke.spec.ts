@@ -1,4 +1,4 @@
-// The chat column's Components tab against the board harness: every frame
+// The chat column's Frames tab against the board harness: every frame
 // listed with its state, only the visible rows mounted, search, and the
 // keyboard's way from the list to a frame on the board.
 
@@ -7,7 +7,7 @@ import { boardUrl, serveBoard } from './board/boardPage';
 
 serveBoard();
 
-test('Components lists every frame, finds one by name and focuses it on the board', async ({
+test('Frames lists every frame, finds one by name and focuses it on the board', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1300, height: 1100 });
@@ -16,7 +16,7 @@ test('Components lists every frame, finds one by name and focuses it on the boar
   const board = page.getByTestId('canvas-board');
   await expect(board).toBeVisible();
 
-  await page.getByRole('tab', { name: 'Components' }).click();
+  await page.getByRole('tab', { name: 'Frames' }).click();
   const list = page.getByRole('listbox', { name: 'Frames' });
   await expect(list.getByRole('option', { name: 'Design A, Ready' })).toBeVisible();
   // 300 frames, and only the rows in view are in the document.

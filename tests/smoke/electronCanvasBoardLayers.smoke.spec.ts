@@ -496,7 +496,7 @@ test('Layers opens a frame on its elements, picks one in Edit and outlines one u
   await card.hover();
   await page.clock.runFor(100);
   await expect(page.locator('.canvas-element-hover')).toBeVisible();
-  await page.getByRole('heading', { name: 'Layers' }).hover();
+  await page.getByRole('tab', { name: 'Layers' }).hover();
   await page.clock.runFor(100);
   await expect(page.locator('.canvas-element-hover')).toHaveCount(0);
 

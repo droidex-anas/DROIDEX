@@ -4,6 +4,7 @@
 // layer above. The sidecar refuses what the source cannot take; these refuse
 // early only what the rows already say, so a drag shows it before the drop.
 
+import type { OutlineNode } from '../protocol';
 import type { ElementEntry } from './ElementRow';
 import type { LayerEntry } from './layerRows';
 
@@ -187,10 +188,13 @@ function isInPlace(rows: readonly LayerEntry[], row: ElementEntry, before: Layer
   return before === row || before === nextSibling;
 }
 
-/** An element written in the source, once, that can have children and has no text of its own. */
 function canHold(row: LayerEntry): row is ElementEntry {
-  if (!isOutlineRow(row)) return false;
-  const { kind, lock, name, text, contentFromProps } = row.node;
+  return isOutlineRow(row) && holdsLayers(row.node);
+}
+
+/** An element written in the source, once, that can have children and has no text of its own. */
+export function holdsLayers(node: OutlineNode): boolean {
+  const { kind, lock, name, text, contentFromProps } = node;
   return (
     kind === 'element' &&
     lock !== 'repeated' &&
