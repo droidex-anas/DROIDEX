@@ -93,13 +93,7 @@ export function useQueuedPromptDelivery({
         // A design prompt goes with its own snapshots of its marks, which hold
         // all it needs even once the browser they were picked in has closed.
         if (head.design) {
-          sendDesignPrompt(
-            head.design.browserKey,
-            text,
-            head.design.references,
-            options.responseFormat,
-            options.mentions,
-          );
+          sendDesignPrompt(head.design.browserKey, text, head.design.references, options);
           dispatch({
             type: 'SESSION_TRANSCRIPT',
             event: createLocalDesignTranscriptEvent(
