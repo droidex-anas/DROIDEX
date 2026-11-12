@@ -213,12 +213,21 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toBeVisible();
 
-  // An edit the source cannot write keeps the element picked and says why.
+  // An edit the source cannot write keeps the element picked and says why, in
+  // the room the status always takes, with the whole reason in its tooltip.
   const fontSize = title.getByLabel('Font size', { exact: true });
+  const fields = title.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
   await fontSize.fill('30px');
   await fontSize.press('Enter');
-  await page.evaluate(() => window.boardHarness.refuseEdit(1, 'fontSize takes a kit size.'));
-  await expect(title.getByRole('status')).toHaveText('fontSize takes a kit size.');
+  const reason =
+    'Canvas can’t write 30px as the font size of this element, because the kit sets its type sizes. Pick one of the kit’s sizes, or ask the agent to change it.';
+  await page.evaluate((reason) => window.boardHarness.refuseEdit(1, reason), reason);
+  const status = title.getByRole('status');
+  await expect(status).toHaveText(reason);
+  expect((await box(fields)).height).toBe(fieldsHeight);
+  await status.focus();
+  await expect(page.getByRole('tooltip')).toHaveText(reason);
   await expect(fontSize).toHaveValue('');
   await fontSize.fill('30px');
   await fontSize.press('Enter');
