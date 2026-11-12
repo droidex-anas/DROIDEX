@@ -8,7 +8,7 @@
 // on, outside React. A release writes through useLayoutWrites, as a
 // nudge, an align or a distribute does.
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { boardPoint } from './boardCoordinates';
 import type { BoardStage } from './boardStage';
 import {
@@ -23,7 +23,7 @@ import {
 } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import { snapFrameRect, snapGroupMove } from './frameSnap';
-import { HeldFrames, type HeldFrame } from './heldFrames';
+import { HeldFrames, type DrawnAt, type HeldFrame } from './heldFrames';
 import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
 import { useLayoutWrites } from './useLayoutWrites';
 
@@ -78,6 +78,8 @@ export function useBoardGestures({
   });
   const latest = useRef({ onEnd, onPan, onBand });
   latest.current = { onEnd, onPan, onBand };
+  // Where the last commit drew each frame, which a hold hands its frames back to.
+  const drawnAt = useRef<DrawnAt>(() => undefined);
 
   const stopCoalescing = useCallback(() => {
     if (move.current.frame !== null) cancelAnimationFrame(move.current.frame);
@@ -94,7 +96,7 @@ export function useBoardGestures({
     const root = board.current;
     if (root?.hasPointerCapture(active.pointerId)) root.releasePointerCapture(active.pointerId);
     setPanning(false);
-    held.release();
+    held.release(drawnAt.current);
     setBand(null);
     if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'frame') {
@@ -129,6 +131,15 @@ export function useBoardGestures({
   // A held frame is drawn where the hand has it outside React, so React keeps
   // the rect its hold began at.
   const { rectFor } = writes;
+  useLayoutEffect(() => {
+    drawnAt.current = (designId) => {
+      const frame = frames.find((each) => each.designId === designId);
+      return frame && rectFor(frame);
+    };
+    // A hold belongs to the rects its frames started from: newer layout for one
+    // of them, or one gone, ends it as a cancel does.
+    if (!held.isDrawnFrom(drawnAt.current)) cancelGesture();
+  });
 
   const applyPointer = useCallback(
     (pointer: Point, snapping: boolean) => {
@@ -356,7 +367,7 @@ export function useBoardGestures({
     gesture.current = null;
     if (root?.hasPointerCapture(event.pointerId)) root.releasePointerCapture(event.pointerId);
     setPanning(false);
-    held.release();
+    held.release(drawnAt.current);
     setBand(null);
     if (takesView(active)) latest.current.onEnd();
     if (active.kind === 'pan') return;

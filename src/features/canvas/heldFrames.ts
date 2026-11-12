@@ -4,10 +4,11 @@
 // Every move between draws straight into the page: each held frame's place
 // and size, its size chip's text, a translate on the overlays that follow it
 // (`data-follows-frame`), and the snap marks, which go to SnapGuides. Letting
-// go puts back what React drew, so the commit that places the frames starts
-// from it.
+// go hands each frame back to where React has it drawn now, so the commit that
+// places the frames starts from it, and a style React believes it wrote is never
+// left stale.
 
-import { frameSizeLabel } from './canvasGeometry';
+import { frameSizeLabel, sameRect } from './canvasGeometry';
 import type { SnapMarks } from './frameSnap';
 import type { FrameRect } from './protocol';
 
@@ -17,6 +18,9 @@ export interface HeldFrame {
   from: FrameRect;
   rect: FrameRect;
 }
+
+/** Where React has a frame drawn now, or undefined for a frame it no longer draws. */
+export type DrawnAt = (designId: string) => FrameRect | undefined;
 
 const NOTHING_HELD: readonly string[] = [];
 const NO_MARKS: SnapMarks = { guides: [], gaps: [] };
@@ -56,9 +60,17 @@ export class HeldFrames {
     this.notify(this.markListeners);
   }
 
-  release(): void {
+  /** Whether React still draws every held frame where its hold began. */
+  isDrawnFrom(drawnAt: DrawnAt): boolean {
+    return this.frames.every(({ designId, from }) => {
+      const rect = drawnAt(designId);
+      return rect !== undefined && sameRect(rect, from);
+    });
+  }
+
+  release(drawnAt: DrawnAt): void {
     if (this.board === null) return;
-    this.restore(this.board);
+    this.restore(this.board, drawnAt);
     this.board = null;
     this.frames = [];
     this.marks = null;
@@ -95,12 +107,13 @@ export class HeldFrames {
     this.moved.add(element);
   }
 
-  private restore(board: HTMLElement): void {
+  private restore(board: HTMLElement, drawnAt: DrawnAt): void {
     for (const element of this.moved) element.style.translate = '';
     this.moved.clear();
-    for (const { designId, from } of this.frames) {
+    for (const { designId } of this.frames) {
       const root = frameRoot(board, designId);
-      if (root) drawRect(root, from);
+      const rect = drawnAt(designId);
+      if (root && rect) drawRect(root, rect);
     }
   }
 

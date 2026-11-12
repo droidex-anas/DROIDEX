@@ -288,6 +288,41 @@ test('the selected frame keeps its size and corners over a neighbour, and its ed
   expect(await arrangeCount(page)).toBe(1);
 });
 
+test('newer layout for a held frame ends the hold where that layout puts it, through Escape and later renders', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const drawnStyle = () =>
+    frame(page, 'A').evaluate((node) => {
+      const { left, top, width, height } = (node as HTMLElement).style;
+      return { left, top, width, height };
+    });
+  const label = await box(frame(page, 'A').locator('[data-frame-header]'));
+  await page.mouse.move(label.x + 30, label.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(label.x + 90, label.y + 48);
+  await page.clock.runFor(32);
+  await page.evaluate(() => {
+    window.boardHarness.publish('a', { x: 700, y: 400, width: 500, height: 350 }, 4);
+  });
+  await page.clock.runFor(32);
+  const moved = { left: '700px', top: '400px', width: '500px', height: '350px' };
+  expect(await drawnStyle()).toEqual(moved);
+  await page.mouse.move(label.x + 150, label.y + 98);
+  await page.clock.runFor(32);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await drawnStyle()).toEqual(moved);
+  // A render that leaves A's rect alone must not find it drawn elsewhere.
+  await page.evaluate(() => {
+    window.boardHarness.select(['a']);
+  });
+  await page.clock.runFor(32);
+  expect(await drawnStyle()).toEqual(moved);
+  expect(await arrangeCount(page)).toBe(0);
+});
+
 test('a frame that joined the open board keeps its size and corners over a later neighbour', async ({
   page,
 }) => {
