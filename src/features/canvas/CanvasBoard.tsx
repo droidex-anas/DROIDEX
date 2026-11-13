@@ -294,7 +294,7 @@ export function CanvasBoard({
         data-board-mode={interaction.mode}
         tabIndex={0}
         aria-label="Design board"
-        className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden bg-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
+        className="relative h-full min-h-0 min-w-0 flex-1 overflow-clip bg-bg outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-focus-ring"
         style={{ cursor: gestures.cursor, touchAction: 'none' }}
         onPointerDown={gestures.onBackgroundPointerDown}
         onPointerUp={(event) => {
