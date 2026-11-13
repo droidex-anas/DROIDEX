@@ -3,7 +3,9 @@
    so they load with the board rather than on every app start. */
 
 /* The tool rail floats at the board's top left, the zoom at its bottom left,
-   and the selection bar at its bottom centre while it has work. */
+   and the selection bar at its bottom centre while it has work. The zoom keeps
+   the rail's left edge, so the board's tools stand in one column, and leaves
+   the bottom right to the toast stack and Edit's panel. */
 .canvas-rail,
 .canvas-zoom,
 .canvas-selection-bar {
@@ -147,29 +149,36 @@
   touch-action: none;
 }
 
+/* A compact bar of control-sm tools, one control-md tall. */
 .canvas-zoom {
   left: 12px;
   bottom: 12px;
   align-items: center;
   gap: 2px;
-  padding: 4px;
-  border-radius: 12px;
+  padding: 2px;
+  border-radius: theme('borderRadius.lg');
 }
 
-/* The zoom typed over and the chevron to its presets: one tool of the rail's
-   height and tint, quiet until the pointer, the keyboard or the open menu is on
-   it. Both parts fill it top to bottom, so each is at least a control-sm target. */
-.canvas-zoom-value {
+.canvas-zoom .canvas-tool {
+  width: theme('width.control-sm');
+  height: theme('height.control-sm');
+  border-radius: theme('borderRadius.md');
+}
+
+/* The zoom typed over and the chevron to its presets: one tool, quiet until
+   the pointer, the keyboard or the open menu is on it. Both parts fill it top
+   to bottom, so each is at least a control-sm target. */
+.canvas-zoom .canvas-zoom-value {
   width: auto;
 }
 
 /* Wide enough for 400% in tabular figures; its colour is the tool's. */
 .canvas-zoom-value input {
-  width: 6ch;
+  width: 5ch;
   height: 100%;
   color: inherit;
   font-variant-numeric: tabular-nums;
-  text-align: center;
+  text-align: right;
 }
 
 .canvas-zoom-menu {
@@ -192,6 +201,12 @@
 .canvas-zoom .canvas-tool[data-tip]:hover::after,
 .canvas-zoom .canvas-tool[data-tip]:focus-visible::after {
   transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-zoom .canvas-tool[data-tip]::after {
+    transform: translate(-50%, 0);
+  }
 }
 
 .canvas-selection-bar {
