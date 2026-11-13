@@ -12,6 +12,7 @@ import {
 } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useStoreApi, useStoreSelector, type AppState } from '../../hooks/useStore';
+import { draftChatTitle } from '../../lib/chatMetadata';
 import { renameSession } from '../../lib/commands';
 import { toast } from '../../lib/toast';
 import type { Voice } from './useVoice';
@@ -159,7 +160,7 @@ export function VoiceProvider({ children }: { children: ReactNode }) {
   );
   useEffect(() => {
     if (owner === null || !firstRequest || !unnamed.current.has(owner)) return;
-    const title = firstRequest.replace(/\s+/g, ' ').trim().slice(0, 48);
+    const title = draftChatTitle(firstRequest);
     if (!title) return;
     unnamed.current.delete(owner);
     renameSession(owner, title);

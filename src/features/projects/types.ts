@@ -1,6 +1,7 @@
 import type {
   Autonomy,
   ContextWindowTokens,
+  DroidProfile,
   ProviderKind,
   ReasoningEffort,
 } from '../../types/bridge';
@@ -35,7 +36,7 @@ export interface ProjectThread {
   appSessionId: string;
   ownerAppSessionId?: string;
   title: string;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   waiting: boolean;
   unread?: true;
   state:

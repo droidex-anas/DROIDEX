@@ -74,8 +74,8 @@ export async function spawnSettings(
     throw new Error('A Factory account profile is only supported for Droid threads.');
   let droidProfile: SessionSummary['droidProfile'];
   if (provider === 'droid') {
-    if (requested.profile === 'alt') droidProfile = 'alt';
-    else if (requested.profile === undefined) droidProfile = owner.droidProfile;
+    if (requested.profile === undefined) droidProfile = owner.droidProfile;
+    else if (requested.profile !== 'main') droidProfile = requested.profile;
   }
   if (droidProfile) droidHome(droidProfile);
   const sameHarness = provider === owner.provider;

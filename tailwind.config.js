@@ -100,7 +100,10 @@ export default {
       // Families stay separate: `wordmark` pairs with `font-pixel`, `code` and
       // `code-sm` with `font-mono`, and `overline` with `uppercase`.
       fontSize: {
+        // The first-run setup's welcome and step titles (rules.md "Type").
+        hero: ['48px', { lineHeight: '52px', letterSpacing: '-0.035em', fontWeight: '400' }],
         wordmark: ['32px', { lineHeight: '32px', letterSpacing: '-0.04em', fontWeight: '400' }],
+        headline: ['30px', { lineHeight: '36px', letterSpacing: '-0.025em', fontWeight: '500' }],
         display: ['24px', { lineHeight: '30px', letterSpacing: '-0.48px', fontWeight: '600' }],
         title: ['22px', { lineHeight: '28px', letterSpacing: '-0.44px', fontWeight: '600' }],
         heading: ['18px', { lineHeight: '22px', letterSpacing: '-0.27px', fontWeight: '600' }],

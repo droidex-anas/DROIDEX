@@ -13,6 +13,7 @@ import type {
 } from '../types/bridge';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
 import {
+  isDroidProfile,
   isModelInfo,
   isProviderKind,
   isProviderStatus,
@@ -175,6 +176,18 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       );
     case 'harness.cli.report':
       return Array.isArray(value.clis) && value.clis.every(isHarnessCliState);
+    case 'harness.cli.install.progress':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        (value.stream === 'stdout' || value.stream === 'stderr') &&
+        typeof value.line === 'string'
+      );
+    case 'harness.cli.install.done':
+      return (
+        isHarnessCliProvider(value.provider) &&
+        typeof value.ok === 'boolean' &&
+        typeof value.exitCode === 'number'
+      );
     case 'harness.cli.update.done':
       return (
         isHarnessCliProvider(value.provider) &&
@@ -425,7 +438,7 @@ function isSessionSummary(value: unknown): boolean {
     isOptionalString(value.resumeId) &&
     isOptionalCanvasTools(value.canvasTools) &&
     (value.droidProfile === undefined ||
-      (value.provider === 'droid' && value.droidProfile === 'alt')) &&
+      (value.provider === 'droid' && isDroidProfile(value.droidProfile))) &&
     isOptionalBoolean(value.fastMode) &&
     isOptionalContextWindow(value.contextWindowTokens) &&
     (value.pendingSteers === undefined ||

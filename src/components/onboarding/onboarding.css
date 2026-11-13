@@ -1,0 +1,326 @@
+/* First-run setup (OnboardingWizard). Colours and motion come from the theme
+   tokens, so it follows the light and dark themes like every other screen. */
+
+.ob-root {
+  /* Hover on a tone well: a step toward `active`, never a line. */
+  --ob-hover: color-mix(in srgb, var(--active) 55%, transparent);
+  --ob-well: color-mix(in srgb, var(--elevated) 45%, transparent);
+}
+
+/* The setup column on the left and the dot stage filling the rest. The column
+   keeps its width at every window size; the stage takes what is left. */
+.ob-column {
+  position: absolute;
+  top: 36px;
+  bottom: 0;
+  left: 88px;
+  display: flex;
+  width: 440px;
+  flex-direction: column;
+}
+.ob-stage {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 520px;
+}
+
+/* A step scrolls when the window is short; the inset keeps focus rings and
+   pressed rows clear of the clipping edge. */
+.ob-scroll {
+  margin: 0 -6px;
+  padding: 0 6px;
+  overflow-y: auto;
+}
+
+@keyframes ob-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* The check glyph's path is 20.2 units long; a 21 dash hides it whole before it draws. */
+@keyframes ob-draw {
+  from {
+    stroke-dashoffset: 21;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes ob-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(calc(var(--ob-direction, 1) * 18px));
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.ob-pop {
+  animation: ob-pop 240ms var(--ease-smooth-out) both;
+}
+.ob-step {
+  animation: ob-step-in 440ms var(--ease-smooth-out) both;
+}
+
+.ob-hero-mark {
+  display: block;
+  margin-top: 14px;
+}
+
+/* Grouped content sits in a tone well, never an outline. */
+.ob-well {
+  border-radius: 12px;
+  background: var(--ob-well);
+}
+
+.ob-tile {
+  display: flex;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.ob-tile-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+}
+
+.ob-progress {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 0 -4px;
+  padding: 0;
+  list-style: none;
+}
+.ob-progress-step {
+  display: flex;
+  height: 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px 0 4px;
+  border-radius: 9999px;
+  color: var(--text-quiet);
+  user-select: none;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.ob-progress-step:disabled {
+  cursor: default;
+}
+.ob-progress-dot {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: var(--elevated);
+  color: var(--text-muted);
+  transition:
+    background-color 200ms ease-out,
+    color 200ms ease-out;
+}
+.ob-progress-step[data-state='current'] {
+  color: var(--text);
+}
+.ob-progress-step[data-state='current'] .ob-progress-dot {
+  background: var(--text);
+  color: var(--bg);
+}
+.ob-progress-step[data-state='done'] {
+  color: var(--text-muted);
+}
+.ob-progress-step[data-state='done'] .ob-progress-dot {
+  color: var(--text);
+}
+.ob-progress-dot .ob-tick path {
+  stroke-dasharray: 21;
+  animation: ob-draw 360ms var(--ease-smooth-out) 80ms both;
+}
+
+.ob-option {
+  display: flex;
+  width: 100%;
+  height: 64px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 0 14px;
+  border-radius: 12px;
+  background: var(--ob-well);
+  text-align: left;
+  user-select: none;
+  transition:
+    background-color 150ms ease-out,
+    transform 75ms ease-out;
+}
+.ob-option[aria-checked='true'] {
+  background: var(--elevated);
+}
+.ob-option:active {
+  transform: scale(0.99);
+}
+
+.ob-check {
+  display: flex;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: var(--active);
+  color: var(--bg);
+  transition: background-color 150ms ease-out;
+}
+.ob-check > svg {
+  opacity: 0;
+  transition: opacity 100ms ease-out;
+}
+[aria-checked='true'] > .ob-check {
+  background: var(--text);
+}
+[aria-checked='true'] > .ob-check > svg {
+  opacity: 1;
+}
+[aria-checked='true'] > .ob-check .ob-tick path {
+  stroke-dasharray: 21;
+  animation: ob-draw 300ms var(--ease-smooth-out) both;
+}
+
+.ob-panel {
+  border-radius: 12px;
+  background: var(--ob-well);
+  transition: background-color 200ms ease-out;
+}
+.ob-panel[data-open] {
+  background: color-mix(in srgb, var(--elevated) 75%, transparent);
+}
+.ob-panel-head {
+  display: flex;
+  width: 100%;
+  height: 60px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 12px;
+  text-align: left;
+  user-select: none;
+  transition: background-color 150ms ease-out;
+}
+.ob-panel-head:disabled {
+  cursor: default;
+}
+.ob-caret {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 250ms var(--ease-smooth-out);
+}
+.ob-panel-head[aria-expanded='true'] .ob-caret {
+  transform: rotate(180deg);
+}
+.ob-panel-head:disabled .ob-caret {
+  opacity: 0.4;
+}
+/* Inside an open panel, commands and logs sit a step below it rather than above. */
+.ob-panel .ob-inset {
+  background: var(--bg);
+}
+
+.ob-command {
+  display: flex;
+  height: 36px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 12px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.ob-segments {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--ob-count), minmax(0, 1fr));
+  height: 32px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bg);
+}
+.ob-segment-pill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px) / var(--ob-count));
+  border-radius: 6px;
+  background: var(--elevated);
+  transform: translateX(calc(100% * var(--ob-index)));
+  transition: transform 260ms var(--ease-smooth-out);
+}
+.ob-segment {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  user-select: none;
+  transition: color 150ms ease-out;
+}
+.ob-segment[aria-checked='true'] {
+  color: var(--text);
+}
+.ob-segment:disabled {
+  opacity: 0.4;
+}
+
+@media (hover: hover) {
+  .ob-option:hover {
+    background: color-mix(in srgb, var(--elevated) 72%, transparent);
+  }
+  .ob-option[aria-checked='true']:hover {
+    background: color-mix(in srgb, var(--elevated) 70%, var(--active));
+  }
+  .ob-panel-head:not(:disabled):hover,
+  .ob-progress-step:not(:disabled):hover {
+    background: var(--ob-hover);
+  }
+  .ob-progress-step:not(:disabled):hover {
+    color: var(--text-secondary);
+  }
+  .ob-segment:not(:disabled):not([aria-checked='true']):hover {
+    color: var(--text-secondary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ob-pop,
+  .ob-step {
+    animation: none;
+  }
+  .ob-segment-pill,
+  .ob-caret,
+  .ob-check > svg {
+    transition: none;
+  }
+  .ob-tick path {
+    animation: none !important;
+  }
+}

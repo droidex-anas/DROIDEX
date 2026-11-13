@@ -122,3 +122,27 @@ test('profile bindings survive restart and provider replacement and cannot switc
     reopened.close();
   }
 });
+
+test('an Alt 2 binding survives restart and cannot move to Alt', () => {
+  const stored: SessionSummary = {
+    ...summary('alt2-bound-chat', join(home, 'workspace-alt2')),
+    droidProfile: 'alt2',
+  };
+  const first = new HistoryIndex();
+  persistTestSummaries([stored]);
+  first.close();
+
+  const reopened = new HistoryIndex();
+  try {
+    assert.equal(
+      reopened.summaryPatchesAndHidden().patches.get('alt2-bound-chat')?.droidProfile,
+      'alt2',
+    );
+    assert.throws(
+      () => persistTestSummaries([{ ...stored, droidProfile: 'alt' }]),
+      /Droid profile.*cannot change/,
+    );
+  } finally {
+    reopened.close();
+  }
+});

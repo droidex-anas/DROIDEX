@@ -17,7 +17,7 @@ import {
   type PermissionHandler,
 } from '@factory/droid-sdk';
 import { childEnv } from './childEnv.js';
-import { droidHome } from './droidProfiles.js';
+import { droidHome, type DroidProfile } from './droidProfiles.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
@@ -35,7 +35,7 @@ export interface RuntimeHandlers {
   cwd?: string;
   /** Process-native context, never part of a user message. */
   systemPromptAppend?: string;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
 }
 
 export interface CreateRuntimeSessionOptions extends RuntimeHandlers {
@@ -299,9 +299,9 @@ export class DroidRuntime implements FactoryRuntime {
     session: DroidSession,
     transport: ConnectableDroidTransport,
     client: DroidClient,
-    droidProfile?: 'alt',
+    droidProfile?: DroidProfile,
   ) {
-    if (droidProfile === 'alt') this.altSessions.add(session);
+    if (droidProfile) this.altSessions.add(session);
     const pid = transport.processId;
     if (pid !== undefined) this.processes.set(session, { pid, transport, client });
     transport.onError((error) => {
@@ -336,10 +336,10 @@ export class DroidRuntime implements FactoryRuntime {
     return { client, transport };
   }
 
-  private env(droidProfile?: 'alt'): Record<string, string> {
+  private env(droidProfile?: DroidProfile): Record<string, string> {
     const env = childEnv();
 
-    if (droidProfile === 'alt') {
+    if (droidProfile) {
       env.HOME = droidHome(droidProfile);
       if (process.platform === 'win32') env.USERPROFILE = env.HOME;
       delete env.FACTORY_API_KEY;

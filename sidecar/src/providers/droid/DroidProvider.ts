@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 
 import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
+import type { DroidProfile } from '../../droidProfiles.js';
 import type { Autonomy } from '../../protocol.js';
 import { normalizeAutonomy } from '../../values.js';
 import type { FactoryRuntime, FactorySession } from '../../DroidRuntime.js';
@@ -65,7 +66,7 @@ export class DroidProvider implements Provider {
       ...droidInteractionHandlers(ref, interactions),
     });
     try {
-      if (droidProfile === 'alt') {
+      if (droidProfile) {
         for (const model of [
           modelId ?? session.initResult.settings.modelId,
           droidLaunch?.specModeModelId,
@@ -75,7 +76,7 @@ export class DroidProvider implements Provider {
           droidLaunch?.workerModelId,
           droidLaunch?.validatorModelId,
         ])
-          if (model) requireAltDroidModel(session, model);
+          if (model) requireAltDroidModel(session, model, droidProfile);
       } else this.onAvailableModels(session.initResult.availableModels ?? []);
       ref.id = appSessionId ?? session.sessionId;
       providerSession = new DroidProviderSession(
@@ -120,9 +121,9 @@ export class DroidProvider implements Provider {
       ...droidInteractionHandlers(ref, interactions),
     });
     try {
-      if (droidProfile === 'alt' && session.initResult.settings.modelId)
-        requireAltDroidModel(session, session.initResult.settings.modelId);
-      if (droidProfile !== 'alt') this.onAvailableModels(session.initResult.availableModels ?? []);
+      if (!droidProfile) this.onAvailableModels(session.initResult.availableModels ?? []);
+      else if (session.initResult.settings.modelId)
+        requireAltDroidModel(session, session.initResult.settings.modelId, droidProfile);
       providerSession = new DroidProviderSession(
         appSessionId,
         session,
@@ -179,7 +180,7 @@ export class DroidProvider implements Provider {
     cwd: string | undefined,
     title: string,
     rewindTo: string | undefined,
-    droidProfile?: 'alt',
+    droidProfile?: DroidProfile,
   ): Promise<string> {
     const session = await this.runtime.loadSession(providerSessionId, { cwd, droidProfile });
     try {
@@ -193,7 +194,7 @@ export class DroidProvider implements Provider {
     providerSessionId: string,
     cwd: string | undefined,
     title: string,
-    droidProfile?: 'alt',
+    droidProfile?: DroidProfile,
   ) {
     const session = await this.runtime.loadSession(providerSessionId, { cwd, droidProfile });
     try {

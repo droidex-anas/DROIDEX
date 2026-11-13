@@ -1,3 +1,4 @@
+import { DROID_PROFILES, type DroidProfile } from '../../types/bridge';
 import { parseToolResultObject } from '../automations/toolNames';
 
 /* The thread tools arrive namespaced by the harness that ran them
@@ -13,7 +14,7 @@ export function isThreadSpawnCall(event: { kind?: string; toolName?: string }): 
 export interface SpawnedChat {
   id: string;
   title: string;
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   /** A thread of the chat that started it, or an ordinary sidebar chat. */
   reportBack: boolean;
 }
@@ -22,20 +23,21 @@ export interface SpawnedChat {
 export function spawnedThread(value: string | undefined): SpawnedChat | null {
   const result = value ? parseToolResultObject(value) : null;
   if (result?.ok !== true || typeof result.title !== 'string') return null;
-  if (result.droidProfile !== undefined && result.droidProfile !== 'alt') return null;
+  const droidProfile = DROID_PROFILES.find((profile) => profile === result.droidProfile);
+  if (result.droidProfile !== undefined && !droidProfile) return null;
   if (result.reportBack === true && typeof result.threadId === 'string')
     return {
       id: result.threadId,
       title: result.title,
       reportBack: true,
-      ...(result.droidProfile === 'alt' ? { droidProfile: result.droidProfile } : {}),
+      ...(droidProfile ? { droidProfile } : {}),
     };
   if (result.reportBack === false && typeof result.sessionId === 'string')
     return {
       id: result.sessionId,
       title: result.title,
       reportBack: false,
-      ...(result.droidProfile === 'alt' ? { droidProfile: result.droidProfile } : {}),
+      ...(droidProfile ? { droidProfile } : {}),
     };
   return null;
 }

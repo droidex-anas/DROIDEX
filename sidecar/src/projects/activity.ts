@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../protocol.js';
+import type { ModelSwitch, TranscriptEvent } from '../protocol.js';
 import { LEDGER_LIMITS } from './store.js';
 
 /** The kinds a model produces while answering; the rest are the app talking. */
@@ -10,10 +10,12 @@ const GENERATED = new Set<TranscriptEvent['kind']>([
   'error',
 ]);
 
-/** What a thread's turn came back with: its final reply, and why it stopped. */
+/** What a thread's turn came back with: its final reply, why it stopped, and
+    the last model its harness moved it to on its own. */
 export interface ThreadTurn {
   text: string;
   error?: string;
+  modelSwitch?: ModelSwitch;
 }
 
 /**
@@ -39,6 +41,13 @@ export class ProjectActivity {
   /** Callers pass events of project conversations only. */
   append(event: TranscriptEvent): void {
     if (event.role !== 'primary' || event.author === 'user') return;
+    // A switch the harness made by itself is news to the owner; one the owner
+    // asked for is not.
+    if (event.modelSwitch?.cause) {
+      const turn = this.turns.get(event.appSessionId);
+      if (turn) turn.modelSwitch = event.modelSwitch;
+      return;
+    }
     // Only generation opens a turn. A status line or a compaction divider
     // reaches an idle thread (retuning one, or an automatic compaction), and
     // opening a turn on it would report silence its owner never asked for.

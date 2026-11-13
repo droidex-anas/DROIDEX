@@ -20,6 +20,7 @@ const TOOL_TITLES = new Map([
   ['thread_stop', 'Stop a DROIDEX thread'],
   ['plan_set', 'Update the DROIDEX project plan'],
   ['project_done', 'Mark the DROIDEX project done'],
+  ['factory_usage', 'Read Factory account usage'],
   ['session_list', 'List DROIDEX chats'],
   ['session_read', 'Read a DROIDEX chat'],
   ['session_send', 'Message a DROIDEX chat'],
@@ -30,7 +31,8 @@ const TOOL_TITLES = new Map([
 // Reading and steering this chat's own threads only moves text between
 // conversations DROIDEX already owns, and none of it can put a thread past the
 // autonomy of the chat that started it. Marking the project done changes only
-// what Projects shows, and new work reopens it. Reading the sidebar changes nothing.
+// what Projects shows, and new work reopens it. Reading the sidebar or the
+// accounts' usage changes nothing.
 // Starting a chat spends real work under its own autonomy, and messaging,
 // stopping or moving a chat the user follows acts on their work, so those ask
 // unless this chat runs at High.
@@ -50,6 +52,7 @@ const ALWAYS_ALLOWED = new Set([
   'thread_stop',
   'plan_set',
   'project_done',
+  'factory_usage',
   'session_list',
   'session_read',
 ]);

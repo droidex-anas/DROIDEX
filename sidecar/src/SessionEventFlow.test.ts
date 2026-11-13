@@ -178,6 +178,19 @@ test('notification ingress converges on the same transcript gating and side-effe
   assert.equal(harness.sideEffects[0]?.value.childSession?.providerSessionId, 'worker-2');
 });
 
+test('a generated title names the chat, never from an agent working in it', () => {
+  const harness = createHarness();
+  const titled = (title: string) => ({ type: 'session_title_updated', title });
+
+  harness.eventFlow.applyNotification('app-1', 'worker-1', 'worker', titled('Agent'), 'child-1');
+  harness.eventFlow.applyNotification('app-1', 'app-1', 'primary', titled(' Fix the redirect '));
+
+  assert.deepEqual(
+    harness.sideEffects.map((effect) => effect.value),
+    [{ sessionTitle: 'Fix the redirect' }],
+  );
+});
+
 test('a new primary turn preserves an admitted child Canvas call while clearing primary bindings', () => {
   const { eventFlow, transcripts } = createHarness({
     childScope: { childSessionId: 'child-1', role: 'worker' },

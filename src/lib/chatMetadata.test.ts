@@ -6,6 +6,8 @@ import {
   archiveChat,
   chatDisplayTitle,
   deleteChat,
+  draftChatTitle,
+  forkNumbers,
   isChatHidden,
   isChatPinned,
   loadChatMetadata,
@@ -107,6 +109,47 @@ test('chatDisplayTitle prefers the override and humanizes commands and markdown 
   for (const [stored, shown] of cases) {
     assert.equal(chatDisplayTitle(makeSession('s', 1_000, stored), undefined), shown, stored);
   }
+});
+
+test('draftChatTitle names a chat from its first sentence without cutting a word', () => {
+  const cases: Array<[message: string, title: string]> = [
+    ['Fix the login bug.', 'Fix the login bug'],
+    ['Why does the build fail? It started this morning.', 'Why does the build fail?'],
+    ['\n\n  Rename the   sidebar rows\nand add tests', 'Rename the sidebar rows'],
+    [
+      'Refactor the sidecar session registry so titles survive restarts',
+      'Refactor the sidecar session registry so titles',
+    ],
+    ['Replace config.json, then restart', 'Replace config.json, then restart'],
+    ['1. Fix the login bug', 'Fix the login bug'],
+    ['   1. Fix the login bug', 'Fix the login bug'],
+    ['# Fix the **login** issue.', 'Fix the login issue'],
+    ['```\nFix the crash in the session registry\n```', 'Fix the crash in the session registry'],
+    ['a'.repeat(60), 'a'.repeat(48)],
+    ['   \n ', ''],
+  ];
+  for (const [message, title] of cases) {
+    assert.equal(draftChatTitle(message), title, message);
+  }
+});
+
+test('forkNumbers numbers the forks of each source chat in the order they were made', () => {
+  const fork = (id: string, sourceAppSessionId: string, forkedAt: number) =>
+    sessionSummary(id, { lineage: { kind: 'fork', sourceAppSessionId, forkedAt } });
+  const numbers = forkNumbers(
+    {
+      lead: makeSession('lead'),
+      latest: fork('latest', 'lead', 40),
+      renamed: fork('renamed', 'lead', 30),
+      first: fork('first', 'lead', 10),
+      other: fork('other', 'second-lead', 20),
+      side: sessionSummary('side', {
+        lineage: { kind: 'side', sourceAppSessionId: 'lead', forkedAt: 5 },
+      }),
+    },
+    { renamed: { displayTitle: 'Try the other auth flow' } },
+  );
+  assert.deepEqual(Object.fromEntries(numbers), { first: 1, latest: 3, other: 1 });
 });
 
 test('pinChat stamps pinnedAt and unpinChat removes the empty entry', () => {

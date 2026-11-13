@@ -1,5 +1,6 @@
 import type { Provider } from '../../components/ModelIcon';
 import type {
+  DroidProfile,
   ModelInfo,
   ProviderKind,
   ProviderReadiness,
@@ -12,12 +13,25 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   codex: 'Codex',
 };
 
+// Each Alt profile is signed in through its own wrapper command.
+export const DROID_PROFILE_LOGINS: Record<DroidProfile, { label: string; command: string }> = {
+  alt: { label: 'Alt', command: 'droid-alt' },
+  alt2: { label: 'Alt 2', command: 'droid-alt2' },
+};
+
 // Where each harness's account usage is managed: the page its own limit
 // message sends people to.
 export const PROVIDER_USAGE_URLS: Record<ProviderKind, string> = {
   droid: 'https://app.factory.ai/settings/usage',
   claude: 'https://claude.ai/settings/usage',
   codex: 'https://chatgpt.com/codex/settings/usage',
+};
+
+// What each harness's own CLI runs to sign in, typed in a terminal.
+export const PROVIDER_SIGN_IN_COMMANDS: Record<ProviderKind, string> = {
+  droid: 'droid',
+  claude: 'claude',
+  codex: 'codex login',
 };
 
 // Each provider carries the official mark of the harness it runs, full color
