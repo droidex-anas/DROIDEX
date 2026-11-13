@@ -3,8 +3,6 @@
 // and kept for the session: a saved version never changes.
 
 import { useEffect, useState } from 'react';
-import { canvasClient } from '../canvasClient';
-import { canvasMessage } from '../client';
 import type { CatalogListing, DesignSystemVersionRef } from '../protocol';
 
 /** A read this quick shows nothing meanwhile, so a fast one does not flash. */
@@ -34,19 +32,24 @@ export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
     const showSkeleton = window.setTimeout(() => {
       setSlow(reading);
     }, SKELETON_DELAY_MS);
-    void canvasClient.designSystems
-      .read({ id, version })
-      .then(
-        ({ name, catalog }): KitCatalog => {
-          catalogs.set(key, { kitName: name, entries: catalog });
-          return { state: 'ready', kitName: name, entries: catalog };
-        },
-        (error: unknown): KitCatalog => ({ state: 'failed', message: canvasMessage(error) }),
-      )
-      .then((catalog) => {
-        window.clearTimeout(showSkeleton);
-        if (!stale) setSettled({ reading, catalog });
-      });
+    // The composer's `@` reads catalogs too, so the client loads with the canvas code, not the entry.
+    const read = async (): Promise<KitCatalog> => {
+      const [{ canvasClient }, { canvasMessage }] = await Promise.all([
+        import('../canvasClient'),
+        import('../client'),
+      ]);
+      try {
+        const { name, catalog } = await canvasClient.designSystems.read({ id, version });
+        catalogs.set(key, { kitName: name, entries: catalog });
+        return { state: 'ready', kitName: name, entries: catalog };
+      } catch (error) {
+        return { state: 'failed', message: canvasMessage(error) };
+      }
+    };
+    void read().then((catalog) => {
+      window.clearTimeout(showSkeleton);
+      if (!stale) setSettled({ reading, catalog });
+    });
     return () => {
       stale = true;
       window.clearTimeout(showSkeleton);

@@ -2,13 +2,23 @@
 // a row tags it in the next prompt. The canvas is watched only while the mention
 // menu is open, so a chat whose pane is closed holds no watch on it.
 
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { canvasClient } from '../../features/canvas/canvasClient';
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import type { CanvasClient } from '../../features/canvas/client';
 import { toggleFramePins, untagsFrames, useFramePins } from '../../features/canvas/framePins';
 import type { CanvasFrame } from '../../features/canvas/protocol';
 import { frameRowKey } from './menuItems';
 
 const NO_FRAMES: readonly CanvasFrame[] = [];
+
+// The client comes with the canvas code rather than the entry. A chat on a
+// canvas loads it up front, so the menu has it by the time `@` is typed.
+let loadedClient: CanvasClient | null = null;
+
+async function loadCanvasClient(): Promise<CanvasClient> {
+  const { canvasClient } = await import('../../features/canvas/canvasClient');
+  loadedClient = canvasClient;
+  return canvasClient;
+}
 
 export function useFrameMentions(
   appSessionId: string | null,
@@ -16,13 +26,29 @@ export function useFrameMentions(
   mentioning: boolean,
 ) {
   const watched = appSessionId !== null && mentioning ? canvasId : null;
+  useEffect(() => {
+    if (canvasId !== null) void loadCanvasClient();
+  }, [canvasId]);
   const subscribe = useCallback(
-    (listener: () => void) =>
-      watched === null ? () => undefined : canvasClient.subscribeCanvas(watched, listener),
+    (listener: () => void) => {
+      if (watched === null) return () => undefined;
+      let unsubscribe: (() => void) | null = null;
+      let closed = false;
+      void loadCanvasClient().then((client) => {
+        if (closed) return;
+        unsubscribe = client.subscribeCanvas(watched, listener);
+        // React read the snapshot before the client loaded; a board it already holds shows now.
+        listener();
+      });
+      return () => {
+        closed = true;
+        unsubscribe?.();
+      };
+    },
     [watched],
   );
   const snapshot = useSyncExternalStore(subscribe, () =>
-    watched === null ? null : canvasClient.snapshotOf(watched),
+    watched === null ? null : (loadedClient?.snapshotOf(watched) ?? null),
   );
   const pins = useFramePins(appSessionId);
   const taggedRowKeys = useMemo(
