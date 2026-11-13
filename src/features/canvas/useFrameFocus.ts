@@ -47,8 +47,6 @@ export function useFrameFocus({
   );
   const onFocusLabel = (frame: CanvasFrame) => {
     setFocusedId(frame.designId);
-    // A focused label must not scroll the clipped board under its transform.
-    if (board.current) board.current.scrollTop = board.current.scrollLeft = 0;
     reveal(rectFor(frame));
   };
 

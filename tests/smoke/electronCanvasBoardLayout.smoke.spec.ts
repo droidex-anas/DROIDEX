@@ -1,6 +1,7 @@
 // The board's layout tools against the harness: a selection dragged as one,
 // picking every frame, the box a multiple selection is measured by, resizing
-// from any edge or to a typed size, the zoom bar and keys, and undoing a placement.
+// from any edge or to a typed size, the zoom bar and keys, the board's tools
+// holding their corners, and undoing a placement.
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
@@ -462,6 +463,44 @@ test('the zoom bar and the ⌘ zoom keys zoom the board, and a typed percentage 
   await page.locator('#outside').focus();
   await page.keyboard.press('ControlOrMeta+0');
   await zoomed('90%');
+});
+
+test('focus reaching a frame out of view never scrolls the board, so its tools keep their corners', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  const board = page.getByTestId('canvas-board');
+  const corner = () =>
+    page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>('[data-testid="canvas-board"]')!;
+      const zoom = root.querySelector<HTMLElement>('[role="group"][aria-label="Zoom"]')!;
+      const rail = root.querySelector<HTMLElement>('[aria-label="Board input mode"]')!;
+      const outer = root.getBoundingClientRect();
+      return {
+        scroll: [root.scrollLeft, root.scrollTop],
+        zoom: [
+          zoom.getBoundingClientRect().left - outer.left,
+          outer.bottom - zoom.getBoundingClientRect().bottom,
+        ],
+        rail: [
+          rail.getBoundingClientRect().left - outer.left,
+          rail.getBoundingClientRect().top - outer.top,
+        ],
+      };
+    });
+  const resting = await corner();
+  // Pan A and its toolbar well past the board's bottom edge.
+  const { x, y, width, height } = await box(board);
+  await page.mouse.move(x + width / 2, y + height / 2);
+  await page.mouse.wheel(0, -1500);
+  await page.clock.runFor(32);
+  const rename = page.getByRole('button', { name: 'Rename Design A' });
+  expect((await box(rename)).y).toBeGreaterThan(y + height);
+
+  await rename.focus();
+  await expect(rename).toBeFocused();
+  expect(await corner()).toEqual(resting);
 });
 
 /** Where the board draws a frame, in board pixels. */

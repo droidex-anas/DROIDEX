@@ -371,9 +371,6 @@ export function useAnnotationEditor({
 
   /** The keyboard reached a mark: it is selected, and shown if the board had it out of view. */
   const onFocusMark = (id: string) => {
-    const root = board.current;
-    // A focused mark must not scroll the clipped board under its transform.
-    if (root) root.scrollTop = root.scrollLeft = 0;
     const mark = marks.find((candidate) => candidate.draft.id === id);
     if (!mark) return;
     reveal(draftBounds(mark.draft));
