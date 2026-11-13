@@ -17,7 +17,11 @@ import {
   useComponentPins,
   type ComponentPin,
 } from '../../features/canvas/componentPins';
-import { NEW_CANVAS_KEY, useDesignSystemChoice } from '../../features/canvas/designSystemChoices';
+import {
+  NEW_CANVAS_KEY,
+  useDesignSystemChoice,
+  type DesignSystemChoice,
+} from '../../features/canvas/designSystemChoices';
 import { ElementCrop } from '../../features/canvas/ElementCrop';
 import {
   elementLabel,
@@ -37,6 +41,8 @@ import {
   useFramePins,
   type FramePin,
 } from '../../features/canvas/framePins';
+import { useKitCatalog } from '../../features/canvas/palette/useKitCatalog';
+import type { DesignSystemRef } from '../../features/canvas/protocol';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { promptChips, type QueuedPrompt } from '../../lib/promptQueue';
 import { promptWithSideChatReplies, sideChatPanel } from '../../lib/sideChats';
@@ -55,6 +61,24 @@ export function composerCanvasKey(state: AppState, appSessionId: string | null):
   if (appSessionId) return state.canvasAttachments[appSessionId] ?? null;
   const canvas = state.draftChat?.canvas;
   return canvas ? (canvas.canvasId ?? NEW_CANVAS_KEY) : null;
+}
+
+/** The tags as the prompt sends them, reading the catalog of the kit version they move to. */
+function useSentComponents(
+  held: readonly ComponentPin[],
+  requestKit: DesignSystemRef | null,
+  choice: DesignSystemChoice | null,
+): readonly ComponentPin[] {
+  const moving =
+    requestKit !== null &&
+    held.some((pin) => pin.kit.id === requestKit.id && pin.kit.version !== requestKit.version);
+  const { catalog } = useKitCatalog(moving ? requestKit : undefined);
+  return pinsUnderKit(
+    held,
+    requestKit,
+    choice,
+    catalog?.state === 'ready' ? catalog.entries : null,
+  );
 }
 
 function repliesChip(count: number, onRemove: () => void): DraftSelection {
@@ -85,7 +109,7 @@ export function useComposerReferences(appSessionId: string | null, toChild: bool
   const taggedComponents = useComponentPins(appSessionId);
   const requestKit = canvasKey === null ? null : requestDesignSystem(framePins, chosenKit);
   const heldComponents = toChild ? NO_COMPONENTS : taggedComponents;
-  const components = pinsUnderKit(heldComponents, requestKit, designSystem);
+  const components = useSentComponents(heldComponents, requestKit, designSystem);
   const queued = {
     ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
     ...(framePins.length > 0 ? { framePins } : {}),

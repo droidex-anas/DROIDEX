@@ -37,7 +37,12 @@ export function useComponentMentions(
     /** Tags the entry beside the ones the draft carries; its chip takes it off. */
     tag: (entry: CatalogListing) => {
       if (appSessionId === null || kit === null || catalog?.state !== 'ready') return;
-      tagComponent(appSessionId, { kit: { ...kit }, kitName: catalog.kitName, name: entry.name });
+      tagComponent(appSessionId, {
+        kit: { ...kit },
+        kitName: catalog.kitName,
+        name: entry.name,
+        props: [],
+      });
     },
   };
 }

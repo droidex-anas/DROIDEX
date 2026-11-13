@@ -14,8 +14,13 @@ import {
 
 const ACME = { id: 'acme', version: 3, mode: 'light' as const };
 
-function pin(name: string, kit = ACME, kitName = 'Acme'): ComponentPin {
-  return { kit, kitName, name };
+function pin(
+  name: string,
+  kit = ACME,
+  kitName = 'Acme',
+  props: ComponentPin['props'] = [],
+): ComponentPin {
+  return { kit, kitName, name, props };
 }
 
 test('a component is tagged once per kit, by the chat that tagged it, up to eight', () => {
@@ -71,8 +76,12 @@ test('a sent prompt takes off only the tags it was composed with, not a tag made
   unpinComponents('chat-s');
 });
 
-test('a chip names its kit only beside components of another kit', () => {
-  assert.deepEqual(componentLabels([pin('Button'), pin('Card')]), ['Button', 'Card']);
+test('a chip names its picked options, and its kit only beside components of another kit', () => {
+  const outline = pin('Button', ACME, 'Acme', [
+    { name: 'variant', value: 'outline' },
+    { name: 'size', value: 'lg' },
+  ]);
+  assert.deepEqual(componentLabels([outline, pin('Card')]), ['Button (outline, lg)', 'Card']);
   const slate = { id: 'slate', version: 1, mode: 'dark' as const };
   assert.deepEqual(componentLabels([pin('Button'), pin('Card', slate, 'Slate')]), [
     'Button · Acme',
@@ -83,9 +92,34 @@ test('tags of the request’s kit follow it to its current version, mode and nam
   const slate = pin('Card', { id: 'slate', version: 1, mode: 'dark' }, 'Slate');
   const pins = [pin('Button'), slate];
   const current = { ...ACME, version: 4, mode: 'dark' as const };
-  assert.deepEqual(pinsUnderKit(pins, current, null), [pin('Button', current), slate]);
+  assert.deepEqual(pinsUnderKit(pins, current, null, null), [pin('Button', current), slate]);
   const renamed = { ref: current, name: 'Acme 2' };
-  assert.deepEqual(pinsUnderKit(pins, current, renamed), [pin('Button', current, 'Acme 2'), slate]);
-  assert.equal(pinsUnderKit(pins, ACME, { ref: ACME, name: 'Acme' }), pins);
-  assert.equal(pinsUnderKit(pins, null, null), pins);
+  assert.deepEqual(pinsUnderKit(pins, current, renamed, null), [
+    pin('Button', current, 'Acme 2'),
+    slate,
+  ]);
+  assert.equal(pinsUnderKit(pins, ACME, { ref: ACME, name: 'Acme' }, null), pins);
+  assert.equal(pinsUnderKit(pins, null, null, null), pins);
+});
+
+test('a tag that follows its kit to a new version keeps only the options that version offers', () => {
+  const picks = [
+    { name: 'variant', value: 'outline' },
+    { name: 'size', value: 'xl' },
+  ];
+  const current = { ...ACME, version: 4 };
+  const catalog = [
+    {
+      name: 'Button',
+      module: null,
+      note: null,
+      props: [
+        { name: 'variant', options: ['default', 'outline'], default: 'default' },
+        { name: 'size', options: ['sm', 'lg'], default: 'sm' },
+      ],
+    },
+  ];
+  assert.deepEqual(pinsUnderKit([pin('Button', ACME, 'Acme', picks)], current, null, catalog), [
+    pin('Button', current, 'Acme', [picks[0]]),
+  ]);
 });

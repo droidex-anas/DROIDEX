@@ -6,7 +6,8 @@
 import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import type { DesignSystemChoice } from './designSystemChoices';
-import type { DesignSystemRef } from './protocol';
+import type { PropPick } from './elementEditProtocol';
+import type { CatalogListing, DesignSystemRef } from './protocol';
 
 /** A prompt names a few components; past that it is asking for a whole kit. */
 const MAX_PINNED_COMPONENTS = 8;
@@ -17,6 +18,8 @@ export interface ComponentPin {
   kitName: string;
   /** The catalog entry's name. */
   name: string;
+  /** The options picked for the entry's props where they differ from its defaults. */
+  props: readonly PropPick[];
 }
 
 const NONE: readonly ComponentPin[] = [];
@@ -51,18 +54,22 @@ export function componentPinKey({ kit, name }: ComponentPin): string {
 }
 
 /**
- * What the chips call the tags: each entry's name, and its kit's name beside
- * it once the tags come from more than one kit. Mirrored by
- * sidecar/src/canvas/canvasPinsPrompt.ts for the sent prompt's bubble.
+ * What the chips call the tags: each entry's name with its picked options, and
+ * its kit's name beside it once the tags come from more than one kit. Mirrored
+ * by sidecar/src/canvas/canvasPinsPrompt.ts for the sent prompt's bubble.
  */
 export function componentLabels(pins: readonly ComponentPin[]): string[] {
   const kits = new Set(pins.map((pin) => pin.kit.id));
-  return pins.map((pin) => (kits.size > 1 ? `${pin.name} · ${pin.kitName}` : pin.name));
+  return pins.map((pin) => {
+    const picked = pin.props.map(({ value }) => value).join(', ');
+    const entry = picked === '' ? pin.name : `${pin.name} (${picked})`;
+    return kits.size > 1 ? `${entry} · ${pin.kitName}` : entry;
+  });
 }
 
 /**
  * Tags the entry in the chat's next prompt beside the ones it has, while it has
- * room. An entry tagged already takes this tag's kit version and mode.
+ * room. An entry tagged already takes this tag's kit version, mode and options.
  */
 export function tagComponent(appSessionId: string, pin: ComponentPin): void {
   const held = componentPins(appSessionId);
@@ -112,12 +119,14 @@ export function unpinSentComponents(appSessionId: string, sent: readonly Compone
 /**
  * The tags as a prompt sends them: those of the request's kit follow it to its
  * current version and mode, so the agent reads the entry the frames build with.
- * When the request runs under the canvas's choice, they take its name too.
+ * When the request runs under the canvas's choice, they take its name too, and
+ * once that version's catalog is read, only the options its entry still offers.
  */
 export function pinsUnderKit(
   pins: readonly ComponentPin[],
   kit: DesignSystemRef | null,
   choice: DesignSystemChoice | null,
+  catalog: readonly CatalogListing[] | null,
 ): readonly ComponentPin[] {
   if (kit === null) return pins;
   const kitName = choice?.ref.id === kit.id ? choice.name : null;
@@ -128,14 +137,28 @@ export function pinsUnderKit(
       (kitName !== null && pin.kitName !== kitName));
   if (!pins.some(isBehind)) return pins;
   return pins.map((pin) =>
-    isBehind(pin) ? { ...pin, kit: { ...kit }, kitName: kitName ?? pin.kitName } : pin,
+    isBehind(pin)
+      ? {
+          kit: { ...kit },
+          kitName: kitName ?? pin.kitName,
+          name: pin.name,
+          props: catalog === null ? pin.props : offeredPicks(pin, catalog),
+        }
+      : pin,
+  );
+}
+
+function offeredPicks({ name, props }: ComponentPin, catalog: readonly CatalogListing[]) {
+  const entry = catalog.find((each) => each.name === name);
+  return props.filter((pick) =>
+    entry?.props.some((prop) => prop.name === pick.name && prop.options.includes(pick.value)),
   );
 }
 
 /**
  * Puts a queued prompt's components back beside the ones the draft has, as far
  * as it has room. A queued tag of an entry the draft holds takes its place, so
- * the prompt keeps the kit version it was queued with.
+ * the prompt keeps the kit version and options it was queued with.
  */
 export function restoreComponentPins(appSessionId: string, pins: readonly ComponentPin[]): void {
   if (pins.length === 0) return;

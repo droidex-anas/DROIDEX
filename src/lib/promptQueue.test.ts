@@ -47,7 +47,7 @@ test('a design prompt’s bubble shows the frames and components it carried', ()
         designSystem: kit,
       },
     ],
-    componentPins: [{ kit, kitName: 'Acme', name: 'Button' }],
+    componentPins: [{ kit, kitName: 'Acme', name: 'Button', props: [] }],
   };
   const event = createLocalDesignTranscriptEvent('chat', 'Use these', [], {
     skills: [],

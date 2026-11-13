@@ -1,19 +1,24 @@
 // The Components tab beside the board: the entries of the kit catalog the
 // target frame pins, searchable, each added with Enter or a click to the layer
-// the line under the search names, with the variants its menu picked. The
+// the line under the search names, with the variants its menu picked, or
+// tagged in the chat with them. The
 // search keeps the keyboard and the arrows walk the matches through
 // aria-activedescendant, as the frame navigator does; a catalog holds at most
 // 128 entries, so every row mounts.
 
-import { useEffect, useId, useRef, useState, type RefObject } from 'react';
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ChevronDown, Search } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Input } from '../../../components/ui/Field';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { ALT_MODIFIER_LABEL } from '../../../lib/shortcuts';
+import { TAG_KEY_LABEL } from '../boardKeys';
+import type { ComponentPin } from '../componentPins';
+import { toggleComponentPin } from '../componentTagging';
 import type { PropPick } from '../elementEditProtocol';
-import type { CatalogListing, DesignSystemVersionRef } from '../protocol';
+import type { CatalogListing, DesignSystemRef } from '../protocol';
+import { TagComponentButton } from '../TagComponentButton';
 import { paletteRows, propPicks, type ChosenProps } from './paletteRows';
 import type { PalettePlace } from './useComponentInsert';
 import { useKitCatalog, type KitCatalog } from './useKitCatalog';
@@ -24,12 +29,15 @@ const SKELETON_WIDTHS = ['w-24', 'w-32', 'w-20', 'w-28', 'w-16', 'w-24'];
 
 export function ComponentsPanel({
   kit,
+  chatId,
   place,
   onAdd,
   onLeave,
 }: {
   /** The kit version whose catalog is listed: the target frame's, else the board's first frame's. */
-  kit: DesignSystemVersionRef | undefined;
+  kit: DesignSystemRef | undefined;
+  /** The chat whose next prompt the rows tag entries in; null on a board that is not the chat's own. */
+  chatId: string | null;
   place: PalettePlace;
   onAdd: (entry: string, props: PropPick[]) => void;
   /** Escape on an empty search: the keyboard goes back to the board. */
@@ -49,10 +57,12 @@ export function ComponentsPanel({
   const listId = useId();
   const hintId = useId();
   const variantsHintId = useId();
+  const tagHintId = useId();
   const optionId = (index: number) => `${listId}-${String(index)}`;
   const matches = catalog?.state === 'ready' ? paletteRows(catalog.entries, query) : [];
   const menuEntry = matches.find((entry) => entry.name === menuFor);
   const picksOf = (entry: CatalogListing) => propPicks(entry, chosen[entry.name] ?? {});
+  const tagging = rowTagging(chatId, kit, catalog);
   const keys = usePaletteKeys({
     query,
     onQuery: setQuery,
@@ -64,6 +74,14 @@ export function ComponentsPanel({
     onMenu: (index) => {
       if (matches[index].props.length > 0) setMenuFor(matches[index].name);
     },
+    onTag: tagging
+      ? (index) => {
+          toggleComponentPin(
+            tagging.chatId,
+            tagging.pinOf(matches[index], picksOf(matches[index])),
+          );
+        }
+      : null,
     onLeave,
   });
   // The tab opens on its search, from the keyboard or a click.
@@ -82,9 +100,9 @@ export function ComponentsPanel({
           aria-label="Search components"
           aria-controls={listId}
           aria-expanded
-          aria-describedby={hintId}
+          aria-describedby={tagging ? `${hintId} ${tagHintId}` : hintId}
           aria-activedescendant={keys.activeIndex >= 0 ? optionId(keys.activeIndex) : undefined}
-          aria-keyshortcuts="Alt+ArrowDown"
+          aria-keyshortcuts={tagging ? 'Alt+ArrowDown Meta+L' : 'Alt+ArrowDown'}
           placeholder="Search components"
           spellCheck={false}
           leading={<Search className="size-icon-sm" />}
@@ -111,6 +129,11 @@ export function ComponentsPanel({
           Alt with Down picks its variants.
         </span>
       )}
+      {tagging && (
+        <span id={tagHintId} className="sr-only">
+          {TAG_KEY_LABEL} tags the component you are on in the chat.
+        </span>
+      )}
       <CatalogState catalog={catalog} query={query} matches={matches.length} onRetry={retry} />
       {matches.length > 0 && (
         <div
@@ -126,6 +149,19 @@ export function ComponentsPanel({
               entry={entry}
               picks={picksOf(entry)}
               variantsHintId={variantsHintId}
+              tag={
+                tagging ? (
+                  <TagComponentButton
+                    appSessionId={tagging.chatId}
+                    pin={tagging.pinOf(entry, picksOf(entry))}
+                    shortcut={TAG_KEY_LABEL}
+                    revealed={index === keys.activeIndex}
+                    // The search keeps the keyboard; ⌘L tags the row it is on.
+                    tabIndex={-1}
+                    className="flex shrink-0"
+                  />
+                ) : null
+              }
               active={index === keys.activeIndex}
               canAdd={place.canAdd}
               menuOpen={entry === menuEntry}
@@ -161,11 +197,31 @@ export function ComponentsPanel({
   );
 }
 
+/** How the rows tag their entries in the chat, or null where they cannot. */
+function rowTagging(
+  chatId: string | null,
+  kit: DesignSystemRef | undefined,
+  catalog: KitCatalog | null,
+) {
+  if (chatId === null || kit === undefined || catalog?.state !== 'ready') return null;
+  const { kitName } = catalog;
+  return {
+    chatId,
+    pinOf: (entry: CatalogListing, props: PropPick[]): ComponentPin => ({
+      kit: { ...kit },
+      kitName,
+      name: entry.name,
+      props,
+    }),
+  };
+}
+
 function CatalogRow({
   id,
   entry,
   picks,
   variantsHintId,
+  tag,
   active,
   canAdd,
   menuOpen,
@@ -179,6 +235,8 @@ function CatalogRow({
   picks: PropPick[];
   /** What tells a row with variants how the keyboard opens its menu. */
   variantsHintId: string;
+  /** The row's Tag in chat toggle, or null where it cannot be tagged. */
+  tag: ReactNode;
   active: boolean;
   canAdd: boolean;
   menuOpen: boolean;
@@ -195,7 +253,7 @@ function CatalogRow({
       aria-describedby={entry.props.length > 0 ? variantsHintId : undefined}
       title={entry.note ?? undefined}
       className={cn(
-        'flex select-none items-center gap-2.5 rounded-md px-3 py-1.5 text-body transition-colors duration-150 ease-out',
+        'group flex select-none items-center gap-2.5 rounded-md px-3 py-1.5 text-body transition-colors duration-150 ease-out',
         active ? 'bg-active' : 'hover:bg-elevated',
         canAdd ? 'cursor-pointer' : 'cursor-default',
       )}
@@ -217,26 +275,28 @@ function CatalogRow({
           {entry.module.split('/').at(-1)}
         </span>
       )}
-      {entry.props.length > 0 && (
-        <Tooltip
-          label={`Variants  ${ALT_MODIFIER_LABEL}↓`}
-          className="-my-1.5 -mr-2 ml-auto flex shrink-0"
-        >
-          <Button
-            ref={menuOpen ? triggerRef : undefined}
-            variant="ghost"
-            size="sm"
-            icon={ChevronDown}
-            aria-label={`${entry.name} variants`}
-            aria-haspopup="menu"
-            aria-expanded={menuOpen}
-            tabIndex={-1}
-            onClick={(event) => {
-              event.stopPropagation();
-              onMenu();
-            }}
-          />
-        </Tooltip>
+      {(tag !== null || entry.props.length > 0) && (
+        <div className="-my-1.5 -mr-2 ml-auto flex shrink-0">
+          {tag}
+          {entry.props.length > 0 && (
+            <Tooltip label={`Variants  ${ALT_MODIFIER_LABEL}↓`} className="flex shrink-0">
+              <Button
+                ref={menuOpen ? triggerRef : undefined}
+                variant="ghost"
+                size="sm"
+                icon={ChevronDown}
+                aria-label={`${entry.name} variants`}
+                aria-haspopup="menu"
+                aria-expanded={menuOpen}
+                tabIndex={-1}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onMenu();
+                }}
+              />
+            </Tooltip>
+          )}
+        </div>
       )}
     </div>
   );
