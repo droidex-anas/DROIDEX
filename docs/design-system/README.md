@@ -69,7 +69,7 @@ The UI uses the platform system face (`sans`: SF Pro on macOS), code uses the na
 - Section headers, meta pills, tooltips: `label` (12/16, medium).
 - Timestamps, counts, hints: `caption` (11/16).
 - Badges: `overline` (10/12, medium, uppercase, 0.08em).
-- Titles: `display` 24/30, `title` 22/28, `heading` 18/22, `subheading` 16/20, all semibold with negative tracking.
+- Titles: `display` 24/30, `title` 22/28, `heading` 18/22, `subheading` 16/20, all semibold with negative tracking. The first-run setup alone sets larger, lighter titles: `hero` 48/52 at 400 for its welcome and closing screens, and `headline` 30/36 at 500 for each step.
 - Code, terminal, diffs: `code` (12/18) and `code-sm` (11/16) in `mono`, tabular figures.
 - Inline code in running text: the face and size of the text around it at weight 500, with no box. Mono is for code surfaces, not names in a sentence.
 - Weights are 400, 500 and 600 only. Medium (500) is the working weight for interactive labels; semibold (600) is for headings. Never bold (700).
@@ -81,7 +81,7 @@ Text doesn't grow or shrink with the window. Each surface uses its own fixed set
 | Surface | Examples | Styles | Controls |
 | --- | --- | --- | --- |
 | **Dense** | sidebar, menus, popovers, chips, tool panels, tooltips, status lines | `body`, `body-strong`, `label`, `caption`, `overline` | `control-sm`/`control-md`, `icon-sm`/`icon-md`, padding `space-1.5` to `space-3` |
-| **Reading** | transcript, markdown, settings pages, dialogs, welcome | `prose`, `display`, `title`, `heading`, `subheading` | `control-md`/`control-lg`, padding `space-4` to `space-6`, a 60–80 character measure for `prose` |
+| **Reading** | transcript, markdown, settings pages, dialogs, welcome, first-run setup | `prose`, `hero`, `headline`, `display`, `title`, `heading`, `subheading` | `control-md`/`control-lg`, padding `space-4` to `space-6`, a 60–80 character measure for `prose` |
 
 Size changes how the text is set:
 

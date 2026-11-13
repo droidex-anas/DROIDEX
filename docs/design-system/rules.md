@@ -5,8 +5,8 @@ The checkable rulebook. Anyone building DROIDEX UI, person or agent, follows the
 ## The ten rules
 
 1. **Only tokens.** Every colour, size, space, radius and shadow comes from this system. No hex, no `[13.5px]`, no `rounded-[5px]`.
-2. **Eleven type styles, nothing else.** See the table below. If text needs to look different, it is a different style, not a tweak.
-3. **Three weights.** 400 for reading, 500 for anything you click or label, 600 for headings. Never 300 or 700.
+2. **Thirteen type styles, nothing else.** See the table below. If text needs to look different, it is a different style, not a tweak.
+3. **Three weights.** 400 for reading, 500 for anything you click or label, 600 for headings. The first-run setup's `hero` and `headline` titles are the one exception and run lighter, at 400 and 500. Never 300 or 700.
 4. **Space and tone, not lines.** Separate things with space and a subtle tone step, never with a line. No outline or stroke around cards, panels, the composer, chips, menus, popovers, sheets, dialogs or inputs, and no divider between rows, under headers, above footers or around groups. Surfaces step in tone (`bg` → `surface` → `elevated` → `raised`), with shadow when they float. Hover, selected and focused things change fill, never add a stroke or ring. A line is allowed only for data tables and the few cases below where it carries meaning tone cannot.
 5. **Colour is a signal.** Neutral by default. Colour appears only for links, status, destructive or confirming actions, and the brand mark.
 6. **One primary action per surface.** Everything else is secondary or ghost.
@@ -41,6 +41,8 @@ Leave surfaces that already work without lines alone.
 
 | Element | Style | Size / line | Weight | Colour |
 | --- | --- | --- | --- | --- |
+| First-run welcome and closing titles | `hero` | 48 / 52 | 400 | `text` |
+| First-run step titles | `headline` | 30 / 36 | 500 | `text` |
 | Page title (settings, welcome) | `title` | 22 / 28 | 600 | `text` |
 | Markdown h1 | `display` | 24 / 30 | 600 | `text` |
 | Dialog and sheet title, markdown h2–h3 | `heading` | 18 / 22 | 600 | `text` |

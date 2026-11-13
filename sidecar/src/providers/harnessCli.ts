@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 
 import {
   completedProcessExitCode,
+  runStreaming,
   streamingInvocation,
   type ShellCommand,
 } from '../CliInstaller.js';
@@ -15,6 +16,7 @@ import type {
   HarnessCliProvider,
   HarnessCliState,
   HarnessInstallSource,
+  InstallChannel,
   ServerEvent,
 } from '../protocol.js';
 import { resolveClaudePath } from './claude/claudeExecutable.js';
@@ -27,6 +29,38 @@ const VERSION_TIMEOUT_MS = 10_000;
 const execFileAsync = promisify(execFile);
 
 type HarnessCliEvent = Extract<ServerEvent, { type: `harness.cli.${string}` }>;
+
+// Each CLI's documented installers. Codex publishes no install script.
+const INSTALLERS: Record<HarnessCliProvider, Partial<Record<InstallChannel, ShellCommand>>> = {
+  claude: {
+    // Downloaded to a file first so a failed curl stops before bash runs.
+    script: {
+      command: 'sh',
+      args: [
+        '-c',
+        'f="$(mktemp)" && curl -fsSL https://claude.ai/install.sh -o "$f" && bash "$f"; r=$?; rm -f "$f"; exit $r',
+      ],
+    },
+    brew: { command: 'brew', args: ['install', '--cask', 'claude-code'] },
+    npm: { command: 'npm', args: ['install', '-g', '@anthropic-ai/claude-code'] },
+  },
+  codex: {
+    brew: { command: 'brew', args: ['install', '--cask', 'codex'] },
+    npm: { command: 'npm', args: ['install', '-g', '@openai/codex'] },
+  },
+};
+
+export function buildHarnessInstallCommand(
+  provider: HarnessCliProvider,
+  channel: InstallChannel,
+): ShellCommand {
+  if (!HARNESS_CLI_PROVIDERS.includes(provider)) {
+    throw new Error(`No installable CLI for provider: ${provider}`);
+  }
+  const command = INSTALLERS[provider][channel];
+  if (!command) throw new Error(`${provider} has no ${channel} installer.`);
+  return command;
+}
 
 interface InstalledCli {
   path: string;
@@ -140,16 +174,18 @@ async function runUpdater(cmd: ShellCommand): Promise<{ exitCode: number; lastLi
   }
 }
 
-// Detects and updates the Claude Code and Codex CLIs through whichever
-// installer owns each binary. One update per harness runs at a time.
-export class HarnessCliUpdater {
-  private readonly updating = new Set<HarnessCliProvider>();
+// Detects, installs and updates the Claude Code and Codex CLIs, updating
+// through whichever installer owns each binary. One install or update per
+// harness runs at a time.
+export class HarnessCliInstaller {
+  private readonly busy = new Set<HarnessCliProvider>();
   private readonly updateErrors = new Map<HarnessCliProvider, string>();
 
   constructor(
     private readonly emit: (event: HarnessCliEvent) => void,
-    // Runs after a successful update: the new binary may offer new models.
-    private readonly afterUpdate: () => Promise<void>,
+    // Runs after a successful install or update: a new binary changes the
+    // provider's readiness and may offer new models.
+    private readonly afterChange: () => Promise<void>,
   ) {}
 
   async report(): Promise<void> {
@@ -157,17 +193,37 @@ export class HarnessCliUpdater {
     this.emit({ type: 'harness.cli.report', clis });
   }
 
+  // A first install has no old version to lose if DROIDEX quits halfway, so
+  // unlike an update it streams its output for the onboarding log.
+  async install(provider: HarnessCliProvider, channel: InstallChannel): Promise<void> {
+    const command = buildHarnessInstallCommand(provider, channel);
+    if (this.busy.has(provider)) return;
+    this.busy.add(provider);
+    let exitCode: number;
+    try {
+      exitCode = await runStreaming(command, ({ stream, line }) => {
+        this.emit({ type: 'harness.cli.install.progress', provider, stream, line });
+      });
+    } finally {
+      this.busy.delete(provider);
+    }
+    const ok = exitCode === 0;
+    this.emit({ type: 'harness.cli.install.done', provider, ok, exitCode });
+    await this.report();
+    if (ok) await this.afterChange();
+  }
+
   async update(provider: HarnessCliProvider): Promise<void> {
     if (!HARNESS_CLI_PROVIDERS.includes(provider)) {
       throw new Error(`No updatable CLI for provider: ${provider}`);
     }
-    if (this.updating.has(provider)) return;
+    if (this.busy.has(provider)) return;
     const install = findInstall(provider);
     if (!install?.update) {
       await this.report();
       return;
     }
-    this.updating.add(provider);
+    this.busy.add(provider);
     let previousVersion: string | undefined;
     let lastLine: string | undefined;
     let exitCode: number;
@@ -176,7 +232,7 @@ export class HarnessCliUpdater {
       await this.report();
       ({ exitCode, lastLine } = await runUpdater(install.update));
     } finally {
-      this.updating.delete(provider);
+      this.busy.delete(provider);
     }
     const ok = exitCode === 0;
     if (ok) {
@@ -196,7 +252,7 @@ export class HarnessCliUpdater {
       ...(version ? { version } : {}),
     });
     await this.report();
-    if (ok) await this.afterUpdate();
+    if (ok) await this.afterChange();
   }
 
   private async state(provider: HarnessCliProvider): Promise<HarnessCliState> {
@@ -210,7 +266,7 @@ export class HarnessCliUpdater {
       path: install.path,
       source: install.source,
       ...(version ? { version } : {}),
-      updating: this.updating.has(provider),
+      updating: this.busy.has(provider),
       ...(updateError ? { updateError } : {}),
     };
   }

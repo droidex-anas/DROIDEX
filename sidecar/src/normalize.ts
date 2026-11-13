@@ -101,6 +101,8 @@ export interface NormalizedEvent {
   };
   // Only ever the primary conversation's own.
   harnessModelSwitch?: HarnessModelSwitch;
+  // The name the harness generated for the chat.
+  sessionTitle?: string;
   done?: boolean;
 }
 
@@ -356,6 +358,8 @@ export function normalizeNotification(
         },
       },
     ];
+  const sessionTitle = sessionTitleFrom(raw);
+  if (sessionTitle) return [{ sessionTitle }];
   const skillActivation = skillActivationFromNotification(raw);
   if (skillActivation)
     return [
@@ -377,6 +381,13 @@ export function normalizeNotification(
       ),
     )
     .filter((event): event is NormalizedEvent => event !== null);
+}
+
+function sessionTitleFrom(raw: unknown): string | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const notification = raw as Record<string, unknown>;
+  if (notification.type !== 'session_title_updated') return undefined;
+  return str(notification.title);
 }
 
 function skillActivationFromNotification(raw: unknown): SkillActivation | undefined {

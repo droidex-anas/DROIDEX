@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { z } from 'zod';
+import { DROID_PROFILES } from '../droidProfiles.js';
 import { PROVIDER_KINDS } from '../providers/providerKind.js';
 import type { Project, ThreadInput } from './types.js';
 
@@ -46,7 +47,7 @@ export const threadInputSchema = z
     title: z.string().trim().min(1).max(LEDGER_LIMITS.title),
     prompt: text.trim().min(1),
     provider: z.enum(PROVIDER_KINDS),
-    droidProfile: z.literal('alt').optional(),
+    droidProfile: z.enum(DROID_PROFILES).optional(),
     modelId: z.string().min(1).max(200).optional(),
     reasoningEffort: z
       .enum(['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'dynamic'])

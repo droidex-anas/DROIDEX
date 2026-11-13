@@ -132,7 +132,7 @@ import {
   DEFAULT_PROVIDER,
   type ProviderKind,
 } from './providers/providerKind.js';
-import { HarnessCliUpdater } from './providers/harnessCli.js';
+import { HarnessCliInstaller } from './providers/harnessCli.js';
 import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
@@ -241,6 +241,8 @@ export interface SessionManagerOptions {
   requestBrowser?: RequestBrowser;
 }
 
+// The renderer caps chat titles the same way (MAX_CHAT_TITLE_LENGTH).
+const MAX_SESSION_TITLE_LENGTH = 200;
 const MAX_OPEN_CHILD_SESSIONS = boundedInt(
   process.env.DROID_CONTROL_MAX_OPEN_CHILD_SESSIONS,
   4,
@@ -387,7 +389,7 @@ export class SessionManager {
     },
   });
   private readonly providerProbes: ProviderProbes;
-  private readonly harnessClis = new HarnessCliUpdater(
+  private readonly harnessClis = new HarnessCliInstaller(
     (event) => {
       this.emit(event);
     },
@@ -448,7 +450,10 @@ export class SessionManager {
         ((appSessionId) => createAutomationMcpServer(appSessionId));
       this.createSessionsMcpResource =
         options.dependencies.createSessionsMcpResource ??
-        ((appSessionId) => createSessionsMcpServer(appSessionId, this.sidebarSessions));
+        ((appSessionId) =>
+          createSessionsMcpServer(appSessionId, this.sidebarSessions, () =>
+            this.runtime.factoryApiKey(),
+          ));
       this.mcpConfiguration = options.dependencies.mcpConfiguration;
       this.loadConfiguredMcpServers = options.dependencies.loadConfiguredMcpServers;
       this.factoryDefaultsOverride = options.dependencies.getFactoryDefaults;
@@ -473,7 +478,9 @@ export class SessionManager {
         createBrowserMcpServer(browsers, appSessionId);
       this.createAutomationMcpResource = (appSessionId) => createAutomationMcpServer(appSessionId);
       this.createSessionsMcpResource = (appSessionId) =>
-        createSessionsMcpServer(appSessionId, this.sidebarSessions);
+        createSessionsMcpServer(appSessionId, this.sidebarSessions, () =>
+          this.runtime.factoryApiKey(),
+        );
       this.mcpConfiguration = new DroidMcpConfiguration();
       this.loadConfiguredMcpServers = loadFactoryMcpServers;
       this.factoryDefaultsOverride = undefined;
@@ -1129,6 +1136,9 @@ export class SessionManager {
       case 'harness.cli.check':
         await this.harnessClis.report();
         return;
+      case 'harness.cli.install':
+        await this.harnessClis.install(cmd.provider, cmd.channel);
+        return;
       case 'harness.cli.update':
         await this.harnessClis.update(cmd.provider);
         return;
@@ -1727,7 +1737,15 @@ export class SessionManager {
     );
     if (kind === 'codex') {
       const inAppServers = [
-        ...(managesChats ? [createSessionsMcpServer(() => ref.id, this.sidebarSessions)] : []),
+        ...(managesChats
+          ? [
+              createSessionsMcpServer(
+                () => ref.id,
+                this.sidebarSessions,
+                () => this.runtime.factoryApiKey(),
+              ),
+            ]
+          : []),
         ...(attended ? [createAutomationMcpServer(() => ref.id)] : []),
         canvas,
       ];
@@ -1986,6 +2004,13 @@ export class SessionManager {
     this.missionControlPolicy.apply(appSessionId, n);
     if (n.harnessModelSwitch)
       this.modelSettings.adoptHarnessModel(appSessionId, n.harnessModelSwitch);
+    // A name is not activity: it must not lift the chat in the sidebar.
+    if (n.sessionTitle)
+      this.registry.updateSummary(
+        appSessionId,
+        { title: n.sessionTitle.slice(0, MAX_SESSION_TITLE_LENGTH) },
+        { touchActivity: false },
+      );
     if (n.childSession) {
       const { toolUseId, ...childSession } = n.childSession;
       this.childSessions.admitChildObservation({
@@ -2263,10 +2288,9 @@ export class SessionManager {
   }
 
   private async renameSession(requestedAppSessionId: string, title: string): Promise<void> {
-    // Renderer metadata caps titles at 200 chars (MAX_CHAT_TITLE_LENGTH); the
-    // bridge is the trusted boundary, so clamp here too before forwarding to
-    // the harness.
-    const safeTitle = title.trim().slice(0, 200);
+    // The bridge is the trusted boundary, so clamp here too before forwarding
+    // to the harness.
+    const safeTitle = title.trim().slice(0, MAX_SESSION_TITLE_LENGTH);
     // Droid keeps the title in its own session file and has to be told; every
     // other provider's title is DROIDEX's alone, so only the daemon call is
     // skipped and the chat is still renamed.

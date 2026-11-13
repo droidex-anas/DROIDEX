@@ -152,6 +152,7 @@ import { DraftSelections, type DraftSelection } from './composer/DraftSelections
 import ComposerMenu, { type SlashCommand } from './ComposerMenu';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { useAskSideChat } from './sidechats/useAskSideChat';
+import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
   PROVIDER_MARKS,
@@ -180,6 +181,7 @@ import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { sideChatPromptFromCommand } from '../lib/sideChats';
+import { draftChatTitle } from '../lib/chatMetadata';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import useFastMode from '../hooks/useFastMode';
@@ -1583,7 +1585,7 @@ export default function PromptInput({
       if (updateInterruptedSubmit()) return;
       const { worker, validator } = state.agentConfig;
       const clientRef = newClientRef();
-      const title = (displayText || skillNames[0] || 'Mission').slice(0, 48);
+      const title = draftChatTitle(displayText) || skillNames[0] || 'Mission';
       startTurnStarting(clientRef);
       const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
       if (!preparation.ok) {
@@ -1639,10 +1641,8 @@ export default function PromptInput({
       // typed or spoken, blocks another.
       if (projectDraft) projectStartRef.current = clientRef;
       const draftAtSubmit = store.getState().draftChat;
-      const title = (displayText || skillNames[0] || (projectDraft ? 'Project' : 'Chat')).slice(
-        0,
-        48,
-      );
+      const title =
+        draftChatTitle(displayText) || skillNames[0] || (projectDraft ? 'Project' : 'Chat');
       startTurnStarting(clientRef);
       const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
       if (!preparation.ok) {
@@ -2459,11 +2459,6 @@ export default function PromptInput({
       }}
     />
   );
-  const altProfileTag = activeSession?.droidProfile === 'alt' && (
-    <span className="shrink-0 px-2 text-caption text-muted" title="Alt Factory account">
-      <span className="sr-only">Factory account: </span>Alt
-    </span>
-  );
   const modelPicker = (
     <>
       <button
@@ -2673,7 +2668,7 @@ export default function PromptInput({
               }}
               chat={
                 activeSession &&
-                (visibleTarget.kind === 'primary' || activeSession.droidProfile === 'alt')
+                (visibleTarget.kind === 'primary' || activeSession.droidProfile !== undefined)
                   ? {
                       usageLimit: visibleTarget.kind === 'primary' ? usageLimit : undefined,
                       droidProfile: activeSession.droidProfile,
@@ -2871,7 +2866,7 @@ export default function PromptInput({
             design system and library names give way first, then the autonomy
             label, never the model's. */}
         <div className="flex min-w-0 items-center gap-1 pl-2.5 pt-2 text-label font-normal">
-          {altProfileTag}
+          <AccountMark profile={activeSession?.droidProfile} className="px-2" />
           {autonomyControl}
           {references.canvasKey && (
             <Suspense fallback={null}>

@@ -1,3 +1,4 @@
+import type { DroidProfile } from '../droidProfiles.js';
 import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
 import type { ProviderKind } from '../providers/providerKind.js';
 import type { ThreadState } from './projectTurns.js';
@@ -26,7 +27,7 @@ export interface ProjectTodo {
 }
 
 export interface ThreadInput {
-  droidProfile?: 'alt';
+  droidProfile?: DroidProfile;
   title: string;
   prompt: string;
   provider: ProviderKind;
@@ -64,7 +65,7 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
   ThreadWorkspaceChoice & {
     /** The plan step this thread carries, by its number or exact title. */
     step?: string;
-    profile?: 'main' | 'alt';
+    profile?: 'main' | DroidProfile;
   };
 
 /** The lead owns step progress independently of a linked conversation. */
@@ -194,7 +195,7 @@ export interface ProjectView {
     ProjectThread,
     'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId' | 'unread'
   > & {
-    droidProfile?: 'alt';
+    droidProfile?: DroidProfile;
     state: ThreadState;
     wait?: ThreadWait;
     approval?: { requestId: string; summary: string };

@@ -1,11 +1,11 @@
 import { AnimatePresence } from 'framer-motion';
 import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 
-import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
+import { DROID_PROFILE_LOGINS, PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import { useRuntimeHealth } from '../../hooks/useRuntimeHealth';
-import type { ProviderKind, ProviderUsage, UsageLimit } from '../../types/bridge';
+import type { DroidProfile, ProviderKind, ProviderUsage, UsageLimit } from '../../types/bridge';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 
 // /usage opens on demand, so its panel loads with the first open.
@@ -29,23 +29,23 @@ export function UsageTabs({
   panelOpen: boolean;
   onClosePanel: () => void;
   // The top-level chat in the composer, and the limit it is held on.
-  chat: { usageLimit: UsageLimit | undefined; droidProfile?: 'alt' } | undefined;
+  chat: { usageLimit: UsageLimit | undefined; droidProfile?: DroidProfile } | undefined;
   onSwitchModel: () => void;
 }) {
-  const isAlt = chat?.droidProfile === 'alt';
-  const warns = !isAlt && chat !== undefined && provider !== 'droid';
+  const altLogin = chat?.droidProfile && DROID_PROFILE_LOGINS[chat.droidProfile];
+  const warns = !altLogin && chat !== undefined && provider !== 'droid';
   let watch: UsageWatch | null = null;
-  if (panelOpen && !isAlt) watch = 'panel';
+  if (panelOpen && !altLogin) watch = 'panel';
   else if (warns) watch = 'chat';
   // The socket's own state too: a reconnect must refresh even where the
   // runtime never reported itself down.
   const socketUp = useRuntimeHealth().transport === 'connected';
   const reachable = connected && socketUp;
   const providerUsage = useProviderUsage(provider, watch, reachable);
-  const usage = isAlt ? undefined : providerUsage;
+  const usage = altLogin ? undefined : providerUsage;
   const now = Date.now();
   const warning = warns && usage ? paceWarning(usage.meters, now) : undefined;
-  useTicking(!isAlt && (panelOpen || warning !== undefined));
+  useTicking(!altLogin && (panelOpen || warning !== undefined));
 
   let tab: ReactNode = null;
   if (panelOpen)
@@ -78,8 +78,8 @@ export function UsageTabs({
     <>
       <span className="sr-only" role="status" aria-live="polite">
         {panelOpen &&
-          (isAlt
-            ? 'Alt account usage is open above the composer.'
+          (altLogin
+            ? `${altLogin.label} account usage is open above the composer.`
             : panelAnnouncement(provider, usage, reachable))}
       </span>
       <AnimatePresence initial={false} mode="wait">

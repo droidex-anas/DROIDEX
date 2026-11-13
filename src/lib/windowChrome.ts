@@ -21,3 +21,11 @@ export const TOP_ROW_HEIGHT_PX = 36;
 // floating controls inside it.
 export const WINDOW_CONTROLS_LEAD_PX =
   WINDOW_CONTROLS_INSET_PX + SIDEBAR_TOGGLE_PX + TOP_ROW_GUTTER_PX;
+
+// The session controls that float at the top row's end while no tab strip or
+// utility pane holds them: the editor menu and two 28px toggles, with their
+// gaps and the row's 12px end padding.
+const SESSION_CONTROLS_PX = 124;
+
+// Where a view's top row must end while those controls float over it.
+export const SESSION_CONTROLS_TRAIL_PX = SESSION_CONTROLS_PX + TOP_ROW_GUTTER_PX;

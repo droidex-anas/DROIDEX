@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSdkMcpServer } from '@factory/droid-sdk';
-import { harness, summary } from '../testing/projectServiceHarness.js';
+import type { ModelSwitch } from '../protocol.js';
+import { drain, harness, projectWithThread, summary } from '../testing/projectServiceHarness.js';
 import { registerProjectService } from './service.js';
 import { threadTools } from './threadMcpTools.js';
 
@@ -83,3 +84,100 @@ test('a queued Alt thread persists its profile and nested threads inherit it', a
   const main = h.state.saved[0]?.threads.find((thread) => thread.title === 'Main task');
   assert.equal(main?.queuedSpawn?.input.droidProfile, undefined);
 });
+
+test('Alt 2 is offered only once signed in, and its threads keep it', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'droidex-alt2-thread-'));
+  const [alt, alt2] = [join(root, 'alt'), join(root, 'alt2')];
+  for (const home of [alt, alt2]) await mkdir(join(home, '.factory'), { recursive: true });
+  const signIn = (home: string) =>
+    writeFile(join(home, '.factory', 'auth.v2.key'), 'test-login-marker');
+  await signIn(alt);
+  process.env.DROIDEX_ALT_HOME = alt;
+  process.env.DROIDEX_ALT2_HOME = alt2;
+  t.after(async () => {
+    delete process.env.DROIDEX_ALT_HOME;
+    delete process.env.DROIDEX_ALT2_HOME;
+    await rm(root, { recursive: true, force: true });
+  });
+  const h = await harness(t);
+  h.sessions.set('lead', summary('lead'));
+  registerProjectService(Promise.resolve(h.projects));
+  assert.deepEqual(await advertisedProfiles(t), ['main', 'alt']);
+  await signIn(alt2);
+  assert.deepEqual(await advertisedProfiles(t), ['main', 'alt', 'alt2']);
+
+  h.state.capacity = 'busy';
+  const spawned = await h.projects.spawn('lead', {
+    title: 'Alt 2 task',
+    prompt: 'Read files',
+    profile: 'alt2',
+  });
+  assert.equal(h.projects.read('lead', spawned.appSessionId).droidProfile, 'alt2');
+  h.sessions.set(spawned.appSessionId, { ...summary(spawned.appSessionId), droidProfile: 'alt2' });
+  await h.projects.spawn(spawned.appSessionId, { title: 'Nested', prompt: 'Read files' });
+  await h.projects.spawn(spawned.appSessionId, {
+    title: 'Alt task',
+    prompt: 'Read files',
+    profile: 'alt',
+  });
+  const queued = (title: string) =>
+    h.state.saved[0]?.threads.find((thread) => thread.title === title)?.queuedSpawn?.input
+      .droidProfile;
+  assert.equal(queued('Nested'), 'alt2');
+  assert.equal(queued('Alt task'), 'alt');
+});
+
+test("a report leads with a model the thread's harness moved it to, not one its owner chose", async (t) => {
+  const { h, main, child } = await projectWithThread(t);
+  const id = child.appSessionId;
+  const switched = (modelSwitch: ModelSwitch) =>
+    h.projects.observe({
+      type: 'event.appended',
+      event: {
+        id: `switch-${modelSwitch.to}`,
+        appSessionId: id,
+        sourceSessionId: id,
+        role: 'primary',
+        ts: 1,
+        kind: 'status',
+        text: `Model switched: ${modelSwitch.from} → ${modelSwitch.to}`,
+        modelSwitch,
+      },
+    });
+  await switched({ from: 'claude-opus-4-7', to: 'glm-5.3-flash', cause: 'usage_limit' });
+  await h.finish(id, 'Implemented the parser.');
+  await drain();
+  assert.match(
+    h.sent.at(-1)?.prompt ?? '',
+    /usage ran out on claude-opus-4-7, so its harness moved it to glm-5\.3-flash\.\n.*Implemented the parser/s,
+  );
+
+  await h.finish(main);
+  await h.streaming(id, true);
+  await switched({ from: 'glm-5.3-flash', to: 'claude-opus-4-7' });
+  await h.finish(id, 'Reviewed the parser.');
+  await drain();
+  assert.match(h.sent.at(-1)?.prompt ?? '', /Reviewed the parser/);
+  assert.doesNotMatch(h.sent.at(-1)?.prompt ?? '', /moved it/);
+});
+
+async function advertisedProfiles(t: TestContext): Promise<unknown> {
+  const tool = threadTools(() => 'lead').find((entry) => entry.name === 'thread_spawn');
+  assert.ok(tool);
+  const server = createSdkMcpServer({ name: 'alt-test', version: '1', tools: [tool] });
+  const config = await server.start();
+  t.after(() => server.close());
+  assert.ok('url' in config);
+  const response = await fetch(config.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+  });
+  const body = await response.text();
+  const json =
+    body
+      .split('\n')
+      .find((line) => line.startsWith('data: '))
+      ?.slice(6) ?? body;
+  return JSON.parse(json).result.tools[0].inputSchema.properties.profile.enum;
+}

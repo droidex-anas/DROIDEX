@@ -1,7 +1,5 @@
-import { join } from 'node:path';
-
 import { providerSessionsDir } from './droidexPaths.js';
-import { altDroidHome } from './droidProfiles.js';
+import { altSessionRoots } from './droidProfiles.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type { SessionListFilterOptions, SessionListPage } from './sessionListFilter.js';
 import type { SessionFileWatcher, SessionFileWatcherOptions } from './sessionFileWatcher.js';
@@ -145,8 +143,7 @@ export class SessionFileServing {
       };
       watch();
       watch(providerSessionsDir());
-      const altHome = altDroidHome();
-      if (altHome) watch(join(altHome, '.factory', 'sessions'));
+      for (const { root } of altSessionRoots()) watch(root);
     }
     if (this.bootReconciled || this.bootReconcile) return;
 
