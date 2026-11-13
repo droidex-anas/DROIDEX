@@ -13,13 +13,12 @@ import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import { recordRevisions } from './canvasRevisionMetadata.js';
 import {
-  canvasChange,
   emptyCanvasManifest,
   mutationFingerprint,
   recordMutation,
-  toFrame,
   type CanvasManifest,
 } from './canvasManifest.js';
+import { canvasChange, toFrame } from './canvasProjection.js';
 import { recordedCreate } from './canvasReceipts.js';
 import type { CanvasScope, CreateFramesInput, CreateFramesResult } from './protocol.js';
 
@@ -103,7 +102,7 @@ export class CanvasFrameCreation {
             this.leases.requireCanvas(scope, canvasId);
           };
         }
-        const designs = placeFrames(staged, next.designs, input.placeBeside);
+        const designs = placeFrames(staged, next, input.placeBeside);
         next.designs.push(...designs);
         next.layoutSequence += 1;
         next.sequence += 1;
@@ -138,10 +137,14 @@ export class CanvasFrameCreation {
           if (design.revisionId !== null)
             this.builds.enqueue(canvasId, design.designId, design.revisionId);
         }
+        const svgAsImage = staged.flatMap(({ designId, svgAsImage: reason }) =>
+          reason ? [{ designId, reason }] : [],
+        );
         return {
           value: {
             canvasId,
             frames: designs.map((design) => toFrame(canvasId, design, this.builds)),
+            ...(svgAsImage.length > 0 ? { svgAsImage } : {}),
           },
           change: canvasChange(next, designs, this.builds),
         };

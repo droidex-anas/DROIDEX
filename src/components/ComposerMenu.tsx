@@ -7,9 +7,11 @@ import {
   type ReactNode,
 } from 'react';
 
-import { Check, FileText } from '@droidex/icons';
+import { Frame } from 'lucide-react';
+import { Check, Component, FileText } from '@droidex/icons';
 
 import { CatalogRowIcon } from './composer/CatalogRowIcon';
+import { frameSizeLabel } from '../features/canvas/canvasGeometry';
 import { catalogLabel, rowScope, type MenuEntry, type MenuItem } from './composer/menuItems';
 import { inlineCardMotion } from './inlineCardMotion';
 import type { SkillInfo } from '../types/bridge';
@@ -126,6 +128,24 @@ function RowBody({ item, staged }: { item: MenuItem; staged: boolean }) {
       </>
     );
   }
+  if (item.type === 'frame') {
+    return (
+      <>
+        <Frame className={ICON} />
+        <Name>{item.frame.name}</Name>
+        <Detail>{frameSizeLabel(item.frame.rect)}</Detail>
+      </>
+    );
+  }
+  if (item.type === 'component') {
+    return (
+      <>
+        <Component className={ICON} />
+        <Name>{item.entry.name}</Name>
+        <Detail>{item.entry.note}</Detail>
+      </>
+    );
+  }
   const { item: row } = item;
   return (
     <>
@@ -155,9 +175,10 @@ interface ComposerMenuProps {
 }
 
 // The composer's / and @ menu: the bound harness's commands, skills, plugins and
-// apps beside DROIDEX's own commands and the repository's files, in one
-// keyboard-navigable list. Rendering only — trigger detection, which rows the
-// harness offers, and keyboard handling stay in PromptInput and menuItems.
+// apps beside DROIDEX's own commands, the repository's files and the chat's
+// canvas frames and kit components, in one keyboard-navigable list. Rendering
+// only — trigger detection, which rows the harness offers, and keyboard
+// handling stay in PromptInput and menuItems.
 //
 // The panel stays mounted while a harness's catalog lands in pieces: entries are
 // keyed, so a row that arrives lands where it belongs without disturbing the

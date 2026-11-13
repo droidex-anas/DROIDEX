@@ -11,6 +11,8 @@ export const CANVAS_LIMITS = {
   maxFileBytes: 256 * 1024,
   /** Bounds instrumented markup and element-map transfer independently of source bytes. */
   maxSourceElements: 8192,
+  /** An outline row's name or text, in code points, on one line. */
+  maxOutlineLabelCodePoints: 64,
   maxFrameDimensionPx: 8192,
   maxIdentifierLength: 128,
   maxFrameNameLength: 120,
@@ -24,6 +26,8 @@ export const CANVAS_LIMITS = {
   maxInstancePathLength: 512,
   maxRevisionPageSize: 50,
   maxRevisionDiffBytes: 256 * 1024,
+  /** More than the inspector's style properties, so one edit can set them all. */
+  maxStylesPerEdit: 64,
   /** Spec §5: two compiler jobs run at once, across every open canvas. */
   buildSlots: 2,
   /** Spec §5: one build gets this long before its worker is ended. */
@@ -51,8 +55,6 @@ const FILE_COUNT_MESSAGE = `A design holds at most ${String(CANVAS_LIMITS.maxSou
 const FILE_BYTES_MESSAGE = `Each source file must stay under ${String(CANVAS_LIMITS.maxFileBytes / 1024)} KiB.`;
 const TOTAL_BYTES_MESSAGE = `The source written for one design must stay under ${String(CANVAS_LIMITS.maxDesignSourceBytes / (1024 * 1024))} MiB in total.`;
 const FRAME_COUNT_MESSAGE = `One create reserves 1 to ${String(CANVAS_LIMITS.maxFramesPerCreate)} frames.`;
-const ARRANGE_COUNT_MESSAGE = `One arrange moves 1 to ${String(CANVAS_LIMITS.maxFramesPerArrange)} frames.`;
-const ARRANGE_REPEAT_MESSAGE = 'A frame can appear only once in an arrange.';
 
 // Canvas IDs, design IDs, revision IDs and mutation IDs share one rule: an
 // opaque token that is safe to log and can never widen a filesystem path.
@@ -82,7 +84,7 @@ export const sessionCanvasIntentSchema = z
   })
   .strict();
 
-const versionSchema = z.number().int().nonnegative();
+export const versionSchema = z.number().int().nonnegative();
 
 export const designSystemRefSchema = z
   .object({
@@ -118,7 +120,7 @@ const designRefSchema = z
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
-const elementRefSchema = z
+export const elementRefSchema = z
   .object({
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
@@ -161,6 +163,7 @@ const revisionSeedSchema = z
 export const canvasSeedSchema = z.discriminatedUnion('kind', [
   revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
+  z.object({ kind: z.literal('svg'), assetId: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
 ]);
 
 const coordinateSchema = z
@@ -196,27 +199,88 @@ export const sourceElementSchema = z
     file: sourcePathSchema,
     start: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
     end: z.number().int().nonnegative().max(CANVAS_LIMITS.maxFileBytes),
+    line: z.number().int().positive().max(CANVAS_LIMITS.maxFileBytes),
     tagName: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes),
+    component: z.string().min(1).max(CANVAS_LIMITS.maxFileBytes).nullable(),
     editability: z.enum(['literal', 'computed', 'shared']),
   })
   .strict()
   .refine((element) => element.end > element.start);
 
-const sourceFileSchema = z
+export const outlineNodeIdSchema = z.string().regex(/^[0-9a-f]{16}$/);
+// Each code point is at most two UTF-16 units, so the cheap length check comes first.
+const outlineLabelSchema = z
+  .string()
+  .min(1)
+  .max(CANVAS_LIMITS.maxOutlineLabelCodePoints * 2)
+  .refine(
+    (label) =>
+      !/[\r\n]/.test(label) && Array.from(label).length <= CANVAS_LIMITS.maxOutlineLabelCodePoints,
+  );
+
+export const sourceOutlineSchema = z
+  .object({
+    nodes: z
+      .array(
+        z
+          .object({
+            nodeId: outlineNodeIdSchema,
+            parentId: outlineNodeIdSchema.nullable(),
+            kind: z.enum(['element', 'instance', 'repeat', 'condition']),
+            name: outlineLabelSchema,
+            text: outlineLabelSchema.nullable(),
+            elementId: canvasIdentifierSchema.nullable(),
+            lock: z.enum(['repeated', 'shared', 'computed', 'kit']).nullable(),
+            free: z.boolean(),
+            contentFromProps: z.boolean(),
+            visibility: z.enum(['shown', 'hidden', 'computed', 'display', 'attribute']),
+          })
+          .strict()
+          .refine(
+            (node) =>
+              (node.kind === 'element') === (node.elementId !== null) &&
+              (node.text === null || node.kind === 'element') &&
+              (node.visibility === 'shown' || node.kind === 'element'),
+          ),
+      )
+      .max(CANVAS_LIMITS.maxSourceElements)
+      .refine(isForest, 'Each outline row needs its own id and must follow the row that holds it.'),
+    truncated: z.boolean(),
+  })
+  .strict();
+
+/** Unique ids, each parent before its children, so the rows form a tree with no cycle. */
+function isForest(nodes: readonly { nodeId: string; parentId: string | null }[]): boolean {
+  const seen = new Set<string>();
+  for (const { nodeId, parentId } of nodes) {
+    if (seen.has(nodeId) || (parentId !== null && !seen.has(parentId))) return false;
+    seen.add(nodeId);
+  }
+  return true;
+}
+
+export const sourceFileSchema = z
   .string()
   .refine((content) => Buffer.byteLength(content, 'utf8') <= CANVAS_LIMITS.maxFileBytes, {
     message: FILE_BYTES_MESSAGE,
   });
 
-export const sourceFilesSchema = z
-  .record(sourcePathSchema, sourceFileSchema)
-  .refine((files) => Object.keys(files).length <= CANVAS_LIMITS.maxSourceFilesPerDesign, {
-    message: FILE_COUNT_MESSAGE,
-  })
-  .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
-  .refine((files) => totalSourceBytes(Object.values(files)) <= CANVAS_LIMITS.maxDesignSourceBytes, {
-    message: TOTAL_BYTES_MESSAGE,
-  });
+/** Source files by path: at most `maxFiles`, distinct, and within the byte limits. */
+export function boundedSourceFilesSchema(maxFiles: number, countMessage: string) {
+  return z
+    .record(sourcePathSchema, sourceFileSchema)
+    .refine((files) => Object.keys(files).length <= maxFiles, { message: countMessage })
+    .refine((files) => !hasPathCollision(Object.keys(files)), { message: PATH_COLLISION_MESSAGE })
+    .refine(
+      (files) => totalSourceBytes(Object.values(files)) <= CANVAS_LIMITS.maxDesignSourceBytes,
+      { message: TOTAL_BYTES_MESSAGE },
+    );
+}
+
+export const sourceFilesSchema = boundedSourceFilesSchema(
+  CANVAS_LIMITS.maxSourceFilesPerDesign,
+  FILE_COUNT_MESSAGE,
+);
 
 const deletedPathsSchema = z
   .array(sourcePathSchema)
@@ -236,6 +300,7 @@ export const createFramesInputSchema = z
             height: dimensionPxSchema,
             designSystem: designSystemRefSchema,
             seed: canvasSeedSchema.optional(),
+            variantOf: canvasIdentifierSchema.optional(),
           })
           .strict(),
       )
@@ -254,10 +319,11 @@ export const writeFilesInputSchema = z
     designSystem: designSystemRefSchema.optional(),
   })
   .strict()
+  // A rename by case or Unicode form alone deletes one spelling and writes the
+  // other; the merged revision is checked for colliding paths after that.
   .superRefine((input, ctx) => {
-    const written = new Set(Object.keys(input.files).map(collisionKey));
     input.deletedPaths.forEach((path, index) => {
-      if (!written.has(collisionKey(path))) return;
+      if (!Object.hasOwn(input.files, path)) return;
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['deletedPaths', index],
@@ -265,52 +331,6 @@ export const writeFilesInputSchema = z
       });
     });
   });
-
-// A style edit's value is a kit token's name (`--ds-space-2`) or a raw CSS value,
-// which the edit resolves to a kit token with that value when the kit has one.
-function styleChangeSchema<Kind extends string>(kind: Kind) {
-  return z
-    .object({
-      kind: z.literal(kind),
-      property: z.string().min(1).max(64),
-      value: z.string().min(1).max(128),
-    })
-    .strict();
-}
-
-/** What a direct edit wrote: a kit token, or the raw value the kit had no token for. */
-export const styleResolutionSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('token'), token: z.string().min(1).max(128) }).strict(),
-  z.object({ kind: z.literal('raw'), value: z.string().min(1).max(128) }).strict(),
-]);
-
-export const editElementInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    edit: z
-      .object({
-        element: z
-          .object({
-            designId: canvasIdentifierSchema,
-            revisionId: canvasIdentifierSchema,
-            elementId: canvasIdentifierSchema,
-            instancePath: z.string().max(512),
-          })
-          .strict(),
-        change: z.discriminatedUnion('kind', [
-          z.object({ kind: z.literal('text'), value: sourceFileSchema }).strict(),
-          styleChangeSchema('spacing'),
-          styleChangeSchema('size'),
-          styleChangeSchema('colour'),
-          styleChangeSchema('typography'),
-          styleChangeSchema('layout'),
-          styleChangeSchema('opacity'),
-          z.object({ kind: z.literal('image'), assetId: canvasIdentifierSchema }).strict(),
-        ]),
-      })
-      .strict(),
-  })
-  .strict();
 
 export const revisionPageSchema = z
   .object({
@@ -325,57 +345,6 @@ export const switchRevisionInputSchema = z
     designId: canvasIdentifierSchema,
     revisionId: canvasIdentifierSchema,
     expectedRevisionId: canvasIdentifierSchema.nullable(),
-  })
-  .strict();
-
-export const arrangeFramesInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    frames: z
-      .array(
-        z
-          .object({
-            designId: canvasIdentifierSchema,
-            expectedLayoutVersion: versionSchema,
-            rect: frameRectSchema,
-          })
-          .strict(),
-      )
-      .min(1, ARRANGE_COUNT_MESSAGE)
-      .max(CANVAS_LIMITS.maxFramesPerArrange, ARRANGE_COUNT_MESSAGE)
-      // Two entries for one frame would carry contradictory expected versions.
-      .refine((frames) => !hasDuplicate(frames.map((frame) => frame.designId)), {
-        message: ARRANGE_REPEAT_MESSAGE,
-      }),
-  })
-  .strict();
-
-export const removeFramesInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    designIds: z
-      .array(canvasIdentifierSchema)
-      .min(1)
-      .max(CANVAS_LIMITS.maxFramesPerRemoval)
-      .refine((ids) => !hasDuplicate(ids), {
-        message: 'A frame can be removed only once per change.',
-      }),
-  })
-  .strict();
-
-export const undoRemovalInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    undoId: canvasIdentifierSchema,
-  })
-  .strict();
-
-export const renameFrameInputSchema = z
-  .object({
-    mutationId: canvasIdentifierSchema,
-    designId: canvasIdentifierSchema,
-    name: canvasNameSchema,
-    expectedManifestVersion: versionSchema,
   })
   .strict();
 
@@ -407,14 +376,8 @@ export type FrameRect = z.infer<typeof frameRectSchema>;
 export type SourceFiles = z.infer<typeof sourceFilesSchema>;
 export type CreateFramesInput = z.infer<typeof createFramesInputSchema>;
 export type WriteFilesInput = z.infer<typeof writeFilesInputSchema>;
-export type EditElementInput = z.infer<typeof editElementInputSchema>;
-export type StyleResolution = z.infer<typeof styleResolutionSchema>;
 export type RevisionPage = z.infer<typeof revisionPageSchema>;
 export type SwitchRevisionInput = z.infer<typeof switchRevisionInputSchema>;
-export type ArrangeFramesInput = z.infer<typeof arrangeFramesInputSchema>;
-export type RemoveFramesInput = z.infer<typeof removeFramesInputSchema>;
-export type UndoRemovalInput = z.infer<typeof undoRemovalInputSchema>;
-export type RenameFrameInput = z.infer<typeof renameFrameInputSchema>;
 
 // An unpaired surrogate encodes to the same UTF-8 replacement bytes as any
 // other, so two distinct paths would address one file on disk.
@@ -445,7 +408,7 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-function hasDuplicate(values: readonly string[]): boolean {
+export function hasDuplicate(values: readonly string[]): boolean {
   return new Set(values).size !== values.length;
 }
 

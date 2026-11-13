@@ -1,9 +1,10 @@
-// Under the cover (spec §5): where the kit came from, and how many of its
-// source's tokens did not map to the document.
+// Under the cover (spec §5): where the kit came from, how many of its source's
+// tokens did not map to the document, and the review of a library import.
 
 import { useEffect, useState } from 'react';
 import { canvasClient } from '../canvasClient';
 import type { DesignSystemProvenance } from '../protocol';
+import { ImportReview } from './ImportReview';
 
 export function ProvenanceLine({
   provenance,
@@ -18,7 +19,14 @@ export function ProvenanceLine({
     unmapped > 0 ? `${String(unmapped)} ${unmapped === 1 ? 'token' : 'tokens'} not mapped` : null,
   ].filter((part) => part !== null);
   if (parts.length === 0) return null;
-  return <p className="text-caption text-muted">{parts.join(' · ')}</p>;
+  const library =
+    provenance !== null && 'project' in provenance ? provenance.project.library : null;
+  return (
+    <>
+      <p className="text-caption text-muted">{parts.join(' · ')}</p>
+      {library && <ImportReview library={library} />}
+    </>
+  );
 }
 
 function useProvenanceOrigin(provenance: DesignSystemProvenance | null): string | null {
@@ -56,8 +64,11 @@ function useProvenanceOrigin(provenance: DesignSystemProvenance | null): string 
   }, [copiedFromId, sourceCanvasId]);
 
   if (provenance !== null && 'project' in provenance) {
-    const { name, files } = provenance.project;
-    return `From ${name}: ${files.join(', ')}`;
+    const { name, files, library } = provenance.project;
+    if (!library) return `From ${name}: ${files.join(', ')}`;
+    const components = new Set(Object.values(library.components)).size;
+    const counted = `${String(components)} ${components === 1 ? 'component' : 'components'}`;
+    return `From ${name} (shadcn/ui, ${counted}): ${files.join(', ')}`;
   }
   if (copiedFrom)
     return `Copy of ${sourceName ?? 'another design system'} v${String(copiedFrom.version)}`;

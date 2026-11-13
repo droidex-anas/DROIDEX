@@ -1,17 +1,33 @@
 // The pinned kit as a turn's first canvas_read carries it, so the agent can
 // follow the kit without fetching it: name, mode, token names by section kind,
-// the primitives its entry exports and its guidance. Token values, files and
-// examples stay with canvas_theme. The kit schema caps the notes and usage notes
-// the guidance carries at 16 KiB, not counting its headings, and the name lists
-// share 4 KiB.
+// the primitives its entry exports, its catalog's entry names and its guidance.
+// Token values, files, examples and entry JSX stay with canvas_theme. The kit
+// schema caps the notes and usage notes the guidance carries at 16 KiB, not
+// counting its headings, and the name lists share 4 KiB; the catalog's entry
+// names have 1 KiB of their own. Under Auto, before a project chat's first
+// design, it also asks the agent to offer a kit from the project.
 
+import { lstat } from 'node:fs/promises';
+import path from 'node:path';
+import { truncateDiagnosticText } from './canvasDiagnostics.js';
 import { CanvasCommandError } from './canvasError.js';
 import { kitGuidance, type TokenSectionKind } from './designSystemDocument.js';
-import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
+import {
+  designSystemKind,
+  KIT_ENTRY,
+  readDesignSystem,
+  type DesignSystem,
+} from './designSystems.js';
+import { readKitCatalog } from './kitCatalog.js';
+import { isFileSystemError } from './projectPaths.js';
 import type { DesignSystemRef } from './protocol.js';
 
 /** What the name lists may cost, counting the JSON quotes, commas and keys around them. */
 const NAME_LIST_BYTES = 4 * 1024;
+/** What the catalog's entry names may cost, apart from the other names. */
+const CATALOG_NAME_BYTES = 1024;
+/** Enough to say why the catalog is unusable, never a parser's quote of the file. */
+const CATALOG_PROBLEM_LENGTH = 240;
 
 export interface DesignSystemBrief {
   ref: DesignSystemRef;
@@ -21,7 +37,26 @@ export interface DesignSystemBrief {
   tokens: Partial<Record<TokenSectionKind, string[]>>;
   /** Names left out to keep the brief bounded; canvas_theme read lists them all. */
   omittedNames?: number;
+  /** The names of the kit's catalog entries, whose JSX canvas_theme catalog reads. */
+  catalog?: string[];
+  /** Entry names left out to keep the brief bounded; canvas_theme catalog lists them all. */
+  omittedCatalogNames?: number;
+  /** Why the kit's catalog.json is unusable, as canvas_theme catalog refuses it. */
+  catalogProblem?: string;
   guidance: string;
+}
+
+function projectKitOffer(hasLibrary: boolean): string {
+  const sources = hasLibrary
+    ? 'shadcn/ui components, with their tokens and Tailwind theme,'
+    : 'Tailwind config, CSS tokens and design docs';
+  return `This chat has a project folder and its canvas has no design yet: unless the user asked for a design system, do what they ask and offer in one sentence of your reply to build one from the project's ${sources} for the designs that follow. Build it only when the user says so.`;
+}
+
+/** Where the turn starts: the chat's project folder, if any, and whether its canvas has a design. */
+export interface OpeningBoard {
+  projectFolder: string | null;
+  hasDesigns: boolean;
 }
 
 /** A pinned kit this machine cannot read, missing or damaged; its builds report the same. */
@@ -32,6 +67,7 @@ interface UnavailableDesignSystem {
 
 export async function designSystemBrief(
   ref: DesignSystemRef,
+  board: OpeningBoard,
 ): Promise<DesignSystemBrief | UnavailableDesignSystem> {
   let system: DesignSystem;
   try {
@@ -42,35 +78,74 @@ export async function designSystemBrief(
     if (error instanceof CanvasCommandError) return { ref, unavailable: error.message };
     throw error;
   }
-  // Names are listed in order until one does not fit, primitives first: they
-  // are what a design builds with.
-  let budget = NAME_LIST_BYTES;
-  let omittedNames = 0;
-  const fits = (name: string, keyBytes = 0): boolean => {
-    const cost = Buffer.byteLength(name, 'utf8') + 3 + keyBytes;
-    if (omittedNames > 0 || cost > budget) {
-      omittedNames += 1;
-      return false;
-    }
-    budget -= cost;
-    return true;
-  };
-  const primitives = kitPrimitives(system).filter((name) => fits(name));
+  // Primitives come first: they are what a design builds with.
+  const names = nameBudget(NAME_LIST_BYTES);
+  const primitives = kitPrimitives(system).filter((name) => names.fits(name));
   const tokens: DesignSystemBrief['tokens'] = {};
-  for (const [kind, names] of tokenNamesByKind(system.sections)) {
+  for (const [kind, kindNames] of tokenNamesByKind(system.sections)) {
     // A kind's first name also pays for its key: `"kind":[],`.
     const keyBytes = Buffer.byteLength(kind, 'utf8') + 6;
-    const listed = names.filter((name, index) => fits(name, index === 0 ? keyBytes : 0));
+    const listed = kindNames.filter((name, index) => names.fits(name, index === 0 ? keyBytes : 0));
     if (listed.length > 0) tokens[kind] = listed;
   }
+  // A saved version's catalog was checked when it was saved, but a v1.6
+  // version converted on read may hold a catalog.json that is not one.
+  const read = readKitCatalog(system.files);
+  const entryNames = nameBudget(CATALOG_NAME_BYTES);
+  const catalogKeyBytes = '"catalog":[],'.length;
+  const catalog =
+    'catalog' in read
+      ? read.catalog
+          .map(({ name }) => name)
+          .filter((name, index) => entryNames.fits(name, index === 0 ? catalogKeyBytes : 0))
+      : [];
+  const guidance = kitGuidance(system.name, system.sections);
+  let offer: string | null = null;
+  if (designSystemKind(ref.id) === 'auto' && board.projectFolder !== null && !board.hasDesigns)
+    offer = projectKitOffer(await hasShadcnLibrary(board.projectFolder));
   return {
     ref,
     name: system.name,
     primitives,
     tokens,
-    ...(omittedNames > 0 ? { omittedNames } : {}),
-    guidance: kitGuidance(system.name, system.sections),
+    ...(names.omitted() > 0 ? { omittedNames: names.omitted() } : {}),
+    ...(catalog.length > 0 ? { catalog } : {}),
+    ...(entryNames.omitted() > 0 ? { omittedCatalogNames: entryNames.omitted() } : {}),
+    ...('problem' in read
+      ? { catalogProblem: truncateDiagnosticText(read.problem, CATALOG_PROBLEM_LENGTH) }
+      : {}),
+    guidance: offer === null ? guidance : `${guidance}\n\n${offer}`,
   };
+}
+
+/** Admits names in order until one does not fit in `bytes`, then only counts the rest. */
+function nameBudget(bytes: number) {
+  let left = bytes;
+  let omitted = 0;
+  return {
+    /** Whether the name is listed; `keyBytes` is what its list's key costs with it. */
+    fits(name: string, keyBytes = 0): boolean {
+      // The name as JSON writes it, escapes and quotes included, and its comma.
+      const cost = Buffer.byteLength(JSON.stringify(name), 'utf8') + 1 + keyBytes;
+      if (omitted > 0 || cost > left) {
+        omitted += 1;
+        return false;
+      }
+      left -= cost;
+      return true;
+    },
+    omitted: () => omitted,
+  };
+}
+
+/** Whether the folder keeps a shadcn/ui library's components.json at its root, as the import reads it: no link. */
+async function hasShadcnLibrary(folder: string): Promise<boolean> {
+  try {
+    return (await lstat(path.join(folder, 'components.json'))).isFile();
+  } catch (error) {
+    if (isFileSystemError(error)) return false;
+    throw error;
+  }
 }
 
 function tokenNamesByKind(sections: DesignSystem['sections']): [TokenSectionKind, string[]][] {

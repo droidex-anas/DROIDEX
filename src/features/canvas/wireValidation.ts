@@ -4,10 +4,19 @@
 
 import { isAnnotation, isAnnotationChange, MAX_ANNOTATIONS } from './annotationValidation';
 import {
+  isBuild,
+  isDiagnostic,
+  isOutlineNodeId,
+  MAX_BUILD_DIAGNOSTICS,
+  MAX_SOURCE_FILE_BYTES,
+} from './buildValidation';
+import {
   isKitDocument,
   isKitSummary,
   isKitVersion,
   isKitVersionEntry,
+  isTokenName,
+  isTokenValue,
 } from './designSystemDocumentValidation';
 import type { CanvasEvent } from './protocol';
 import {
@@ -57,6 +66,8 @@ const REPLY_KINDS = new Set([
   'removed',
   'undone',
   'renamed',
+  'hiddenSet',
+  'reordered',
   'annotated',
   'artifact',
   'source',
@@ -64,6 +75,7 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'editTokens',
   'designSystemVersions',
   'designSystemSaved',
   'kitPreview',
@@ -80,9 +92,6 @@ const ADHERENCE_RULES = new Set<unknown>(['off', 'guide', 'strict']);
 
 /** An artifact document, bounded well above a realistic design (spec §5). */
 const MAX_ARTIFACT_BYTES = 8 * 1024 * 1024;
-const MAX_SOURCE_ELEMENTS = 8192;
-const MAX_BUILD_DIAGNOSTICS = 64;
-const MAX_SOURCE_FILE_BYTES = 256 * 1024;
 // What one revision's tree may hold, matching `CANVAS_LIMITS` in the sidecar's
 // schema: 64 files, each path at most 256 characters.
 const MAX_SOURCE_PATHS = 64;
@@ -100,6 +109,8 @@ export const MAX_KIT_CAPTURE_BASE64_LENGTH = Math.ceil((2 * 1024 * 1024) / 3) * 
 // `MAX_KIT_FONT_FACES` and `MAX_FONT_DESCRIPTOR_LENGTH` in the sidecar's kitFonts.ts.
 const MAX_KIT_FONT_FACES = 16;
 const MAX_FONT_DESCRIPTOR_LENGTH = 1024;
+// The sidecar's `CANVAS_LIMITS.maxFramesPerCreate`.
+const MAX_FRAMES_PER_CREATE = 4;
 // The sidecar's `CANVAS_LIMITS.maxFrameDimensionPx`.
 const MAX_FRAME_DIMENSION_PX = 8192;
 // The sidecar's `CANVAS_LIMITS.maxFrameNameLength`, which bounds a library item's name too.
@@ -116,7 +127,11 @@ export function isCanvasEvent(value: Record<string, unknown>): value is CanvasEv
       return isChange(value.change);
     case 'canvas.captureRequest':
       return (
-        id(value.captureId) && id(value.canvasId) && id(value.designId) && id(value.revisionId)
+        id(value.captureId) &&
+        id(value.canvasId) &&
+        id(value.designId) &&
+        id(value.revisionId) &&
+        isCaptureImage(value.image)
       );
     case 'canvas.designSystemsChanged':
       return id(value.id);
@@ -143,7 +158,8 @@ function isReply(value: unknown): boolean {
           /^[0-9a-f]{64}$/.test(asset.assetId) &&
           (asset.mediaType === 'image/png' ||
             asset.mediaType === 'image/jpeg' ||
-            asset.mediaType === 'image/webp') &&
+            asset.mediaType === 'image/webp' ||
+            asset.mediaType === 'image/svg+xml') &&
           count(asset.byteLength) &&
           asset.byteLength > 0 &&
           asset.byteLength <= 10 * 1024 * 1024 &&
@@ -164,18 +180,21 @@ function isReply(value: unknown): boolean {
       return id(value.canvasId) && (value.attachedCanvasId === null || id(value.attachedCanvasId));
     case 'created':
       return (
-        record(value.created) && id(value.created.canvasId) && list(value.created.frames, isFrame)
+        record(value.created) &&
+        id(value.created.canvasId) &&
+        list(value.created.frames, isFrame) &&
+        (value.created.svgAsImage === undefined ||
+          boundedList(value.created.svgAsImage, MAX_FRAMES_PER_CREATE, isSvgAsImage))
       );
     case 'written':
       return isReceipt(value.receipt);
     case 'edited':
-      return (
-        isReceipt(value.receipt) &&
-        (value.resolution === null || isStyleResolution(value.resolution))
-      );
+      return isReceipt(value.receipt) && (value.landed === null || isOutlineNodeId(value.landed));
     case 'arranged':
     case 'undone':
     case 'renamed':
+    case 'hiddenSet':
+    case 'reordered':
     case 'annotated':
       return isChange(value.change);
     case 'removed':
@@ -192,6 +211,8 @@ function isReply(value: unknown): boolean {
       return list(value.systems, isKitSummary);
     case 'designSystem':
       return isKitDocument(value.system);
+    case 'editTokens':
+      return isEditTokens(value.tokens);
     case 'designSystemVersions':
       return list(value.versions, isKitVersionEntry);
     case 'designSystemSaved':
@@ -225,6 +246,12 @@ function isReply(value: unknown): boolean {
     default:
       return true;
   }
+}
+
+function isCaptureImage(value: unknown): boolean {
+  if (!record(value)) return false;
+  if (value.format === 'svg') return true;
+  return value.format === 'png' && [1, 2, 3, null].includes(value.scale as number | null);
 }
 
 /** A base64 PNG within `maxLength`, or null where there is none. */
@@ -348,15 +375,12 @@ function isKitPreview(value: unknown): boolean {
   );
 }
 
-function isFrameProjection(value: unknown): value is Record<string, unknown> {
-  return (
-    record(value) && id(value.canvasId) && count(value.sequence) && list(value.frames, isFrame)
-  );
-}
-
 function isSnapshot(value: unknown): boolean {
   return (
-    isFrameProjection(value) &&
+    record(value) &&
+    id(value.canvasId) &&
+    count(value.sequence) &&
+    list(value.frames, isFrame) &&
     count(value.annotationsVersion) &&
     boundedList(value.annotations, MAX_ANNOTATIONS, isAnnotation)
   );
@@ -364,9 +388,24 @@ function isSnapshot(value: unknown): boolean {
 
 function isChange(value: unknown): boolean {
   return (
-    isFrameProjection(value) &&
+    record(value) &&
+    id(value.canvasId) &&
+    count(value.sequence) &&
+    list(value.frames, isChangedFrame) &&
+    list(value.builds, isFrameBuild) &&
     list(value.removedDesignIds, id) &&
-    (value.annotations === undefined || isAnnotationChange(value.annotations))
+    (value.annotations === undefined || isAnnotationChange(value.annotations)) &&
+    (value.order === undefined || isStackingOrder(value.order))
+  );
+}
+
+/** The whole stacking order, which names each frame once and at least one. */
+function isStackingOrder(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(id) &&
+    new Set(value).size === value.length
   );
 }
 
@@ -386,13 +425,42 @@ function isReceipt(value: unknown): boolean {
   return record(value) && id(value.designId) && id(value.revisionId) && count(value.sequence);
 }
 
-function isStyleResolution(value: unknown): boolean {
-  if (!record(value)) return false;
-  if (value.kind === 'token') return boundedText(value.token, 128);
-  return value.kind === 'raw' && boundedText(value.value, 128);
+function isSvgAsImage(value: unknown): boolean {
+  return (
+    record(value) &&
+    id(value.designId) &&
+    (value.reason === 'too_large' || value.reason === 'stylesheet')
+  );
+}
+
+// Property keys bound at the whitelisted properties; the token caps are the
+// document's (MAX_TOKENS in designSystemDocumentValidation.ts).
+const MAX_EDIT_TOKEN_PROPERTIES = 64;
+const MAX_EDIT_TOKENS_PER_PROPERTY = 256;
+
+function isEditTokens(value: unknown): boolean {
+  if (!record(value) || Object.keys(value).length > MAX_EDIT_TOKEN_PROPERTIES) return false;
+  return Object.values(value).every((options) =>
+    boundedList(options, MAX_EDIT_TOKENS_PER_PROPERTY, isEditToken),
+  );
+}
+
+function isEditToken(token: unknown): boolean {
+  if (!record(token) || !isTokenName(token.name)) return false;
+  if (token.value !== undefined)
+    return isTokenValue(token.value) && token.light === undefined && token.dark === undefined;
+  return isTokenValue(token.light) && isTokenValue(token.dark);
 }
 
 function isFrame(value: unknown): boolean {
+  return isChangedFrame(value) && isBuild(value.build);
+}
+
+function isFrameBuild(value: unknown): boolean {
+  return record(value) && id(value.designId) && isBuild(value.build);
+}
+
+function isChangedFrame(value: unknown): value is Record<string, unknown> {
   return (
     record(value) &&
     id(value.designId) &&
@@ -402,7 +470,9 @@ function isFrame(value: unknown): boolean {
     count(value.manifestVersion) &&
     (value.revisionId === null || id(value.revisionId)) &&
     isDesignSystem(value.designSystem) &&
-    isBuild(value.build)
+    (value.variantOf === null || id(value.variantOf)) &&
+    (value.seededRevisionId === null || id(value.seededRevisionId)) &&
+    typeof value.hidden === 'boolean'
   );
 }
 
@@ -412,61 +482,6 @@ function isDesignSystem(value: unknown): boolean {
     id(value.id) &&
     count(value.version) &&
     (value.mode === 'light' || value.mode === 'dark')
-  );
-}
-
-function isBuild(value: unknown): boolean {
-  // Every state names the attempt it belongs to, whatever the attempt produced.
-  if (!record(value) || !count(value.generation)) return false;
-  switch (value.status) {
-    case 'pending':
-      return true;
-    case 'building':
-      return id(value.revisionId);
-    case 'ready':
-      return (
-        id(value.revisionId) &&
-        id(value.artifactId) &&
-        boundedList(value.elements, MAX_SOURCE_ELEMENTS, isSourceElement) &&
-        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic)
-      );
-    case 'failed':
-      return (
-        id(value.revisionId) &&
-        boundedList(value.diagnostics, MAX_BUILD_DIAGNOSTICS, isDiagnostic) &&
-        (value.lastWorkingRevisionId === null || id(value.lastWorkingRevisionId))
-      );
-    case 'cancelled':
-      return value.revisionId === null || id(value.revisionId);
-    default:
-      return false;
-  }
-}
-
-function isSourceElement(value: unknown): boolean {
-  return (
-    record(value) &&
-    id(value.elementId) &&
-    boundedText(value.file, 256) &&
-    count(value.start) &&
-    count(value.end) &&
-    value.end > value.start &&
-    value.end <= MAX_SOURCE_FILE_BYTES &&
-    boundedText(value.tagName, MAX_SOURCE_FILE_BYTES) &&
-    (value.editability === 'literal' ||
-      value.editability === 'computed' ||
-      value.editability === 'shared')
-  );
-}
-
-function isDiagnostic(value: unknown): boolean {
-  return (
-    record(value) &&
-    boundedText(value.code, 64) &&
-    boundedText(value.message, 2048) &&
-    (value.file === undefined || (typeof value.file === 'string' && value.file.length <= 320)) &&
-    (value.line === undefined || count(value.line)) &&
-    (value.column === undefined || count(value.column))
   );
 }
 

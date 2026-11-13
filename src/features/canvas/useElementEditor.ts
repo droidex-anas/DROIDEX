@@ -1,53 +1,69 @@
 // The board's direct element edits: which element of which live preview is
-// selected, what the user has previewed on it, and the one commit in flight.
-// Previews report through `selections`; the board draws the outline and the
-// panel from the selection this returns.
+// selected, what the user has previewed on it, the one commit in flight, and
+// the element under the pointer. Previews report through `selections`; the
+// board draws the outlines and the panel from what this returns.
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { elementStep } from './boardKeys';
-import { canvasMessage } from './client';
+import { elementStep, historyStep, isDeleteKey } from './boardKeys';
+import { canvasMessage, CanvasRequestError } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEditResult, StyleResolution } from './elementEditProtocol';
+import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
 import {
-  commitStyle,
+  commitPath,
+  commitStyles,
+  commitText,
   editDraft,
   followRevision,
+  previewedStyles,
   previewStyle,
+  previewText,
   revertStyle,
+  revertText,
   settleCommit,
   type CommitOutcome,
   type ElementEditDraft,
 } from './elementEditDraft';
+import { usePathShape } from './paths/usePathShape';
+import { elementSite, pickedLayer } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
+import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame, ElementRef } from './protocol';
 import { STYLE_PROPERTIES } from './styleProperties';
-
-/** Every property a direct edit may set, which is what the guest reports. */
-const PROPERTIES = Object.keys(STYLE_PROPERTIES);
+import { useEditTokens } from './useEditTokens';
+import { useElementHover } from './useElementHover';
 
 export interface ElementSelection {
   draft: ElementEditDraft;
   /** The guest's last report: where the element is drawn and its computed values. */
   shown: PreviewElement;
-  /** What the last commit on this element wrote. */
-  written: { property: string; resolution: StyleResolution | null } | null;
 }
 
 interface ElementEditorInputs {
   canvasId: string;
   frames: CanvasFrame[];
+  runs: PreviewRuns;
   /** The board is in Edit; outside it nothing stays selected. */
   active: boolean;
-  onEditElement: (input: EditElementInput) => Promise<ElementEditResult>;
+  /** The element under the pointer is asked for, as it is in Edit and Design. */
+  hovering: boolean;
+  onEditElement: (input: EditElementInput) => Promise<ElementEdited>;
 }
 
-export function useElementEditor({ canvasId, frames, active, onEditElement }: ElementEditorInputs) {
+export function useElementEditor({
+  canvasId,
+  frames,
+  runs,
+  active,
+  hovering,
+  onEditElement,
+}: ElementEditorInputs) {
   const [selection, setSelection] = useState<ElementSelection | null>(null);
   const [error, setError] = useState('');
+  const [refused, setRefused] = useState<Refused | null>(null);
+  /** Counts the picks answered, so a pick of the element already selected still reads as one. */
+  const [picks, setPicks] = useState(0);
   const [seenFrames, setSeenFrames] = useState(frames);
-  /** The one preview each design is running, as it attached. */
-  const runs = useRef(new Map<string, { revisionId: string; run: PreviewRun }>());
   /** The run whose guest holds the selection, so moving it elsewhere releases this one. */
   const holder = useRef<PreviewRun | null>(null);
   /**
@@ -55,7 +71,24 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
    * replies, so a report under another sequence answers a select.
    */
   const picking = useRef<{ run: PreviewRun; sequence: number } | null>(null);
+  /** Enter arrived while a pick was in flight, so it goes into the panel of what that finds. */
+  const enterOnAnswer = useRef(false);
+  /** A board Delete is waiting for its answer. */
+  const removing = useRef(false);
   const panel = useRef<HTMLDivElement>(null);
+  const hover = useElementHover(
+    hovering,
+    (designId, at) => runs.get(designId)?.run.hover(at) ?? Promise.resolve(null),
+  );
+  const { rerun } = hover;
+
+  const path = usePathShape(selection?.draft ?? null, runs);
+
+  const { tokens, mode } = useEditTokens(
+    selection
+      ? frames.find((frame) => frame.designId === selection.draft.element.designId)?.designSystem
+      : undefined,
+  );
 
   if (!active && (selection !== null || error !== '')) {
     setSelection(null);
@@ -85,12 +118,18 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
   // the guest's answer to this never sends it again.
   const draft = selection?.draft ?? null;
   useEffect(() => {
-    const held = draft ? runs.current.get(draft.element.designId) : undefined;
+    const held = draft ? runs.get(draft.element.designId) : undefined;
     const next = draft && held?.revisionId === draft.element.revisionId ? held.run : null;
-    if (holder.current && holder.current !== next) holder.current.select(null, PROPERTIES);
-    if (draft && next) next.select(target(draft), PROPERTIES);
+    if (holder.current && holder.current !== next) holder.current.select(null, STYLE_PROPERTIES);
+    if (draft && next) next.select(target(draft), STYLE_PROPERTIES);
     holder.current = next;
-  }, [draft]);
+  }, [draft, runs]);
+
+  useEffect(() => {
+    if (!enterOnAnswer.current || picking.current !== null) return;
+    enterOnAnswer.current = false;
+    focusFirstField(panel.current);
+  }, [selection]);
 
   const [selections] = useState<PreviewSelections>(() => {
     /** A pick's answer: the element it found becomes the selection, once its revision has built. */
@@ -106,7 +145,7 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
       }
       const site = siteOf(latest.current.frames, designId, revisionId, element.elementId);
       if (!site) {
-        run.select(null, PROPERTIES);
+        run.select(null, STYLE_PROPERTIES);
         choose(null);
         setError('This design is still building. Pick the element again once it has.');
         return;
@@ -120,29 +159,32 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
           site,
         ),
         shown: element,
-        written: null,
       });
     };
 
     return {
       attach(designId, revisionId, run) {
-        runs.current.set(designId, { revisionId, run });
+        runs.set(designId, revisionId, run);
+        rerun(designId);
         const current = latest.current.selection?.draft;
         if (current?.element.designId === designId && current.element.revisionId === revisionId) {
-          run.select(target(current), PROPERTIES);
+          run.select(target(current), STYLE_PROPERTIES);
           holder.current = run;
         }
         return () => {
-          if (runs.current.get(designId)?.run === run) runs.current.delete(designId);
+          if (runs.release(designId, run)) rerun(designId);
           if (holder.current === run) holder.current = null;
         };
       },
       report(designId, revisionId, element, sequence) {
-        const held = runs.current.get(designId);
+        const held = runs.get(designId);
         if (held?.revisionId !== revisionId) return;
         const asked = picking.current;
         const answersPick = asked?.run === held.run && asked.sequence === sequence;
-        if (answersPick) picking.current = null;
+        if (answersPick) {
+          picking.current = null;
+          setPicks((count) => count + 1);
+        }
         const selected = selectionIn(latest.current.selection, designId, revisionId);
         if (element && selected && sameElement(selected.draft.element, element)) {
           choose({ ...selected, shown: element });
@@ -152,19 +194,20 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
         // A select names the selected element, so its answer means something
         // only when the guest has lost that element.
         else if (element === null && selected) choose(null);
+        if (answersPick && latest.current.selection === null) enterOnAnswer.current = false;
       },
     };
   });
   /** Picks in one design's live preview: at a point in its pixels, or a step along. */
   const pick = (designId: string, at: PreviewPick): boolean => {
-    const held = runs.current.get(designId);
+    const held = runs.get(designId);
     if (!held) {
       setError('This design’s preview isn’t running, so nothing in it can be picked.');
       return false;
     }
     setError('');
     if (latest.current.selection?.draft.element.designId !== designId) choose(null);
-    picking.current = { run: held.run, sequence: held.run.pick(at, PROPERTIES) };
+    picking.current = { run: held.run, sequence: held.run.pick(at, STYLE_PROPERTIES) };
     return true;
   };
 
@@ -174,56 +217,132 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
     return true;
   };
 
-  const preview = (property: string, value: string) => {
+  /** Changes what the selected element previews, from what it draws now. */
+  const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: previewStyle(current.draft, property, value) });
+    if (current) choose({ ...current, draft: change(current.draft, current.shown) });
   };
 
-  const revert = (property: string) => {
-    const current = latest.current.selection;
-    if (current) choose({ ...current, draft: revertStyle(current.draft, property) });
-  };
+  /**
+   * Whether `element` is still selected, in the revision a panel callback was
+   * drawn for; the draft keeps its element until it moves to another revision.
+   */
+  const selects = (element: ElementRef) => latest.current.selection?.draft.element === element;
 
-  const commit = (property: string) => {
+  /** Sends the commit `make` draws from the draft, if it has one to send; resolves whether the source wrote it. */
+  const send = (make: typeof commitStyles): Promise<boolean> => {
     const current = latest.current.selection;
-    if (!current) return;
+    if (!current) return Promise.resolve(false);
     const mutationId = crypto.randomUUID();
-    const committed = commitStyle(current.draft, property, mutationId);
-    if (!committed) return;
+    const committed = make(current.draft, mutationId);
+    if (!committed) return Promise.resolve(false);
+    setRefused(null);
     choose({ ...current, draft: committed.draft });
-    const settle = (outcome: CommitOutcome, written: ElementSelection['written']) => {
+    const settle = (outcome: CommitOutcome) => {
       const now = latest.current.selection;
-      if (now?.draft.pendingMutationId !== mutationId) return;
+      if (now?.draft.pending?.mutationId !== mutationId) return;
       const settled = settleCommit(now.draft, mutationId, outcome);
-      choose(settled && { ...now, draft: settled, written });
+      choose(settled && { ...now, draft: settled });
     };
-    latest.current.onEditElement(committed.input).then(
-      ({ receipt, resolution }) => {
-        settle({ status: 'edited', revisionId: receipt.revisionId }, { property, resolution });
+    return latest.current.onEditElement(committed.input).then(
+      ({ receipt }) => {
+        settle({ status: 'edited', revisionId: receipt.revisionId });
+        return true;
       },
       (refusal: unknown) => {
-        if (latest.current.selection?.draft.pendingMutationId === mutationId)
-          setError(canvasMessage(refusal));
-        settle({ status: 'refused' }, null);
+        const now = latest.current.selection;
+        if (now?.draft.pending?.mutationId !== mutationId) return false;
+        if (isUnwritable(refusal)) {
+          setRefused({ element: now.draft.element, reason: refusal.message });
+          settle({ status: 'unwritable' });
+          return false;
+        }
+        setError(canvasMessage(refusal));
+        settle({ status: 'refused' });
+        return false;
       },
     );
   };
 
-  /** Enter in Edit: into the panel when `designId` holds the selected element, else its first element. */
+  /**
+   * Draws `d` as the data of `element`, the selected path, or its own again for
+   * null, leaving the draft alone: a drag previews each frame and commits once.
+   */
+  const previewPath = (d: string | null, element: ElementRef) => {
+    const current = latest.current.selection;
+    if (!current || !selects(element) || !holder.current) return;
+    const shown = target(current.draft);
+    holder.current.select(d === null ? shown : { ...shown, d }, STYLE_PROPERTIES);
+  };
+
+  /**
+   * Sends an edit of a layer of `layer.designId`'s outline. Once it answers, a
+   * pick in that design is dropped: the edit shifts the elements of its source,
+   * so the pick, made before or during the edit, would follow the wrong one.
+   */
+  const editLayer = async (layer: LayerRef, change: LayerChange): Promise<ElementEdited> => {
+    const input = { mutationId: crypto.randomUUID(), edit: { layer, change } };
+    const edited = await latest.current.onEditElement(input);
+    if (latest.current.selection?.draft.element.designId === layer.designId) choose(null);
+    return edited;
+  };
+
+  /**
+   * Delete in Edit: removes the selected element's layer, saying why where it
+   * cannot. A commit or a delete in flight edits the same revision, so it waits.
+   */
+  const removeSelected = ({ draft }: ElementSelection) => {
+    if (draft.pending !== null || removing.current) return;
+    const { designId, revisionId, elementId } = draft.element;
+    const frame = latest.current.frames.find((each) => each.designId === designId);
+    const picked = frame && pickedLayer(frame, revisionId, elementId);
+    if (!picked) {
+      setError('This design is still building. Pick the element again once it has.');
+      return;
+    }
+    if ('refusal' in picked) {
+      setError(picked.refusal);
+      return;
+    }
+    setError('');
+    removing.current = true;
+    editLayer({ designId, revisionId, nodeId: picked.row.nodeId }, { kind: 'remove' })
+      .catch((refusal: unknown) => {
+        setError(canvasMessage(refusal));
+      })
+      .finally(() => {
+        removing.current = false;
+      });
+  };
+
+  /**
+   * Enter in Edit, or a double-click: into the panel when `designId` holds the
+   * selected element, else its first element. While a pick in it is in
+   * flight, into the panel of the element that pick finds.
+   */
   const enter = (designId: string) => {
-    if (latest.current.selection?.draft.element.designId === designId)
-      panel.current?.querySelector<HTMLElement>('input')?.focus();
+    const held = runs.get(designId);
+    if (held && picking.current?.run === held.run) enterOnAnswer.current = true;
+    else if (latest.current.selection?.draft.element.designId === designId)
+      focusFirstField(panel.current);
     else pick(designId, { step: 'first' });
   };
 
   /**
    * Edit's keys on the board, for the frame `designId` the keyboard is on:
    * Enter as `enter`, and once an element is picked the arrows step through
-   * its design's elements. Without one the arrows stay the board's.
+   * its design's elements and Delete removes it rather than its frame.
+   * Without one the arrows and Delete stay the board's. The history's keys,
+   * and Delete, wait while a commit is saving, as they do in the panel.
    */
   const runKey = (event: KeyboardEvent, designId: string | null): boolean => {
-    const step = active ? elementStep(event) : null;
     const current = latest.current.selection;
+    if (historyStep(event)) return current !== null && current.draft.pending !== null;
+    if (active && current && isDeleteKey(event)) {
+      if (!event.repeat) removeSelected(current);
+      return true;
+    }
+    const step = active ? elementStep(event) : null;
     if (step === 'first') {
       const on = designId ?? current?.draft.element.designId;
       if (on === undefined) return false;
@@ -237,22 +356,89 @@ export function useElementEditor({ canvasId, frames, active, onEditElement }: El
 
   return {
     selection,
+    picks,
     error,
     selections,
     panel,
+    tokens,
+    mode,
     pick,
     clear,
-    preview,
-    revert,
-    commit,
+    editLayer,
+    refusal: refusalOf(refused, selection),
+    preview: (property: string, value: string, element: ElementRef): boolean => {
+      if (!selects(element)) return false;
+      setRefused(null);
+      update((draft, shown) => previewStyle(draft, property, value, shown.styles[property] ?? ''));
+      return true;
+    },
+    revert: (property: string, element: ElementRef): boolean => {
+      if (!selects(element)) return false;
+      update((draft) => revertStyle(draft, property));
+      return true;
+    },
+    commit: (element: ElementRef) => {
+      if (selects(element)) void send(commitStyles);
+    },
+    previewText: (text: string) => {
+      setRefused(null);
+      update((draft) => previewText(draft, text));
+    },
+    revertText: () => {
+      update(revertText);
+    },
+    commitText: () => {
+      void send(commitText);
+    },
     enter,
     runKey,
+    hover,
+    path: {
+      ...path,
+      preview: previewPath,
+      commit: (d: string, element: ElementRef): Promise<boolean> => {
+        if (!selects(element)) return Promise.resolve(false);
+        return send((draft, mutationId) => commitPath(draft, mutationId, d));
+      },
+    },
   };
 }
 
+export type ElementEditor = ReturnType<typeof useElementEditor>;
+
 function target(draft: ElementEditDraft): PreviewTarget {
   const { elementId, instancePath } = draft.element;
-  return { elementId, instancePath, styles: { ...draft.values } };
+  const shown = { elementId, instancePath, styles: previewedStyles(draft), text: draft.text };
+  return draft.d === null ? shown : { ...shown, d: draft.d };
+}
+
+/** Why the source could not take the last commit on an element, which stays selected. */
+interface Refused {
+  element: ElementRef;
+  reason: string;
+}
+
+/** The refusal's reason while its element is still the one selected. */
+function refusalOf(refused: Refused | null, selection: ElementSelection | null): string | null {
+  return refused !== null && refused.element === selection?.draft.element ? refused.reason : null;
+}
+
+/** The source cannot take the edit as written; nothing about the selection has gone stale. */
+function isUnwritable(refusal: unknown): refusal is CanvasRequestError {
+  return (
+    refusal instanceof CanvasRequestError &&
+    (refusal.code === 'invalid_edit' ||
+      refusal.code === 'unsupported_edit' ||
+      refusal.code === 'ambiguous_element')
+  );
+}
+
+/** The panel's first field that takes typing, else its first working button. */
+function focusFirstField(panel: HTMLElement | null) {
+  const first =
+    panel?.querySelector<HTMLElement>('textarea:not([readonly]), input:not([readonly])') ??
+    panel?.querySelector<HTMLElement>('button:not([disabled])');
+  first?.focus();
 }
 
 /** The selection when it is in this revision of this design, else null. */
@@ -263,9 +449,8 @@ function selectionIn(selection: ElementSelection | null, designId: string, revis
 
 /** Where an element is written, known only once its revision has built. */
 function siteOf(frames: CanvasFrame[], designId: string, revisionId: string, elementId: string) {
-  const build = frames.find((frame) => frame.designId === designId)?.build;
-  if (build?.status !== 'ready' || build.revisionId !== revisionId) return undefined;
-  return build.elements.find((element) => element.elementId === elementId);
+  const frame = frames.find((each) => each.designId === designId);
+  return frame && elementSite(frame, revisionId, elementId);
 }
 
 function sameElement(a: PreviewTarget | ElementEditDraft['element'], b: PreviewElement): boolean {

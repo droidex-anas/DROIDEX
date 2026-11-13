@@ -13,7 +13,8 @@ import {
 import { CompilerWorker } from './compiler.js';
 import { readDesignSystem, saveDesignSystem, type DesignSystem } from './designSystems.js';
 import { systemsRoot } from './designSystemStorage.js';
-import { importKitImage, kitImageImportSchema } from './kitAssets.js';
+import { chosenImageSchema } from './canvasAssets.js';
+import { importKitImage } from './kitAssets.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
@@ -57,7 +58,7 @@ test('kit image imports apply the canvas image checks and keep one copy', async 
   const oversized = await chosenImage(t);
   await truncate(oversized.filePath, 10 * 1024 * 1024 + 1);
   await assert.rejects(importKitImage(oversized), { code: 'invalid_input' });
-  assert.equal(kitImageImportSchema.safeParse({ ...request, canvasId: 'canvas-1' }).success, false);
+  assert.equal(chosenImageSchema.safeParse({ ...request, canvasId: 'canvas-1' }).success, false);
 });
 
 test('a kit document names only images that were imported', async (t) => {

@@ -294,7 +294,8 @@ export function readTailwind(
   return null;
 }
 
-function literalValue(value: ConfigValue, section: string): string | null {
+/** A config value as one CSS value: a font family list joined, a fontSize pair's size; null for a computed one. */
+export function literalValue(value: ConfigValue, section: string): string | null {
   if (value.kind === 'text') return value.value;
   // A list with a spread or reference cannot be read whole.
   if (value.kind !== 'list' || value.items.some((item) => item.kind === 'computed')) return null;

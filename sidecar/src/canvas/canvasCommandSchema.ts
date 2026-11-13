@@ -5,13 +5,22 @@ import { z } from 'zod';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
 import { documentIdSchema } from './designSystemDocument.js';
 import { DESIGN_SYSTEM_LIMITS, designSystemObjectSchema } from './designSystems.js';
-import { MAX_CAPTURE_BASE64_LENGTH } from './canvasCaptures.js';
+import { MAX_CAPTURE_BASE64_LENGTH, MAX_CAPTURE_SVG_BYTES } from './canvasCaptures.js';
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
-import type { CanvasCommand } from './protocol.js';
+import { catalogNameSchema } from './kitCatalog.js';
 import {
   arrangeFramesInputSchema,
+  removeFramesInputSchema,
+  renameFrameInputSchema,
+  reorderFramesInputSchema,
+  setFrameHiddenInputSchema,
+  undoRemovalInputSchema,
+} from './frameEditSchema.js';
+import { editElementInputSchema } from './elementEditSchema.js';
+import type { CanvasCommand } from './protocol.js';
+import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
   canvasNameSchema,
@@ -19,13 +28,9 @@ import {
   designSystemRefSchema,
   designSystemVersionRefSchema,
   designSystemAdherenceSchema,
-  editElementInputSchema,
-  removeFramesInputSchema,
-  renameFrameInputSchema,
   switchRevisionInputSchema,
   revisionPageSchema,
   revisionRefSchema,
-  undoRemovalInputSchema,
   writeFilesInputSchema,
 } from './schema.js';
 
@@ -216,6 +221,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('canvas.setFrameHidden'),
+      ...request,
+      ...target,
+      input: setFrameHiddenInputSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.reorderFrames'),
+      ...request,
+      ...target,
+      input: reorderFramesInputSchema,
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('canvas.annotate'),
       ...request,
       ...target,
@@ -226,6 +247,13 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('canvas.readDesignSystem'),
+      ...request,
+      ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readEditTokens'),
       ...request,
       ref: designSystemVersionRefSchema,
     })
@@ -308,8 +336,22 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
     .object({
       type: z.literal('canvas.readKitPreview'),
       ...request,
-      ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
-      item: documentIdSchema,
+      target: z.discriminatedUnion('kind', [
+        z
+          .object({
+            kind: z.literal('preview'),
+            ref: z.union([designSystemRefSchema, designSystemProposalRefSchema]),
+            item: documentIdSchema,
+          })
+          .strict(),
+        z
+          .object({
+            kind: z.literal('catalog'),
+            ref: designSystemRefSchema,
+            entry: catalogNameSchema,
+          })
+          .strict(),
+      ]),
     })
     .strict(),
   z
@@ -393,11 +435,20 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.reportCapture'),
       ...request,
       captureId: canvasIdentifierSchema,
-      capture: z.discriminatedUnion('ok', [
+      capture: z.union([
         z
           .object({
             ok: z.literal(true),
             png: base64Schema(MAX_CAPTURE_BASE64_LENGTH),
+          })
+          .strict(),
+        z
+          .object({
+            ok: z.literal(true),
+            svg: z
+              .string()
+              .max(MAX_CAPTURE_SVG_BYTES)
+              .refine((svg) => Buffer.byteLength(svg) <= MAX_CAPTURE_SVG_BYTES),
           })
           .strict(),
         z.object({ ok: z.literal(false), message: z.string().min(1).max(300) }).strict(),
@@ -419,6 +470,8 @@ export type CanvasMutation = Extract<
       | 'remove'
       | 'undoRemoval'
       | 'renameFrame'
+      | 'setFrameHidden'
+      | 'reorderFrames'
       | 'annotate'}`;
   }
 >;

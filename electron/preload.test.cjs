@@ -126,9 +126,36 @@ const invokeContract = [
   ],
   [
     'canvasImageSave',
-    ['cv_01', 'dsg_01', 'rev_01', 'design', new Uint8Array([1, 2, 3])],
+    ['capture-1', 'design', new Uint8Array([1, 2, 3])],
     'canvas-image-save',
-    { canvasId: 'cv_01', designId: 'dsg_01', revisionId: 'rev_01', suggestedName: 'design' },
+    { requestId: 'capture-1', suggestedName: 'design' },
+  ],
+  [
+    'canvasExportSource',
+    [
+      'canvas_1',
+      { designId: 'd', revisionId: 'r' },
+      { appSessionId: 'app-1', folder: 'design/a', requestId: 'export-1', extra: true },
+    ],
+    'canvas-export-source',
+    {
+      canvasId: 'canvas_1',
+      ref: { designId: 'd', revisionId: 'r' },
+      project: { appSessionId: 'app-1', folder: 'design/a' },
+      requestId: 'export-1',
+    },
+  ],
+  [
+    'canvasExportSourceCancel',
+    ['export-1'],
+    'canvas-export-source-cancel',
+    { requestId: 'export-1' },
+  ],
+  [
+    'canvasSvgSave',
+    ['<svg/>', 'mark'],
+    'canvas-image-save',
+    { format: 'svg', svg: '<svg/>', suggestedName: 'mark' },
   ],
   ['setAutomaticDiagnostics', [false], 'diagnostics-preference-set', { enabled: false }],
   ['setHardwareAcceleration', [false], 'hardware-acceleration-preference-set', { enabled: false }],
@@ -152,9 +179,25 @@ test('invoke methods send closed payloads and return the main-process result unc
     assert.equal(calls.length, 1, method);
     assert.equal(calls[0].channel, channel, method);
     // The payload is built inside the preload's realm; copy it before comparing.
-    const sent = calls[0].payload === undefined ? undefined : { ...calls[0].payload };
+    const sent = calls[0].payload === undefined ? undefined : structuredClone(calls[0].payload);
     assert.deepEqual(sent, payload, method);
   }
+});
+
+test('a pasted SVG is sent as markup and answers the owned asset or the curated error', async () => {
+  const asset = { assetId: 'a'.repeat(64), mediaType: 'image/svg+xml', width: 24, height: 24 };
+  const imported = loadApi({ ok: true, asset });
+  assert.equal(await imported.api.canvasPasteSvg('canvas_1', '<svg/>'), asset);
+  assert.deepEqual(structuredClone(imported.calls), [
+    { channel: 'canvas-paste-svg', payload: { canvasId: 'canvas_1', svg: '<svg/>' } },
+  ]);
+
+  const error = { code: 'invalid_input', message: 'Choose a valid SVG file.' };
+  const refused = loadApi({ ok: false, error });
+  await assert.rejects(refused.api.canvasPasteSvg('canvas_1', '<p/>'), (thrown) => {
+    assert.deepEqual(structuredClone(thrown), error);
+    return true;
+  });
 });
 
 test('GitHub device codes use a removable trusted event subscription', () => {

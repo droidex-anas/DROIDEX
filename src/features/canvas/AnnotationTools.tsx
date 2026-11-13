@@ -7,7 +7,7 @@ import { useState } from 'react';
 import { PenLine } from '@droidex/icons';
 import type { AnnotationColor } from './annotationProtocol';
 import { isShapeTool, type AnnotationTool, type ShapeTool } from './annotationGeometry';
-import { Tool } from './BoardControls';
+import { Tool } from './BoardTool';
 
 const COLORS: { color: AnnotationColor; label: string }[] = [
   { color: 'ink', label: 'Ink' },

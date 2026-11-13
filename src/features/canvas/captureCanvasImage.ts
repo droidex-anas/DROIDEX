@@ -1,10 +1,14 @@
 import {
+  type CanvasImageSaveResult,
   cancelCanvasPreviewCapture,
   captureCanvasPreview,
   saveCanvasImage,
+  saveCanvasSvg,
 } from '../../lib/desktop';
+import type { PreviewVector } from './previewDocument';
 import type {
   CanvasCommand,
+  CanvasFrame,
   CanvasErrorCode,
   CanvasEvent,
   CaptureReport,
@@ -34,14 +38,32 @@ interface LivePreview {
   width: number;
   height: number;
   scaleFactor: number;
+  vector: () => Promise<PreviewVector | null>;
   ended: AbortController;
 }
 
+type Listeners = Map<string, Set<() => void>>;
+
 const livePreviews = new Map<string, LivePreview>();
-const captureListeners = new Map<string, Set<() => void>>();
+const captureListeners: Listeners = new Map();
+const shownListeners: Listeners = new Map();
 
 function captureKey(canvasId: string, ref: RevisionRef): string {
   return JSON.stringify([canvasId, ref.designId, ref.revisionId]);
+}
+
+function listen(listeners: Listeners, key: string, listener: () => void): () => void {
+  const forKey = listeners.get(key) ?? new Set();
+  forKey.add(listener);
+  listeners.set(key, forKey);
+  return () => {
+    forKey.delete(listener);
+    if (forKey.size === 0 && listeners.get(key) === forKey) listeners.delete(key);
+  };
+}
+
+function notify(listeners: Listeners, key: string): void {
+  for (const listener of listeners.get(key) ?? []) listener();
 }
 
 /** The board calls this only after that guest reports ready; release cancels its captures. */
@@ -54,11 +76,38 @@ export function registerCanvasPreview(
   livePreviews.get(key)?.ended.abort();
   const live = { ...preview, ended: new AbortController() };
   livePreviews.set(key, live);
+  notify(shownListeners, key);
   return () => {
     if (livePreviews.get(key) !== live) return;
     livePreviews.delete(key);
     live.ended.abort();
   };
+}
+
+/** The revision on show, while it has a working build main can capture. */
+export function exportableRevision(frame: CanvasFrame): RevisionRef | null {
+  const { build, revisionId } = frame;
+  if (revisionId === null || build.status !== 'ready' || build.revisionId !== revisionId)
+    return null;
+  return { designId: frame.designId, revisionId };
+}
+
+/** The mounted revision's root `<svg>` or why it has none, or null when no live preview shows it. */
+export function readCanvasVector(
+  canvasId: string,
+  ref: RevisionRef,
+): Promise<PreviewVector | null> {
+  const preview = livePreviews.get(captureKey(canvasId, ref));
+  return preview ? preview.vector() : Promise.resolve(null);
+}
+
+/** Calls back each time a live preview of that revision becomes ready. */
+export function onCanvasPreviewShown(
+  canvasId: string,
+  ref: RevisionRef,
+  listener: () => void,
+): () => void {
+  return listen(shownListeners, captureKey(canvasId, ref), listener);
 }
 
 /** Calls back each time main keeps a new picture of that revision. */
@@ -67,23 +116,27 @@ export function onCanvasImageCaptured(
   ref: RevisionRef,
   listener: () => void,
 ): () => void {
-  const key = captureKey(canvasId, ref);
-  const listeners = captureListeners.get(key) ?? new Set();
-  listeners.add(listener);
-  captureListeners.set(key, listeners);
-  return () => {
-    listeners.delete(listener);
-    if (listeners.size === 0 && captureListeners.get(key) === listeners)
-      captureListeners.delete(key);
-  };
+  return listen(captureListeners, captureKey(canvasId, ref), listener);
 }
 
-/** Captures the mounted revision, independently of any source write or turn. */
+interface CapturedImage {
+  /** Names the capture main kept, when it was asked to keep one for a save. */
+  requestId: string;
+  mediaType: 'image/png';
+  bytes: Uint8Array;
+}
+
+/**
+ * Captures the mounted revision, independently of any source write or turn,
+ * at the display's scale unless the caller names another.
+ */
 export function captureCanvasImage(
   canvasId: string,
   ref: RevisionRef,
   signal: AbortSignal,
-): Promise<{ mediaType: 'image/png'; bytes: Uint8Array }> {
+  scaleFactor?: number,
+  retain = false,
+): Promise<CapturedImage> {
   const key = captureKey(canvasId, ref);
   const preview = livePreviews.get(key);
   if (!preview || signal.aborted || preview.ended.signal.aborted)
@@ -92,7 +145,7 @@ export function captureCanvasImage(
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     let settled = false;
-    const finish = (result: { mediaType: 'image/png'; bytes: Uint8Array } | CanvasImageError) => {
+    const finish = (result: CapturedImage | CanvasImageError) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
@@ -124,17 +177,22 @@ export function captureCanvasImage(
       generation: preview.generation,
       width: preview.width,
       height: preview.height,
-      scaleFactor: preview.scaleFactor,
+      scaleFactor: scaleFactor ?? preview.scaleFactor,
+      retain,
     }).then(
       (result) => {
         // Main keeps every picture it reports, even one this request no longer wants.
-        if (result.ok) for (const listener of captureListeners.get(key) ?? []) listener();
+        if (result.ok) notify(captureListeners, key);
         if (settled) return;
         if (livePreviews.get(key) !== preview) {
           cancel();
           return;
         }
-        finish(result.ok ? result : new CanvasImageError(result.error.message));
+        finish(
+          result.ok
+            ? { requestId, mediaType: result.mediaType, bytes: result.bytes }
+            : new CanvasImageError(result.error.message),
+        );
       },
       () => {
         finish(new CanvasImageError());
@@ -143,43 +201,78 @@ export function captureCanvasImage(
   });
 }
 
-/** The OS dialog chooses the destination; generated code never supplies a path. */
+/**
+ * The OS dialog chooses the destination; generated code never supplies a path.
+ * Main saves the capture it kept for this request, not the revision's latest.
+ */
 export async function exportCanvasImage(
   canvasId: string,
   ref: RevisionRef,
   suggestedName: string,
+  scaleFactor: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  await captureCanvasImage(canvasId, ref, signal);
-  const saved = await saveCanvasImage(canvasId, ref.designId, ref.revisionId, suggestedName);
-  if (saved.ok) return true;
-  if ('cancelled' in saved) return false;
-  throw new CanvasImageError(saved.message, saved.code);
+  const { requestId } = await captureCanvasImage(canvasId, ref, signal, scaleFactor, true);
+  return saved(await saveCanvasImage(requestId, suggestedName));
+}
+
+/** Reads the root `<svg>` afresh, so the file is the revision on show; main writes only its sanitised rebuild. */
+export async function exportCanvasSvg(
+  canvasId: string,
+  ref: RevisionRef,
+  suggestedName: string,
+): Promise<boolean> {
+  const vector = await readCanvasVector(canvasId, ref);
+  if (!vector || !('svg' in vector))
+    throw new CanvasImageError(
+      'This design is no longer a single SVG. Export it as a PNG instead.',
+    );
+  return saved(await saveCanvasSvg(vector.svg, suggestedName));
+}
+
+function saved(result: CanvasImageSaveResult): boolean {
+  if (result.ok) return true;
+  if ('cancelled' in result) return false;
+  throw new CanvasImageError(result.message, result.code);
 }
 
 /**
- * An agent's inspect screenshot, answered from this page's live preview of
+ * An agent's screenshot or render, answered from this page's live preview of
  * exactly that revision. A page that is not showing it says so.
  */
 export async function answerCaptureRequest(
   request: Extract<CanvasEvent, { type: 'canvas.captureRequest' }>,
 ): Promise<ReportCapture> {
-  const { captureId, canvasId, designId, revisionId } = request;
+  const { captureId, canvasId, designId, revisionId, image } = request;
+  const ref = { designId, revisionId };
   const reported = (capture: CaptureReport): ReportCapture => ({
     type: 'canvas.reportCapture',
     requestId: crypto.randomUUID(),
     captureId,
     capture,
   });
-  if (!livePreviews.has(captureKey(canvasId, { designId, revisionId })))
+  if (!livePreviews.has(captureKey(canvasId, ref)))
     return reported({ ok: false, message: NOT_SHOWN });
+  if (image.format === 'svg') {
+    const vector = await readCanvasVector(canvasId, ref);
+    if (vector === null) return reported({ ok: false, message: NOT_SHOWN });
+    if ('svg' in vector) return reported({ ok: true, svg: vector.svg });
+    return reported({
+      ok: false,
+      message:
+        vector.refused === 'too_large'
+          ? 'This design’s SVG is over 256 KiB. Render it as a PNG.'
+          : 'This design is not a single root <svg>, so it has no SVG. Render it as a PNG.',
+    });
+  }
   try {
-    const image = await captureCanvasImage(
+    const { bytes } = await captureCanvasImage(
       canvasId,
-      { designId, revisionId },
+      ref,
       new AbortController().signal,
+      image.scale ?? undefined,
     );
-    return reported({ ok: true, png: base64(image.bytes) });
+    return reported({ ok: true, png: base64(bytes) });
   } catch (error) {
     return reported({
       ok: false,

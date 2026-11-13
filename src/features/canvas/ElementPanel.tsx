@@ -1,94 +1,76 @@
-// The selected element's styles while Edit has one, in a column at the board's
-// right: the values its preview computes, one field per property the edit
-// whitelist allows, grouped the way a designer reads them, and what the last
-// commit wrote. Typing previews in the guest; Enter commits one property and
-// Escape takes its preview back.
+// The selected element's text and styles while Edit has one, in a full-height
+// column at the board's right: typed controls grouped the way a designer reads
+// them — content, an SVG's paint, layout, size, spacing, typography, fill,
+// border, effects — reading the values the preview computes, with the kit's
+// tokens one press away. A flex or grid container shows its alignment, and an
+// item of one its own. Typing previews in the guest; picking a segment, option,
+// token or swatch applies at once; Enter commits every style preview as one
+// edit, or the text as its own, and Escape takes one back.
 
-import type { KeyboardEvent, Ref } from 'react';
-import { Input } from '../../components/ui/Field';
-import { cn } from '../../components/ui/cn';
-import type { SourceElement } from './protocol';
+import type { ReactNode, Ref } from 'react';
+import { ChevronRight } from '@droidex/icons';
+import type { HistoryStep } from './boardHistory';
+import { historyStep, isBoardEditor } from './boardKeys';
+import { ColourField } from './ColourField';
+import { hasPreviews } from './elementEditDraft';
+import { ElementEffects } from './ElementEffects';
+import {
+  ALIGN,
+  ALIGN_COLUMN,
+  ALIGN_SELF,
+  BORDER_STYLE,
+  DIRECTION,
+  displayFor,
+  JUSTIFY,
+  JUSTIFY_COLUMN,
+  LAYOUT,
+  layoutOf,
+  type Layout,
+  MORE_DISPLAYS,
+  OVERFLOW,
+  TEXT_ALIGN,
+  TEXT_TRANSFORM,
+  vectorPaint,
+  WEIGHTS,
+  WRAP,
+} from './elementPanelChoices';
+import { Fields, Labelled, Pair, Section } from './ElementPanelRows';
+import { ElementPanelStatus } from './ElementPanelStatus';
+import { ElementTextField } from './ElementTextField';
+import { ElementVectorPaint } from './ElementVectorPaint';
+import { NumberField } from './NumberField';
+import { firstFamily, sameFontStack } from './panelValues';
+import { isDrawn } from './previewDocument';
+import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
+import type { EditToken, ElementRef, FrameRect, SourceElement } from './protocol';
+import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';
-
-/** One field: the style property it edits and the short name shown in it. */
-interface StyleField {
-  property: string;
-  /** Part of the field's accessible name, which is the property's full name. */
-  label: string;
-}
-
-/** A row holds one field across the panel, or two side by side. */
-type StyleRow = [StyleField] | [StyleField, StyleField];
-
-const field = (property: string, label: string): StyleField => ({ property, label });
-
-// Every property in STYLE_PROPERTIES has exactly one place here.
-const SECTIONS: { title: string; rows: StyleRow[] }[] = [
-  {
-    title: 'Layout',
-    rows: [
-      [field('flexDirection', 'Direction')],
-      [field('alignItems', 'Align')],
-      [field('justifyContent', 'Justify')],
-      [field('gap', 'Gap')],
-      [field('rowGap', 'Row'), field('columnGap', 'Column')],
-    ],
-  },
-  {
-    title: 'Size',
-    rows: [
-      [field('width', 'Width'), field('height', 'Height')],
-      [field('minWidth', 'Min width')],
-      [field('maxWidth', 'Max width')],
-      [field('minHeight', 'Min height')],
-      [field('maxHeight', 'Max height')],
-    ],
-  },
-  {
-    title: 'Spacing',
-    rows: [
-      [field('padding', 'Padding')],
-      [field('paddingTop', 'Top'), field('paddingRight', 'Right')],
-      [field('paddingBottom', 'Bottom'), field('paddingLeft', 'Left')],
-      [field('margin', 'Margin')],
-      [field('marginTop', 'Top'), field('marginRight', 'Right')],
-      [field('marginBottom', 'Bottom'), field('marginLeft', 'Left')],
-    ],
-  },
-  {
-    title: 'Text',
-    rows: [
-      [field('fontFamily', 'Font')],
-      [field('fontSize', 'Size'), field('fontWeight', 'Weight')],
-      [field('lineHeight', 'Line'), field('letterSpacing', 'Letter')],
-    ],
-  },
-  {
-    title: 'Colour',
-    rows: [
-      [field('color', 'Colour')],
-      [field('backgroundColor', 'Background')],
-      [field('borderColor', 'Border')],
-    ],
-  },
-  {
-    title: 'Appearance',
-    rows: [
-      [field('opacity', 'Opacity'), field('borderRadius', 'Radius')],
-      [field('boxShadow', 'Shadow')],
-    ],
-  },
-];
-
-const COLOUR_PROPERTIES = new Set(['color', 'backgroundColor', 'borderColor']);
+import { usePickPreview } from './usePickPreview';
+import { ValuePickerField, type ValueOption } from './ValuePickerField';
 
 export interface ElementPanelProps {
   ref: Ref<HTMLDivElement>;
   selection: ElementSelection;
-  onPreview: (property: string, value: string) => void;
-  onRevert: (property: string) => void;
-  onCommit: (property: string) => void;
+  /** The name of the frame the element is in, which leads its breadcrumb. */
+  frameName: string;
+  /** Why a picked path's points can't move on the board; null when they can, or it is no path. */
+  pathNote: string | null;
+  /** Why the source could not take the last commit on the element; null otherwise. */
+  refusal: string | null;
+  /** The selected design's kit tokens by property; null until they load. */
+  tokens: Record<string, EditToken[]> | null;
+  /** The mode the selected design previews its kit in. */
+  mode: 'light' | 'dark';
+  /** Each names the element it was drawn for, and edits nothing once that is no longer selected. */
+  onPreview: (property: string, value: string, element: ElementRef) => boolean;
+  onRevert: (property: string, element: ElementRef) => boolean;
+  onCommit: (element: ElementRef) => void;
+  onPreviewText: (text: string) => void;
+  onRevertText: () => void;
+  onCommitText: () => void;
+  /** ⌘Z and its kin once nothing typed here is waiting to be saved. */
+  onHistory: (step: HistoryStep) => boolean;
   /** Escape on a field with nothing to take back hands the keyboard to the board. */
   onLeave: () => void;
 }
@@ -96,115 +78,404 @@ export interface ElementPanelProps {
 export function ElementPanel({
   ref,
   selection,
+  frameName,
+  pathNote,
+  refusal,
+  tokens,
+  mode,
   onPreview,
   onRevert,
   onCommit,
+  onPreviewText,
+  onRevertText,
+  onCommitText,
+  onHistory,
   onLeave,
 }: ElementPanelProps) {
   const { draft, shown } = selection;
   const editable = draft.site.editability === 'literal';
-  const readOnly = !editable || draft.pendingMutationId !== null;
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>, property: string) => {
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      onCommit(property);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      if (Object.hasOwn(draft.values, property)) onRevert(property);
-      else onLeave();
-    }
-  };
-  const renderField = ({ property, label }: StyleField, wide: boolean) => {
-    const previewed = Object.hasOwn(draft.values, property);
-    const value = previewed ? draft.values[property] : (shown.styles[property] ?? '');
-    return (
-      <Input
-        key={property}
-        variant="compact"
-        aria-label={propertyLabel(property)}
-        value={value}
-        title={value}
-        readOnly={readOnly}
-        spellCheck={false}
-        // An unsaved preview steps up a tone, and its name brightens with it.
-        className={cn('tabular-nums', previewed && 'bg-active')}
-        leading={
-          <span
-            className={cn(
-              'flex shrink-0 items-center gap-1.5 pr-2 text-label',
-              wide ? 'w-20' : 'w-16',
-              previewed && 'text-primary',
-            )}
-          >
-            {COLOUR_PROPERTIES.has(property) && <Swatch colour={value} />}
-            <span className="truncate">{label}</span>
-          </span>
-        }
-        onChange={(event) => {
-          onPreview(property, event.target.value);
-        }}
-        onKeyDown={(event) => {
-          onKeyDown(event, property);
-        }}
-      />
-    );
-  };
+  const readOnly = !editable || draft.pending !== null;
+  const note = editable ? pathNote : agentRoute(draft.site.editability);
+  const text = draft.text ?? shown.text;
+  const { value, previewed, preview, revert, commit, pick, hover } = usePickPreview({
+    draft,
+    computed: shown.styles,
+    readOnly,
+    onPreview,
+    onRevert,
+    onCommit,
+  });
+  /**
+   * The property's kit tokens as picker options, with the mode's value as the
+   * hint; undefined until they load.
+   */
+  const tokenOptions = (property: string, colour = false): ValueOption[] | undefined =>
+    tokens === null
+      ? undefined
+      : (tokens[property] ?? []).map((token) => {
+          const hint = 'value' in token ? token.value : token[mode];
+          return {
+            value: token.name,
+            label: bareTokenName(token.name),
+            hint,
+            ...(colour ? { swatch: hint } : {}),
+          };
+        });
+  /** Why a token-only picker is off once the kit's tokens have loaded without any. */
+  const noTokens = (options: ValueOption[], kind: string) =>
+    tokens !== null && options.length === 0 && `This kit defines no ${kind}.`;
+  const segmentValue = (property: string, options: readonly Segment<string>[]): string =>
+    options.some((option) => option.value === value(property)) ? value(property) : '';
+
+  const number = (
+    property: string,
+    label: string,
+    short: string,
+    options: {
+      unit?: 'px' | null;
+      step?: number;
+      shiftStep?: number;
+      min?: number;
+      max?: number;
+      trailing?: ReactNode;
+    } = {},
+  ) => (
+    <NumberField
+      label={label}
+      short={short}
+      value={value(property)}
+      previewed={previewed(property)}
+      disabled={readOnly}
+      unit={options.unit === undefined ? 'px' : options.unit}
+      step={options.step ?? 1}
+      shiftStep={options.shiftStep ?? 10}
+      min={options.min}
+      max={options.max}
+      tokens={tokenOptions(property)}
+      trailing={options.trailing}
+      onPreview={preview(property)}
+      onRevert={revert(property)}
+      onCommit={commit}
+      onLeave={onLeave}
+      onPick={pick(property)}
+      onActive={hover(property)}
+    />
+  );
+  const segmented = (property: string, label: string, options: readonly Segment<string>[]) => (
+    <SegmentedControl
+      label={label}
+      options={options}
+      value={segmentValue(property, options)}
+      disabled={readOnly}
+      onPick={pick(property)}
+    />
+  );
+  const colour = (property: string, label: string) => (
+    <ColourField
+      label={label}
+      value={value(property)}
+      previewed={previewed(property)}
+      disabled={readOnly}
+      tokens={tokenOptions(property, true) ?? []}
+      onPreview={preview(property)}
+      onRevert={revert(property)}
+      onCommit={commit}
+      onLeave={onLeave}
+      onPick={pick(property)}
+      onActive={hover(property)}
+    />
+  );
+
+  const display = value('display');
+  const layout = layoutOf(display);
+  const column = value('flexDirection').startsWith('column');
+  const parent = layoutOf(shown.parentDisplay);
+  const fontTokens = tokenOptions('fontFamily') ?? [];
+  const fontFamily = value('fontFamily');
+  const fontToken = fontTokens.find((option) => sameFontStack(option.hint ?? '', fontFamily));
+  const vector = vectorPaint(draft.site.tagName);
   return (
     <div
       ref={ref}
       role="region"
       aria-label={`Styles of the selected ${draft.site.tagName}`}
-      className="canvas-element-panel my-2 mr-2 flex w-80 shrink-0 flex-col rounded-xl bg-surface"
+      className={SIDEBAR}
+      onKeyDown={(event) => {
+        const step = historyStep(event);
+        if (!step) return;
+        // Typing not yet saved comes back through the field's own undo first,
+        // and a field in a popover, such as a picker's search, keeps its own.
+        const inPopover = !(
+          event.target instanceof Node && event.currentTarget.contains(event.target)
+        );
+        if (isBoardEditor(event.target) && (inPopover || hasPreviews(draft))) return;
+        event.preventDefault();
+        // A step now would move the head out from under the commit still saving.
+        if (draft.pending === null) onHistory(step);
+      }}
     >
       <header className="shrink-0 px-3 pb-2 pt-3">
-        <h2 className="flex min-w-0 items-baseline gap-2">
+        <h2 className="flex min-w-0 items-center gap-1 text-body">
+          <span className="min-w-0 truncate text-muted" title={frameName}>
+            {frameName}
+          </span>
+          <ChevronRight aria-hidden className="size-icon-sm shrink-0 text-muted" />
           <span className="shrink-0 text-body-strong text-primary">{draft.site.tagName}</span>
-          <span className="truncate text-caption text-muted" title={draft.site.file}>
+        </h2>
+        <p className="mt-0.5 flex min-w-0 items-baseline gap-2 text-caption text-muted">
+          <span className="truncate" title={draft.site.file}>
             {fileName(draft.site.file)}
           </span>
-          <span className="ml-auto shrink-0 text-caption tabular-nums text-muted">
-            {Math.round(shown.rect.width)} × {Math.round(shown.rect.height)}
-          </span>
-        </h2>
-        {!editable && (
-          <p className="mt-1.5 text-caption text-secondary">{agentRoute(draft.site.editability)}</p>
-        )}
+          <span className="ml-auto shrink-0 tabular-nums">{sizeText(shown.rect)}</span>
+        </p>
+        {note && <p className="mt-1.5 text-caption text-secondary">{note}</p>}
       </header>
-      <div className="scrollbar-on-hover min-h-0 flex-1 overflow-y-auto px-3 pb-2">
-        {SECTIONS.map(({ title, rows }) => (
-          <section key={title} aria-label={title} className="pt-2">
-            <h3 className="pb-1.5 text-label text-muted">{title}</h3>
-            <div className="flex flex-col gap-1">
-              {rows.map((row) => (
-                <div key={row[0].property} className="grid grid-cols-2 gap-1">
-                  {row.length === 1 ? (
-                    <div className="col-span-2">{renderField(row[0], true)}</div>
-                  ) : (
-                    row.map((each) => renderField(each, false))
-                  )}
-                </div>
-              ))}
-            </div>
-          </section>
-        ))}
-      </div>
-      <p role="status" className="shrink-0 px-3 pb-3 pt-2 text-caption text-muted">
-        {status(selection, editable)}
-      </p>
+      <Fields locked={!editable}>
+        {text !== null && (
+          <Section title="Content">
+            <ElementTextField
+              value={text}
+              previewed={draft.text !== null}
+              disabled={readOnly}
+              onPreview={onPreviewText}
+              onRevert={onRevertText}
+              onCommit={onCommitText}
+              onLeave={onLeave}
+            />
+          </Section>
+        )}
+        {vector && (
+          <ElementVectorPaint
+            value={value}
+            disabled={readOnly}
+            onPick={pick}
+            colour={colour}
+            strokeWidth={number('strokeWidth', 'Stroke width', 'Width', { min: 0, step: 0.5 })}
+          />
+        )}
+        <Section title="Layout">
+          <SegmentedControl
+            label="Display"
+            options={LAYOUT}
+            value={layout ?? ''}
+            disabled={readOnly}
+            onPick={(next) => {
+              pick('display')(displayFor(display, next));
+            }}
+            more={
+              <MoreSegments
+                label="More displays"
+                options={MORE_DISPLAYS}
+                value={display}
+                disabled={readOnly}
+                onPick={pick('display')}
+              />
+            }
+          />
+          {layout === 'flex' && (
+            <>
+              {segmented('flexDirection', 'Direction', DIRECTION)}
+              {segmented('flexWrap', 'Wrap', WRAP)}
+            </>
+          )}
+          {placesItems(layout) && (
+            <>
+              {segmented('justifyContent', 'Justify', column ? JUSTIFY_COLUMN : JUSTIFY)}
+              {segmented('alignItems', 'Align', column ? ALIGN_COLUMN : ALIGN)}
+            </>
+          )}
+          {layout === 'flex' && number('gap', 'Gap', 'Gap', { min: 0 })}
+          {layout === 'grid' && (
+            <Pair>
+              {number('rowGap', 'Row gap', 'Row', { min: 0 })}
+              {number('columnGap', 'Column gap', 'Col', { min: 0 })}
+            </Pair>
+          )}
+          {placesItems(parent) && segmented('alignSelf', 'Align self', ALIGN_SELF)}
+          {parent === 'flex' && (
+            <Pair>{number('flexGrow', 'Flex grow', 'Grow', { unit: null, min: 0 })}</Pair>
+          )}
+          <Labelled label="Overflow">
+            <ValuePickerField
+              label="Overflow"
+              options={OVERFLOW}
+              value={value('overflow')}
+              disabled={readOnly}
+              onPick={pick('overflow')}
+              onActive={hover('overflow')}
+            />
+          </Labelled>
+        </Section>
+        <Section title="Size">
+          <Pair>
+            {number('width', 'Width', 'W', {
+              min: 0,
+              trailing: (
+                <SizeMode
+                  label="Width"
+                  extent={shown.rect.width}
+                  value={value('width')}
+                  disabled={readOnly}
+                  onPick={pick('width')}
+                />
+              ),
+            })}
+            {number('height', 'Height', 'H', {
+              min: 0,
+              trailing: (
+                <SizeMode
+                  label="Height"
+                  extent={shown.rect.height}
+                  value={value('height')}
+                  disabled={readOnly}
+                  onPick={pick('height')}
+                />
+              ),
+            })}
+            {number('minWidth', 'Minimum width', 'Min W', { min: 0 })}
+            {number('maxWidth', 'Maximum width', 'Max W', {
+              min: 0,
+              trailing: (
+                <NoneMode
+                  label="Maximum width"
+                  value={value('maxWidth')}
+                  disabled={readOnly}
+                  onPick={pick('maxWidth')}
+                />
+              ),
+            })}
+            {number('minHeight', 'Minimum height', 'Min H', { min: 0 })}
+            {number('maxHeight', 'Maximum height', 'Max H', {
+              min: 0,
+              trailing: (
+                <NoneMode
+                  label="Maximum height"
+                  value={value('maxHeight')}
+                  disabled={readOnly}
+                  onPick={pick('maxHeight')}
+                />
+              ),
+            })}
+          </Pair>
+        </Section>
+        <Section title="Spacing">
+          {number('padding', 'Padding', 'Padding', { min: 0 })}
+          <Pair>
+            {number('paddingTop', 'Padding top', 'T', { min: 0 })}
+            {number('paddingRight', 'Padding right', 'R', { min: 0 })}
+            {number('paddingBottom', 'Padding bottom', 'B', { min: 0 })}
+            {number('paddingLeft', 'Padding left', 'L', { min: 0 })}
+          </Pair>
+          {number('margin', 'Margin', 'Margin')}
+          <Pair>
+            {number('marginTop', 'Margin top', 'T')}
+            {number('marginRight', 'Margin right', 'R')}
+            {number('marginBottom', 'Margin bottom', 'B')}
+            {number('marginLeft', 'Margin left', 'L')}
+          </Pair>
+        </Section>
+        <Section title="Typography">
+          <Labelled label="Font" note={noTokens(fontTokens, 'fonts')}>
+            <ValuePickerField
+              label="Font"
+              options={fontTokens}
+              value={fontToken?.value ?? fontFamily}
+              face={firstFamily(fontFamily)}
+              disabled={readOnly || fontTokens.length === 0}
+              onPick={pick('fontFamily')}
+              onActive={hover('fontFamily')}
+            />
+          </Labelled>
+          <Labelled label="Weight">
+            <ValuePickerField
+              label="Font weight"
+              options={[...(tokenOptions('fontWeight') ?? []), ...WEIGHTS]}
+              value={value('fontWeight')}
+              disabled={readOnly}
+              onPick={pick('fontWeight')}
+              onActive={hover('fontWeight')}
+            />
+          </Labelled>
+          <Pair>
+            {number('fontSize', 'Font size', 'Size', { min: 1 })}
+            {number('lineHeight', 'Line height', 'Line', {
+              unit: null,
+              step: 0.1,
+              shiftStep: 1,
+              min: 0,
+            })}
+            {number('letterSpacing', 'Letter spacing', 'Letter', { step: 0.1, shiftStep: 1 })}
+          </Pair>
+          {segmented('textAlign', 'Text align', TEXT_ALIGN)}
+          <Labelled label="Case">
+            <ValuePickerField
+              label="Text transform"
+              options={TEXT_TRANSFORM}
+              value={value('textTransform')}
+              disabled={readOnly}
+              onPick={pick('textTransform')}
+              onActive={hover('textTransform')}
+            />
+          </Labelled>
+          <Labelled label="Colour">{colour('color', 'Text colour')}</Labelled>
+        </Section>
+        {/* A shape's background paints nothing; its fill is the vector one. */}
+        {vector !== 'shape' && (
+          <Section title="Fill">
+            <Labelled label="Fill">{colour('backgroundColor', 'Fill')}</Labelled>
+          </Section>
+        )}
+        <Section title="Border">
+          <Labelled label="Colour">{colour('borderColor', 'Border colour')}</Labelled>
+          {segmented('borderStyle', 'Style', BORDER_STYLE)}
+          <Pair>
+            {number('borderWidth', 'Border width', 'Width', { min: 0 })}
+            {number('borderRadius', 'Corner radius', 'Radius', { min: 0 })}
+          </Pair>
+        </Section>
+        <ElementEffects
+          value={value}
+          tokenOptions={tokenOptions}
+          disabled={readOnly}
+          onPick={pick}
+          onHover={hover}
+        >
+          <Pair>
+            {number('opacity', 'Opacity', 'Opacity', {
+              unit: null,
+              step: 0.01,
+              shiftStep: 0.1,
+              min: 0,
+              max: 1,
+            })}
+          </Pair>
+        </ElementEffects>
+      </Fields>
+      <ElementPanelStatus draft={draft} editable={editable} refusal={refusal} />
     </div>
   );
 }
 
-/** The value's own colour, edged so any colour reads on any surface. */
-function Swatch({ colour }: { colour: string }) {
+/** The column at the board's right, full height, scrolling its own fields. */
+const SIDEBAR = 'canvas-element-panel flex h-full w-sidebar shrink-0 flex-col bg-surface';
+
+/** Edit with nothing picked yet: the column holds its place and says how to start. */
+export function EmptyElementPanel() {
   return (
-    <span
-      aria-hidden
-      className="size-3 shrink-0 rounded-xs"
-      // The same neutral hairline as ColorPicker's swatch.
-      style={{ backgroundColor: colour, boxShadow: 'inset 0 0 0 1px rgba(128, 128, 128, 0.3)' }}
-    />
+    <div role="region" aria-label="Element styles" className={SIDEBAR}>
+      <div className="px-3 pt-3">
+        <h2 className="text-body-strong text-primary">Edit</h2>
+        <p className="mt-1 text-caption text-secondary">
+          Pick an element in a design to edit its styles. Enter picks the first one.
+        </p>
+      </div>
+    </div>
   );
+}
+
+/** Flex and grid place their items, so they and their items take alignment. */
+function placesItems(layout: Layout | null): boolean {
+  return layout === 'flex' || layout === 'grid';
 }
 
 /** Shared and computed sites are the agent's: one edit here could change what is not selected. */
@@ -214,25 +485,9 @@ function agentRoute(editability: SourceElement['editability']): string {
     : 'This element’s styles are worked out in code. Ask the agent to change it.';
 }
 
-function status({ draft, written }: ElementSelection, editable: boolean): string {
-  if (!editable) return 'Read only.';
-  if (draft.pendingMutationId !== null) return 'Saving…';
-  if (written) {
-    const name = propertyLabel(written.property);
-    if (written.resolution?.kind === 'token')
-      return `${name} now uses ${bareTokenName(written.resolution.token)}.`;
-    if (written.resolution?.kind === 'raw')
-      return `${name} is now ${written.resolution.value}; no design system token matches it.`;
-  }
-  return 'Enter saves a change; Escape takes it back.';
-}
-
-/** `backgroundColor` as a person reads it: "Background colour". */
-function propertyLabel(property: string): string {
-  const words = property
-    .replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)
-    .replace(/\bcolor\b/, 'colour');
-  return words.charAt(0).toUpperCase() + words.slice(1);
+function sizeText(rect: FrameRect): string {
+  if (!isDrawn(rect)) return 'Hidden';
+  return `${String(Math.round(rect.width))} × ${String(Math.round(rect.height))}`;
 }
 
 function fileName(path: string): string {

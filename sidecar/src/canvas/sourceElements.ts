@@ -1,28 +1,13 @@
 import { createHash } from 'node:crypto';
-import { posix } from 'node:path';
 import ts from 'typescript';
-import type { SourceElement, SourceFiles } from './protocol.js';
+import { componentUses, functionName, type ComponentUses } from './componentUses.js';
+import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
+import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
+import { resolveRelative } from './relativeImport.js';
 import { CANVAS_LIMITS } from './schema.js';
+import { SourceElementError } from './sourceElementError.js';
 import { inlineSourceMap } from './sourceInstrumentationMap.js';
-
-export class SourceElementError extends Error {
-  constructor(
-    readonly code:
-      | 'stale_reference'
-      | 'ambiguous_element'
-      | 'invalid_source'
-      | 'invalid_edit'
-      | 'unsupported_edit'
-      | 'selection_limit',
-    message: string,
-    readonly file?: string,
-    readonly line?: number,
-    readonly column?: number,
-  ) {
-    super(message);
-    this.name = 'SourceElementError';
-  }
-}
+import { sourceOutline } from './sourceOutline.js';
 
 export type ElementNode = ts.JsxElement | ts.JsxSelfClosingElement;
 export interface Site {
@@ -36,8 +21,10 @@ const MARKER = 'data-droidex-element';
 export function instrumentSource(
   files: SourceFiles,
   revisionId: string,
-): { files: SourceFiles; elements: SourceElement[] } {
-  const sites = sourceSites(files, revisionId);
+): { files: SourceFiles; elements: SourceElement[]; outline: SourceOutline } {
+  const program = parseProgram(files);
+  const uses = componentUses(program);
+  const sites = programSites(program, uses, files, revisionId);
   const derived: SourceFiles = { ...files };
   const byFile = new Map<ts.SourceFile, Site[]>();
   for (const site of sites) {
@@ -61,30 +48,44 @@ export function instrumentSource(
     text += source.text.slice(offset);
     derived[source.fileName] = text + inlineSourceMap(source, inserts);
   }
-  return { files: derived, elements: sites.map((site) => site.element) };
+  return {
+    files: derived,
+    elements: sites.map((site) => site.element),
+    outline: sourceOutline(program, uses, sites),
+  };
+}
+
+/** The outline of a set of files with the node each row is written at; row ids do not depend on a revision. */
+export function sourceLayers(files: SourceFiles): {
+  uses: ComponentUses;
+  outline: SourceOutline;
+  written: Map<string, ts.Node>;
+  checker: ts.TypeChecker;
+} {
+  const program = parseProgram(files);
+  const uses = componentUses(program);
+  const written = new Map<string, ts.Node>();
+  const outline = sourceOutline(program, uses, programSites(program, uses, files, ''), written);
+  return { uses, outline, written, checker: program.getTypeChecker() };
 }
 
 export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
+  const program = parseProgram(files);
+  return programSites(program, componentUses(program), files, revisionId);
+}
+
+function programSites(
+  program: ts.Program,
+  { rendersOnce }: ComponentUses,
+  files: SourceFiles,
+  revisionId: string,
+): Site[] {
   const hash = createHash('sha256').update(
     JSON.stringify([revisionId, Object.entries(files).sort(([a], [b]) => comparePaths(a, b))]),
   );
-  const sources = Object.entries(files)
-    .filter(([file]) => !file.endsWith('.css'))
-    .map(([file, text]) => parseSource(file, text));
-  const importsEntry = sources.some((source) =>
-    source.statements.some((statement) => {
-      if (!ts.isImportDeclaration(statement) && !ts.isExportDeclaration(statement)) return false;
-      const specifier = statement.moduleSpecifier;
-      if (!specifier || !ts.isStringLiteral(specifier) || !specifier.text.startsWith('.'))
-        return false;
-      const target = posix.normalize(posix.join(posix.dirname(source.fileName), specifier.text));
-      return target === 'main' || target === 'main.tsx' || target === 'main.ts';
-    }),
-  );
   const sites: Site[] = [];
-  for (const source of sources) {
+  for (const source of program.getSourceFiles()) {
     const file = source.fileName;
-    const root = file === 'main.tsx' && !importsEntry ? defaultComponent(source) : undefined;
     const pending: ts.Node[] = [source];
     while (pending.length) {
       const node = pending.pop();
@@ -109,7 +110,7 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
         );
       const start = node.getStart(source);
       let editability: SourceElement['editability'] = 'literal';
-      if (isShared(node, root)) editability = 'shared';
+      if (!rendersOnce(node)) editability = 'shared';
       else if (isComputed(node)) editability = 'computed';
       sites.push({
         node,
@@ -122,7 +123,9 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
           file,
           start,
           end: node.end,
+          line: source.getLineAndCharacterOfPosition(start).line + 1,
           tagName: opening.tagName.text,
+          component: componentOf(node),
           editability,
         },
       });
@@ -133,14 +136,29 @@ export function sourceSites(files: SourceFiles, revisionId: string): Site[] {
   );
 }
 
-function parseSource(file: string, text: string): ts.SourceFile {
+/**
+ * One program over the design's sources, so the checker resolves a name by
+ * scope and an import as the bundler does. Throws on the first syntax error.
+ */
+function parseProgram(files: SourceFiles): ts.Program {
+  const sources = new Map<string, ts.SourceFile>();
+  let file = '';
   try {
-    const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-    const program = ts.createProgram(
-      [file],
-      { noLib: true, noResolve: true, jsx: ts.JsxEmit.Preserve },
-      {
-        getSourceFile: (name) => (name === file ? source : undefined),
+    for (const [path, text] of Object.entries(files)) {
+      if (path.endsWith('.css')) continue;
+      file = path;
+      sources.set(
+        path,
+        ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+      );
+    }
+    const program = ts.createProgram({
+      rootNames: [...sources.keys()],
+      options: { noLib: true, types: [], jsx: ts.JsxEmit.Preserve },
+      host: {
+        getSourceFile: (name) => sources.get(name),
+        resolveModuleNameLiterals: (literals, importer) =>
+          literals.map(({ text }) => ({ resolvedModule: designModule(files, importer, text) })),
         getDefaultLibFileName: () => '',
         writeFile: () => undefined,
         getCurrentDirectory: () => '',
@@ -148,12 +166,14 @@ function parseSource(file: string, text: string): ts.SourceFile {
         getCanonicalFileName: (name) => name,
         useCaseSensitiveFileNames: () => true,
         getNewLine: () => '\n',
-        fileExists: (name) => name === file,
-        readFile: (name) => (name === file ? text : undefined),
+        fileExists: (name) => sources.has(name),
+        readFile: (name) => sources.get(name)?.text,
       },
-    );
-    const diagnostic = program.getSyntacticDiagnostics(source).at(0);
-    if (diagnostic) {
+    });
+    for (const source of sources.values()) {
+      file = source.fileName;
+      const diagnostic = program.getSyntacticDiagnostics(source).at(0);
+      if (!diagnostic) continue;
       const position = source.getLineAndCharacterOfPosition(diagnostic.start);
       throw new SourceElementError(
         'invalid_source',
@@ -161,12 +181,12 @@ function parseSource(file: string, text: string): ts.SourceFile {
         file,
         position.line + 1,
         Buffer.byteLength(
-          text.slice(diagnostic.start - position.character, diagnostic.start),
+          source.text.slice(diagnostic.start - position.character, diagnostic.start),
           'utf8',
         ),
       );
     }
-    return source;
+    return program;
   } catch (error) {
     if (error instanceof SourceElementError) throw error;
     throw new SourceElementError(
@@ -177,62 +197,25 @@ function parseSource(file: string, text: string): ts.SourceFile {
   }
 }
 
-function defaultComponent(source: ts.SourceFile): ts.Node | undefined {
-  for (const statement of source.statements) {
-    if (
-      ts.isFunctionDeclaration(statement) &&
-      statement.modifiers?.some((m) => m.kind === ts.SyntaxKind.DefaultKeyword)
-    )
-      return referencedElsewhere(source, statement.name) ? undefined : statement;
-    if (
-      ts.isExportAssignment(statement) &&
-      !statement.isExportEquals &&
-      (ts.isArrowFunction(statement.expression) || ts.isFunctionExpression(statement.expression))
-    )
-      return statement.expression;
-  }
-  return undefined;
+/** A relative import of another design source; anything else resolves to nothing. */
+function designModule(
+  files: SourceFiles,
+  importer: string,
+  specifier: string,
+): ts.ResolvedModuleFull | undefined {
+  if (!specifier.startsWith('.')) return undefined;
+  const resolved = resolveRelative(files, importer, specifier);
+  if (resolved.kind !== 'file' || resolved.path.endsWith('.css')) return undefined;
+  const extension = resolved.path.endsWith('.ts') ? ts.Extension.Ts : ts.Extension.Tsx;
+  return { resolvedFileName: resolved.path, extension };
 }
-
-function referencedElsewhere(source: ts.SourceFile, name: ts.Identifier | undefined): boolean {
-  if (!name) return false;
-  const pending: ts.Node[] = [source];
-  while (pending.length) {
-    const node = pending.pop();
-    if (!node) break;
-    if (ts.isIdentifier(node) && node !== name && node.text === name.text) return true;
-    node.forEachChild((child) => {
-      pending.push(child);
-    });
-  }
-  return false;
-}
-
-function isShared(node: ElementNode, root: ts.Node | undefined): boolean {
+function componentOf(node: ElementNode): string | null {
   for (let parent = node.parent; !ts.isSourceFile(parent); parent = parent.parent) {
-    if (parent === root) return false;
-    if (canReuseJsx(parent)) return true;
-    if (ts.isJsxElement(parent) || ts.isJsxSelfClosingElement(parent)) {
-      const tag = ts.isJsxElement(parent) ? parent.openingElement.tagName : parent.tagName;
-      if (!ts.isIdentifier(tag) || !/^[a-z]/.test(tag.text)) return true;
-    }
+    if (!ts.isFunctionLike(parent)) continue;
+    const name = functionName(parent);
+    if (name && /^[A-Z]/.test(name)) return name;
   }
-  return true;
-}
-
-function canReuseJsx(node: ts.Node): boolean {
-  return (
-    ts.isFunctionLike(node) ||
-    ts.isVariableDeclaration(node) ||
-    ts.isCallExpression(node) ||
-    ts.isArrayLiteralExpression(node) ||
-    ts.isPropertyAssignment(node) ||
-    ts.isForStatement(node) ||
-    ts.isForOfStatement(node) ||
-    ts.isForInStatement(node) ||
-    ts.isWhileStatement(node) ||
-    ts.isDoStatement(node)
-  );
+  return null;
 }
 
 function isComputed(node: ElementNode): boolean {
@@ -249,6 +232,9 @@ function isComputed(node: ElementNode): boolean {
   return node.children.some(
     (child) =>
       !ts.isJsxText(child) &&
+      !ts.isJsxElement(child) &&
+      !ts.isJsxSelfClosingElement(child) &&
+      !ts.isJsxFragment(child) &&
       !(
         ts.isJsxExpression(child) &&
         !child.dotDotDotToken &&
@@ -258,23 +244,30 @@ function isComputed(node: ElementNode): boolean {
   );
 }
 
+// SVG paint attributes, which a paint edit replaces and so must be able to read.
+const PAINT_ATTRIBUTES = new Set(['fill', 'stroke', 'strokeWidth', 'stroke-width']);
+
 function hasComputedAttributes(attributes: ts.JsxAttributes): boolean {
   const names = new Set<string>();
   for (const attr of attributes.properties) {
     if (ts.isJsxSpreadAttribute(attr)) return true;
     const name = attr.name.getText();
-    if (names.has(name)) return true;
+    if (names.has(name) || isComputedAttribute(name, attributeValue(attr))) return true;
     names.add(name);
-    if (
-      name === 'children' ||
-      name === 'dangerouslySetInnerHTML' ||
-      name.toLowerCase() === 'srcset'
-    )
-      return true;
-    const value = attributeValue(attr);
-    if ((name === 'className' || name === 'src') && value && !isLiteral(value)) return true;
-    if (name === 'style' && hasComputedStyle(value)) return true;
   }
+  return false;
+}
+
+function isComputedAttribute(name: string, value: ts.Expression | undefined): boolean {
+  if (name === 'children' || name === 'dangerouslySetInnerHTML' || name.toLowerCase() === 'srcset')
+    return true;
+  if (name === 'className') return value !== undefined && classLiterals(value) === null;
+  if (name === 'src') return value !== undefined && !isLiteral(value);
+  if (name === 'style') return hasComputedStyle(value);
+  if (PAINT_ATTRIBUTES.has(name))
+    return value === undefined || !(isLiteral(value) || ts.isNumericLiteral(value));
+  // A path edit replaces its data, which it writes only over one quoted string.
+  if (name === 'd') return value !== undefined && !ts.isStringLiteral(value);
   return false;
 }
 
@@ -284,7 +277,7 @@ function hasComputedStyle(value: ts.Expression | undefined): boolean {
   for (const property of value.properties) {
     if (
       !ts.isPropertyAssignment(property) ||
-      (!isLiteral(property.initializer) && !ts.isNumericLiteral(property.initializer))
+      (!isLiteral(property.initializer) && !isNumber(property.initializer))
     )
       return true;
     const key = propertyName(property.name);
@@ -294,28 +287,41 @@ function hasComputedStyle(value: ts.Expression | undefined): boolean {
   return false;
 }
 
-export function attribute(opening: ts.JsxOpeningElement | ts.JsxSelfClosingElement, name: string) {
-  return opening.attributes.properties.find(
-    (attr): attr is ts.JsxAttribute => ts.isJsxAttribute(attr) && attr.name.getText() === name,
+const CLASS_JOINERS = new Set(['cn', 'clsx', 'cx']);
+
+/**
+ * The string literals a className is spelled with: the value itself, or every
+ * argument of a class-joining call such as `cn("p-4", "flex")`. Null when any
+ * part of it is computed.
+ */
+export function classLiterals(
+  value: ts.Expression,
+): (ts.StringLiteral | ts.NoSubstitutionTemplateLiteral)[] | null {
+  if (isLiteral(value)) return [value];
+  if (
+    !ts.isCallExpression(value) ||
+    !ts.isIdentifier(value.expression) ||
+    !CLASS_JOINERS.has(value.expression.text) ||
+    value.arguments.length === 0
+  )
+    return null;
+  const literals = value.arguments.filter(isLiteral);
+  return literals.length === value.arguments.length ? literals : null;
+}
+
+/** A number as a style object writes it: `12` or `-12`. */
+function isNumber(node: ts.Expression): boolean {
+  if (ts.isNumericLiteral(node)) return true;
+  return (
+    ts.isPrefixUnaryExpression(node) &&
+    node.operator === ts.SyntaxKind.MinusToken &&
+    ts.isNumericLiteral(node.operand)
   );
-}
-export function attributeValue(attr: ts.JsxAttribute | undefined): ts.Expression | undefined {
-  const value = attr?.initializer;
-  if (!value) return undefined;
-  return ts.isJsxExpression(value) ? value.expression : value;
-}
-export function propertyName(name: ts.PropertyName): string {
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : '';
-}
-export function isLiteral(
-  node: ts.Node,
-): node is ts.StringLiteral | ts.NoSubstitutionTemplateLiteral {
-  return ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
 }
 export function ambiguous(): SourceElementError {
   return new SourceElementError(
     'ambiguous_element',
-    'This source is computed or shared. Ask the agent to edit the selected scope.',
+    'Canvas can’t change this element directly. Ask the agent to change it.',
   );
 }
 function comparePaths(left: string, right: string): number {

@@ -6,13 +6,14 @@
 // checked through the same compiler and never kept.
 
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
+import { entryModule } from './catalogEntryModule.js';
 import { buildFailure } from './canvasBuildFailures.js';
-import { boundDiagnostics } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
 import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
+import { readKitCatalog, type KitFailure } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemProposalRef,
@@ -25,7 +26,7 @@ export type KitPreview =
   | { status: 'ready'; artifact: PreviewArtifact }
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
 
-type KitCompiler = Pick<CompilerWorker, 'compile' | 'terminate'>;
+type KitCompiler = Pick<CompilerWorker, 'compile' | 'checkCatalog' | 'terminate'>;
 
 export interface KitPreviewsDeps {
   compiler?: () => KitCompiler;
@@ -38,7 +39,20 @@ interface Answer {
   kept: boolean;
 }
 
+/** What one compiler request answered, or the diagnostics its failure reports. */
+type Attempt<T> =
+  | { status: 'done'; value: T }
+  | { status: 'failed'; diagnostics: CanvasDiagnostic[]; kept: boolean };
+
 const MAX_KEPT_PREVIEWS = 32;
+const ENTRY_STAGE = JSON.stringify({
+  display: 'flex',
+  minHeight: '100vh',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 32,
+  boxSizing: 'border-box',
+});
 const SHUTTING_DOWN = 'DROIDEX is shutting down.';
 // A side-effect import, which the TypeScript loader keeps, so the kit's entry is bundled.
 const KIT_ENTRY_CHECK = `import '@droidex/design-system';
@@ -66,34 +80,29 @@ export class KitPreviews {
   }
 
   /** The preview `item` names in that kit version or proposal, in its mode. */
-  async read(ref: DesignSystemRef | DesignSystemProposalRef, item: string): Promise<KitPreview> {
-    this.refuseClosed();
-    const source = 'proposalId' in ref ? ref.proposalId : ref.version;
-    const key = JSON.stringify([ref.id, source, ref.mode, item]);
-    const kept = this.kept.get(key);
-    if (kept) {
-      this.keep(key, kept);
-      return kept;
-    }
-    const { preview } = await (this.pending.get(key) ?? this.start(key, ref, item));
-    this.refuseClosed();
-    return preview;
+  read(ref: DesignSystemRef | DesignSystemProposalRef, item: string): Promise<KitPreview> {
+    return this.readExample(ref, [item], (system) => kitExample(system, item));
+  }
+
+  /** The catalog entry named `entry` in that saved kit version, alone on a page. */
+  readCatalogEntry(ref: DesignSystemRef, entry: string): Promise<KitPreview> {
+    return this.readExample(ref, ['catalog', entry], (system) =>
+      catalogEntryExample(system, entry),
+    );
   }
 
   /**
    * Compiles a kit that may not be saved yet: its entry, then each of its
-   * examples once. Returns the failures' diagnostics, none when everything
+   * examples once, then its catalog. Returns the failures, none when everything
    * builds. One stylesheet carries both modes and the mode is only the
    * document's `data-mode`, so one compile answers for both.
    */
-  async check(
-    kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>,
-  ): Promise<CanvasDiagnostic[]> {
+  async check(kit: Pick<DesignSystem, 'files' | 'sections' | 'examples'>): Promise<KitFailure[]> {
     const source = { files: kit.files, sections: kit.sections };
     const entries: [string, string][] = [[KIT_ENTRY, KIT_ENTRY_CHECK]];
     for (const [name, example] of Object.entries(kit.examples))
       entries.push([`examples/${name}`, example]);
-    const diagnostics: CanvasDiagnostic[] = [];
+    const failures: KitFailure[] = [];
     for (const [file, example] of entries) {
       this.refuseClosed();
       const { preview } = await this.compile({
@@ -105,10 +114,23 @@ export class KitPreviews {
       if (preview.status === 'ready') continue;
       // The entry stands in for the example it compiled; the kit's own files keep their paths.
       for (const diagnostic of preview.diagnostics)
-        diagnostics.push(diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic);
+        failures.push({
+          entry: null,
+          diagnostic: diagnostic.file === DESIGN_ENTRY ? { ...diagnostic, file } : diagnostic,
+        });
     }
+    failures.push(...(await this.checkCatalog(source)));
+    return failures;
+  }
+
+  /** Why the kit's catalog is unusable, or each entry that does not stand alone or build. */
+  async checkCatalog(kit: Pick<DesignSystem, 'files' | 'sections'>): Promise<KitFailure[]> {
     this.refuseClosed();
-    return boundDiagnostics(diagnostics);
+    const source = { files: kit.files, sections: kit.sections };
+    const answer = await this.attempt((compiler, signal) => compiler.checkCatalog(source, signal));
+    this.refuseClosed();
+    if (answer.status === 'done') return answer.value;
+    return answer.diagnostics.map((diagnostic) => ({ entry: null, diagnostic }));
   }
 
   /** Refuses every read and cancels every compile; nothing compiles after this. */
@@ -120,12 +142,31 @@ export class KitPreviews {
     while (this.ending.size > 0) await Promise.all([...this.ending]);
   }
 
+  /** `target` names the example in the key, so no two examples of one source share it. */
+  private async readExample(
+    ref: DesignSystemRef | DesignSystemProposalRef,
+    target: string[],
+    example: (system: DesignSystem) => string,
+  ): Promise<KitPreview> {
+    this.refuseClosed();
+    const source = 'proposalId' in ref ? ref.proposalId : ref.version;
+    const key = JSON.stringify([ref.id, source, ref.mode, ...target]);
+    const kept = this.kept.get(key);
+    if (kept) {
+      this.keep(key, kept);
+      return kept;
+    }
+    const { preview } = await (this.pending.get(key) ?? this.start(key, ref, example));
+    this.refuseClosed();
+    return preview;
+  }
+
   private start(
     key: string,
     ref: DesignSystemRef | DesignSystemProposalRef,
-    item: string,
+    example: (system: DesignSystem) => string,
   ): Promise<Answer> {
-    const answer = this.compileItem(ref, item);
+    const answer = this.compileExample(ref, example);
     this.pending.set(key, answer);
     void answer.then(
       ({ preview, kept }) => {
@@ -150,19 +191,33 @@ export class KitPreviews {
     if (this.closed) throw canvasError('scope_expired', SHUTTING_DOWN);
   }
 
-  private async compileItem(
+  private async compileExample(
     ref: DesignSystemRef | DesignSystemProposalRef,
-    item: string,
+    example: (system: DesignSystem) => string,
   ): Promise<Answer> {
     const system =
       'proposalId' in ref ? await readProposedSystem(ref) : await readDesignSystem(ref);
-    const example = kitExample(system, item);
+    const source = example(system);
     this.refuseClosed();
     const kit = { files: system.files, sections: system.sections };
-    return this.compile({ kind: 'kitPreview', kit, mode: ref.mode, example });
+    return this.compile({ kind: 'kitPreview', kit, mode: ref.mode, example: source });
   }
 
   private async compile(input: KitPreviewCompileInput): Promise<Answer> {
+    const answer = await this.attempt((compiler, signal) => compiler.compile(input, signal));
+    if (answer.status === 'failed')
+      return {
+        preview: { status: 'failed', diagnostics: answer.diagnostics },
+        kept: answer.kept,
+      };
+    const { artifactId, html } = answer.value;
+    return { preview: { status: 'ready', artifact: { artifactId, html } }, kept: true };
+  }
+
+  /** One request to the kit compiler, ended when it outlives the build deadline. */
+  private async attempt<T>(
+    request: (compiler: KitCompiler, signal: AbortSignal) => Promise<T>,
+  ): Promise<Attempt<T>> {
     const compiler = (this.compiler ??= this.fork());
     const abort = new AbortController();
     let overdue = false;
@@ -174,13 +229,11 @@ export class KitPreviews {
     });
     this.running.add(abort);
     try {
-      const { artifactId, html } = await compiler.compile(input, abort.signal);
-      return { preview: { status: 'ready', artifact: { artifactId, html } }, kept: true };
+      return { status: 'done', value: await request(compiler, abort.signal) };
     } catch (error) {
       const failure = buildFailure(error, overdue);
       if (failure?.result.status !== 'failed') throw error;
-      const { diagnostics } = failure.result;
-      return { preview: { status: 'failed', diagnostics }, kept: failure.persists };
+      return { status: 'failed', diagnostics: failure.result.diagnostics, kept: failure.persists };
     } finally {
       cancelDeadline();
       this.running.delete(abort);
@@ -205,6 +258,16 @@ export function kitExample(system: DesignSystem, item: string): string {
   if (source === undefined)
     throw canvasError('invalid_input', 'That preview is not in this design system version.');
   return source;
+}
+
+/** A catalog entry as an example: its own module, centred on an otherwise empty page. */
+function catalogEntryExample(system: DesignSystem, name: string): string {
+  const read = readKitCatalog(system.files);
+  const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
+  if (entry === undefined)
+    throw canvasError('invalid_input', 'That component is not in this design system version.');
+  // Inline styles, because a kit's Tailwind theme may not define the usual utilities.
+  return entryModule(entry, `<main style={${ENTRY_STAGE}}>\n${entry.jsx}\n</main>`);
 }
 
 function exampleName(system: DesignSystem, item: string): string | undefined {

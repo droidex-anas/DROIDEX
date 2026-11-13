@@ -1,7 +1,8 @@
 // What the agent is told about a frame: its identity and place, and a compact
 // account of its build with each diagnostic's file and line and the step that
 // follows. Element maps and manifest versions stay out, because they cost the
-// model thousands of tokens and answer nothing it can act on.
+// model thousands of tokens and answer nothing it can act on; an element the
+// user picked is told one at a time, when the agent asks for it.
 //
 // canvas_write waits a bounded time for the build it started and then for an
 // open preview to say whether it rendered, so an agent that broke its design
@@ -11,8 +12,18 @@
 
 import type { CanvasChangeFeed } from './canvasChangeFeed.js';
 import type { CanvasPreviewReports } from './canvasPreviewReports.js';
-import { ADHERENCE_CODES, isAdherenceDiagnostic } from './canvasDiagnostics.js';
-import type { CanvasDiagnostic, CanvasFrame, PreviewReport } from './protocol.js';
+import {
+  ADHERENCE_CODES,
+  isAdherenceDiagnostic,
+  isCodeQualityDiagnostic,
+} from './canvasDiagnostics.js';
+import type {
+  CanvasBuildOutcome,
+  CanvasDiagnostic,
+  CanvasFrame,
+  PreviewReport,
+  SourceFiles,
+} from './protocol.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** The build deadline plus room for a build queued behind the other slots. */
@@ -42,6 +53,8 @@ export type BuildReport =
       warnings?: AgentDiagnostic[];
       /** Where the design strays from its pinned kit under the `guide` rule; it still built. */
       designSystem?: { diagnostics: AgentDiagnostic[]; next: string };
+      /** What a reviewer would change in the frame's code; advice, never a build failure. */
+      codeQuality?: { diagnostics: AgentDiagnostic[]; next: string };
       next: string;
     }
   | { status: 'render_failed'; revisionId: string; errors: string[]; next: string }
@@ -63,6 +76,8 @@ export interface AgentFrame {
   rect: CanvasFrame['rect'];
   layoutVersion: number;
   revisionId: string | null;
+  /** Only on a frame the user hid from the board; it can still be read and written. */
+  hidden?: true;
   build: BuildReport;
 }
 
@@ -73,6 +88,7 @@ export function agentFrame(frame: CanvasFrame, preview: PreviewReport | null): A
     rect: frame.rect,
     layoutVersion: frame.layoutVersion,
     revisionId: frame.revisionId,
+    ...(frame.hidden ? { hidden: true as const } : {}),
     build: buildReport(frame, preview),
   };
 }
@@ -93,7 +109,7 @@ export function buildReport(frame: CanvasFrame, preview: PreviewReport | null): 
       revisionId,
       diagnostics,
       lastWorkingRevisionId: build.lastWorkingRevisionId,
-      next: `Fix ${place(diagnostics[0])} and write again with expectedRevisionId "${revisionId}".`,
+      next: failedNext(diagnostics, revisionId),
     };
   }
   if (build.status === 'cancelled')
@@ -130,10 +146,13 @@ function readyReport(
       next: `It built, but the preview stopped before it rendered. Fix the error and ${again}.`,
     };
   const warnings = diagnostics
-    .filter((diagnostic) => !isAdherenceDiagnostic(diagnostic))
+    .filter(
+      (diagnostic) => !isAdherenceDiagnostic(diagnostic) && !isCodeQualityDiagnostic(diagnostic),
+    )
     .slice(0, REPORTED_DIAGNOSTICS)
     .map(agentDiagnostic);
   const designSystem = designSystemReport(diagnostics.filter(isAdherenceDiagnostic));
+  const codeQuality = codeQualityReport(diagnostics.filter(isCodeQualityDiagnostic));
   const rendered = preview?.outcome === 'rendered';
   const errors = rendered ? preview.errors : [];
   let next = `Built; no open preview has confirmed it renders. To change it, ${again}.`;
@@ -148,7 +167,25 @@ function readyReport(
     ...(errors.length > 0 ? { errors } : {}),
     ...(warnings.length > 0 ? { warnings } : {}),
     ...(designSystem ? { designSystem } : {}),
+    ...(codeQuality ? { codeQuality } : {}),
     next,
+  };
+}
+
+function failedNext(diagnostics: AgentDiagnostic[], revisionId: string): string {
+  const fix = `Fix ${place(diagnostics[0])} and write again with expectedRevisionId "${revisionId}".`;
+  // Only the canvas's strict rule fails a build on kit findings.
+  if (!diagnostics.some(isAdherenceDiagnostic)) return fix;
+  return `Strict design-system rule: the frame did not build because it strays from the pinned design system. Use its --ds-* tokens, fonts and primitives where noted, or keep a deliberate change as a --ds-* token override in source. ${fix}`;
+}
+
+function codeQualityReport(
+  diagnostics: CanvasDiagnostic[],
+): { diagnostics: AgentDiagnostic[]; next: string } | undefined {
+  if (diagnostics.length === 0) return undefined;
+  return {
+    diagnostics: diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic),
+    next: 'Code quality, not a build error: the frame built, but its code is not ready to merge. Fix each note in the named file and write again before you reply.',
   };
 }
 
@@ -160,7 +197,7 @@ function designSystemReport(
   return {
     diagnostics: diagnostics.slice(0, REPORTED_DIAGNOSTICS).map(agentDiagnostic),
     next: strays
-      ? 'This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source.'
+      ? 'Guide design-system rule: the frame built, and the user sees these as notes on it. This strays from the pinned design system: use its --ds-* tokens, fonts and primitives where noted and write again, or keep a deliberate change as a --ds-* token override in source. If the user asked to explore a new direction, the departure is expected: keep it, with its values as --ds-* overrides rather than literals.'
       : 'The token overrides are kept as deliberate; nothing to change for the design system.',
   };
 }
@@ -240,9 +277,11 @@ export function settledFrame(
     }, BUILD_WAIT_MS).unref();
     unsubscribe = changes.subscribe(
       (change) => {
-        const frame = change.frames.find((entry) => entry.designId === designId);
-        if (frame && isSettled(frame, revisionId)) finish(frame);
-        else if (change.removedDesignIds.includes(designId)) finish(undefined);
+        if (change.removedDesignIds.includes(designId)) finish(undefined);
+        else if (change.builds.some((entry) => entry.designId === designId)) {
+          const frame = safely(readFrame);
+          if (!frame || isSettled(frame, revisionId)) finish(frame);
+        }
       },
       // A closed workspace publishes nothing more, so its last word is the receipt.
       () => {
@@ -278,4 +317,29 @@ function agentDiagnostic({ code, message, file, line }: CanvasDiagnostic): Agent
 function place(diagnostic: AgentDiagnostic | undefined): string {
   if (!diagnostic?.file) return 'the source';
   return diagnostic.line ? `${diagnostic.file} line ${String(diagnostic.line)}` : diagnostic.file;
+}
+
+/**
+ * Where the revision's build found an element, with the lines that write it;
+ * undefined when that revision is not the one built or has no such element.
+ */
+export function agentElement(
+  build: CanvasBuildOutcome,
+  files: SourceFiles,
+  revisionId: string,
+  elementId: string,
+) {
+  if (build.status !== 'ready' || build.revisionId !== revisionId) return undefined;
+  const element = build.elements.find((each) => each.elementId === elementId);
+  const text = element && files[element.file];
+  if (!element || text === undefined) return undefined;
+  const { file, line, start, end, tagName, component } = element;
+  // The line breaks TypeScript's line map counts, so CR, CRLF and U+2028 sources line up with it.
+  const lineBreak = /\r\n|[\n\r\u2028\u2029]/;
+  const endLine = line + text.slice(start, end).split(lineBreak).length - 1;
+  const source = text
+    .split(lineBreak)
+    .slice(line - 1, endLine)
+    .join('\n');
+  return { elementId, file, line, endLine, tagName, component, source };
 }

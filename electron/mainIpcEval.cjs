@@ -144,6 +144,7 @@ function createGuestSessionStub() {
     },
     setPermissionRequestHandler() {},
     setPermissionCheckHandler() {},
+    setDevicePermissionHandler() {},
   };
   return { guestSession, release: proxy.resolve, calls };
 }

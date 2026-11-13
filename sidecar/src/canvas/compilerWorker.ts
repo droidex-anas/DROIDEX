@@ -8,7 +8,13 @@ import { createHash } from 'node:crypto';
 import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
-import { ownedCanvasRuntimeDir, startCanvasRuntime, stopCanvasRuntime } from './canvasRuntime.js';
+import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
+import {
+  DamagedRuntimeError,
+  ownedCanvasRuntimeDir,
+  startCanvasRuntime,
+  stopCanvasRuntime,
+} from './canvasRuntime.js';
 import {
   CompileCancelledError,
   CompileFailedError,
@@ -17,25 +23,35 @@ import {
   type CompiledDesign,
   type CompilerRequest,
   type CompilerResponse,
+  type CompilerUnavailableReason,
+  type EditedSource,
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
+import { checkCodeQuality } from './designCodeQuality.js';
 import { DESIGN_ENTRY, designEntryDiagnostic } from './designEntry.js';
 import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
+import {
+  KIT_CATALOG_FILE,
+  readKitCatalog,
+  type CatalogEntry,
+  type KitFailure,
+} from './kitCatalog.js';
+import { kitTailwindTheme } from './kitTailwindTheme.js';
+import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
-import { instrumentSource, SourceElementError } from './sourceElements.js';
-import { resolveStyleChange, styleValue } from './styleEdits.js';
+import { SourceElementError } from './sourceElementError.js';
+import { instrumentSource } from './sourceElements.js';
+import { insertLayer } from './sourceInsert.js';
+import { editLayer } from './sourceStructureEdits.js';
+import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
-import type {
-  CanvasDiagnostic,
-  DesignSystemRef,
-  ElementEdit,
-  StyleResolution,
-} from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
+import type { SourceFiles } from './schema.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
 
@@ -50,7 +66,8 @@ export async function compileDesign(
   input: CompileInput,
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
-  if (input.kind === 'kitPreview') return compileKitPreview(input, signal);
+  if (input.kind === 'kitPreview')
+    return compileUnderKit({ [DESIGN_ENTRY]: input.example }, input.kit, input.mode, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -63,7 +80,7 @@ export async function compileDesign(
   } catch (error) {
     if (!(error instanceof SourceElementError)) throw error;
     if (error.code === 'selection_limit') {
-      instrumented = { files: input.files, elements: [] };
+      instrumented = { files: input.files, elements: [], outline: { nodes: [], truncated: true } };
       selectionDiagnostics.push({ code: 'selection_unavailable', message: error.message });
     } else {
       throw new CompileFailedError([
@@ -91,6 +108,13 @@ export async function compileDesign(
   const stylesheet = await buildDesignStylesheet(input.files, system);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
+  let codeQuality: CanvasDiagnostic[] = [];
+  try {
+    codeQuality = checkCodeQuality(input.files, system, input.designSystemAdherence);
+  } catch (error) {
+    // Its findings are advice, so a fault in the checker costs only them, never the build.
+    console.error('Canvas code-quality check failed:', error);
+  }
 
   const html = previewDocument(stylesheet.css, bundle.js, input.designSystem.mode);
   return {
@@ -100,36 +124,66 @@ export async function compileDesign(
       ...selectionDiagnostics,
       ...bundle.warnings,
       ...adherence.diagnostics,
+      ...codeQuality,
     ]),
     elements: instrumented.elements,
+    outline: instrumented.outline,
   };
 }
 
 /**
- * One kit example as a one-file design under that kit. Nothing on it can be
- * selected, and the kit is not held to its own rules.
+ * A kit example, or the kit's catalog, as a design under that kit. Nothing on
+ * it can be selected, and the kit is not held to its own rules.
  */
-async function compileKitPreview(
-  input: KitPreviewCompileInput,
+async function compileUnderKit(
+  files: SourceFiles,
+  kit: KitPreviewCompileInput['kit'],
+  mode: DesignSystemRef['mode'],
   signal: AbortSignal,
 ): Promise<CompiledDesign> {
-  const files = { [DESIGN_ENTRY]: input.example };
-  const bundle = await bundleDesign({ files, kitFiles: input.kit.files });
+  const bundle = await bundleDesign({ files, kitFiles: kit.files });
   stopIfCancelled(signal);
   if (!bundle.ok) throw new CompileFailedError(bundle.diagnostics);
   const unbound = unboundNameDiagnostics(files);
   if (unbound.length > 0) throw new CompileFailedError(unbound);
-  const stylesheet = await buildDesignStylesheet(files, input.kit);
+  const stylesheet = await buildDesignStylesheet(files, kit);
   stopIfCancelled(signal);
   if (!stylesheet.ok) throw new CompileFailedError(stylesheet.diagnostics);
 
-  const html = previewDocument(stylesheet.css, bundle.js, input.mode);
+  const html = previewDocument(stylesheet.css, bundle.js, mode);
   return {
     artifactId: createHash('sha256').update(html).digest('hex'),
     html,
     diagnostics: boundDiagnostics(bundle.warnings),
     elements: [],
+    outline: { nodes: [], truncated: false },
   };
+}
+
+/** Why the kit's catalog is unusable, else each entry on its own, then all of them built under the kit. */
+async function checkCatalog(
+  kit: KitPreviewCompileInput['kit'],
+  signal: AbortSignal,
+): Promise<KitFailure[]> {
+  const read = readKitCatalog(kit.files);
+  if ('problem' in read)
+    return [
+      {
+        entry: null,
+        diagnostic: { code: 'invalid_input', message: read.problem, file: KIT_CATALOG_FILE },
+      },
+    ];
+  if (read.catalog.length === 0) return [];
+  const standalone = standaloneFailures(read.catalog);
+  if (standalone.length > 0) return standalone;
+  stopIfCancelled(signal);
+  try {
+    await compileUnderKit(catalogDesign(read.catalog), kit, 'light', signal);
+    return [];
+  } catch (error) {
+    if (!(error instanceof CompileFailedError)) throw error;
+    return catalogBuildFailures(read.catalog, error.diagnostics);
+  }
 }
 
 function stopIfCancelled(signal: AbortSignal): void {
@@ -139,7 +193,10 @@ function stopIfCancelled(signal: AbortSignal): void {
 /**
  * One document, with the stylesheet and the bundle inline. The preview host
  * loads it with no network, so an external reference would simply be missing;
- * kit images are the preview host's to serve.
+ * kit images are the preview host's to serve. Every design frame and kit
+ * preview is a fixed viewport, so a reserved scrollbar gutter, whether the kit
+ * or the design asks for it, would only show as an empty strip down its right
+ * edge. Exported apps keep the rule.
  */
 function previewDocument(css: string, js: string, mode: DesignSystemRef['mode']): string {
   return `<!doctype html>
@@ -152,6 +209,7 @@ ${EARLY_FAILURE_SCRIPT}
 </script>
 <style>
 ${escapeClosingTag(resolveKitAssetReferences(css), 'style')}
+html { scrollbar-gutter: auto; }
 </style>
 </head>
 <body>
@@ -197,6 +255,12 @@ process.on('message', (request: CompilerRequest) => {
     void shutdown(request.requestId);
     return;
   }
+  // Reading modules needs only the parser, never the runtime.
+  if (request.type === 'readModules') {
+    const modules = request.sources.map(moduleDeclarations);
+    send({ requestId: request.requestId, status: 'modules', modules } satisfies CompilerResponse);
+    return;
+  }
   if (runtimeFault !== null) {
     send({
       requestId: request.requestId,
@@ -210,6 +274,10 @@ process.on('message', (request: CompilerRequest) => {
   running.set(request.requestId, controller);
   if (request.type === 'edit') {
     void runEdit(request, controller.signal).finally(() => running.delete(request.requestId));
+  } else if (request.type === 'checkCatalog') {
+    void runCatalogCheck(request, controller.signal).finally(() => {
+      running.delete(request.requestId);
+    });
   } else {
     void runCompile(request.requestId, request.input, controller.signal).finally(() => {
       running.delete(request.requestId);
@@ -224,11 +292,24 @@ async function runEdit(
   const { requestId, files, elements, edit, designSystem } = request;
   try {
     stopIfCancelled(signal);
-    const { change, resolution } = await sourceChange(edit.change, designSystem);
+    let edited: EditedSource;
+    if ('layer' in edit) {
+      const { change } = edit;
+      if (change.kind === 'insert') {
+        const entry = await catalogEntry(change.entry, designSystem);
+        stopIfCancelled(signal);
+        edited = insertLayer(files, edit.layer.nodeId, entry, change.props);
+      } else edited = editLayer(files, edit.layer.nodeId, change);
+    } else {
+      const change = await sourceChange(edit.change, designSystem);
+      stopIfCancelled(signal);
+      edited = {
+        files: applyElementEdit(files, elements, { element: edit.element, change }),
+        landed: null,
+      };
+    }
     stopIfCancelled(signal);
-    const changed = applyElementEdit(files, elements, { element: edit.element, change });
-    stopIfCancelled(signal);
-    send({ requestId, status: 'edited', files: changed, resolution } satisfies CompilerResponse);
+    send({ requestId, status: 'edited', ...edited } satisfies CompilerResponse);
   } catch (error) {
     if (error instanceof SourceElementError) {
       const code = error.code === 'selection_limit' ? 'stale_reference' : error.code;
@@ -259,24 +340,34 @@ async function runEdit(
   }
 }
 
-/** Resolves a style edit against the pinned kit into the CSS value source receives. */
+/** The entry an insert names, from the pinned kit version's catalog, which was checked when it was saved. */
+async function catalogEntry(name: string, designSystem: DesignSystemRef): Promise<CatalogEntry> {
+  const read = readKitCatalog((await readDesignSystem(designSystem)).files);
+  const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
+  if (!entry)
+    throw new SourceElementError(
+      'invalid_edit',
+      `This kit has no component called ${name} any more.`,
+    );
+  return entry;
+}
+
+/** Resolves each style of a style edit against the pinned kit. */
 async function sourceChange(
-  change: ElementEdit['change'],
+  change: Extract<ElementEdit, { element: unknown }>['change'],
   designSystem: DesignSystemRef,
-): Promise<{ change: SourceChange; resolution: StyleResolution | null }> {
-  switch (change.kind) {
-    case 'text':
-    case 'image':
-      return { change, resolution: null };
-    default: {
-      const kit = await readDesignSystem(designSystem);
-      const resolution = resolveStyleChange(change, kitTokens(kit, designSystem.mode));
-      return {
-        change: { kind: 'style', property: change.property, value: styleValue(resolution) },
-        resolution,
-      };
-    }
-  }
+): Promise<SourceChange> {
+  if (change.kind !== 'style') return change;
+  const system = await readDesignSystem(designSystem);
+  const tokens = kitTokens(system, designSystem.mode);
+  return {
+    kind: 'style',
+    styles: change.styles.map((style) => ({
+      property: style.property,
+      resolution: resolveStyleChange(style, tokens),
+    })),
+    theme: kitTailwindTheme(system),
+  };
 }
 
 /** The kit's tokens in one mode: those its CSS declares, overridden by the mode's own values. */
@@ -304,6 +395,18 @@ async function shutdown(requestId: number): Promise<void> {
   });
 }
 
+async function runCatalogCheck(
+  { requestId, kit }: Extract<CompilerRequest, { type: 'checkCatalog' }>,
+  signal: AbortSignal,
+): Promise<void> {
+  try {
+    const failures = await checkCatalog(kit, signal);
+    send({ requestId, status: 'catalogChecked', failures } satisfies CompilerResponse);
+  } catch (error) {
+    send({ requestId, ...outcomeOf(error) } satisfies CompilerResponse);
+  }
+}
+
 async function runCompile(
   requestId: number,
   input: CompileInput,
@@ -322,8 +425,12 @@ function outcomeOf(
 ):
   | { status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { status: 'cancelled' }
-  | { status: 'unavailable'; reason: 'lost-compiler'; message: string } {
+  | { status: 'unavailable'; reason: CompilerUnavailableReason; message: string } {
   if (error instanceof CompileCancelledError) return { status: 'cancelled' };
+  if (error instanceof DamagedRuntimeError) {
+    console.error('Canvas runtime is incomplete:', error.message);
+    return { status: 'unavailable', reason: 'damaged-runtime', message: RUNTIME_UNAVAILABLE };
+  }
   if (error instanceof CompileFailedError)
     return { status: 'failed', diagnostics: boundDiagnostics(error.diagnostics) };
   // A revision pinning a kit version that is not there is the revision's

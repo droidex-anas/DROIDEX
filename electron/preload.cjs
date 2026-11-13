@@ -147,6 +147,8 @@ contextBridge.exposeInMainWorld('droidex', {
     const filePath = canvasDroppedFilePath(file);
     return canvasImageReply(await ipcRenderer.invoke('canvas-drop-image', { canvasId, filePath }));
   },
+  canvasPasteSvg: async (canvasId, svg) =>
+    canvasImageReply(await ipcRenderer.invoke('canvas-paste-svg', { canvasId, svg })),
   canvasPickKitImage: async () => {
     const reply = await ipcRenderer.invoke('canvas-pick-kit-image');
     return reply === null ? null : canvasImageReply(reply);
@@ -168,10 +170,24 @@ contextBridge.exposeInMainWorld('droidex', {
     ipcRenderer.invoke('canvas-preview-cancel-capture', { requestId }),
   canvasThumbnailRead: (canvasId, designId, revisionId) =>
     ipcRenderer.invoke('canvas-thumbnail-read', { canvasId, designId, revisionId }),
-  canvasImageSave: (canvasId, designId, revisionId, suggestedName) =>
-    ipcRenderer.invoke('canvas-image-save', { canvasId, designId, revisionId, suggestedName }),
-  canvasExportSource: (canvasId, ref) =>
-    ipcRenderer.invoke('canvas-export-source', { canvasId, ref }),
+  canvasImageSave: (requestId, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { requestId, suggestedName }),
+  canvasSvgSave: (svg, suggestedName) =>
+    ipcRenderer.invoke('canvas-image-save', { format: 'svg', svg, suggestedName }),
+  canvasExportSource: (canvasId, ref, project) =>
+    ipcRenderer.invoke(
+      'canvas-export-source',
+      project === undefined
+        ? { canvasId, ref }
+        : {
+            canvasId,
+            ref,
+            project: { appSessionId: project.appSessionId, folder: project.folder },
+            requestId: project.requestId,
+          },
+    ),
+  canvasExportSourceCancel: (requestId) =>
+    ipcRenderer.invoke('canvas-export-source-cancel', { requestId }),
   canvasExportDesignSystem: (ref) => ipcRenderer.invoke('canvas-export-design-system', { ref }),
   terminalSubscribe: (id) => subscribeTerminalPort(id),
 });

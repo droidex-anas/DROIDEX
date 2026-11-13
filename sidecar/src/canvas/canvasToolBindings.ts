@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { droidexUserDataDir } from '../droidexPaths.js';
 import { objectValue } from '../values.js';
 import {
+  imageKind,
   isIdentifier,
   kitReference,
   safeFrameName,
@@ -18,6 +19,7 @@ const ACTIONS: CanvasToolBinding['action'][] = [
   'arrange',
   'annotate',
   'theme',
+  'image',
 ];
 
 function pathFor(appSessionId: string): string {
@@ -74,6 +76,7 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
       if (designIds.length !== rawIds.length) continue;
       const { revisionId, canvasId, frameNames } = value;
       const operation = themeOperation(value.themeOperation);
+      const kind = imageKind(value.imageKind);
       const designSystem = kitReference(value.designSystem);
       const rawNames: unknown[] = Array.isArray(frameNames) ? frameNames : [];
       const safeNames = rawNames.filter(
@@ -94,6 +97,7 @@ export function readCanvasToolBindings(appSessionId: string): CanvasToolBinding[
           ? { frameNames: safeNames }
           : {}),
         ...(operation ? { themeOperation: operation } : {}),
+        ...(kind ? { imageKind: kind } : {}),
         ...(designSystem ? { designSystem } : {}),
       });
     } catch {

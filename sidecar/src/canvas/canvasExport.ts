@@ -1,38 +1,69 @@
 import { createHash } from 'node:crypto';
 import { constants } from 'node:fs';
-import { lstat, mkdir, mkdtemp, open, readdir, rename, rm, rmdir } from 'node:fs/promises';
-import { createRequire } from 'node:module';
+import {
+  lstat,
+  mkdir,
+  mkdtemp,
+  open,
+  readdir,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+} from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { z } from 'zod';
 import { canvasDir } from '../droidexPaths.js';
 import { readImageIn, referencedAssetIds } from './canvasAssets.js';
 import { CanvasFiles } from './canvasFiles.js';
+import type { SavedRevision } from './canvasRevisionMetadata.js';
 import { canvasError, CanvasCommandError, storageFailure } from './canvasError.js';
+import { BUILD_SCRIPT, EXPORT_README, exportPackageJson } from './canvasExportBuild.js';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
-import { readDesignSystem } from './designSystems.js';
+import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { kitImageFiles, referencedKitAssetIds } from './kitAssets.js';
-import { ownedCanvasRuntimeDir } from './canvasRuntime.js';
-import { CANVAS_TAILWIND_OPTIONS } from './designStylesheet.js';
+import { canvasTailwindOptions } from './designStylesheet.js';
+import {
+  NO_PROJECT_FOLDER,
+  projectExportDestination,
+  projectMapping,
+} from './canvasProjectExport.js';
+import type { ProjectExportAdmission } from './projectExports.js';
+import { libraryExport } from './projectLibraryExport.js';
+import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 import type { RevisionRef } from './protocol.js';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
 const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';
 const UNSAFE_PATH = 'The export contains an unsafe path. Check the saved source and try again.';
 const EXPORT_FAILED = 'The export could not be written. Check the folder and try again.';
+const MOVED = 'The export folder moved while it was written. Nothing was published there.';
+const CLOSED = 'The chat closed before the export finished. Nothing was published.';
 const FONT_REFERENCE = /data:font\/woff2;base64,([A-Za-z0-9+/=]+)/g;
 
 /** The folder Electron main chose; each export also requires it to be absolute. */
 export const exportDestinationSchema = z.string().min(1).max(4096);
 
+const exportedRevision = {
+  canvasId: canvasIdentifierSchema,
+  ref: z.object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema }).strict(),
+};
+
 const exportRequestSchema = z
+  .object({ ...exportedRevision, destinationDirectory: exportDestinationSchema })
+  .strict();
+
+// Export to project names the chat whose project folder receives the export.
+const projectExportRequestSchema = z
   .object({
-    canvasId: canvasIdentifierSchema,
-    ref: z
-      .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
+    ...exportedRevision,
+    project: z
+      .object({
+        appSessionId: z.string().min(1).max(256),
+        folder: z.string().min(1).max(MAX_PROJECT_PATH_LENGTH),
+      })
       .strict(),
-    destinationDirectory: exportDestinationSchema,
   })
   .strict();
 
@@ -62,7 +93,7 @@ async function readPinned<T>(canvasId: string, read: () => Promise<T>): Promise<
   }
 }
 
-/** Export one immutable revision. Only Electron main calls this over its private route. */
+/** Export one immutable revision into a folder Electron main chose, over its private route. */
 export async function exportCanvasSource(
   canvasId: string,
   ref: RevisionRef,
@@ -72,7 +103,24 @@ export async function exportCanvasSource(
   const parsed = exportRequestSchema.safeParse({ canvasId, ref, destinationDirectory });
   if (!parsed.success || !isAbsolute(destinationDirectory))
     throw canvasError('invalid_input', 'Choose an export folder in DROIDEX first.');
+  const revision = await readExportedRevision(canvasId, ref, signal);
+  const files = await canvasSourceFiles(revision, signal);
+  await writeExport(resolve(destinationDirectory), files, signal);
+  return { filesWritten: files.length };
+}
 
+/** One revision as an export reads it, with its canvas images and its pinned kit. */
+interface ExportedRevision {
+  saved: SavedRevision;
+  assets: ExportFile[];
+  kit: DesignSystem;
+}
+
+async function readExportedRevision(
+  canvasId: string,
+  ref: RevisionRef,
+  signal?: AbortSignal,
+): Promise<ExportedRevision> {
   signal?.throwIfAborted();
   // Everything this export needs from the canvas is read up front, under a
   // pin that removing the canvas waits for (10a: deletion never cancels it).
@@ -87,7 +135,19 @@ export async function exportCanvasSource(
     return { saved: revision, assets: images };
   });
   signal?.throwIfAborted();
-  const kit = await readDesignSystem(saved.designSystem);
+  return { saved, assets, kit: await readDesignSystem(saved.designSystem) };
+}
+
+/**
+ * Everything one revision's export writes, read and checked before any folder
+ * is touched; `readmeNote` ends its README.
+ */
+async function canvasSourceFiles(
+  revision: ExportedRevision,
+  signal?: AbortSignal,
+  readmeNote = '',
+): Promise<ExportFile[]> {
+  const { saved, kit } = revision;
   const files: ExportFile[] = [];
   for (const [path, content] of saved.files) files.push({ path: `src/${path}`, content });
   for (const [path, content] of Object.entries(kit.files))
@@ -98,7 +158,7 @@ export async function exportCanvasSource(
   });
   files.push({
     path: 'canvas-export/tailwind-config.json',
-    content: `${JSON.stringify(CANVAS_TAILWIND_OPTIONS, null, 2)}\n`,
+    content: `${JSON.stringify(canvasTailwindOptions(kit), null, 2)}\n`,
   });
   files.push({ path: 'canvas-export/guidance.md', content: kitGuidance(kit.name, kit.sections) });
   files.push(
@@ -108,14 +168,13 @@ export async function exportCanvasSource(
     })),
   );
 
-  // One file per hash: the same bytes can be both a canvas image and a kit image.
-  const kitImageIds = referencedKitAssetIds([
-    ...saved.files.values(),
-    ...Object.values(kit.files),
-    ...Object.values(kit.examples),
-  ]);
-  for (const assetId of referencedAssetIds(saved.files.values())) kitImageIds.delete(assetId);
-  files.push(...assets, ...(await kitImageFiles(kitImageIds, signal)));
+  files.push(
+    ...(await imageFiles(
+      revision,
+      [...saved.files.values(), ...Object.values(kit.files), ...Object.values(kit.examples)],
+      signal,
+    )),
+  );
 
   const fonts = new Map<string, Buffer>();
   for (const content of Object.values(kit.files)) {
@@ -128,61 +187,56 @@ export async function exportCanvasSource(
   }
   for (const [id, bytes] of fonts) files.push({ path: `fonts/${id}.woff2`, content: bytes });
 
-  files.push({ path: 'package.json', content: exportPackageJson() });
+  const sources = [...saved.files.values(), ...Object.values(kit.files)];
+  files.push({ path: 'package.json', content: await exportPackageJson(sources, signal) });
   files.push({ path: 'build.mjs', content: BUILD_SCRIPT });
-  files.push({ path: 'README.md', content: README });
-  await writeExport(resolve(destinationDirectory), files, signal);
-  return { filesWritten: files.length };
+  files.push({
+    path: 'README.md',
+    content: EXPORT_README + (projectMapping(kit) ?? '') + readmeNote,
+  });
+  return files;
 }
 
-function exportPackageJson(): string {
-  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
-  const anchor = join(ownedCanvasRuntimeDir ?? moduleDirectory, 'canvas-export.cjs');
-  const requireFromRuntime = createRequire(anchor);
-  const version = (name: string): string => {
-    const manifestPath = requireFromRuntime.resolve(`${name}/package.json`);
-    if (ownedCanvasRuntimeDir !== null) {
-      const fromRuntime = relative(join(ownedCanvasRuntimeDir, 'node_modules'), manifestPath);
-      if (fromRuntime === '..' || fromRuntime.startsWith(`..${sep}`) || isAbsolute(fromRuntime))
-        throw new Error('Canvas runtime package resolved outside its owned directory.');
-    }
-    const manifest = requireFromRuntime(manifestPath) as { version: string };
-    return manifest.version;
-  };
-  try {
-    return `${JSON.stringify(
-      {
-        name: 'droidex-canvas-export',
-        private: true,
-        type: 'module',
-        scripts: { build: 'node build.mjs', preview: 'node build.mjs --serve' },
-        dependencies: {
-          react: version('react'),
-          'react-dom': version('react-dom'),
-          'lucide-react': '0.460.0',
-          recharts: version('recharts'),
-          'react-is': version('react-is'),
-          'simple-icons': '16.36.0',
-        },
-        devDependencies: {
-          esbuild: version('esbuild'),
-          postcss: version('postcss'),
-          tailwindcss: version('tailwindcss'),
-        },
-      },
-      null,
-      2,
-    )}\n`;
-  } catch (error) {
-    throw storageFailure('The Canvas build toolchain is unavailable. Reopen DROIDEX.', error);
-  }
+/** The canvas images and the kit images `sources` refer to. */
+async function imageFiles(
+  { saved, assets }: ExportedRevision,
+  sources: string[],
+  signal?: AbortSignal,
+): Promise<ExportFile[]> {
+  // One file per hash: the same bytes can be both a canvas image and a kit image.
+  const kitImageIds = referencedKitAssetIds(sources);
+  for (const assetId of referencedAssetIds(saved.files.values())) kitImageIds.delete(assetId);
+  return [...assets, ...(await kitImageFiles(kitImageIds, signal))];
 }
 
-/** Publishes the files into an empty, unlinked folder in one rename, or leaves it untouched. */
+/**
+ * Export to project's files: a kit made from the project's library imports
+ * the project's components where it can, and any other kit is copied.
+ */
+async function projectSourceFiles(
+  canvasId: string,
+  ref: RevisionRef,
+  projectFolder: string,
+  signal: AbortSignal,
+): Promise<ExportFile[]> {
+  const revision = await readExportedRevision(canvasId, ref, signal);
+  const library = await libraryExport(projectFolder, revision.kit, revision.saved.files, signal);
+  if (library?.status !== 'rewritten') return canvasSourceFiles(revision, signal, library?.readme);
+  const sources = [...revision.saved.files.values()];
+  return [...library.files, ...(await imageFiles(revision, sources, signal))];
+}
+
+/**
+ * Publishes the files into an empty, unlinked folder in one rename, or leaves it
+ * untouched. A folder in a chat's project names the project's real root: the
+ * folder, its staging copy and its parent are found again before each write
+ * and before publication, and refused once moved, linked or outside it.
+ */
 export async function writeExport(
   directory: string,
   files: ExportFile[],
   signal?: AbortSignal,
+  projectRoot?: string,
 ): Promise<void> {
   assertDistinctTargets(directory, exportPaths(directory, files));
   let staging: string | null = null;
@@ -195,10 +249,14 @@ export async function writeExport(
     if (entries.some((entry) => entry.isSymbolicLink()))
       throw canvasError('invalid_source_path', UNSAFE_PATH);
     if (entries.length > 0) throw canvasError('invalid_input', COLLISION);
+    const destination = { path: directory, dev: selected.dev, ino: selected.ino };
+    await assertUnmoved(destination, projectRoot);
     staging = await mkdtemp(join(dirname(directory), `.${basename(directory)}-staging-`));
-    await writeStagingFiles(staging, files, signal);
+    const made = await lstat(staging);
+    const staged = { path: staging, dev: made.dev, ino: made.ino };
+    await writeStagingFiles(staged.path, files, signal, () => assertUnmoved(staged, projectRoot));
     signal?.throwIfAborted();
-    await publishStaging(staging, directory, signal);
+    await publishStaging(staged, destination, projectRoot, signal);
     staging = null;
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -210,20 +268,49 @@ export async function writeExport(
   }
 }
 
+/** A folder this export checked or made, as it was then. */
+interface CheckedFolder {
+  path: string;
+  dev: number;
+  ino: number;
+}
+
+/**
+ * Refuses unless the folder is still the one checked. In a project, its parent
+ * must also still be its own real path inside the project root; the time
+ * between this check and the write that follows it remains open.
+ */
+async function assertUnmoved(folder: CheckedFolder, projectRoot?: string): Promise<void> {
+  const found = await lstat(folder.path).catch(() => null);
+  if (found?.dev !== folder.dev || found.ino !== folder.ino)
+    throw canvasError('invalid_source_path', MOVED);
+  if (projectRoot === undefined) return;
+  const parent = dirname(folder.path);
+  const real = await realpath(parent).catch(() => null);
+  if (real !== parent || !(real === projectRoot || isInsideProject(projectRoot, real)))
+    throw canvasError('invalid_source_path', MOVED);
+}
+
 async function publishStaging(
-  staging: string,
-  directory: string,
+  staged: CheckedFolder,
+  destination: CheckedFolder,
+  projectRoot: string | undefined,
   signal?: AbortSignal,
 ): Promise<void> {
+  const directory = destination.path;
   const backup = await mkdtemp(join(dirname(directory), `.${basename(directory)}-backup-`));
   let originalMoved = false;
   let published = false;
   try {
+    await assertUnmoved(destination, projectRoot);
     await rename(directory, backup);
     originalMoved = true;
     if ((await readdir(backup)).length > 0) throw canvasError('invalid_input', COLLISION);
     signal?.throwIfAborted();
-    await rename(staging, directory);
+    await assertUnmoved({ ...destination, path: backup }, projectRoot);
+    await assertUnmoved(staged, projectRoot);
+    signal?.throwIfAborted();
+    await rename(staged.path, directory);
     published = true;
     try {
       await rmdir(backup);
@@ -237,7 +324,6 @@ async function publishStaging(
     if (!originalMoved) await rmdir(backup);
   }
 }
-
 function exportPaths(directory: string, files: ExportFile[]): string[] {
   return files.map(({ path }) => {
     const parsed = sourcePathSchema.safeParse(path);
@@ -258,10 +344,12 @@ function exportPaths(directory: string, files: ExportFile[]): string[] {
 async function writeStagingFiles(
   staging: string,
   files: ExportFile[],
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  beforeEach: () => Promise<void>,
 ): Promise<void> {
   for (const { path, content } of files) {
     signal?.throwIfAborted();
+    await beforeEach();
     const target = join(staging, ...path.split('/'));
     await mkdir(dirname(target), { recursive: true });
     const file = await open(
@@ -299,17 +387,42 @@ export function serveCanvasSourceExport(
   request: IncomingMessage,
   response: ServerResponse,
   token: string | undefined,
+  admitProjectExport: (appSessionId: string) => ProjectExportAdmission | null,
 ): boolean {
   if (request.url !== '/canvas/source-export') return false;
-  serveExportRequest(request, response, token, (input, signal) => {
-    const parsed = exportRequestSchema.safeParse(input);
-    if (!parsed.success) throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
-    return exportCanvasSource(
-      parsed.data.canvasId,
-      parsed.data.ref,
-      parsed.data.destinationDirectory,
-      signal,
-    );
+  serveExportRequest(request, response, token, async (input, signal) => {
+    const chosen = exportRequestSchema.safeParse(input);
+    if (chosen.success)
+      return exportCanvasSource(
+        chosen.data.canvasId,
+        chosen.data.ref,
+        chosen.data.destinationDirectory,
+        signal,
+      );
+    const inProject = projectExportRequestSchema.safeParse(input);
+    if (!inProject.success)
+      throw canvasError('invalid_input', 'Choose a Canvas revision to export.');
+    const { canvasId, ref, project } = inProject.data;
+    const admission = admitProjectExport(project.appSessionId);
+    if (admission === null) throw canvasError('invalid_input', NO_PROJECT_FOLDER);
+    const running = AbortSignal.any([signal, admission.signal]);
+    try {
+      // The folder is made only once there is an export to put in it.
+      const files = await projectSourceFiles(canvasId, ref, admission.projectFolder, running);
+      const { projectRoot, directory } = await projectExportDestination(
+        admission.projectFolder,
+        project.folder,
+        running,
+      );
+      await writeExport(directory, files, running, projectRoot);
+      return { filesWritten: files.length };
+    } catch (error) {
+      // Main is still waiting when only the chat closed, so it hears why.
+      if (admission.signal.aborted && !signal.aborted) throw canvasError('scope_expired', CLOSED);
+      throw error;
+    } finally {
+      admission.settle();
+    }
   });
   return true;
 }
@@ -373,101 +486,3 @@ async function answerExportRequest(
     response.off('close', onClose);
   }
 }
-
-const README = `# Canvas source export
-
-The selected revision starts at \`src/main.tsx\`. Its pinned design system is in
-\`design-system/\`: React primitives, token CSS and font licences. The kit's
-guidance and examples are in \`canvas-export/\`. Font copies are in \`fonts/\`,
-selected light/dark values in \`canvas-export/modes.json\`, and the canvas and kit
-images the source and kit refer to in \`assets/\`.
-
-Use Node.js 22 and npm. Run \`npm install\`, then \`npm run build\` and
-\`npm run preview\` to serve the result locally. The supported runtime imports
-are \`react\`, \`react-dom/client\`, \`lucide-react\`, \`recharts\`, \`simple-icons\`
-and \`@droidex/design-system\`. Direct dependency versions are exact in
-\`package.json\`. No lockfile is generated during export: npm resolves transitive
-dependencies when you install, without the export needing registry access.
-`;
-
-const BUILD_SCRIPT = `import { createServer } from 'node:http';
-import { cp, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import esbuild from 'esbuild';
-import postcss from 'postcss';
-import tailwindcss from 'tailwindcss';
-
-async function filesIn(directory) {
-  const files = [];
-  for (const entry of await readdir(directory, { withFileTypes: true })) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...(await filesIn(path)));
-    else if (entry.isFile()) files.push(path);
-  }
-  return files;
-}
-
-const source = await filesIn('src');
-const kit = await filesIn('design-system');
-const modes = JSON.parse(await readFile('canvas-export/modes.json', 'utf8'));
-const tailwindOptions = JSON.parse(await readFile('canvas-export/tailwind-config.json', 'utf8'));
-const tokens = ['light', 'dark'].map((mode) => {
-  const selector = mode === modes.selected ? ':root' : '[data-mode="' + mode + '"]';
-  return selector + '{' + Object.entries(modes.modes[mode]).map(([key, value]) => key + ':' + value + ';').join('') + '}';
-}).join('\\n');
-const cssFiles = [...kit, ...source].filter((path) => path.endsWith('.css'));
-let css = '@tailwind base;\\n@tailwind components;\\n' + tokens + '\\n';
-for (const path of cssFiles) css += await readFile(path, 'utf8') + '\\n';
-css += '@tailwind utilities;\\n';
-const content = await Promise.all([...source, ...kit].filter((path) => /\\.[jt]sx?$/.test(path)).map((path) => readFile(path, 'utf8')));
-const stylesheet = await postcss([tailwindcss({ ...tailwindOptions, content: [{ raw: content.join('\\n'), extension: 'tsx' }] })]).process(css, { from: undefined });
-await mkdir('dist', { recursive: true });
-const assetUrl = (text) => text.replace(/(?:canvas|kit)-asset:([0-9a-f]{64})\\b/g, '/assets/$1');
-await writeFile('dist/style.css', assetUrl(stylesheet.css));
-const bundle = await esbuild.build({
-  stdin: {
-    contents: "import React from 'react'; import { createRoot } from 'react-dom/client'; import Design from './src/main.tsx'; createRoot(document.getElementById('canvas-root')).render(React.createElement(Design));",
-    resolveDir: process.cwd(),
-    sourcefile: 'bootstrap.tsx',
-    loader: 'tsx',
-  },
-  bundle: true,
-  outfile: 'dist/app.js',
-  write: false,
-  format: 'iife',
-  platform: 'browser',
-  jsx: 'automatic',
-  target: 'es2022',
-  alias: { '@droidex/design-system': './design-system/index.tsx' },
-  define: { 'process.env.NODE_ENV': '"production"' },
-});
-await writeFile('dist/app.js', assetUrl(bundle.outputFiles[0].text));
-try { await cp('assets', 'dist/assets', { recursive: true }); }
-catch (error) { if (error.code !== 'ENOENT') throw error; }
-await writeFile('dist/index.html', '<!doctype html><html data-mode="' + modes.selected + '"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body><div id="canvas-root"></div><script src="/app.js"></script></body></html>');
-
-if (process.argv.includes('--serve')) {
-  const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' };
-  const imageType = (bytes) => {
-    if (bytes.subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex'))) return 'image/png';
-    if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
-    if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
-    return 'application/octet-stream';
-  };
-  const server = createServer(async (request, response) => {
-    const asset = /^\\/assets\\/([0-9a-f]{64})$/.exec(request.url ?? '');
-    const name = asset ? join('assets', asset[1]) : request.url === '/app.js' ? 'app.js' : request.url === '/style.css' ? 'style.css' : 'index.html';
-    try {
-      const bytes = await readFile(join('dist', name));
-      response.writeHead(200, { 'content-type': asset ? imageType(bytes) : types[name.slice(name.lastIndexOf('.'))], 'x-content-type-options': 'nosniff' });
-      response.end(bytes);
-    } catch (error) {
-      response.writeHead(error.code === 'ENOENT' ? 404 : 500).end();
-    }
-  });
-  const portOption = process.argv.find((argument) => argument.startsWith('--port='));
-  server.listen(Number(portOption?.slice(7) ?? 4173), '127.0.0.1', () => {
-    console.log('Canvas preview: http://127.0.0.1:' + server.address().port);
-  });
-}
-`;

@@ -2,11 +2,34 @@ import { CanvasMcpServer } from './canvasMcpTransport.js';
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { applyDesignSystem } from './applyDesignSystem.js';
-import { agentFrame, buildReport, renderedPreview, settledFrame } from './canvasAgentReport.js';
+import {
+  agentElement,
+  agentFrame,
+  buildReport,
+  renderedPreview,
+  settledFrame,
+} from './canvasAgentReport.js';
 import { agentAnnotation } from './canvasAnnotationReport.js';
 import { annotateCanvasInputSchema } from './canvasAnnotationSchema.js';
+import {
+  annotateSchema,
+  arrangeSchema,
+  createSchema,
+  entryNamesSchema,
+  imageSchema,
+  imageShape,
+  inspectSchema,
+  pageSchema,
+  readSchema,
+  scopeArgumentSchema,
+  scopeIdSchema,
+  themeSchema,
+  writeSchema,
+} from './canvasMcpSchemas.js';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { importFromProject, renderTarget, saveRender } from './canvasImageTool.js';
 import { KitBuildError, kitSaveShape, saveKit } from './canvasMcpDesignSystemSave.js';
+import { readCatalogEntries } from './kitCatalog.js';
 import { invalidCanvasArguments, validateCanvasTool } from './canvasMcpValidation.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
@@ -16,91 +39,11 @@ import type { SessionPurpose } from '../protocol.js';
 import type { CanvasCapture } from './canvasCaptures.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
+import type { ImportProjectImage } from './desktopImageChannel.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type { CanvasFrame, CanvasScope } from './protocol.js';
-import {
-  arrangeFramesInputSchema,
-  canvasIdentifierSchema,
-  createFramesInputSchema,
-  designSystemRefSchema,
-  writeFilesInputSchema,
-} from './schema.js';
+import type { CanvasFrame, CanvasScope, CanvasSnapshot, CaptureImage } from './protocol.js';
+import { canvasIdentifierSchema, designSystemRefSchema, writeFilesInputSchema } from './schema.js';
 import { listDesignSystems, readDesignSystem } from './designSystems.js';
-
-const scopeIdSchema = z
-  .string()
-  .min(1)
-  .max(200)
-  .describe(
-    'The exact scopeId returned by this turn’s canvas_read. Never invent an ID or reuse one from an earlier turn.',
-  );
-const scopeShape = {
-  scopeId: scopeIdSchema
-    .optional()
-    .describe(
-      'Omit scopeId to begin the turn. Only supply a scopeId this turn’s canvas_read returned to keep reading that lease’s pinned references.',
-    ),
-};
-const mutationScopeShape = { scopeId: scopeIdSchema };
-const scopeArgumentSchema = z.object(scopeShape).passthrough();
-const pageSchema = z.number().int().min(0).max(100_000);
-const readSchema = z
-  .object({
-    ...scopeShape,
-    view: z.enum(['summary', 'design']).default('summary'),
-    designId: canvasIdentifierSchema.optional(),
-    revisionId: canvasIdentifierSchema.optional(),
-    paths: z.array(z.string().min(1).max(256)).max(16).optional(),
-    offset: pageSchema.default(0),
-    limit: z.number().int().min(1).max(32).default(32),
-  })
-  .strict();
-const createSchema = createFramesInputSchema.extend(mutationScopeShape).strict();
-const writeSchema = z
-  .object({ ...writeFilesInputSchema.innerType().shape, ...mutationScopeShape })
-  .strict();
-const arrangeSchema = arrangeFramesInputSchema.extend(mutationScopeShape).strict();
-const annotateSchema = z
-  .object({ ...annotateCanvasInputSchema.innerType().shape, ...mutationScopeShape })
-  .strict();
-const inspectSchema = z
-  .object({
-    ...scopeShape,
-    designId: canvasIdentifierSchema,
-    revisionId: canvasIdentifierSchema.optional(),
-    kind: z.enum(['diagnostics', 'element', 'screenshot']).default('diagnostics'),
-    elementId: canvasIdentifierSchema.optional(),
-  })
-  .strict();
-const themeSchema = z.discriminatedUnion('operation', [
-  z
-    .object({
-      ...scopeShape,
-      operation: z.literal('list'),
-      offset: pageSchema.default(0),
-      limit: z.number().int().min(1).max(32).default(32),
-    })
-    .strict(),
-  z.object({ ...scopeShape, operation: z.literal('read'), ref: designSystemRefSchema }).strict(),
-  z
-    .object({
-      ...mutationScopeShape,
-      operation: z.literal('save'),
-      mutationId: canvasIdentifierSchema,
-      ...kitSaveShape,
-    })
-    .strict(),
-  z
-    .object({
-      ...mutationScopeShape,
-      operation: z.literal('apply'),
-      mutationId: canvasIdentifierSchema,
-      designId: canvasIdentifierSchema,
-      expectedRevisionId: canvasIdentifierSchema,
-      ref: designSystemRefSchema,
-    })
-    .strict(),
-]);
 
 /** The facts a tool answers with, and a base64 PNG the model sees beside them. */
 type ToolValue = Record<string, unknown> & { png?: string };
@@ -113,6 +56,7 @@ export function createCanvasMcpServer(
   kits: Pick<KitPreviews, 'check'>,
   getAppSessionId: () => string,
   projectFolder: (appSessionId: string) => string | null,
+  importImage: ImportProjectImage,
   purpose?: SessionPurpose,
 ) {
   const dispatch = async (
@@ -151,25 +95,34 @@ export function createCanvasMcpServer(
     }
   };
 
-  const board = async (
-    scope: CanvasScope,
-  ): Promise<ReturnType<CanvasWorkspace['snapshot']> | null> => {
-    if (scope.canvasId === null) return null;
-    const owner = await workspace();
-    const snapshot = owner.snapshot(scope.canvasId);
-    const allowed = scope.allowedDesignIds;
-    if (allowed === 'canvas') return snapshot;
-    return {
-      ...snapshot,
-      frames: snapshot.frames.filter((frame) => allowed.includes(frame.designId)),
-    };
+  const wholeBoard = async (scope: CanvasScope): Promise<CanvasSnapshot | null> =>
+    scope.canvasId === null ? null : (await workspace()).snapshot(scope.canvasId);
+
+  const board = async (scope: CanvasScope): Promise<CanvasSnapshot | null> => {
+    const snapshot = await wholeBoard(scope);
+    return snapshot && withinScope(snapshot, scope);
   };
 
-  /** The live preview's PNG of the frame's current revision, never another one. */
-  const screenshot = async (
+  /** A frame this turn may use, on the canvas the chat is attached to. */
+  const scopedFrame = async (scope: CanvasScope, designId: string) => {
+    if (scope.allowedDesignIds !== 'canvas' && !scope.allowedDesignIds.includes(designId))
+      throw canvasError('scope_expired', 'That frame is outside this turn’s assigned frames.');
+    const snapshot = await board(scope);
+    const frame = snapshot?.frames.find((entry) => entry.designId === designId);
+    if (!snapshot || !frame)
+      throw canvasError(
+        'invalid_input',
+        'That design is not on this canvas. Read the canvas summary again.',
+      );
+    return { canvasId: snapshot.canvasId, frame };
+  };
+
+  /** The live preview's image of the frame's current revision, never another one. */
+  const captureFrame = async (
     canvasId: string,
     frame: CanvasFrame,
     scope: CanvasScope,
+    image: CaptureImage,
   ): Promise<string> => {
     const { designId, revisionId, build } = frame;
     if (revisionId === null)
@@ -179,22 +132,29 @@ export function createCanvasMcpServer(
         'capture_unavailable',
         'That revision has no working build to capture. Inspect its diagnostics, and capture it once it is ready.',
       );
-    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId));
+    return capture(canvasId, { designId, revisionId }, turns.scopeEnded(scope.scopeId), image);
   };
 
   const tools = [
     tool(
       'canvas_read',
-      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. Pinned images are reference images the user attached: you see each one on the message, and canvas-asset:<assetId> places it in a design’s source. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design; under Auto, take the style from the request and the frames already on the canvas. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
-      readSchema.shape,
+      'When the user explores, compares, or visualizes, make the result interactive with real controls, state, and data. Start each turn by calling canvas_read with no arguments to get its scopeId, attached canvas and pinned references. Pinned designs are the frames the user picked for this request and the only ones it can change. A <canvas_elements> block in the prompt lists the elements the user picked in them: change those, not the rest of the design, and read one’s exact source with view design and its design, revision and elementId. Pinned images are reference images the user attached: you see each one on the message, and canvas-asset:<assetId> places it in a design’s source. Never invent a scopeId. Subsequent reads may name only a scopeId this turn’s canvas_read returned. Pass that exact scopeId on every mutation, including theme save and apply. Never refresh a scope to retry an earlier turn’s mutation. Follow the design system the opening read returns when creating or restyling a design; under Auto, take the style from the request, then the chat’s project source, then the frames already on the canvas. Create named frames, then write each frame’s main.tsx with canvas_write, whose reply reports the build. Fix or reuse empty and failed frames instead of adding duplicates. Preserve unrelated frames and cite revision IDs when updating existing work. The same read lists the board’s annotations, each with its colour, its author, its geometry in whole board pixels — rect {x, y, width, height}, or points [{x, y}] — and the frames it is over, near, or points at with an arrow.',
+      readSchema.innerType().shape,
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = readSchema.parse(raw);
+          const whole = await wholeBoard(scope);
+          const snapshot = whole && withinScope(whole, scope);
           // A turn's opening read carries its pinned kit, so the agent need not fetch it.
+          // Every frame counts toward its offers, whichever frames this turn may change.
           const kit = input.scopeId
             ? {}
-            : { designSystem: await designSystemBrief(scope.context.designSystem) };
-          const snapshot = await board(scope);
+            : {
+                designSystem: await designSystemBrief(scope.context.designSystem, {
+                  projectFolder: projectFolder(scope.appSessionId),
+                  hasDesigns: hasDesigns(whole),
+                }),
+              };
           if (!snapshot)
             return {
               scopeId: scope.scopeId,
@@ -233,17 +193,25 @@ export function createCanvasMcpServer(
               'scope_expired',
               'That frame is outside this turn’s assigned frames.',
             );
-          if (!snapshot.frames.some((frame) => frame.designId === input.designId))
+          const frame = snapshot.frames.find((each) => each.designId === input.designId);
+          if (!frame)
             throw canvasError(
               'invalid_input',
               'That design is not on this canvas. Read the canvas summary again.',
             );
-          const files = await (
-            await workspace()
-          ).readFiles(snapshot.canvasId, {
-            designId: input.designId,
-            revisionId: input.revisionId,
-          });
+          const { designId, revisionId, elementId } = input;
+          const { canvasId } = snapshot;
+          const read = { scopeId: scope.scopeId, ...kit, canvasId, designId, revisionId };
+          const files = await (await workspace()).readFiles(canvasId, { designId, revisionId });
+          if (elementId) {
+            const element = agentElement(frame.build, files, revisionId, elementId);
+            if (!element)
+              throw canvasError(
+                'invalid_input',
+                'That element is not in this revision’s build. Read its source by path instead.',
+              );
+            return { ...read, element };
+          }
           const names = Object.keys(files).sort();
           const selected = input.paths ?? names.slice(input.offset, input.offset + input.limit);
           const source: Record<string, string> = {};
@@ -256,11 +224,7 @@ export function createCanvasMcpServer(
             source[path] = files[path];
           }
           return {
-            scopeId: scope.scopeId,
-            ...kit,
-            canvasId: snapshot.canvasId,
-            designId: input.designId,
-            revisionId: input.revisionId,
+            ...read,
             totalFiles: names.length,
             paths: names,
             files: source,
@@ -269,7 +233,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_create',
-      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read, then write each one with canvas_write: its entry is main.tsx, which default-exports a React component. Use placeBeside to place variants below an existing frame, and seed to copy a revision from this canvas or a library item the user named by its itemId. Create a small working composition first; retry with the same mutationId and scopeId after a lost response. A design system is a kit saved with canvas_theme, not frames.',
+      'Reserve one to four named frames on the attached canvas using the scopeId from this turn’s canvas_read, then write each one with canvas_write: its entry is main.tsx, which default-exports a React component. Use placeBeside to place variants in one row below an existing frame, with variantOf naming that frame on each so the user can pick one, and seed to copy a revision from this canvas or a library item the user named by its itemId. A seed of kind svg with the assetId of an SVG imported by canvas_image makes a vector frame whose main.tsx is that SVG as JSX, or an <img> of it when it is too large or its <style> rules cannot be written onto its elements. Size each frame for its deliverable from the board’s size groups, in CSS pixels: Screens (Phone 393×852, Tablet 768×1024, Desktop 1440×900), Print at 96 dpi (A4 794×1123, A3 1123×1587, Letter 816×1056, Poster 18×24 in 1728×2304), Social (Square 1080×1080, Portrait 1080×1350, Story 1080×1920, Landscape 1200×630) and Logo (Logo 512×512, Wide logo 1024×320, Icon 256×256). Create a small working composition first; retry with the same mutationId and scopeId after a lost response. A design system is a kit saved with canvas_theme, not frames.',
       createSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
@@ -290,7 +254,7 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_write',
-      'Submit complete changed React/TSX files for a named frame using the scopeId from this turn’s canvas_read and the frame’s current revisionId (null for a new frame). The entry is main.tsx, which must default-export a React component; other relative .tsx, .ts and .css files are optional modules it imports. Imports may name react, lucide-react (UI icons), simple-icons (brand marks), recharts and @droidex/design-system (Tailwind available; a plain HTML document is not a frame). A tree without main.tsx is refused. The reply waits for the build: when it failed, fix the named file and line and write again in this turn. Use a new mutationId for each change and reuse it, with its scopeId, only to retry a lost response.',
+      'Submit complete changed React/TSX files for a named frame using the scopeId from this turn’s canvas_read and the frame’s current revisionId (null for a new frame). The entry is main.tsx, which must default-export a React component; other relative .tsx, .ts and .css files are optional modules it imports. Imports may name react, lucide-react (UI icons), simple-icons (brand marks), recharts and @droidex/design-system (Tailwind available; a plain HTML document is not a frame); copy a project component in as a relative module, since project files cannot be imported. A tree without main.tsx is refused. The reply waits for the build: when it failed, fix the named file and line and write again in this turn. Use a new mutationId for each change and reuse it, with its scopeId, only to retry a lost response.',
       writeSchema.shape,
       (raw) =>
         dispatch(raw, 'mutation', async (scope) => {
@@ -331,21 +295,7 @@ export function createCanvasMcpServer(
       (raw) =>
         dispatch(raw, 'read', async (scope) => {
           const input = inspectSchema.parse(raw);
-          if (
-            scope.allowedDesignIds !== 'canvas' &&
-            !scope.allowedDesignIds.includes(input.designId)
-          )
-            throw canvasError(
-              'scope_expired',
-              'That frame is outside this turn’s assigned frames.',
-            );
-          const snapshot = await board(scope);
-          const frame = snapshot?.frames.find((entry) => entry.designId === input.designId);
-          if (!snapshot || !frame)
-            throw canvasError(
-              'invalid_input',
-              'That design is not on this canvas. Read the canvas summary again.',
-            );
+          const { canvasId, frame } = await scopedFrame(scope, input.designId);
           if (input.revisionId && frame.revisionId !== input.revisionId)
             throw canvasError(
               'revision_conflict',
@@ -360,10 +310,44 @@ export function createCanvasMcpServer(
           const facts = {
             designId: frame.designId,
             revisionId: frame.revisionId,
-            build: buildReport(frame, previews.reportFor(snapshot.canvasId, frame)),
+            build: buildReport(frame, previews.reportFor(canvasId, frame)),
           };
           if (input.kind === 'diagnostics') return facts;
-          return { ...facts, png: await screenshot(snapshot.canvasId, frame, scope) };
+          const png = await captureFrame(canvasId, frame, scope, { format: 'png', scale: null });
+          return { ...facts, png };
+        }),
+    ),
+    tool(
+      'canvas_image',
+      'Save a frame as an image file in this chat’s project folder, or make an image already in that folder one of the canvas’s images, using the scopeId from this turn’s canvas_read. Use it for deliverables (posters, logos, icons, social images) and for the project’s own images. kind render captures the frame’s current revision as DROIDEX renders it, which needs a ready build and its canvas open in a DROIDEX window, and writes it to "to", a path relative to the project folder: format png (the default) at scale 1, 2 or 3 (default 1, the frame’s own CSS size), or svg when the frame’s root element is a single <svg>. It never replaces a file unless overwrite is true, and the reply shows the PNG. kind import reads "from", a PNG, JPEG, WebP or SVG under 10 MiB in the project folder, and returns its reference: canvas-asset:<assetId> places it in a design’s source.',
+      imageShape,
+      (raw) =>
+        dispatch(raw, 'mutation', async (scope) => {
+          const input = imageSchema.parse(raw);
+          const folder = projectFolder(scope.appSessionId);
+          if (input.kind === 'import') {
+            if (scope.canvasId === null)
+              throw canvasError(
+                'invalid_input',
+                'This chat has no canvas yet. Create a frame first, then import the image.',
+              );
+            const signal = turns.scopeEnded(scope.scopeId);
+            return importFromProject(folder, input.from, scope.canvasId, importImage, signal);
+          }
+          const target = await renderTarget(folder, input.to, input.format);
+          const { canvasId, frame } = await scopedFrame(scope, input.designId);
+          const image: CaptureImage =
+            input.format === 'svg' ? { format: 'svg' } : { format: 'png', scale: input.scale };
+          const captured = await captureFrame(canvasId, frame, scope, image);
+          const saved = await saveRender(
+            target,
+            input.format === 'svg'
+              ? { format: 'svg', markup: captured }
+              : { format: 'png', base64: captured },
+            input.overwrite,
+            turns.scopeEnded(scope.scopeId),
+          );
+          return { designId: frame.designId, revisionId: frame.revisionId, ...saved };
         }),
     ),
     tool(
@@ -404,17 +388,18 @@ export function createCanvasMcpServer(
     ),
     tool(
       'canvas_theme',
-      'List or read versioned design systems: omit scopeId to use the active turn, or use only a scopeId this turn’s canvas_read returned. Save and apply require that returned scopeId; reuse it and mutationId on retry. Apply to a named design at its current revision. Save sends changes, not a whole kit: a new id starts from blank, a copy, or this chat’s project files (from: { project: [{ path, kind }] }; kind is tailwind, css, tokens for a JS, TS or JSON token module, or designMd) and saves version 1, while a change to an existing kit becomes a proposal the user reviews, so read that kit first and pass the version you read as baseVersion; send a new kit whole in its first save. Changes find tokens by name, notes by label, previews by title and images by name; a new token needs its section and group, and goes last in that group unless before names the token it goes just ahead of, so keep each scale in order, smallest first. From a description: start from blank, keep its token names (text-2xs before text-xs, text-2xl after text-xl), set light and dark colours, a type scale in Inter (embedded) or a system stack, spacing, radius, shadows and motion for that product, and set its 1-rules.md note to the product’s rules, keeping the shared ones that still hold, instead of adding a second. Extracting from a project or site: the import reads the named files, then your changes add what it missed — keep the source’s own token names (only the --ds- prefix is added, dots become hyphens), never rename or invent them, set values per mode where the source does, and move imported tokens into their proper sections and groups, covering every category the source has: Colors, Typography, Spacing, Corner radius, Shadows, Size, Z index, Motion. Notes are short neutral rules with no author, never restated token values, and name tokens bare (accent, never --ds-accent); give important tokens and each primitive a usage note. When you create a kit or change its look, write a cover.tsx example (1200 × 480) with cover: preview, and two or three demos as previews. Each example renders in a box exactly its preview’s size: fix its root at that size with overflow hidden (<main className="h-[480px] w-[1200px] overflow-hidden"> for the cover), never min-h-screen, h-screen, h-full or vh units, which follow the window. The cover is the brand’s poster, not a screen: the brand colours at full strength in both modes, one graphic idea from the brand’s geometry or mark (a giant form, layered cards under a sticker, or a texture field), a large headline in the kit’s faces and the mark small, with no app chrome, window or controls. Build each demo as the product’s own screen as it ships, not a mockup: a structured screen from the kit’s tokens and primitives cropped to its subject, real words and honest data on the subject and placeholder lines elsewhere, depth from surface tones not borders, no backdrop plate, no device frame or browser window unless that chrome is the product, no sparkles, stock-AI purple or made-up logos. After saving, read the kit back and check each example against its box and both modes’ token values. Save compiles index.tsx and every example and refuses with file and line diagnostics. Never invent a scopeId.',
+      'List or read versioned design systems, or read a kit’s catalog: omit scopeId to use the active turn, or use only a scopeId this turn’s canvas_read returned. Catalog returns the ready-made components of the turn’s kit, or of ref, as { name, uses, icons, jsx, note, props }: all of them, or the entries you name (a name also matches the entries filed under it, as Button / outline). When the user names or tags one, write its jsx as given, import its uses from @droidex/design-system and its icons from lucide-react, and set a prop only to one of its options; entries past the reply’s size are listed as omitted, to read by name, with moreOmitted counting those past the list’s room. Save and apply require that returned scopeId; reuse it and mutationId on retry. Apply to a named design at its current revision. Save sends changes, not a whole kit: a new id starts from blank, a copy, or this chat’s project files (from: { project: [{ path, kind }] }; kind is tailwind, css, tokens for a JS, TS or JSON token module, or designMd; or a shadcn/ui library’s components.json alone, kind shadcn, which copies its components into the kit with its stylesheet’s tokens and Tailwind theme) and saves version 1, while a change to an existing kit becomes a proposal the user reviews, so read that kit first and pass the version you read as baseVersion; send a new kit whole in its first save. Changes find tokens by name, notes by label, previews by title and images by name; a new token needs its section and group, and goes last in that group unless before names the token it goes just ahead of, so keep each scale in order, smallest first. From a description: start from blank, keep its token names (text-2xs before text-xs, text-2xl after text-xl), set light and dark colours, a type scale in Inter (embedded) or a system stack, spacing, radius, shadows and motion for that product, and set its 1-rules.md note to the product’s rules, keeping the shared ones that still hold, instead of adding a second. Extracting from a project or site: the import reads the named files, then your changes add what it missed — keep the source’s own token names (only the --ds- prefix is added, dots become hyphens), never rename or invent them, set values per mode where the source does, and move imported tokens into their proper sections and groups, covering every category the source has: Colors, Typography, Spacing, Corner radius, Shadows, Size, Z index, Motion. Notes are short neutral rules with no author, never restated token values, and name tokens bare (accent, never --ds-accent); give important tokens and each primitive a usage note. When you create a kit or change its look, write a cover.tsx example (1200 × 480) with cover: preview, and two or three demos as previews. Each example renders in a box exactly its preview’s size: fix its root at that size with overflow hidden (<main className="h-[480px] w-[1200px] overflow-hidden"> for the cover), never min-h-screen, h-screen, h-full or vh units, which follow the window. The cover is the brand’s poster, not a screen: the brand colours at full strength in both modes, one graphic idea from the brand’s geometry or mark (a giant form, layered cards under a sticker, or a texture field), a large headline in the kit’s faces and the mark small, with no app chrome, window or controls. Build each demo as the product’s own screen as it ships, not a mockup: a structured screen from the kit’s tokens and primitives cropped to its subject, real words and honest data on the subject and placeholder lines elsewhere, depth from surface tones not borders, no backdrop plate, no device frame or browser window unless that chrome is the product, no sparkles, stock-AI purple or made-up logos. After saving, read the kit back and check each example against its box and both modes’ token values. catalog.json lists insertable JSX for each primitive: [{ name, module, uses, icons, jsx, note }], where jsx is one JSX element or fragment that stands alone, naming only its uses (index.tsx exports), its icons (lucide-react icons), what it binds itself and undefined; give a primitive you add its entry. Save compiles index.tsx, every example and the catalog and refuses with diagnostics: a file and line for index.tsx or an example, and the entry’s name for a catalog problem, with a jsx line where the parser gives one. Never invent a scopeId.',
       {
         scopeId: scopeIdSchema
           .optional()
           .describe(
-            'Required for save and apply: use this turn’s canvas_read scopeId. For list and read, omit it to use the active turn, or use only a scopeId this turn’s canvas_read returned.',
+            'Required for save and apply: use this turn’s canvas_read scopeId. For list, read and catalog, omit it to use the active turn, or use only a scopeId this turn’s canvas_read returned.',
           ),
-        operation: z.enum(['list', 'read', 'save', 'apply']),
+        operation: z.enum(['list', 'read', 'catalog', 'save', 'apply']),
         offset: pageSchema.optional(),
         limit: z.number().int().min(1).max(32).optional(),
         ref: designSystemRefSchema.optional(),
+        entries: entryNamesSchema.optional(),
         mutationId: canvasIdentifierSchema.optional(),
         ...kitSaveShape,
         kit: kitSaveShape.kit.optional(),
@@ -436,6 +421,11 @@ export function createCanvasMcpServer(
               };
             }
             if (input.operation === 'read') return { system: await readDesignSystem(input.ref) };
+            if (input.operation === 'catalog') {
+              const { id, version } = input.ref ?? scope.context.designSystem;
+              const { files } = await readDesignSystem({ id, version });
+              return { ref: { id, version }, ...readCatalogEntries(files, input.entries) };
+            }
             if (input.operation === 'save')
               return saveKit(input, {
                 appSessionId: scope.appSessionId,
@@ -475,6 +465,20 @@ export function createCanvasMcpServer(
     },
     purpose === 'design' ? DESIGN_CANVAS_MCP_INSTRUCTIONS : undefined,
   );
+}
+
+/** The canvas as this turn sees it: every frame, or only the frames it was assigned. */
+function withinScope(snapshot: CanvasSnapshot, scope: CanvasScope): CanvasSnapshot {
+  const allowed = scope.allowedDesignIds;
+  if (allowed === 'canvas') return snapshot;
+  return {
+    ...snapshot,
+    frames: snapshot.frames.filter((frame) => allowed.includes(frame.designId)),
+  };
+}
+
+function hasDesigns(snapshot: CanvasSnapshot | null): boolean {
+  return snapshot?.frames.some((frame) => frame.revisionId !== null) ?? false;
 }
 
 function toolFailure(error: unknown): CanvasCommandError {

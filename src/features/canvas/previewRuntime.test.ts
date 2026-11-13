@@ -249,6 +249,8 @@ const picked: PreviewElement = {
   instancePath: '0/1',
   rect: { x: 8, y: 12, width: 120, height: 32 },
   styles: { gap: '4px' },
+  text: null,
+  parentDisplay: 'block',
 };
 
 test('selection commands reach only a guest this run started and has not stopped', async () => {
@@ -258,19 +260,135 @@ test('selection commands reach only a guest this run started and has not stopped
 
   await started(session);
   assert.equal(session.preview.pick({ step: 'next' }, ['gap']), 2);
-  const target = { elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' } };
+  const target = { elementId: 'el_1', instancePath: '0/1', styles: { gap: '8px' }, text: null };
   assert.equal(session.preview.select(target, ['gap']), 3);
   assert.deepEqual(
     session.calls.slice(2).map((call) => call.code),
     [
       'globalThis.__droidexCanvasPreview.pick({"step":"next","properties":["gap"],"sequence":2})',
-      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"}},"properties":["gap"],"sequence":3})',
+      'globalThis.__droidexCanvasPreview.select({"target":{"elementId":"el_1","instancePath":"0/1","styles":{"gap":"8px"},"text":null},"properties":["gap"],"sequence":3})',
     ],
   );
 
   session.preview.stop();
   session.preview.select(null, ['gap']);
   assert.equal(session.calls.length, 4);
+});
+
+test('a hover asks a started guest directly and answers null once the run stops', async () => {
+  const session = run();
+  assert.equal(await session.preview.hover({ x: 1, y: 2 }), null, 'nothing to ask before start');
+  assert.equal(session.calls.length, 1);
+
+  await started(session);
+  const answer = session.preview.hover({ x: 10, y: 20 });
+  const call = session.calls[2];
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.hover({"x":10,"y":20})');
+  const hovered = {
+    elementId: 'el_1',
+    instancePath: '0/1',
+    rect: picked.rect,
+    tagName: 'h1',
+    room: { above: null, below: 4 },
+  };
+  call.settle(JSON.stringify(hovered));
+  assert.deepEqual(await answer, hovered);
+
+  // A guest that never answers cannot keep a stopped run's hover waiting.
+  const stranded = session.preview.hover({ x: 10, y: 20 });
+  session.preview.stop();
+  assert.equal(await stranded, null);
+});
+
+test('a probe answer that lands as the run stops is dropped', async () => {
+  const session = run();
+  await started(session);
+  const answer = session.preview.probe({ at: { x: 10, y: 20 } });
+  const call = session.calls[2];
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.probe({"at":{"x":10,"y":20}})');
+  call.settle(
+    JSON.stringify({ elementId: 'el_1', instancePath: '0/1', rect: picked.rect, text: null }),
+  );
+  // One tick: the guest has answered, but the probe has not yet read it.
+  await Promise.resolve();
+  session.preview.stop();
+  assert.equal(await answer, null);
+});
+
+test('a locate asks a started guest directly and answers null before start and once stopped', async () => {
+  const session = run();
+  assert.equal(await session.preview.locate(['el_1']), null, 'nothing to ask before start');
+  assert.equal(session.calls.length, 1);
+
+  await started(session);
+  const answer = session.preview.locate(['el_1', 'el_2']);
+  const call = session.calls[2];
+  assert.equal(
+    call.code,
+    'globalThis.__droidexCanvasPreview.locate({"elementIds":["el_1","el_2"]})',
+  );
+  call.settle(JSON.stringify([picked.rect, null]));
+  assert.deepEqual(await answer, [picked.rect, null]);
+
+  // An answer that lands as the run stops is dropped.
+  const late = session.preview.locate(['el_1']);
+  session.calls[3].settle(JSON.stringify([picked.rect]));
+  await Promise.resolve();
+  session.preview.stop();
+  assert.equal(await late, null);
+  assert.equal(await session.preview.locate(['el_1']), null, 'nothing to ask once stopped');
+  assert.equal(session.calls.length, 4);
+});
+
+test('a tree asks a started guest directly and answers null before start and once stopped', async () => {
+  const session = run();
+  assert.equal(await session.preview.tree(null), null, 'nothing to ask before start');
+
+  await started(session);
+  const answer = session.preview.tree(null);
+  const call = session.calls[2];
+  assert.equal(call.code, 'globalThis.__droidexCanvasPreview.tree({"from":0})');
+  const tree = {
+    nodes: [{ elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 }],
+    cap: 400,
+    truncated: true,
+  };
+  call.settle(JSON.stringify({ ...tree, from: 0 }));
+  assert.deepEqual(await answer, tree);
+  // The next page starts where the last one stopped.
+  void session.preview.tree(tree);
+  assert.equal(session.calls[3].code, 'globalThis.__droidexCanvasPreview.tree({"from":1})');
+
+  const stranded = session.preview.tree(null);
+  session.preview.stop();
+  assert.equal(await stranded, null);
+});
+
+test('a shape asks a started guest directly and answers null before start and once stopped', async () => {
+  const session = run();
+  const node = { elementId: 'el_1', instancePath: '0/0' };
+  assert.equal(await session.preview.shape(node), null, 'nothing to ask before start');
+
+  await started(session);
+  const answer = session.preview.shape(node);
+  const call = session.calls[2];
+  assert.equal(
+    call.code,
+    'globalThis.__droidexCanvasPreview.shape({"elementId":"el_1","instancePath":"0/0"})',
+  );
+  const shape = {
+    d: 'M0 0 L10 10',
+    matrix: [2, 0, 0, 2, 8, 8],
+    rect: { x: 8, y: 8, width: 20, height: 20 },
+  };
+  call.settle(JSON.stringify(shape));
+  assert.deepEqual(await answer, shape);
+
+  const stranded = session.preview.shape(node);
+  session.calls[3].settle(JSON.stringify(shape));
+  await Promise.resolve();
+  session.preview.stop();
+  assert.equal(await stranded, null);
 });
 
 test('draft tokens reach a started guest as data and nothing after the run stops', async () => {

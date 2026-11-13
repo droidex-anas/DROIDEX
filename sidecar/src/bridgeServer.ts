@@ -24,7 +24,8 @@ import {
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';
-import { serveCanvasImageImport, type CanvasImages } from './canvas/canvasImageRoute.js';
+import { serveCanvasImages, type CanvasImages } from './canvas/canvasImageRoute.js';
+import type { ProjectExportAdmission } from './canvas/projectExports.js';
 import { serveProfileUsage } from './usage/profileRoute.js';
 
 const HOST = '127.0.0.1';
@@ -57,6 +58,8 @@ export function startBridgeServer(options: {
   token: string;
   canvasImages?: CanvasImages;
   canvasExportToken?: string;
+  /** Admits an export into the chat's project folder, until the chat closes. */
+  admitProjectExport?: (appSessionId: string) => ProjectExportAdmission | null;
   // `pageId` identifies the renderer page the command came from, when it sent
   // one, so an owner can scope per-page state to it.
   onCommand: (command: ClientCommand, pageId: string | null) => Promise<void>;
@@ -83,13 +86,14 @@ export function startBridgeServer(options: {
       });
   });
   const replay = new BridgeReplayBuffer();
+  const admitProjectExport = options.admitProjectExport ?? (() => null);
   let boundPort = options.requestedPort;
   let closed = false;
   let closePromise: Promise<void> | null = null;
 
   const server = createServer((req, res) => {
-    if (serveCanvasImageImport(req, res, options.canvasImages)) return;
-    if (serveCanvasSourceExport(req, res, options.canvasExportToken)) return;
+    if (serveCanvasImages(req, res, options.canvasImages)) return;
+    if (serveCanvasSourceExport(req, res, options.canvasExportToken, admitProjectExport)) return;
     if (serveDesignSystemExport(req, res, options.canvasExportToken)) return;
     if (serveProfileUsage(req, res, options.token, options.getProfileUsage)) return;
     if (serveHotPathMetrics(req, res, options.token)) return;

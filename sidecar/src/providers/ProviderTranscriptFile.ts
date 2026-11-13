@@ -106,6 +106,7 @@ export class ProviderTranscriptFile {
   }
 
   append(event: TranscriptEvent): void | Promise<void> {
+    if (event.transient) return;
     if (event.role !== 'primary' && !this.parentAppSessionId) return this.appendToChild(event);
     if (event.kind === 'text' && event.author === 'user' && !event.spoken) {
       return this.sealThenWrite(

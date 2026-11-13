@@ -11,11 +11,13 @@ import {
 import './canvasAnimations.css';
 import './canvasBloom.css';
 import './canvasBoard.css';
+import './canvasBoardSelection.css';
 import './canvasBoardTools.css';
+import './canvasPresence.css';
 import { AgentPaneExpand } from '../../components/agents/AgentPaneExpand';
 import { useStoreSelector } from '../../hooks/useStore';
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
-import { canvasClient as canvas, frameRemovals } from './canvasClient';
+import { boardHistory, canvasClient as canvas, frameRemovals, variantSets } from './canvasClient';
 import { canvasMessage } from './client';
 import { CanvasMenu } from './CanvasMenu';
 import type { CanvasBoardHandle } from './CanvasBoard';
@@ -168,6 +170,8 @@ export function CanvasWorkspace({
     return canvas.subscribeSummaries((summaries) => {
       if (summaries.some((summary) => summary.canvasId === watched)) return;
       frameRemovals.forget(watched);
+      variantSets.forget(watched);
+      boardHistory.forget(watched);
       if (namedCanvasId === undefined) attach(null);
       else closeCanvasTab(appSessionId);
     });
@@ -282,6 +286,9 @@ export function CanvasWorkspace({
             onOpenSource={(designId) => {
               dispatch(openSourcePanel(designId));
             }}
+            onShowLayers={(shown) => {
+              dispatch({ type: 'show-layers', shown });
+            }}
           />
         </div>
       </div>
@@ -321,6 +328,7 @@ function CanvasBody({
   onChoose,
   onRetry,
   onOpenSource,
+  onShowLayers,
 }: {
   state: CanvasPaneState;
   appSessionId: string;
@@ -334,6 +342,7 @@ function CanvasBody({
   onChoose: (canvasId: string) => Promise<void>;
   onRetry: () => void;
   onOpenSource: (designId: string) => void;
+  onShowLayers: (shown: boolean) => void;
 }) {
   const toolsMissing = useStoreSelector((current) =>
     lacksCanvasTools(current.sessions[appSessionId]),
@@ -361,7 +370,14 @@ function CanvasBody({
       );
     case 'unattached':
       if (shownDocument)
-        return <DocumentMount appSessionId={appSessionId} canvasId={null} shown={shownDocument} />;
+        return (
+          <DocumentMount
+            appSessionId={appSessionId}
+            canvasId={null}
+            pinnable={pinnable}
+            shown={shownDocument}
+          />
+        );
       if (toolsMissing) return <CanvasToolsMissing canvasId={null} />;
       return (
         <CanvasEmptyState
@@ -384,6 +400,8 @@ function CanvasBody({
           onInteractionChange={onInteractionChange}
           boardRef={boardRef}
           onOpenSource={onOpenSource}
+          layersOpen={state.layersOpen}
+          onShowLayers={onShowLayers}
         />
       );
   }

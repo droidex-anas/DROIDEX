@@ -1,6 +1,8 @@
 // Main's file-picker/drop boundary for Canvas images and kit images. It decodes
-// the selected bytes before asking the sidecar to own them; a digest rejects a
-// changed path. The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`.
+// raster bytes before asking the sidecar to own them; an SVG is markup, which
+// the sidecar sanitises and measures itself. A digest rejects a changed path.
+// The owner is `{ kind: 'canvas', canvasId }` or `{ kind: 'kit' }`. The sidecar
+// asks here too, for an image an agent names in its project folder.
 
 const { createHash } = require('node:crypto');
 const { constants } = require('node:fs');
@@ -8,11 +10,13 @@ const { open } = require('node:fs/promises');
 const { extname, isAbsolute } = require('node:path');
 const { imageMediaType } = require('./canvasPreviewAssets.cjs');
 
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const EXTENSIONS = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
 };
 
 class CanvasImageImportError extends Error {
@@ -33,16 +37,30 @@ function storageFailure() {
   );
 }
 
+function cancelledImport() {
+  return new CanvasImageImportError('storage_failed', 'The image import was cancelled.');
+}
+
+/**
+ * `project` is set for the sidecar's request: `project.file` is the identity
+ * the sidecar checked inside the project, so a path swapped since is refused,
+ * and it posts only to the run that asked, while that run still wants it.
+ */
 function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
-  return async function importCanvasImage(owner, filePath) {
+  return async function importCanvasImage(owner, filePath, project = null) {
     if (!isImageOwner(owner) || typeof filePath !== 'string' || !isAbsolute(filePath))
       throw invalidImage('Choose a canvas and an image first.');
+    if (project && !isFileIdentity(project.file))
+      throw invalidImage('Choose a canvas and an image first.');
+    const stillWanted = () => !project || (!project.signal.aborted && !project.runEnded());
     let bytes;
     try {
       const file = await open(filePath, constants.O_RDONLY | constants.O_NOFOLLOW);
       try {
         const info = await file.stat();
-        if (!info.isFile() || info.size < 1 || info.size > 10 * 1024 * 1024)
+        if (project && !isSameFile(info, project.file))
+          throw invalidImage('The image changed while it was being imported. Try again.');
+        if (!info.isFile() || info.size < 1 || info.size > MAX_IMAGE_BYTES)
           throw invalidImage('Choose an image under 10 MiB.');
         bytes = Buffer.alloc(info.size);
         let offset = 0;
@@ -58,55 +76,42 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
       if (error instanceof CanvasImageImportError) throw error;
       throw invalidImage('The selected image could not be read. Choose it again.');
     }
+    if (!stillWanted()) throw cancelledImport();
 
     const expectedType = EXTENSIONS[extname(filePath).toLowerCase()];
-    if (!expectedType || imageMediaType(bytes) !== expectedType)
-      throw invalidImage('Choose a PNG, JPEG or WebP image whose extension matches its contents.');
-    const declared = imageDimensions(bytes, expectedType);
-    if (!declared) throw invalidImage('Choose a valid PNG, JPEG or WebP image.');
-    assertImageDimensions(declared.width, declared.height);
-
-    let width;
-    let height;
-    try {
-      if (expectedType === 'image/webp') {
-        const { createCanvas, loadImage } = require('@napi-rs/canvas');
-        const decoded = await loadImage(bytes);
-        ({ width, height } = decoded);
-        assertImageDimensions(width, height);
-        createCanvas(1, 1).getContext('2d').drawImage(decoded, 0, 0, 1, 1);
-      } else {
-        const decoded = nativeImage.createFromBuffer(bytes);
-        if (decoded.isEmpty()) throw invalidImage('Choose a valid PNG or JPEG image.');
-        ({ width, height } = decoded.getSize());
-        assertImageDimensions(width, height);
-        // Force pixel decode, so a plausible header with a broken body is refused.
-        if (decoded.toBitmap().length !== width * height * 4)
-          throw invalidImage('The selected image could not be decoded.');
-      }
-    } catch (error) {
-      if (error instanceof CanvasImageImportError) throw error;
-      throw invalidImage('The selected image could not be decoded.');
-    }
+    const actualType = imageMediaType(bytes);
+    // Only an SVG the sidecar already sanitised is recognisable here; any other is still markup.
+    const matches =
+      actualType === expectedType || (expectedType === 'image/svg+xml' && actualType === null);
+    if (!expectedType || !matches)
+      throw invalidImage(
+        'Choose a PNG, JPEG, WebP or SVG image whose extension matches its contents.',
+      );
+    const size =
+      expectedType === 'image/svg+xml' ? null : await decodedSize(nativeImage, bytes, expectedType);
+    if (!stillWanted()) throw cancelledImport();
 
     let response;
     try {
-      const { port } = await sidecarSupervisor.getBridgeInfo();
+      const { port, secret } = project
+        ? project.bridge
+        : {
+            port: (await sidecarSupervisor.getBridgeInfo()).port,
+            secret: sidecarSupervisor.canvasAssetSecret(),
+          };
       const route = owner.kind === 'kit' ? 'import-kit-image' : 'import-image';
+      const timeout = AbortSignal.timeout(15_000);
       response = await fetch(`http://127.0.0.1:${String(port)}/canvas/${route}`, {
         method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-canvas-secret': sidecarSupervisor.canvasAssetSecret(),
-        },
+        headers: { 'content-type': 'application/json', 'x-canvas-secret': secret },
         body: JSON.stringify({
           ...(owner.kind === 'canvas' ? { canvasId: owner.canvasId } : {}),
+          ...(project ? { requestId: project.requestId } : {}),
           filePath,
           digest: createHash('sha256').update(bytes).digest('hex'),
-          width,
-          height,
+          ...size,
         }),
-        signal: AbortSignal.timeout(15_000),
+        signal: project ? AbortSignal.any([project.signal, timeout]) : timeout,
       });
     } catch {
       throw storageFailure();
@@ -127,6 +132,44 @@ function createCanvasImageImporter(nativeImage, sidecarSupervisor) {
     }
     return answer;
   };
+}
+
+async function decodedSize(nativeImage, bytes, mediaType) {
+  const declared = imageDimensions(bytes, mediaType);
+  if (!declared) throw invalidImage('Choose a valid PNG, JPEG or WebP image.');
+  assertImageDimensions(declared.width, declared.height);
+  try {
+    if (mediaType === 'image/webp') {
+      const { createCanvas, loadImage } = require('@napi-rs/canvas');
+      const decoded = await loadImage(bytes);
+      assertImageDimensions(decoded.width, decoded.height);
+      createCanvas(1, 1).getContext('2d').drawImage(decoded, 0, 0, 1, 1);
+      return { width: decoded.width, height: decoded.height };
+    }
+    const decoded = nativeImage.createFromBuffer(bytes);
+    if (decoded.isEmpty()) throw invalidImage('Choose a valid PNG or JPEG image.');
+    const { width, height } = decoded.getSize();
+    assertImageDimensions(width, height);
+    // Force pixel decode, so a plausible header with a broken body is refused.
+    if (decoded.toBitmap().length !== width * height * 4)
+      throw invalidImage('The selected image could not be decoded.');
+    return { width, height };
+  } catch (error) {
+    if (error instanceof CanvasImageImportError) throw error;
+    throw invalidImage('The selected image could not be decoded.');
+  }
+}
+
+function isFileIdentity(file) {
+  return (
+    Number.isSafeInteger(file?.dev) &&
+    Number.isSafeInteger(file?.ino) &&
+    Number.isSafeInteger(file?.size)
+  );
+}
+
+function isSameFile(info, file) {
+  return info.dev === file.dev && info.ino === file.ino && info.size === file.size;
 }
 
 function isImageOwner(owner) {
@@ -221,4 +264,57 @@ async function canvasImageImportResult(importImage, owner, filePath) {
   }
 }
 
-module.exports = { createCanvasImageImporter, canvasImageImportResult };
+/**
+ * The sidecar's requests for images an agent named in its chat's project
+ * folder, which the sidecar has kept inside that folder. The handler says
+ * whether a message was one; a request the sidecar cancels stops before it posts.
+ */
+function createProjectImageRequests(importImage, sidecarSupervisor) {
+  const running = new Map(); // request id -> its cancellation
+
+  async function answer(message, reply, runEnded, signal) {
+    const owner = { kind: 'canvas', canvasId: message.canvasId };
+    const importForRun = async () => {
+      // Pinned now: a replacement sidecar must never receive this run's import.
+      const { port } = await sidecarSupervisor.getBridgeInfo();
+      const bridge = { port, secret: sidecarSupervisor.canvasAssetSecret() };
+      const project = { requestId: message.id, file: message.file, bridge, signal, runEnded };
+      return importImage(owner, message.filePath, project);
+    };
+    reply({
+      type: 'canvas.importImageResult',
+      id: message.id,
+      result: await canvasImageImportResult(importForRun, owner, message.filePath),
+    });
+  }
+
+  return function handle(message, reply, runEnded) {
+    if (message?.type === 'canvas.importImageCancel') {
+      running.get(message.id)?.abort();
+      return true;
+    }
+    if (message?.type !== 'canvas.importImage' || typeof message.id !== 'string') return false;
+    if (runEnded() || running.has(message.id)) return true;
+    const cancellation = new AbortController();
+    running.set(message.id, cancellation);
+    void answer(message, reply, runEnded, cancellation.signal).finally(() => {
+      running.delete(message.id);
+    });
+    return true;
+  };
+}
+
+/** Pasted SVG markup as the data URL the attachments store saves, refused before any copy when it is not markup under the limit. */
+function pastedSvgDataUrl(svg) {
+  if (typeof svg !== 'string' || svg === '') throw invalidImage('The pasted SVG is empty.');
+  if (Buffer.byteLength(svg, 'utf8') > MAX_IMAGE_BYTES)
+    throw invalidImage('Paste an SVG under 10 MiB.');
+  return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
+}
+
+module.exports = {
+  createCanvasImageImporter,
+  canvasImageImportResult,
+  createProjectImageRequests,
+  pastedSvgDataUrl,
+};

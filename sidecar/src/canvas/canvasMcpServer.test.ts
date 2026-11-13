@@ -19,6 +19,7 @@ import {
 } from '../testing/canvasStorageSupport.js';
 import { saveLibraryItem } from './canvasLibrary.js';
 import { createCanvasMcpServer } from './canvasMcpServer.js';
+import { instrumentSource } from './sourceElements.js';
 import { CANVAS_MCP_SERVER_NAME, CANVAS_TOOL_NAMES } from './canvasMcpNames.js';
 import {
   DESIGN_CANVAS_MCP_INSTRUCTIONS,
@@ -39,7 +40,7 @@ async function createFrame(call: Harness['call'], scopeId: string | undefined, m
   return { canvasId: created.created.canvasId, designId: first.designId };
 }
 
-test('seven Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
+test('eight Canvas tools are discoverable and an inactive chat cannot read', async (t) => {
   const h = await harness(t);
   assert.equal(h.server.name, CANVAS_MCP_SERVER_NAME);
   assert.deepEqual(
@@ -59,6 +60,7 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       h.kits,
       () => 'chat-one',
       () => null,
+      () => Promise.reject(new Error('Image import unavailable')),
       purpose,
     );
     t.after(() => server.close());
@@ -104,6 +106,8 @@ test('MCP initialization carries tool discovery guidance only for a Design sessi
       assert.match(result.instructions, /foreground as currentColor on dark or coloured fills/);
       assert.equal(result.instructions.includes(DESIGN_SESSION_GUIDANCE), false);
     }
+    const read = server.tools.find((entry) => entry.name === 'canvas_read');
+    assert.match(read?.description ?? '', /style from[^.]*request[^.]*project[^.]*frames/);
     const write = server.tools.find((entry) => entry.name === 'canvas_write');
     assert.ok(write);
     assert.ok(write.description);
@@ -178,12 +182,15 @@ test('HTTP Canvas calls strictly validate raw arguments and return payload-free 
   assert.deepEqual(h.workspace.listCanvases(), []);
 });
 
-test('theme listing is bounded and saving requires a client mutation ID', async (t) => {
+test('theme listing is bounded, a catalog read defaults to the turn’s kit, and saving requires a client mutation ID', async (t) => {
   const { scopeId, ...h } = await openTurn(t);
   assert.equal((await h.call('canvas_read', { unknown: 'secret' })).code, 'invalid_input');
   const listed = await h.call('canvas_theme', { operation: 'list', limit: 1 });
   assert.equal(listed.ok, true);
   assert.equal(listed.systems?.length, 1);
+  // With no ref it reads the turn's kit, Auto, whose catalog the shared primitives fill.
+  const catalog = await h.call('canvas_theme', { operation: 'catalog', entries: ['button'] });
+  assert.equal(catalog.entries?.map(({ name }) => name).join(), 'Button');
   const save = {
     scopeId,
     operation: 'save',
@@ -325,17 +332,30 @@ test('lost create response retries to the same canvas and invalid source paths h
     deletedPaths: [],
   });
   assert.equal(invalid.code, 'invalid_source_path');
+  const source =
+    'export default function Hey() {\n  return (\n    <h1>\n      Hey\n    </h1>\n  );\n}';
   const written = await h.call('canvas_write', {
     scopeId,
     mutationId: 'write-one',
     designId,
     expectedRevisionId: null,
-    files: { 'main.tsx': 'export default function Hey(){return <h1>Hey</h1>}' },
+    files: { 'main.tsx': source },
     deletedPaths: [],
   });
   assert.equal(written.ok, true);
-  assert.ok(written.receipt?.revisionId);
+  const revisionId = written.receipt?.revisionId;
+  assert.ok(revisionId);
   assert.equal(written.canvasId, first.created?.canvasId);
+  const [heading] = instrumentSource({ 'main.tsx': source }, revisionId).elements;
+  const read = { view: 'design', designId, revisionId, elementId: heading.elementId };
+  const picked = await h.call('canvas_read', read);
+  assert.deepEqual(
+    [picked.element?.line, picked.element?.endLine, picked.element?.source],
+    [3, 5, '    <h1>\n      Hey\n    </h1>'],
+  );
+  assert.equal((await h.call('canvas_read', { ...read, elementId: 'gone' })).code, 'invalid_input');
+  const summary = await h.call('canvas_read', { elementId: heading.elementId });
+  assert.equal(summary.code, 'invalid_input');
   assert.equal((await h.call('canvas_inspect', { designId })).ok, true);
   assert.equal(
     (await h.call('canvas_inspect', { designId, kind: 'screenshot' })).code,

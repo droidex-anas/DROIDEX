@@ -477,8 +477,8 @@ successfully; build publication checks the captured job at the final manifest re
 
 ### Canvas agent tools
 
-Each chat gets one local `droidex-canvas` MCP server with seven tools: read, create,
-write, inspect, arrange, annotate, and theme. Annotations are the board's own layer,
+Each chat gets one local `droidex-canvas` MCP server with eight tools: read, create,
+write, inspect, image, arrange, annotate, and theme. Annotations are the board's own layer,
 versioned apart from frames; `canvas_read` relates each one to the frames it is
 over, near or points at, and an agent may change only the annotations its chat drew. `CanvasTurns` mints a scope when a turn starts;
 call `canvas_read` with no arguments first to obtain that chat's newest live lease.
@@ -491,6 +491,14 @@ without retaining revoked scope payloads. `endSession` drops that chat's issued
 IDs, so requests naming its closed era return `invalid_input`. Every mutation
 requires its explicit `scopeId`; retries keep the original scope and cannot
 borrow a later turn's authority. Named leases expire when their turn or provider ends.
+
+Frames stack in manifest order, back to front, and the board paints them in that
+order. The Layers panel's `canvas.reorderFrames` replaces the whole order and is
+refused with `revision_conflict` unless it names exactly the canvas's frames;
+`canvas.setFrameHidden` compares the frame's manifest version as a rename does.
+A hidden frame leaves the board's drawing, reading order, focus, picking and
+selection, but stays in the Layers panel and the agent's model: `canvas_read`
+marks it `hidden: true`, and every agent tool still reads and writes it.
 
 `designSessionGuidance.ts` owns the concise Design brief. Droid receives it
 through process-local `exec --append-system-prompt`, Claude through the
@@ -528,10 +536,20 @@ noted once. The canvas manifest's `designSystemAdherence` rule (`off`, default `
 or `strict`) is set by an attached chat with `canvas.setDesignSystemAdherence` and
 reported in `CanvasSummary`; a change rebuilds every frame with source, and a cached
 outcome holds only under the rule it was built with. Under `guide` the findings ride a
-ready build as the report's `designSystem` notes; under `strict` they fail it. A turn's
+ready build as the report's `designSystem` notes; under `strict` they fail it, and the
+report's next step names the rule either way. The board's canvas menu and the chat
+column header's canvas menu offer the three rules (`designSystemRule.ts`); a frame
+whose ready build carries findings shows a kit notes badge on its label, which opens
+its source, and a build the strict rule failed says so on the frame. A turn's
 opening `canvas_read` carries the pinned kit's name, mode, token and primitive names and
-guidance (`designSystemBrief.ts`, under 21 KiB) and the canvas's rule; `canvas_theme`
-reads full kits. Once the build is ready, the write waits 1.5 s for
+guidance (`designSystemBrief.ts`, under 21 KiB), its catalog's entry names (1 KiB more)
+and the canvas's rule; under Auto, before a project chat's first design, that guidance
+also asks the agent to offer a kit from the project. `canvas_theme` reads full kits, and
+reads a kit's catalog entries by name with their JSX, kit and icon imports, notes and props (`kitCatalog.ts`)
+so the agent writes a component the user names or tags as its entry gives it. A component
+tagged from the composer's `@` menu (`componentPins.ts`) reaches the agent as a
+`<canvas_components>` block naming the entry and its kit's ref; the sidecar strips that
+block from the replayed bubble and keeps its names as chips. Once the build is ready, the write waits 1.5 s for
 an open pane to start the preview and then one 13 s deadline for it to render. The pane reports
 `loading`, `rendered` or `failed` through `canvas.reportPreview`; `CanvasPreviewReports`
 keeps the latest per design, so a design that compiles and then throws reaches the
@@ -552,15 +570,30 @@ scope.
 An inspect screenshot reuses the preview capture below; the sidecar holds no
 pixels. It needs the frame's current revision to have a ready build, then
 `CanvasCaptures` broadcasts `canvas.captureRequest` naming that exact revision
-and waits for `canvas.reportCapture` from the pages watching the canvas when it
-asked. A page answers from its registered live preview of that revision through
-`captureCanvasImage`, or refuses. The first valid PNG, at most 8 MiB, returns to
-the model as image content beside the build facts; Codex receives it as an
+and the image it wants (a PNG at 1x, 2x, 3x or the page's display scale, or a
+vector design's root `<svg>`), and waits for `canvas.reportCapture` from the
+pages watching the canvas when it asked. A page answers from its registered live
+preview of that revision through `captureCanvasImage`, or refuses. The first
+valid answer in the format asked for, a PNG at most 8 MiB or an SVG at most
+256 KiB, returns to the model as image content beside the build facts; Codex receives it as an
 `inputImage` data URL. No watching page, every watching page refusing or leaving,
 or seven seconds without an answer return `capture_unavailable`. Revoking the
 turn's lease aborts the wait, and a read revalidates its lease before delivery,
 so a capture that settles after its turn ended is dropped. Writes and turn
 settlement never wait on a capture. Element capture remains `capture_unavailable`.
+
+`canvas_image` (`canvasImageTool.ts`) works in the chat's project folder, which
+comes from the session, never from the agent. A render takes the same capture at
+the scale or format asked for, sanitises an SVG with `sanitiseSvg`, and writes it
+to a relative path inside the folder: no `..`, no absolute path, no symbolic link
+on the way, and no replacing a file unless `overwrite` is set. An import checks the
+named file the same way, then sends main a `canvas.importImage` request over the
+sidecar's IPC channel (`desktopImageChannel.ts`); main reads and decodes it with the
+importer it uses for a picked image and answers `canvas.importImageResult`, and the
+agent gets a `canvas-asset:` reference. Main opens only the file the sidecar checked,
+by its device, inode and size, and posts it only to the sidecar run that asked.
+Ending the turn aborts both waits; an import that ends or times out is cancelled
+with `canvas.importImageCancel`, and the image route refuses to save it.
 
 ### Canvas live previews
 
@@ -568,7 +601,8 @@ A Canvas design's preview is a `<webview>` guest in the board's DOM flow, and it
 crosses all three processes. `electron/canvasPreview.cjs` owns the guest end:
 the privileged `droidex-canvas-preview` scheme, the one guest document, its
 restrictive CSP, the trusted intermediate and the registry of guests main
-attached. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
+attached; `electron/canvasPreviewSession.cjs` shuts the guests' session off from
+the network. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
 and content-addressed kit images and fonts through that same scheme. `electron/main.cjs` sets `webviewTag` on the
 app window alone and installs `will-attach-webview` before that window loads
 anything, so renderer content can only ever attach the owned source, with any
@@ -578,10 +612,13 @@ The intermediate holds the compiled design in an opaque-origin
 `sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the
 intermediate rather than the chat renderer and the three documents hold three
 processes. Generated code gets no preload and no Electron API. The board drives
-a preview through the webview element's `executeJavaScript` with two audited
+a preview through the webview element's `executeJavaScript` with nine audited
 literals in `src/features/canvas/previewDocument.ts`: one hands over the
-artifact and the instance identity, the other drains a bounded queue of
-`ready`/`resize`/`diagnostics` events as one validated JSON snapshot.
+artifact and the instance identity, one drains a bounded queue of
+`ready`/`resize`/`diagnostics`/`selection` events as one validated JSON
+snapshot, one reads a vector design's root `<svg>`, and the rest carry the
+board's element commands (pick, select, hover, probe, locate and a kit's draft
+tokens) as JSON data to fixed calls.
 `previewRuntime.ts` keeps exactly one poll in flight per guest on a bounded
 cadence and revalidates the instance after every await, so a replaced preview
 can never be reached by the guest it replaced.
@@ -609,10 +646,14 @@ than waiting out a poll deadline.
 
 The artifact itself travels over the ordinary bridge: `canvas.readArtifact`
 answers one revision's document, read from the derived build cache by
-`sidecar/src/canvas/canvasBuildCache.ts`. Every build state carries the
-registry's per-design `generation`, so a board can tell a build that moved from a
-frame an arrange merely re-sent, and a rebuild of identical source — which is
-content-addressed to the same artifact ID — still reads as a new attempt.
+`sidecar/src/canvas/canvasBuildCache.ts`. A `CanvasChange` that creates, writes,
+restores or rebuilds frames carries each named frame's build in `builds`; an
+arrange, rename, hide or restack carries none, so the frames' element maps and
+outlines are not sent again. A change naming a frame the renderer has never
+seen without its build is answered by reading a fresh snapshot. Every build
+state carries the registry's per-design `generation`, so a rebuild of
+identical source — which is content-addressed to the same artifact ID — still
+reads as a new attempt.
 
 Canvas source selection is derived by `sidecar/src/canvas/sourceElements.ts` with the
 TypeScript parser bundled into the owned compiler process. That process instruments native
@@ -626,13 +667,29 @@ outside canonical source, forces a rebuild. Inline source maps preserve canonica
 through bundling
 without shipping host runtime paths or canonical source content in the final artifact map.
 Direct edits reparse that source and
-replace one literal AST range; computed/shared sites require an agent edit and stale
-references require reselection. `canvas.editElement` sets text, or one whitelisted style
-property as a spacing, size, colour, typography, layout or opacity change. A style value is a
-pinned kit token's name, or a raw value that resolves to the kit token with that value and stays
-raw only when the kit has none; the reply and the edit's ledger record carry that resolution, so
-a retry answers it unchanged. The edit commits through the workspace's revision
-compare-and-swap. Image edits remain unavailable until the asset store can verify ownership.
+replace only literal ranges within the element's own site; computed/shared sites require an
+agent edit and stale references require reselection. A className spelled with string literals,
+including through a `cn()`/`clsx()` call whose arguments are all literals, is still a literal
+site. `canvas.editElement` sets text, or a batch of whitelisted style properties in one
+revision, or moves a layer of the outline: its JSX is cut whole and pasted among another
+element's children within the same block of the same component, in the file's own indentation
+and line endings, leaving strings and templates as written; a move into or out of text, or into
+an element whose content a prop sets, is refused. It also removes a layer, closing a parent it
+leaves empty to `<ul></ul>` and keeping an instance's component, or puts a copy right after it,
+refused when the layer writes an `id`. It adds an entry of the catalog of the kit version the
+frame pins, last inside the layer when it holds others and else right after it, importing the
+kit exports and lucide-react icons the entry names into that file once, refused where the file
+binds one of those names itself, with each prop picked in the row's variant menu written on the
+entry's first element that uses a kit component (refused where the entry writes that prop in
+code). The board's Components tab beside Layers sends it. The reply
+names the row the edit lands on in the new revision (the moved layer, the copy, the added
+element, or the row beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+token with that value and stays raw only when the kit has none. What a style edit writes is
+what a person writing Tailwind would: the class that says the value in place of the classes it
+makes dead, with the style attribute only where no stock class says it or a frame-scoped class
+or inline shorthand would win. The edit commits through the workspace's revision
+compare-and-swap; its ledger record answers a retry with the original receipt. Image edits
+remain unavailable until the asset store can verify ownership.
 
 The source drawer keeps drafts and save operations in the feature-local
 `canvasSourceStore`, outside panel mounts. Switching utility tabs or hiding the
@@ -651,7 +708,11 @@ own picker. Main checks the 10 MiB limit and matching extension, decodes PNG/JPE
 with `nativeImage` and WebP with `@napi-rs/canvas`, then checks the 8192-pixel
 dimension limit. Its private loopback route sends the
 selected path with a digest and decoded dimensions to the sidecar; the sidecar
-rejects a changed file and stores accepted bytes by hash under the canvas. Each
+rejects a changed file and stores accepted bytes by hash under the canvas. An
+SVG is not decoded in main: the sidecar rebuilds it from an allowlist
+(`canvasSvg.ts`), keeping vectors and dropping script, outside references and
+entity declarations, and stores only the rebuilt markup. Main serves an SVG
+asset only when it starts with that rebuilt prefix, under an inert CSP. Each
 asset has a durable metadata record, and `canvas.listAssets` recovers its ID
 even when the import reply or original file is lost.
 `canvas-asset:<assetId>` in source becomes a signed, canvas-scoped preview URL
@@ -673,17 +734,20 @@ from generated CSS through the same preview scheme.
 WebSocket) against a scripted provider and writes JSON + Markdown artifacts
 to `reports/perf/`. Headless scenarios: `smoke`, `idle`, `streaming`,
 `multi-agent`, `agents-4`, `agents-16`, `agents-27`, `long-history`,
-`long-tail`, `session-switch`, `soak`. Browser/design workspace, hidden-window
-CPU, and sidecar-restart are documented skips (restart belongs to the
-supervision phase).
+`long-tail`, `session-switch`, `soak`. The browser pane, hidden-window CPU,
+and sidecar-restart are documented skips (restart belongs to the supervision
+phase). The design canvas has its own headless scenario, `npm run perf:canvas`:
+Playwright streams board gestures at 120 Hz into the board harness and counts
+React commits and layout reads per frame and long tasks per gesture.
 
 A/B probes (`npm run perf:compare` / `npm run perf:report`) measure the same
 self-contained metrics on a baseline git worktree and on this tree. Metrics
 that need phase-0/1/4 code are labelled **candidate-only** and never get a
 fabricated baseline. `npm run perf:gates` / `npm run quality:perf-gates` fail
 on bounded mounted rows, bounded queues, marker loss, soak leaks, terminal
-delivery amplification, and feed rebuild counts. Timing CPU/RSS is recorded
-and warned, not failed, on shared runners. Bundle bytes stay gated by
+delivery amplification, feed rebuild counts, and the canvas's commits and
+layout reads per pan frame and long tasks during gestures. Timing CPU/RSS is
+recorded and warned, not failed, on shared runners. Bundle bytes stay gated by
 `npm run quality:bundle-budgets`. Release numbers live in
 `docs/performance-budgets.md`.
 
@@ -801,11 +865,15 @@ and [Remote and Profile](remote.md).
 
 `npm run build` runs frontend typecheck and Vite build, builds the sidecar bundles, and syntax-checks Electron CommonJS entrypoints. The sidecar build emits `sidecar/dist/sidecar.mjs` plus the `historyPersistenceWorker.mjs`, `compilerWorker.mjs` and `usageWorker.mjs` entries and the Remote host bundle beside it; Electron uses the main sidecar unless `SIDECAR_ENTRY` is set and packages the bundles from `sidecar/dist`.
 
-Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind, PostCSS, React, Lucide, Recharts and Simple Icons at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. The design allowlist exposes the bare `lucide-react`, `recharts` and `simple-icons` specifiers; the compiler resolves each one's ESM entry through the same runtime anchor so unused icons, chart exports and brand marks can be removed. Simple Icons exports that entry to `import` only, so it is read at its path inside the package `require` finds. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable a checkout resolves from `sidecar/node_modules` exactly as it does in development, unless a staged runtime's manifest is sitting beside the compiler, which means a packaged app lost the variable and compiles nothing. A relative value is a malformed host and is refused outright.
+Packaging adds one more resource beside that bundle. The design compiler loads esbuild, Tailwind with `tailwindcss-animate`, PostCSS, React, Lucide, Recharts, Simple Icons and shadcn/ui's peers (`radix-ui` and its `@radix-ui/react-*` primitives, `@radix-ui/react-icons`, `class-variance-authority`, `clsx`, `tailwind-merge`) at run time, and a packaged app may not resolve them from a checkout or download them, so `npm run canvas:runtime` stages one complete runtime per architecture under `sidecar/canvas-runtime/<arch>` and `extraResources` copies the matching one to `resources/sidecar/canvas-runtime`. `sidecar/src/canvas/designPackages.ts` maps each bare specifier the design allowlist exposes to its ESM entry, which the compiler resolves through the same runtime anchor so unused icons, chart exports, brand marks and primitives can be removed. Most of those packages export that entry to `import` only, so an entry naming a file is read at its path inside the package `require` finds. Radix's primitives are listed by name rather than matched by prefix, so its internal packages stay out of the allowlist; the umbrella re-exports every listed primitive, which is how staging reaches their files. `electron/main.cjs` derives that directory from its own resources and hands it to the sidecar as `DROIDEX_CANVAS_RUNTIME_DIR`; `sidecar/src/canvas/canvasRuntime.ts` is the only reader, anchoring the compiler's `require` there and naming the owned `ESBUILD_BINARY_PATH` the forked compiler receives. Without that variable a checkout resolves from `sidecar/node_modules` exactly as it does in development, unless a staged runtime's manifest is sitting beside the compiler, which means a packaged app lost the variable and compiles nothing. A relative value is a malformed host and is refused outright.
 
-Canvas source export is a host action. Electron main opens the destination chooser, then calls a schema-validated sidecar HTTP route with a per-process `CANVAS_EXPORT_TOKEN` that never reaches the renderer or agent children. `canvasExport.ts` reads one immutable revision and its pinned kit, copies only the canvas and kit images its source and kit refer to, and refuses collisions and linked destination paths. The ordinary Canvas WebSocket exposes no destination path or export command. The exported project includes source, kit files and fonts, pinned build dependencies, and a local build/preview script. Design-system export, from the more menu of a kit's document, takes the same path on its own route: `designSystemExport.ts` writes one kit version's files under `src/`, its examples, its guidance as `DESIGN.md`, its light and dark tokens as `modes.css` and the kit images it shows or refers to under `assets/`, with each file's `kit-asset:` references rewritten to relative paths to those copies, through the same empty-folder writer.
+Canvas source export is a host action. Electron main opens the destination chooser, then calls a schema-validated sidecar HTTP route with a per-process `CANVAS_EXPORT_TOKEN` that never reaches the renderer or agent children. `canvasExport.ts` reads one immutable revision and its pinned kit, copies only the canvas and kit images its source and kit refer to, and refuses collisions and linked destination paths. The ordinary Canvas WebSocket exposes no destination path or export command. The exported project includes source, kit files and fonts, pinned build dependencies, and a local build/preview script; a library package is pinned only when the source or kit imports it, which the compiler process reads with the TypeScript parser, as the main sidecar never loads it. Design-system export, from the more menu of a kit's document, takes the same path on its own route: `designSystemExport.ts` writes one kit version's files under `src/`, its examples, its guidance as `DESIGN.md`, its light and dark tokens as `modes.css` and the kit images it shows or refers to under `assets/`, with each file's `kit-asset:` references rewritten to relative paths to those copies, through the same empty-folder writer.
 
-A kit's other actions are Canvas WebSocket commands answered by `designSystemCommands.ts` without a canvas or scope, because kits are global. The document lists, reads and saves versions, restores an earlier one, and from its more menu duplicates the kit as a copy with `copiedFrom` provenance or deletes it with Undo; the design system picker's new-kit form imports a pasted DESIGN.md, CSS variables or a Tailwind config. An agent's `canvas_theme` change to an existing user kit is not saved: `designSystemProposals.ts` keeps it as the kit's one pending proposal, which the user reviews in the document and accepts as the next version or discards. Every save goes through `saveDesignSystem`, the owner `canvas_theme` saves through, and a new kit is named by its mutation ID so a retried save finds the version it published. `designSystemImport.ts` maps familiar token names onto the `--ds-*` contract the shared primitives read and keeps every other token under its own name; a read reports those as `unmapped`. `designSystemTokens.ts` owns the root and `data-mode` token rule, hex expansion and the competing-value report for both extraction and import; the importer's wider selectors build on it, and both refuse competing values. Imports parse CSS with PostCSS and read a config's literals only (`configLiterals.ts`), never running it, and keep the TypeScript parser out of the sidecar's main process. Pasted nesting, token count and value nesting are bounded before any recursive reader runs, so an oversized paste is refused as `invalid_input`. The renderer reaches these commands through `canvasClient.designSystems`, and the export answers its IPC call with a result rather than a throw.
+Export to project, from a frame's More menu in a chat that has a project folder, skips the chooser. The renderer names the chat and a folder relative to its project, with a request ID; the sidecar takes the project folder from that chat's session, never from the renderer or the request. It reads the revision first, then makes the folder under the project's real path. Before each staged write and before publication it finds the folder, its staging copy and their parent again, and refuses with nothing published once one has moved, become a link or left the project. A window remains between each check and the write after it, because Node has no directory-relative rename. `ProjectExports` admits the export against the chat, so closing the chat aborts it with `scope_expired`. Closing the dialog cancels it through main by its request ID, which aborts the HTTP request. Either way the staging copy is removed and the folder stays empty, though folders made for it stay. A late answer to a closed dialog shows nothing. A frame whose kit was made from that project's shadcn/ui library is exported as project source instead (`projectLibraryExport.ts`): when components.json, its ui alias and stylesheet still read and every module the kit recorded is still a file in the ui folder that the alias reaches through `tsconfig.json`'s paths, and copying it again gives the kit's file (so a project with the same paths but other components does not pass), each `@droidex/design-system` import becomes imports of those modules through the alias, each kit token the project sets as the same kind of value in both modes becomes the project's, under the stylesheet's own spelling (`hsl(var(--x))` where the project sets bare HSL channels), and the export writes only that source, the images it refers to, the kit's guidance, a `tokens.css` holding the kit values of tokens the project lacks, and a README naming each mapping. Otherwise it copies the kit as any export does, and the README says why. The compiler process reads the imports, so the main sidecar parses no TypeScript. A plain export always copies.
+
+A kit's other actions are Canvas WebSocket commands answered by `designSystemCommands.ts` without a canvas or scope, because kits are global. The document lists, reads and saves versions, restores an earlier one, and from its more menu duplicates the kit as a copy with `copiedFrom` provenance or deletes it with Undo; the design system picker's new-kit form imports a pasted DESIGN.md, CSS variables or a Tailwind config. An agent's `canvas_theme` change to an existing user kit is not saved: `designSystemProposals.ts` keeps it as the kit's one pending proposal, which the user reviews in the document and accepts as the next version or discards. Every save goes through `saveDesignSystem`, the owner `canvas_theme` saves through, and a new kit is named by its mutation ID so a retried save finds the version it published. `designSystemImport.ts` maps familiar token names onto the `--ds-*` contract the shared primitives read and keeps every other token under its own name; a read reports those as `unmapped`. `designSystemTokens.ts` owns the root and `data-mode` token rule, hex expansion and the competing-value report for both extraction and import; the importer's wider selectors build on it, and both refuse competing values. Imports parse CSS with PostCSS and read a config's literals only (`configLiterals.ts`), never running it, and keep the TypeScript parser out of the sidecar's main process. Pasted nesting, token count and value nesting are bounded before any recursive reader runs, so an oversized paste is refused as `invalid_input`. The renderer reaches these commands through `canvasClient.designSystems`, and the export answers its IPC call with a result rather than a throw. A shadcn/ui library imports from its `components.json` alone (`designSystemLibrary.ts`), which needs the `tsconfig.json` beside it to map its aliases and the stylesheet and Tailwind config it names: DROIDEX copies up to 96 of the ui folder's components, those the canvas can load, and the cn() helper into the kit (which holds up to 128 files, twice a design's) with their `@/` imports pointed at the kit's files (`libraryComponents.ts`), records in the kit's provenance one review record per file it left out, or kept while the kit entry takes none or not all of its exports, each with a reason code and a detail of at most 200 characters that never names an absolute path; up to 128 records within 32 KiB are listed, with a count of each kind, so a long record never refuses the import, and the document shows them under its provenance line, imports the stylesheet's custom properties through `designSystemImport.ts`, and keeps the Tailwind config's literal theme as the kit's `tailwind.theme.json` (`libraryTheme.ts`), reporting and leaving out the values that are computed or that the kit's theme cannot hold. The compiler process reads the components' imports and exports with the TypeScript parser (`moduleDeclarations.ts`), so this path keeps it out of the main process too. The canvas applies that file as `theme.extend`, so a key it names replaces the stock value, while a hand-made kit's tokens only add classes (`kitTailwindTheme.ts`); style edits and adherence read the same theme. A Tailwind 4 project, a `tailwind.prefix` and `cssVariables: false` are refused, since the canvas builds unprefixed Tailwind 3.4 classes over the stylesheet's variables.
+
+A kit's `catalog.json` (`kitCatalog.ts`) lists insertable JSX for its primitives: up to 128 entries, each a name, the kit file it shows, the kit exports and lucide-react icons it names, one JSX element or fragment of at most 4 KiB and a note. It is data and never runs on its own. After the kit's entry and examples, `KitPreviews.check` asks the compiler process to check the catalog (`catalogCheck.ts`): each entry is parsed on its own and must be exactly one element or fragment naming only its own uses and icons, what it binds itself and `undefined`, so no entry can borrow another's import, reach a global or load a module; then every entry is built once under the kit, each as its own module with its own imports, so the kit's real exports decide what an entry may use and a failure is told as the entry whose module it is in. A broken entry refuses a save as a broken example does. The presets carry hand-written catalogs (`presets/catalogs.ts`). A shadcn/ui library import seeds the catalog from shadcn's own demos at a pinned commit (`libraryCatalogSeeds.json`, written by `tools/extract-shadcn-catalog.mjs`), keeping a seed only when its module was copied and the names it uses are kit exports, leaving out one that gives a component's literal `cva()` variant (such as `variant` or `size`) a quoted value the table does not define (esbuild does not type-check, so the build cannot catch it) with a `demo_left_out` record in the import review, and leaving out one that fails the save's catalog check with a save diagnostic (`libraryCatalog.ts`). The seeded kit carries shadcn/ui's MIT notice as its file `licenses/shadcn-ui.txt`, so an exported kit keeps it. A seeded entry's optional `props` (at most 8, each a name, 2 to 32 options and a default among them) are the enum variants of its first element that uses a kit component, read from the one `cva()` table that component's own declaration uses, in the file the kit entry exports it from, only when `cva` is imported as a value and every key and value is a literal (`libraryVariants.ts`); a component that uses no such table, or two, offers none, and boolean variants are left out, and the default is what the demo writes, else the table's default. The document view carries each entry's name, module (null when the entry names no kit file), note and props, and the JSX stays in the sidecar. The document lists them after the Components section's notes and previews, in a Components section of its own for a kit without one, and its search matches an entry's name, module or note (`CatalogSection.tsx`, `documentSearch.ts`). An open entry runs in one live guest: `canvas.readKitPreview` with a `{ kind: 'catalog', ref, entry }` target builds that entry alone on a page from the saved version its `ref` names (a proposal's catalog is never built), keyed apart from the previews and never captured, so the preview cap and the stills are untouched.
 
 Anchoring `require` is not a boundary on its own: node resolution also walks ancestor `node_modules`, `NODE_PATH` and the user's global folders, and a transitive `require` inside a package cannot be intercepted. The boundary is that the tree is exactly what staging produced. Staging writes `canvas-runtime/manifest.json` listing every file it placed with its size, and the compiler child walks the runtime under a root canonicalised once: every entry has to be a regular file the manifest lists at the staged size, or a directory the manifest has files under, and anything else — a symbolic link, an unlisted file, an unlisted directory — refuses the runtime. Comparing the tree to the manifest rather than the manifest to the tree is what catches an entry nobody staged, such as a nested `node_modules` link that changes resolution without touching a listed file. Only then is anything loaded, through the one `require` built from that same canonical root, which is also the resolver a design's imports go through; the fork drops `NODE_PATH` and `NODE_OPTIONS`. A runtime that fails answers every request with one curated unavailable sentence and loads nothing at all, including on the shutdown path. `npm run canvas:probe` compiles the design kit's own example through that contract with the network refused, then requires damaged copies and misnamed roots to compile nothing and to resolve no module outside the runtime for the whole of a graceful shutdown, and checks that `npm run release:verify:mac`'s own copy of the rule refuses every tree the compiler refuses, for each fixture it exercises. That gate also `require`s esbuild, Tailwind and PostCSS in a child process, because a tree can agree with its own manifest and still be short of a dependency one of them needs; `npm run canvas:runtime` runs the same gate, so an incomplete staging input fails where it was made. It proves those pinned packages load through CommonJS from the owned root, with nothing resolved outside it by that loader; it is not a sandbox, and the manifest sizes remain the only account of what the files contain. The one entry staging never places that the runtime tolerates is a regular `.DS_Store`: Finder writes it into any folder a user opens, and the app's signature omits it, so refusing it would disable Canvas over a still-valid app.
 

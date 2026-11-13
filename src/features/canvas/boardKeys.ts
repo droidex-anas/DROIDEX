@@ -1,33 +1,56 @@
-// What a key means on the board: the zoom, mode and annotation tool shortcuts, Edit's element keys, which elements
+// What a key means on the board: the zoom, mode, tag, side panel and annotation tool shortcuts, Edit's element keys, which elements
 // keep their own keys, and how focus moves between frames and between marks.
 // The board reads these; nothing here touches React state.
 
 import type { KeyboardEvent } from 'react';
+import { formatChord, matchesChord } from '../../lib/shortcuts';
 import { draftBounds, isTextDraft, type AnnotationTool } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
-import type { ZoomCommand } from './BoardControls';
+import type { HistoryStep } from './boardHistory';
+import type { ZoomCommand } from './ZoomControl';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import type { FrameRect } from './protocol';
 
-/** The zoom keys a design tool uses: + and −, and ⇧1, ⇧2 and ⇧0. */
+const COMMAND_DIGITS = new Map<string, ZoomCommand>([
+  ['Digit1', 'fit'],
+  ['Digit0', 'actual'],
+]);
+
+const SHIFT_DIGITS = new Map<string, ZoomCommand>([
+  ['Digit1', 'fit'],
+  ['Digit2', 'selection'],
+  ['Digit0', 'actual'],
+]);
+
+/**
+ * The zoom keys a design tool uses: + and −, alone or with ⌘ (Ctrl off the
+ * Mac); ⇧1, ⇧2 and ⇧0; and ⌘1 to fit and ⌘0 for 100%.
+ */
 export function zoomShortcut(event: KeyboardEvent): ZoomCommand | null {
-  if (event.metaKey || event.ctrlKey || event.altKey) return null;
-  // The shifted digits go by key position first: on some layouts ⇧1 types +.
-  if (event.shiftKey && event.code === 'Digit1') return 'fit';
-  if (event.shiftKey && event.code === 'Digit2') return 'selection';
-  if (event.shiftKey && event.code === 'Digit0') return 'actual';
+  if (event.altKey) return null;
+  const digit = digitZoom(event);
+  if (digit) return digit;
   if (event.key === '+' || event.key === '=') return 'in';
   if (event.key === '-' || event.key === '_') return 'out';
   return null;
 }
 
-/** V for Select, I for Interact and E for Edit element, as the rail's tips say. */
+/** The digits go by key position, not by what they type: on some layouts ⇧1 types +. */
+function digitZoom(event: KeyboardEvent): ZoomCommand | null {
+  const primary = event.metaKey || event.ctrlKey;
+  if (primary && !event.shiftKey) return COMMAND_DIGITS.get(event.code) ?? null;
+  if (!primary && event.shiftKey) return SHIFT_DIGITS.get(event.code) ?? null;
+  return null;
+}
+
+/** V for Select, I for Interact, E for Edit element and D for Design, as the rail's tips say. */
 export function modeShortcut(event: KeyboardEvent): BoardMode | null {
   if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return null;
   if (event.key === 'v' || event.key === 'V') return 'select';
   if (event.key === 'i' || event.key === 'I') return 'interact';
   if (event.key === 'e' || event.key === 'E') return 'edit';
+  if (event.key === 'd' || event.key === 'D') return 'design';
   return null;
 }
 
@@ -53,10 +76,47 @@ export function isDeleteKey(event: KeyboardEvent): boolean {
   return event.key === 'Backspace' || event.key === 'Delete';
 }
 
-/** ⌘Z, or Ctrl+Z off the Mac. */
-export function isUndoKey(event: KeyboardEvent): boolean {
+/** ⌘Z undoes; ⇧⌘Z and ⌘Y redo. Ctrl stands in for ⌘ off the Mac. */
+export function historyStep(event: KeyboardEvent): HistoryStep | null {
+  if (!(event.metaKey || event.ctrlKey) || event.altKey) return null;
+  const key = event.key.toLowerCase();
+  if (key === 'z') return event.shiftKey ? 'redo' : 'undo';
+  if (key === 'y' && !event.shiftKey) return 'redo';
+  return null;
+}
+
+/** ⌘L tags the selected frames in the chat, or untags them; Ctrl+L off the Mac. */
+const TAG_CHORD = 'Meta+L';
+export const TAG_KEY_LABEL = formatChord(TAG_CHORD);
+
+export function isTagKey(event: KeyboardEvent): boolean {
+  return matchesChord(event, TAG_CHORD);
+}
+
+/** The tabs of the panel beside the board. */
+export type SidePanelTab = 'layers' | 'components';
+
+/** ⌥1 shows the layers beside the board and ⌥2 the components, or hides the tab showing, as in a design tool. */
+const LAYERS_CHORD = 'Alt+1';
+const COMPONENTS_CHORD = 'Alt+2';
+export const LAYERS_KEY_LABEL = formatChord(LAYERS_CHORD);
+export const COMPONENTS_KEY_LABEL = formatChord(COMPONENTS_CHORD);
+
+export function isLayersKey(event: KeyboardEvent): boolean {
+  return matchesChord(event, LAYERS_CHORD);
+}
+
+/** The side panel tab a key goes to, or null for any other key. */
+export function sidePanelKey(event: KeyboardEvent): SidePanelTab | null {
+  if (isLayersKey(event)) return 'layers';
+  if (matchesChord(event, COMPONENTS_CHORD)) return 'components';
+  return null;
+}
+
+/** ⌘A, or Ctrl+A off the Mac. */
+export function isSelectAllKey(event: KeyboardEvent): boolean {
   if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false;
-  return event.key.toLowerCase() === 'z';
+  return event.key.toLowerCase() === 'a';
 }
 
 /** Edit's keys: Enter for the first element, or into the panel once one is picked; the arrows step. */

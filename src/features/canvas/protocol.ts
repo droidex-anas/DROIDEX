@@ -8,7 +8,7 @@
 
 import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 
 export interface DesignSystemRef {
   id: string;
@@ -28,6 +28,15 @@ export interface DesignSystemProposalRef {
   proposalId: string;
   mode: DesignSystemRef['mode'];
 }
+
+/**
+ * What a kit preview shows: a preview by its id or `cover`, from a saved
+ * version or a waiting proposal, or a catalog entry by its name, which a saved
+ * version alone answers for.
+ */
+export type KitPreviewTarget =
+  | { kind: 'preview'; ref: DesignSystemRef | DesignSystemProposalRef; item: string }
+  | { kind: 'catalog'; ref: DesignSystemRef; entry: string };
 
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
@@ -64,7 +73,47 @@ export interface DesignSystemVersionEntry {
 export type DesignSystemProvenance =
   | { sourceCanvasId: string; revision: { designId: string; revisionId: string } }
   | { copiedFrom: { id: string; version: number } }
-  | { project: { name: string; files: string[] } };
+  | { project: { name: string; files: string[]; library?: LibraryProvenance } };
+
+/** A kit read from a component library in the project, and the project names it kept. */
+export interface LibraryProvenance {
+  kind: 'shadcn';
+  /** Each primitive the kit exports, and the project module it came from. */
+  components: Record<string, string>;
+  /** Each kit token, and the project token it was read from. */
+  tokens: Record<string, string>;
+  /** The import's review, by file, up to 128 records; the counts have them all. */
+  skipped: LibrarySkip[];
+  /** Files the import left out of the kit. */
+  skippedCount: number;
+  /**
+   * Files it kept whose exports the kit entry does not all re-export
+   * (no_exports, duplicate_export) or whose catalog demo it left out (demo_left_out).
+   */
+  partialCount: number;
+}
+
+/**
+ * A file a library import left out, or kept with exports the kit entry does
+ * not take or without its catalog demo. `detail` names the import, the
+ * left-out sibling, the exports another file gave the entry or the variant
+ * the library lacks, for the four reasons that have one.
+ */
+export interface LibrarySkip {
+  file: string;
+  reason: LibrarySkipReason;
+  detail: string | null;
+}
+
+export type LibrarySkipReason =
+  | 'over_limit'
+  | 'unreadable'
+  | 'unsupported_import'
+  | 'needs_left_out'
+  | 'duplicate_export'
+  | 'no_exports'
+  | 'not_a_component'
+  | 'demo_left_out';
 
 /** What deleting a canvas would end, which the renderer discloses before the user confirms. */
 export interface CanvasRemovalPreview {
@@ -92,6 +141,26 @@ export interface LibraryItem {
   designSystem: DesignSystemRef;
 }
 
+/** One kit token a direct style edit may name, with its value in each mode. */
+export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
+
+/** One insertable entry of a kit's catalog, as the kit document lists it. */
+export interface CatalogListing {
+  name: string;
+  /** The kit file it shows, for grouping and search. */
+  module: string | null;
+  note: string | null;
+  /** The props a palette lets the user pick before it inserts the entry. */
+  props: CatalogProp[];
+}
+
+/** An attribute of an entry's element and the options it can take, `default` the one it writes. */
+export interface CatalogProp {
+  name: string;
+  options: string[];
+  default: string;
+}
+
 /** A kit version as its document shows it: everything but its source. */
 export interface DesignSystemDocumentView {
   id: string;
@@ -104,6 +173,8 @@ export interface DesignSystemDocumentView {
   sections: DocumentSection[];
   /** The example file names its previews may name. */
   examples: string[];
+  /** The entries of the kit's catalog.json, in its order. */
+  catalog: CatalogListing[];
   /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;
@@ -169,7 +240,8 @@ export interface RevisionRef {
 
 export type CanvasSeed =
   | { kind: 'revision'; canvasId: string; revision: RevisionRef }
-  | { kind: 'library'; itemId: string };
+  | { kind: 'library'; itemId: string }
+  | { kind: 'svg'; assetId: string };
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
@@ -229,7 +301,7 @@ export interface PreviewReport {
 
 export interface OwnedAsset {
   assetId: string;
-  mediaType: 'image/png' | 'image/jpeg' | 'image/webp';
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/svg+xml';
   byteLength: number;
   width: number;
   height: number;
@@ -257,8 +329,46 @@ export interface SourceElement {
   file: string;
   start: number;
   end: number;
+  /** The 1-based line `start` is on, for display; the offsets are what locate the element. */
+  line: number;
   tagName: string;
+  /** The capitalised function it is written in, as React names a component; null outside one. */
+  component: string | null;
   editability: 'literal' | 'computed' | 'shared';
+}
+
+/** One row of a design's source outline: something written in its source, nested as written. */
+export interface OutlineNode {
+  /** Unique within its outline: an element opened through two instances is two rows. */
+  nodeId: string;
+  /** Null for a row the root component renders directly. */
+  parentId: string | null;
+  kind: 'element' | 'instance' | 'repeat' | 'condition';
+  /** The tag, the component's name, 'Repeat' or 'Condition'. */
+  name: string;
+  /** An element's own literal text, on one line, 64 code points at most. */
+  text: string | null;
+  /** The element's marker; null for the other kinds. */
+  elementId: string | null;
+  /** Why it cannot be edited directly: in a repeat, rendered several times, worked out in code, or the kit's. */
+  lock: 'repeated' | 'shared' | 'computed' | 'kit' | null;
+  /** A direct JSX child, so it can be moved, removed or copied as a whole. */
+  free: boolean;
+  /** An element whose props set or may set its content, so it takes no written children. */
+  contentFromProps: boolean;
+  /**
+   * An element is 'shown' unless Tailwind's `hidden` class hides it ('hidden'),
+   * or the layers panel can't tell or change whether it shows: its classes or
+   * props come from code ('computed'), a class or style decides its display
+   * ('display'), or a `hidden` attribute does ('attribute'). Other kinds are 'shown'.
+   */
+  visibility: 'shown' | 'hidden' | 'computed' | 'display' | 'attribute';
+}
+
+/** What a design's root renders, in reading order, and whether it stopped at a cap. */
+export interface SourceOutline {
+  nodes: OutlineNode[];
+  truncated: boolean;
 }
 
 /** What one design's build is doing, on its own. */
@@ -270,6 +380,7 @@ export type CanvasBuildOutcome =
       revisionId: string;
       artifactId: string;
       elements: SourceElement[];
+      outline: SourceOutline;
       diagnostics: CanvasDiagnostic[];
     }
   | {
@@ -281,10 +392,10 @@ export type CanvasBuildOutcome =
   | { status: 'cancelled'; revisionId: string | null };
 
 /**
- * One design's build state and the attempt it belongs to. `generation` is the
- * per-design attempt counter, which only ever increases, so a reader can tell a
- * build that actually moved from a frame that was merely re-sent: an arrange
- * re-sends every frame it touches with its build untouched.
+ * One design's build state and the attempt it belongs to. `generation` counts
+ * the design's build attempts and only goes up: the sidecar publishes a result
+ * only while its attempt is the latest, and the renderer takes a new generation
+ * as a new build even when identical source rebuilt to the same artifact.
  */
 export type CanvasBuildState = CanvasBuildOutcome & { generation: number };
 
@@ -297,6 +408,12 @@ export interface CanvasFrame {
   // null while the frame is reserved and has no source yet.
   revisionId: string | null;
   designSystem: DesignSystemRef;
+  /** The frame this one is a variant of; its set is every frame naming the same one. */
+  variantOf: string | null;
+  /** The copy its seed made; while `revisionId` is this one, nobody has changed it. */
+  seededRevisionId: string | null;
+  /** The user hid it from the board; an agent still reads and writes it. */
+  hidden: boolean;
   build: CanvasBuildState;
 }
 
@@ -310,13 +427,25 @@ export interface CanvasSnapshot {
   annotations: Annotation[];
 }
 
+/** A frame as a change reports it: its build travels apart, and only when it changed. */
+export type ChangedFrame = Omit<CanvasFrame, 'build'>;
+
+interface FrameBuild {
+  designId: string;
+  build: CanvasBuildState;
+}
+
 export interface CanvasChange {
   canvasId: string;
   sequence: number;
-  frames: CanvasFrame[];
+  frames: ChangedFrame[];
+  /** The builds this change moved; a frame new to the canvas always has its build here. */
+  builds: FrameBuild[];
   removedDesignIds: string[];
   /** Present only on a change that touched the annotation layer. */
   annotations?: AnnotationChange;
+  /** Present only on a reorder: every frame's designId, back to front. */
+  order?: string[];
 }
 
 export interface CanvasSummary {
@@ -334,6 +463,7 @@ export interface CanvasSummary {
 export interface CreateFramesResult {
   canvasId: string;
   frames: CanvasFrame[];
+  svgAsImage?: { designId: string; reason: 'too_large' | 'stylesheet' }[];
 }
 
 export interface WriteReceipt {
@@ -351,6 +481,7 @@ export interface CreateFramesInput {
     height: number;
     designSystem: DesignSystemRef;
     seed?: CanvasSeed;
+    variantOf?: string;
   }[];
 }
 
@@ -432,6 +563,19 @@ export interface RenameFrameInput {
   designId: string;
   name: string;
   expectedManifestVersion: number;
+}
+
+export interface SetFrameHiddenInput {
+  mutationId: string;
+  designId: string;
+  hidden: boolean;
+  expectedManifestVersion: number;
+}
+
+/** The whole stacking order, back to front, naming each frame on the canvas once. */
+export interface ReorderFramesInput {
+  mutationId: string;
+  designIds: string[];
 }
 
 // The stable codes from spec §8. Every failure carries a short recovery message
@@ -585,6 +729,20 @@ export type CanvasCommand =
       input: RenameFrameInput;
     }
   | {
+      type: 'canvas.setFrameHidden';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: SetFrameHiddenInput;
+    }
+  | {
+      type: 'canvas.reorderFrames';
+      requestId: string;
+      appSessionId: string;
+      canvasId: string;
+      input: ReorderFramesInput;
+    }
+  | {
       type: 'canvas.annotate';
       requestId: string;
       appSessionId: string;
@@ -597,6 +755,7 @@ export type CanvasCommand =
   // mutationId, so a retry finds the version it already saved.
   | { type: 'canvas.listDesignSystems'; requestId: string }
   | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | { type: 'canvas.readEditTokens'; requestId: string; ref: DesignSystemVersionRef }
   | {
       type: 'canvas.saveDesignSystem';
       requestId: string;
@@ -655,15 +814,10 @@ export type CanvasCommand =
       name: string;
       source: DesignSystemSource;
     }
-  // A kit version's previews in one mode, or a waiting proposal's. `item` is a
-  // preview's id or `cover`. A capture is a base64 PNG the document took from a
-  // saved version's live preview; a later one replaces it.
-  | {
-      type: 'canvas.readKitPreview';
-      requestId: string;
-      ref: DesignSystemRef | DesignSystemProposalRef;
-      item: string;
-    }
+  // One preview of a kit in one mode, as its target names it. A capture is a
+  // base64 PNG the document took from a saved version's live preview; a later
+  // one replaces it, and its `item` names a preview as a preview target does.
+  | { type: 'canvas.readKitPreview'; requestId: string; target: KitPreviewTarget }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;
@@ -705,15 +859,24 @@ export type CanvasCommand =
       expectedSequence: number;
       expectedAttachedAppSessionIds: string[];
     }
-  // A page's answer to an agent's inspect screenshot; only a page that was
+  // A page's answer to an agent's screenshot or render; only a page that was
   // watching the canvas when it was asked is counted.
   | { type: 'canvas.reportCapture'; requestId: string; captureId: string; capture: CaptureReport };
 
 /**
- * A page's answer to one `canvas.captureRequest`: the base64 PNG its live
- * preview of exactly that revision produced, or why it could not capture it.
+ * What a capture asks a page for: a PNG at a scale, where null is the page's
+ * display scale, or a vector design's own root `<svg>`.
  */
-export type CaptureReport = { ok: true; png: string } | { ok: false; message: string };
+export type CaptureImage = { format: 'png'; scale: 1 | 2 | 3 | null } | { format: 'svg' };
+
+/**
+ * A page's answer to one `canvas.captureRequest`: the base64 PNG or the SVG
+ * its live preview of exactly that revision produced, or why it could not.
+ */
+export type CaptureReport =
+  | { ok: true; png: string }
+  | { ok: true; svg: string }
+  | { ok: false; message: string };
 
 /** What a successful command answers with, one kind per command. */
 export type CanvasReply =
@@ -724,11 +887,14 @@ export type CanvasReply =
   | ({ kind: 'canvasCreated' } & CreateCanvasResult)
   | { kind: 'created'; created: CreateFramesResult }
   | { kind: 'written'; receipt: WriteReceipt }
-  | ({ kind: 'edited' } & ElementEditResult)
+  /** A direct edit's revision, and the nodeId of the row a layer edit lands on in it (the moved layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
+  | { kind: 'edited'; receipt: WriteReceipt; landed: string | null }
   | { kind: 'arranged'; change: CanvasChange }
   | { kind: 'removed'; undoId: string }
   | { kind: 'undone'; change: CanvasChange }
   | { kind: 'renamed'; change: CanvasChange }
+  | { kind: 'hiddenSet'; change: CanvasChange }
+  | { kind: 'reordered'; change: CanvasChange }
   | { kind: 'annotated'; change: CanvasChange }
   | { kind: 'revisions'; revisions: RevisionSummary[] }
   | { kind: 'revisionDiff'; diff: RevisionDiff }
@@ -736,6 +902,7 @@ export type CanvasReply =
   | { kind: 'source'; files: SourceFiles }
   | { kind: 'designSystems'; systems: DesignSystemSummary[] }
   | { kind: 'designSystem'; system: DesignSystemDocumentView }
+  | { kind: 'editTokens'; tokens: Record<string, EditToken[]> }
   | { kind: 'designSystemVersions'; versions: DesignSystemVersionEntry[] }
   // Import diagnostics name what could not become a token; unmapped tokens are
   // read from the saved kit instead.
@@ -766,6 +933,7 @@ export type CanvasEvent =
       canvasId: string;
       designId: string;
       revisionId: string;
+      image: CaptureImage;
     }
   // After any write to a kit, so every open list and document reads it again.
   | { type: 'canvas.designSystemsChanged'; id: string };

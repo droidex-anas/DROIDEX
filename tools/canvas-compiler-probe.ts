@@ -33,6 +33,7 @@ import {
 import { listDesignSystems, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
 import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
+import { LIBRARY_DESIGN } from '../sidecar/src/canvas/fixtures/library.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
 
 const PLATFORM_PACKAGE = `@esbuild/${process.platform}-${process.arch}`;
@@ -73,6 +74,28 @@ const DAMAGE: [string, (runtime: string) => void, string?][] = [
       drop(runtime, 'node_modules/react/jsx-runtime.js');
       rewriteManifest(runtime, (manifest) => {
         delete manifest.files['node_modules/react/jsx-runtime.js'];
+      });
+    },
+  ],
+  [
+    // Its entry file is still there, but startup finds a package's directory by
+    // its package.json, so the copy above the runtime is the one it would read.
+    'the package.json of a package with an ESM entry, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/radix-ui/package.json');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/radix-ui/package.json'];
+      });
+    },
+  ],
+  [
+    // The tree agrees with its manifest and startup accepts it; only a compile
+    // follows the dropped subpath, to the copy above the runtime.
+    'a subpath package.json only its browser graph reads, with a manifest that agrees',
+    (runtime) => {
+      drop(runtime, 'node_modules/react-remove-scroll-bar/constants');
+      rewriteManifest(runtime, (manifest) => {
+        delete manifest.files['node_modules/react-remove-scroll-bar/constants/package.json'];
       });
     },
   ],
@@ -523,14 +546,27 @@ process.stdout.write(
     `artifact delta ${String(chartArtifact.bytes - kitBytes)} bytes versus the kit example.\n`,
 );
 
+const library = await runWorker(target, target.runtimeDir, compileInput(LIBRARY_DESIGN));
+assertClean(library, `${target.label} component library`);
+const libraryArtifact = artifactOf(library.compiled, 'Invite teammates');
+process.stdout.write(
+  `Compiled the Radix, cva and cn design offline from the ${target.label}: ${libraryArtifact.label}\n`,
+);
+
 const isolated = copiedLayout(target, null);
 drop(isolated.layout, 'node_modules');
 const isolatedChart = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(CHART_DESIGN));
+const isolatedLibrary = await runWorker(isolated.target, isolated.target.runtimeDir, compileInput(LIBRARY_DESIGN));
 rmSync(isolated.layout, { recursive: true, force: true });
 assertClean(isolatedChart, 'an isolated chart runtime');
+assertClean(isolatedLibrary, 'an isolated component library runtime');
 if (artifactOf(isolatedChart.compiled, 'Weekly visits').label !== chartArtifact.label)
   fail('the isolated chart compiled a different artifact');
-process.stdout.write(`An isolated runtime compiled the same chart: ${chartArtifact.label}\n`);
+if (artifactOf(isolatedLibrary.compiled, 'Invite teammates').label !== libraryArtifact.label)
+  fail('the isolated component library compiled a different artifact');
+process.stdout.write(
+  `An isolated runtime compiled the same chart and component library: ${chartArtifact.label}, ${libraryArtifact.label}\n`,
+);
 
 const copied = copiedLayout(target, null);
 const intact = await runWorker(copied.target, copied.target.runtimeDir);
@@ -541,7 +577,8 @@ process.stdout.write(`An intact copy under a linked path compiled: ${artifactOf(
 for (const [what, damage, expectedFailure] of DAMAGE) {
   const { layout, target: damaged } = copiedLayout(target, damage);
   const verifierFailure = releaseVerifierFailure(damaged.runtimeDir);
-  const run = await runWorker(damaged, damaged.runtimeDir);
+  // The component library reads the most of the browser graph.
+  const run = await runWorker(damaged, damaged.runtimeDir, compileInput(LIBRARY_DESIGN));
   rmSync(layout, { recursive: true, force: true });
   assertRefused(run, `a runtime missing ${what}`);
   if (verifierFailure === null) fail(`the release verifier would ship a runtime missing ${what}`);

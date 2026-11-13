@@ -234,7 +234,13 @@ function mergeStreamingDelta(
       ...(forkPointId ? { forkPointId } : {}),
     };
   }
-  if (isToolCallDelta(previous) && isToolCallDelta(next) && previous.toolUseId === next.toolUseId) {
+  // A call's live-only snapshots never merge into the part of it that is stored.
+  if (
+    isToolCallDelta(previous) &&
+    isToolCallDelta(next) &&
+    previous.toolUseId === next.toolUseId &&
+    previous.transient === next.transient
+  ) {
     let canvasActivity = next.canvasActivity ?? previous.canvasActivity;
     if (previous.canvasActivity?.designIds.length && !next.canvasActivity?.designIds.length) {
       canvasActivity = previous.canvasActivity;

@@ -2,9 +2,11 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after } from 'node:test';
 import { openTurn } from '../testing/canvasMcpSupport.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
+import { KitBuildError, saveKit } from './canvasMcpDesignSystemSave.js';
+import { stopCanvasRuntime } from './canvasRuntime.js';
 import { readProposal } from './designSystemProposals.js';
 import {
   listDesignSystemVersions,
@@ -13,9 +15,12 @@ import {
   setDesignSystemDeleted,
   type DesignSystem,
 } from './designSystems.js';
+import { catalogFile, KIT_CATALOG_FILE } from './kitCatalog.js';
+import { KitPreviews } from './kitPreviews.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 pinScratchProfile();
+after(() => stopCanvasRuntime());
 
 const accent = { set: 'token', name: '--ds-accent', value: '#c2410c' };
 
@@ -190,4 +195,32 @@ test('a stale base refuses with the latest version, and a kit that does not buil
   });
   assert.equal(unshown.code, 'invalid_source', 'an example no preview shows builds too');
   assert.equal(await readProposal('busy'), null, 'a refused save leaves nothing to review');
+});
+
+test('a catalog entry that closes its wrapper refuses the save by name, and nothing is saved', async (t) => {
+  const kits = new KitPreviews();
+  t.after(() => kits.close());
+  const escape = {
+    name: 'Escape',
+    module: null,
+    uses: [],
+    icons: [],
+    jsx: '<div />\n)}\n</>\n);\n}\nimport { useState } from "react";\nexport const injected = 42;\nfunction Tail() {return (<>\n{(null',
+    note: null,
+  };
+  const save = saveKit(
+    {
+      mutationId: 'escape',
+      kit: { id: 'escape', from: 'blank' },
+      name: 'Escape',
+      files: { [KIT_CATALOG_FILE]: catalogFile([escape]) },
+    },
+    { appSessionId: 'chat-one', kits, projectFolder: () => null, beforePublish: () => undefined },
+  );
+  await assert.rejects(save, (error) => {
+    assert.ok(error instanceof KitBuildError);
+    assert.match(error.diagnostics[0].message, /^catalog\.json, Escape: /);
+    return true;
+  });
+  assert.deepEqual(await listDesignSystemVersions('escape'), []);
 });

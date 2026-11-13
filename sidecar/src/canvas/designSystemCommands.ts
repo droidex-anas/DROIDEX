@@ -3,7 +3,7 @@
 // save through the same owner as the agent's canvas_theme tool.
 
 import { canvasError } from './canvasError.js';
-import type { DocumentSection } from './designSystemDocument.js';
+import { kitModes, type DocumentSection } from './designSystemDocument.js';
 import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
 import {
   acceptProposal,
@@ -20,11 +20,13 @@ import {
   setDesignSystemDeleted,
   type DesignSystem,
   type DesignSystemCover,
-  type DesignSystemProvenance,
   type DesignSystemSummary,
   type SavedBy,
 } from './designSystems.js';
+import type { DesignSystemProvenance } from './designSystemProvenance.js';
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
+import { catalogListing, type CatalogListing } from './kitCatalog.js';
+import { editTokens } from './styleEdits.js';
 import { readKitFonts } from './kitFonts.js';
 import type { KitPreviews } from './kitPreviews.js';
 import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
@@ -41,6 +43,8 @@ export interface DesignSystemDocumentView {
   sections: DocumentSection[];
   /** The example file names its previews may name. */
   examples: string[];
+  /** The entries of the kit's catalog.json, in its order. */
+  catalog: CatalogListing[];
   /** Tokens a kit built on the shared primitives has beyond the ones they read. */
   unmapped: string[];
   provenance: DesignSystemProvenance | null;
@@ -57,6 +61,7 @@ export type DesignSystemCommand = Extract<
     type: `canvas.${
       | 'listDesignSystems'
       | 'readDesignSystem'
+      | 'readEditTokens'
       | 'saveDesignSystem'
       | 'listDesignSystemVersions'
       | 'restoreDesignSystemVersion'
@@ -75,6 +80,7 @@ export type DesignSystemCommand = Extract<
 const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.listDesignSystems',
   'canvas.readDesignSystem',
+  'canvas.readEditTokens',
   'canvas.saveDesignSystem',
   'canvas.listDesignSystemVersions',
   'canvas.restoreDesignSystemVersion',
@@ -104,6 +110,10 @@ export async function answerDesignSystemCommand(
       return { kind: 'designSystems', systems: await listDesignSystems() };
     case 'canvas.readDesignSystem':
       return { kind: 'designSystem', system: await readDocument(command.ref) };
+    case 'canvas.readEditTokens': {
+      const modes = kitModes((await readDesignSystem(command.ref)).sections);
+      return { kind: 'editTokens', tokens: editTokens(modes.light, modes.dark) };
+    }
     case 'canvas.listDesignSystemVersions':
       return { kind: 'designSystemVersions', versions: await listDesignSystemVersions(command.id) };
     case 'canvas.saveDesignSystem': {
@@ -162,8 +172,14 @@ export async function answerDesignSystemCommand(
       });
       return saved(ref, imported.diagnostics);
     }
-    case 'canvas.readKitPreview':
-      return { kind: 'kitPreview', preview: await previews.read(command.ref, command.item) };
+    case 'canvas.readKitPreview': {
+      const { target } = command;
+      const preview =
+        target.kind === 'preview'
+          ? await previews.read(target.ref, target.item)
+          : await previews.readCatalogEntry(target.ref, target.entry);
+      return { kind: 'kitPreview', preview };
+    }
     case 'canvas.saveKitCapture':
       await saveKitCapture(command.ref, command.item, Buffer.from(command.png, 'base64'));
       return { kind: 'ok' };
@@ -196,6 +212,7 @@ async function readDocument(ref: DesignSystemVersionRef): Promise<DesignSystemDo
     cover: system.cover,
     sections: system.sections,
     examples: Object.keys(system.examples).sort(),
+    catalog: catalogListing(system.files),
     unmapped: unmappedKitTokens(system),
     provenance: system.provenance ?? null,
     savedAt: entry?.savedAt ?? null,

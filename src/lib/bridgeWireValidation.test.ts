@@ -21,10 +21,14 @@ test('canvas asset replies accept owned images and reject malformed metadata', (
   };
   const result = { type: 'canvas.result', requestId: 'assets-1', ok: true };
   assertAccepted({ ...result, reply: { kind: 'assets', assets: [asset] } });
+  assertAccepted({
+    ...result,
+    reply: { kind: 'assets', assets: [{ ...asset, mediaType: 'image/svg+xml' }] },
+  });
   assertAccepted({ ...result, reply: { kind: 'assets', assets: [] } });
   for (const malformed of [
     { ...asset, assetId: 'not-an-image-digest' },
-    { ...asset, mediaType: 'image/svg+xml' },
+    { ...asset, mediaType: 'image/gif' },
     { ...asset, byteLength: 0 },
     { ...asset, width: 1.5 },
     { ...asset, height: 8193 },
@@ -385,6 +389,14 @@ test('transient transcript events accept only the literal true or an absent flag
   assertAccepted({ type: 'event.appended', event: { ...event, canvasFrames: ['Pricing · Wide'] } });
   for (const canvasFrames of ['Pricing · Wide', [1], [null], {}]) {
     assertRejected({ type: 'event.appended', event: { ...event, canvasFrames } });
+  }
+  // Its tagged components are chip labels, checked the same way.
+  assertAccepted({
+    type: 'event.appended',
+    event: { ...event, canvasComponents: ['Button · Acme'] },
+  });
+  for (const canvasComponents of ['Button', [1], [null], {}]) {
+    assertRejected({ type: 'event.appended', event: { ...event, canvasComponents } });
   }
   // An artifact card opens the canvas and frame its activity names.
   const canvasActivity = {

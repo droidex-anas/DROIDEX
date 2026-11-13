@@ -1,17 +1,23 @@
 // The board's viewport and everything that moves it: the measured board box,
-// pan, pointer-anchored zoom, the one Fit it may take before the user has
+// the canvas held in place on screen when the board's left edge moves, pan,
+// pointer-anchored zoom, the one Fit it may take before the user has
 // navigated, the eased programmatic focus, and the quiet window a wheel gesture
 // needs because it has no end event.
 //
 // The board owns the pointer gesture machine and pans through `panByScreen`
-// from it. Nothing here knows about frames beyond the rects it is asked to fit.
+// from it. Every move goes through the stage, and the viewport React renders
+// takes it once the move settles. Nothing here knows about frames beyond the
+// rects it is asked to fit.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { boardPoint, boardWheelDelta } from './boardCoordinates';
+import { BoardStage } from './boardStage';
 import type { CanvasMotion } from './canvasMotion';
 import {
   fitFrames,
   interpolateViewport,
+  revealRect,
   wheelZoomScale,
   zoomAtPoint,
   zoomStep,
@@ -29,8 +35,13 @@ const SCROLL_IDLE_MS = 140;
 const IDENTITY: Viewport = { x: 0, y: 0, scale: 1 };
 
 export interface BoardViewport {
+  /** Where the view last settled; mid-gesture, the stage is ahead of it. */
   viewport: Viewport;
-  /** The board element's own box in board-local pixels, as last measured. */
+  /** The live view, which moves the world layer while a gesture lasts. */
+  stage: BoardStage;
+  /** Hands the live view to React, as a pointer gesture does once it is over. */
+  settle: () => void;
+  /** The part of the board's box no panel is docked over, in board-local pixels. */
   size: Point;
   panByScreen: (screenDelta: Point) => void;
   /** Fit and focus are the same operation; focus just passes one rect. */
@@ -39,14 +50,15 @@ export interface BoardViewport {
   zoomTo: (scale: number) => void;
   /** Eases to the next zoom stop in `direction`, as + and − ask. */
   stepZoom: (direction: 1 | -1) => void;
-  /** Centers a frame the board does not wholly show, at the current zoom; one in view stays put. */
+  /** Pans a frame the board does not wholly show into view, at the current zoom; one in view stays put. */
   reveal: (rect: FrameRect) => void;
-  /** Ends any running focus animation, so a hand gesture is never fought. */
-  stopAnimating: () => void;
+  /**
+   * The user's hand takes the viewport: a running focus animation ends, so the
+   * gesture is never fought, and the board's one Fit retires.
+   */
+  takeOver: () => void;
   /** True while a wheel gesture is still arriving. */
   scrolling: boolean;
-  /** Marks the viewport as the user's, which retires the board's one Fit. */
-  markNavigated: () => void;
 }
 
 export function useBoardViewport(
@@ -57,10 +69,13 @@ export function useBoardViewport(
   motion: CanvasMotion,
   /** Where a board returning from a document was left; it opens there instead of fitting. */
   restored: Viewport | undefined,
+  /** Screen pixels along the board's right edge that a docked panel covers. */
+  rightInset: number,
 ): BoardViewport {
-  const [viewport, setViewport] = useState<Viewport>(restored ?? IDENTITY);
+  const [stage] = useState(() => new BoardStage(restored ?? IDENTITY));
+  const [viewport, setViewport] = useState(stage.viewport);
   const [scrolling, setScrolling] = useState(false);
-  const [size, setSize] = useState<Point>({ x: 0, y: 0 });
+  const [box, setBox] = useState<Point>({ x: 0, y: 0 });
 
   const animation = useRef<number | null>(null);
   // Where a running animation is headed. A zoom command starts from there, so
@@ -68,12 +83,18 @@ export function useBoardViewport(
   const heading = useRef<Viewport | null>(null);
   const scroll = useRef<ScrollGesture>({ active: false, suppressed: false, idle: null });
   const measured = useRef<Point>({ x: 0, y: 0 });
+  // The board's left edge in client pixels when it was last measured.
+  const leftEdge = useRef<number | null>(null);
   const opening = useRef({ fitted: restored !== undefined, navigated: false });
   // What the listeners below need from the current render. They are registered
   // once, or run from an animation frame, so they cannot close over it. The
   // frames are also how a resize finds something to fit.
-  const latest = useRef({ viewport, frames });
-  latest.current = { viewport, frames };
+  const latest = useRef({ frames, rightInset });
+  latest.current = { frames, rightInset };
+  const visibleBox = useCallback(
+    () => visiblePart(measured.current, latest.current.rightInset),
+    [],
+  );
 
   const stopAnimating = useCallback(() => {
     if (animation.current !== null) cancelAnimationFrame(animation.current);
@@ -81,17 +102,47 @@ export function useBoardViewport(
     heading.current = null;
   }, []);
 
-  const markNavigated = useCallback(() => {
+  const navigate = useCallback(() => {
+    stopAnimating();
     opening.current.navigated = true;
-  }, []);
+  }, [stopAnimating]);
 
-  const panByScreen = useCallback((screenDelta: Point) => {
-    setViewport((current) => ({
-      ...current,
-      x: current.x + screenDelta.x,
-      y: current.y + screenDelta.y,
-    }));
-  }, []);
+  const settle = useCallback(() => {
+    stage.flush();
+    setViewport(stage.viewport);
+  }, [stage]);
+
+  /** Ends the wheel gesture in flight, if any, giving the chrome back its scale. */
+  const endScroll = useCallback(() => {
+    if (scroll.current.idle !== null) clearTimeout(scroll.current.idle);
+    if (scroll.current.active) setScrolling(false);
+    scroll.current = { active: false, suppressed: false, idle: null };
+    stage.releaseChrome();
+  }, [stage]);
+
+  // The hand ends a wheel gesture still in its quiet window, so that wheel's
+  // idle cannot settle the hand's pan halfway through.
+  const takeOver = useCallback(() => {
+    navigate();
+    endScroll();
+  }, [endScroll, navigate]);
+
+  /** A move that is over once made, so React takes it at once. */
+  const jumpTo = useCallback(
+    (target: Viewport) => {
+      stage.moveTo(target);
+      settle();
+    },
+    [settle, stage],
+  );
+
+  const panByScreen = useCallback(
+    (screenDelta: Point) => {
+      const current = stage.viewport;
+      stage.moveTo({ ...current, x: current.x + screenDelta.x, y: current.y + screenDelta.y });
+    },
+    [stage],
+  );
 
   /** Every programmatic move: fit, focus and the zoom commands. */
   const animateTo = useCallback(
@@ -102,94 +153,110 @@ export function useBoardViewport(
       stopAnimating();
       opening.current.navigated = true;
       if (motion.focusMs === 0) {
-        setViewport(target);
+        jumpTo(target);
         return;
       }
-      const from = latest.current.viewport;
+      const from = stage.viewport;
       const started = performance.now();
       heading.current = target;
       const step = () => {
         const progress = Math.min(1, (performance.now() - started) / motion.focusMs);
-        setViewport(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
+        stage.moveTo(interpolateViewport(from, target, easeProgress(progress, motion.ease)));
         animation.current = progress < 1 ? requestAnimationFrame(step) : null;
-        if (progress === 1) heading.current = null;
+        if (progress === 1) {
+          heading.current = null;
+          settle();
+        }
       };
       animation.current = requestAnimationFrame(step);
     },
-    [motion, stopAnimating],
+    [jumpTo, motion, settle, stage, stopAnimating],
   );
 
   const fitTo = useCallback(
     (rects: readonly FrameRect[]) => {
-      if (rects.length > 0) animateTo(fitFrames(rects, measured.current));
+      if (rects.length > 0) animateTo(fitFrames(rects, visibleBox()));
     },
-    [animateTo],
+    [animateTo, visibleBox],
   );
 
   const zoomTo = useCallback(
     (scale: number) => {
-      const centre = { x: measured.current.x / 2, y: measured.current.y / 2 };
-      animateTo(zoomAtPoint(heading.current ?? latest.current.viewport, centre, scale));
+      const visible = visibleBox();
+      const centre = { x: visible.x / 2, y: visible.y / 2 };
+      animateTo(zoomAtPoint(heading.current ?? stage.viewport, centre, scale));
     },
-    [animateTo],
+    [animateTo, stage, visibleBox],
   );
 
   const reveal = useCallback(
     (rect: FrameRect) => {
-      const current = heading.current ?? latest.current.viewport;
-      const size = measured.current;
-      const left = current.x + rect.x * current.scale;
-      const top = current.y + rect.y * current.scale;
-      const right = left + rect.width * current.scale;
-      const bottom = top + rect.height * current.scale;
-      if (left >= 0 && top >= 0 && right <= size.x && bottom <= size.y) return;
-      animateTo({
-        scale: current.scale,
-        x: size.x / 2 - (rect.x + rect.width / 2) * current.scale,
-        y: size.y / 2 - (rect.y + rect.height / 2) * current.scale,
-      });
+      const target = revealRect(heading.current ?? stage.viewport, rect, visibleBox());
+      if (target) animateTo(target);
     },
-    [animateTo],
+    [animateTo, stage, visibleBox],
   );
 
   const stepZoom = useCallback(
     (direction: 1 | -1) => {
-      zoomTo(zoomStep((heading.current ?? latest.current.viewport).scale, direction));
+      zoomTo(zoomStep((heading.current ?? stage.viewport).scale, direction));
     },
-    [zoomTo],
+    [stage, zoomTo],
   );
 
   /** Spec §4: the board may fit once, before the user has navigated. */
   const fitOnce = useCallback(() => {
     const held = latest.current.frames;
+    const visible = visibleBox();
     if (opening.current.fitted || opening.current.navigated) return;
-    if (held.length === 0 || measured.current.x === 0) return;
+    if (held.length === 0 || visible.x === 0) return;
     opening.current.fitted = true;
-    setViewport(
+    jumpTo(
       fitFrames(
         held.map((frame) => frame.rect),
-        measured.current,
+        visible,
       ),
     );
-  }, []);
+  }, [jumpTo, visibleBox]);
 
   useEffect(() => {
     fitOnce();
   }, [fitOnce, frames]);
+
+  /**
+   * A column opening or closing at the board's left, or the chat column giving
+   * it room, moves the board's edge but not the canvas: the view pans by as much
+   * in the same frame, so no frame moves on screen, as in a design tool.
+   */
+  const holdCanvasInPlace = useCallback(
+    (root: HTMLElement) => {
+      const box = root.getBoundingClientRect();
+      const previous = leftEdge.current;
+      leftEdge.current = box.left;
+      if (previous === null || previous === box.left || box.width === 0) return;
+      const shift = ((box.left - previous) * root.offsetWidth) / box.width;
+      const current = stage.viewport;
+      stage.moveTo({ ...current, x: current.x - shift });
+      // Before the next paint, or the chrome drawn over the board would show one frame in the old place.
+      flushSync(settle);
+    },
+    [settle, stage],
+  );
 
   useEffect(() => {
     const root = board.current;
     if (!root) return undefined;
     const observer = new ResizeObserver(() => {
       measured.current = { x: root.clientWidth, y: root.clientHeight };
-      setSize(measured.current);
+      setBox(measured.current);
+      holdCanvasInPlace(root);
       fitOnce();
     });
     observer.observe(root);
     return () => {
       observer.disconnect();
     };
-  }, [board, fitOnce]);
+  }, [board, fitOnce, holdCanvasInPlace]);
 
   /**
    * Extends the wheel gesture in flight. `scroll.current` is what the wheel
@@ -203,10 +270,10 @@ export function useBoardViewport(
       setScrolling(true);
     }
     scroll.current.idle = setTimeout(() => {
-      scroll.current = { active: false, suppressed: false, idle: null };
-      setScrolling(false);
+      endScroll();
+      settle();
     }, SCROLL_IDLE_MS);
-  }, []);
+  }, [endScroll, settle]);
 
   // Wheel has to be a non-passive listener of its own: React's root listener is
   // passive, so the default Electron page zoom could not be prevented there.
@@ -218,29 +285,25 @@ export function useBoardViewport(
       markScrolling();
       // Fit owns the rest of this wheel gesture, even after its animation ends.
       if (scroll.current.suppressed) return;
-      stopAnimating();
+      navigate();
       const pointer = boardPoint(root, { x: event.clientX, y: event.clientY });
       const delta = boardWheelDelta(root, event);
-      opening.current.navigated = true;
-      setViewport((current) => {
-        // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
-        // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
-        // same thing; both zoom under the pointer.
-        if (event.ctrlKey || event.metaKey) {
-          return zoomAtPoint(
-            current,
-            pointer,
-            wheelZoomScale(current.scale, delta.y, event.ctrlKey),
-          );
-        }
-        return { ...current, x: current.x - delta.x, y: current.y - delta.y };
-      });
+      const current = stage.viewport;
+      // A plain wheel or two-finger scroll pans. A pinch arrives as a wheel
+      // with `ctrlKey` set, and cmd held is the mouse's way of asking for the
+      // same thing; both zoom under the pointer.
+      if (event.ctrlKey || event.metaKey) {
+        stage.holdChrome();
+        stage.moveSoon(
+          zoomAtPoint(current, pointer, wheelZoomScale(current.scale, delta.y, event.ctrlKey)),
+        );
+      } else stage.moveSoon({ ...current, x: current.x - delta.x, y: current.y - delta.y });
     };
     root.addEventListener('wheel', onWheel, { passive: false });
     return () => {
       root.removeEventListener('wheel', onWheel);
     };
-  }, [board, markScrolling, stopAnimating]);
+  }, [board, markScrolling, navigate, stage]);
 
   useEffect(
     () => () => {
@@ -252,16 +315,22 @@ export function useBoardViewport(
 
   return {
     viewport,
-    size,
+    stage,
+    settle,
+    size: visiblePart(box, rightInset),
     panByScreen,
     fitTo,
     zoomTo,
     stepZoom,
     reveal,
-    stopAnimating,
+    takeOver,
     scrolling,
-    markNavigated,
   };
+}
+
+/** A panel docked over the board's right edge hides that strip of it. */
+function visiblePart(box: Point, rightInset: number): Point {
+  return { x: Math.max(0, box.x - rightInset), y: box.y };
 }
 
 interface ScrollGesture {

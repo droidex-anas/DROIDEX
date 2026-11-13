@@ -1,0 +1,425 @@
+/* What the board draws around a selection and while frames are moved: the
+   selected frame's size, a multiple selection's box, the resize handles, the
+   rubber band, the snap guides, the elements Edit and Design hover and pick,
+   and a picked path's points. It loads with
+   canvasBoard.css, whose --board-scale and chrome font it uses.
+
+   Chrome drawn inside the world layer divides by --board-scale, so it keeps
+   its screen size at any zoom. */
+
+/* The selected frame's size, under its bottom edge. The wrapper scales about
+   the frame's centre line, and the badge centres itself on it. It paints over
+   neighbouring frames, as the toolbar does; the wrapper lets presses through,
+   so only the badge's own button in Select takes one. */
+.canvas-frame-size {
+  position: absolute;
+  z-index: 2;
+  top: 100%;
+  left: 50%;
+  transform-origin: 0 0;
+  pointer-events: none;
+}
+
+.canvas-frame-size > span,
+.canvas-frame-size > button {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 8px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--selection);
+  color: var(--on-selection);
+  font: 500 11px / 16px var(--canvas-chrome-font);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* In Select the size opens the size menu. */
+.canvas-frame-size > button {
+  padding-right: 4px;
+  pointer-events: auto;
+  transition: background 120ms;
+}
+
+.canvas-frame-size > button:hover,
+.canvas-frame-size > button:focus-visible,
+.canvas-frame-size > button[aria-expanded='true'] {
+  outline: none;
+  background: color-mix(in srgb, var(--selection) 82%, var(--text));
+}
+
+/* A multiple selection's own box, a hairline at any zoom, with its size under it. */
+.canvas-selection-bounds {
+  position: absolute;
+  pointer-events: none;
+  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
+}
+
+/* Resize: a square at each corner, and the four edges as invisible strips. */
+/* A press that selects text would make the next press on it a native drag. */
+.canvas-frame-handle {
+  position: absolute;
+  touch-action: none;
+  user-select: none;
+}
+
+.canvas-frame-handle[data-handle='north'],
+.canvas-frame-handle[data-handle='south'] {
+  left: 0;
+  width: 100%;
+  height: calc(10px / var(--board-scale));
+  margin-top: calc(-5px / var(--board-scale));
+  cursor: ns-resize;
+}
+
+.canvas-frame-handle[data-handle='north'] {
+  top: 0;
+}
+
+.canvas-frame-handle[data-handle='south'] {
+  top: 100%;
+}
+
+.canvas-frame-handle[data-handle='east'],
+.canvas-frame-handle[data-handle='west'] {
+  top: 0;
+  width: calc(10px / var(--board-scale));
+  height: 100%;
+  margin-left: calc(-5px / var(--board-scale));
+  cursor: ew-resize;
+}
+
+.canvas-frame-handle[data-handle='east'] {
+  left: 100%;
+}
+
+.canvas-frame-handle[data-handle='west'] {
+  left: 0;
+}
+
+/* A corner paints over neighbouring frames, so a corner you can see always
+   takes the press; the edges draw nothing and leave a neighbour its presses. */
+.canvas-frame-corner {
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--selection);
+  border-radius: 2px;
+  background: var(--raised);
+  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
+}
+
+.canvas-frame-handle[data-handle='northwest'] {
+  left: 0;
+  top: 0;
+  cursor: nwse-resize;
+}
+
+.canvas-frame-handle[data-handle='northeast'] {
+  left: 100%;
+  top: 0;
+  cursor: nesw-resize;
+}
+
+.canvas-frame-handle[data-handle='southwest'] {
+  left: 0;
+  top: 100%;
+  cursor: nesw-resize;
+}
+
+.canvas-frame-handle[data-handle='southeast'] {
+  left: 100%;
+  top: 100%;
+  cursor: nwse-resize;
+}
+
+/* The rubber band, in screen space above the world layer, placed by transform. */
+.canvas-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  border-radius: 2px;
+  border: 1px solid var(--selection);
+  background: color-mix(in srgb, var(--selection) 8%, transparent);
+}
+
+/* What a snapped drag lined up on and the spaces it measured, in screen space
+   above the frames, each placed by translate. They come and go with the snap,
+   with no motion, so they never trail the hand. */
+.canvas-snap {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.canvas-snap-line,
+.canvas-snap-gap,
+.canvas-snap-gap::before,
+.canvas-snap-gap::after {
+  position: absolute;
+  background: var(--selection);
+}
+
+.canvas-snap-line,
+.canvas-snap-gap,
+.canvas-snap-pill {
+  top: 0;
+  left: 0;
+}
+
+.canvas-snap-gap::before,
+.canvas-snap-gap::after {
+  content: '';
+}
+
+/* The measured line's end ticks, across it at each frame's edge. */
+.canvas-snap-gap[data-axis='x']::before,
+.canvas-snap-gap[data-axis='x']::after {
+  top: -3px;
+  width: 1px;
+  height: 7px;
+}
+
+.canvas-snap-gap[data-axis='x']::after {
+  right: 0;
+}
+
+.canvas-snap-gap[data-axis='y']::before,
+.canvas-snap-gap[data-axis='y']::after {
+  left: -3px;
+  width: 7px;
+  height: 1px;
+}
+
+.canvas-snap-gap[data-axis='y']::after {
+  bottom: 0;
+}
+
+/* The distance, centred on its line, in the size pill's shape. */
+.canvas-snap-pill {
+  position: absolute;
+  padding: 1px 6px;
+  border-radius: 5px;
+  background: var(--selection);
+  color: var(--on-selection);
+  font: 500 11px / 16px var(--ui-font-family, system-ui, sans-serif);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+
+/* A line too short to hold its distance puts it beside the line, clear of the ticks. */
+.canvas-snap-pill[data-axis='x'][data-beside] {
+  transform: translate(-50%, calc(-100% - theme('spacing[1.5]')));
+}
+
+.canvas-snap-pill[data-axis='y'][data-beside] {
+  transform: translate(theme('spacing[1.5]'), -50%);
+}
+
+/* Edit's and Design's outlines over the guest, drawn like a frame's: the element
+   under the pointer as a 1px line named by its tag, each pick at 1.5px. Outside any
+   frame, so they set the chrome font themselves. Each is placed by transform
+   and its line drawn by ::before, so a changed box glides there by transform
+   and scale alone (ElementOutlines), and a new hover fades in. Each is its own
+   stacking context at 0, so the picked one's size badge stays under a sheet's
+   notices and the selected frame's toolbar, size and corners. */
+.canvas-element-hover,
+.canvas-element-outline {
+  --canvas-chrome-font: var(--ui-font-family, system-ui, sans-serif);
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.canvas-element-hover::before,
+.canvas-element-outline::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-element-hover {
+  animation: canvas-element-hover-in var(--duration-quick) var(--ease-smooth-out);
+}
+
+.canvas-element-hover::before {
+  box-shadow: 0 0 0 calc(1px / var(--board-scale)) var(--selection);
+}
+
+@keyframes canvas-element-hover-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.canvas-element-outline::before {
+  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
+  background: color-mix(in srgb, var(--selection) 6%, transparent);
+}
+
+/* Design's quick prompt opens from the pick it sits below. */
+[data-design-pick-prompt][data-side='below'].canvas-popover-reveal {
+  animation-name: canvas-popover-drop;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-element-hover {
+    animation: none;
+  }
+}
+
+/* The hovered element's tag, a tight pill flush on the outline's left edge:
+   above the box, below it or tucked into its corner, wherever ElementOutlines
+   finds it room clear of other content. */
+.canvas-element-tag {
+  position: absolute;
+  left: calc(-1px / var(--board-scale));
+}
+
+.canvas-element-tag[data-side='above'] {
+  bottom: 100%;
+  transform-origin: 0 100%;
+}
+
+.canvas-element-tag[data-side='below'] {
+  top: 100%;
+  transform-origin: 0 0;
+}
+
+.canvas-element-tag[data-side='inside'] {
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.canvas-element-tag > span {
+  display: block;
+  padding: 0 4px;
+  border-radius: 4px 4px 4px 0;
+  background: var(--selection);
+  color: var(--on-selection);
+  font: 500 11px / 14px var(--canvas-chrome-font);
+  white-space: nowrap;
+}
+
+/* In Design the tag names the component first, and the tag after it, quieter. */
+.canvas-element-tag-detail {
+  margin-left: 4px;
+  font-weight: 400;
+  color: color-mix(in srgb, var(--on-selection) 72%, transparent);
+}
+
+.canvas-element-tag[data-side='below'] > span,
+.canvas-element-tag[data-side='inside'] > span {
+  border-radius: 0 4px 4px;
+}
+
+/* The selected path's anchors and handles, from PathGrips: an anchor is a
+   small square, filled while selected, and a handle a round grip on a hairline
+   to the anchor it shapes. Each grip takes a small control's press at any
+   zoom, its mark drawn inside it. Presses fall through the layer everywhere else. */
+.canvas-path-grips {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.canvas-path-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  width: 1px;
+  height: 1px;
+}
+
+.canvas-path-lines > line {
+  stroke: var(--selection);
+  stroke-width: calc(1px / var(--board-scale));
+}
+
+.canvas-path-grip {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: theme('width.control-sm');
+  height: theme('height.control-sm');
+  margin: calc(theme('width.control-sm') / -2) 0 0 calc(theme('width.control-sm') / -2);
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: move;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  transform: scale(calc(1 / var(--board-scale)));
+}
+
+/* Focus is drawn as the selected anchor's fill. */
+.canvas-path-grip:focus-visible {
+  outline: none;
+}
+
+.canvas-path-grip::before {
+  content: '';
+  width: theme('spacing.2');
+  height: theme('spacing.2');
+  border: 1.5px solid var(--selection);
+  /* Off the radius scale, like the resize handles: its smallest step
+     would round this mark into a handle's circle. */
+  border-radius: 2px;
+  background: var(--raised);
+  transition: background var(--duration-quick) var(--ease-smooth-out);
+}
+
+.canvas-path-grip[data-path-grip='handle']::before {
+  width: theme('spacing[1.5]');
+  height: theme('spacing[1.5]');
+  border-width: 1px;
+  border-radius: theme('borderRadius.full');
+}
+
+/* A point held on both axes by horizontal or vertical lines cannot move. */
+.canvas-path-grips:not([data-readonly]) .canvas-path-grip[aria-disabled]::before {
+  opacity: 0.55;
+}
+
+.canvas-path-grip[aria-disabled] {
+  cursor: default;
+}
+
+.canvas-path-grip:hover::before {
+  background: color-mix(in srgb, var(--selection) 50%, var(--raised));
+}
+
+.canvas-path-grip[data-selected]::before {
+  background: var(--selection);
+}
+
+.canvas-path-grips[data-dragging],
+.canvas-path-grips[data-dragging] .canvas-path-grip {
+  cursor: grabbing;
+}
+
+/* A path the board cannot write shows its points, quieter, and lets presses through. */
+.canvas-path-grips[data-readonly] {
+  opacity: 0.55;
+}
+
+.canvas-path-grips[data-readonly] .canvas-path-grip {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .canvas-path-grip::before {
+    transition: none;
+  }
+}

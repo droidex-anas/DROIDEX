@@ -296,13 +296,15 @@ export interface TranscriptEvent {
   // but missing or untargeted snapshots cannot replace a targeted activity.
   canvasActivity?: {
     toolUseId: string;
-    action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme';
+    action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme' | 'image';
     designIds: string[];
     state: 'running' | 'completed' | 'failed';
     message: string;
     // The canvas a create or write changed, as its reply named it.
     canvasId?: string;
     title?: string;
+    // The revision a write committed, which the turn's card shows.
+    revisionId?: string;
     // This create gave an unattached chat its canvas: the chat's first artifact.
     firstArtifact?: true;
     // The kit a theme call saved, proposed or applied; its reference only.
@@ -332,6 +334,8 @@ export interface TranscriptEvent {
   sideChatReplies?: string[];
   // Names of the canvas frames the user pinned to this prompt.
   canvasFrames?: string[];
+  // What the chips call the kit components the user tagged in this prompt.
+  canvasComponents?: string[];
   steered?: boolean;
   // Links the delivered user row to its pending steer, including ordinary-turn fallback.
   steerId?: string;
@@ -341,8 +345,9 @@ export interface TranscriptEvent {
   modelSwitch?: ModelSwitch;
   errorKind?: 'usage_limit';
   resetsAt?: number;
-  // A 'status' row that only says what the app is doing right now (booting a
-  // CLI, stopping a turn to send now). It is shown live and never stored, so
+  // A row that only says what is happening right now: a 'status' row (booting
+  // a CLI, stopping a turn to send now), or a 'tool_call' snapshot of a call
+  // whose input is still streaming. It is shown live and never stored, so
   // reopening the session does not replay stale progress.
   transient?: true;
 }
@@ -1007,6 +1012,8 @@ export type ClientCommand =
       references: DesignReference[];
       mentions?: ProviderMention[];
       responseFormat?: ResponseFormat;
+      // What the prompt pinned, as `session.send` carries it.
+      canvasContext?: CanvasTurnContext;
     }
   | { type: 'sidebar.result'; result: SidebarResult };
 

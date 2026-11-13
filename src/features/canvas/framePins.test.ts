@@ -1,16 +1,32 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import {
-  addFramePins,
   canvasContextOf,
   framePins,
-  promptWithFramePins,
+  pinOf,
+  promptWithCanvasPins,
   restoreFramePins,
   syncFramePins,
-  toggleFramePin,
+  tagFramesLabel,
+  toggleFramePins,
   unpinFrames,
+  untagsFrames,
 } from './framePins';
+import type { PickedElement } from './pickedElement';
 import type { CanvasFrame } from './protocol';
+
+const pickedTitle: PickedElement = {
+  designId: 'd1',
+  revisionId: 'r1',
+  elementId: 'e1',
+  instancePath: '0/0',
+  source: { file: 'main.tsx', start: 120, end: 160, line: 7 },
+  tagName: 'h1',
+  component: 'Hero',
+  box: { x: 0, y: 0, width: 300, height: 40 },
+  text: { excerpt: 'Ship\n  faster', box: { x: 0, y: 0, width: 120, height: 40 } },
+};
 
 function frame(
   designId: string,
@@ -25,13 +41,17 @@ function frame(
     manifestVersion: 1,
     revisionId,
     designSystem: { id: 'droidex', version: 2, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
+    hidden: false,
     build: { status: 'pending', generation: 1 },
   };
 }
 
-test('a frame is pinned once, by the chat that pinned it, and a second press takes it off', () => {
-  toggleFramePin('chat-a', 'cv_1', frame('d1', 'r1', 'Pricing · 3 Tiers'));
-  toggleFramePin('chat-a', 'cv_1', frame('d2', 'r1'));
+test('a frame is tagged once, by the chat that tagged it, and a second press untags it', () => {
+  toggleFramePins('chat-a', 'cv_1', [frame('d1', 'r1', 'Pricing · 3 Tiers')]);
+  // A selection that is partly tagged tags the rest and leaves the tagged in place.
+  toggleFramePins('chat-a', 'cv_1', [frame('d2', 'r1'), frame('d1', 'r1')]);
 
   assert.deepEqual(
     framePins('chat-a').map(({ designId, size, name }) => ({ designId, size, name })),
@@ -42,21 +62,70 @@ test('a frame is pinned once, by the chat that pinned it, and a second press tak
   );
   assert.equal(framePins('chat-b').length, 0);
 
-  toggleFramePin('chat-a', 'cv_1', frame('d1', 'r1'));
+  toggleFramePins('chat-a', 'cv_1', [frame('d1', 'r1')]);
   assert.deepEqual(
     framePins('chat-a').map((pin) => pin.designId),
     ['d2'],
   );
+  // A selection that is all tagged untags together.
+  toggleFramePins('chat-a', 'cv_1', [frame('d1', 'r1'), frame('d2', 'r1')]);
+  toggleFramePins('chat-a', 'cv_1', [frame('d1', 'r1'), frame('d2', 'r1')]);
+  assert.equal(framePins('chat-a').length, 0);
   // One request pins one canvas, so a frame from another starts over.
-  toggleFramePin('chat-a', 'cv_2', frame('d9', 'r1'));
+  toggleFramePins('chat-a', 'cv_1', [frame('d1', 'r1')]);
+  toggleFramePins('chat-a', 'cv_2', [frame('d9', 'r1')]);
   assert.deepEqual(
     framePins('chat-a').map((pin) => pin.designId),
     ['d9'],
   );
 });
 
+test('a selection past what a prompt carries says so, and the next press untags it', () => {
+  let shown: ToastItem[] = [];
+  const stopWatching = subscribeToasts((toasts) => {
+    shown = toasts;
+  });
+  const frames = Array.from({ length: 40 }, (_, index) => frame(`d${String(index)}`, 'r1'));
+
+  toggleFramePins('chat-f', 'cv_1', frames);
+  assert.equal(framePins('chat-f').length, 32);
+  assert.deepEqual(
+    shown.map((item) => item.message),
+    ['A prompt carries at most 32 frames, so 8 weren’t tagged.'],
+  );
+  for (const item of shown) dismissToast(item.id);
+  stopWatching();
+
+  assert.equal(untagsFrames(framePins('chat-f'), 'cv_1', frames), true);
+  toggleFramePins('chat-f', 'cv_1', frames);
+  assert.equal(framePins('chat-f').length, 0);
+});
+
+test('the tag row counts the frames a press changes, not the frames selected', () => {
+  const frames = Array.from({ length: 35 }, (_, index) => frame(`d${String(index)}`, 'r1'));
+  toggleFramePins('chat-c', 'cv_1', frames.slice(0, 2));
+  // Two of three tagged with room to spare: the press tags the third.
+  assert.equal(tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(0, 3)), 'Tag in chat');
+  assert.equal(
+    tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(1, 5)),
+    'Tag 3 frames in chat',
+  );
+
+  // With room for one more, the press tags one of the four.
+  toggleFramePins('chat-c', 'cv_1', frames.slice(2, 31));
+  assert.equal(tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(31, 35)), 'Tag in chat');
+
+  // A full prompt untags what is tagged in the selection, and only that.
+  toggleFramePins('chat-c', 'cv_1', frames.slice(31, 32));
+  const label = tagFramesLabel(framePins('chat-c'), 'cv_1', frames.slice(29));
+  assert.equal(label, 'Untag 3 frames from chat');
+  toggleFramePins('chat-c', 'cv_1', frames.slice(29));
+  assert.equal(framePins('chat-c').length, 29);
+  unpinFrames('chat-c');
+});
+
 test('a queued request keeps the revisions it was sent with when the pins move on', () => {
-  toggleFramePin('chat-q', 'cv_1', frame('d1', 'r1'));
+  toggleFramePins('chat-q', 'cv_1', [frame('d1', 'r1')]);
   const queued = framePins('chat-q');
 
   // The agent revises the frame and the user pins another before the queue drains.
@@ -65,7 +134,7 @@ test('a queued request keeps the revisions it was sent with when the pins move o
     sequence: 2,
     frames: [frame('d1', 'r2'), frame('d2', 'r1')],
   });
-  toggleFramePin('chat-q', 'cv_1', frame('d2', 'r1'));
+  toggleFramePins('chat-q', 'cv_1', [frame('d2', 'r1')]);
 
   assert.deepEqual(canvasContextOf(queued), {
     designs: [{ designId: 'd1', revisionId: 'r1' }],
@@ -79,9 +148,9 @@ test('a queued request keeps the revisions it was sent with when the pins move o
   assert.equal(canvasContextOf([]), undefined);
 
   // The model is told which frames before any tool call, in the block the
-  // sidecar's canvasFramesFromPrompt splits back out on replay.
+  // sidecar's canvasPinsFromPrompt splits back out on replay.
   assert.equal(
-    promptWithFramePins('Make it bolder', queued),
+    promptWithCanvasPins('Make it bolder', queued),
     [
       'Make it bolder',
       '',
@@ -91,12 +160,83 @@ test('a queued request keeps the revisions it was sent with when the pins move o
       '</canvas_frames>',
     ].join('\n'),
   );
-  assert.equal(promptWithFramePins('Make it bolder', []), 'Make it bolder');
+  assert.equal(promptWithCanvasPins('Make it bolder', []), 'Make it bolder');
+
+  // Picked elements follow the frames, in pick order, each by the IDs canvas_read resolves.
+  const card = { ...pickedTitle, elementId: 'e2', component: null, tagName: 'section', text: null };
+  const odd = {
+    ...pickedTitle,
+    elementId: 'e3',
+    source: { ...pickedTitle.source, file: 'ui/"odd<name>.tsx' },
+    text: { excerpt: 'Say </element> & go', box: { x: 0, y: 0, width: 120, height: 40 } },
+  };
+  assert.equal(
+    promptWithCanvasPins(
+      'Tighten this',
+      [],
+      [
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: pickedTitle },
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: card },
+        { canvasId: 'cv_1', frameName: 'Design d1', frameWidth: 720, element: odd },
+      ],
+    ),
+    [
+      'Tighten this',
+      '',
+      '<canvas_elements>',
+      'The user picked these elements for this request; change them, not the rest of their designs.',
+      '<element id="e1" design="d1" revision="r1" source="main.tsx:7" tag="h1" component="Hero">Ship faster</element>',
+      '<element id="e2" design="d1" revision="r1" source="main.tsx:7" tag="section"></element>',
+      '<element id="e3" design="d1" revision="r1" source="ui/&quot;odd&lt;name&gt;.tsx:7" tag="h1" component="Hero">Say &lt;/element&gt; &amp; go</element>',
+      '</canvas_elements>',
+    ].join('\n'),
+  );
+});
+
+test('tagged kit components lead the frames, each named with the kit ref it is read from and its picked options', () => {
+  const kit = { id: 'acme', version: 3, mode: 'light' as const };
+  const components = [
+    {
+      kit,
+      kitName: 'Acme',
+      name: 'Button / outline',
+      props: [
+        { name: 'variant', value: 'outline' },
+        { name: 'size', value: 'lg' },
+      ],
+    },
+    {
+      kit: { ...kit, id: 'odd' },
+      kitName: 'Odd  "kit" & <co>',
+      name: 'Card <wide> & tall',
+      props: [],
+    },
+    // The catalog reads an entry by its exact name, spaces and line breaks included.
+    { kit, kitName: 'Acme', name: 'Two  spaces\nand a line', props: [] },
+  ];
+  assert.equal(
+    promptWithCanvasPins('Use these', [pinOf('cv_1', frame('d1', 'r1'))], [], components),
+    [
+      'Use these',
+      '',
+      '<canvas_components>',
+      'The user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given, with each prop in its props set to the option named.',
+      '<component kit="Acme" ref-id="acme" ref-version="3" ref-mode="light" props="variant=outline size=lg">Button / outline</component>',
+      '<component kit="Odd  &quot;kit&quot; &amp; &lt;co&gt;" ref-id="odd" ref-version="3" ref-mode="light">Card &lt;wide&gt; &amp; tall</component>',
+      '<component kit="Acme" ref-id="acme" ref-version="3" ref-mode="light">Two  spaces&#10;and a line</component>',
+      '</canvas_components>',
+      '',
+      '<canvas_frames>',
+      'The user pinned these canvas frames to this request; "this" and "it" mean them.',
+      '<frame id="d1">Design d1</frame>',
+      '</canvas_frames>',
+    ].join('\n'),
+  );
 });
 
 test('pins follow the attached canvas, and come off by frame however they have moved', () => {
-  toggleFramePin('chat-s', 'cv_1', frame('d1', 'r1'));
-  toggleFramePin('chat-s', 'cv_1', frame('d2', 'r1'));
+  toggleFramePins('chat-s', 'cv_1', [frame('d1', 'r1')]);
+  toggleFramePins('chat-s', 'cv_1', [frame('d2', 'r1')]);
 
   // d2 was deleted from the board; d1 is as it was.
   syncFramePins('chat-s', { canvasId: 'cv_1', sequence: 3, frames: [frame('d1', 'r1')] });
@@ -113,15 +253,15 @@ test('pins follow the attached canvas, and come off by frame however they have m
   unpinFrames('chat-s', sending);
   assert.equal(framePins('chat-s').length, 0);
 
-  toggleFramePin('chat-s', 'cv_1', frame('d1', 'r2'));
+  toggleFramePins('chat-s', 'cv_1', [frame('d1', 'r2')]);
   // A chat that moved to another canvas drops the old canvas's frames.
   syncFramePins('chat-s', { canvasId: 'cv_2', sequence: 1, frames: [frame('d1', 'r1')] });
   assert.equal(framePins('chat-s').length, 0);
 });
 
 test('an edited queued prompt brings back only frames still on the attached board', () => {
-  toggleFramePin('chat-e', 'cv_1', frame('d1', 'r1'));
-  toggleFramePin('chat-e', 'cv_1', frame('d2', 'r1'));
+  toggleFramePins('chat-e', 'cv_1', [frame('d1', 'r1')]);
+  toggleFramePins('chat-e', 'cv_1', [frame('d2', 'r1')]);
   const queued = framePins('chat-e');
   unpinFrames('chat-e');
 
@@ -158,24 +298,4 @@ test('an edited queued prompt brings back only frames still on the attached boar
     framePins('chat-e').map((pin) => pin.designId),
     ['d1', 'd2'],
   );
-});
-
-test('variants join the pins the draft already holds, once each', () => {
-  toggleFramePin('chat-v', 'cv_1', frame('d1', 'r1'));
-  addFramePins('chat-v', 'cv_1', [frame('v1', 'r1', 'Hey · layout 1'), frame('d1', 'r2')]);
-
-  assert.deepEqual(
-    framePins('chat-v').map(({ designId, revisionId }) => ({ designId, revisionId })),
-    [
-      { designId: 'v1', revisionId: 'r1' },
-      { designId: 'd1', revisionId: 'r2' },
-    ],
-  );
-  // A frame from another canvas starts over, as a toggle does.
-  addFramePins('chat-v', 'cv_2', [frame('w1', 'r1')]);
-  assert.deepEqual(
-    framePins('chat-v').map((pin) => pin.designId),
-    ['w1'],
-  );
-  unpinFrames('chat-v');
 });

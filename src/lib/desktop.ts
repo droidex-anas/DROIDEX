@@ -93,6 +93,8 @@ export interface CanvasPreviewCaptureRequest {
   width: number;
   height: number;
   scaleFactor: number;
+  /** Main keeps the capture for one `canvasImageSave` of this request ID. */
+  retain: boolean;
 }
 
 export type CanvasPreviewCaptureResult =
@@ -104,6 +106,12 @@ export type CanvasExportResult =
   | { ok: true; filesWritten: number }
   | { ok: false; cancelled: true }
   | { ok: false; code: CanvasErrorCode; message: string };
+
+/** A folder inside a chat's project, named relative to the project folder. */
+export interface ProjectExportTarget {
+  appSessionId: string;
+  folder: string;
+}
 
 export type CanvasImageSaveResult =
   | { ok: true }
@@ -292,6 +300,7 @@ export interface DroidexApi {
   pickFiles: () => Promise<string[]>;
   canvasPickImage: (canvasId: string) => Promise<OwnedAsset | null>;
   canvasDropImage: (canvasId: string, file: File) => Promise<OwnedAsset>;
+  canvasPasteSvg: (canvasId: string, svg: string) => Promise<OwnedAsset>;
   canvasPickKitImage: () => Promise<OwnedAsset | null>;
   canvasDropKitImage: (file: File) => Promise<OwnedAsset>;
   /** A kit image's bytes, or null when the store does not hold that image intact. */
@@ -325,13 +334,14 @@ export interface DroidexApi {
     designId: string,
     revisionId: string,
   ) => Promise<Uint8Array | null>;
-  canvasImageSave: (
+  canvasImageSave: (requestId: string, suggestedName: string) => Promise<CanvasImageSaveResult>;
+  canvasSvgSave: (svg: string, suggestedName: string) => Promise<CanvasImageSaveResult>;
+  canvasExportSource: (
     canvasId: string,
-    designId: string,
-    revisionId: string,
-    suggestedName: string,
-  ) => Promise<CanvasImageSaveResult>;
-  canvasExportSource: (canvasId: string, ref: RevisionRef) => Promise<CanvasExportResult>;
+    ref: RevisionRef,
+    project?: ProjectExportTarget & { requestId: string },
+  ) => Promise<CanvasExportResult>;
+  canvasExportSourceCancel: (requestId: string) => Promise<void>;
   canvasExportDesignSystem: (ref: DesignSystemVersionRef) => Promise<CanvasExportResult>;
   systemIdleTime: () => Promise<number>;
   powerTier: () => Promise<DesktopPowerTierSnapshot>;
@@ -609,6 +619,11 @@ export async function importCanvasImage(canvasId: string, file: File): Promise<O
     canvasId,
     file,
   );
+}
+
+// Imports pasted SVG markup into the canvas as an owned asset, rejecting like importCanvasImage.
+export async function importPastedSvg(canvasId: string, svg: string): Promise<OwnedAsset> {
+  return requireDesktopApi('Pasting SVGs needs the desktop app.').canvasPasteSvg(canvasId, svg);
 }
 
 // Kit images (design system documents spec §8) enter the kit store only through
@@ -906,15 +921,50 @@ export async function readCanvasThumbnail(
 }
 
 export async function saveCanvasImage(
-  canvasId: string,
-  designId: string,
-  revisionId: string,
+  requestId: string,
   suggestedName: string,
 ): Promise<CanvasImageSaveResult> {
   const api = desktopApi();
   if (!api)
     return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
-  return api.canvasImageSave(canvasId, designId, revisionId, suggestedName);
+  return api.canvasImageSave(requestId, suggestedName);
+}
+
+export async function saveCanvasSvg(
+  svg: string,
+  suggestedName: string,
+): Promise<CanvasImageSaveResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'capture_unavailable', message: 'Open DROIDEX to save this image.' };
+  return api.canvasSvgSave(svg, suggestedName);
+}
+
+/**
+ * Writes one revision's source into a folder of its chat's project, without a
+ * chooser. Aborting `signal` cancels the export before it is published.
+ */
+export async function exportCanvasToProject(
+  canvasId: string,
+  ref: RevisionRef,
+  project: ProjectExportTarget,
+  signal: AbortSignal,
+): Promise<CanvasExportResult> {
+  const api = desktopApi();
+  if (!api)
+    return { ok: false, code: 'storage_failed', message: 'Open DROIDEX to export a design.' };
+  const requestId = crypto.randomUUID();
+  const cancel = () => {
+    void api.canvasExportSourceCancel(requestId).catch(() => {
+      // A request main no longer holds has nothing left to cancel.
+    });
+  };
+  signal.addEventListener('abort', cancel);
+  try {
+    return await api.canvasExportSource(canvasId, ref, { ...project, requestId });
+  } finally {
+    signal.removeEventListener('abort', cancel);
+  }
 }
 
 /** Opens the host's folder chooser, then writes one kit version there. */

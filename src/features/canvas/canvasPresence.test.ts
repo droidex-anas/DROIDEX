@@ -1,0 +1,322 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { asChunkedSequence } from '../../lib/chunkedSequence';
+import type { TranscriptEvent } from '../../types/bridge';
+import {
+  canvasPresence,
+  landedWrites,
+  NO_LANDED_WRITES,
+  NO_PRESENCE,
+  sameLandedWrites,
+  samePresence,
+  type CanvasPresence,
+  type PresenceSources,
+} from './canvasPresence';
+
+let seq = 0;
+
+function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
+  seq += 1;
+  return {
+    id: `e${String(seq)}`,
+    appSessionId: 'chat',
+    sourceSessionId: 'primary',
+    role: 'primary',
+    ts: seq,
+    kind: 'text',
+    ...extra,
+  };
+}
+
+function prompt(steered?: true): TranscriptEvent {
+  return ev({ sourceSessionId: 'user', author: 'user', text: 'Design it', steered });
+}
+
+type Action = 'create' | 'write';
+
+/** A canvas call by the chat itself, or by the child named. */
+function call(toolUseId: string, action: Action, designIds: string[], child?: string) {
+  return ev({
+    ...from(child),
+    kind: 'tool_call',
+    toolUseId,
+    canvasActivity: { toolUseId, action, designIds, state: 'running', message: '' },
+  });
+}
+
+function result(toolUseId: string, action: Action, designIds: string[], child?: string) {
+  return ev({
+    ...from(child),
+    kind: 'tool_result',
+    toolUseId,
+    canvasActivity: { toolUseId, action, designIds, state: 'completed', message: '' },
+  });
+}
+
+function from(child: string | undefined): Partial<TranscriptEvent> {
+  return child ? { sourceSessionId: child, role: 'worker' } : {};
+}
+
+const designed = (designId: string) => ({ designId, revisionId: 'rev_1' });
+const reserved = (designId: string) => ({ designId, revisionId: null });
+
+function sources(
+  events: TranscriptEvent[],
+  live: { primary?: boolean; children?: string[]; startedAt?: Record<string, number> } = {
+    primary: true,
+  },
+): PresenceSources {
+  return {
+    appSessionId: 'chat',
+    events,
+    primaryLive: live.primary ?? false,
+    liveChildren: new Map((live.children ?? []).map((child) => [child, live.startedAt?.[child]])),
+  };
+}
+
+/** Each frame worked on, with its agent's key. */
+function frameAgents(presence: CanvasPresence): string[][] {
+  return [...presence].map(([designId, worker]) => [designId, worker.agent.key]);
+}
+
+test('a running create or write puts its agent on the frames it names until its result', () => {
+  const frames = [designed('a'), designed('b')];
+  const writing = [prompt(), call('t1', 'write', ['a']), call('t2', 'write', ['gone'])];
+  const presence = canvasPresence(sources(writing), frames);
+
+  assert.deepEqual([...presence.keys()], ['a']);
+  assert.equal(presence.get('a')?.agent.key, 'chat');
+  assert.equal(presence.get('a')?.named, true);
+  assert.equal(canvasPresence(sources([...writing, result('t1', 'write', ['a'])]), frames).size, 0);
+  // A call event that lands after its result does not open it again.
+  const settledFirst = [prompt(), result('t1', 'write', ['a']), call('t1', 'write', ['a'])];
+  assert.equal(canvasPresence(sources(settledFirst), frames).size, 0);
+  // A settled chat has no one at work, whatever its transcript left open.
+  assert.equal(canvasPresence(sources(writing, { primary: false }), frames), NO_PRESENCE);
+});
+
+test('a call whose input is still streaming is at work once it names its frame', () => {
+  const frames = [designed('a')];
+  const started = { ...call('t1', 'write', []), transient: true as const };
+  const named = { ...call('t1', 'write', ['a']), transient: true as const };
+
+  assert.equal(canvasPresence(sources([prompt(), started]), frames).size, 0);
+  assert.deepEqual(frameAgents(canvasPresence(sources([prompt(), named]), frames)), [
+    ['a', 'chat'],
+  ]);
+  // A stream cut off before the call was stored leaves no one behind.
+  assert.equal(canvasPresence(sources([prompt(), named], { primary: false }), frames), NO_PRESENCE);
+});
+
+test("a write lands for the agent whose completed result names the frame's revision", () => {
+  const landed = (state: 'completed' | 'failed', revisionId?: string) =>
+    ev({
+      ...from('worker'),
+      kind: 'tool_result',
+      toolUseId: 't1',
+      canvasActivity: {
+        toolUseId: 't1',
+        action: 'write',
+        designIds: ['a'],
+        state,
+        message: '',
+        revisionId,
+      },
+    });
+  const live = { children: ['worker'] };
+  const writes = landedWrites(
+    sources([prompt(), call('t1', 'write', ['a'], 'worker'), landed('completed', 'rev_2')], live),
+  );
+
+  assert.deepEqual([...writes], [['a', { agentKey: 'chat/worker', revisionId: 'rev_2' }]]);
+  // A streamed token after it changes nothing the board reads.
+  const streamed = landedWrites(
+    sources(
+      [
+        prompt(),
+        call('t1', 'write', ['a'], 'worker'),
+        landed('completed', 'rev_2'),
+        ev({ text: 'Done' }),
+      ],
+      live,
+    ),
+  );
+  assert.ok(sameLandedWrites(writes, streamed));
+  // Only a completed result names a revision as an agent's, and only while an agent is live.
+  for (const events of [
+    [prompt(), call('t1', 'write', ['a'], 'worker')],
+    [prompt(), landed('failed', 'rev_2')],
+    [prompt(), landed('completed')],
+  ])
+    assert.equal(landedWrites(sources(events, live)), NO_LANDED_WRITES);
+  assert.equal(
+    landedWrites(sources([prompt(), landed('completed', 'rev_2')], {})),
+    NO_LANDED_WRITES,
+  );
+});
+
+test('a frame with no source yet belongs to the live agent whose create made it this turn', () => {
+  const frames = [reserved('mine'), reserved('theirs'), reserved('left')];
+  const events = [
+    prompt(),
+    call('t1', 'create', []),
+    result('t1', 'create', ['mine']),
+    call('t2', 'create', [], 'w1'),
+    result('t2', 'create', ['theirs'], 'w1'),
+  ];
+
+  const both = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
+  // The frame an earlier turn left empty is no one's.
+  assert.deepEqual(frameAgents(both), [
+    ['mine', 'chat'],
+    ['theirs', 'chat/w1'],
+  ]);
+  assert.equal(both.get('mine')?.named, false);
+  // The worker that made it is done, so its frame is not being written, even
+  // while the chat's own turn runs on.
+  const workerDone = canvasPresence(sources(events, { primary: true }), frames);
+  assert.deepEqual(frameAgents(workerDone), [['mine', 'chat']]);
+  // A turn that never touches the canvas paints no frame.
+  assert.equal(canvasPresence(sources([prompt()]), frames).size, 0);
+});
+
+test('a running create takes only the empty frames that reached the board after it started', () => {
+  const frames = [reserved('old'), reserved('new')];
+  const creating = [prompt(), call('t1', 'create', [], 'w1')];
+  const twoCreating = [...creating, call('t2', 'create', [], 'w2')];
+  // 'new' reached the board after both creates started; 'old' was there first.
+  const arrivedAt = new Map([['new', seq + 1]]);
+  const live = { primary: true, children: ['w1', 'w2'] };
+
+  const early = canvasPresence(sources(creating, live), frames, arrivedAt);
+  assert.deepEqual(frameAgents(early), [['new', 'chat/w1']]);
+  assert.equal(early.get('new')?.named, false);
+  // Either agent could have made it, so until a result names it it is no one's.
+  assert.equal(canvasPresence(sources(twoCreating, live), frames, arrivedAt).size, 0);
+});
+
+test('only the current turn counts, and a steer does not start a new one', () => {
+  const frames = [designed('a'), designed('b')];
+  const interrupted = [prompt(), call('t1', 'write', ['a'])];
+
+  assert.equal(canvasPresence(sources([...interrupted, prompt()]), frames).size, 0);
+  const steered = canvasPresence(sources([...interrupted, prompt(true)]), frames);
+  assert.deepEqual([...steered.keys()], ['a']);
+});
+
+test('a child still at work when the user prompts again keeps its frames', () => {
+  const frames = [designed('a'), reserved('made')];
+  const events = [
+    prompt(),
+    call('t1', 'create', [], 'w1'),
+    result('t1', 'create', ['made'], 'w1'),
+    call('t2', 'write', ['a'], 'w1'),
+    call('t3', 'write', ['a']),
+    // However long the chat talks on, its words do not push the child's calls out of reach.
+    ...Array.from({ length: 2500 }, () => ev({ text: 'word' })),
+    prompt(),
+  ];
+
+  // The prompt cut off the chat's own write, not the child's.
+  const presence = canvasPresence(sources(events, { primary: true, children: ['w1'] }), frames);
+  assert.deepEqual(frameAgents(presence), [
+    ['a', 'chat/w1'],
+    ['made', 'chat/w1'],
+  ]);
+});
+
+test('a live child is read back no further than the chunk open when it started', () => {
+  const frames = [designed('a'), designed('b')];
+  // A long chat from before any live child, each event counted when it is read.
+  let olderReads = 0;
+  const older = Array.from({ length: 400 }, (_, ts) => {
+    const event = ev({ ts, text: 'word' });
+    const { role } = event;
+    return Object.defineProperty(event, 'role', {
+      enumerable: true,
+      get: () => {
+        olderReads += 1;
+        return role;
+      },
+    });
+  });
+  const events = [
+    ...older,
+    ev({ ts: 100_000, ...from('w1'), text: 'Reading the brief' }),
+    { ...call('t1', 'write', ['a'], 'w1'), ts: 100_100 },
+    { ...prompt(), ts: 100_200 },
+    { ...call('t2', 'write', ['b'], 'w3'), ts: 200_100 },
+  ];
+  // w2 has no canvas calls at all, and w3 started after the prompt.
+  const live = {
+    primary: true,
+    children: ['w1', 'w2', 'w3'],
+    startedAt: { w1: 100_000, w2: 100_000, w3: 200_000 },
+  };
+
+  const presence = canvasPresence(sources(asChunkedSequence(events, 4), live), frames);
+  assert.deepEqual(frameAgents(presence), [
+    ['a', 'chat/w1'],
+    ['b', 'chat/w3'],
+  ]);
+  // At most the one older chunk that was open when they started.
+  assert.ok(olderReads <= 4, `read ${String(olderReads)} older events`);
+});
+
+test('a turn is read whole across the chunks the store keeps a transcript in', () => {
+  const frames = [designed('a'), designed('b'), designed('c')];
+  const talk = () => ev({ text: 'word' });
+  const events = [
+    call('t0', 'write', ['c']),
+    prompt(),
+    talk(),
+    call('t1', 'write', ['a']),
+    talk(),
+    talk(),
+    talk(),
+    call('t2', 'write', ['b']),
+    talk(),
+  ];
+  const presence = canvasPresence(sources(asChunkedSequence(events, 3)), frames);
+  assert.deepEqual([...presence.keys()].sort(), ['a', 'b']);
+});
+
+test('each agent keeps one look, distinct from every other agent on the board', () => {
+  const frames = [designed('a'), designed('b'), designed('c')];
+  const alone = [prompt(), call('t1', 'write', ['a'], 'w1')];
+  const joined = [...alone, call('t2', 'write', ['b'], 'w2'), call('t3', 'write', ['c'])];
+  const live = { primary: true, children: ['w1', 'w2'] };
+
+  const first = canvasPresence(sources(alone, live), frames).get('a');
+  const all = canvasPresence(sources(joined, live), frames);
+  // Joining agents never restyle the one already working.
+  assert.deepEqual(all.get('a'), first);
+  const agents = [...all.values()].map((worker) => worker.agent);
+  assert.equal(new Set(agents.map((agent) => agent.name)).size, 3);
+  assert.equal(new Set(agents.map((agent) => agent.color)).size, 3);
+  assert.ok(samePresence(all, canvasPresence(sources(joined, live), frames)));
+});
+
+test('an agent keeps its look while others join and leave', () => {
+  const frames = [designed('a'), designed('b'), designed('c')];
+  const live = { primary: true, children: ['w4', 'w10', 'w29'] };
+  const lookOn = (events: TranscriptEvent[], designId: string) =>
+    canvasPresence(sources(events, live), frames).get(designId)?.agent;
+  // w4 hashes to the chat's name, and w29 to w10's name and colour.
+
+  // The chat keeps its own look, though a child came to the canvas first.
+  const chatAlone = [prompt(), call('t1', 'write', ['a'])];
+  const childFirst = [prompt(), call('t0', 'write', ['b'], 'w4'), call('t1', 'write', ['a'])];
+  assert.deepEqual(lookOn(childFirst, 'a'), lookOn(chatAlone, 'a'));
+  assert.notEqual(lookOn(childFirst, 'b')?.name, lookOn(childFirst, 'a')?.name);
+
+  // w29 keeps its look while w10, which came before it, leaves and comes back.
+  const both = [prompt(), call('t2', 'write', ['a'], 'w10'), call('t3', 'write', ['b'], 'w29')];
+  const w10Left = [...both, result('t2', 'write', ['a'], 'w10')];
+  const w10Back = [...w10Left, call('t4', 'write', ['c'], 'w10')];
+  const w29 = lookOn(both, 'b');
+  assert.deepEqual(lookOn(w10Left, 'b'), w29);
+  assert.deepEqual(lookOn(w10Back, 'b'), w29);
+  assert.notEqual(lookOn(w10Back, 'c')?.name, w29?.name);
+  assert.notEqual(lookOn(w10Back, 'c')?.color, w29?.color);
+});

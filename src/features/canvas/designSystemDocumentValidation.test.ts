@@ -3,10 +3,14 @@ import test from 'node:test';
 
 import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
+import { designSystemProvenanceSchema } from '../../../sidecar/src/canvas/designSystemProvenance.js';
+import { catalogListing, catalogPropSchema } from '../../../sidecar/src/canvas/kitCatalog.js';
+import { STARTER_FILES, STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
 import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
+import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
 import type { DocumentSection } from './designSystemDocumentProtocol';
-import { isDocumentSections } from './designSystemDocumentValidation';
+import { isDocumentSections, isKitDocument } from './designSystemDocumentValidation';
 import { isCanvasEvent } from './wireValidation';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,6 +145,7 @@ test('the renderer accepts every design system reply and event the sidecar sends
     cover: { kind: 'preview', example: 'cover.tsx' },
     sections: DROIDEX_DOCUMENT_SECTIONS,
     examples: ['cover.tsx'],
+    catalog: catalogListing(STARTER_FILES),
     unmapped: ['--brand-ink'],
     provenance: { copiedFrom: { id: 'droidex', version: 1 } },
     savedAt: '2026-10-31T12:00:00.000Z',
@@ -229,6 +234,12 @@ test('the renderer accepts every design system reply and event the sidecar sends
         diagnostics: [{ code: 'single_mode_token', message: 'Both modes use it.', line: 4 }],
       },
     },
+    {
+      type: 'canvas.result',
+      requestId: 'req_05',
+      ok: true,
+      reply: { kind: 'editTokens', tokens: editTokens(STARTER_TOKENS.light, STARTER_TOKENS.dark) },
+    },
   ];
   for (const event of events) {
     const serialized: unknown = JSON.parse(JSON.stringify(event));
@@ -236,5 +247,110 @@ test('the renderer accepts every design system reply and event the sidecar sends
       isRecord(serialized) && isCanvasEvent(serialized),
       `rejected ${JSON.stringify(event).slice(0, 80)}`,
     );
+  }
+  // A token has one value or one per mode, never both.
+  const mixed = { name: '--ds-accent', value: '#8a5a1f', light: '#8a5a1f', dark: '#e3a857' };
+  const reply = { kind: 'editTokens', tokens: { color: [mixed] } };
+  assert.equal(
+    isCanvasEvent({ type: 'canvas.result', requestId: 'req_05', ok: true, reply }),
+    false,
+  );
+  // The sidecar refuses a catalog that names two entries alike.
+  const variant = { name: 'variant', options: ['default', 'outline'], default: 'outline' };
+  const listing = { name: 'Button', module: 'index.tsx', note: null, props: [variant] };
+  assert.equal(isKitDocument({ ...paper, catalog: [listing] }), true);
+  assert.equal(
+    isKitDocument({ ...paper, catalog: [listing, { ...listing, note: 'Twice' }] }),
+    false,
+  );
+  // A prop's default is one of its options, as the sidecar's catalog schema requires.
+  const unlisted = { ...variant, default: 'ghost' };
+  assert.equal(isKitDocument({ ...paper, catalog: [{ ...listing, props: [unlisted] }] }), false);
+  assert.equal(catalogPropSchema.safeParse(unlisted).success, false);
+});
+
+test('both boundaries accept a library kit provenance and refuse the same malformed ones', () => {
+  const view: DesignSystemDocumentView = {
+    id: 'acme',
+    version: 1,
+    latestVersion: 1,
+    name: 'Acme',
+    kind: 'user',
+    cover: null,
+    sections: DROIDEX_DOCUMENT_SECTIONS,
+    examples: [],
+    catalog: [],
+    unmapped: [],
+    provenance: null,
+    savedAt: null,
+    savedBy: null,
+    proposal: null,
+  };
+  const library = {
+    kind: 'shadcn',
+    components: { Button: 'components/ui/button.tsx', buttonVariants: 'components/ui/button.tsx' },
+    tokens: { '--ds-accent': '--primary' },
+    skipped: [
+      {
+        file: 'components/ui/calendar.tsx',
+        reason: 'unsupported_import',
+        detail: 'react-day-picker',
+      },
+      { file: 'components/ui/use-toast.ts', reason: 'not_a_component', detail: null },
+      { file: 'components/ui/big-button.tsx', reason: 'duplicate_export', detail: 'Button, Bar' },
+    ],
+    skippedCount: 3,
+    partialCount: 1,
+  };
+  const skip = (each: object) => ({ ...library, skipped: [each] });
+  const cases: [string, unknown, boolean][] = [
+    ['a shadcn library', library, true],
+    ['another library kind', { ...library, kind: 'mui' }, false],
+    ['an export that is not an identifier', { ...library, components: { 'a-b': 'a.tsx' } }, false],
+    ['a project token that is not a token name', { ...library, tokens: { '--ds-a': 'a' } }, false],
+    ['an extra key', { ...library, version: '4' }, false],
+    ['no left-out files', { ...library, skipped: undefined }, false],
+    ['no count of files kept in part', { ...library, partialCount: undefined }, false],
+    ['more left-out files than counted', { ...library, skippedCount: 1 }, false],
+    ['more files kept in part than counted', { ...library, partialCount: 0 }, false],
+    [
+      'a file reviewed twice',
+      { ...library, skipped: [library.skipped[0], library.skipped[0]], skippedCount: 2 },
+      false,
+    ],
+    [
+      'an absolute import',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: '/Users/someone/a' }),
+      false,
+    ],
+    [
+      'a drive path',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: 'C:\\Users\\a' }),
+      false,
+    ],
+    [
+      'a file URL',
+      skip({ file: 'a.tsx', reason: 'unsupported_import', detail: 'file:///a.tsx' }),
+      false,
+    ],
+    ['an absolute file', skip({ file: '/srv/a.tsx', reason: 'unreadable', detail: null }), false],
+    ['an unknown reason', skip({ file: 'a.tsx', reason: 'too_big', detail: null }), false],
+    [
+      'a reason without its detail',
+      skip({ file: 'a.tsx', reason: 'needs_left_out', detail: null }),
+      false,
+    ],
+    [
+      'a detail its reason has none of',
+      skip({ file: 'a.tsx', reason: 'unreadable', detail: 'a' }),
+      false,
+    ],
+  ];
+  for (const [name, value, accepted] of cases) {
+    const project = { name: 'acme', files: ['components.json'], library: value };
+    const provenance: unknown = JSON.parse(JSON.stringify({ project }));
+    const sidecar = designSystemProvenanceSchema.safeParse(provenance).success;
+    const renderer = isKitDocument({ ...view, provenance });
+    assert.deepEqual({ sidecar, renderer }, { sidecar: accepted, renderer: accepted }, name);
   }
 });

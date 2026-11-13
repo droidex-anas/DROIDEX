@@ -1,5 +1,6 @@
 // One section of the document (spec §5, §6): a heading with its count and
-// menu, then its notes, token groups, previews and assets in reading order.
+// menu, then its notes, token groups, previews and assets in reading order,
+// and the kit's catalog after them in the Components section.
 
 import { useContext, useRef, type CSSProperties, type ReactNode, type RefObject } from 'react';
 import { ArrowDown, ArrowUp, Pencil, Trash, Upload } from '@droidex/icons';
@@ -15,7 +16,9 @@ import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddRow } from './AddRow';
 import { AssetGrid, ImageDropCue } from './AssetsSection';
+import { CatalogSection } from './CatalogSection';
 import type { DraftChange } from './documentDraft';
+import type { ShownSection } from './documentSearch';
 import type { DocumentItem, DraftMark } from './documentSections';
 import { PreviewItem } from './DocumentPreview';
 import { InlineField, type InlineFieldHandle } from './InlineField';
@@ -57,7 +60,7 @@ export function SectionBlock({
   justAdded,
   editing,
 }: {
-  section: DocumentSection;
+  section: ShownSection;
   count: number;
   kitId: string;
   mode: PreviewMode;
@@ -81,6 +84,7 @@ export function SectionBlock({
   const tokenKind = tokenKindOf(section);
   const holdsTokens = tokenKind !== null;
   const imports = useKitImageImport(editing?.onAddImages ?? null);
+  const catalog = section.catalog ?? [];
 
   const itemActions = (id: string): MenuAction[] => {
     if (!editing) return [];
@@ -210,6 +214,7 @@ export function SectionBlock({
     ) : (
       renderItem(run.item)
     );
+  const blocks = blocksWithAddRows(section, editing, holdsTokens, renderRun);
 
   return (
     <section
@@ -233,45 +238,67 @@ export function SectionBlock({
         </p>
       )}
       {!isRemoved &&
-        (section.items.length === 0 ? (
-          <div className="flex items-center gap-3">
-            <p className="text-body text-muted">
-              {imports.pick
-                ? 'Drop PNG, JPEG or WebP images here.'
-                : 'Nothing in this section yet.'}
-            </p>
-            {editing && (
-              <div className="flex gap-1">
-                <AddRow
-                  offers={{ note: true, group: holdsTokens }}
-                  onAdd={(kind) => {
-                    editing.onAdd(kind);
-                  }}
-                />
-                {imports.pick && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    icon={Upload}
-                    loading={imports.isImporting}
-                    onClick={imports.pick}
-                  >
-                    Image…
-                  </Button>
-                )}
-              </div>
-            )}
-          </div>
+        (section.items.length === 0 && catalog.length === 0 ? (
+          <EmptySection
+            editing={editing}
+            holdsTokens={holdsTokens}
+            pickImages={imports.pick}
+            isImporting={imports.isImporting}
+          />
         ) : (
-          <ProposalMarks.Provider
-            value={proposal && mark === 'added' ? IN_ADDED_SECTION : proposal}
-          >
-            <div className="flex flex-col gap-6">
-              {blocksWithAddRows(section, editing, holdsTokens, renderRun)}
-            </div>
-          </ProposalMarks.Provider>
+          <>
+            {blocks.length > 0 && (
+              <ProposalMarks.Provider
+                value={proposal && mark === 'added' ? IN_ADDED_SECTION : proposal}
+              >
+                <div className="flex flex-col gap-6">{blocks}</div>
+              </ProposalMarks.Provider>
+            )}
+            <CatalogSection entries={catalog} previewing={previewing} />
+          </>
         ))}
     </section>
+  );
+}
+
+function EmptySection({
+  editing,
+  holdsTokens,
+  pickImages,
+  isImporting,
+}: {
+  editing: SectionEditing | null;
+  holdsTokens: boolean;
+  pickImages: (() => void) | null;
+  isImporting: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3">
+      <p className="text-body text-muted">
+        {pickImages ? 'Drop PNG, JPEG, WebP or SVG images here.' : 'Nothing in this section yet.'}
+      </p>
+      {editing && (
+        <div className="flex gap-1">
+          <AddRow
+            offers={{ note: true, group: holdsTokens }}
+            onAdd={(kind) => {
+              editing.onAdd(kind);
+            }}
+          />
+          {pickImages && (
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={Upload}
+              loading={isImporting}
+              onClick={pickImages}
+            >
+              Image…
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

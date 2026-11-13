@@ -74,6 +74,8 @@ interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
   leading?: ReactNode;
   /** Fixed content after the value, such as the unit of a number. */
   trailing?: ReactNode;
+  /** Controls at the field's end, such as a picker button; unlike the affixes, assistive tech reaches them. */
+  actions?: ReactNode;
 }
 
 function inputFill(invalid: boolean, variant: InputVariant) {
@@ -89,6 +91,7 @@ export function Input({
   invalid,
   leading,
   trailing,
+  actions,
   className,
   ...rest
 }: InputProps) {
@@ -96,7 +99,7 @@ export function Input({
   const isInvalid = field?.invalid ?? invalid ?? false;
   const fill = inputFill(isInvalid, variant);
   const hovers = fill === 'bg-field';
-  const hasAffix = leading !== undefined || trailing !== undefined;
+  const hasAffix = [leading, trailing, actions].some((part) => part !== undefined);
   const width = variant === 'inline' ? 'field-sizing-content' : 'w-full';
   const input = (
     <input
@@ -109,7 +112,7 @@ export function Input({
         !hasAffix
           ? cn(
               width,
-              'min-w-0 text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
+              'min-w-0 text-ellipsis text-primary transition-colors duration-150 ease-out placeholder:text-muted disabled:cursor-not-allowed disabled:opacity-40',
               VARIANT[variant],
               fill,
               hovers && 'enabled:hover:bg-active',
@@ -117,31 +120,46 @@ export function Input({
             )
           : cn(
               width,
-              'h-full min-w-0 bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed',
+              'h-full min-w-0 text-ellipsis bg-transparent text-primary placeholder:text-muted focus-visible:outline-none disabled:cursor-not-allowed',
             )
       }
     />
   );
   if (!hasAffix) return input;
   // Affixes sit in the same line box as the value, so they share one
-  // baseline at every size. The label wrapper lets a click on them focus the
-  // input; index.css draws the focus ring on the wrapper.
+  // baseline at every size. The label lets a click on them focus the input;
+  // the actions sit beside it, as a label may hold no control but its own.
+  // index.css draws the focus ring on the box.
   return (
-    <label
+    <div
       className={cn(
-        'field-affix flex cursor-text items-center transition-colors duration-150 ease-out',
+        'field-affix flex items-center transition-colors duration-150 ease-out',
         VARIANT[variant],
         fill,
         hovers && !rest.disabled && 'hover:bg-active',
-        rest.disabled && 'cursor-not-allowed opacity-40',
+        rest.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-text',
         className,
       )}
+      onMouseDown={(event) => {
+        // The box's padding lies outside the label, so focus the input from there too.
+        if (event.target !== event.currentTarget) return;
+        event.preventDefault();
+        event.currentTarget.querySelector('input')?.focus();
+      }}
     >
-      <Affix>{leading}</Affix>
-      {input}
-      <Affix className={variant === 'inline' ? 'pl-0.5' : 'pl-1'}>{trailing}</Affix>
-    </label>
+      <label className="flex min-w-0 flex-1 items-center self-stretch">
+        <Affix>{leading}</Affix>
+        {input}
+        <Affix className={variant === 'inline' ? 'pl-0.5' : 'pl-1'}>{trailing}</Affix>
+      </label>
+      <Actions>{actions}</Actions>
+    </div>
   );
+}
+
+function Actions({ children }: { children: ReactNode }) {
+  if (children === undefined) return null;
+  return <span className="flex shrink-0 items-center gap-0.5 pl-1">{children}</span>;
 }
 
 function Affix({ className, children }: { className?: string; children: ReactNode }) {

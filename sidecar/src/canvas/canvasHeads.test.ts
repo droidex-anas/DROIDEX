@@ -91,35 +91,19 @@ const EDIT_RECORD = {
   sequence: 1,
 } as const;
 
-test('an edit record keeps the resolution it wrote across a reopen', async (t) => {
+test('edit records open across a reopen, with or without the resolution earlier edits saved', async (t) => {
   const root = await saved(t);
-  const record = { ...EDIT_RECORD, resolution: { kind: 'token', token: '--ds-space-4' } } as const;
-  const written = { ...manifest('cv_02', 'app-2'), mutations: [record] };
+  const earlier = {
+    ...EDIT_RECORD,
+    mutationId: 'm-earlier',
+    resolution: { kind: 'token', token: '--ds-space-4' },
+  } as const;
+  const written = { ...manifest('cv_02', 'app-2'), mutations: [earlier, EDIT_RECORD] };
   await new CanvasFiles(root).writeManifest(written, keepGoing);
 
   const heads = await reopen(root);
   assert.deepEqual(heads.damagedIds(), []);
-  assert.deepEqual(heads.find('cv_02')?.mutations, [record]);
-});
-
-test('a head holding an edit record without its resolution is damaged and named, not fatal', async (t) => {
-  const logged = t.mock.method(console, 'error', () => undefined);
-  const root = await saved(t);
-  const files = new CanvasFiles(root);
-  await files.writeManifest(manifest('cv_02', 'app-2'), keepGoing);
-  const before = { ...manifest('cv_02', 'app-2'), mutations: [EDIT_RECORD] };
-  await writeFile(join(root, 'cv_02', 'manifest.json'), JSON.stringify(before));
-
-  const heads = await reopen(root);
-  assert.deepEqual(
-    heads.all().map((head) => head.canvasId),
-    ['cv_01'],
-  );
-  assert.deepEqual(heads.damagedIds(), ['cv_02']);
-  assert.match(
-    String(logged.mock.calls.at(-1)?.arguments[0]),
-    /^Canvas cv_02 was not opened because its manifest field mutations\.0\.resolution /,
-  );
+  assert.deepEqual(heads.find('cv_02')?.mutations, [earlier, EDIT_RECORD]);
 });
 
 test('a readable head is served with exactly the attachments it records', async (t) => {

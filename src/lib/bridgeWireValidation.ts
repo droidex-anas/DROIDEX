@@ -535,6 +535,7 @@ function isTranscriptEvent(value: unknown): boolean {
     isOptionalString(value.steerId) &&
     (value.sideChatReplies === undefined || stringArray(value.sideChatReplies)) &&
     (value.canvasFrames === undefined || stringArray(value.canvasFrames)) &&
+    (value.canvasComponents === undefined || stringArray(value.canvasComponents)) &&
     (value.canvasActivity === undefined || isCanvasActivity(value.canvasActivity))
   );
 }
@@ -544,13 +545,14 @@ function isCanvasActivity(value: unknown): boolean {
   return (
     isRecord(value) &&
     hasStrings(value, ['toolUseId', 'message']) &&
-    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'].includes(
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme', 'image'].includes(
       value.action as string,
     ) &&
     ['running', 'completed', 'failed'].includes(value.state as string) &&
     stringArray(value.designIds) &&
     isOptionalString(value.canvasId) &&
     isOptionalString(value.title) &&
+    isOptionalString(value.revisionId) &&
     (value.firstArtifact === undefined || value.firstArtifact === true) &&
     (value.designSystem === undefined || isKitActivity(value.designSystem))
   );

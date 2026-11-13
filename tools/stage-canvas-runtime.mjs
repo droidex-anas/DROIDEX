@@ -1,8 +1,8 @@
 // Stages the Canvas compiler runtime that electron-builder ships as
 // resources/sidecar/canvas-runtime (spec §6). Node-loaded compiler packages
 // retain their dependency closure; browser packages come from esbuild's resolved
-// module graph, plus package metadata and notices. VictoryVendor's README
-// carries its top-level license statement; its vendored libraries have licenses.
+// module graph, plus package metadata and notices. A few packages state their
+// license only in their README, which is then staged as their notice.
 //
 // One complete tree per architecture, because DROIDEX_CANVAS_RUNTIME_DIR names
 // a single directory a packaged compile may resolve from.
@@ -22,9 +22,13 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import process from 'node:process';
-import { CANVAS_RUNTIME_MANIFEST, verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';
+import {
+  CANVAS_RUNTIME_MANIFEST,
+  README_LICENSES,
+  verifyCanvasRuntime,
+} from './verifyCanvasRuntime.mjs';
 
 const sidecarDir = 'sidecar';
 const stagingDir = join(sidecarDir, 'canvas-runtime');
@@ -34,7 +38,13 @@ const PLATFORM = 'darwin';
 const ARCHITECTURES = ['arm64', 'x64'];
 
 /** Loaded by the worker through Node; keep their complete dependency closure. */
-const NODE_RUNTIME_ROOTS = ['esbuild', 'tailwindcss', 'postcss', 'postcss-value-parser'];
+const NODE_RUNTIME_ROOTS = [
+  'esbuild',
+  'tailwindcss',
+  'tailwindcss-animate',
+  'postcss',
+  'postcss-value-parser',
+];
 
 /** Browser entries esbuild may bundle from a design. Add future allowlisted entries here. */
 const BUNDLED_SPECIFIERS = [
@@ -45,6 +55,13 @@ const BUNDLED_SPECIFIERS = [
   'recharts/es6/index.js',
   // Its exports map gives esbuild the ESM barrel, index.mjs.
   'simple-icons',
+  // Re-exports every @radix-ui/react-* primitive a design may import, so their
+  // ESM entries are staged with it.
+  'radix-ui',
+  '@radix-ui/react-icons',
+  'class-variance-authority',
+  'clsx',
+  'tailwind-merge',
 ];
 
 // No runtime path reads these, and a packaged app may not carry source maps.
@@ -149,6 +166,11 @@ function isNotice(path) {
   return /^(?:LICEN[CS]E|NOTICE)(?:$|[.-])/i.test(name);
 }
 
+/** A sidecar file's path inside the staged runtime, with forward slashes. */
+function stagedPath(file) {
+  return relative(sidecarDir, file).split(sep).join('/');
+}
+
 function copyFile(file, archDir) {
   const destination = join(archDir, relative(sidecarDir, file));
   mkdirSync(dirname(destination), { recursive: true });
@@ -159,7 +181,7 @@ function copyPackage({ dir, name }, archDir) {
   const prune = PRUNED[name];
   for (const file of packageFiles(dir)) {
     const packagePath = relative(dir, file).split(sep).join('/');
-    if (isSkipped(packagePath) && !(name === 'dlv' && packagePath === 'README.md')) continue;
+    if (isSkipped(packagePath) && !README_LICENSES.has(stagedPath(file))) continue;
     if (prune?.(packagePath)) continue;
     copyFile(file, archDir);
   }
@@ -201,18 +223,15 @@ function browserModuleFiles() {
     if (packageRoot === null) fail(`${input} has no installed package.`);
     const files = packages.get(packageRoot) ?? new Set();
     files.add(file);
-    for (let ancestor = dirname(file); ancestor !== packageRoot; ancestor = dirname(ancestor)) {
-      const manifest = join(ancestor, 'package.json');
-      if (existsSync(manifest)) files.add(manifest);
-    }
     packages.set(packageRoot, files);
   }
+  // Every manifest, not only those above a bundled file: a subpath such as
+  // `react-remove-scroll-bar/constants` resolves through its own package.json.
   for (const [dir, files] of packages) {
-    files.add(join(dir, 'package.json'));
     for (const file of packageFiles(dir)) {
-      const path = relative(dir, file).split(sep).join('/');
-      if (isNotice(path) || (dir.endsWith('victory-vendor') && path === 'README.md'))
-        files.add(file);
+      const packagePath = relative(dir, file).split(sep).join('/');
+      const isManifest = basename(file) === 'package.json' && !isSkipped(packagePath);
+      if (isManifest || isNotice(file) || README_LICENSES.has(stagedPath(file))) files.add(file);
     }
   }
   return packages;
@@ -323,12 +342,7 @@ function writeManifest(archDir, binaryPath) {
   }
   const paths = Object.keys(files);
   const notices = paths
-    .filter(
-      (path) =>
-        isNotice(path) ||
-        path === 'node_modules/victory-vendor/README.md' ||
-        path === 'node_modules/dlv/README.md',
-    )
+    .filter((path) => isNotice(path) || README_LICENSES.has(path))
     .sort();
   const packagePaths = paths.filter((path) => path.endsWith('/package.json'));
   const manifestPath = join(archDir, CANVAS_RUNTIME_MANIFEST);

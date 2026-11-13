@@ -1,7 +1,8 @@
 // The renderer's half of the preview pull channel (spec §6).
 //
 // There is no guest preload: the board drives a preview through the webview
-// element's `executeJavaScript`, with exactly the five audited literals below.
+// element's `executeJavaScript`, with exactly the nine audited literals below
+// and the tree's one in previewDocumentTree.ts.
 // Every payload is a JSON-serialised argument to a fixed string, so nothing the
 // sidecar or a design produced is ever interpolated as code.
 //
@@ -17,11 +18,20 @@ export const MAX_PREVIEW_SNAPSHOT_EVENTS = 64;
 const MAX_PREVIEW_DIAGNOSTICS = 8;
 const MAX_PREVIEW_TEXT = 512;
 /** Style properties one selection command may name, as the intermediate caps them. */
-const MAX_PREVIEW_STYLE_PROPERTIES = 40;
+const MAX_PREVIEW_STYLE_PROPERTIES = 64;
+/** Elements one locate may name, as the intermediate caps them. */
+export const MAX_PREVIEW_LOCATE_ELEMENTS = 8;
 /** Bytes one queued event may measure, as the intermediate accepts it. */
 const MAX_PREVIEW_EVENT_BYTES = 4096;
-/** The queue cap times the largest event the guest will keep, with headroom. */
-const MAX_PREVIEW_SNAPSHOT_BYTES = MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + 1024;
+/** Bytes a selection may measure: the intermediate gives it its own cap and keeps only one. */
+const MAX_PREVIEW_SELECTION_BYTES = 16384;
+/** Bytes a vector design's markup may measure, as the reporter caps it. */
+const MAX_PREVIEW_VECTOR_BYTES = 256 * 1024;
+/** JSON escaping at most doubles the markup a vector answer carries. */
+const MAX_PREVIEW_VECTOR_ANSWER_BYTES = 2 * MAX_PREVIEW_VECTOR_BYTES + 1024;
+/** The queue cap times the largest event, plus the one selection the guest keeps, with headroom. */
+const MAX_PREVIEW_SNAPSHOT_BYTES =
+  MAX_PREVIEW_SNAPSHOT_EVENTS * MAX_PREVIEW_EVENT_BYTES + MAX_PREVIEW_SELECTION_BYTES + 1024;
 
 /** One live preview's identity, minted by the board and echoed by the guest. */
 export interface PreviewInstance {
@@ -46,6 +56,60 @@ export interface PreviewElement {
   instancePath: string;
   rect: FrameRect;
   styles: Record<string, string>;
+  /**
+   * Its text when that is all it holds and fits the cap, else null. Never cut,
+   * since what the board shows here it may write back as the whole text.
+   */
+  text: string | null;
+  /** Its parent's computed `display`, which decides whether it is a flex or grid item. */
+  parentDisplay: string;
+}
+
+/** Whether the guest draws the element at all; one it does not, as under `display: none`, measures 0 × 0 at the origin. */
+export function isDrawn(rect: FrameRect): boolean {
+  return rect.x !== 0 || rect.y !== 0 || rect.width !== 0 || rect.height !== 0;
+}
+
+/** The element under the pointer, which the board outlines and names before it is picked. */
+export interface PreviewHover {
+  elementId: string;
+  instancePath: string;
+  rect: FrameRect;
+  tagName: string;
+  /**
+   * How far its box can grow up and down, across its width, before it meets
+   * other content, in the design's pixels; null where nothing is in the way.
+   */
+  room: { above: number | null; below: number | null };
+}
+
+/**
+ * Whether the element is the design's own top, mounted straight into the
+ * preview's root container: the reporter's path to it from the body is two steps.
+ */
+export function isDesignRoot(element: { instancePath: string }): boolean {
+  return element.instancePath.split('/').length <= 2;
+}
+
+/** The text between two points in the design's pixels, from where a press went down. */
+export interface PreviewTextRange {
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+}
+
+/** What a probe asks about: the element at a point, or the text between two points. */
+export type PreviewProbe = { at: { x: number; y: number } } | PreviewTextRange;
+
+/**
+ * What a probe found, in the design's own pixels: the marked element and its
+ * box, and for two points the text between them, cut to the text cap, with the
+ * box it is drawn in. A probe selects nothing.
+ */
+export interface PreviewFinding {
+  elementId: string;
+  instancePath: string;
+  rect: FrameRect;
+  text: { excerpt: string; rect: FrameRect } | null;
 }
 
 /**
@@ -59,14 +123,33 @@ export type PreviewEvent =
   | { event: 'selection'; sequence: number; element: PreviewElement | null }
   | { event: 'interaction'; kind: string };
 
-/** A pick at a point in the design's own pixels, or a keyboard step through its elements. */
-export type PreviewPick = { x: number; y: number } | { step: 'first' | 'next' | 'previous' };
+/**
+ * A vector design's root `<svg>`, standalone with its tokens resolved, or why
+ * there is none: the root is not one svg, or its markup is over the cap.
+ * Untrusted markup, which the sidecar sanitises before anything stores it.
+ */
+export type PreviewVector = { svg: string } | { refused: 'not_vector' | 'too_large' };
 
-/** An element to select by its marker and path, with the inline styles it previews. */
+/** One drawn instance of an element: its source marker and its path from the document body. */
+export interface PreviewNode {
+  elementId: string;
+  instancePath: string;
+}
+
+/** A pick at a point in the design's own pixels, a keyboard step through its elements, or one instance. */
+export type PreviewPick =
+  | { x: number; y: number }
+  | { step: 'first' | 'next' | 'previous' }
+  | PreviewNode;
+
+/** An element to select by its marker and path, with the inline styles and text it previews. */
 export interface PreviewTarget {
   elementId: string;
   instancePath: string;
   styles: Record<string, string>;
+  text: string | null;
+  /** Path data a selected `<path>` previews as its `d`, with spaces and commas only. */
+  d?: string;
 }
 
 /** One drained queue, with how many messages the guest dropped under its cap. */
@@ -94,8 +177,8 @@ export const PREVIEW_STARTED = 'started';
 export const PREVIEW_POLL_SCRIPT = 'globalThis.__droidexCanvasPreview.drain()';
 
 /**
- * Selects the element under a point or the next one along; a `selection` event
- * carrying `sequence` answers.
+ * Selects the element under a point, the next one along or the one named; a
+ * `selection` event carrying `sequence` answers.
  */
 export function previewPickScript(
   pick: PreviewPick,
@@ -118,6 +201,32 @@ export function previewSelectScript(
 }
 
 /**
+ * Asks which element is under a point in the design's pixels, or where the one
+ * named is drawn; the call itself answers.
+ */
+export function previewHoverScript(at: { x: number; y: number } | PreviewNode): string {
+  const asked =
+    'x' in at ? { x: at.x, y: at.y } : { elementId: at.elementId, instancePath: at.instancePath };
+  return `globalThis.__droidexCanvasPreview.hover(${jsonArgument(asked)})`;
+}
+
+/** Asks what is at a point or between two points in the design's pixels; the call itself answers. */
+export function previewProbeScript(probe: PreviewProbe): string {
+  return `globalThis.__droidexCanvasPreview.probe(${jsonArgument(probe)})`;
+}
+
+/**
+ * Asks where each element is drawn in the design's pixels, by the first of its
+ * instances that is; the call itself answers.
+ */
+export function previewLocateScript(elementIds: readonly string[]): string {
+  return `globalThis.__droidexCanvasPreview.locate(${jsonArgument({ elementIds })})`;
+}
+
+/** Asks for the design's root `<svg>`; the call itself answers. */
+export const PREVIEW_VECTOR_SCRIPT = 'globalThis.__droidexCanvasPreview.vector()';
+
+/**
  * Sets a kit's draft token values on the design's root, replacing the set this
  * guest was given before; an empty set puts the saved values back.
  */
@@ -129,7 +238,7 @@ export function previewSetTokensScript(tokens: Readonly<Record<string, string>>)
  * A JSON literal that is also a safe JS expression: escaping `<` means no
  * artifact can close an element or open a tag wherever the code is placed.
  */
-function jsonArgument(value: unknown): string {
+export function jsonArgument(value: unknown): string {
   return JSON.stringify(value).replaceAll('<', '\\u003c');
 }
 
@@ -186,7 +295,9 @@ function readEvent(value: unknown): PreviewEvent | null {
     case 'selection':
       return readSelection(value);
     case 'interaction':
-      return present(value.kind) ? { event: 'interaction', kind: clamp(value.kind) } : null;
+      return present(value.kind)
+        ? { event: 'interaction', kind: clampPreviewText(value.kind) }
+        : null;
     default:
       return null;
   }
@@ -197,15 +308,96 @@ function readDiagnostics(value: unknown): PreviewEvent | null {
   const diagnostics: CanvasDiagnostic[] = [];
   for (const entry of value) {
     if (!record(entry) || !present(entry.code) || typeof entry.message !== 'string') return null;
-    diagnostics.push({ code: clamp(entry.code), message: clamp(entry.message) });
+    diagnostics.push({
+      code: clampPreviewText(entry.code),
+      message: clampPreviewText(entry.message),
+    });
   }
   return { event: 'diagnostics', diagnostics };
+}
+
+/** A hover's answer, or null when nothing marked is under the point or the answer is not one. */
+export function readPreviewHover(value: unknown): PreviewHover | null {
+  const parsed = readAnswer(value);
+  if (!record(parsed) || !present(parsed.elementId) || !present(parsed.tagName)) return null;
+  const rect = readRect(parsed.rect);
+  if (!rect || !isInstancePath(parsed.instancePath) || !record(parsed.room)) return null;
+  const { above, below } = parsed.room;
+  if (!isRoom(above) || !isRoom(below)) return null;
+  return {
+    elementId: clampPreviewText(parsed.elementId),
+    instancePath: parsed.instancePath,
+    rect,
+    tagName: clampPreviewText(parsed.tagName),
+    room: { above, below },
+  };
+}
+
+/** A probe's answer, or null when nothing marked is there or the answer is not one. */
+export function readPreviewFinding(value: unknown): PreviewFinding | null {
+  const parsed = readAnswer(value);
+  if (!record(parsed) || !present(parsed.elementId) || !isInstancePath(parsed.instancePath))
+    return null;
+  const rect = readRect(parsed.rect);
+  if (!rect) return null;
+  let text: PreviewFinding['text'] = null;
+  if (parsed.text !== null) {
+    if (!record(parsed.text) || typeof parsed.text.excerpt !== 'string') return null;
+    const textRect = readRect(parsed.text.rect);
+    if (!textRect) return null;
+    text = { excerpt: clampPreviewText(parsed.text.excerpt), rect: textRect };
+  }
+  return {
+    elementId: clampPreviewText(parsed.elementId),
+    instancePath: parsed.instancePath,
+    rect,
+    text,
+  };
+}
+
+/**
+ * A locate's answer: a box for each of the `asked` elements in order, null for
+ * one that is not drawn, or null when the answer is not one.
+ */
+export function readPreviewLocations(value: unknown, asked: number): (FrameRect | null)[] | null {
+  const parsed = readAnswer(value);
+  if (!Array.isArray(parsed) || parsed.length !== asked) return null;
+  return parsed.map(readRect);
+}
+
+/** A vector answer, or null when the answer is not one. */
+export function readPreviewVector(value: unknown): PreviewVector | null {
+  const parsed = readAnswer(value, MAX_PREVIEW_VECTOR_ANSWER_BYTES);
+  if (!record(parsed)) return null;
+  if (typeof parsed.svg === 'string' && utf8Bytes(parsed.svg) <= MAX_PREVIEW_VECTOR_BYTES)
+    return { svg: parsed.svg };
+  const { refused } = parsed;
+  return refused === 'not_vector' || refused === 'too_large' ? { refused } : null;
+}
+
+/** A direct answer's JSON, within its cap, or undefined. */
+export function readAnswer(value: unknown, capBytes = MAX_PREVIEW_EVENT_BYTES): unknown {
+  if (typeof value !== 'string' || utf8Bytes(value) > capBytes) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+function isRoom(value: unknown): value is number | null {
+  return value === null || (finite(value) && value >= 0);
 }
 
 function readSelection({ sequence, element }: Record<string, unknown>): PreviewEvent | null {
   if (!count(sequence) || sequence === 0) return null;
   if (element === null) return { event: 'selection', sequence, element: null };
-  if (!record(element) || !present(element.elementId) || typeof element.instancePath !== 'string')
+  if (
+    !record(element) ||
+    !present(element.elementId) ||
+    !isInstancePath(element.instancePath) ||
+    typeof element.parentDisplay !== 'string'
+  )
     return null;
   const rect = readRect(element.rect);
   if (!rect || !record(element.styles)) return null;
@@ -214,33 +406,35 @@ function readSelection({ sequence, element }: Record<string, unknown>): PreviewE
   if (entries.length > MAX_PREVIEW_STYLE_PROPERTIES) return null;
   for (const [name, style] of entries) {
     if (typeof style !== 'string') return null;
-    styles[name] = clamp(style);
+    styles[name] = clampPreviewText(style);
   }
   return {
     event: 'selection',
     sequence,
     element: {
-      elementId: clamp(element.elementId),
-      instancePath: clamp(element.instancePath),
+      elementId: clampPreviewText(element.elementId),
+      instancePath: element.instancePath,
       rect,
       styles,
+      text: whole(element.text),
+      parentDisplay: clampPreviewText(element.parentDisplay),
     },
   };
 }
 
 /** A box in the design's own pixels, which may start above or left of its viewport. */
-function readRect(value: unknown): FrameRect | null {
+export function readRect(value: unknown): FrameRect | null {
   if (!record(value)) return null;
   const { x, y, width, height } = value;
   if (!finite(x) || !finite(y) || !finite(width) || !finite(height)) return null;
   return width < 0 || height < 0 ? null : { x, y, width, height };
 }
 
-function record(value: unknown): value is Record<string, unknown> {
+export function record(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function count(value: unknown): value is number {
+export function count(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
@@ -248,7 +442,15 @@ function finite(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value);
 }
 
-function present(value: unknown): value is string {
+/**
+ * Child indices from the body down, as the reporter writes an element's path.
+ * A path is an identity, not display text, so it is read whole or not at all.
+ */
+export function isInstancePath(value: unknown): value is string {
+  return typeof value === 'string' && /^\d+(?:\/\d+)*$/.test(value);
+}
+
+export function present(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
@@ -257,9 +459,10 @@ function present(value: unknown): value is string {
  * security consequence, so an over-long one is cut rather than used as a reason
  * to refuse the snapshot: refusing one would end a guest over a diagnostic, and
  * the intermediate already cuts to the same bound from the other side. The cut
- * lands on a code point boundary, so a character is never split in half.
+ * lands on a code point boundary, so a character is never split in half. The
+ * element panel cuts typed text the same way, so what it previews is what it saves.
  */
-function clamp(value: string): string {
+export function clampPreviewText(value: string): string {
   if (utf8Bytes(value) <= MAX_PREVIEW_TEXT) return value;
   let cut = '';
   for (const character of value) {
@@ -267,6 +470,11 @@ function clamp(value: string): string {
     cut += character;
   }
   return cut;
+}
+
+/** Text the board may write back whole: within the cap, or none at all. */
+function whole(value: unknown): string | null {
+  return typeof value === 'string' && utf8Bytes(value) <= MAX_PREVIEW_TEXT ? value : null;
 }
 
 const encoder = new TextEncoder();

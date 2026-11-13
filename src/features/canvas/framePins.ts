@@ -2,9 +2,14 @@
 // design shows as a composer chip, and sending pins its revision to that
 // request. The board adds frames and keeps them current; the composer shows,
 // sends and clears them. Neither owns the other, so they live here, by chat.
+// The elements Design picks live beside them, in elementPins.ts.
 
 import { useSyncExternalStore } from 'react';
+import { toast } from '../../lib/toast';
+import { frameSizeLabel } from './canvasGeometry';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
+import type { ComponentPin } from './componentPins';
+import type { ElementPin } from './elementPins';
 import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
@@ -49,14 +54,13 @@ export function useFramePins(appSessionId: string | null): readonly FramePin[] {
   return useSyncExternalStore(subscribe, () => (appSessionId ? framePins(appSessionId) : NONE));
 }
 
-function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
-  const { width, height } = frame.rect;
+export function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
   return {
     canvasId,
     designId: frame.designId,
     revisionId: frame.revisionId,
     name: frame.name,
-    size: `${String(Math.round(width))} × ${String(Math.round(height))}`,
+    size: frameSizeLabel(frame.rect),
     designSystem: frame.designSystem,
   };
 }
@@ -79,34 +83,70 @@ function samePin(a: FramePin, b: FramePin): boolean {
   );
 }
 
-/**
- * Adds a frame to the chat's next prompt, or takes it off if it is there. A
- * request pins frames of one canvas, so a frame from another starts over.
- */
-export function toggleFramePin(appSessionId: string, canvasId: string, frame: CanvasFrame): void {
-  const held = framePins(appSessionId).filter((pin) => pin.canvasId === canvasId);
-  if (held.some((pin) => pin.designId === frame.designId))
-    publish(
-      appSessionId,
-      held.filter((pin) => pin.designId !== frame.designId),
-    );
-  else if (held.length < MAX_PINNED) publish(appSessionId, [...held, pinOf(canvasId, frame)]);
+function isTagged(pins: readonly FramePin[], canvasId: string, frame: CanvasFrame): boolean {
+  return pins.some((pin) => pin.canvasId === canvasId && pin.designId === frame.designId);
 }
 
 /**
- * Adds these frames to the chat's next prompt beside what it already pins, by
- * the same one-canvas rule as a toggle; at the limit, the oldest pins give way.
+ * Tagging these frames again untags them: every one is tagged already, or the
+ * prompt is full, so those that are not could never be added.
  */
-export function addFramePins(
+export function untagsFrames(
+  pins: readonly FramePin[],
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): boolean {
+  const held = pins.filter((pin) => pin.canvasId === canvasId);
+  const tagged = frames.filter((frame) => isTagged(held, canvasId, frame));
+  return tagged.length > 0 && (tagged.length === frames.length || held.length >= MAX_PINNED);
+}
+
+/**
+ * What pressing tag on these frames says it does, counting the frames it
+ * changes: untagging takes off only the tagged ones, and tagging adds the rest
+ * the prompt has room for.
+ */
+export function tagFramesLabel(
+  pins: readonly FramePin[],
+  canvasId: string,
+  frames: readonly CanvasFrame[],
+): string {
+  const held = pins.filter((pin) => pin.canvasId === canvasId);
+  const untags = untagsFrames(pins, canvasId, frames);
+  const tagged = frames.filter((frame) => isTagged(held, canvasId, frame)).length;
+  const changed = untags ? tagged : Math.min(frames.length - tagged, MAX_PINNED - held.length);
+  const count = changed > 1 ? ` ${String(changed)} frames` : '';
+  return untags ? `Untag${count} from chat` : `Tag${count} in chat`;
+}
+
+/**
+ * Tags these frames in the chat's next prompt, as many as it has room for, or
+ * untags them by `untagsFrames`. A request pins frames of one canvas, so a frame
+ * from another starts over.
+ */
+export function toggleFramePins(
   appSessionId: string,
   canvasId: string,
   frames: readonly CanvasFrame[],
 ): void {
-  const held = framePins(appSessionId).filter(
-    (pin) => pin.canvasId === canvasId && !frames.some((frame) => frame.designId === pin.designId),
-  );
-  const added = frames.map((frame) => pinOf(canvasId, frame));
-  publish(appSessionId, [...held, ...added].slice(-MAX_PINNED));
+  const pins = framePins(appSessionId);
+  const held = pins.filter((pin) => pin.canvasId === canvasId);
+  if (untagsFrames(pins, canvasId, frames)) {
+    publish(
+      appSessionId,
+      held.filter((pin) => !frames.some((frame) => frame.designId === pin.designId)),
+    );
+    return;
+  }
+  const untagged = frames.filter((frame) => !isTagged(held, canvasId, frame));
+  const added = untagged.slice(0, MAX_PINNED - held.length);
+  const left = untagged.length - added.length;
+  if (left > 0)
+    toast.error(
+      `A prompt carries at most ${String(MAX_PINNED)} frames, so ${String(left)} ${left === 1 ? 'wasn’t' : 'weren’t'} tagged.`,
+    );
+  if (added.length > 0)
+    publish(appSessionId, [...held, ...added.map((frame) => pinOf(canvasId, frame))]);
 }
 
 /** Takes these frames off the chat's next prompt, or all of them. */
@@ -135,6 +175,11 @@ export function restoreFramePins(appSessionId: string, pins: readonly FramePin[]
   const board = boards.get(appSessionId);
   const next = board ? onBoard(merged, board) : merged.filter((pin) => pin.canvasId === canvasId);
   publishChanged(appSessionId, held, next.slice(0, MAX_PINNED));
+}
+
+/** The attached board the chat's pane is showing, while it shows one. */
+export function attachedBoard(appSessionId: string): CanvasSnapshot | undefined {
+  return boards.get(appSessionId);
 }
 
 /**
@@ -185,41 +230,100 @@ export function requestDesignSystem(
 }
 
 /**
- * The turn context a send carries: the frames' revisions and the kit as they
- * are now, in fresh objects, so nothing that changes afterwards can retarget
- * the request. A chat on no canvas, with nothing pinned, carries none.
+ * The turn context a send carries: the frames' revisions, the elements picked
+ * and the kit as they are now, in fresh objects, so nothing that changes
+ * afterwards can retarget the request. A chat on no canvas, with nothing
+ * pinned, carries none.
  */
 export function canvasContextOf(
   pins: readonly FramePin[] = NONE,
   onCanvas: CanvasRequestPins | null = null,
+  elements: readonly ElementPin[] = [],
 ): CanvasTurnContext | undefined {
-  if (pins.length === 0 && !onCanvas) return undefined;
+  if (pins.length === 0 && elements.length === 0 && !onCanvas) return undefined;
   const designSystem = requestDesignSystem(pins, onCanvas?.designSystem ?? null);
   const images = onCanvas?.imageAssetIds ?? [];
   return {
     designs: pins.map(({ designId, revisionId }) => ({ designId, revisionId })),
-    elements: [],
+    elements: elements.map(({ element }) => ({
+      designId: element.designId,
+      revisionId: element.revisionId,
+      elementId: element.elementId,
+      instancePath: element.instancePath,
+    })),
     designSystem: { ...designSystem },
     ...(images.length > 0 ? { images: images.map((assetId) => ({ assetId })) } : {}),
   };
 }
 
-// Mirrored by sidecar/src/canvas/canvasFramesPrompt.ts, which strips the block
-// back out of a stored prompt so the bubble shows the frames as chips.
+// Mirrored by sidecar/src/canvas/canvasPinsPrompt.ts, which strips the blocks
+// back out of a stored prompt so the bubble shows the components and frames as
+// chips.
 const FRAMES_OPEN =
   '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.';
 const FRAMES_CLOSE = '</canvas_frames>';
+const ELEMENTS_OPEN =
+  '<canvas_elements>\nThe user picked these elements for this request; change them, not the rest of their designs.';
+const ELEMENTS_CLOSE = '</canvas_elements>';
+const COMPONENTS_OPEN =
+  '<canvas_components>\nThe user tagged these kit components for this request; read each with canvas_theme catalog, its ref-id, ref-version and ref-mode as ref, and write its jsx and imports as given, with each prop in its props set to the option named.';
+const COMPONENTS_CLOSE = '</canvas_components>';
 
 /**
- * The prompt with its pinned frames named after the user's words. The turn's
- * lease already holds them, but a model that acts before it reads would not
- * know which frame "this one" is.
+ * The prompt with its tagged kit components, its pinned frames, then its
+ * picked elements, named after the user's words. The turn's lease already
+ * holds the frames and elements, but a model that acts before it reads would
+ * not know which frame or element "this one" is.
  */
-export function promptWithFramePins(prompt: string, pins: readonly FramePin[] = NONE): string {
-  if (pins.length === 0) return prompt;
-  const frames = pins.map(
-    (pin) => `<frame id="${pin.designId}">${pin.name.replace(/\s+/g, ' ')}</frame>`,
-  );
-  const block = [FRAMES_OPEN, ...frames, FRAMES_CLOSE].join('\n');
-  return prompt ? `${prompt}\n\n${block}` : block;
+export function promptWithCanvasPins(
+  prompt: string,
+  pins: readonly FramePin[] = NONE,
+  elements: readonly ElementPin[] = [],
+  components: readonly ComponentPin[] = [],
+): string {
+  const blocks = [prompt];
+  if (components.length > 0)
+    blocks.push([COMPONENTS_OPEN, ...components.map(componentLine), COMPONENTS_CLOSE].join('\n'));
+  if (pins.length > 0) blocks.push([FRAMES_OPEN, ...pins.map(frameLine), FRAMES_CLOSE].join('\n'));
+  if (elements.length > 0)
+    blocks.push([ELEMENTS_OPEN, ...elements.map(elementLine), ELEMENTS_CLOSE].join('\n'));
+  return blocks.filter(Boolean).join('\n\n');
+}
+
+function componentLine({ kit, kitName, name, props }: ComponentPin): string {
+  const ref = `ref-id="${escapeAttribute(kit.id)}" ref-version="${String(kit.version)}" ref-mode="${kit.mode}"`;
+  const picks = props.map((pick) => `${pick.name}=${pick.value}`).join(' ');
+  const picked = picks === '' ? '' : ` props="${escapeAttribute(picks)}"`;
+  return `<component kit="${escapeName(kitName).replaceAll('"', '&quot;')}" ${ref}${picked}>${escapeName(name)}</component>`;
+}
+
+function frameLine(pin: FramePin): string {
+  return `<frame id="${pin.designId}">${escapeText(oneLine(pin.name))}</frame>`;
+}
+
+/** A pick by the IDs canvas_read resolves it with, where it is written, and any words it spans. */
+function elementLine({ element }: ElementPin): string {
+  const { elementId, designId, revisionId, source, tagName, component, text } = element;
+  const named = component ? ` component="${escapeAttribute(component)}"` : '';
+  const file = escapeAttribute(source.file);
+  const words = text ? escapeText(oneLine(text.excerpt)) : '';
+  return `<element id="${elementId}" design="${designId}" revision="${revisionId}" source="${file}:${String(source.line)}" tag="${tagName}"${named}>${words}</element>`;
+}
+
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** Escaped so a name or picked words can never close or forge a record. */
+function escapeText(text: string): string {
+  return text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+}
+
+/** A kit's or entry's exact name, as the catalog read matches it; line breaks become references to keep one record per line. */
+function escapeName(name: string): string {
+  return escapeText(name).replaceAll('\r', '&#13;').replaceAll('\n', '&#10;');
+}
+
+function escapeAttribute(value: string): string {
+  return escapeText(value).replaceAll('"', '&quot;');
 }

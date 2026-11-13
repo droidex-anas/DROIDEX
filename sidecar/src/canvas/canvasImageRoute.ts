@@ -2,12 +2,16 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
   canvasImageImportSchema,
+  chosenImageSchema,
   type CanvasImageImport,
   type ChosenImage,
 } from './canvasAssets.js';
 import { CanvasCommandError } from './canvasError.js';
-import { kitImageImportSchema } from './kitAssets.js';
+import { sanitiseSvg } from './canvasSvg.js';
 import type { OwnedAsset } from './protocol.js';
+
+/** A vector design's markup, as the preview reporter caps it. */
+const MAX_SANITISED_SVG_BYTES = 256 * 1024;
 
 export interface CanvasImages {
   secret: string;
@@ -15,13 +19,18 @@ export interface CanvasImages {
   importKitImage: (request: ChosenImage) => Promise<OwnedAsset>;
 }
 
-/** Main's route for an image the user chose, into a canvas or into the kit store. */
-export function serveCanvasImageImport(
+/**
+ * Main's routes for an image the user chose, into a canvas or into the kit
+ * store, and for a design's own SVG on its way to a file the user chose: only
+ * its sanitised rebuild goes back.
+ */
+export function serveCanvasImages(
   req: IncomingMessage,
   res: ServerResponse,
   images: CanvasImages | undefined,
 ): boolean {
-  if (req.url !== '/canvas/import-image' && req.url !== '/canvas/import-kit-image') return false;
+  const routes = ['/canvas/import-image', '/canvas/import-kit-image', '/canvas/sanitise-svg'];
+  if (!req.url || !routes.includes(req.url)) return false;
   if (!images || req.headers['x-canvas-secret'] !== images.secret) {
     res.writeHead(401).end('unauthorized');
     return true;
@@ -30,22 +39,21 @@ export function serveCanvasImageImport(
     res.writeHead(405).end('method not allowed');
     return true;
   }
-  const intoKit = req.url === '/canvas/import-kit-image';
+  const { url } = req;
 
   void (async () => {
     try {
-      const chunks: Buffer[] = [];
-      let size = 0;
-      for await (const chunk of req) {
-        const bytes = Buffer.from(chunk as Uint8Array);
-        size += bytes.length;
-        if (size > 8192) throw new Error('request too large');
-        chunks.push(bytes);
+      if (url === '/canvas/sanitise-svg') {
+        const { bytes } = sanitiseSvg(await body(req, MAX_SANITISED_SVG_BYTES));
+        res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
+        res.end(bytes);
+        return;
       }
-      const body: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-      const asset = intoKit
-        ? await images.importKitImage(parsed(kitImageImportSchema.safeParse(body)))
-        : await images.importImage(parsed(canvasImageImportSchema.safeParse(body)));
+      const request: unknown = JSON.parse((await body(req, 8192)).toString('utf8'));
+      const asset =
+        url === '/canvas/import-kit-image'
+          ? await images.importKitImage(parsed(chosenImageSchema.safeParse(request)))
+          : await images.importImage(parsed(canvasImageImportSchema.safeParse(request)));
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify(asset));
     } catch (error) {
@@ -58,6 +66,18 @@ export function serveCanvasImageImport(
     }
   })();
   return true;
+}
+
+async function body(req: IncomingMessage, limitBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const bytes = Buffer.from(chunk as Uint8Array);
+    size += bytes.length;
+    if (size > limitBytes) throw new Error('request too large');
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks);
 }
 
 function parsed<T>(result: { success: true; data: T } | { success: false }): T {

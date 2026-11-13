@@ -8,11 +8,14 @@ const GENERATED_PROBE_INTERVAL_MS = 2_000;
 const GENERATED_PROBE_DEADLINE_MS = 3_000;
 const GENERATED_PROBE = '0';
 const PREVIEW_IDENTITY_SCRIPT = 'globalThis.__droidexCanvasPreview.identity()';
+// Read in the guest's own top frame, which generated code cannot reach.
+const DISPLAY_SCALE_SCRIPT = 'devicePixelRatio';
 const CAPTURE_DEADLINE_MS = 6_000;
 const MAX_CAPTURE_DIMENSION_PX = 4_096;
 const MAX_CAPTURE_PIXELS = 16_000_000;
 const MAX_CAPTURE_BYTES = 8 * 1024 * 1024;
 const MAX_CACHED_BYTES = 32 * 1024 * 1024;
+const MAX_RETAINED_CAPTURES = 4;
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -42,19 +45,21 @@ function isKitCapture(guest, canvasId, designId, revisionId) {
   );
 }
 
-function captureBounds(width, height, scaleFactor) {
-  if (
-    !Number.isSafeInteger(width) ||
-    !Number.isSafeInteger(height) ||
-    width < 1 ||
-    height < 1 ||
-    width > 8_192 ||
-    height > 8_192 ||
-    !Number.isFinite(scaleFactor) ||
-    scaleFactor < 1 ||
-    scaleFactor > 4
-  )
-    return false;
+function validSize(width, height, scaleFactor) {
+  return (
+    Number.isSafeInteger(width) &&
+    Number.isSafeInteger(height) &&
+    width >= 1 &&
+    height >= 1 &&
+    width <= 8_192 &&
+    height <= 8_192 &&
+    Number.isFinite(scaleFactor) &&
+    scaleFactor >= 1 &&
+    scaleFactor <= 4
+  );
+}
+
+function fitsCaps(width, height, scaleFactor) {
   const pixelWidth = Math.ceil(width * scaleFactor);
   const pixelHeight = Math.ceil(height * scaleFactor);
   return (
@@ -64,20 +69,69 @@ function captureBounds(width, height, scaleFactor) {
   );
 }
 
-/** The PNG header is checked before any bytes leave main or enter its cache. */
-function validPng(bytes, width, height, scaleFactor) {
-  if (!Buffer.isBuffer(bytes) || bytes.length < 33 || bytes.length > MAX_CAPTURE_BYTES)
-    return false;
+/** Names the largest whole scale under the caps, so a refusal says what would work. */
+function tooLarge(width, height, scaleFactor) {
+  let fits = Math.ceil(scaleFactor) - 1;
+  while (fits >= 1 && !fitsCaps(width, height, fits)) fits -= 1;
+  const asked = `${String(scaleFactor)}x`;
+  return captureFailure(
+    fits >= 1
+      ? `Too large at ${asked}; try ${String(fits)}x.`
+      : `Too large to capture at ${asked}.`,
+  );
+}
+
+/**
+ * The compositor answers at the display's own scale, and its PNG cannot be
+ * scaled up without blurring, so another scale is drawn again by Chromium.
+ */
+function atScale(contents, bytes, width, height, scaleFactor) {
+  const native = pngSize(bytes);
+  if (!native || isAtScale(native, width, height, scaleFactor)) return bytes;
+  return redraw(contents, width, height, scaleFactor / (native.pixelWidth / width));
+}
+
+/** Chromium's own drawing of the page at `scale` times the display's scale. */
+async function redraw(contents, width, height, scale) {
+  const debuggerClient = contents.debugger;
+  const wasAttached = debuggerClient.isAttached();
+  if (!wasAttached) debuggerClient.attach('1.3');
+  try {
+    const { data } = await debuggerClient.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      clip: { x: 0, y: 0, width, height, scale },
+    });
+    return Buffer.from(data, 'base64');
+  } finally {
+    if (!wasAttached && !contents.isDestroyed()) debuggerClient.detach();
+  }
+}
+
+/** A PNG's pixel size from its header, or null for bytes that are not a PNG. */
+function pngSize(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length < 33) return null;
   if (!bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString('ascii', 12, 16) !== 'IHDR')
-    return false;
-  const pixelWidth = bytes.readUInt32BE(16);
-  const pixelHeight = bytes.readUInt32BE(20);
+    return null;
+  return { pixelWidth: bytes.readUInt32BE(16), pixelHeight: bytes.readUInt32BE(20) };
+}
+
+function isAtScale({ pixelWidth, pixelHeight }, width, height, scaleFactor) {
+  return (
+    Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
+    Math.abs(pixelHeight - height * scaleFactor) <= 1
+  );
+}
+
+/** The PNG header is checked against the caps before any bytes leave main or enter its cache. */
+function validPng(bytes, width, height, scaleFactor) {
+  const size = pngSize(bytes);
+  if (!size || bytes.length > MAX_CAPTURE_BYTES) return false;
+  const { pixelWidth, pixelHeight } = size;
   return (
     pixelWidth <= MAX_CAPTURE_DIMENSION_PX &&
     pixelHeight <= MAX_CAPTURE_DIMENSION_PX &&
     pixelWidth * pixelHeight <= MAX_CAPTURE_PIXELS &&
-    Math.abs(pixelWidth - width * scaleFactor) <= 1 &&
-    Math.abs(pixelHeight - height * scaleFactor) <= 1
+    isAtScale(size, width, height, scaleFactor)
   );
 }
 
@@ -86,6 +140,9 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
   const guests = new Map();
   const captures = new Map();
   const thumbnails = new Map();
+  // Captures kept for a save, by request: the thumbnail of a revision is
+  // whichever capture landed last, so a save never reads it.
+  const retained = new Map();
   let cachedBytes = 0;
 
   function captureAvailable() {
@@ -154,6 +211,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     thumbnails.delete(key);
   }
 
+  function retain(requestId, bytes) {
+    retained.set(requestId, bytes);
+    if (retained.size > MAX_RETAINED_CAPTURES) retained.delete(retained.keys().next().value);
+  }
+
   function cache(key, bytes) {
     releaseThumbnail(key);
     thumbnails.set(key, { bytes });
@@ -213,10 +275,15 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
     clear() {
       for (const guestId of guests.keys()) forget(guestId);
       for (const key of [...thumbnails.keys()]) releaseThumbnail(key);
+      retained.clear();
     },
 
-    /** Caller settlement cannot release the deadline of unfinished native work. */
+    /**
+     * Releases a kept capture, or settles one in flight. Caller settlement
+     * cannot release the deadline of unfinished native work.
+     */
     cancelCapture(requestId) {
+      if (retained.delete(requestId)) return true;
       const capture = captures.get(requestId);
       if (!capture) return false;
       return capture.settle(captureFailure());
@@ -234,6 +301,7 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         width,
         height,
         scaleFactor,
+        retain: isRetained,
       } = request;
       const guest = guests.get(guestId);
       const isKit = isKitCapture(guest, canvasId, designId, revisionId);
@@ -242,6 +310,8 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         typeof requestId !== 'string' ||
         !IDENTIFIER.test(requestId) ||
         captures.has(requestId) ||
+        retained.has(requestId) ||
+        typeof isRetained !== 'boolean' ||
         (!isKit && !key) ||
         !guest ||
         guest.capture ||
@@ -249,9 +319,11 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
         !captureAvailable() ||
         !Number.isSafeInteger(generation) ||
         generation < 1 ||
-        !captureBounds(width, height, scaleFactor)
+        !validSize(width, height, scaleFactor)
       )
         return Promise.resolve(captureFailure());
+      if (!fitsCaps(width, height, scaleFactor))
+        return Promise.resolve(tooLarge(width, height, scaleFactor));
 
       return new Promise((resolve) => {
         let releaseDeadline = null;
@@ -294,13 +366,25 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
               complete(captureFailure());
               return;
             }
-            return guest.contents.capturePage({ x: 0, y: 0, width, height }, { stayHidden: true });
+            return guest.contents.executeJavaScript(DISPLAY_SCALE_SCRIPT);
           })
-          .then((image) => {
+          .then((displayScale) => {
             if (!isCurrent()) return;
-            if (!image) return;
-            if (image.isEmpty()) return complete(captureFailure());
-            const bytes = image.toPNG({ scaleFactor });
+            if (!Number.isFinite(displayScale) || displayScale <= 0)
+              return complete(captureFailure());
+            // A native image over the caps is never made: a Poster at 1x on a
+            // 3x display is drawn by Chromium at the asked scale instead.
+            if (!fitsCaps(width, height, displayScale))
+              return redraw(guest.contents, width, height, scaleFactor / displayScale);
+            const rect = { x: 0, y: 0, width, height };
+            return guest.contents.capturePage(rect, { stayHidden: true }).then((image) => {
+              if (!isCurrent() || !image) return;
+              if (image.isEmpty()) return complete(captureFailure());
+              return atScale(guest.contents, image.toPNG(), width, height, scaleFactor);
+            });
+          })
+          .then((bytes) => {
+            if (!isCurrent() || !bytes) return;
             if (!captureAvailable() || !validPng(bytes, width, height, scaleFactor))
               return complete(captureFailure());
             return guest.contents.executeJavaScript(PREVIEW_IDENTITY_SCRIPT).then((identity) => {
@@ -315,12 +399,20 @@ function createCanvasPreviewHosts({ log, clock = realClock, canCapture = () => t
                 return;
               }
               if (key) cache(key, bytes);
+              if (isRetained) retain(requestId, bytes);
               complete({ ok: true, mediaType: 'image/png', bytes });
             });
           })
           .catch(() => complete(captureFailure()))
           .finally(finish);
       });
+    },
+
+    /** The capture kept for this request, handed over once. */
+    takeCapture(requestId) {
+      const bytes = retained.get(requestId) ?? null;
+      retained.delete(requestId);
+      return bytes;
     },
 
     readThumbnail(canvasId, designId, revisionId) {

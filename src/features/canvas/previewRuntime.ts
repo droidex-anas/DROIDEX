@@ -13,19 +13,34 @@ import { isDocumentVisible, subscribeVisibilityChange } from '../../hooks/useDoc
 import {
   PREVIEW_POLL_SCRIPT,
   PREVIEW_STARTED,
+  PREVIEW_VECTOR_SCRIPT,
+  previewHoverScript,
+  previewLocateScript,
   previewNonce,
   previewPickScript,
+  previewProbeScript,
   previewSelectScript,
   previewSetTokensScript,
   previewStartScript,
+  readPreviewFinding,
+  readPreviewHover,
+  readPreviewLocations,
   readPreviewSnapshot,
+  readPreviewVector,
   type PreviewElement,
   type PreviewEvent,
+  type PreviewFinding,
+  type PreviewHover,
   type PreviewInstance,
+  type PreviewNode,
   type PreviewPick,
+  type PreviewProbe,
   type PreviewTarget,
+  type PreviewVector,
 } from './previewDocument';
-import type { CanvasDiagnostic } from './protocol';
+import { previewShapeScript, readPreviewShape, type PreviewShape } from './previewDocumentShape';
+import { previewTreeScript, readPreviewTree, type PreviewTree } from './previewDocumentTree';
+import type { CanvasDiagnostic, FrameRect } from './protocol';
 
 /** How long the board waits between two polls of one guest. */
 export const PREVIEW_POLL_INTERVAL_MS = 100;
@@ -110,12 +125,25 @@ export interface PreviewRunOptions {
  * One running preview. `stop` is idempotent and releases every timer. The two
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
- * `setTokens` reaches the same guests and is not answered.
+ * `setTokens` reaches the same guests and is not answered. `hover`, `probe`,
+ * `locate`, `vector`, `shape` and `tree` answer themselves, with null when
+ * nothing is there or this run can no longer ask, and leave the selection alone.
  */
 export interface PreviewRun {
   stop(): void;
   pick(pick: PreviewPick, properties: readonly string[]): number;
   select(target: PreviewTarget | null, properties: readonly string[]): number;
+  /** The element under a point, or the one named where it is drawn now. */
+  hover(at: { x: number; y: number } | PreviewNode): Promise<PreviewHover | null>;
+  probe(probe: PreviewProbe): Promise<PreviewFinding | null>;
+  /** Where each element is drawn, in order, null for one that is not. */
+  locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null>;
+  /** The design's root `<svg>` as a standalone file, or why it has none. */
+  vector(): Promise<PreviewVector | null>;
+  /** A drawn `<path>`'s data, matrix and box, or why it has none. */
+  shape(node: PreviewNode): Promise<PreviewShape | null>;
+  /** The marked elements in document order: the first page, or `before` with the next page added. */
+  tree(before: PreviewTree | null): Promise<PreviewTree | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -224,14 +252,56 @@ class GuestRun implements PreviewRun {
   }
 
   setTokens(tokens: Readonly<Record<string, string>>): void {
-    if (!this.stopped && this.started) void this.ask(previewSetTokensScript(tokens));
+    if (this.canAsk()) void this.ask(previewSetTokensScript(tokens));
+  }
+
+  async hover(at: { x: number; y: number } | PreviewNode): Promise<PreviewHover | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewHoverScript(at));
+    // An answer can land just before the run stops; a stopped run answers null.
+    return this.canAsk() ? readPreviewHover(answer) : null;
+  }
+
+  async probe(probe: PreviewProbe): Promise<PreviewFinding | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewProbeScript(probe));
+    return this.canAsk() ? readPreviewFinding(answer) : null;
+  }
+
+  async locate(elementIds: readonly string[]): Promise<(FrameRect | null)[] | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewLocateScript(elementIds));
+    return this.canAsk() ? readPreviewLocations(answer, elementIds.length) : null;
+  }
+
+  async vector(): Promise<PreviewVector | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(PREVIEW_VECTOR_SCRIPT);
+    return this.canAsk() ? readPreviewVector(answer) : null;
+  }
+
+  async shape(node: PreviewNode): Promise<PreviewShape | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewShapeScript(node));
+    return this.canAsk() ? readPreviewShape(answer) : null;
+  }
+
+  async tree(before: PreviewTree | null): Promise<PreviewTree | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewTreeScript(before?.nodes.length ?? 0));
+    return this.canAsk() ? readPreviewTree(answer, before) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */
   private command(script: (sequence: number) => string): number {
     this.latestCommand += 1;
-    if (!this.stopped && this.started) void this.ask(script(this.latestCommand));
+    if (this.canAsk()) void this.ask(script(this.latestCommand));
     return this.latestCommand;
+  }
+
+  /** A guest is asked only once it has started and while this run is still its. */
+  private canAsk(): boolean {
+    return this.started && !this.stopped;
   }
 
   private release(): void {

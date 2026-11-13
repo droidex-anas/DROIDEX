@@ -1,21 +1,14 @@
-// The persisted state of one canvas and the wire values projected from it. The
-// manifest is an untrusted boundary: it is re-validated on every load, and the
-// workspace never reads a field this module has not parsed.
+// The persisted state of one canvas. The manifest is an untrusted boundary: it
+// is re-validated on every load, and the workspace never reads a field this
+// module has not parsed. canvasProjection.ts projects it onto the wire.
 
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { ANNOTATION_LIMITS, annotationSchema } from './canvasAnnotationSchema.js';
 import { canvasError } from './canvasError.js';
 import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
-import type {
-  CanvasBuildState,
-  CanvasChange,
-  CanvasFrame,
-  CanvasSnapshot,
-  CanvasSummary,
-  EditElementInput,
-  StyleResolution,
-} from './protocol.js';
+import { stackingOrderSchema } from './frameEditSchema.js';
+import type { EditElementInput } from './protocol.js';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
@@ -23,7 +16,7 @@ import {
   designSystemAdherenceSchema,
   designSystemRefSchema,
   frameRectSchema,
-  styleResolutionSchema,
+  hasDuplicate,
 } from './schema.js';
 
 const CANVAS_MANIFEST_VERSION = 2;
@@ -57,6 +50,12 @@ const persistedDesignSchema = z
     designSystem: designSystemRefSchema,
     // Provenance only: this design owns its source copy independently.
     seed: canvasSeedSchema.optional(),
+    // The frame this one was made as a variant of, which may since have been removed.
+    variantOf: canvasIdentifierSchema.optional(),
+    // The revision the seed made, so a reader can tell that copy from later work.
+    seededRevisionId: canvasIdentifierSchema.optional(),
+    // The user hid it from the board; absent while it shows.
+    hidden: z.literal(true).optional(),
   })
   .strict();
 
@@ -106,8 +105,15 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       designId: canvasIdentifierSchema,
       revisionId: canvasIdentifierSchema,
       sequence: versionSchema,
-      // A retry cannot recompute it: the edit has already moved the revision on.
-      resolution: styleResolutionSchema.nullable(),
+      // What the one style of an edit saved before style edits were batched
+      // resolved to. Nothing reads it, but those canvases must still open.
+      resolution: z
+        .discriminatedUnion('kind', [
+          z.object({ kind: z.literal('token'), token: z.string().min(1).max(128) }).strict(),
+          z.object({ kind: z.literal('raw'), value: z.string().min(1).max(128) }).strict(),
+        ])
+        .nullable()
+        .optional(),
     })
     .strict(),
   z
@@ -171,6 +177,26 @@ const persistedMutationSchema = z.discriminatedUnion('kind', [
       fingerprint: fingerprintSchema,
       sequence: versionSchema,
       design: persistedDesignSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('hide'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      design: persistedDesignSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('reorder'),
+      mutationId: canvasIdentifierSchema,
+      scopeId: scopeIdSchema,
+      fingerprint: fingerprintSchema,
+      sequence: versionSchema,
+      designIds: stackingOrderSchema,
     })
     .strict(),
   z
@@ -262,7 +288,6 @@ export type CanvasManifest = z.infer<typeof canvasManifestSchema>;
 export interface SourceRevisionMutation {
   kind: 'edit';
   input: EditElementInput;
-  resolution: StyleResolution | null;
 }
 
 export function emptyCanvasManifest(canvasId: string, name: string, now: number): CanvasManifest {
@@ -283,62 +308,6 @@ export function emptyCanvasManifest(canvasId: string, name: string, now: number)
     tombstones: [],
     revisions: [],
     mutations: [],
-  };
-}
-
-/** Where a frame's build state comes from: `CanvasBuilds` is its one owner. */
-export interface BuildStates {
-  stateOf(canvasId: string, designId: string): CanvasBuildState;
-}
-
-export function toFrame(
-  canvasId: string,
-  design: PersistedDesign,
-  builds: BuildStates,
-): CanvasFrame {
-  return {
-    designId: design.designId,
-    name: design.name,
-    rect: { ...design.rect },
-    layoutVersion: design.layoutVersion,
-    manifestVersion: design.manifestVersion,
-    revisionId: design.revisionId,
-    designSystem: { ...design.designSystem },
-    build: builds.stateOf(canvasId, design.designId),
-  };
-}
-
-export function canvasSnapshot(manifest: CanvasManifest, builds: BuildStates): CanvasSnapshot {
-  return {
-    canvasId: manifest.canvasId,
-    sequence: manifest.sequence,
-    frames: manifest.designs.map((design) => toFrame(manifest.canvasId, design, builds)),
-    annotationsVersion: manifest.annotationsVersion,
-    annotations: [...manifest.annotations],
-  };
-}
-
-export function canvasSummary(manifest: CanvasManifest): CanvasSummary {
-  return {
-    canvasId: manifest.canvasId,
-    name: manifest.name,
-    updatedAt: manifest.updatedAt,
-    designCount: manifest.designs.length,
-    attachedAppSessionIds: [...manifest.attachedAppSessionIds],
-    designSystemAdherence: manifest.designSystemAdherence,
-  };
-}
-
-export function canvasChange(
-  manifest: CanvasManifest,
-  designs: readonly PersistedDesign[],
-  builds: BuildStates,
-): CanvasChange {
-  return {
-    canvasId: manifest.canvasId,
-    sequence: manifest.sequence,
-    frames: designs.map((design) => toFrame(manifest.canvasId, design, builds)),
-    removedDesignIds: [],
   };
 }
 
@@ -427,10 +396,6 @@ function canonicalJson(value: unknown): string {
     .sort(([left], [right]) => (left < right ? -1 : 1))
     .map(([key, field]) => `${JSON.stringify(key)}:${canonicalJson(field)}`);
   return `{${fields.join(',')}}`;
-}
-
-function hasDuplicate(values: readonly string[]): boolean {
-  return new Set(values).size !== values.length;
 }
 
 /**

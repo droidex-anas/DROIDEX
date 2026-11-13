@@ -12,12 +12,12 @@ import {
   CompilerUnavailableError,
   CompilerWorker,
   RUNTIME_UNAVAILABLE,
-  compilerResponse,
   type CompiledDesign,
 } from './compiler.js';
 import { CompilerProcesses, type DesignCompiler } from './canvasCompilerProcesses.js';
 import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
+import { LIBRARY_DESIGN } from './fixtures/library.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
@@ -78,6 +78,7 @@ test('a design above the selection limit still compiles with an honest diagnosti
   const design = await compile({ 'main.tsx': source });
   assert.match(design.html, /id="canvas-root"/);
   assert.deepEqual(design.elements, []);
+  assert.deepEqual(design.outline, { nodes: [], truncated: true });
   assert.deepEqual(
     design.diagnostics.map((entry) => entry.code),
     ['selection_unavailable'],
@@ -90,7 +91,10 @@ test('direct edits compile through the worker and its map points to canonical so
     { source: '<h1>Hello</h1>', change: { kind: 'text', value: 'Welcome' }, rendered: 'Welcome' },
     {
       source: '<h1 style={{color:"var(--ds-text)"}}>Hello</h1>',
-      change: { kind: 'style', property: 'color', value: 'var(--ds-accent)' },
+      change: {
+        kind: 'style',
+        styles: [{ property: 'color', resolution: { kind: 'token', token: '--ds-accent' } }],
+      },
       rendered: 'var(--ds-accent)',
     },
     {
@@ -211,12 +215,19 @@ test('a named Lucide icon or Simple Icons brand mark adds only its own code', as
   }
 });
 
-test('an allowed chart import compiles into a self-contained document', async () => {
-  const design = await compile(CHART_DESIGN);
+test('allowed chart and component library imports compile into a self-contained document', async () => {
+  const chart = await compile(CHART_DESIGN);
+  const library = await compile(LIBRARY_DESIGN);
 
-  assert.deepEqual(design.diagnostics, []);
-  assert.match(design.html, /Weekly visits/);
-  assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+  for (const [design, content] of [
+    [chart, /Weekly visits/],
+    [library, /Invite teammates/],
+  ] as const) {
+    assert.deepEqual(design.diagnostics, []);
+    assert.match(design.html, content);
+    assert.equal(/<script[^>]+src=|<link[\s/>]/.test(design.html), false);
+  }
+  assert.match(library.html, /@keyframes enter/, 'tailwindcss-animate writes the enter classes');
 });
 
 test('identical input names one artifact and a change names another', async () => {
@@ -280,6 +291,8 @@ test('an import that leaves the design is refused', async () => {
     ['fs', 'unsupported_import'],
     ['lucide-react/dist/cjs/lucide-react.js', 'unsupported_import'],
     ['recharts/es6/index.js', 'unsupported_import'],
+    ['radix-ui/dist/index.mjs', 'unsupported_import'],
+    ['@radix-ui/react-primitive', 'unsupported_import'],
     ['simple-icons/icons/github.svg', 'unsupported_import'],
     ['./parts/missing', 'missing_module'],
   ];
@@ -540,54 +553,6 @@ test('a runtime the app owns but cannot vouch for compiles nothing', async (t) =
       CompilerUnavailableError,
       `${reason}, after terminating`,
     );
-  }
-});
-
-test('a reply the protocol does not define is not an answer', () => {
-  // What the forked compiler sends is the one thing here this module does not
-  // write, and an unknown reason would otherwise reach the renderer as advice
-  // to restart. This covers the rule, not its wiring: `liveCompiler`'s listener
-  // calling it, losing and ending the process, and the next build forking a
-  // replacement, are exercised only by a throwaway probe driving a real child,
-  // because nothing can make the packaged worker send a malformed reply —
-  // `compilerEnv` deletes NODE_OPTIONS and the entry path is not injectable.
-  const unavailable = {
-    requestId: 1,
-    status: 'unavailable',
-    reason: 'damaged-runtime',
-    message: RUNTIME_UNAVAILABLE,
-  };
-  assert.deepEqual(compilerResponse(unavailable), unavailable);
-  assert.deepEqual(compilerResponse({ requestId: 2, status: 'stopped' }), {
-    requestId: 2,
-    status: 'stopped',
-  });
-  const edited = {
-    requestId: 3,
-    status: 'edited',
-    files: { 'main.tsx': '<h1>Changed</h1>' },
-    resolution: null,
-  };
-  assert.deepEqual(compilerResponse(edited), edited);
-
-  for (const malformed of [
-    null,
-    'stopped',
-    { status: 'stopped' },
-    { requestId: '1', status: 'stopped' },
-    { requestId: 1, status: 'invented' },
-    { ...unavailable, reason: 'invented' },
-    { ...unavailable, reason: undefined },
-    { ...unavailable, reason: { damaged: true } },
-    { ...unavailable, message: 12 },
-    { requestId: 1, status: 'ready' },
-    { requestId: 1, status: 'ready', design: { artifactId: 'a', html: 'h' } },
-    { requestId: 1, status: 'failed' },
-    { requestId: 1, status: 'edited', files: { '../outside.tsx': 'bad' } },
-    { ...edited, resolution: { kind: 'token' } },
-    { requestId: 1, status: 'edit_failed', code: 'unknown', message: 'bad' },
-  ]) {
-    assert.equal(compilerResponse(malformed), null, JSON.stringify(malformed));
   }
 });
 

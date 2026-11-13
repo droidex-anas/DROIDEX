@@ -20,38 +20,26 @@ import {
   canvasIdentifierSchema,
   designSystemAdherenceSchema,
   sourceElementSchema,
+  sourceOutlineSchema,
 } from './schema.js';
-import { MAX_BUILD_DIAGNOSTICS, MAX_DIAGNOSTIC_MESSAGE_LENGTH } from './canvasDiagnostics.js';
+import { canvasDiagnosticSchema, MAX_BUILD_DIAGNOSTICS } from './canvasDiagnostics.js';
 
-const BUILD_OUTCOME_VERSION = 3;
-
-const diagnosticSchema = z
-  .object({
-    code: z.string().min(1).max(64),
-    message: z.string().min(1).max(MAX_DIAGNOSTIC_MESSAGE_LENGTH),
-    // A design path, or one under `@droidex/design-system/`.
-    file: z
-      .string()
-      .max(CANVAS_LIMITS.maxSourcePathLength + 64)
-      .optional(),
-    line: z.number().int().nonnegative().optional(),
-    column: z.number().int().nonnegative().optional(),
-  })
-  .strict();
+const BUILD_OUTCOME_VERSION = 7;
 
 const readyResultSchema = z
   .object({
     status: z.literal('ready'),
     artifactId: canvasIdentifierSchema,
     elements: z.array(sourceElementSchema).max(CANVAS_LIMITS.maxSourceElements),
-    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+    outline: sourceOutlineSchema,
+    diagnostics: z.array(canvasDiagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
   })
   .strict();
 
 const failedResultSchema = z
   .object({
     status: z.literal('failed'),
-    diagnostics: z.array(diagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
+    diagnostics: z.array(canvasDiagnosticSchema).max(MAX_BUILD_DIAGNOSTICS),
   })
   .strict();
 
@@ -247,14 +235,18 @@ function sourceMapDigest(
     if (left === right) return 0;
     return left < right ? -1 : 1;
   });
-  const sites = elements.map(({ elementId, file, start, end, tagName, editability }) => [
-    elementId,
-    file,
-    start,
-    end,
-    tagName,
-    editability,
-  ]);
+  const sites = elements.map(
+    ({ elementId, file, start, end, line, tagName, component, editability }) => [
+      elementId,
+      file,
+      start,
+      end,
+      line,
+      tagName,
+      component,
+      editability,
+    ],
+  );
   return createHash('sha256')
     .update(JSON.stringify([sources, sites]))
     .digest('hex');
@@ -316,6 +308,7 @@ export function builtState(
       revisionId,
       artifactId: result.artifactId,
       elements: result.elements,
+      outline: result.outline,
       diagnostics: result.diagnostics,
     };
   return { status: 'failed', revisionId, diagnostics: result.diagnostics, lastWorkingRevisionId };

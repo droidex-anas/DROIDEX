@@ -95,6 +95,7 @@ export class CanvasAnnotations {
           canvasId: next.canvasId,
           sequence: next.sequence,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           annotations: {
             version: next.annotationsVersion,

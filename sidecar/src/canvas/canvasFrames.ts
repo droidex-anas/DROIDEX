@@ -11,7 +11,7 @@ import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMet
 import { stageSeed } from './canvasSeeds.js';
 import { designEntryDiagnostic } from './designEntry.js';
 import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
-import type { CreateFramesInput, WriteFilesInput } from './protocol.js';
+import type { CreateFramesInput, SvgImageReason, WriteFilesInput } from './protocol.js';
 import { mergedRevisionViolation, type FrameRect } from './schema.js';
 
 export interface SourceWriteOptions {
@@ -23,6 +23,7 @@ export interface SourceWriteOptions {
 export interface StagedFrame {
   designId: string;
   revisionId: string | null;
+  svgAsImage?: SvgImageReason;
   frame: CreateFramesInput['frames'][number];
 }
 
@@ -35,26 +36,32 @@ export async function stageFrames(
   const staged: StagedFrame[] = [];
   for (const frame of input.frames) {
     const designId = randomUUID();
-    const revisionId = await stageSeed(files, root, canvasId, designId, frame);
-    staged.push({ designId, revisionId, frame });
+    const seeded = await stageSeed(files, root, canvasId, designId, frame);
+    staged.push({ designId, revisionId: null, ...seeded, frame });
   }
   return staged;
 }
+
+const SOURCE_REMOVED = 'That source frame was removed. Undo it before creating a variant.';
+const SOURCE_UNKNOWN = 'No frame on this board has that id.';
 
 /** A seed can copy only a frame that still belongs to this board. */
 export function requireSeedFrames(manifest: CanvasManifest, input: CreateFramesInput): void {
   for (const frame of input.frames) {
     const seed = frame.seed;
-    if (seed?.kind !== 'revision') continue;
-    if (
-      seed.canvasId === manifest.canvasId &&
-      !manifest.designs.some((design) => design.designId === seed.revision.designId)
-    )
-      throw canvasError(
-        'not_found',
-        'That source frame was removed. Undo it before creating a variant.',
-      );
+    if (seed?.kind === 'revision' && seed.canvasId === manifest.canvasId)
+      requireOnBoard(manifest, seed.revision.designId);
   }
+}
+
+/** Points to Undo only while Undo can still bring the frame back. */
+function requireOnBoard(manifest: CanvasManifest, designId: string): void {
+  if (manifest.designs.some((design) => design.designId === designId)) return;
+  const undoable = manifest.tombstones.some(
+    (tombstone) =>
+      !tombstone.consumed && tombstone.designs.some((design) => design.designId === designId),
+  );
+  throw canvasError('not_found', undoable ? SOURCE_REMOVED : SOURCE_UNKNOWN);
 }
 
 /**
@@ -91,9 +98,10 @@ export async function stageRevision(
 /** Placement is decided against the current board inside the commit queue. */
 export function placeFrames(
   staged: readonly StagedFrame[],
-  placed: readonly PersistedDesign[],
+  manifest: CanvasManifest,
   placeBeside: CreateFramesInput['placeBeside'],
 ): PersistedDesign[] {
+  const placed = manifest.designs;
   let positions: FrameRect[] | undefined;
   if (placeBeside) {
     const source = placed.find((design) => design.designId === placeBeside.designId);
@@ -124,6 +132,9 @@ export function placeFrames(
   }
   const designs: PersistedDesign[] = [];
   for (const { designId, revisionId, frame } of staged) {
+    if (frame.variantOf && placeBeside && frame.variantOf !== placeBeside.designId)
+      throw canvasError('invalid_input', 'Place a variant beside the frame it is a variant of.');
+    if (frame.variantOf) requireOnBoard(manifest, frame.variantOf);
     const position = positions ? positions[designs.length] : { x, y };
     designs.push({
       designId,
@@ -135,6 +146,8 @@ export function placeFrames(
       lastWorkingRevisionId: null,
       designSystem: frame.designSystem,
       ...(frame.seed ? { seed: structuredClone(frame.seed) } : {}),
+      ...(frame.seed && revisionId ? { seededRevisionId: revisionId } : {}),
+      ...(frame.variantOf ? { variantOf: frame.variantOf } : {}),
     });
     x += frame.width + FRAME_GAP_PX;
   }

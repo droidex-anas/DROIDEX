@@ -1,6 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { FrameRect } from '../../src/features/canvas/protocol';
-import { box, boardUrl, frame, openBoard, serveBoard, stubGuests } from './board/boardPage';
+import {
+  box,
+  boardUrl,
+  frame,
+  openBoard,
+  serveBoard,
+  stubGuests,
+  zoomField,
+} from './board/boardPage';
 
 serveBoard();
 
@@ -238,6 +246,22 @@ test('Escape during a re-drag restores acknowledged geometry, not its earlier ho
   expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
 });
 
+test('Escape during a re-drag withdraws a move still waiting on an unanswered one', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await drag(page, 'A');
+  const sent = await renderedRect(page, 'A');
+  await drag(page, 'A', 30, 20);
+  await drag(page, 'A', 25, 20, false);
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.evaluate(() => window.boardHarness.answer(0));
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  expect(await renderedRect(page, 'A')).toEqual(sent);
+});
+
 test('obsolete arrange rejections cannot replace newer work or report stale errors', async ({
   page,
 }) => {
@@ -301,8 +325,9 @@ test('UI zoom preserves pointer anchors and 1:1 frame and background drags at 13
     const beforeDrag = await box(frame(page, 'A'));
     await drag(page, 'A');
     const afterDrag = await box(frame(page, 'A'));
-    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 1);
-    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 1);
+    // A drag commits whole world pixels, so the frame lands within half a pixel of the hand.
+    expect(afterDrag.x - beforeDrag.x).toBeCloseTo(60, 0);
+    expect(afterDrag.y - beforeDrag.y).toBeCloseTo(40, 0);
     expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
     const board = await box(page.getByTestId('canvas-board'));
     await page.mouse.move(Math.round(board.x + 10), Math.round(board.y + 10));
@@ -371,7 +396,8 @@ test('keyboard arrows pan only without a selection, with a visible soft board fo
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
 
   // With a selection the arrows stop panning and nudge it instead: one world
-  // unit, ten with Shift, each written at the layout version it was read at.
+  // unit, ten with Shift. A nudge on one still saving waits for it to land and
+  // is written at the layout version that one leaves.
   await page.evaluate(() => window.boardHarness.select(['a']));
   await expect(page.locator('#outside')).toHaveAttribute('aria-pressed', 'true');
   await board.focus();
@@ -379,11 +405,14 @@ test('keyboard arrows pan only without a selection, with a visible soft board fo
   await page.keyboard.press('ArrowRight');
   await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
   await page.keyboard.press('Shift+ArrowRight');
+  await page.clock.runFor(32);
+  expect(await page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.evaluate(() => window.boardHarness.answer(0));
   await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(2);
   const nudged = await page.evaluate(() => window.boardHarness.calls.map((call) => call.frames));
   expect(nudged).toEqual([
     [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 101, y: 50, width: 400, height: 300 } }],
-    [{ designId: 'a', expectedLayoutVersion: 3, rect: { x: 111, y: 50, width: 400, height: 300 } }],
+    [{ designId: 'a', expectedLayoutVersion: 4, rect: { x: 111, y: 50, width: 400, height: 300 } }],
   ]);
   expect(await transform(page)).toBe(selectedView);
 
@@ -420,6 +449,23 @@ test('at most four previews stay mounted and the interacted frame keeps its slot
   const panned = await mountedPreviews(page);
   expect(panned).toHaveLength(4);
   expect(panned).toContain('a');
+});
+
+test('a pan Escape cancels settles where it stopped, so the previews follow the view', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const previews = page.locator('[data-harness-preview]');
+  await expect(previews).toHaveCount(2);
+  await page.mouse.move(250, 140);
+  await page.mouse.down();
+  await page.mouse.move(1150, 140);
+  await page.clock.runFor(32);
+  await page.keyboard.press('Escape');
+  await page.clock.runFor(32);
+  // Design B is panned off the board while the button is still down.
+  await expect(previews).toHaveCount(1);
+  await page.mouse.up();
 });
 
 test('Interact gives the pointer to the preview and two Escapes undo mode then selection', async ({
@@ -646,7 +692,7 @@ test('arrowing onto a frame partly off the board brings it wholly into view at t
   expect(shown.y).toBeGreaterThanOrEqual(board.y);
   expect(shown.x + shown.width).toBeLessThanOrEqual(board.x + board.width);
   expect(shown.y + shown.height).toBeLessThanOrEqual(board.y + board.height);
-  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+  await expect(zoomField(page)).toHaveValue('90%');
 });
 
 test('a live guest keeps its element through selection, zoom, arrange, a resized pane and the source drawer', async ({

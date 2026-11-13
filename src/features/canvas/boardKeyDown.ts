@@ -9,14 +9,17 @@ import {
   frameHeaderOf,
   isBoardControl,
   isBoardEditor,
+  historyStep,
   isDeleteKey,
-  isUndoKey,
+  isSelectAllKey,
+  isTagKey,
   modeShortcut,
   zoomShortcut,
 } from './boardKeys';
-import type { ZoomCommand } from './BoardControls';
+import type { HistoryStep } from './boardHistory';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent, BoardMode } from './canvasState';
+import type { ZoomCommand } from './ZoomControl';
 
 /** Board-local pixels one arrow key pans by when nothing is selected. */
 const ARROW_PAN_PX = 32;
@@ -40,10 +43,12 @@ export interface BoardKeyActions {
   nudge: (step: Point) => void;
   /** Deletes the selected frames; false when there is nothing Delete can take. */
   removeSelection: () => boolean;
-  /** Undoes this canvas's latest deletion; false when none is offered. */
-  undoRemoval: () => boolean;
+  /** Steps this canvas's history back or on; false when there is no step. */
+  history: (step: HistoryStep) => boolean;
   focusBoard: () => void;
   focusLabel: (designId: string) => void;
+  /** Tags these frames in the chat, or untags them; undefined where frames cannot be tagged. */
+  tagFrames: ((designIds: readonly string[]) => void) | undefined;
 }
 
 export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: BoardKeyActions) {
@@ -51,6 +56,10 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
   if (isBoardEditor(event.target)) return;
   const header = frameHeaderOf(event.target);
   const mark = annotationMarkOf(event.target);
+  if (isTagKey(event)) {
+    runTagKey(event, header, actions);
+    return;
+  }
   // Board commands belong to the board and its frame labels. Its own tools take
   // the zoom and mode keys too, so a key still works after one was clicked;
   // Space, Enter and the arrows stay theirs. A focused mark takes the
@@ -69,6 +78,26 @@ export function onBoardKeyDown(event: KeyboardEvent<HTMLDivElement>, actions: Bo
           runBoardKey(event, header, actions)));
   }
   if (handled) event.preventDefault();
+}
+
+/**
+ * The tag key, wherever on the board it is pressed: the selected frames, or a
+ * focused label's own frame when it is not among them.
+ */
+function runTagKey(
+  event: KeyboardEvent,
+  header: string | null,
+  { interaction, tagFrames }: BoardKeyActions,
+) {
+  const { selectedFrameIds } = interaction;
+  const designIds =
+    header !== null && !selectedFrameIds.includes(header) ? [header] : selectedFrameIds;
+  if (!tagFrames || designIds.length === 0) return;
+  // The key is the board's here, so an app shortcut bound to it does not run as
+  // well; a held key auto-repeats and would toggle straight back.
+  event.preventDefault();
+  event.stopPropagation();
+  if (!event.repeat) tagFrames(designIds);
 }
 
 function soleSelection({ selectedFrameIds }: BoardInteraction): string | null {
@@ -94,6 +123,9 @@ function escape(header: string | null, mark: string | null, actions: BoardKeyAct
 function runShortcut(event: KeyboardEvent, actions: BoardKeyActions): boolean {
   const zoom = zoomShortcut(event);
   if (zoom) actions.zoom(zoom);
+  // The board's ⌘ zoom keys are its own: ⌘1 would also pick the first tab, and
+  // an app shortcut someone bound to ⌘0, ⌘+ or ⌘− would run as well.
+  if (zoom && (event.metaKey || event.ctrlKey)) event.stopPropagation();
   const mode = zoom ? null : modeShortcut(event);
   if (mode) actions.setMode(mode);
   return zoom !== null || mode !== null;
@@ -119,7 +151,12 @@ function runBoardKey(
     return true;
   }
   if (isDeleteKey(event)) return actions.removeSelection();
-  if (isUndoKey(event)) return actions.undoRemoval();
+  const step = historyStep(event);
+  if (step) return actions.history(step);
+  if (isSelectAllKey(event)) {
+    actions.dispatch({ type: 'pick-all', designIds: [...actions.order] });
+    return true;
+  }
   if (event.key === ' ') {
     actions.holdSpace();
     return true;

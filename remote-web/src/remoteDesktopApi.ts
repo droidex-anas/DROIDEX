@@ -164,8 +164,15 @@ export function createRemoteDesktopApi(
         code: 'capture_unavailable',
         message: 'Saving a design image is only available on your laptop.',
       }),
+    canvasSvgSave: () =>
+      Promise.resolve({
+        ok: false,
+        code: 'capture_unavailable',
+        message: 'Saving a design image is only available on your laptop.',
+      }),
     canvasPickImage: laptopOnly('Adding Canvas images'),
     canvasDropImage: laptopOnly('Adding Canvas images'),
+    canvasPasteSvg: laptopOnly('Pasting SVGs'),
     canvasPickKitImage: laptopOnly('Adding design system images'),
     canvasDropKitImage: laptopOnly('Adding design system images'),
     canvasReadKitImage: laptopOnly('Showing design system images'),
@@ -175,6 +182,7 @@ export function createRemoteDesktopApi(
         code: 'storage_failed',
         message: 'Exporting Canvas source is only available on your laptop.',
       }),
+    canvasExportSourceCancel: () => Promise.resolve(),
     canvasExportDesignSystem: () =>
       Promise.resolve({
         ok: false,

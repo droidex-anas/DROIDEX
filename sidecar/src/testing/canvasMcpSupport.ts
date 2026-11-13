@@ -9,6 +9,7 @@ import type { AgentAnnotation } from '../canvas/canvasAnnotationReport.js';
 import type { CanvasCapture } from '../canvas/canvasCaptures.js';
 import { canvasError } from '../canvas/canvasError.js';
 import type { CanvasFileSystem } from '../canvas/canvasFiles.js';
+import type { ImportProjectImage } from '../canvas/desktopImageChannel.js';
 import { createCanvasMcpServer } from '../canvas/canvasMcpServer.js';
 import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
@@ -21,6 +22,8 @@ import {
 import { checkDesignSystemAdherence } from '../canvas/designSystemAdherence.js';
 import { readDesignSystem } from '../canvas/designSystems.js';
 import { KitPreviews } from '../canvas/kitPreviews.js';
+import { SourceElementError } from '../canvas/sourceElementError.js';
+import { instrumentSource } from '../canvas/sourceElements.js';
 import { storage } from './canvasBuildSupport.js';
 
 /** No renderer page answers a screenshot here, so capture is always refused. */
@@ -37,10 +40,12 @@ export interface Reply {
   chatAttached?: true;
   created?: { canvasId: string; frames: { designId: string; revisionId: string | null }[] };
   receipt?: { revisionId: string };
+  element?: { elementId: string; line: number; endLine: number; source: string };
   frames?: { designId: string }[];
   systems?: { id: string; version: number; proposal: boolean }[];
   status?: string;
   ref?: { id: string; version: number };
+  entries?: { name: string; jsx: string }[];
   id?: string;
   baseVersion?: number;
   latestVersion?: number;
@@ -64,6 +69,8 @@ export async function harness(
   fs?: CanvasFileSystem,
   capture?: CanvasCapture,
   projectFolder: () => string | null = () => null,
+  importImage: ImportProjectImage = () =>
+    Promise.reject(canvasError('storage_failed', 'No desktop app imports images in this suite.')),
 ) {
   const scopes = new CanvasScopes();
   const turns = new CanvasTurns(scopes, (id) => workspace.attachedCanvasId(id));
@@ -86,7 +93,7 @@ export async function harness(
   // The open pane: it starts a preview of every build that lands and, a turn of
   // the event loop later, says what the design did.
   workspace.changes.subscribe((change) => {
-    for (const { designId, build } of change.frames) {
+    for (const { designId, build } of change.builds) {
       if (build.status !== 'ready') continue;
       const ran = { designId, revisionId: build.revisionId };
       workspace.previews.record(change.canvasId, { ...ran, outcome: 'loading', errors: [] });
@@ -107,6 +114,7 @@ export async function harness(
     kits,
     () => 'chat-one',
     projectFolder,
+    importImage,
   );
   const call = async (name: string, input: Record<string, unknown>): Promise<Reply> => {
     const target = server.tools.find((entry) => entry.name === name);
@@ -144,12 +152,24 @@ function answeringBuilds(): CanvasBuilds {
     const kit = checkDesignSystemAdherence(input.files, system, input.designSystemAdherence);
     if (kit.status === 'failed') throw new CompileFailedError(kit.diagnostics);
     const artifactId = `${main.includes('THROWS') ? 'throws' : 'renders'}-${input.revisionId}`;
-    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements: [] };
+    const { elements, outline } = instrumented(input);
+    return { artifactId, html: '<html></html>', diagnostics: kit.diagnostics, elements, outline };
   };
   return new CanvasBuilds({
     compiler: () => ({ compile, terminate: () => Promise.resolve() }),
     deadline: () => () => undefined,
   });
+}
+
+/** The element map and outline, or the syntax failure the real compiler reports for unparsable source. */
+function instrumented(input: DesignCompileInput) {
+  try {
+    return instrumentSource(input.files, input.revisionId);
+  } catch (error) {
+    if (!(error instanceof SourceElementError) || error.code === 'selection_limit') throw error;
+    const { message, file, line, column } = error;
+    throw new CompileFailedError([{ code: 'syntax_error', message, file, line, column }]);
+  }
 }
 
 /** Kit examples build at once, except one that names `BROKEN`. */
@@ -166,11 +186,13 @@ function answeringKits(): KitPreviews {
       html: '<html></html>',
       diagnostics: [],
       elements: [],
+      outline: { nodes: [], truncated: false },
     });
   };
   return new KitPreviews({
     compiler: () => ({
       compile: (input) => compile(input as KitPreviewCompileInput),
+      checkCatalog: () => Promise.resolve([]),
       terminate: () => Promise.resolve(),
     }),
     deadline: () => () => undefined,

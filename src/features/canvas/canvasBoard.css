@@ -1,7 +1,8 @@
 /* The board's chrome: frames drawn as sheets with their labels, selection and
    states. It is imported by the lazy Canvas surface, so it loads with the board
-   rather than on every app start, in Chat as in Design; the tools that float
-   on the board have their own sheet, canvasBoardTools.css.
+   rather than on every app start, in Chat as in Design. The tools that float
+   on the board and what it draws around a selection have their own sheets,
+   canvasBoardTools.css and canvasBoardSelection.css.
 
    The world layer sets --board-scale. Chrome drawn inside it divides by that,
    so a frame's edge, label, handles and badges keep their screen size at any
@@ -29,12 +30,16 @@
   box-shadow:
     0 0 0 calc(1px / var(--board-scale)) var(--canvas-sheet-edge),
     var(--shadow-sm);
-  transition: box-shadow 120ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: box-shadow var(--duration-quick) var(--ease-smooth-out);
 }
 
-.canvas-frame:hover > .canvas-sheet {
+/* Hover and selection draw the line the element Edit picks is drawn with,
+   1px on hover and 1.5px once selected. A layers row under the pointer
+   lights its frame the same way. */
+.canvas-frame:hover > .canvas-sheet,
+.canvas-frame[data-layer-hover] > .canvas-sheet {
   box-shadow:
-    0 0 0 calc(1px / var(--board-scale)) color-mix(in srgb, var(--selection) 55%, transparent),
+    0 0 0 calc(1px / var(--board-scale)) var(--selection),
     var(--shadow-sm);
 }
 
@@ -50,20 +55,31 @@
   font-family: var(--canvas-chrome-font);
 }
 
-/* The name above the sheet, which is also the frame's drag handle and tab stop.
-   Plain text on the board, its first letter on the sheet's left edge: the
-   inset that gives the focus line room is taken back by the margin. */
+/* The row above the sheet, which drags the frame: the name, then its kit notes
+   and tag. Plain text on the board, its first letter on the sheet's left edge:
+   the inset that gives the focus line room is taken back by the margin. It is
+   as wide on screen as the frame, which a resize sets, so a long name ellipsizes. */
 .canvas-frame-label {
   position: absolute;
   bottom: 100%;
   left: 0;
+  width: calc(100% * var(--board-scale));
   display: flex;
   align-items: center;
   gap: 6px;
   padding-bottom: 4px;
   transform-origin: 0 100%;
-  outline: none;
   touch-action: none;
+  user-select: none;
+}
+
+/* The name and its Interacting note: the frame's tab stop. */
+.canvas-frame-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  outline: none;
 }
 
 .canvas-frame-name {
@@ -77,21 +93,37 @@
   font: 500 12px / 18px var(--canvas-chrome-font);
   color: var(--text-muted);
   transition:
-    color 120ms,
-    box-shadow 120ms;
+    color var(--duration-quick) var(--ease-smooth-out),
+    box-shadow var(--duration-quick) var(--ease-smooth-out);
 }
 
-.canvas-frame:hover .canvas-frame-name {
-  color: var(--text);
+/* A long variant name shortens before its suffix, so the variants of one frame
+   still read apart. */
+.canvas-frame-name-split {
+  display: flex;
 }
 
+.canvas-frame-name-base {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-frame-name-suffix {
+  flex-shrink: 0;
+  white-space: pre;
+}
+
+.canvas-frame:hover .canvas-frame-name,
+.canvas-frame[data-layer-hover] .canvas-frame-name,
 .canvas-frame[data-selected] .canvas-frame-name {
   color: var(--selection-label);
 }
 
 /* The keyboard's place on the board: the selection line around the name, which
    holds 3:1 against every board, where a tint read as nothing on dark ones. */
-.canvas-frame-label:focus-visible .canvas-frame-name {
+.canvas-frame-header:focus-visible .canvas-frame-name,
+.canvas-frame-kit-notes:focus-visible > * {
   box-shadow: 0 0 0 1.5px var(--selection);
 }
 
@@ -101,95 +133,79 @@
   color: var(--selection-label);
 }
 
-/* The selected frame's toolbar, above its label row, starting where the label
-   does, or ending where the frame does when the board would cut it off. The
-   wrapper is what scales, so the gap under the bar is in screen pixels. */
-.canvas-frame-tools {
-  position: absolute;
-  bottom: calc(100% + 32px / var(--board-scale));
-  left: 0;
-  padding-bottom: 6px;
-  transform-origin: 0 100%;
-}
-
-.canvas-frame-tools[data-align='end'] {
-  right: 0;
-  left: auto;
-  transform-origin: 100% 100%;
-}
-
-.canvas-frame-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-  border-radius: 10px;
-  background: var(--raised);
-  box-shadow: var(--shadow-sm);
-  transform-origin: 0 100%;
-}
-
-.canvas-frame-tools[data-align='end'] .canvas-frame-toolbar {
-  transform-origin: 100% 100%;
-}
-
-.canvas-frame-tool {
+/* The frame's tag in the chat: the selection tint while tagged, revealed by
+   hovering the frame while not, and never clicked while hidden. The inset gives
+   the small glyph a 28px target. */
+.canvas-frame-tag {
+  position: relative;
   display: flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  font: 500 12px / 18px var(--canvas-chrome-font);
-  color: var(--text-secondary);
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
   transition:
-    background 120ms,
-    color 120ms;
+    opacity var(--duration-quick) var(--ease-smooth-out),
+    background var(--duration-quick) var(--ease-smooth-out),
+    color var(--duration-quick) var(--ease-smooth-out);
 }
 
-.canvas-frame-tool:hover,
-.canvas-frame-tool:focus-visible,
-.canvas-frame-tool[aria-expanded='true'] {
-  outline: none;
-  background: color-mix(in srgb, var(--text) 8%, transparent);
-  color: var(--text);
+.canvas-frame-tag::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
 }
 
-.canvas-frame-tool[aria-pressed='true'] {
+@media (hover: hover) {
+  .canvas-frame:hover .canvas-frame-tag {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .canvas-frame-tag:hover {
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+  }
+}
+
+.canvas-frame-tag[data-tagged],
+.canvas-frame-tag[data-tagged]:hover {
+  opacity: 1;
+  pointer-events: auto;
   background: color-mix(in srgb, var(--selection) 14%, transparent);
-  color: var(--selection);
+  color: var(--selection-label);
 }
 
-.canvas-frame-tool-text {
-  width: auto;
-  padding: 0 10px;
-}
-
-/* The version on show, as a tinted chip that opens the list of versions. */
-.canvas-frame-version {
-  width: auto;
-  min-width: 32px;
-  padding: 0 8px;
-  background: var(--success-soft);
-  color: var(--success);
-  font-variant-numeric: tabular-nums;
-}
-
-.canvas-frame-version:hover,
-.canvas-frame-version:focus-visible,
-.canvas-frame-version[aria-expanded='true'] {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-
-.canvas-frame-divider {
+/* Guide's kit notes on a built frame. The inset gives the 20px badge a 28px
+   target, and only a badge that opens the source takes the pointer; any other
+   press falls through to the row and picks or drags the frame. */
+.canvas-frame-kit-notes {
+  position: relative;
+  display: flex;
   flex-shrink: 0;
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: color-mix(in srgb, var(--text) 12%, transparent);
+  padding: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  pointer-events: none;
 }
+
+.canvas-frame-kit-notes::before {
+  content: '';
+  position: absolute;
+  inset: -4px 0;
+}
+
+.canvas-frame-kit-notes[data-opens] {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
 /* The name while it is renamed: a raised field where the plain name stood. */
 .canvas-frame-name-field {
   width: 100%;
@@ -199,65 +215,6 @@
   box-shadow:
     0 0 0 1.5px var(--selection),
     var(--shadow-sm);
-}
-
-/* The selected frame's size, under its bottom edge. The wrapper scales about
-   the frame's centre line, and the badge centres itself on it. */
-.canvas-frame-size {
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform-origin: 0 0;
-  pointer-events: none;
-}
-
-.canvas-frame-size > span {
-  display: block;
-  margin-top: 8px;
-  padding: 1px 6px;
-  border-radius: 5px;
-  background: var(--selection);
-  color: var(--on-selection);
-  font: 500 11px / 16px var(--canvas-chrome-font);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transform: translateX(-50%);
-}
-
-/* Resize: a square at the corner, and the two edges as invisible strips. */
-.canvas-frame-handle {
-  position: absolute;
-  touch-action: none;
-}
-
-.canvas-frame-handle[data-handle='southeast'] {
-  left: 100%;
-  top: 100%;
-  width: 8px;
-  height: 8px;
-  border: 1.5px solid var(--selection);
-  border-radius: 2px;
-  background: var(--raised);
-  transform: translate(-50%, -50%) scale(calc(1 / var(--board-scale)));
-  cursor: nwse-resize;
-}
-
-.canvas-frame-handle[data-handle='east'] {
-  top: 0;
-  left: 100%;
-  width: calc(10px / var(--board-scale));
-  height: 100%;
-  margin-left: calc(-5px / var(--board-scale));
-  cursor: ew-resize;
-}
-
-.canvas-frame-handle[data-handle='south'] {
-  left: 0;
-  top: 100%;
-  width: 100%;
-  height: calc(10px / var(--board-scale));
-  margin-top: calc(-5px / var(--board-scale));
-  cursor: ns-resize;
 }
 
 /* What a sheet says when it has no live preview: centred, at screen size. It
@@ -464,27 +421,56 @@
   fill: var(--raised);
 }
 
-/* The rubber band, in screen space above the world layer. */
-.canvas-band {
-  position: absolute;
-  pointer-events: none;
-  border-radius: 2px;
-  border: 1px solid var(--selection);
-  background: color-mix(in srgb, var(--selection) 8%, transparent);
-}
-
-/* The element Edit has picked, outlined over the guest that draws it. */
-.canvas-element-outline {
-  position: absolute;
-  pointer-events: none;
-  box-shadow: 0 0 0 calc(1.5px / var(--board-scale)) var(--selection);
-  background: color-mix(in srgb, var(--selection) 6%, transparent);
-}
-
 /* ── Pane ───────────────────────────────────────────────────────────────── */
 
-/* The element panel docks inside the board's column, so the side pane's corner
-   controls step left of it instead of covering its header. */
+/* The element panel docks inside the board's column, full height, so the side
+   pane's corner controls step left of it instead of covering its header. */
 .canvas-pane-column:has(.canvas-element-panel) > .canvas-pane-corner {
-  right: calc(theme('width.80') + theme('spacing.4'));
+  right: calc(theme('width.sidebar') + theme('spacing.2'));
+}
+
+/* The layers tree keeps the keyboard while its rows take it in turn through
+   aria-activedescendant, so the row the keyboard is on wears the ring a
+   focused control would, and the tree wears none. */
+.canvas-layers-tree:focus-visible {
+  outline: none;
+}
+
+.canvas-layers-tree:focus-visible [data-keyboard-row] {
+  outline: 1.5px solid var(--focus-ring);
+  outline-offset: -1.5px;
+}
+
+/* A row's eye and handle show under the pointer and on the keyboard's row; a
+   hidden frame's eye stays, so the panel says which frames are off the board. */
+.canvas-layer-tool {
+  opacity: 0;
+}
+
+.canvas-layers-tree [role='treeitem']:hover .canvas-layer-tool,
+.canvas-layers-tree:focus-visible [data-keyboard-row] .canvas-layer-tool,
+.canvas-layer-tool[aria-pressed='true'] {
+  opacity: 1;
+}
+
+.canvas-layers-tree[data-dragging],
+.canvas-layers-tree[data-dragging] * {
+  cursor: grabbing;
+}
+
+.canvas-layers-tree[data-refused],
+.canvas-layers-tree[data-refused] * {
+  cursor: not-allowed;
+}
+
+/* A colour that paints nothing, as the element panel's swatch shows it. */
+.canvas-swatch-none {
+  background-color: var(--surface);
+  background-image: conic-gradient(
+    color-mix(in srgb, var(--text) 22%, transparent) 25%,
+    transparent 0 50%,
+    color-mix(in srgb, var(--text) 22%, transparent) 0 75%,
+    transparent 0
+  );
+  background-size: 6px 6px;
 }

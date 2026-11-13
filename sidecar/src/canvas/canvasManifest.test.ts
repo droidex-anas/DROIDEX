@@ -118,5 +118,5 @@ test('a receipt answers only the request and the command it was issued for', () 
   assert.throws(() => recordedRevision(manifest, createInput.mutationId, 'write', fingerprint), {
     code: 'invalid_input',
   });
-  assert.equal(recordedArrange(manifest, 'never-issued', fingerprint, unbuilt), null);
+  assert.equal(recordedArrange(manifest, 'never-issued', fingerprint), null);
 });

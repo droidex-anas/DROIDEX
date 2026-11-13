@@ -110,6 +110,8 @@ import {
 import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import { useComposerReferences } from './composer/useComposerReferences';
+import { useComponentMentions } from './composer/useComponentMentions';
+import { useFrameMentions } from './composer/useFrameMentions';
 import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
 import { CanvasImageChip } from './composer/CanvasImageChip';
 import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../features/canvas/designSystemChoices';
@@ -856,6 +858,16 @@ export default function PromptInput({
   const { applyFormat } = draftEditing;
 
   const trigger = useMemo(() => composerTrigger(input, caret), [input, caret]);
+  const frameMentions = useFrameMentions(
+    appSessionId,
+    references.canvasKey,
+    trigger?.kind === 'file',
+  );
+  const componentMentions = useComponentMentions(
+    appSessionId,
+    references.canvasKey,
+    trigger?.kind === 'file',
+  );
 
   // Switching conversations abandons any schedule in progress; the bumped
   // generation also stops an in-flight save from clearing the new draft.
@@ -961,9 +973,15 @@ export default function PromptInput({
   const menu = useMemo(
     () =>
       trigger
-        ? composerMenu(trigger, { commands: slashCommands, catalog, files })
+        ? composerMenu(trigger, {
+            commands: slashCommands,
+            catalog,
+            files,
+            frames: frameMentions.frames,
+            components: componentMentions.components,
+          })
         : EMPTY_COMPOSER_MENU,
-    [trigger, files, catalog, slashCommands],
+    [trigger, files, catalog, slashCommands, frameMentions.frames, componentMentions.components],
   );
 
   const menuOpen = !!trigger && menu.rows.length > 0;
@@ -973,8 +991,10 @@ export default function PromptInput({
       new Set([
         ...activeSkills.map((item) => menuRowKey({ type: 'catalog', item })),
         ...attachedFiles.map((path) => menuRowKey({ type: 'file', path })),
+        ...frameMentions.taggedRowKeys,
+        ...componentMentions.taggedRowKeys,
       ]),
-    [activeSkills, attachedFiles],
+    [activeSkills, attachedFiles, frameMentions.taggedRowKeys, componentMentions.taggedRowKeys],
   );
   // The highlight follows the row rather than its position, so a row landing
   // while the menu is open never moves it. No row named means the first one.
@@ -1231,7 +1251,13 @@ export default function PromptInput({
       replaceTrigger('');
       item.command.run();
     } else if (item.type === 'catalog') runCatalogRow(item.item);
-    else addFile(item.path);
+    else if (item.type === 'frame') {
+      frameMentions.tag(item.frame);
+      replaceTrigger('');
+    } else if (item.type === 'component') {
+      componentMentions.tag(item.entry);
+      replaceTrigger('');
+    } else addFile(item.path);
   };
 
   const prepareDraftCwd = async (
@@ -1725,11 +1751,12 @@ export default function PromptInput({
             files: allFiles,
             ...(mentions.length > 0 ? { mentions } : {}),
             ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
-            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
+            ...references.queued,
+            ...(canvasContext ? { canvasContext } : {}),
             design,
           },
         });
-        if (sideChatReplies.length > 0) references.detachReplies();
+        references.detach();
         clearDesign();
         return;
       }
@@ -1745,10 +1772,10 @@ export default function PromptInput({
               appSessionId,
               displayText,
               browserTranscriptReferencesFromDesignReferences(design.references),
-              { skills: skillNames, files: allFiles, sideChatReplies },
+              { skills: skillNames, files: allFiles, ...references.transcript },
             ),
           });
-          if (sideChatReplies.length > 0) references.detachReplies();
+          references.detach();
         },
         resetComposer: () => {
           const draftKept = composerRevisionRef.current !== composerRevision;
@@ -1763,7 +1790,11 @@ export default function PromptInput({
         },
         sendCommand: () => {
           try {
-            sendDesignPrompt(appSessionId, composed, design.references, responseFormat, mentions);
+            sendDesignPrompt(appSessionId, composed, design.references, {
+              responseFormat,
+              mentions,
+              canvasContext,
+            });
             armTurnStartingTimeout();
           } catch (err) {
             stopTurnStarting();

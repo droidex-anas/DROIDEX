@@ -41,13 +41,13 @@ import {
 } from './canvasAnnotationSchema.js';
 import {
   arrangeFramesInputSchema,
-  createFramesInputSchema,
-  editElementInputSchema,
   removeFramesInputSchema,
   renameFrameInputSchema,
+  reorderFramesInputSchema,
   undoRemovalInputSchema,
-  writeFilesInputSchema,
-} from './schema.js';
+} from './frameEditSchema.js';
+import { editElementInputSchema } from './elementEditSchema.js';
+import { createFramesInputSchema, writeFilesInputSchema } from './schema.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -138,6 +138,16 @@ const sketch: Annotation = {
   updatedAt: 1_767_225_600_500,
 };
 
+const hey = {
+  designId: 'dsg_hey',
+  name: 'Hey',
+  rect: { x: 0, y: 0, width: 720, height: 720 },
+  designSystem,
+  variantOf: null,
+  seededRevisionId: null,
+  hidden: false,
+};
+
 const wire: SidecarWire = {
   createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
   create: {
@@ -162,13 +172,10 @@ const wire: SidecarWire = {
     canvasId: 'cv_01',
     frames: [
       {
-        designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
+        ...hey,
         layoutVersion: 0,
         manifestVersion: 0,
         revisionId: null,
-        designSystem,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -235,18 +242,16 @@ const wire: SidecarWire = {
     annotations: [sketch],
     frames: [
       {
-        designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
+        ...hey,
         layoutVersion: 2,
         manifestVersion: 2,
         revisionId: 'rev_02',
-        designSystem,
         build: {
           status: 'ready',
           revisionId: 'rev_02',
           artifactId: 'art_02',
           elements: [],
+          outline: { nodes: [], truncated: false },
           diagnostics: [],
           generation: 1,
         },
@@ -259,6 +264,9 @@ const wire: SidecarWire = {
         manifestVersion: 1,
         revisionId: null,
         designSystem,
+        variantOf: null,
+        seededRevisionId: null,
+        hidden: false,
         build: { status: 'pending', generation: 0 },
       },
     ],
@@ -266,15 +274,10 @@ const wire: SidecarWire = {
   change: {
     canvasId: 'cv_01',
     sequence: 8,
-    frames: [
+    frames: [{ ...hey, layoutVersion: 2, manifestVersion: 2, revisionId: 'rev_03' }],
+    builds: [
       {
         designId: 'dsg_hey',
-        name: 'Hey',
-        rect: { x: 0, y: 0, width: 720, height: 720 },
-        layoutVersion: 2,
-        manifestVersion: 2,
-        revisionId: 'rev_03',
-        designSystem,
         build: {
           status: 'failed',
           generation: 2,
@@ -322,7 +325,9 @@ const wire: SidecarWire = {
     file: 'main.tsx',
     start: 48,
     end: 64,
+    line: 3,
     tagName: 'h1',
+    component: 'Hero',
     editability: 'literal',
   },
   edit: {
@@ -462,6 +467,12 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'edited', receipt: wire.receipt, landed: '0123456789abcdef' },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: { kind: 'arranged', change: wire.change },
     },
     {
@@ -486,12 +497,25 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       type: 'canvas.result',
       requestId: 'req_01',
       ok: true,
+      reply: { kind: 'hiddenSet', change: wire.change },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
+      reply: { kind: 'reordered', change: { ...wire.change, frames: [], order: ['dsg_hey'] } },
+    },
+    {
+      type: 'canvas.result',
+      requestId: 'req_01',
+      ok: true,
       reply: {
         kind: 'annotated',
         change: {
           canvasId: 'cv_01',
           sequence: 9,
           frames: [],
+          builds: [],
           removedDesignIds: [],
           annotations: { version: 4, upserted: [sketch], removedIds: ['ann_old'] },
         },
@@ -544,6 +568,15 @@ test('every serialized event the sidecar emits passes the renderer validator', (
       canvasId: 'cv_01',
       designId: 'dsg_01',
       revisionId: 'rev_01',
+      image: { format: 'png', scale: 3 },
+    },
+    {
+      type: 'canvas.captureRequest',
+      captureId: '0b6b9f3e-7c1d-4f43-9a5e-2f1c8d4e6a71',
+      canvasId: 'cv_01',
+      designId: 'dsg_01',
+      revisionId: 'rev_01',
+      image: { format: 'svg' },
     },
   ];
   // Types agreeing is not enough: the two runtime bounds have to agree too, or
@@ -552,6 +585,13 @@ test('every serialized event the sidecar emits passes the renderer validator', (
     const serialized: unknown = JSON.parse(JSON.stringify(event));
     assert.ok(isRecord(serialized) && isCanvasEvent(serialized), `rejected ${event.type}`);
   }
+  assert.equal(isCanvasEvent({ ...events.at(-1), image: { format: 'png', scale: 4 } }), false);
+  const reordered = (order: string[]) => ({
+    type: 'canvas.change',
+    change: { ...wire.change, order },
+  });
+  assert.ok(isCanvasEvent(reordered(['dsg_a', 'dsg_b'])));
+  assert.equal(isCanvasEvent(reordered(['dsg_a', 'dsg_a'])), false);
   // The renderer's half of the one correlation bound; canvasBridge.test.ts
   // holds the sidecar to the same length through the dispatch boundary.
   assert.ok(isCanvasEvent({ ...wire.event, requestId: 'r'.repeat(128) }));
@@ -559,11 +599,15 @@ test('every serialized event the sidecar emits passes the renderer validator', (
 });
 
 test('the renderer accepts a ready element map and rejects incomplete or unbounded maps', () => {
+  const node = { nodeId: '0123456789abcdef', parentId: null, kind: 'element', name: 'h1' };
+  const flags = { lock: null, free: false, contentFromProps: false, visibility: 'shown' };
+  const row = { ...node, ...flags, text: 'Hey', elementId: wire.element.elementId };
   const ready = {
     status: 'ready',
     revisionId: 'rev_02',
     artifactId: 'art_02',
     elements: [wire.element],
+    outline: { nodes: [row], truncated: false },
     diagnostics: [{ code: 'selection_unavailable', message: 'Reselect after rebuilding.' }],
     generation: 1,
   };
@@ -599,6 +643,12 @@ test('the renderer accepts a ready element map and rejects incomplete or unbound
     false,
   );
   assert.equal(isCanvasEvent(event({ ...ready, elements: [{ ...wire.element, end: 47 }] })), false);
+  assert.equal(isCanvasEvent(event({ ...ready, outline: undefined })), false);
+  const bad = { ...row, nodeId: 'not-hex' };
+  assert.equal(
+    isCanvasEvent(event({ ...ready, outline: { nodes: [bad], truncated: false } })),
+    false,
+  );
 });
 
 test('the renderer refuses history replies without a version counted from 1', () => {
@@ -633,6 +683,13 @@ test('the mutation fixtures parse, and the parsed values fit the mirror', () => 
   assert.deepEqual(undo, wire.undo);
   assert.deepEqual(rename, wire.rename);
   assert.deepEqual(annotate, wire.annotate);
+});
+
+test('a reorder names each frame once', () => {
+  assert.match(
+    rejection(reorderFramesInputSchema, { mutationId: 'reorder', designIds: ['dsg_a', 'dsg_a'] }),
+    /each frame once/,
+  );
 });
 
 test('annotate names each annotation once, changes at least one and refuses a stray control character', () => {
@@ -733,6 +790,9 @@ test('write rejects escaping, absolute, backslash and case-colliding paths', () 
     ),
     /cannot also be written/,
   );
+  // A rename by case and Unicode form alone deletes one spelling and writes the other.
+  const rename = writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] });
+  assert.equal(writeFilesInputSchema.safeParse(rename).success, true);
 });
 
 test('write rejects a path an object-keyed source tree would lose', () => {
@@ -749,13 +809,6 @@ test('write rejects paths the filesystem would merge by Unicode form or surrogat
   assert.match(
     rejection(writeFilesInputSchema, writeWith({ files: { 'café.tsx': 'x', 'café.tsx': 'y' } })),
     /Unicode normalization/,
-  );
-  assert.match(
-    rejection(
-      writeFilesInputSchema,
-      writeWith({ files: { 'café.tsx': 'x' }, deletedPaths: ['Café.tsx'] }),
-    ),
-    /cannot also be written/,
   );
   // Both lone surrogates encode to the same UTF-8 bytes, so both are refused.
   assert.match(

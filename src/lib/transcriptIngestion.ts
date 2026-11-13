@@ -131,6 +131,8 @@ export function ingestTranscriptEvents(
         ...(canvasActivity ? { canvasActivity } : {}),
         endTs: event.endTs ?? event.ts,
       };
+      // A live-only snapshot becomes durable once the stored call joins it.
+      if (!event.transient) delete mergedCall.transient;
       events = replaceChunkedSequenceAt(events, mergeTarget.index, mergedCall);
       indexes = replaceIndexedEvent(indexes, mergeTarget.existing, mergedCall);
       recordChange(mergeTarget.index);

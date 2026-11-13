@@ -1,11 +1,22 @@
 // The selected frame's toolbar against the harness: rename, the version
-// menu and switching, Source and More, the keyboard's way through it, and
-// when it steps aside.
+// menu and switching, Source, tagging in the chat, Variants, Use this variant
+// and More, the keyboard's way through it, and when it steps aside.
 
 import { expect, test } from '@playwright/test';
-import { box, frame, openBoard, serveBoard } from './board/boardPage';
+import { box, boardUrl, frame, openBoard, serveBoard } from './board/boardPage';
 
 serveBoard();
+
+declare global {
+  interface Window {
+    /** What the stand-in host was asked to export to a project, and to cancel. */
+    projectExports: {
+      asked: unknown[];
+      cancelled: string[];
+      answer: (index: number, result: object) => void;
+    };
+  }
+}
 
 test('the toolbar renames a frame, switches its version and opens its source', async ({ page }) => {
   await openBoard(page);
@@ -93,6 +104,64 @@ test('a rename saves over a build that landed meanwhile, but not over another re
   expect(await page.evaluate(() => window.boardHarness.renameCalls)).toHaveLength(1);
 });
 
+test('frames tag in the chat from the toolbar, the label and the tag key, never from a field', async ({
+  page,
+}) => {
+  await openBoard(page);
+  const tags = (name: string) => frame(page, name).locator('.canvas-frame-tag');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await page
+    .getByRole('toolbar', { name: 'Design A actions' })
+    .getByRole('button', { name: 'Tag Design A in the chat' })
+    .click();
+  await expect(
+    page.getByRole('button', { name: 'Untag Design A from the chat', pressed: true }),
+  ).toBeVisible();
+  await expect(tags('A')).toHaveAttribute('data-tagged', 'true');
+
+  // The key tags the whole selection, and once all are tagged, untags them.
+  // It is the board's alone, and a held key's repeats do not toggle back.
+  await page.evaluate(() => {
+    window.addEventListener('keydown', (event) => {
+      if (event.code === 'KeyL') document.body.dataset.tagKeyEscaped = 'true';
+    });
+  });
+  await page.evaluate(() => window.boardHarness.select(['a', 'b']));
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+l');
+  await expect(tags('B')).toHaveAttribute('data-tagged', 'true');
+  const primary = process.platform === 'darwin' ? { metaKey: true } : { ctrlKey: true };
+  await page
+    .getByTestId('canvas-board')
+    .dispatchEvent('keydown', { key: 'l', code: 'KeyL', repeat: true, ...primary });
+  await page.keyboard.press('ControlOrMeta+l');
+  expect(await page.evaluate(() => document.body.dataset.tagKeyEscaped ?? null)).toBeNull();
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
+  await expect(tags('B')).not.toHaveAttribute('data-tagged');
+
+  // The label's tag acts on its own frame and leaves the selection alone.
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await frame(page, 'B').hover();
+  await tags('B').click();
+  await expect(tags('B')).toHaveAttribute('data-tagged', 'true');
+  expect(await page.evaluate(() => window.boardHarness.interaction().selectedFrameIds)).toEqual([
+    'a',
+  ]);
+
+  // A field on the board and anything off it keep the key.
+  await page
+    .getByRole('toolbar', { name: 'Design A actions' })
+    .getByRole('button', { name: 'Rename Design A' })
+    .click();
+  await expect(page.getByRole('textbox', { name: 'Name of Design A' })).toBeFocused();
+  await page.keyboard.press('ControlOrMeta+l');
+  await page.keyboard.press('Escape');
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
+  await page.locator('#outside').focus();
+  await page.keyboard.press('ControlOrMeta+l');
+  await expect(tags('A')).not.toHaveAttribute('data-tagged');
+});
+
 test('the toolbar is one tab stop the arrows walk, and Escape returns to the label', async ({
   page,
 }) => {
@@ -113,10 +182,22 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
 
   await page.keyboard.press('Enter');
   const menu = page.getByRole('menu', { name: 'More for Design B' });
-  await expect(menu.getByRole('menuitem', { name: 'Make variants…' })).toBeFocused();
+  await expect(menu.getByRole('menuitem', { name: 'Save to library…' })).toBeFocused();
   await page.keyboard.press('Enter');
-  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['variants:b']);
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b']);
   await expect(menu).toHaveCount(0);
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await menu.getByRole('menuitem', { name: 'Export image…' }).click();
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual(['save:b', 'export:b']);
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Enter');
+  await menu.getByRole('menuitem', { name: 'Export to project…' }).click();
+  expect(await page.evaluate(() => window.boardHarness.dialogs)).toEqual([
+    'save:b',
+    'export:b',
+    'project:b',
+  ]);
   await expect(more).toBeFocused();
 
   // Escape leaves the bar, not the selection; Tab comes back to the tool last used.
@@ -130,6 +211,187 @@ test('the toolbar is one tab stop the arrows walk, and Escape returns to the lab
   await page.keyboard.press('ArrowRight');
   await expect(versions).toBeFocused();
   expect(await page.evaluate(() => window.boardHarness.calls)).toEqual([]);
+});
+
+test('closing Export to project cancels its export, and a late answer shows nothing', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const answers: ((result: object) => void)[] = [];
+    const exports: Window['projectExports'] = {
+      asked: [],
+      cancelled: [],
+      answer: (index, result) => {
+        answers[index](result);
+      },
+    };
+    window.projectExports = exports;
+    Object.defineProperty(window, 'droidex', {
+      value: {
+        canvasExportSource: (_canvasId: string, _ref: unknown, project: object) => {
+          exports.asked.push(project);
+          return new Promise((resolve) => answers.push(resolve));
+        },
+        canvasExportSourceCancel: async (requestId: string) => {
+          exports.cancelled.push(requestId);
+        },
+      },
+    });
+  });
+  await openBoard(page, 14, 'reduce', '&project=1');
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const more = page
+    .getByRole('toolbar', { name: 'Design B actions' })
+    .getByRole('button', { name: 'More for Design B' });
+  const dialog = page.getByRole('dialog', { name: 'Export to project' });
+  const folder = dialog.getByRole('textbox', { name: 'Folder in the project' });
+  const exportButton = dialog.getByRole('button', { name: 'Export', exact: true });
+  const openDialog = async () => {
+    await more.click();
+    await page.getByRole('menuitem', { name: 'Export to project…' }).click();
+    await expect(folder).toHaveValue('design/design-b');
+  };
+  const exports = () =>
+    page.evaluate(() => ({
+      asked: window.projectExports.asked,
+      cancelled: window.projectExports.cancelled,
+    }));
+  const toasts = () => page.evaluate(() => window.boardHarness.toasts());
+
+  // While the export runs the user can still walk away, and Escape cancels it.
+  await openDialog();
+  await exportButton.click();
+  await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeEnabled();
+  await expect.poll(exports).toEqual({
+    asked: [{ appSessionId: 'chat_1', folder: 'design/design-b', requestId: expect.any(String) }],
+    cancelled: [],
+  });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  const { asked } = await exports();
+  expect((await exports()).cancelled).toEqual([(asked[0] as { requestId: string }).requestId]);
+
+  // Its answer, landing after all, neither toasts nor closes the dialog opened since.
+  await openDialog();
+  await folder.fill('design/again');
+  await page.evaluate(() => window.projectExports.answer(0, { ok: true, filesWritten: 3 }));
+  await exportButton.click();
+  await expect.poll(() => exports().then(({ asked }) => asked.length)).toBe(2);
+  await expect(dialog).toBeVisible();
+  await page.evaluate(() => window.projectExports.answer(1, { ok: true, filesWritten: 3 }));
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(toasts).toEqual(['Exported “Design B” to design/again.']);
+  expect((await exports()).cancelled).toHaveLength(1);
+});
+
+test('Variants asks for three in one click, and its options choose kind, count and direction', async ({
+  page,
+}) => {
+  await openBoard(page);
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
+
+  // While the first set is being made Variants holds, through reselecting the
+  // frame too, and a second click makes no second set.
+  const variants = toolbar.getByRole('button', { name: 'Make 3 variants of Design B' });
+  await variants.click();
+  await expect(variants).toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.boardHarness.select([]));
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  await expect(variants).toBeDisabled();
+  await variants.dispatchEvent('click');
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerVariants(0));
+  await expect(variants).toBeEnabled();
+
+  const chevron = toolbar.getByRole('button', { name: 'Variant options for Design B' });
+  await chevron.click();
+  const options = page.getByRole('dialog', { name: 'Variants of Design B' });
+  await options.getByRole('radio', { name: 'Colour' }).click();
+  await expect(options.getByRole('radio', { name: 'Colour' })).toBeChecked();
+  await options.getByRole('radio', { name: '2', exact: true }).click();
+  await options.getByRole('textbox', { name: 'Direction (optional)' }).fill('warmer, rounder');
+  await page.keyboard.press('Enter');
+  await expect(options).toHaveCount(0);
+  await expect(chevron).toBeFocused();
+  expect(await page.evaluate(() => window.boardHarness.variantCalls)).toEqual([
+    { designId: 'b', kind: 'any', count: 3, direction: '' },
+    { designId: 'b', kind: 'colour', count: 2, direction: 'warmer, rounder' },
+  ]);
+});
+
+test('a variant gives its design to its source in one step, then offers to remove the set', async ({
+  page,
+}) => {
+  await openBoard(page, 14, 'reduce', '&variants=1');
+  await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect(page.getByRole('button', { name: /^Use this variant/ })).toHaveCount(0);
+
+  await page.evaluate(() => window.boardHarness.select(['b']));
+  const use = page
+    .getByRole('toolbar', { name: 'Design B actions' })
+    .getByRole('button', { name: 'Use this variant for Design A' });
+  await use.click();
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.writeCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        expectedRevisionId: 'rev_01',
+        files: { 'main.tsx': '// b' },
+        deletedPaths: [],
+        designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+      },
+    ]);
+  // It holds until the write lands.
+  await expect(use).toHaveAttribute('aria-busy', 'true');
+  await page.evaluate(() => window.boardHarness.answerWrite(0));
+  await expect(use).toBeEnabled();
+  await page.getByText('Design A now uses Design B').hover();
+  await page.getByRole('button', { name: 'Remove variants' }).click();
+  expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([
+    { mutationId: expect.any(String), designIds: ['b'] },
+  ]);
+  await page.evaluate(() => window.boardHarness.answerRemove(0));
+  await expect(page.getByText('Deleted Design B')).toBeVisible();
+
+  // Undo takes back the deletion first, then the variant's design on its source.
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  await page.evaluate(() => window.boardHarness.answerUndo(0));
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_01',
+        expectedRevisionId: 'rev_w0',
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(0));
+  // Taken back, the choice no longer offers to clear its set.
+  const toasts = () => page.evaluate(() => window.boardHarness.toasts());
+  await expect.poll(toasts).not.toContain('Design A now uses Design B');
+
+  // Redo uses it again, and offers again to remove the set.
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  await expect
+    .poll(() => page.evaluate(() => window.boardHarness.switchCalls.slice(1)))
+    .toEqual([
+      {
+        mutationId: expect.any(String),
+        designId: 'a',
+        revisionId: 'rev_w0',
+        expectedRevisionId: 'rev_01',
+      },
+    ]);
+  await page.evaluate(() => window.boardHarness.answerSwitch(1));
+  await expect.poll(toasts).toContain('Design A now uses Design B');
 });
 
 test('the toolbar steps aside while a drag holds the frame and offers only Done in Interact', async ({
@@ -152,4 +414,58 @@ test('the toolbar steps aside while a drag holds the frame and offers only Done 
   await expect(page.getByTestId('canvas-board')).toHaveAttribute('data-board-mode', 'interact');
   await expect(toolbar.getByRole('button')).toHaveCount(1);
   await expect(toolbar.getByRole('button', { name: 'Return to Select' })).toBeVisible();
+});
+
+test('the toolbar drops below its frame rather than cover the frame above it', async ({ page }) => {
+  await openBoard(page);
+  // B goes under A, overlapping it across, with less than the bar's height between them.
+  const label = await box(frame(page, 'B').locator('[data-frame-header]'));
+  await page.mouse.move(label.x + 30, label.y + label.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(label.x - 285, label.y + label.height / 2 + 60, { steps: 4 });
+  await page.clock.runFor(32);
+  await page.mouse.up();
+  await expect.poll(() => page.evaluate(() => window.boardHarness.calls.length)).toBe(1);
+  await page.evaluate(() => window.boardHarness.answer(0));
+  // One step out leaves the board room under B.
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('ControlOrMeta+-');
+  await page.clock.runFor(32);
+
+  const toolbar = page.getByRole('toolbar', { name: 'Design B actions' });
+  await expect(toolbar).toBeVisible();
+  const bar = await box(toolbar);
+  const above = await box(frame(page, 'A'));
+  const own = await box(frame(page, 'B'));
+  expect(bar.y).toBeGreaterThan(own.y + own.height);
+  expect(bar.x).toBeLessThan(above.x + above.width);
+  expect(bar.y).toBeGreaterThan(above.y + above.height);
+});
+
+test('with no place clear of the other frames, the toolbar still paints over them', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1300, height: 1100 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto(boardUrl('font=14&frames=3'));
+  await expect(page.getByTestId('canvas-board')).toBeVisible();
+  // B runs across the board above A and X0 across it below, so every place overlaps one.
+  await page.evaluate(() => {
+    window.boardHarness.publish('b', { x: -200, y: -500, width: 1400, height: 480 }, 9);
+    window.boardHarness.publish('x0', { x: -200, y: 380, width: 1400, height: 400 }, 9);
+    window.boardHarness.select(['a']);
+  });
+
+  const toolbar = page.getByRole('toolbar', { name: 'Design A actions' });
+  await expect(toolbar).toBeVisible();
+  const bar = await box(toolbar);
+  const centre = { x: bar.x + bar.width / 2, y: bar.y + bar.height / 2 };
+  const above = await box(frame(page, 'B'));
+  expect(centre.y).toBeLessThan(above.y + above.height);
+  expect(
+    await toolbar.evaluate(
+      (element, point) => element.contains(document.elementFromPoint(point.x, point.y)),
+      centre,
+    ),
+  ).toBe(true);
 });

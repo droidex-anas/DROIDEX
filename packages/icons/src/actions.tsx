@@ -208,6 +208,16 @@ export const Eye = createIcon(
   </>,
 );
 
+export const EyeOff = createIcon(
+  'eye-off',
+  <>
+    <path d="M9.9 5.7A9 9 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.4 3.2" />
+    <path d="M14.1 14.2a2.8 2.8 0 0 1-4.2-4.1" />
+    <path d="M17 17.1A9.5 9.5 0 0 1 12 18.5c-6 0-9.5-6.5-9.5-6.5a17 17 0 0 1 4-4.6" />
+    <path d="m4 4 16 16" />
+  </>,
+);
+
 export const ListFilter = createIcon(
   'list-filter',
   <>

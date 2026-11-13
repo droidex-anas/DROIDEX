@@ -64,6 +64,9 @@ export type ShortcutBindings = Record<ShortcutAction, string>;
 /** How the primary modifier is written on this platform, for capture hints. */
 export const PRIMARY_MODIFIER_LABEL = APPLE ? '⌘' : 'Ctrl';
 
+/** How the Option key is written on this platform: Alt off the Mac. */
+export const ALT_MODIFIER_LABEL = APPLE ? '⌥' : 'Alt';
+
 export function defaultChordFor(action: ShortcutAction): string {
   return (
     SHORTCUT_DEFINITIONS.find((definition) => definition.action === action)?.defaultChord ?? ''

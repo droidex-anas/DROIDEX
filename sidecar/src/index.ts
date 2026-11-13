@@ -20,6 +20,7 @@ import {
 import { SessionManager } from './SessionManager.js';
 import { startBridgeServer } from './bridgeServer.js';
 import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js';
+import { createDesktopImageChannel } from './canvas/desktopImageChannel.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
 import type { ClientCommand } from './protocol.js';
@@ -70,15 +71,21 @@ function queueUsageSessions(ids: readonly string[]): Promise<void> {
   return operation;
 }
 
+const projectImages = createDesktopImageChannel();
 const server = startBridgeServer({
   requestedPort: REQUESTED_PORT,
   token: TOKEN,
   canvasImages: {
     secret: CANVAS_ASSET_SECRET,
-    importImage: async (request) => (await canvasReady).importCanvasImage(request),
+    importImage: async (request) => {
+      const { requestId } = request;
+      const isWanted = () => requestId === undefined || projectImages.isWaiting(requestId);
+      return (await canvasReady).importCanvasImage(request, isWanted);
+    },
     importKitImage,
   },
   canvasExportToken: CANVAS_EXPORT_TOKEN,
+  admitProjectExport: (appSessionId) => manager.admitProjectExport(appSessionId),
   onCommand: async (command, pageId) => {
     if (command.type === 'session.interrupt' || command.type === 'session.close') {
       // Invalidate automatic work immediately; never delay the user's Stop for disk IO.
@@ -128,8 +135,10 @@ const manager = new SessionManager(
   {
     canvasTurns,
     canvasWorkspace: () => canvasReady,
-    canvasCapture: (canvasId, ref, signal) => canvasBridge.capture(canvasId, ref, signal),
+    canvasCapture: (canvasId, ref, signal, image) =>
+      canvasBridge.capture(canvasId, ref, signal, image),
     kitPreviews,
+    importProjectImage: projectImages.importImage,
     onUserPrompt: (appSessionId) => {
       void projects?.userContinued(appSessionId).catch(reportProjectError);
     },

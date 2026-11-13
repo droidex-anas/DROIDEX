@@ -39,13 +39,19 @@ const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
+const canvasPreviewSession = require('./canvasPreviewSession.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 const {
   mayRequestPreviewAsset,
   readCanvasPreviewAsset,
   readKitImage,
 } = require('./canvasPreviewAssets.cjs');
-const { createCanvasImageImporter, canvasImageImportResult } = require('./canvasImageImport.cjs');
+const {
+  createCanvasImageImporter,
+  canvasImageImportResult,
+  createProjectImageRequests,
+  pastedSvgDataUrl,
+} = require('./canvasImageImport.cjs');
 const { createCanvasImageSave } = require('./canvasImageSave.cjs');
 const { createCanvasSourceExport, createDesignSystemExport } = require('./canvasSourceExport.cjs');
 const editorApps = require('./editorApps.cjs');
@@ -128,10 +134,13 @@ const sidecarSupervisor = createSidecarSupervisor({
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
-  onMessage: (message, reply, runEnded) =>
-    void nativeBrowserRequests.handle(message, reply, runEnded),
+  onMessage: (message, reply, runEnded) => {
+    if (!projectImageRequests(message, reply, runEnded))
+      void nativeBrowserRequests.handle(message, reply, runEnded);
+  },
 });
 const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
+const projectImageRequests = createProjectImageRequests(importCanvasImage, sidecarSupervisor);
 // subscribe() replays the current status synchronously, so mainWindow must
 // already be initialized when this runs.
 let mainWindow = null;
@@ -158,8 +167,9 @@ const canvasPreviewHosts = createCanvasPreviewHosts({
 const saveCanvasImage = createCanvasImageSave({
   dialog,
   fs: fsp,
-  readThumbnail: canvasPreviewHosts.readThumbnail,
+  takeCapture: canvasPreviewHosts.takeCapture,
   getWindow: () => mainWindow,
+  sidecar: sidecarSupervisor,
 });
 
 // Selected app-icon appearance. 'system' tracks the OS light/dark setting via
@@ -509,7 +519,7 @@ function installWebviewAttachment(contents) {
 function hardenCanvasPreviewGuest(event, preferences, params) {
   // Before the guest session is configured it routes DIRECT, so a guest that
   // attached then would have a live network however correct its partition is.
-  if (!canvasPreview.canvasPreviewSessionReady(previewGuestSession())) {
+  if (!canvasPreviewSession.canvasPreviewSessionReady(previewGuestSession())) {
     console.warn('[canvas-preview] Refused a guest before its session was configured');
     event.preventDefault();
     return false;
@@ -519,8 +529,8 @@ function hardenCanvasPreviewGuest(event, preferences, params) {
   // The guest's own in-memory session: no storage, every TCP connection to a
   // dead proxy, no permissions. A `<webview>` may name any partition, so this
   // is forced here rather than trusted from the element.
-  params.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
-  preferences.partition = canvasPreview.CANVAS_PREVIEW_PARTITION;
+  params.partition = canvasPreviewSession.CANVAS_PREVIEW_PARTITION;
+  preferences.partition = canvasPreviewSession.CANVAS_PREVIEW_PARTITION;
   preferences.nodeIntegration = false;
   preferences.nodeIntegrationInSubFrames = false;
   preferences.contextIsolation = true;
@@ -640,9 +650,9 @@ function registerFaviconProtocol() {
 // Serves the one trusted intermediate a Canvas preview guest loads (see
 // canvasPreview.cjs). The policy travels as a header, so no document surgery can
 // drop it, and the generated frame inherits it through `srcdoc`.
-/** The one session every preview guest attaches into (see canvasPreview.cjs). */
+/** The one session every preview guest attaches into (see canvasPreviewSession.cjs). */
 function previewGuestSession() {
-  return session.fromPartition(canvasPreview.CANVAS_PREVIEW_PARTITION);
+  return session.fromPartition(canvasPreviewSession.CANVAS_PREVIEW_PARTITION);
 }
 
 function kitStoreRoot() {
@@ -661,11 +671,14 @@ function registerCanvasPreviewProtocol() {
         secret: sidecarSupervisor.canvasAssetSecret(),
       });
       if (!asset) return new Response('Not found', { status: 404 });
+      // The inert-body policy local images use: a sanitised SVG stays an image
+      // even if something navigates to it or embeds it directly.
       return new Response(asset.data, {
         headers: {
           'content-type': asset.mime,
           'cache-control':
             asset.mime === 'font/woff2' ? 'public, max-age=31536000, immutable' : 'no-store',
+          'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'",
           'x-content-type-options': 'nosniff',
           ...(asset.mime === 'font/woff2' ? { 'access-control-allow-origin': '*' } : {}),
         },
@@ -702,7 +715,7 @@ function registerCanvasPreviewProtocol() {
       callback({ redirectURL: 'droidex-canvas-preview://preview/not-found' });
     },
   );
-  return canvasPreview.configureCanvasPreviewSession(guestSession, serve);
+  return canvasPreviewSession.configureCanvasPreviewSession(guestSession, serve);
 }
 
 function registerIpc() {
@@ -750,7 +763,7 @@ function registerIpc() {
   const pickImage = async (owner) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       properties: ['openFile'],
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'svg'] }],
     });
     if (result.canceled || !result.filePaths[0]) return null;
     return canvasImageImportResult(importCanvasImage, owner, result.filePaths[0]);
@@ -789,6 +802,21 @@ function registerIpc() {
   });
   desktopIpc.handle('discard-image', ({ path: target }) => {
     return attachments.discard(attachmentsDir, target);
+  });
+  // The importer reads a path, so pasted SVG markup passes through the
+  // attachments dir; the day-old sweep removes a file discard could not.
+  ipcMain.handle('canvas-paste-svg', (event, { canvasId, svg }) => {
+    assertMainRenderer(event);
+    const importPasted = async (owner) => {
+      const dataUrl = pastedSvgDataUrl(svg);
+      const filePath = await attachments.saveFile(attachmentsDir, { name: 'pasted.svg', dataUrl });
+      try {
+        return await importCanvasImage(owner, filePath);
+      } finally {
+        await attachments.discard(attachmentsDir, filePath).catch(() => {});
+      }
+    };
+    return canvasImageImportResult(importPasted, { kind: 'canvas', canvasId }, null);
   });
   desktopIpc.handle('save-image-as', async ({ url, name }) => {
     // Node's fetch decodes data: URLs; only the session's fetch reaches droidex-img.
@@ -896,6 +924,10 @@ function registerIpc() {
   ipcMain.handle('canvas-export-source', (event, input) => {
     assertMainRenderer(event);
     return exportCanvasSource(input);
+  });
+  ipcMain.handle('canvas-export-source-cancel', (event, request) => {
+    assertMainRenderer(event);
+    exportCanvasSource.cancel(request?.requestId);
   });
   ipcMain.handle('canvas-export-design-system', (event, input) => {
     assertMainRenderer(event);

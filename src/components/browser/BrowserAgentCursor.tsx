@@ -1,14 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { onNativeBrowserAgentPoint } from '../../lib/nativeBrowser';
+import { AgentCursor } from '../AgentCursor';
 import design from './browserAgentCursorDesign.json';
-
-const ARTWORK = design.styles.droidex;
-// The glyph's tip, where the agent points, as a share of the artwork's box.
-const TIP = {
-  x: design.hotspot.x / design.viewBoxSize,
-  y: design.hotspot.y / design.viewBoxSize,
-};
 
 // Where the agent last pointed, in the page's own pixels, the scale the page
 // is drawn at, and the glide that takes the cursor there.
@@ -72,32 +66,13 @@ export function BrowserAgentCursor({
       className="agent-cursor pointer-events-none absolute left-0 top-0"
       style={
         {
-          width: size,
-          height: size,
           opacity: working ? 1 : 0,
-          transform: `translate(${String(cursor.x * scale - TIP.x * size)}px, ${String(cursor.y * scale - TIP.y * size)}px)`,
+          transform: `translate(${String(cursor.x * scale)}px, ${String(cursor.y * scale)}px)`,
           '--glide': `${String(cursor.glideMs)}ms`,
         } as CSSProperties
       }
     >
-      <svg
-        viewBox={`0 0 ${String(design.viewBoxSize)} ${String(design.viewBoxSize)}`}
-        className={`block h-full w-full ${working ? 'agent-cursor-tilt' : ''}`}
-        style={{
-          filter: ARTWORK.overlayFilter,
-          transformOrigin: `${String(TIP.x * 100)}% ${String(TIP.y * 100)}%`,
-        }}
-      >
-        <path
-          d={design.path}
-          fill={ARTWORK.fill}
-          fillOpacity={ARTWORK.fillOpacity}
-          stroke={ARTWORK.stroke}
-          strokeWidth={design.strokeWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
+      <AgentCursor size={size} working={working} />
     </div>
   );
 }

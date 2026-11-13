@@ -386,6 +386,51 @@ test('switch CAS rejects a concurrent head change without spending its ID', asyn
   assert.equal(canvas.workspace.snapshot(canvas.canvasId).frames[0]?.revisionId, first.revisionId);
 });
 
+test('undo and redo switch one design between two revisions and touch nothing else', async (t) => {
+  const canvas = await harness(t);
+  const { workspace, scope, canvasId, designId } = canvas;
+  const created = await workspace.create(scope, {
+    mutationId: 'create-other',
+    frames: [{ name: 'Other', width: 720, height: 720, designSystem }],
+  });
+  const otherId = created.frames[0]?.designId;
+  assert.ok(otherId);
+  await workspace.write(scope, {
+    mutationId: 'other',
+    designId: otherId,
+    expectedRevisionId: null,
+    files: { 'main.tsx': 'other' },
+    deletedPaths: [],
+  });
+  const before = await canvas.write('one', null, { 'main.tsx': 'one' });
+  const after = await canvas.write('two', before.revisionId, { 'main.tsx': 'two' });
+  const revisions = join(canvas.root, canvasId, 'revisions');
+  const stored = await readdir(revisions);
+  const frameOf = (id: string) => {
+    const frame = workspace.snapshot(canvasId).frames.find((each) => each.designId === id);
+    assert.ok(frame);
+    // Builds run on their own clock; the rest is what a switch could change.
+    return { ...frame, build: null };
+  };
+  const other = frameOf(otherId);
+  const versions = async (id: string) =>
+    (await workspace.history.listRevisions(canvasId, id, { limit: 50 })).map(
+      (revision) => revision.revisionId,
+    );
+  const otherVersions = await versions(otherId);
+
+  const step = (mutationId: string, revisionId: string, expectedRevisionId: string) =>
+    workspace.switchRevision(scope, { mutationId, designId, revisionId, expectedRevisionId });
+  await step('undo', before.revisionId, after.revisionId);
+  assert.equal(frameOf(designId).revisionId, before.revisionId);
+  await step('redo', after.revisionId, before.revisionId);
+  assert.equal(frameOf(designId).revisionId, after.revisionId);
+
+  assert.deepEqual(frameOf(otherId), other);
+  assert.deepEqual(await versions(otherId), otherVersions);
+  assert.deepEqual(await versions(designId), [after.revisionId, before.revisionId]);
+  assert.deepEqual(await readdir(revisions), stored);
+});
 test('a removed design refuses history and switching until Undo brings its history back', async (t) => {
   const canvas = await harness(t);
   const { workspace, scope, canvasId, designId } = canvas;

@@ -15,7 +15,12 @@ import {
   type DraftChange,
 } from './documentDraft';
 
-const IMAGE_TYPES: ReadonlySet<string> = new Set(['image/png', 'image/jpeg', 'image/webp']);
+const IMAGE_TYPES: ReadonlySet<string> = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/svg+xml',
+]);
 
 /** An image now in the kit store, with the name its entry starts with. */
 export interface ImportedImage {
@@ -187,7 +192,7 @@ async function importDropped(files: File[]): Promise<ImageBatch> {
 
 function refusalMessage({ unsupported, failures }: ImageBatch, overCap: number): string | null {
   const reasons = [
-    unsupported > 0 ? 'Only PNG, JPEG and WebP images can be added.' : null,
+    unsupported > 0 ? 'Only PNG, JPEG, WebP and SVG images can be added.' : null,
     failures.length > 0 ? importFailure(failures[0]) : null,
     overCap > 0 ? FULL_KIT_MESSAGE : null,
   ].filter((reason) => reason !== null);

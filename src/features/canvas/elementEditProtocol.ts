@@ -4,30 +4,59 @@
 
 import type { ElementRef, WriteReceipt } from './protocol';
 
-export type StyleKind = 'spacing' | 'size' | 'colour' | 'typography' | 'layout' | 'opacity';
-
-/** A kit token's name (`--ds-space-2`) or a raw CSS value for one style property. */
-export type StyleChange =
-  | { kind: 'spacing'; property: string; value: string }
-  | { kind: 'size'; property: string; value: string }
-  | { kind: 'colour'; property: string; value: string }
-  | { kind: 'typography'; property: string; value: string }
-  | { kind: 'layout'; property: string; value: string }
-  | { kind: 'opacity'; property: string; value: string };
+/** One property's new value: a kit token's name (`--ds-space-2`) or a raw CSS value. */
+export interface StyleValue {
+  property: string;
+  value: string;
+}
 
 export interface EditElementInput {
   mutationId: string;
-  edit: {
-    element: ElementRef;
-    change: { kind: 'text'; value: string } | StyleChange | { kind: 'image'; assetId: string };
-  };
+  edit:
+    | {
+        element: ElementRef;
+        change:
+          | { kind: 'text'; value: string }
+          | { kind: 'style'; styles: StyleValue[] }
+          | { kind: 'image'; assetId: string }
+          /** A literal `<path>`'s `d`, as SVG path data separated by spaces and commas only. */
+          | { kind: 'path'; d: string };
+      }
+    | {
+        layer: LayerRef;
+        change: LayerChange;
+      };
 }
 
-/** What a style edit wrote: a kit token, or the raw value the kit had no token for. */
-export type StyleResolution = { kind: 'token'; token: string } | { kind: 'raw'; value: string };
+/** One of a catalog entry's props, and the option an insert gives it. */
+export interface PropPick {
+  name: string;
+  value: string;
+}
 
-/** A direct edit's revision and what its style value resolved to; null for a text edit. */
-export interface ElementEditResult {
+/** A row of a frame's revision's outline, as a layer edit names it. */
+export interface LayerRef {
+  designId: string;
+  revisionId: string;
+  nodeId: string;
+}
+
+export type LayerChange =
+  /** Into the element row `parentId`, before its child row `beforeId`, or last for null. */
+  | { kind: 'move'; parentId: string; beforeId: string | null }
+  | { kind: 'remove' }
+  /** A copy right after the layer. */
+  | { kind: 'duplicate' }
+  /**
+   * The kit catalog entry named `entry`, last inside the layer when it holds
+   * others, else after it, with each picked prop written on its element.
+   */
+  | { kind: 'insert'; entry: string; props: PropPick[] }
+  /** The element given Tailwind's `hidden` class, or without it to show again. */
+  | { kind: 'hide'; hidden: boolean };
+
+/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved or hidden layer, its copy, the added element, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
+export interface ElementEdited {
   receipt: WriteReceipt;
-  resolution: StyleResolution | null;
+  landed: string | null;
 }

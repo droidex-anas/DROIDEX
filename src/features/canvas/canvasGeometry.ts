@@ -24,12 +24,12 @@ export interface Viewport {
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 4;
 
-/** Screen padding Fit and focus leave around what they frame, which clears the tool rail. */
+/** Screen padding Fit and focus leave around what they frame, which clears the tool rail; reveal keeps it on the left. */
 const FIT_PADDING_PX = 72;
 
 /**
  * Screen height a selected frame's label and toolbar stand above its top edge
- * (`.canvas-frame-tools` in canvasBoard.css). Fit keeps its padding above them
+ * (`.canvas-frame-tools` in canvasBoardTools.css). Fit keeps its padding above them
  * too, so a focused frame's toolbar clears the pane's own controls.
  */
 const FRAME_CHROME_PX = 74;
@@ -52,10 +52,6 @@ export const MAX_FRAME_PX = 8192;
 
 function clampScale(scale: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
-}
-
-function clampDimension(px: number): number {
-  return Math.min(MAX_FRAME_PX, Math.max(MIN_FRAME_PX, px));
 }
 
 export function canvasToScreen(viewport: Viewport, point: Point): Point {
@@ -109,8 +105,31 @@ export function fitFrames(rects: readonly FrameRect[], viewportSize: Point): Vie
   };
 }
 
+/**
+ * The viewport that brings `rect` wholly into view at the same zoom with the
+ * least travel, or null when it is in view already. The rail's column and the
+ * label and toolbar above the frame count as out of view, so a revealed frame
+ * keeps its chrome clear of the rail; one larger than the board shows its top left.
+ */
+export function revealRect(viewport: Viewport, rect: FrameRect, size: Point): Viewport | null {
+  const left = viewport.x + rect.x * viewport.scale;
+  const top = viewport.y + rect.y * viewport.scale;
+  const shift = {
+    x: shiftInto(left, rect.width * viewport.scale, FIT_PADDING_PX, size.x),
+    y: shiftInto(top, rect.height * viewport.scale, FRAME_CHROME_PX, size.y),
+  };
+  if (shift.x === 0 && shift.y === 0) return null;
+  return { ...viewport, x: viewport.x + shift.x, y: viewport.y + shift.y };
+}
+
+/** How far a span starting at `start` moves to lie within `from`–`to`, or to start at `from` when it cannot. */
+function shiftInto(start: number, length: number, from: number, to: number): number {
+  if (start < from || length > to - from) return from - start;
+  return Math.min(0, to - (start + length));
+}
+
 /** The box every rect sits inside, or null when there is nothing to frame. */
-function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
+export function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
   if (rects.length === 0) return null;
   let left = Infinity;
   let top = Infinity;
@@ -125,14 +144,75 @@ function boundsOf(rects: readonly FrameRect[]): FrameRect | null {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-/** What the hand took hold of: the whole frame, or one of its resize edges. */
-export type FrameHandle = 'move' | 'east' | 'south' | 'southeast';
+/** What the hand took hold of: the whole frame, or one of its edges or corners to resize it. */
+export type FrameHandle = 'move' | ResizeHandle;
+
+export type ResizeHandle =
+  | 'north'
+  | 'south'
+  | 'east'
+  | 'west'
+  | 'northeast'
+  | 'northwest'
+  | 'southeast'
+  | 'southwest';
+
+/** The side of a rect a resize moves on one axis: left or top, or right or bottom. */
+export type ResizeEdge = 'start' | 'end';
+
+const RESIZE_EDGES: Record<ResizeHandle, { x: ResizeEdge | null; y: ResizeEdge | null }> = {
+  north: { x: null, y: 'start' },
+  south: { x: null, y: 'end' },
+  east: { x: 'end', y: null },
+  west: { x: 'start', y: null },
+  northeast: { x: 'end', y: 'start' },
+  northwest: { x: 'start', y: 'start' },
+  southeast: { x: 'end', y: 'end' },
+  southwest: { x: 'start', y: 'end' },
+};
+
+/** The edge `handle` moves on `axis`, or null when that axis keeps its size. */
+export function resizeEdge(handle: ResizeHandle, axis: 'x' | 'y'): ResizeEdge | null {
+  return RESIZE_EDGES[handle][axis];
+}
+
+/**
+ * `rect` with its `edge` on `axis` moved by `by` world units while the opposite
+ * edge stays where it was, in whole pixels and within the frame size limits.
+ */
+export function moveEdge(
+  rect: FrameRect,
+  axis: 'x' | 'y',
+  edge: ResizeEdge,
+  by: number,
+): FrameRect {
+  const start = axis === 'x' ? rect.x : rect.y;
+  const size = axis === 'x' ? rect.width : rect.height;
+  // An agent may make a frame smaller than a resize can; it keeps that size rather than jumping.
+  const smallest = Math.min(MIN_FRAME_PX, size);
+  const wanted = Math.round(edge === 'end' ? size + by : size - by);
+  const resized = Math.min(MAX_FRAME_PX, Math.max(smallest, wanted));
+  const moved = edge === 'end' ? start : start + size - resized;
+  return axis === 'x'
+    ? { ...rect, x: moved, width: resized }
+    : { ...rect, y: moved, height: resized };
+}
+
+/** The rect in whole pixels, which is what every drag commits. */
+export function roundRect(rect: FrameRect): FrameRect {
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+}
 
 /**
  * A held frame's rect after the pointer moved `screenDelta` screen pixels,
  * which is `screenDelta / scale` world units, so the frame keeps up with the
- * hand at any zoom. A resize changes the frame's viewport dimensions, which is
- * what makes a responsive layout real (spec §4).
+ * hand at any zoom, rounded to whole pixels. A resize changes the frame's
+ * viewport dimensions, which is what makes a responsive layout real (spec §4).
  */
 export function applyFrameHandle(
   rect: FrameRect,
@@ -141,12 +221,13 @@ export function applyFrameHandle(
   scale: number,
 ): FrameRect {
   const world = { x: screenDelta.x / scale, y: screenDelta.y / scale };
-  if (handle === 'move') return { ...rect, x: rect.x + world.x, y: rect.y + world.y };
-  return {
-    ...rect,
-    width: handle === 'south' ? rect.width : clampDimension(rect.width + world.x),
-    height: handle === 'east' ? rect.height : clampDimension(rect.height + world.y),
-  };
+  if (handle === 'move') return roundRect({ ...rect, x: rect.x + world.x, y: rect.y + world.y });
+  let resized = roundRect(rect);
+  for (const axis of ['x', 'y'] as const) {
+    const edge = resizeEdge(handle, axis);
+    if (edge !== null) resized = moveEdge(resized, axis, edge, world[axis]);
+  }
+  return resized;
 }
 
 /** World units one arrow key moves a selection, and with Shift held (spec §4). */
@@ -226,6 +307,11 @@ export function sameRect(left: FrameRect, right: FrameRect): boolean {
     left.width === right.width &&
     left.height === right.height
   );
+}
+
+/** A frame's size as its size chip reads it, in whole pixels. */
+export function frameSizeLabel({ width, height }: FrameRect): string {
+  return `${String(Math.round(width))} × ${String(Math.round(height))}`;
 }
 
 /** The edge or axis an align brings a selection onto (spec §4). */

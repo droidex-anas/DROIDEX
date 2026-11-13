@@ -3,39 +3,50 @@ import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
-import { canvasError, CanvasCommandError } from './canvasError.js';
+import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
+import { sanitiseSvg } from './canvasSvg.js';
 import type { OwnedAsset } from './protocol.js';
 import { canvasIdentifierSchema } from './schema.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_DIMENSION = 8192;
-const IMAGE_RECOVERY = 'Choose a PNG, JPEG or WebP image under 10 MiB and 8192 pixels per side.';
+const IMAGE_RECOVERY =
+  'Choose a PNG, JPEG, WebP or SVG image under 10 MiB and 8192 pixels per side.';
 const DAMAGED_ASSET = 'A saved Canvas image is damaged. Reopen DROIDEX to recover it.';
 const MISSING_ASSET = 'A Canvas image this design uses is missing. Replace it and try again.';
 const ASSET_REFERENCE = /canvas-asset:([0-9a-f]{64})\b/g;
 export const ownedAssetSchema = z
   .object({
     assetId: z.string().regex(/^[0-9a-f]{64}$/),
-    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
+    mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']),
     byteLength: z.number().int().min(1).max(MAX_IMAGE_BYTES),
     width: z.number().int().min(1).max(MAX_DIMENSION),
     height: z.number().int().min(1).max(MAX_DIMENSION),
   })
   .strict();
 
-// Main decodes these exact bytes before sending the digest and dimensions over
-// its private bridge route. The digest closes the path replacement race.
-const chosenImageSchema = z
-  .object({
+// Main decodes raster bytes before sending their digest and dimensions over its
+// private bridge route; an SVG is markup to main, so it sends the digest alone
+// and the size comes from the sanitised SVG. The digest closes the path
+// replacement race.
+function chosenImage<Owner extends z.ZodRawShape>(owner: Owner) {
+  const chosenFile = {
+    ...owner,
     filePath: z.string().min(1).max(4096),
     digest: z.string().regex(/^[0-9a-f]{64}$/),
-    width: z.number().int().min(1).max(MAX_DIMENSION),
-    height: z.number().int().min(1).max(MAX_DIMENSION),
-  })
-  .strict();
+  };
+  const dimension = z.number().int().min(1).max(MAX_DIMENSION);
+  return z.union([
+    z.object({ ...chosenFile, width: dimension, height: dimension }).strict(),
+    z.object(chosenFile).strict(),
+  ]);
+}
 
-export const canvasImageImportSchema = chosenImageSchema.extend({
+export const chosenImageSchema = chosenImage({});
+// An import an agent asked for names main's request, so a cancelled one is not saved.
+export const canvasImageImportSchema = chosenImage({
   canvasId: canvasIdentifierSchema,
+  requestId: z.string().uuid().optional(),
 });
 
 export type ChosenImage = z.infer<typeof chosenImageSchema>;
@@ -47,17 +58,23 @@ export interface OwnedImage {
   bytes: Buffer;
 }
 
-/** The sidecar owns the durable copy; only Electron main may call this route. */
+/**
+ * The sidecar owns the durable copy; only Electron main may call this route.
+ * `isWanted` is asked once the bytes are read, and again just before the
+ * record that publishes the asset.
+ */
 export async function importCanvasImage(
   root: string,
   request: CanvasImageImport,
+  isWanted: () => boolean = () => true,
 ): Promise<OwnedAsset> {
   const { asset, bytes } = await readChosenImage(request);
-  await saveOwnedAsset(root, request.canvasId, asset, bytes);
+  if (!isWanted()) throw canvasError('scope_expired', EXPIRED_TURN);
+  await saveOwnedAsset(root, request.canvasId, asset, bytes, isWanted);
   return asset;
 }
 
-/** The bytes main attested, refused unless they are still the image it decoded. */
+/** The bytes main attested, refused unless they are still the file it read; an SVG is kept sanitised. */
 export async function readChosenImage(request: ChosenImage): Promise<OwnedImage> {
   if (!isAbsolute(request.filePath))
     throw canvasError('invalid_input', 'Choose an image from your computer first.');
@@ -86,19 +103,36 @@ export async function readChosenImage(request: ChosenImage): Promise<OwnedImage>
     throw canvasError('invalid_input', 'The selected image could not be read. Choose it again.');
   }
 
-  const mediaType = imageMediaType(bytes);
-  if (!mediaType) throw canvasError('invalid_input', IMAGE_RECOVERY);
-  const assetId = createHash('sha256').update(bytes).digest('hex');
-  if (assetId !== request.digest)
+  if (createHash('sha256').update(bytes).digest('hex') !== request.digest)
     throw canvasError('invalid_input', 'The selected image changed. Choose it again.');
+  const mediaType = imageMediaType(bytes);
+  if ('width' in request) {
+    if (!mediaType) throw canvasError('invalid_input', IMAGE_RECOVERY);
+    const asset: OwnedAsset = {
+      assetId: request.digest,
+      mediaType,
+      byteLength: bytes.length,
+      width: request.width,
+      height: request.height,
+    };
+    return { asset, bytes };
+  }
+  if (mediaType) throw canvasError('invalid_input', IMAGE_RECOVERY);
+  return ownedSvg(bytes);
+}
+
+/** An SVG as the canvas keeps it: sanitised, and named by the hash of what is kept. */
+function ownedSvg(source: Uint8Array): OwnedImage {
+  const svg = sanitiseSvg(source);
+  if (svg.bytes.length > MAX_IMAGE_BYTES) throw canvasError('invalid_input', IMAGE_RECOVERY);
   const asset: OwnedAsset = {
-    assetId,
-    mediaType,
-    byteLength: bytes.length,
-    width: request.width,
-    height: request.height,
+    assetId: createHash('sha256').update(svg.bytes).digest('hex'),
+    mediaType: 'image/svg+xml',
+    byteLength: svg.bytes.length,
+    width: svg.width,
+    height: svg.height,
   };
-  return { asset, bytes };
+  return { asset, bytes: svg.bytes };
 }
 
 export async function saveOwnedAsset(
@@ -106,15 +140,21 @@ export async function saveOwnedAsset(
   canvasId: string,
   asset: OwnedAsset,
   bytes: Buffer,
+  isWanted?: () => boolean,
 ): Promise<void> {
-  await saveImageIn(join(root, canvasId), asset, bytes);
+  await saveImageIn(join(root, canvasId), asset, bytes, isWanted);
 }
 
 /**
  * Content-addressed, immutable storage in `owner`'s `assets` folder, with no
  * links below the profile root. `owner` is a canvas's directory or the kit store's.
  */
-export async function saveImageIn(owner: string, asset: OwnedAsset, bytes: Buffer): Promise<void> {
+export async function saveImageIn(
+  owner: string,
+  asset: OwnedAsset,
+  bytes: Buffer,
+  isWanted: () => boolean = () => true,
+): Promise<void> {
   const assets = join(owner, 'assets');
   const target = join(assets, asset.assetId);
   const temporary = `${target}.${randomUUID()}.tmp`;
@@ -172,7 +212,7 @@ export async function saveImageIn(owner: string, asset: OwnedAsset, bytes: Buffe
     // every path repeats both flushes: an earlier import may have failed either
     // one after its rename, so existing files are not evidence of durability.
     await syncDirectory(assets);
-    await saveAssetMetadata(assets, asset);
+    await saveAssetMetadata(assets, asset, isWanted);
     await syncDirectory(assets);
     await syncDirectory(owner);
   } catch (error) {
@@ -260,7 +300,11 @@ async function readImage(directory: string, assetId: string): Promise<OwnedImage
   }
 }
 
-async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<void> {
+async function saveAssetMetadata(
+  directory: string,
+  asset: OwnedAsset,
+  isWanted: () => boolean,
+): Promise<void> {
   const target = join(directory, `${asset.assetId}.json`);
   try {
     const existing = await readAssetMetadata(target, asset.assetId);
@@ -284,6 +328,7 @@ async function saveAssetMetadata(directory: string, asset: OwnedAsset): Promise<
     } finally {
       await file.close();
     }
+    if (!isWanted()) throw canvasError('scope_expired', EXPIRED_TURN);
     await rename(temporary, target);
   } finally {
     await rm(temporary, { force: true }).catch(() => undefined);

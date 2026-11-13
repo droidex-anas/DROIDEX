@@ -10,7 +10,8 @@ declare global {
   interface Window {
     boardGuestReady: boolean;
     guestCommands: Record<string, unknown>[];
-    guestAnswer: (command: string, argument: Record<string, unknown>) => unknown;
+    guestTreeHeld: boolean;
+    guestAnswer: (command: string, argument: Record<string, unknown>) => object | null;
   }
 }
 
@@ -50,20 +51,26 @@ export async function openBoard(
   await page.goto(boardUrl(`font=${font}${query}`));
   await expect(page.getByTestId('canvas-board')).toBeVisible();
   // The opening Fit: 72 px of padding each side in a 1000 px board, about 90%.
-  await expect(page.getByTestId('canvas-board').getByText('90%', { exact: true })).toBeVisible();
+  await expect(zoomField(page)).toHaveValue('90%');
   await page.clock.runFor(32);
 }
 
 /**
  * Stands in for the preview host: every `<webview>` the board makes answers as
  * guest 41, bound to this canvas, and reports ready once `boardGuestReady` is set.
- * Pick and select commands are recorded in `guestCommands` and answered by
- * `guestAnswer`.
+ * Pick, select, probe and locate commands are recorded in `guestCommands` and
+ * answered by `guestAnswer`: a pick or select as an element in a block parent
+ * unless it names another, a probe directly with no text unless it says, a
+ * locate or a shape directly with whatever it gives. A hover is
+ * answered by `guestAnswer` directly, with nothing beside the element unless it
+ * says, and not recorded; a tree page is answered by `guestAnswer('tree', { from })`
+ * directly, or never while `guestTreeHeld` is set, and recorded.
  */
 export async function stubGuests(page: Page) {
   await page.addInitScript(() => {
     window.boardGuestReady = false;
     window.guestCommands = [];
+    window.guestTreeHeld = false;
     window.guestAnswer = () => null;
     Object.defineProperty(window, 'droidex', {
       value: {
@@ -95,12 +102,32 @@ export async function stubGuests(page: Page) {
             }
             if (call?.[1] === 'pick' || call?.[1] === 'select') {
               window.guestCommands.push({ command: call[1], ...argument });
+              const element = window.guestAnswer(call[1], argument);
               answers.push({
                 event: 'selection',
                 sequence: argument.sequence,
-                element: window.guestAnswer(call[1], argument),
+                element: element && { parentDisplay: 'block', ...element },
               });
               return 'sent';
+            }
+            if (call?.[1] === 'probe') {
+              window.guestCommands.push({ command: 'probe', ...argument });
+              const element = window.guestAnswer('probe', argument);
+              return JSON.stringify(element && { text: null, ...element });
+            }
+            if (call?.[1] === 'locate' || call?.[1] === 'shape') {
+              window.guestCommands.push({ command: call[1], ...argument });
+              return JSON.stringify(window.guestAnswer(call[1], argument));
+            }
+            if (call?.[1] === 'tree') {
+              window.guestCommands.push({ command: 'tree', ...argument });
+              if (window.guestTreeHeld) await new Promise(() => {});
+              const page = window.guestAnswer('tree', argument);
+              return JSON.stringify(page && { from: argument.from, ...page });
+            }
+            if (call?.[1] === 'hover') {
+              const element = window.guestAnswer('hover', argument);
+              return JSON.stringify(element && { room: { above: null, below: null }, ...element });
             }
             const events = window.boardGuestReady && !sent ? [{ event: 'ready' }] : [];
             if (events.length > 0) sent = true;
@@ -115,8 +142,17 @@ export async function stubGuests(page: Page) {
   });
 }
 
+/** The zoom bar's percentage, which reads the board's zoom and takes a typed one. */
+export function zoomField(page: Page): Locator {
+  return page.getByRole('textbox', { name: 'Zoom percentage' });
+}
+
+/** A frame on the board; Edit's panel names the picked element's frame too. */
 export function frame(page: Page, name: string): Locator {
-  return page.getByText(`Design ${name}`, { exact: true }).locator('..').locator('..');
+  return page
+    .getByTestId('canvas-board')
+    .getByText(`Design ${name}`, { exact: true })
+    .locator('xpath=ancestor::*[@data-design-frame][1]');
 }
 
 export async function box(locator: Locator) {

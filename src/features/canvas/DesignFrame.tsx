@@ -8,7 +8,15 @@
 // at screen size: the board stylesheet divides it by --board-scale, because
 // chrome that shrinks with the board is unusable on a 50-frame canvas.
 
-import { useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from 'react';
+import {
+  memo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+  type PointerEvent,
+  type ReactNode,
+} from 'react';
 import { flushSync } from 'react-dom';
 import {
   AlertTriangle,
@@ -20,13 +28,27 @@ import {
 } from '@droidex/icons';
 import type { FrameHandle, Point } from './canvasGeometry';
 import type { CanvasMotion } from './canvasMotion';
+import type { PresenceAgent } from './canvasPresence';
 import type { BoardMode } from './canvasState';
-import { FrameLabel, FrameNameField } from './FrameLabel';
+import { FrameInputOverlay } from './FrameInputOverlay';
+import { FrameLabel } from './FrameLabel';
+import { FrameNameField } from './FrameNameField';
+import type { FrameSize } from './FrameSizeMenu';
+import { FrameSizing } from './FrameSizing';
 import { FrameThumbnail } from './FrameThumbnail';
 import { FrameToolbar, type FrameActions } from './FrameToolbar';
+import { FrameWorkingState } from './FrameWorkingState';
 import { PendingBloom } from './PendingBloom';
-import { diagnosticPlace, isPending, sheetState, type SheetState } from './previewLabels';
+import {
+  diagnosticPlace,
+  isPending,
+  sheetState,
+  strictRuleNote,
+  type SheetState,
+} from './previewLabels';
 import type { CanvasFrame, FrameRect } from './protocol';
+import type { ToolbarRoom } from './toolbarPlacement';
+import type { DesignPress } from './useDesignPicker';
 
 /** Below this on screen a sheet shows its title alone, without the detail. */
 const COMPACT_SHEET_PX = { width: 220, height: 140 };
@@ -38,10 +60,8 @@ export interface DesignFrameProps {
   frame: CanvasFrame;
   /** Where the board draws it: under the hand, pending, or acknowledged. */
   rect: FrameRect;
-  /** The board's scale, so the frame's chrome can be laid out in screen pixels. */
+  /** The board's scale, so a sheet without a preview knows the room it has on screen. */
   scale: number;
-  /** Screen pixels from the frame's left edge to the board's right edge. */
-  roomRight: number;
   /** Spec §11's timings, resolved against the reduced-motion preference. */
   motion: CanvasMotion;
   /** It joined the board after the board opened, so it arrives with motion. */
@@ -50,17 +70,26 @@ export interface DesignFrameProps {
   visible: boolean;
   mode: BoardMode;
   selected: boolean;
-  /** It is the only frame selected, or the one Interact drives: it shows its toolbar. */
-  showTools: boolean;
+  /** Several frames are selected, so a selected one leaves its size and handles to their box. */
+  multiSelect: boolean;
+  /**
+   * Where its toolbar has room on the board, while it shows one: it is the only
+   * frame selected, or the one Interact drives.
+   */
+  toolbarRoom: ToolbarRoom | null;
   /** This is the frame Interact is driving. */
   interacted: boolean;
-  /** A hand gesture is holding this frame right now. */
-  held: boolean;
-  /** This chat's agent has a turn running, so a frame with no source is being written. */
-  agentWorking: boolean;
   /**
-   * Spec §4: Select and Edit install a transparent overlay over the guest and
-   * Interact removes it. The board owns when flipping it is safe; this only paints it.
+   * A hand gesture holds this frame, and draws it where the hand has it
+   * (HeldFrames); `rect` stays where the hold began.
+   */
+  held: boolean;
+  /** The agent at work on this frame, if any. */
+  worker: PresenceAgent | undefined;
+  /**
+   * Spec §4: Select, Edit and Design install a transparent overlay over the
+   * guest and Interact removes it. The board owns when flipping it is safe;
+   * this only paints it.
    */
   capturePointer: boolean;
   /** The revision on show: its working one, or the one it showed before a newer build. */
@@ -70,37 +99,53 @@ export interface DesignFrameProps {
   /** It held a live slot and lost it, so returning reloads the design. */
   released: boolean;
   onHold: (frame: CanvasFrame, handle: FrameHandle, event: PointerEvent<HTMLElement>) => void;
+  /** A size typed or picked for the frame, which keeps its top-left corner. */
+  onResize: (frame: CanvasFrame, size: FrameSize) => void;
   onPick: (frame: CanvasFrame, additive: boolean) => void;
   onInteract: (frame: CanvasFrame) => void;
   /** A press in Edit, at a point in the design's own pixels. */
   onPickElement: (frame: CanvasFrame, at: Point) => void;
-  /** Enter on the label in Edit. */
+  /** A press going down in Design, as what its drag and release ask. */
+  onDesignPress: (frame: CanvasFrame) => DesignPress;
+  /** The pointer moving over the design in Edit or Design, at a point in its pixels, or leaving it. */
+  onHoverElement: (frame: CanvasFrame, at: Point | null) => void;
+  /** Enter on the label, or a double-click on the design, in Edit. */
   onEditEnter: (frame: CanvasFrame) => void;
-  /** The box of the element Edit has picked in this frame, in the design's pixels. */
-  elementBox: FrameRect | null;
+  /** Edit has picked an element in this frame, so its size is the element's to show. */
+  elementPicked: boolean;
+  /** The pointer is over an element Edit or Design can pick in this frame. */
+  elementHovered: boolean;
   /** This frame's label holds the frames' one tab stop. */
   tabStop: boolean;
   onFocusLabel: (frame: CanvasFrame) => void;
   onExitInteract: () => void;
   onOpenSource?: (designId: string) => void;
-  /** The frame is pinned to the chat's next prompt. */
-  inChat: boolean;
-  /** Pins it to the chat's next prompt or takes it off; absent where it cannot be pinned. */
-  onToggleChat?: (frame: CanvasFrame) => void;
+  /** The frame is tagged in the chat's next prompt. */
+  tagged: boolean;
+  /** Tags frames in the chat's next prompt, or untags them; absent where frames cannot be tagged. */
+  onTagFrames?: (designIds: readonly string[]) => void;
   actions: FrameActions;
   /** Deletes the selection, which is this frame while it shows its toolbar. */
   onDelete: () => void;
 }
 
-export function DesignFrame(props: DesignFrameProps) {
-  const { frame, rect, scale, motion, arriving, mode, selected, showTools, held } = props;
-  const { capturePointer, onHold, onPick, onInteract, onPickElement, onEditEnter } = props;
-  const { elementBox } = props;
+/** Memoized, so a board render that leaves a frame's props alone does not draw it again. */
+export const DesignFrame = memo(function DesignFrame(props: DesignFrameProps) {
+  const { frame, rect, motion, arriving, mode, selected, toolbarRoom, held } = props;
+  const { capturePointer, onHold, onPick, onInteract, onEditEnter } = props;
   const [renaming, setRenaming] = useState(false);
   const label = useRef<HTMLDivElement>(null);
   const animated = arriving && motion.frameArrivalMs > 0;
-  const screenWidth = rect.width * scale;
   const focusLabel = () => label.current?.focus({ preventScroll: true });
+  // A press on a frame already selected keeps the selection, so all of it drags
+  // together; a click that never became a drag then picks the frame alone.
+  const press = (event: PointerEvent<HTMLElement>) => {
+    if (event.shiftKey || !selected) onPick(frame, event.shiftKey);
+    if (!event.shiftKey) onHold(frame, 'move', event);
+  };
+  const click = (event: MouseEvent<HTMLElement>) => {
+    if (!event.shiftKey) onPick(frame, false);
+  };
   return (
     <div
       data-design-frame={frame.designId}
@@ -115,30 +160,35 @@ export function DesignFrame(props: DesignFrameProps) {
       }}
     >
       {renaming ? (
-        <FrameNameField
-          frame={frame}
-          width={screenWidth}
-          onRename={props.actions.rename}
-          onDone={() => {
-            // The label has to be back before it can take the keyboard.
-            flushSync(() => {
-              setRenaming(false);
-            });
-            focusLabel();
-          }}
-        />
+        <div className="canvas-frame-label canvas-chrome">
+          <FrameNameField
+            frame={frame}
+            className="canvas-frame-name canvas-frame-name-field"
+            onRename={props.actions.rename}
+            onDone={() => {
+              // The label has to be back before it can take the keyboard.
+              flushSync(() => {
+                setRenaming(false);
+              });
+              focusLabel();
+            }}
+          />
+        </div>
       ) : (
         <FrameLabel
           ref={label}
           frame={frame}
-          width={screenWidth}
           selected={selected}
           interacted={props.interacted}
           held={held}
+          tagged={props.tagged}
           tabStop={props.tabStop}
-          onHold={onHold}
+          onPress={press}
+          onClick={click}
           onPick={onPick}
           onInteract={onInteract}
+          onTagFrames={props.onTagFrames}
+          onOpenSource={props.onOpenSource}
           onEnter={(picked) => {
             // Edit goes into the frame's elements; otherwise Enter picks the
             // frame, and on one already picked starts interacting with it.
@@ -151,18 +201,18 @@ export function DesignFrame(props: DesignFrameProps) {
           onFocusLabel={props.onFocusLabel}
         />
       )}
-      {showTools && !held && (
+      {toolbarRoom && !held && (
         <FrameToolbar
           frame={frame}
           interacted={props.interacted}
-          roomRight={props.roomRight}
+          room={toolbarRoom}
           motion={motion}
-          inChat={props.inChat}
+          tagged={props.tagged}
           actions={props.actions}
           onInteract={onInteract}
           onExitInteract={props.onExitInteract}
           onOpenSource={props.onOpenSource}
-          onToggleChat={props.onToggleChat}
+          onTagFrames={props.onTagFrames}
           onRename={() => {
             setRenaming(true);
           }}
@@ -173,7 +223,7 @@ export function DesignFrame(props: DesignFrameProps) {
 
       <div
         // The sheet is the design's, never the board's background: in Interact
-        // the pointer belongs to the preview, and in Select the overlay above
+        // the pointer belongs to the preview, and otherwise the overlay above
         // has already decided what the press meant.
         onPointerDown={(event) => {
           event.stopPropagation();
@@ -181,80 +231,25 @@ export function DesignFrame(props: DesignFrameProps) {
         className="canvas-sheet"
       >
         <FrameBody {...props} />
+        <FrameWorkingState {...props} />
         <RebuildBadge {...props} />
-        {capturePointer && (
-          <div
-            data-canvas-input-overlay
-            className="absolute inset-0"
-            style={{ cursor: held ? 'grabbing' : 'default', touchAction: 'none' }}
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              if (mode === 'edit') {
-                onPick(frame, false);
-                const box = event.currentTarget.getBoundingClientRect();
-                onPickElement(frame, {
-                  x: (event.clientX - box.left) / scale,
-                  y: (event.clientY - box.top) / scale,
-                });
-                return;
-              }
-              onPick(frame, event.shiftKey);
-              if (!event.shiftKey) onHold(frame, 'move', event);
-            }}
-            onDoubleClick={(event) => {
-              event.stopPropagation();
-              if (mode === 'select') onInteract(frame);
-            }}
-          />
-        )}
-        {elementBox && (
-          <div
-            aria-hidden
-            className="canvas-element-outline"
-            style={{
-              left: elementBox.x,
-              top: elementBox.y,
-              width: elementBox.width,
-              height: elementBox.height,
-            }}
-          >
-            <div className="canvas-frame-size canvas-chrome">
-              <span>
-                {Math.round(elementBox.width)} × {Math.round(elementBox.height)}
-              </span>
-            </div>
-          </div>
-        )}
+        {capturePointer && <FrameInputOverlay {...props} held={held} press={press} click={click} />}
       </div>
 
-      {selected && !elementBox && (
-        <div className="canvas-frame-size canvas-chrome">
-          <span>
-            {Math.round(rect.width)} × {Math.round(rect.height)}
-          </span>
-        </div>
+      {selected && !props.multiSelect && (
+        <FrameSizing
+          frame={frame}
+          rect={rect}
+          mode={mode}
+          elementPicked={props.elementPicked}
+          onHold={onHold}
+          onResize={props.onResize}
+          onLeave={focusLabel}
+        />
       )}
-
-      {selected &&
-        mode === 'select' &&
-        (['east', 'south', 'southeast'] as const).map((handle) => (
-          <span
-            key={handle}
-            role="presentation"
-            aria-hidden
-            data-handle={handle}
-            className="canvas-frame-handle"
-            onPointerDown={(event) => {
-              if (event.button !== 0) return;
-              event.stopPropagation();
-              onHold(frame, handle, event);
-            }}
-          />
-        ))}
     </div>
   );
-}
+});
 
 /**
  * Spec §11: a new frame fades in with at most `frameArrivalTravelPx` of travel.
@@ -301,11 +296,11 @@ function FrameBody({
   shownRevisionId,
   preview,
   released,
-  agentWorking,
+  worker,
   onOpenSource,
 }: DesignFrameProps) {
   if (preview) return preview;
-  const state = sheetState(frame, shownRevisionId, agentWorking, released);
+  const state = sheetState(frame, shownRevisionId, worker !== undefined, released);
   const fits = (box: { width: number; height: number }) =>
     rect.width * scale >= box.width && rect.height * scale >= box.height;
   const content = (
@@ -425,12 +420,14 @@ function FailedNote({
   const first = state.diagnostics.at(0);
   const more = state.diagnostics.length - 1;
   const place = first ? diagnosticPlace(first) : null;
+  const ruleNote = strictRuleNote(state.diagnostics);
   return (
     <>
       <span className="canvas-sheet-icon" data-tone="danger">
         <AlertTriangle className="h-4 w-4" aria-hidden />
       </span>
       <p className="canvas-sheet-title">Didn’t build</p>
+      {!compact && ruleNote && <p className="canvas-sheet-detail">{ruleNote}</p>}
       {!compact && first && (
         <p className="canvas-sheet-detail canvas-sheet-clamp">
           {place && <strong>{place} · </strong>}

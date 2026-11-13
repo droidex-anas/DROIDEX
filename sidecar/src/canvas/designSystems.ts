@@ -37,11 +37,13 @@ import {
   versionPath,
   writeVersion,
 } from './designSystemStorage.js';
+import { designSystemProvenanceSchema } from './designSystemProvenance.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
+import { catalogProblem } from './kitCatalog.js';
 import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
 import {
+  boundedSourceFilesSchema,
   canvasIdentifierSchema,
-  designSystemVersionRefSchema,
   sourceFilesSchema,
   sourcePathSchema,
 } from './schema.js';
@@ -52,8 +54,8 @@ export const KIT_ENTRY = 'index.tsx';
 export const DESIGN_SYSTEM_LIMITS = {
   maxGuidanceBytes: 16 * 1024,
   maxNameLength: 120,
-  maxProjectFiles: 8,
-  maxProjectPathLength: 1024,
+  /** More than a design's files, so a kit can hold a whole component library. */
+  maxFiles: 128,
 } as const;
 
 const ENTRY_MESSAGE = `A design system must provide ${KIT_ENTRY}, which exports its primitives.`;
@@ -61,9 +63,10 @@ const UNKNOWN_MESSAGE = 'That design system version is not available.';
 const BUILT_IN_MESSAGE = 'That design system name belongs to a built-in kit. Choose another id.';
 const DELETED_MESSAGE = 'That design system was deleted. Restore it before saving to it.';
 
-const kitFilesSchema = sourceFilesSchema.refine((files) => Object.hasOwn(files, KIT_ENTRY), {
-  message: ENTRY_MESSAGE,
-});
+const kitFilesSchema = boundedSourceFilesSchema(
+  DESIGN_SYSTEM_LIMITS.maxFiles,
+  `A design system holds at most ${String(DESIGN_SYSTEM_LIMITS.maxFiles)} files.`,
+).refine((files) => Object.hasOwn(files, KIT_ENTRY), { message: ENTRY_MESSAGE });
 
 const coverSchema = z
   .discriminatedUnion('kind', [
@@ -81,34 +84,7 @@ export const designSystemObjectSchema = z
     sections: documentSectionsSchema,
     files: kitFilesSchema,
     examples: sourceFilesSchema,
-    // Extracted from a canvas revision, saved as a copy of another kit version,
-    // or read from a project folder's files.
-    provenance: z
-      .union([
-        z
-          .object({
-            sourceCanvasId: canvasIdentifierSchema,
-            revision: z
-              .object({ designId: canvasIdentifierSchema, revisionId: canvasIdentifierSchema })
-              .strict(),
-          })
-          .strict(),
-        z.object({ copiedFrom: designSystemVersionRefSchema }).strict(),
-        z
-          .object({
-            project: z
-              .object({
-                name: z.string().min(1).max(255),
-                files: z
-                  .array(z.string().min(1).max(DESIGN_SYSTEM_LIMITS.maxProjectPathLength))
-                  .min(1)
-                  .max(DESIGN_SYSTEM_LIMITS.maxProjectFiles),
-              })
-              .strict(),
-          })
-          .strict(),
-      ])
-      .optional(),
+    provenance: designSystemProvenanceSchema.optional(),
   })
   .strict();
 
@@ -118,7 +94,6 @@ export const designSystemSchema = designSystemObjectSchema.superRefine((system, 
 });
 
 export type DesignSystem = z.infer<typeof designSystemSchema>;
-type DesignSystemProvenance = NonNullable<DesignSystem['provenance']>;
 export type DesignSystemCover = DesignSystem['cover'];
 
 // The rules that span the document and its files.
@@ -139,7 +114,7 @@ function versionProblem(system: z.infer<typeof designSystemObjectSchema>): strin
   );
   if (documentBytes > DOCUMENT_LIMITS.maxDocumentBytes)
     return 'The design system document is over 256 KiB. Remove some of it.';
-  return null;
+  return catalogProblem(system.files);
 }
 
 const savedBySchema = z.discriminatedUnion('actor', [
@@ -189,8 +164,6 @@ export interface DesignSystemSource {
   kind: 'designMd' | 'cssOrTailwind';
   text: string;
 }
-
-export type { DesignSystemProvenance };
 
 const savedVersionSchema = z
   .object({
@@ -335,7 +308,9 @@ export async function readDesignSystem(
   if (!system)
     throw canvasError(
       'storage_failed',
-      'The saved kit is damaged. Restore that design system version.',
+      libraryVersionSchema.safeParse(value).success
+        ? 'This kit was imported from a component library by an earlier build and cannot be read. Import the library again as a new design system and choose that one.'
+        : 'The saved kit is damaged. Restore that design system version.',
     );
   // A file whose contents name another version would serve the wrong kit.
   if (system.id !== ref.id || system.version !== ref.version)
@@ -345,6 +320,12 @@ export async function readDesignSystem(
     );
   return system;
 }
+
+// No earlier library provenance is read, and no version of such a kit has
+// one this build reads, so restoring cannot help.
+const libraryVersionSchema = z.object({
+  system: z.object({ provenance: z.object({ project: z.object({ library: z.object({}) }) }) }),
+});
 
 /** The kit a current version file holds, when its header describes it. */
 function savedSystem(value: unknown): DesignSystem | null {

@@ -8,11 +8,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { PresenceContext } from 'framer-motion';
-import { createElement } from 'react';
+import { createElement, useState } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CanvasBoard } from './CanvasBoard';
+import { CanvasBoard, type CanvasBoardProps } from './CanvasBoard';
+import { NO_PRESENCE, type CanvasPresence } from './canvasPresence';
 import { DesignPreview } from './DesignPreview';
 import type { FrameActions } from './FrameToolbar';
+import { PreviewRuns } from './previewRuns';
+import { useElementEditor } from './useElementEditor';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
 import type { Annotation } from './annotationProtocol';
 import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
@@ -23,8 +26,14 @@ const FRAME_ACTIONS: FrameActions = {
   history: { listRevisions: () => Promise.resolve([]), switchRevision: () => Promise.resolve() },
   canEdit: false,
   rename: () => Promise.resolve(),
-  makeVariants: () => undefined,
+  picksIn: () => [],
+  makeVariants: () => Promise.resolve(),
+  variantWork: { subscribe: () => () => undefined, of: () => null },
+  sourceOf: () => null,
+  applyVariant: () => Promise.resolve(false),
   saveToLibrary: () => undefined,
+  exportImage: () => undefined,
+  exportToProject: null,
 };
 
 function frame(designId: string, rect: FrameRect): CanvasFrame {
@@ -36,6 +45,9 @@ function frame(designId: string, rect: FrameRect): CanvasFrame {
     manifestVersion: 1,
     revisionId: 'rev_01',
     designSystem: { id: 'droidex', version: 1, mode: 'dark' },
+    variantOf: null,
+    seededRevisionId: null,
+    hidden: false,
     build: { status: 'pending', generation: 1 },
   };
 }
@@ -52,17 +64,31 @@ function annotated(snapshot: CanvasSnapshot, annotations: Annotation[]): CanvasS
   return { ...snapshot, annotationsVersion: annotations.length, annotations };
 }
 
+/** The board as its mount runs it, with the element editor the mount keeps beside it. */
+function EditableBoard(props: Omit<CanvasBoardProps, 'runs' | 'editor'>) {
+  const [runs] = useState(() => new PreviewRuns());
+  const editor = useElementEditor({
+    canvasId: props.snapshot.canvasId,
+    frames: props.snapshot.frames,
+    runs,
+    active: props.interaction.mode === 'edit',
+    hovering: false,
+    onEditElement: () => Promise.reject(new Error('This board makes no edits.')),
+  });
+  return createElement(CanvasBoard, { ...props, runs, editor });
+}
+
 function board(
   snapshot: CanvasSnapshot,
   interaction: BoardInteraction = SELECT_MODE,
-  agentWorking = false,
-  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onToggleChat'> = {},
+  presence: CanvasPresence = NO_PRESENCE,
+  pins: Pick<Parameters<typeof CanvasBoard>[0], 'pinnedIds' | 'onTagFrames'> = {},
 ) {
-  return createElement(CanvasBoard, {
+  return createElement(EditableBoard, {
     ...pins,
     snapshot,
     interaction,
-    agentWorking,
+    presence,
     frameActions: FRAME_ACTIONS,
     onInteractionChange: () => undefined,
     onArrangeFrames: () => Promise.resolve(),
@@ -168,7 +194,12 @@ test('a frame with no live preview says only what is true of it', () => {
   const base = frame('dsg_hey', ACKNOWLEDGED);
   const reserved = { ...base, revisionId: null };
   const empty = render(snapshotOf(reserved));
-  const writing = render(snapshotOf(reserved), SELECT_MODE, true);
+  const kairo = { key: 'ses_1', name: 'Kairo', color: 'crimson' } as const;
+  const writing = render(
+    snapshotOf(reserved),
+    SELECT_MODE,
+    new Map([['dsg_hey', { agent: kairo, named: false }]]),
+  );
   const building = render(snapshotOf(withBuild(base, { status: 'building', generation: 2 })));
   const cancelled = render(snapshotOf(withBuild(base, { status: 'cancelled', generation: 2 })));
   const failed = render(
@@ -184,11 +215,15 @@ test('a frame with no live preview says only what is true of it', () => {
     ),
   );
 
-  // A reserved frame shimmers as written only while its chat's agent works.
+  // A reserved frame shimmers as written only while an agent works on it, and
+  // takes that agent's colour.
   assert.match(empty, /Empty frame/);
   assert.equal(empty.includes('canvas-bloom-label'), false);
+  assert.equal(empty.includes('canvas-working'), false);
   assert.match(writing, /Writing/);
   assert.match(writing, /canvas-bloom-label/);
+  assert.match(writing, /--worker:var\(--presence-crimson\)/);
+  assert.match(writing, /Kairo is working on this frame/);
   assert.match(building, /canvas-bloom-label/);
   assert.match(building, /Building/);
   assert.match(cancelled, /Build cancelled/);
@@ -231,24 +266,26 @@ test('a board leaving with its pane mounts no live preview', () => {
   assert.equal(inPane(false).includes('Loading this preview'), false);
 });
 
-test('a selected frame offers Add to chat only on its chat’s own canvas, and says when it is in', () => {
+test('a selected frame offers Tag in chat only on its chat’s own canvas, and says when it is tagged', () => {
   const picked: BoardInteraction = {
     mode: 'select',
     selectedFrameIds: ['a'],
     interactedFrameId: null,
   };
   const snapshot = snapshotOf(frame('a', ACKNOWLEDGED));
-  const onToggleChat = () => undefined;
+  const onTagFrames = () => undefined;
 
-  assert.equal(render(snapshot, picked).includes('Add to chat'), false);
+  const elsewhere = render(snapshot, picked);
+  assert.equal(elsewhere.includes('Tag Design a in the chat'), false);
+  assert.equal(elsewhere.includes('canvas-frame-tag'), false);
   assert.match(
-    render(snapshot, picked, false, { onToggleChat }),
-    /aria-pressed="false" aria-label="Add Design a to the chat"/,
+    render(snapshot, picked, NO_PRESENCE, { onTagFrames }),
+    /aria-pressed="false" aria-label="Tag Design a in the chat"/,
   );
-  assert.match(
-    render(snapshot, picked, false, { onToggleChat, pinnedIds: new Set(['a']) }),
-    /aria-pressed="true" aria-label="Take Design a out of the chat"/,
-  );
+  const tagged = render(snapshot, picked, NO_PRESENCE, { onTagFrames, pinnedIds: new Set(['a']) });
+  assert.match(tagged, /aria-pressed="true" aria-label="Untag Design a from the chat"/);
+  // The label keeps saying so once the frame is no longer selected.
+  assert.match(tagged, /data-tagged="true" class="canvas-frame-tag"/);
 });
 
 test('saved marks draw in their theme colour, and an agent’s carry its glyph', () => {
@@ -282,4 +319,33 @@ test('saved marks draw in their theme colour, and an agent’s carry its glyph',
   for (const tool of ['Draw', 'Shapes', 'Text', 'Note'])
     assert.match(markup, new RegExp(`aria-label="${tool}"`));
   assert.equal(markup.includes('aria-label="Colour"'), false);
+});
+
+test('a built frame that strays from its kit says so on its label; a strict failure names the rule', () => {
+  const finding = (line: number) => ({
+    code: 'design_system_color',
+    message: `#${String(line)}00 is a hard-coded colour.`,
+    file: 'main.tsx',
+    line,
+  });
+  const strays = withBuild(frame('a', ACKNOWLEDGED), {
+    status: 'ready',
+    revisionId: 'rev_01',
+    artifactId: 'art_01',
+    elements: [],
+    diagnostics: [finding(1), finding(2)],
+    generation: 2,
+  });
+  const blocked = withBuild(frame('b', { ...ACKNOWLEDGED, x: 600 }), {
+    status: 'failed',
+    revisionId: 'rev_01',
+    diagnostics: [finding(3)],
+    lastWorkingRevisionId: null,
+    generation: 2,
+  });
+  const markup = render(snapshotOf(strays, blocked));
+
+  assert.equal(markup.match(/canvas-frame-kit-notes/g)?.length, 1);
+  assert.match(markup, />2 kit notes</);
+  assert.match(markup, /Blocked by the Strict design-system rule/);
 });

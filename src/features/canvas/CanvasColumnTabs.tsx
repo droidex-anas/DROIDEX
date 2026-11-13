@@ -1,16 +1,16 @@
 // Spec §4: the docked chat column's tabs while its chat has a canvas on the
-// board. Agent is the transcript under them; Components lays the canvas's
-// frame list over it, above the composer.
+// board. Agent is the transcript under them; Frames lays the canvas's frame
+// list over it, above the composer.
 
 import { useState, type KeyboardEvent } from 'react';
 import './canvasColumn.css';
 import { CanvasNavigator } from './CanvasNavigator';
 
-type ColumnTab = 'agent' | 'components';
+type ColumnTab = 'agent' | 'frames';
 
 const TABS: { id: ColumnTab; label: string }[] = [
   { id: 'agent', label: 'Agent' },
-  { id: 'components', label: 'Components' },
+  { id: 'frames', label: 'Frames' },
 ];
 
 export function CanvasColumnTabs({ canvasId }: { canvasId: string }) {
@@ -20,7 +20,7 @@ export function CanvasColumnTabs({ canvasId }: { canvasId: string }) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
-    const next = tab === 'agent' ? 'components' : 'agent';
+    const next = tab === 'agent' ? 'frames' : 'agent';
     setTab(next);
     event.currentTarget.querySelector<HTMLElement>(`[data-column-tab="${next}"]`)?.focus();
   };
@@ -50,8 +50,8 @@ export function CanvasColumnTabs({ canvasId }: { canvasId: string }) {
           </button>
         ))}
       </div>
-      {tab === 'components' && (
-        <div role="tabpanel" aria-label="Components" className="canvas-column-panel">
+      {tab === 'frames' && (
+        <div role="tabpanel" aria-label="Frames" className="canvas-column-panel">
           <CanvasNavigator canvasId={canvasId} />
         </div>
       )}

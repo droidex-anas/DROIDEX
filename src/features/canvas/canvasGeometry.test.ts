@@ -15,6 +15,7 @@ import {
   arrowDirection,
   nudgeStep,
   reduceFrameDrag,
+  revealRect,
   screenToCanvas,
   visibleDesignIds,
   wheelZoomScale,
@@ -107,6 +108,26 @@ test('fit centres every frame and its chrome with padding and never magnifies pa
   assert.deepEqual(fitFrames([rect(0, 0)], { x: 0, y: 0 }), { x: 0, y: 0, scale: 1 });
 });
 
+test('reveal pans the least way that clears the rail and the chrome above, at the same zoom', () => {
+  const size = { x: 480, y: 800 };
+  const viewport: Viewport = { x: 0, y: 0, scale: 0.5 };
+  // In view, clear of the rail and with room for its label and toolbar: no pan.
+  assert.equal(revealRect(viewport, rect(200, 400), size), null);
+
+  // Under the rail's column, it lands 72 px in, its label and toolbar 74 px below the top.
+  const underRail = revealRect(viewport, rect(40, 40), size);
+  assert.deepEqual(underRail && canvasToScreen(underRail, { x: 40, y: 40 }), { x: 72, y: 74 });
+  assert.equal(underRail?.scale, 0.5);
+
+  // Past the right and bottom edges, it stops at them.
+  const pastEnd = revealRect(viewport, rect(800, 1500), size);
+  assert.deepEqual(pastEnd && canvasToScreen(pastEnd, { x: 1200, y: 1800 }), { x: 480, y: 800 });
+
+  // Wider than the room right of the rail, it shows its left edge.
+  const wide = revealRect(viewport, rect(400, 400, 1200), size);
+  assert.equal(wide && canvasToScreen(wide, { x: 400, y: 400 }).x, 72);
+});
+
 test('fit of a very large board clamps to the minimum scale', () => {
   const fitted = fitFrames([rect(0, 0, 400_000, 200_000)], { x: 1000, y: 800 });
   assert.equal(fitted.scale, MIN_SCALE);
@@ -138,6 +159,15 @@ test('a dragged frame follows the hand 1:1 at any zoom', () => {
     assert.ok(Math.abs(after.x - before.x - 60) < 1e-9, `x at ${String(scale)}`);
     assert.ok(Math.abs(after.y - before.y + 30) < 1e-9, `y at ${String(scale)}`);
   }
+});
+
+test('a drag at any zoom commits whole pixels', () => {
+  // At 75% ten screen pixels is 13.3 world units, which no one could type.
+  assert.deepEqual(applyFrameHandle(rect(100, 50), 'move', { x: 10, y: 7 }, 0.75), rect(113, 59));
+  assert.deepEqual(
+    applyFrameHandle(rect(100, 50), 'southeast', { x: 10, y: 7 }, 0.75),
+    rect(100, 50, 413, 309),
+  );
 });
 
 test('a fit animation starts where it was and ends on the target', () => {
@@ -282,6 +312,32 @@ test('a resize changes the frame viewport by the edge it was taken by', () => {
   assert.equal(applyFrameHandle(start, 'east', { x: 100, y: 0 }, 0.5).width, 600);
 });
 
+test('a resize from a west or north edge or corner keeps the opposite edges where they were', () => {
+  const start = rect(100, 50, 400, 300);
+
+  assert.deepEqual(applyFrameHandle(start, 'west', { x: -40, y: 999 }, 1), rect(60, 50, 440, 300));
+  assert.deepEqual(applyFrameHandle(start, 'north', { x: 999, y: 30 }, 1), rect(100, 80, 400, 270));
+  assert.deepEqual(
+    applyFrameHandle(start, 'northwest', { x: 20, y: -10 }, 1),
+    rect(120, 40, 380, 310),
+  );
+  assert.deepEqual(
+    applyFrameHandle(start, 'northeast', { x: 20, y: -10 }, 1),
+    rect(100, 40, 420, 310),
+  );
+  assert.deepEqual(
+    applyFrameHandle(start, 'southwest', { x: 20, y: -10 }, 1),
+    rect(120, 50, 380, 290),
+  );
+  // Past the smallest size the frame stops rather than sliding after the hand.
+  assert.deepEqual(
+    applyFrameHandle(start, 'northwest', { x: 9999, y: 9999 }, 1),
+    rect(500 - MIN_FRAME_PX, 350 - MIN_FRAME_PX, MIN_FRAME_PX, MIN_FRAME_PX),
+  );
+  // A fractional world delta still leaves the right edge on its whole pixel.
+  const zoomed = applyFrameHandle(start, 'west', { x: 10, y: 0 }, 0.75);
+  assert.deepEqual(zoomed, rect(113, 50, 387, 300));
+});
 test('a resize stays inside the dimensions the sidecar will accept', () => {
   const start = rect(0, 0, 400, 300);
 
@@ -293,6 +349,10 @@ test('a resize stays inside the dimensions the sidecar will accept', () => {
     applyFrameHandle(start, 'southeast', { x: 99_999, y: 99_999 }, 1),
     rect(0, 0, MAX_FRAME_PX, MAX_FRAME_PX),
   );
+  // A frame already smaller than a resize may leave follows the hand from its own size.
+  const small = rect(0, 0, 80, 60);
+  assert.deepEqual(applyFrameHandle(small, 'southeast', { x: 5, y: 5 }, 1), rect(0, 0, 85, 65));
+  assert.deepEqual(applyFrameHandle(small, 'northwest', { x: 5, y: 5 }, 1), small);
 });
 
 test('a resize commits once on release and a cancelled one commits nothing', () => {

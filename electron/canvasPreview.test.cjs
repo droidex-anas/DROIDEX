@@ -1,14 +1,17 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 
 const {
   CANVAS_PREVIEW_CSP,
-  CANVAS_PREVIEW_PARTITION,
   CANVAS_PREVIEW_URL,
   canvasPreviewDocument,
+} = require('./canvasPreview.cjs');
+const {
+  CANVAS_PREVIEW_PARTITION,
   canvasPreviewSessionReady,
   configureCanvasPreviewSession,
-} = require('./canvasPreview.cjs');
+} = require('./canvasPreviewSession.cjs');
 const { createCanvasPreviewHosts } = require('./canvasPreviewHosts.cjs');
 
 /** The design's frame, whose every probe is a promise the test settles. */
@@ -31,13 +34,14 @@ function createGuest(id, frames = []) {
     id,
     captures,
     identity: { designId: 'dsg_01', revisionId: 'rev_01', generation: 1 },
+    displayScale: 2,
     crashes: 0,
     destroyed: false,
     windowOpenHandler: null,
     webRtcPolicy: null,
     mainFrame: { frames },
-    executeJavaScript() {
-      return Promise.resolve(this.identity);
+    executeJavaScript(script) {
+      return Promise.resolve(script === 'devicePixelRatio' ? this.displayScale : this.identity);
     },
     capturePage(rect, options) {
       return new Promise((resolve, reject) => captures.push({ rect, options, resolve, reject }));
@@ -259,7 +263,7 @@ test('the guest loses every network path at its own session', async () => {
   assert.equal(CANVAS_PREVIEW_CSP.includes('webrtc'), false);
   assert.equal(guest.webRtcPolicy, 'disable_non_proxied_udp');
 
-  const configured = { handled: [], proxy: null, requested: [], checked: null };
+  const configured = { handled: [], proxy: null, requested: [], checked: null, device: null };
   await configureCanvasPreviewSession(
     {
       protocol: {
@@ -278,6 +282,12 @@ test('the guest loses every network path at its own session', async () => {
       setPermissionCheckHandler(handler) {
         configured.checked = handler({}, 'media', 'droidex-canvas-preview://preview', {});
       },
+      setDevicePermissionHandler(handler) {
+        configured.device = handler({
+          deviceType: 'usb',
+          origin: 'droidex-canvas-preview://preview',
+        });
+      },
     },
     'serve',
   );
@@ -293,6 +303,7 @@ test('the guest loses every network path at its own session', async () => {
   });
   assert.deepEqual(configured.requested, [false, false]);
   assert.equal(configured.checked, false);
+  assert.equal(configured.device, false);
   // In memory only: a `persist:` partition would keep storage for generated code.
   assert.equal(CANVAS_PREVIEW_PARTITION.startsWith('persist:'), false);
 });
@@ -372,6 +383,177 @@ test('the intermediate measures its message cap in bytes', () => {
   assert.equal(/encoded\.length >/.test(document), false);
 });
 
+/**
+ * The intermediate's own script, run against a stand-in for its document: what
+ * it posts to the generated frame, and `reply` for the frame's messages back.
+ */
+function runIntermediate() {
+  const document = canvasPreviewDocument();
+  const script = document.slice(
+    document.lastIndexOf('<script>') + 8,
+    document.lastIndexOf('</script>'),
+  );
+  const posted = [];
+  const contentWindow = { postMessage: (message) => posted.push(message) };
+  let receive = null;
+  const context = vm.createContext({
+    document: { querySelector: () => ({ contentWindow }) },
+    addEventListener: (type, listener) => {
+      if (type === 'message') receive = listener;
+    },
+    TextEncoder,
+    // No answer deadline fires here; the test settles every question itself.
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  });
+  vm.runInContext(script, context);
+  const preview = context.__droidexCanvasPreview;
+  const nonce = 'a'.repeat(32);
+  assert.equal(
+    preview.start({ nonce, html: '', designId: 'dsg_01', revisionId: 'rev_01', generation: 1 }),
+    'started',
+  );
+  return {
+    preview,
+    posted,
+    reply: (data) =>
+      receive({ source: contentWindow, data: Object.assign({ canvasPreview: nonce }, data) }),
+  };
+}
+
+test('the intermediate refuses a locate that names too many, empty or overlong elements', () => {
+  const { preview, posted } = runIntermediate();
+  const ids = (count) => Array.from({ length: count }, (_, index) => `el_${index}`);
+
+  for (const request of [
+    { elementIds: ids(9) },
+    { elementIds: [''] },
+    { elementIds: ['e'.repeat(129)] },
+    { elementIds: 'el_1' },
+    null,
+  ])
+    assert.equal(preview.locate(request), 'invalid_request');
+  assert.deepEqual(posted, []);
+  preview.locate({ elementIds: ids(8) });
+  assert.equal(posted.length, 1);
+});
+
+test("a locate is answered only by its own reply, never a probe's that echoes its sequence", async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const rect = { x: 1, y: 2, width: 30, height: 40 };
+  const probed = preview.probe({ at: { x: 5, y: 5 } });
+  const located = preview.locate({ elementIds: ['el_1'] });
+  const settled = [];
+  void probed.then(() => settled.push('probe'));
+  void located.then(() => settled.push('locate'));
+  assert.deepEqual(
+    posted.map(({ command, sequence }) => [command, sequence]),
+    [
+      ['probe', 1],
+      ['locate', 2],
+    ],
+  );
+
+  reply({ event: 'probe', sequence: 2, element: { elementId: 'el_1', rect } });
+  reply({ event: 'locate', sequence: 1, rects: [rect] });
+  await new Promise(setImmediate);
+  assert.deepEqual(settled, []);
+
+  reply({ event: 'locate', sequence: 2, rects: [rect] });
+  assert.deepEqual(JSON.parse(await located), [rect]);
+});
+
+test('a probe answer keeps its path whole, and one without a path answers nothing', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const rect = { x: 1, y: 2, width: 30, height: 40 };
+  const answer = (element) => {
+    const asked = preview.probe({ at: { x: 5, y: 5 } });
+    reply({ event: 'probe', sequence: posted.at(-1).sequence, element });
+    return asked.then(JSON.parse);
+  };
+  // A path is an identity, so one past the text cap is kept whole.
+  const instancePath = '0/'.repeat(300) + '0';
+  assert.deepEqual(await answer({ elementId: 'el_1', instancePath, rect }), {
+    elementId: 'el_1',
+    instancePath,
+    rect,
+    text: null,
+  });
+  assert.equal(await answer({ elementId: 'el_1', rect }), null);
+});
+
+test('a vector answer has its own cap and carries only markup or a known refusal', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const answer = (data) => {
+    const asked = preview.vector();
+    reply({ event: 'vector', sequence: posted.at(-1).sequence, ...data });
+    return asked.then(JSON.parse);
+  };
+  const svg = `<svg>${'x'.repeat(8_000)}</svg>`;
+  assert.deepEqual(await answer({ svg }), { svg });
+  assert.deepEqual(await answer({ refused: 'not_vector', svg: 42 }), { refused: 'not_vector' });
+  assert.equal(await answer({ refused: 'anything' }), null);
+});
+
+test('a pick or hover by path is passed on only for an element id and a path of child indices', () => {
+  const { preview, posted } = runIntermediate();
+  const properties = ['color'];
+  for (const named of [
+    { elementId: '', instancePath: '0/1' },
+    { elementId: 'el_1', instancePath: '0/../1' },
+    { elementId: 'el_1', instancePath: 4 },
+  ]) {
+    assert.equal(preview.pick({ ...named, properties, sequence: 1 }), 'invalid_request');
+    assert.equal(preview.hover(named), 'invalid_request');
+  }
+  assert.deepEqual(posted, []);
+  preview.pick({ elementId: 'el_1', instancePath: '0/1', properties, sequence: 2 });
+  void preview.hover({ elementId: 'el_1', instancePath: '0/1', x: 4, y: 4 });
+  assert.deepEqual(
+    posted.map(({ command, elementId, instancePath, x }) => [command, elementId, instancePath, x]),
+    [
+      ['pick', 'el_1', '0/1', undefined],
+      ['hover', 'el_1', '0/1', undefined],
+    ],
+  );
+});
+
+test('a tree answer has its own cap, and each node is rebuilt or the answer refused', async () => {
+  const { preview, posted, reply } = runIntermediate();
+  const answer = (data, from = 0) => {
+    const asked = preview.tree({ from });
+    assert.equal(posted.at(-1).from, from);
+    reply({ event: 'tree', sequence: posted.at(-1).sequence, from, ...data });
+    return asked.then(JSON.parse);
+  };
+  const node = { elementId: 'el_1', instancePath: '0/0', tagName: 'main', depth: 0 };
+  // Far over the 4096 bytes any other event may measure.
+  const nodes = Array.from({ length: 400 }, () => node);
+  assert.deepEqual(await answer({ nodes, cap: 400, truncated: true }), {
+    nodes,
+    from: 0,
+    cap: 400,
+    truncated: true,
+  });
+  assert.deepEqual(
+    await answer({ nodes: [{ ...node, style: 'x' }], cap: 400, truncated: false }, 400),
+    { nodes: [node], from: 400, cap: 400, truncated: false },
+  );
+  for (const refused of [
+    { nodes: [...nodes, node], cap: 400, truncated: true },
+    { nodes: [{ ...node, instancePath: '0/x' }], cap: 400, truncated: false },
+    { nodes: [{ ...node, depth: -1 }], cap: 400, truncated: false },
+    { nodes: [node], cap: 400 },
+    // The cap is the reporter's to name, never the intermediate's to fill in.
+    { nodes: [node], truncated: false },
+    { nodes: [node], cap: 10, truncated: false },
+    // A page from somewhere else than asked.
+    { nodes: [node], from: 3, cap: 400, truncated: false },
+  ])
+    assert.equal(await answer(refused), null);
+  for (const from of [undefined, -1, 1.5, '0'])
+    assert.equal(preview.tree({ from }), 'invalid_request');
+});
 test('a guest is not attachable until the preview session is configured', async () => {
   // The module that configures the session is what reports readiness, so main
   // has no second flag to forget: an unconfigured session routes DIRECT, and a
@@ -382,6 +564,7 @@ test('a guest is not attachable until the preview session is configured', async 
     setProxy: () => held.promise,
     setPermissionRequestHandler() {},
     setPermissionCheckHandler() {},
+    setDevicePermissionHandler() {},
   };
 
   const configuring = configureCanvasPreviewSession(guestSession, () => undefined);
@@ -405,6 +588,7 @@ const captureRequest = {
   width: 720,
   height: 720,
   scaleFactor: 2,
+  retain: false,
 };
 
 function capturedImage(width = 1440, height = 1440) {
@@ -434,6 +618,92 @@ test('main captures only the attached guest at CSS size and device scale, and ke
   assert.deepEqual(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01'), result.bytes);
   assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_02'), null);
   assert.deepEqual(clock.pending(), { intervals: 1, deadlines: 0 });
+});
+
+test('a capture at a scale the display does not draw is drawn again by Chromium at that scale', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push({ method, params });
+      return Promise.resolve({ data: capturedImage(2160, 2160).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const capture = hosts.capture({ ...captureRequest, scaleFactor: 3 });
+  await new Promise(setImmediate);
+  guest.captures[0].resolve(capturedImage());
+  const result = await capture;
+  assert.equal(result.ok, true);
+  assert.equal(result.bytes.readUInt32BE(16), 2160);
+  const clip = { x: 0, y: 0, width: 720, height: 720, scale: 1.5 };
+  assert.deepEqual(sent, [{ method: 'Page.captureScreenshot', params: { format: 'png', clip } }]);
+  assert.equal(guest.debugger.attached, false);
+});
+
+test('a Poster at 1x on a 3x display is drawn by Chromium without a native image over the caps', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  guest.displayScale = 3;
+  const sent = [];
+  guest.debugger = {
+    attached: false,
+    isAttached: () => guest.debugger.attached,
+    attach: () => (guest.debugger.attached = true),
+    detach: () => (guest.debugger.attached = false),
+    sendCommand(method, params) {
+      sent.push(params.clip.scale);
+      return Promise.resolve({ data: capturedImage(1728, 2304).toPNG().toString('base64') });
+    },
+  };
+  hosts.attach(guest);
+
+  const poster = { ...captureRequest, width: 1728, height: 2304, scaleFactor: 1 };
+  const result = await hosts.capture(poster);
+  assert.equal(result.ok, true);
+  assert.deepEqual([result.bytes.readUInt32BE(16), result.bytes.readUInt32BE(20)], [1728, 2304]);
+  assert.equal(guest.captures.length, 0);
+  assert.deepEqual(sent, [1 / 3]);
+});
+
+test('a save reads the capture kept for its own request, not the revision’s latest picture', async () => {
+  const { hosts } = createHosts();
+  const guest = createGuest(41);
+  hosts.attach(guest);
+  const captureAt = async (requestId, scaleFactor, side) => {
+    const capture = hosts.capture({ ...captureRequest, requestId, scaleFactor, retain: true });
+    await new Promise(setImmediate);
+    guest.captures.at(-1).resolve(capturedImage(side, side));
+    assert.equal((await capture).ok, true);
+  };
+  await captureAt('capture_1x', 1, 720);
+  await captureAt('capture_2x', 2, 1440);
+  await captureAt('capture_released', 2, 1440);
+
+  assert.equal(hosts.readThumbnail('cv_01', 'dsg_01', 'rev_01').readUInt32BE(16), 1440);
+  assert.equal(hosts.takeCapture('capture_1x').readUInt32BE(16), 720);
+  assert.equal(hosts.takeCapture('capture_1x'), null);
+  assert.equal((await hosts.capture({ ...captureRequest, requestId: 'capture_2x' })).ok, false);
+  assert.equal(hosts.cancelCapture('capture_released'), true);
+  assert.equal(hosts.takeCapture('capture_released'), null);
+  assert.equal(hosts.takeCapture('capture_2x').readUInt32BE(16), 1440);
+});
+
+test('a capture over the pixel caps is refused with the largest scale that fits', async () => {
+  const { hosts } = createHosts();
+  hosts.attach(createGuest(41));
+  const refusal = async (side, scaleFactor) =>
+    (await hosts.capture({ ...captureRequest, width: side, height: side, scaleFactor })).error
+      .message;
+  assert.equal(await refusal(1800, 3), 'Too large at 3x; try 2x.');
+  assert.equal(await refusal(4000, 2), 'Too large at 2x; try 1x.');
+  assert.equal(await refusal(5000, 1), 'Too large to capture at 1x.');
 });
 
 test('a kit-bound guest is captured without a canvas, and main keeps no copy', async () => {

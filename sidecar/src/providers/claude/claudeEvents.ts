@@ -204,7 +204,7 @@ export class ClaudeEventMapper {
       : [];
     for (const block of content) {
       if (block.kind === 'tool_call') {
-        events.push(this.toolCall(block.id, block.name, block.input, parentToolUseId));
+        events.push(this.toolCall(block, parentToolUseId));
         continue;
       }
       const textUpdate: TranscriptEvent['textUpdate'] = {
@@ -363,9 +363,7 @@ export class ClaudeEventMapper {
   }
 
   private toolCall(
-    id: string,
-    name: string,
-    input: unknown,
+    { id, name, input, transient }: Extract<ClaudeContent, { kind: 'tool_call' }>,
     parentToolUseId: string | null,
   ): NormalizedEvent {
     this.subagents.noteToolUse(name, id, parentToolUseId);
@@ -383,6 +381,7 @@ export class ClaudeEventMapper {
         toolArgs,
         toolUseId: id,
         ...(pollsChildSessionId ? { pollsChildSessionId } : {}),
+        ...(transient ? { transient } : {}),
       }),
     };
   }

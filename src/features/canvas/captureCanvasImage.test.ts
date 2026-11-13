@@ -5,12 +5,16 @@ import type {
   CanvasPreviewCaptureResult,
   CanvasPreviewCaptureRequest,
 } from '../../lib/desktop';
+import type { PreviewVector } from './previewDocument';
 import {
   answerCaptureRequest,
   CanvasImageError,
   captureCanvasImage,
   exportCanvasImage,
+  exportCanvasSvg,
   onCanvasImageCaptured,
+  onCanvasPreviewShown,
+  readCanvasVector,
   registerCanvasPreview,
 } from './captureCanvasImage';
 
@@ -22,7 +26,8 @@ function desktopCapture() {
     answer: (result: CanvasPreviewCaptureResult) => void;
   }[] = [];
   const cancelled: string[] = [];
-  const saves: [string, string, string, string][] = [];
+  const saves: [string, string][] = [];
+  const svgSaves: [string, string][] = [];
   Object.defineProperty(globalThis, 'window', {
     configurable: true,
     value: {
@@ -33,23 +38,34 @@ function desktopCapture() {
           cancelled.push(requestId);
           return Promise.resolve(true);
         },
-        canvasImageSave: (...args: [string, string, string, string]) => {
+        canvasImageSave: (...args: [string, string]) => {
           saves.push(args);
+          return Promise.resolve<CanvasImageSaveResult>({ ok: true });
+        },
+        canvasSvgSave: (...args: [string, string]) => {
+          svgSaves.push(args);
           return Promise.resolve<CanvasImageSaveResult>({ ok: true });
         },
       },
     },
   });
-  return { pending, cancelled, saves, close: () => Reflect.deleteProperty(globalThis, 'window') };
+  return {
+    pending,
+    cancelled,
+    saves,
+    svgSaves,
+    close: () => Reflect.deleteProperty(globalThis, 'window'),
+  };
 }
 
-function mount(guestId: number) {
+function mount(guestId: number, vector: PreviewVector | null = null) {
   return registerCanvasPreview('cv_01', ref, {
     guestId,
     generation: guestId,
     width: 720,
     height: 720,
     scaleFactor: 2,
+    vector: () => Promise.resolve(vector),
   });
 }
 
@@ -108,6 +124,20 @@ test('releasing the preview slot cancels a pending capture', async () => {
   }
 });
 
+test('a preview that becomes ready after the vector was first read is announced', async () => {
+  assert.equal(await readCanvasVector('cv_01', ref), null);
+  let shown = 0;
+  const stopListening = onCanvasPreviewShown('cv_01', ref, () => (shown += 1));
+  const release = mount(41, { svg: '<svg/>' });
+  try {
+    assert.equal(shown, 1);
+    assert.deepEqual(await readCanvasVector('cv_01', ref), { svg: '<svg/>' });
+  } finally {
+    stopListening();
+    release();
+  }
+});
+
 test('a picture main keeps reaches the listeners of that revision, a failed capture does not', async () => {
   const desktop = desktopCapture();
   const release = mount(41);
@@ -138,16 +168,18 @@ test('a picture main keeps reaches the listeners of that revision, a failed capt
   }
 });
 
-test('export saves the captured revision identifiers without forwarding renderer bytes', async () => {
+test('export saves the capture main kept for its request, without forwarding renderer bytes', async () => {
   const desktop = desktopCapture();
   const release = mount(41);
   try {
-    const exported = exportCanvasImage('cv_01', ref, 'design', new AbortController().signal);
+    const exported = exportCanvasImage('cv_01', ref, 'design', 3, new AbortController().signal);
     assert.deepEqual(desktop.saves, []);
     const request = desktop.pending[0].request;
     assert.equal(request.canvasId, 'cv_01');
     assert.equal(request.designId, 'dsg_01');
     assert.equal(request.revisionId, 'rev_01');
+    assert.equal(request.scaleFactor, 3);
+    assert.equal(request.retain, true);
     desktop.pending[0].answer({
       ok: true,
       mediaType: 'image/png',
@@ -155,7 +187,27 @@ test('export saves the captured revision identifiers without forwarding renderer
     });
 
     assert.equal(await exported, true);
-    assert.deepEqual(desktop.saves, [['cv_01', 'dsg_01', 'rev_01', 'design']]);
+    assert.deepEqual(desktop.saves, [[request.requestId, 'design']]);
+  } finally {
+    release();
+    desktop.close();
+  }
+});
+
+test('an SVG export saves the live root svg, and refuses a design that is not one', async () => {
+  const desktop = desktopCapture();
+  let release = mount(41, { svg: '<svg/>' });
+  try {
+    assert.equal(await exportCanvasSvg('cv_01', ref, 'mark'), true);
+    assert.deepEqual(desktop.svgSaves, [['<svg/>', 'mark']]);
+
+    release();
+    release = mount(42, { refused: 'not_vector' });
+    await assert.rejects(
+      exportCanvasSvg('cv_01', ref, 'mark'),
+      (error: unknown) => error instanceof CanvasImageError,
+    );
+    assert.equal(desktop.svgSaves.length, 1);
   } finally {
     release();
     desktop.close();
@@ -169,6 +221,7 @@ test('an agent screenshot is answered only from a live preview of that exact rev
     captureId: 'capture-1',
     canvasId: 'cv_01',
     ...ref,
+    image: { format: 'png', scale: null },
   } as const;
   try {
     const unshown = await answerCaptureRequest(request);
@@ -191,6 +244,33 @@ test('an agent screenshot is answered only from a live preview of that exact rev
       release();
     }
   } finally {
+    desktop.close();
+  }
+});
+
+test('a render asks the live preview for its scale, or for its root svg', async () => {
+  const desktop = desktopCapture();
+  let release = mount(41, { refused: 'not_vector' });
+  const request = {
+    type: 'canvas.captureRequest',
+    captureId: 'capture-2',
+    canvasId: 'cv_01',
+    ...ref,
+  } as const;
+  try {
+    const scaled = answerCaptureRequest({ ...request, image: { format: 'png', scale: 3 } });
+    assert.equal(desktop.pending[0].request.scaleFactor, 3);
+    desktop.pending[0].answer({ ok: true, mediaType: 'image/png', bytes: new Uint8Array([1]) });
+    assert.equal((await scaled).capture.ok, true);
+
+    const refused = await answerCaptureRequest({ ...request, image: { format: 'svg' } });
+    assert.equal(refused.capture.ok, false);
+    release();
+    release = mount(42, { svg: '<svg/>' });
+    const vector = await answerCaptureRequest({ ...request, image: { format: 'svg' } });
+    assert.deepEqual(vector.capture, { ok: true, svg: '<svg/>' });
+  } finally {
+    release();
     desktop.close();
   }
 });

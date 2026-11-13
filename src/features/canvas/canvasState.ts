@@ -22,6 +22,8 @@ export type CanvasPaneState =
       snapshot: CanvasSnapshot;
       /** The frame the source drawer is open on, or null while it is closed. */
       sourceDesignId: string | null;
+      /** The layers panel beside the board is open. */
+      layersOpen: boolean;
       /** Where the board was when a document took its place, so Back returns there. */
       boardViewport?: Viewport;
     }
@@ -40,6 +42,8 @@ export type CanvasPaneEvent =
   // The toolbar's Source action (Task 5d binds it) and the drawer closing.
   | { type: 'open-source'; designId: string }
   | { type: 'close-source' }
+  // The board's Layers tool, its shortcut and the panel's own close.
+  | { type: 'show-layers'; shown: boolean }
   | { type: 'board-left'; viewport: Viewport };
 
 /** The event the toolbar's Source action dispatches for one frame. */
@@ -132,6 +136,7 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
         canvasId: snapshot.canvasId,
         snapshot,
         sourceDesignId: keptSourceDesignId(state, snapshot),
+        layersOpen: state.status === 'ready' && state.layersOpen,
         ...(boardViewport ? { boardViewport } : {}),
       };
     }
@@ -145,6 +150,9 @@ export function reduceCanvasPane(state: CanvasPaneState, event: CanvasPaneEvent)
       const designId = event.type === 'open-source' ? event.designId : null;
       return { ...state, sourceDesignId: designId };
     }
+    case 'show-layers':
+      if (state.status !== 'ready' || state.layersOpen === event.shown) return state;
+      return { ...state, layersOpen: event.shown };
     case 'board-left':
       if (state.status !== 'ready' || state.snapshot.frames.length === 0) return state;
       return { ...state, boardViewport: event.viewport };
@@ -212,9 +220,10 @@ export function reduceCanvasRemoval(
  * Spec §4: Select gives the board pointer ownership through a transparent
  * overlay over the guests; Interact removes it so the preview receives real
  * pointer and keyboard events. Edit keeps the overlay, and a press on a frame
- * picks the element under it instead of the frame.
+ * picks the element under it instead of the frame. Design keeps it too, and a
+ * press points the chat's next prompt at the element or text under it.
  */
-export type BoardMode = 'select' | 'interact' | 'edit';
+export type BoardMode = 'select' | 'interact' | 'edit' | 'design';
 
 export interface BoardInteraction {
   mode: BoardMode;
@@ -239,18 +248,21 @@ export type BoardInteractionEvent =
   | { type: 'pick'; designId: string; additive: boolean }
   /** A finished rubber-band. */
   | { type: 'pick-band'; designIds: string[]; additive: boolean }
+  /** ⌘A: every frame, in reading order. */
+  | { type: 'pick-all'; designIds: string[] }
   /** A click on the board background. */
   | { type: 'clear' }
   /** Double-click, or Enter on a single selected frame. */
   | { type: 'interact'; designId: string }
   | { type: 'edit' }
+  | { type: 'design' }
   | { type: 'escape' }
   /** Frames the canvas no longer has, so nothing points at a deleted design. */
   | { type: 'frames'; designIds: string[] };
 
 /**
  * Spec §4: Escape returns to selection and Escape again clears it, so the two
- * steps out of Interact or Edit are never one. Picking while interacting moves Interact
+ * steps out of Interact, Edit or Design are never one. Picking while interacting moves Interact
  * to the frame picked, which keeps the live slot under the hand; picking
  * several leaves Interact, because it drives one frame.
  */
@@ -274,6 +286,8 @@ export function reduceBoardInteraction(
         : event.designIds;
       return settle(state, selected);
     }
+    case 'pick-all':
+      return settle(state, event.designIds);
     case 'clear':
       return settle(state, []);
     case 'interact':
@@ -283,21 +297,31 @@ export function reduceBoardInteraction(
         interactedFrameId: event.designId,
       };
     case 'edit':
-      return { ...state, mode: 'edit', interactedFrameId: null };
+    case 'design':
+      return { ...state, mode: event.type, interactedFrameId: null };
     case 'escape':
       if (state.mode !== 'select') return { ...state, mode: 'select', interactedFrameId: null };
       return state.selectedFrameIds.length === 0 ? state : settle(state, []);
-    case 'frames': {
-      const held = new Set(event.designIds);
-      const selected = state.selectedFrameIds.filter((id) => held.has(id));
-      if (
-        selected.length === state.selectedFrameIds.length &&
-        (state.interactedFrameId === null || held.has(state.interactedFrameId))
-      )
-        return state;
-      return settle(state, selected);
-    }
+    case 'frames':
+      return keepFrames(state, event.designIds);
   }
+}
+
+/** The state pointing only at designs the canvas still has, unchanged when it lost none in use. */
+function keepFrames(state: BoardInteraction, designIds: string[]): BoardInteraction {
+  const held = new Set(designIds);
+  const selected = state.selectedFrameIds.filter((id) => held.has(id));
+  if (
+    selected.length === state.selectedFrameIds.length &&
+    (state.interactedFrameId === null || held.has(state.interactedFrameId))
+  )
+    return state;
+  return settle(state, selected);
+}
+
+/** Edit and Design point at the elements inside a frame rather than at the frame. */
+export function picksElements(mode: BoardMode): mode is 'edit' | 'design' {
+  return mode === 'edit' || mode === 'design';
 }
 
 /** A frame shows its actions while it is the one selection, or Interact drives it. */

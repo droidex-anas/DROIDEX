@@ -1,0 +1,73 @@
+import { useState, type KeyboardEvent } from 'react';
+import { isTagKey } from '../boardKeys';
+
+/**
+ * The match the keyboard is on, for a search field that keeps the keyboard:
+ * the arrows walk the matches, Enter adds the one it is on, ⌥↓ opens its
+ * variant menu, ⌘L tags it in the chat where the rows can be tagged, and
+ * Escape clears the search, then hands the keyboard back to the board.
+ */
+export function usePaletteKeys({
+  query,
+  onQuery,
+  count,
+  optionId,
+  onAdd,
+  onMenu,
+  onTag,
+  onLeave,
+}: {
+  query: string;
+  onQuery: (query: string) => void;
+  /** How many matches the query finds. */
+  count: number;
+  optionId: (index: number) => string;
+  onAdd: (index: number) => void;
+  onMenu: (index: number) => void;
+  /** Null where the rows cannot be tagged, so ⌘L stays the app's. */
+  onTag: ((index: number) => void) | null;
+  onLeave: () => void;
+}) {
+  const [active, setActive] = useState(0);
+  const activeIndex = count === 0 ? -1 : Math.min(active, count - 1);
+
+  const search = (next: string) => {
+    onQuery(next);
+    setActive(0);
+  };
+  const moveTo = (index: number) => {
+    setActive(index);
+    document.getElementById(optionId(index))?.scrollIntoView({ block: 'nearest' });
+  };
+  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.nativeEvent.isComposing) return;
+    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
+    if (isVariantsKey(event)) {
+      event.preventDefault();
+      if (activeIndex >= 0) onMenu(activeIndex);
+    } else if (step !== undefined && count > 0) {
+      event.preventDefault();
+      moveTo((activeIndex + step + count) % count);
+    } else if (event.key === 'Enter' && activeIndex >= 0) {
+      event.preventDefault();
+      if (!event.repeat) onAdd(activeIndex);
+    } else if (isTagKey(event) && onTag !== null) {
+      // The search owns the key here, so the board does not tag its frames as well.
+      event.preventDefault();
+      event.stopPropagation();
+      if (activeIndex >= 0 && !event.repeat) onTag(activeIndex);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (query === '') onLeave();
+      else search('');
+    }
+  };
+  return { activeIndex, setActive, search, onKeyDown };
+}
+
+function isVariantsKey(event: KeyboardEvent): boolean {
+  return (
+    event.key === 'ArrowDown' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+  );
+}

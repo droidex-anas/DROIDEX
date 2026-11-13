@@ -4,8 +4,9 @@
 // newer revision builds and keeps its slot while it stays in view.
 
 import { useIsPresent } from 'framer-motion';
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { BoardInteraction } from './canvasState';
+import type { PreviewSelections } from './DesignPreview';
 import { NO_SHOWN_REVISIONS, shownRevisions } from './previewLabels';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots } from './previewSlots';
 import type { CanvasFrame } from './protocol';
@@ -14,7 +15,12 @@ export function useBoardPreviews(
   frames: CanvasFrame[],
   visible: string[],
   interaction: BoardInteraction,
-  renderPreview: (frame: CanvasFrame, revisionId: string) => ReactNode,
+  renderPreview: (
+    frame: CanvasFrame,
+    revisionId: string,
+    selections: PreviewSelections,
+  ) => ReactNode,
+  selections: PreviewSelections,
 ) {
   const [retainedSlots, setRetainedSlots] = useState(NO_PREVIEW_SLOTS);
   const [retainedShown, setRetainedShown] = useState(NO_SHOWN_REVISIONS);
@@ -37,13 +43,23 @@ export function useBoardPreviews(
       });
   if (slots !== retainedSlots) setRetainedSlots(slots);
 
+  // Kept across renders that change none of them, so a frame that holds a
+  // slot is not drawn again for a board render that leaves its preview alone.
+  const previews = useMemo(
+    () =>
+      new Map(
+        frames.flatMap((frame) => {
+          const revisionId = shown.get(frame.designId);
+          return revisionId !== undefined && slots.live.includes(frame.designId)
+            ? [[frame.designId, renderPreview(frame, revisionId, selections)] as const]
+            : [];
+        }),
+      ),
+    [frames, shown, slots.live, renderPreview, selections],
+  );
+
   /** One frame's live preview, or null when it holds no slot. */
-  const preview = (frame: CanvasFrame): ReactNode | null => {
-    const revisionId = shown.get(frame.designId);
-    return revisionId !== undefined && slots.live.includes(frame.designId)
-      ? renderPreview(frame, revisionId)
-      : null;
-  };
+  const preview = (frame: CanvasFrame): ReactNode | null => previews.get(frame.designId) ?? null;
 
   return { shown, released: slots.released, preview };
 }

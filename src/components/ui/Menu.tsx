@@ -12,7 +12,7 @@ import {
 import { useMergeRefs } from '@floating-ui/react';
 import type { IconComponent } from '@droidex/icons';
 import { cn } from './cn';
-import { navigationIndex, typeaheadIndex } from './menuKeys';
+import { isTypeaheadKey, navigationIndex, typeaheadIndex } from './menuKeys';
 import { Popover, type PopoverProps } from './Popover';
 
 // How long typed letters keep adding to one type-ahead query.
@@ -118,12 +118,6 @@ function enabledItems(list: HTMLElement | null): HTMLElement[] {
   return Array.from(list?.querySelectorAll<HTMLElement>(ENABLED_ITEM) ?? []);
 }
 
-function isTypeaheadKey(event: KeyboardEvent): boolean {
-  return (
-    event.key.length === 1 && event.key !== ' ' && !event.metaKey && !event.ctrlKey && !event.altKey
-  );
-}
-
 const ITEM_TONE = {
   neutral: 'text-primary focus:bg-elevated dark:focus:bg-active',
   danger: 'text-danger focus:bg-danger-soft',
@@ -144,7 +138,6 @@ function MenuItem({
   onSelect,
   onClick,
   onPointerMove,
-  onPointerLeave,
   className,
   children,
   ...rest
@@ -186,10 +179,6 @@ function MenuItem({
         const item = itemRef.current;
         if (disabled || selectingRef.current || item === document.activeElement) return;
         item?.focus({ preventScroll: true });
-      }}
-      onPointerLeave={(event) => {
-        onPointerLeave?.(event);
-        if (!selectingRef.current) listRef.current?.focus({ preventScroll: true });
       }}
       className={cn(
         'flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left text-body outline-none',

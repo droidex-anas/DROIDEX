@@ -81,6 +81,27 @@ export const METRIC_CATALOG: readonly MetricDefinition[] = [
     availability:
       'Both refs answer sessions.list over the bridge; median spawn→first list on each tree’s production sidecar.',
   },
+  ...[
+    ['canvas.reactCommitsPerPanFrame', 'commits'],
+    ['canvas.reactCommitsPerZoomFrame', 'commits'],
+    ['canvas.reactCommitsPerDragFrame', 'commits'],
+    ['canvas.reactCommitsPerMarqueeFrame', 'commits'],
+    ['canvas.reactCommitsPerEditHoverFrame', 'commits'],
+    ['canvas.reactCommitsPerLayersSweepFrame', 'commits'],
+    ['canvas.layoutReadsPerPanFrame', 'reads'],
+    ['canvas.longTasksDuringGestures', 'tasks'],
+    ['canvas.panBusyP95Ms', 'ms'],
+    ['canvas.panOverBudgetShare', 'ratio'],
+    ['canvas.panRafP95Ms', 'ms'],
+  ].map(
+    ([id, unit]): MetricDefinition => ({
+      id,
+      class: 'ab',
+      unit,
+      availability:
+        'This branch’s canvas runner against each tree’s board harness (tests/smoke/board) in headless Chromium.',
+    }),
+  ),
   {
     id: 'sidecar.eventReductionRatio',
     class: 'candidate',

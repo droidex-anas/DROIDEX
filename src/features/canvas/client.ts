@@ -6,6 +6,7 @@ import type { AnnotateCanvasInput } from './annotationProtocol';
 import { applyCanvasChange } from './applyCanvasChange';
 import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
 import { DesignSystemRequests } from './designSystemRequests';
+import { LayerRequests } from './layerRequests';
 import { LibraryRequests } from './libraryRequests';
 import { RemovalRequests } from './removalRequests';
 import { RevisionRequests } from './revisionRequests';
@@ -22,6 +23,7 @@ import type {
   CreateCanvasResult,
   CreateFramesInput,
   CreateFramesResult,
+  DesignSystemAdherence,
   OwnedAsset,
   PreviewArtifact,
   RemoveFramesInput,
@@ -93,6 +95,7 @@ export class CanvasClient {
   constructor(private readonly transport: CanvasTransport) {}
 
   readonly designSystems = new DesignSystemRequests((command) => this.request(command));
+  readonly layers = new LayerRequests((command) => this.request(command));
   readonly library = new LibraryRequests((command) => this.request(command));
   readonly removal = new RemovalRequests((command) => this.request(command));
   readonly revisions = new RevisionRequests((command) => this.request(command));
@@ -150,6 +153,22 @@ export class CanvasClient {
       appSessionId,
     });
     reply(event, 'attachment');
+  }
+
+  /** The chat must be attached to the canvas; the sidecar rebuilds its frames under the new rule. */
+  async setDesignSystemAdherence(
+    appSessionId: string,
+    canvasId: string,
+    designSystemAdherence: DesignSystemAdherence,
+  ): Promise<void> {
+    const event = await this.request({
+      type: 'canvas.setDesignSystemAdherence',
+      requestId: requestId(),
+      appSessionId,
+      canvasId,
+      designSystemAdherence,
+    });
+    reply(event, 'ok');
   }
 
   async createFrames(
@@ -376,9 +395,10 @@ export class CanvasClient {
     let projection = snapshot;
     for (const change of queued) {
       if (change.sequence <= projection.sequence) continue;
-      if (change.sequence !== projection.sequence + 1)
-        return { snapshot: projection, current: false };
-      projection = applyCanvasChange(projection, change);
+      const next =
+        change.sequence === projection.sequence + 1 && applyCanvasChange(projection, change);
+      if (!next) return { snapshot: projection, current: false };
+      projection = next;
     }
     return { snapshot: projection, current: true };
   }
@@ -468,11 +488,13 @@ export class CanvasClient {
       return;
     }
     if (change.sequence <= current.sequence) return;
-    if (change.sequence === current.sequence + 1) {
-      this.project(board, applyCanvasChange(current, change));
+    const next = change.sequence === current.sequence + 1 && applyCanvasChange(current, change);
+    if (next) {
+      this.project(board, next);
       return;
     }
-    // A gap means a change never arrived, and only a fresh snapshot closes it.
+    // A gap means a change never arrived, and a frame the projection does not
+    // hold yet, sent without its build, cannot be shown: only a fresh snapshot closes either.
     board.queued.push(change);
     void this.load(board, change.canvasId).catch(reportLostSnapshot);
   }

@@ -26,6 +26,7 @@ A quiet, raised card for results, errors and updates. Colour lives only in its 1
 - **Repeats:** raising the same toast again counts up (×2) instead of stacking a duplicate.
 - **In-place updates:** loading → success or error, and progress ticks, change the toast where it is (the icon cross-fades with a 2px blur), so it never pops out and back in.
 - **Position:** bottom-right, 16px from the edge, above the status bar. Newest at the front. Up to 3 peek out behind, 10px apart and each 5% smaller, with only their edges showing. Hovering fans the stack out 8px apart.
+  - While a design board is on screen, the stack sits in the board's own bottom-right corner instead: clear of a panel docked over it, and above the board's zoom or selection bar where either would meet the stack.
 - **Motion:** enter rising 16px on the stack spring (520 / 38), exit in 120ms with a fade and a slight shrink. Swipe right to dismiss.
 - **Keyboard:** ⌥T focuses the newest toast and Escape dismisses it. Errors use `role="alert"` and everything else `role="status"`.
 

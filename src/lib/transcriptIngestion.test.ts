@@ -109,6 +109,24 @@ test('ingestion merges one streamed tool call and keeps distinct calls separate'
   assert.equal(result.estimatedCost, estimateTranscriptCost(result.events));
 });
 
+test('a live-only tool-call snapshot is kept once the stored call joins it', () => {
+  const started = toolCall(
+    'started',
+    'tool-use-1',
+    {},
+    { toolName: 'Canvas write', transient: true },
+  );
+  const named = toolCall('named', 'tool-use-1', { designId: 'a' }, { transient: true, ts: 2 });
+  const stored = toolCall('stored', 'tool-use-1', { designId: 'a' }, { ts: 3 });
+
+  const live = ingestTranscriptEvents([], 0, [started, named]);
+  assert.equal(live.events[0]?.transient, true);
+  const joined = ingestTranscriptEvents(live.events, live.estimatedCost, [stored]);
+  assert.equal(joined.events.length, 1);
+  assert.equal(joined.events[0]?.id, 'started');
+  assert.equal(joined.events[0]?.transient, undefined);
+});
+
 test('ingestion keeps the latest targeted Canvas activity across tool-call snapshots', () => {
   const activity: NonNullable<TranscriptEvent['canvasActivity']> = {
     toolUseId: 'canvas-call',

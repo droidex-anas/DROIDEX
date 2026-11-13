@@ -22,10 +22,40 @@ export const MAX_KIT_NAME_LENGTH = 120;
 // a kit holds as many examples as a design holds files.
 const MAX_SOURCE_PATH_LENGTH = 256;
 const MAX_EXAMPLES = 64;
-// `DESIGN_SYSTEM_LIMITS`' project fields: the files a kit was read from.
+// `CATALOG_LIMITS` in the sidecar's kitCatalog.ts.
+const MAX_CATALOG_ENTRIES = 128;
+const MAX_CATALOG_NAME_LENGTH = 80;
+const MAX_CATALOG_NOTE_LENGTH = 200;
+const MAX_CATALOG_PROPS = 8;
+const MAX_PROP_OPTIONS = 32;
+const PROP_NAME = /^[A-Za-z_$][\w$]{0,79}$/;
+const PROP_OPTION = /^[A-Za-z0-9][\w-]{0,39}$/;
+// The project fields of the sidecar's designSystemProvenance.ts: the files a
+// kit was read from, and a library kit's exports and token names.
 const MAX_PROJECT_NAME_LENGTH = 255;
 const MAX_PROJECT_FILES = 8;
 const MAX_PROJECT_PATH_LENGTH = 1024;
+const MAX_LIBRARY_EXPORTS = 1024;
+const MAX_LIBRARY_SKIPS = 128;
+const SKIP_REASONS = new Set<unknown>([
+  'over_limit',
+  'unreadable',
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+  'no_exports',
+  'not_a_component',
+  'demo_left_out',
+]);
+const DETAILED_SKIP_REASONS = new Set<unknown>([
+  'unsupported_import',
+  'needs_left_out',
+  'duplicate_export',
+  'demo_left_out',
+]);
+const KEPT_SKIP_REASONS = new Set<unknown>(['no_exports', 'duplicate_export', 'demo_left_out']);
+const HOST_PATH = /^(?:[\\/]|[a-z]:[\\/]|file:)/i;
+const EXPORT_NAME = /^[A-Za-z$][\w$]{0,127}$/;
 const TOKEN_KINDS = new Set<unknown>([
   'colors',
   'typography',
@@ -128,7 +158,7 @@ function isPreview(value: unknown): boolean {
     value.kind === 'preview' &&
     isItemId(value.id) &&
     isTitle(value.title) &&
-    isExamplePath(value.example) &&
+    isSourcePath(value.example) &&
     isWholeBetween(value.width, 240, 1440) &&
     isWholeBetween(value.height, 120, 1200) &&
     isOptionalNote(value.note, MAX_ITEM_NOTE_BYTES)
@@ -204,7 +234,9 @@ export function isKitDocument(value: unknown): boolean {
     isKitKind(value.kind) &&
     isCover(value.cover) &&
     isDocumentSections(value.sections) &&
-    boundedList(value.examples, MAX_EXAMPLES, isExamplePath) &&
+    boundedList(value.examples, MAX_EXAMPLES, isSourcePath) &&
+    boundedList(value.catalog, MAX_CATALOG_ENTRIES, isCatalogListing) &&
+    isUniqueBy(value.catalog, 'name') &&
     boundedList(value.unmapped, MAX_TOKENS, isTokenName) &&
     (value.provenance === null || isKitProvenance(value.provenance)) &&
     (value.savedAt === null || isTimestamp(value.savedAt)) &&
@@ -252,7 +284,7 @@ function isKitKind(value: unknown): boolean {
 function isCover(value: unknown): boolean {
   if (value === null) return true;
   if (hasOnlyKeys(value, ['kind', 'example']) && value.kind === 'preview')
-    return isExamplePath(value.example);
+    return isSourcePath(value.example);
   return (
     hasOnlyKeys(value, ['kind', 'assetId']) && value.kind === 'image' && isAssetId(value.assetId)
   );
@@ -267,9 +299,8 @@ function isKitProvenance(value: unknown): boolean {
       boundedText(value.project.name, MAX_PROJECT_NAME_LENGTH) &&
       Array.isArray(value.project.files) &&
       value.project.files.length > 0 &&
-      boundedList(value.project.files, MAX_PROJECT_FILES, (file) =>
-        boundedText(file, MAX_PROJECT_PATH_LENGTH),
-      )
+      boundedList(value.project.files, MAX_PROJECT_FILES, isProjectPath) &&
+      (value.project.library === undefined || isLibraryProvenance(value.project.library))
     );
   return (
     id(value.sourceCanvasId) &&
@@ -277,6 +308,75 @@ function isKitProvenance(value: unknown): boolean {
     id(value.revision.designId) &&
     id(value.revision.revisionId)
   );
+}
+
+function isLibraryProvenance(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, [
+      'kind',
+      'components',
+      'tokens',
+      'skipped',
+      'skippedCount',
+      'partialCount',
+    ]) &&
+    value.kind === 'shadcn' &&
+    isNameMap(value.components, MAX_LIBRARY_EXPORTS, isExportName, isProjectPath) &&
+    isNameMap(value.tokens, MAX_TOKENS, isTokenName, isTokenName) &&
+    Array.isArray(value.skipped) &&
+    boundedList(value.skipped, MAX_LIBRARY_SKIPS, isLibrarySkip) &&
+    count(value.skippedCount) &&
+    count(value.partialCount) &&
+    listsAtMostItsCounts(value.skipped, value.skippedCount, value.partialCount) &&
+    isUniqueBy(value.skipped, 'file')
+  );
+}
+
+function isLibrarySkip(value: unknown): boolean {
+  if (!hasOnlyKeys(value, ['file', 'reason', 'detail'])) return false;
+  if (!isReviewText(value.file) || !SKIP_REASONS.has(value.reason)) return false;
+  if (DETAILED_SKIP_REASONS.has(value.reason)) return isReviewText(value.detail);
+  return value.detail === null;
+}
+
+function listsAtMostItsCounts(
+  skipped: readonly unknown[],
+  skippedCount: number,
+  partialCount: number,
+): boolean {
+  const kept = skipped.filter((skip) => record(skip) && KEPT_SKIP_REASONS.has(skip.reason)).length;
+  return kept <= partialCount && skipped.length - kept <= skippedCount;
+}
+
+/** Whether no two records of a list share their value at `key`. */
+function isUniqueBy(list: unknown, key: string): boolean {
+  if (!Array.isArray(list)) return false;
+  const values = list.map((each: unknown) => (record(each) ? each[key] : null));
+  return new Set(values).size === values.length;
+}
+
+/** A review record's file or detail: a project path or short text, never an absolute path. */
+function isReviewText(value: unknown): boolean {
+  return typeof value === 'string' && isProjectPath(value) && !HOST_PATH.test(value);
+}
+
+function isNameMap(
+  value: unknown,
+  max: number,
+  isKey: (key: string) => boolean,
+  isValue: (value: unknown) => boolean,
+): boolean {
+  if (!record(value)) return false;
+  const entries = Object.entries(value);
+  return entries.length <= max && entries.every(([key, name]) => isKey(key) && isValue(name));
+}
+
+function isExportName(value: string): boolean {
+  return EXPORT_NAME.test(value);
+}
+
+function isProjectPath(value: unknown): boolean {
+  return boundedText(value, MAX_PROJECT_PATH_LENGTH);
 }
 
 function isSavedBy(value: unknown): boolean {
@@ -288,8 +388,37 @@ function isTimestamp(value: unknown): boolean {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value));
 }
 
-/** A name in the kit's examples, held to the sidecar's `sourcePathSchema`. */
-function isExamplePath(value: unknown): boolean {
+function isCatalogListing(value: unknown): boolean {
+  return (
+    hasOnlyKeys(value, ['name', 'module', 'note', 'props']) &&
+    boundedText(value.name, MAX_CATALOG_NAME_LENGTH) &&
+    (value.module === null || isSourcePath(value.module)) &&
+    (value.note === null || boundedText(value.note, MAX_CATALOG_NOTE_LENGTH)) &&
+    boundedList(value.props, MAX_CATALOG_PROPS, isCatalogProp) &&
+    isUniqueBy(value.props, 'name')
+  );
+}
+
+function isCatalogProp(value: unknown): boolean {
+  if (!hasOnlyKeys(value, ['name', 'options', 'default'])) return false;
+  const { name, options } = value;
+  return (
+    typeof name === 'string' &&
+    PROP_NAME.test(name) &&
+    Array.isArray(options) &&
+    options.length >= 2 &&
+    boundedList(options, MAX_PROP_OPTIONS, isPropOption) &&
+    new Set(options).size === options.length &&
+    options.includes(value.default)
+  );
+}
+
+function isPropOption(value: unknown): boolean {
+  return typeof value === 'string' && PROP_OPTION.test(value);
+}
+
+/** A kit file's or example's name, held to the sidecar's `sourcePathSchema`. */
+function isSourcePath(value: unknown): boolean {
   if (typeof value !== 'string' || value.length === 0 || value.length > MAX_SOURCE_PATH_LENGTH)
     return false;
   if (value.includes('\\') || hasControlCharacter(value) || UNPAIRED_SURROGATE.test(value))

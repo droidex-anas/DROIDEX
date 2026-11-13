@@ -146,6 +146,7 @@ test('snapshots move the projection forward only', () => {
     canvasId: 'canvas-1',
     snapshot: snapshot(4, ['Pricing']),
     sourceDesignId: null,
+    layersOpen: false,
   });
 
   // A resync answers with a snapshot taken before the changes already applied.
@@ -238,6 +239,30 @@ test('the source drawer follows its frame and closes when the frame is gone', ()
   // A pane with no board has no drawer to open.
   assert.equal(
     reduceCanvasPane({ status: 'opening' }, openSourcePanel('design-1')).status,
+    'opening',
+  );
+});
+
+test('the layers panel stays as it was put while the canvas changes', () => {
+  const ready = apply(initialCanvasPaneState('canvas-1'), {
+    type: 'snapshot',
+    snapshot: snapshot(4, ['Pricing']),
+  });
+  const open = reduceCanvasPane(ready, { type: 'show-layers', shown: true });
+  assert.equal(open.status === 'ready' && open.layersOpen, true);
+  // Showing what is already shown changes nothing, so the pane does not render again.
+  assert.equal(reduceCanvasPane(open, { type: 'show-layers', shown: true }), open);
+
+  const changed = reduceCanvasPane(open, {
+    type: 'snapshot',
+    snapshot: snapshot(5, ['Pricing', 'Checkout']),
+  });
+  assert.equal(changed.status === 'ready' && changed.layersOpen, true);
+  const closed = reduceCanvasPane(changed, { type: 'show-layers', shown: false });
+  assert.equal(closed.status === 'ready' && closed.layersOpen, false);
+  // A pane with no board has no panel to open.
+  assert.equal(
+    reduceCanvasPane({ status: 'opening' }, { type: 'show-layers', shown: true }).status,
     'opening',
   );
 });

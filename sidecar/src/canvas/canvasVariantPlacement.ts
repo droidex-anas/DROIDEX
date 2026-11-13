@@ -4,7 +4,11 @@ import type { FrameRect } from './schema.js';
 /** The same gap used for ordinary Canvas frame creation. */
 export const FRAME_GAP_PX = 80;
 
-/** V2: the original sits above rows of two independently reserved variants. */
+/**
+ * Variants sit in one row below the source, from its left edge and evenly
+ * spaced. A row that would touch another frame moves down past it whole, so a
+ * second set of variants lands below the first.
+ */
 export function placeVariants(
   source: FrameRect,
   existing: readonly FrameRect[],
@@ -12,11 +16,9 @@ export function placeVariants(
   size: Pick<FrameRect, 'width' | 'height'>,
 ): FrameRect[] {
   const occupied = [source, ...existing];
-  const positions: FrameRect[] = [];
-  let y = source.y + source.height + FRAME_GAP_PX;
-  while (positions.length < count) {
-    const columns = Math.min(2, count - positions.length);
-    const row = Array.from({ length: columns }, (_, column) => ({
+  let y = bottomWithGap(source);
+  for (;;) {
+    const row = Array.from({ length: count }, (_, column) => ({
       x: source.x + column * (size.width + FRAME_GAP_PX),
       y,
       ...size,
@@ -35,25 +37,10 @@ export function placeVariants(
         'Move the source closer to the board origin and try again.',
       );
     const blocking = occupied.filter((rect) => row.some((slot) => collides(slot, rect)));
-    if (blocking.length > 0) {
-      // Jump over tall occupied frames instead of walking arbitrarily many rows.
-      const nextY = blocking.reduce(
-        (next, rect) => Math.max(next, bottomWithGap(rect)),
-        y + size.height + FRAME_GAP_PX,
-      );
-      if (nextY <= y)
-        throw canvasError(
-          'invalid_input',
-          'Move the source closer to the board origin and try again.',
-        );
-      y = nextY;
-      continue;
-    }
-    positions.push(...row);
-    occupied.push(...row);
-    y += size.height + FRAME_GAP_PX;
+    if (blocking.length === 0) return row;
+    // Each blocker ends below this row's top, so the row always moves down.
+    y = blocking.reduce((lowest, rect) => Math.max(lowest, bottomWithGap(rect)), y);
   }
-  return positions;
 }
 
 function bottomWithGap(rect: FrameRect): number {

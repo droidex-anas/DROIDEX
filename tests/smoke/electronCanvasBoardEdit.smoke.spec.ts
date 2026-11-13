@@ -2,7 +2,7 @@
 // guest, the style panel, and the edit it sends.
 
 import { expect, test } from '@playwright/test';
-import { box, frame, openBoard, serveBoard, stubGuests } from './board/boardPage';
+import { box, frame, openBoard, serveBoard, stubGuests, zoomField } from './board/boardPage';
 
 serveBoard();
 
@@ -51,6 +51,7 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   // A press over the title picks it at the design's own pixels, not the screen's.
   const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
   const scale = sheet.width / 400;
+  const before = await box(frame(page, 'A'));
   await page.mouse.click(sheet.x + 20 * scale, sheet.y + 20 * scale);
   await page.clock.runFor(100);
   const [picked] = await page.evaluate(() => window.guestCommands);
@@ -62,6 +63,13 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
   const fontSize = panel.getByLabel('Font size', { exact: true });
   await expect(fontSize).toHaveValue('24px');
+  // The panel opens beside the board and nothing on the board moves for it.
+  expect(await box(frame(page, 'A'))).toEqual(before);
+  // A focused field reads as it does at rest.
+  const colour = panel.getByLabel('Text colour', { exact: true });
+  const atRest = await colour.inputValue();
+  await colour.focus();
+  await expect(colour).toHaveValue(atRest);
 
   // The panel is a column beside the board: a wheel over it scrolls its fields
   // and leaves the board where it was.
@@ -74,7 +82,10 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
     .toBeGreaterThan(0);
   expect(await box(frame(page, 'A'))).toEqual(placed);
 
-  // Typing previews in the guest; Enter sends the canonical value, once.
+  // Typing previews in the guest; Enter sends the canonical value, once, and
+  // the fields keep their height while it saves.
+  const fields = panel.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
   await fontSize.fill(' 28PX ');
   await page.clock.runFor(100);
   expect(await page.evaluate(() => window.guestCommands.at(-1))).toMatchObject({
@@ -84,6 +95,10 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
   await fontSize.press('Enter');
   await fontSize.press('Enter');
   await expect(panel.getByRole('status')).toHaveText('Saving…');
+  expect((await box(fields)).height).toBe(fieldsHeight);
+  // Delete on the board waits too: it would edit the revision the commit is replacing.
+  await board.focus();
+  await page.keyboard.press('Delete');
   expect(await page.evaluate(() => window.boardHarness.editCalls)).toEqual([
     {
       mutationId: expect.any(String),
@@ -94,20 +109,29 @@ test('Edit picks an element in the guest, previews a style, and commits it once'
           elementId: 'el_title',
           instancePath: '0/0',
         },
-        change: { kind: 'typography', property: 'fontSize', value: '28px' },
+        change: { kind: 'style', styles: [{ property: 'fontSize', value: '28px' }] },
       },
     },
   ]);
 
   // The written revision builds and the selection follows the title into it.
-  await page.evaluate(() =>
-    window.boardHarness.answerEdit(0, { kind: 'token', token: '--ds-font-size-xl' }),
-  );
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
   await page.clock.runFor(240);
-  await expect(panel.getByRole('status')).toHaveText('Font size now uses font-size-xl.');
+  await expect(panel.getByRole('status')).toHaveText(
+    'Enter saves your changes; Escape takes one back.',
+  );
   await expect
     .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
     .toMatchObject({ command: 'select', target: { elementId: 'el_title', styles: {} } });
+
+  // Typing that another revision replaces reads as the element's value again,
+  // so Enter has nothing to send.
+  await fontSize.fill('32px');
+  await page.evaluate(() => window.boardHarness.editByUser('a'));
+  await page.clock.runFor(240);
+  await expect(fontSize).toHaveValue('24px');
+  await fontSize.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.editCalls)).toHaveLength(1);
 
   // A shared element is the agent's to change, and Escape steps out one level at a time.
   const card = await box(frame(page, 'A').locator('.canvas-sheet'));
@@ -174,10 +198,705 @@ test('Edit works from the keyboard: Enter picks, arrows step, and a refused edit
   await expect(page.getByTestId('canvas-board')).toBeFocused();
   await expect(title).toBeVisible();
 
-  const fontSize = title.getByLabel('Font size', { exact: true });
-  await fontSize.fill('30px');
-  await fontSize.press('Enter');
+  // Delete removes the picked element's layer from its source rather than its frame,
+  // and a second Delete while that one is in flight sends nothing more.
+  await page.keyboard.press('Delete');
+  await page.keyboard.press('Delete');
+  expect(await page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit))).toEqual([
+    {
+      layer: { designId: 'a', revisionId: 'rev_01', nodeId: '0000000000000003' },
+      change: { kind: 'remove' },
+    },
+  ]);
+  expect(await page.evaluate(() => window.boardHarness.removeCalls)).toEqual([]);
   await page.evaluate(() => window.boardHarness.refuseEdit(0));
   await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
+  await expect(title).toBeVisible();
+
+  // An edit the source cannot write keeps the element picked and says why, in
+  // the room the status always takes, with the whole reason in its tooltip.
+  const fontSize = title.getByLabel('Font size', { exact: true });
+  const fields = title.locator('.overflow-y-auto');
+  const fieldsHeight = (await box(fields)).height;
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  const reason =
+    'Canvas can’t write 30px as the font size of this element, because the kit sets its type sizes. Pick one of the kit’s sizes, or ask the agent to change it.';
+  const status = title.getByRole('status');
+  // The live region stays the same node, so the reason is announced.
+  const region = await status.elementHandle();
+  await page.evaluate((reason) => window.boardHarness.refuseEdit(1, reason), reason);
+  await expect(status).toHaveText(reason);
+  expect(await region?.evaluate((node) => node.isConnected)).toBe(true);
+  expect((await box(fields)).height).toBe(fieldsHeight);
+  await status.focus();
+  await expect(page.getByRole('tooltip')).toHaveText(reason);
+  await expect(fontSize).toHaveValue('');
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  await page.evaluate(() => window.boardHarness.refuseEdit(2));
+  await expect(page.getByRole('alert')).toHaveText('This element changed. Pick it again.');
   await expect(title).toHaveCount(0);
+});
+
+test('A double-click in Edit goes to the picked element’s text, and Enter saves the text on its own', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      return {
+        elementId: 'el_title',
+        instancePath: '0/0',
+        rect: { x: 8, y: 8, width: 240, height: 30 },
+        styles: { fontSize: '24px' },
+        text: 'Title',
+      };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('e');
+
+  // The double-click's own pick is still in flight; the Text field waits for its answer.
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const scale = sheet.width / 400;
+  await page.mouse.dblclick(sheet.x + 20 * scale, sheet.y + 20 * scale);
+  await page.clock.runFor(100);
+  const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  const text = panel.getByRole('textbox', { name: 'Text', exact: true });
+  await expect(text).toBeFocused();
+  await expect(text).toHaveValue('Title');
+
+  // Text previews in the guest beside a style, and Enter in it sends only the text.
+  await panel.getByLabel('Font size', { exact: true }).fill('30px');
+  await text.fill('Welcome back');
+  await page.clock.runFor(100);
+  expect(await page.evaluate(() => window.guestCommands.at(-1))).toMatchObject({
+    command: 'select',
+    target: { elementId: 'el_title', styles: { fontSize: '30px' }, text: 'Welcome back' },
+  });
+  await text.press('Enter');
+  expect(await page.evaluate(() => window.boardHarness.editCalls)).toEqual([
+    {
+      mutationId: expect.any(String),
+      edit: {
+        element: {
+          designId: 'a',
+          revisionId: 'rev_01',
+          elementId: 'el_title',
+          instancePath: '0/0',
+        },
+        change: { kind: 'text', value: 'Welcome back' },
+      },
+    },
+  ]);
+
+  // Once the text's revision builds, the style typed beside it is still there to save.
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await page.clock.runFor(240);
+  await expect
+    .poll(() => page.evaluate(() => window.guestCommands.at(-1)))
+    .toMatchObject({ command: 'select', target: { styles: { fontSize: '30px' }, text: null } });
+  await expect(panel.getByLabel('Font size', { exact: true })).toHaveValue('30px');
+});
+
+test('Edit outlines the element under the pointer by its tag, through a zoom, until the pointer or Edit leaves', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    const card = { elementId: 'el_card', instancePath: '0', tagName: 'section' };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const y = typeof argument.y === 'number' ? argument.y : 0;
+      const element = y < 38 ? title : card;
+      const rect =
+        element === title
+          ? { x: 8, y: 8, width: 240, height: 30 }
+          : { x: 0, y: 0, width: 400, height: 300 };
+      return command === 'hover' ? { ...element, rect } : { ...element, rect, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+
+  const sheet = frame(page, 'A').locator('.canvas-sheet');
+  const hover = page.locator('[data-element-hover]');
+  const pointAt = async (x: number, y: number) => {
+    const drawn = await box(sheet);
+    const scale = drawn.width / 400;
+    await page.mouse.move(drawn.x + x * scale, drawn.y + y * scale);
+    await page.clock.runFor(32);
+    return { drawn, scale };
+  };
+  const { drawn, scale } = await pointAt(20, 20);
+  await expect(hover).toHaveAttribute('data-element-hover', 'h1');
+  await expect(hover).toHaveText('h1');
+  const titleBox = await box(hover);
+  expect(titleBox.x).toBeCloseTo(drawn.x + 8 * scale, 0);
+  expect(titleBox.width).toBeCloseTo(240 * scale, 0);
+  // Its tag would leave the sheet above it, so it sits under it instead, and
+  // a box filling the sheet holds its tag in its corner.
+  const tag = hover.locator('.canvas-element-tag > span');
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
+  await pointAt(300, 200);
+  await expect(hover).toHaveAttribute('data-element-hover', 'section');
+  expect((await box(tag)).y).toBeGreaterThanOrEqual(drawn.y - 0.5);
+  expect((await box(tag)).y).toBeLessThan(drawn.y + 30);
+
+  // The picked element has its own outline, so the pointer over it adds none.
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.clock.runFor(100);
+  await pointAt(300, 200);
+  await expect(page.locator('.canvas-element-outline')).toBeVisible();
+  await expect(hover).toHaveCount(0);
+
+  // Both outlines stay on their elements through a zoom.
+  await pointAt(20, 20);
+  await expect(hover).toHaveAttribute('data-element-hover', 'h1');
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+0');
+  await page.clock.runFor(400);
+  const zoomed = await box(sheet);
+  const zoom = zoomed.width / 400;
+  expect(zoom).not.toBeCloseTo(scale, 2);
+  const zoomedTitle = await box(hover);
+  expect(zoomedTitle.x).toBeCloseTo(zoomed.x + 8 * zoom, 0);
+  expect(zoomedTitle.y).toBeCloseTo(zoomed.y + 8 * zoom, 0);
+  expect(zoomedTitle.width).toBeCloseTo(240 * zoom, 0);
+  const outline = await box(page.locator('.canvas-element-outline'));
+  expect(outline.x).toBeCloseTo(zoomed.x, 0);
+  expect(outline.width).toBeCloseTo(zoomed.width, 0);
+
+  // Leaving the design clears the hover, and so does leaving Edit, for good.
+  await page.mouse.move(zoomed.x - 40, zoomed.y + 20);
+  await expect(hover).toHaveCount(0);
+  await pointAt(20, 20);
+  await expect(hover).toHaveCount(1);
+  await board.focus();
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(board).toHaveAttribute('data-board-mode', 'select');
+  await expect(hover).toHaveCount(0);
+  await page.keyboard.press('e');
+  await expect(board).toHaveAttribute('data-board-mode', 'edit');
+  await expect(hover).toHaveCount(0);
+});
+
+test('the hover tag keeps off other content and off the picked size chip', async ({ page }) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = {
+      elementId: 'el_title',
+      instancePath: '0/0',
+      tagName: 'h1',
+      rect: { x: 8, y: 8, width: 240, height: 30 },
+      room: { above: null, below: 26 },
+    };
+    const body = {
+      elementId: 'el_body',
+      instancePath: '0/1',
+      tagName: 'p',
+      rect: { x: 8, y: 64, width: 240, height: 20 },
+      room: { above: 26, below: null },
+    };
+    // A label wedged between two rows, with no room for a tag above or below it.
+    const note = {
+      elementId: 'el_note',
+      instancePath: '0/2',
+      tagName: 'span',
+      rect: { x: 264, y: 40, width: 120, height: 16 },
+      room: { above: 4, below: 4 },
+    };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const x = typeof argument.x === 'number' ? argument.x : 0;
+      const y = typeof argument.y === 'number' ? argument.y : 0;
+      let element = y < 50 ? title : body;
+      if (x > 260) element = note;
+      return command === 'hover' ? element : { ...element, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const hover = page.locator('[data-element-hover]');
+  const hoverAt = async (x: number, y: number, tagName: string) => {
+    await page.mouse.move(drawn.x + (x * drawn.width) / 400, drawn.y + (y * drawn.width) / 400);
+    await page.clock.runFor(32);
+    await expect(hover).toHaveAttribute('data-element-hover', tagName);
+    return {
+      outline: await box(hover),
+      tag: await box(hover.locator('.canvas-element-tag > span')),
+    };
+  };
+
+  // With no room either side, the tag covers only the element it names.
+  const wedged = await hoverAt(300, 48, 'span');
+  expect(wedged.tag.y).toBeGreaterThanOrEqual(wedged.outline.y - 0.5);
+  expect(wedged.tag.y).toBeLessThan(wedged.outline.y + 1);
+  const clear = await hoverAt(20, 70, 'p');
+  expect(clear.tag.y + clear.tag.height).toBeLessThanOrEqual(clear.outline.y + 1);
+
+  // The full width of the paragraph would meet the picked heading's size
+  // chip; the tag at its left does not, so it stays above.
+  await page.mouse.click(drawn.x + (20 * drawn.width) / 400, drawn.y + (20 * drawn.width) / 400);
+  await page.clock.runFor(100);
+  const chip = await box(page.locator('.canvas-element-outline .canvas-frame-size > span'));
+  const besideChip = await hoverAt(20, 70, 'p');
+  expect(besideChip.tag.y + besideChip.tag.height).toBeLessThanOrEqual(besideChip.outline.y + 1);
+  expect(besideChip.tag.x + besideChip.tag.width).toBeLessThan(chip.x);
+});
+
+test('a pick that changes size mid-glide glides on from where it is shown, its size chip under the line', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const title = { elementId: 'el_title', instancePath: '0/0', tagName: 'h1' };
+    // A previewed font size resizes the title.
+    const sizes: Record<string, { width: number; height: number }> = {
+      '40px': { width: 400, height: 300 },
+      '20px': { width: 200, height: 150 },
+      '30px': { width: 0, height: 300 },
+      '50px': { width: 400, height: 0 },
+    };
+    window.guestAnswer = (command, argument) => {
+      const target = argument.target as { styles?: Record<string, string> } | undefined;
+      const size = sizes[target?.styles?.fontSize ?? ''] ?? { width: 100, height: 50 };
+      const rect = { x: 20, y: 20, ...size };
+      if (command === 'hover') return { ...title, rect };
+      return { ...title, rect, styles: { fontSize: '24px', ...target?.styles } };
+    };
+  });
+  await openBoard(page, 14, 'no-preference', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await page.getByTestId('canvas-board').focus();
+  await page.keyboard.press('e');
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const scale = sheet.width / 400;
+  await page.mouse.click(sheet.x + 30 * scale, sheet.y + 30 * scale);
+  await page.clock.runFor(100);
+  const chip = page.locator('.canvas-element-outline .canvas-frame-size > span');
+  await expect(chip).toHaveText('100 × 50');
+  // Every glide frozen at one time; a glide's animations are the ones it adds.
+  const glidesAt = (step: number | 'end') =>
+    page.evaluate((step) => {
+      for (const animation of document.getAnimations()) {
+        if ((animation.effect as KeyframeEffect).composite !== 'add') continue;
+        if (step === 'end') animation.finish();
+        else {
+          animation.pause();
+          animation.currentTime = step;
+        }
+      }
+    }, step);
+  /** The line as drawn, with its `::before` scale, and where the chip sits from its bottom middle. */
+  const drawn = () =>
+    page.evaluate(() => {
+      const outline = document.querySelector<HTMLElement>('.canvas-element-outline')!;
+      const box = outline.getBoundingClientRect();
+      const { a, d } = new DOMMatrix(getComputedStyle(outline, '::before').transform);
+      const line = { x: box.x, y: box.y, width: box.width * a, height: box.height * d };
+      const chip = outline.querySelector('.canvas-frame-size > span')!.getBoundingClientRect();
+      return {
+        line,
+        across: chip.x + chip.width / 2 - (line.x + line.width / 2),
+        below: chip.y - (line.y + line.height),
+      };
+    });
+  const underLine = { across: expect.closeTo(0, 0), below: expect.closeTo(8, 0) };
+  const glides = () =>
+    page.evaluate(
+      () =>
+        document
+          .getAnimations()
+          .filter((animation) => (animation.effect as KeyframeEffect).composite === 'add').length,
+    );
+  const resize = async (fontSize: string, size: string) => {
+    await page.getByLabel('Font size', { exact: true }).fill(fontSize);
+    await page.clock.runFor(100);
+    await expect(chip).toHaveText(size);
+  };
+
+  // Grown, or with an axis gone to no size, which is drawn at once rather than scaled to.
+  for (const [fontSize, size] of [
+    ['40px', '400 × 300'],
+    ['30px', '0 × 300'],
+    ['50px', '400 × 0'],
+  ] as const) {
+    await resize('24px', '100 × 50');
+    await glidesAt('end');
+    await resize(fontSize, size);
+    await glidesAt(0);
+    expect(await drawn()).toMatchObject(underLine);
+    await glidesAt(25);
+    const shown = await drawn();
+    expect(shown).toMatchObject(underLine);
+
+    // A new size mid-glide replaces the glide, starting from the line as shown.
+    await resize('20px', '200 × 150');
+    await glidesAt(0);
+    // The line and its chip, and nothing left of the glide it replaced.
+    expect(await glides()).toBe(2);
+    const resumed = await drawn();
+    expect(resumed).toMatchObject(underLine);
+    for (const side of ['x', 'y', 'width', 'height'] as const)
+      expect(resumed.line[side]).toBeCloseTo(shown.line[side], 0);
+    for (const at of [25, 50, 'end'] as const) {
+      await glidesAt(at);
+      expect(await drawn()).toMatchObject(underLine);
+    }
+    expect((await drawn()).line).toMatchObject({
+      width: expect.closeTo(200 * scale, 0),
+      height: expect.closeTo(150 * scale, 0),
+    });
+  }
+});
+test('held Alt in Edit measures from the picked element to the one under the pointer, or to its frame', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    // Paths run from the body, as the reporter's do: the design's root sits in the preview's.
+    const root = { elementId: 'el_page', instancePath: '0/0', tagName: 'main' };
+    const card = { elementId: 'el_card', instancePath: '0/0/0', tagName: 'section' };
+    const title = { elementId: 'el_title', instancePath: '0/0/0/0', tagName: 'h1' };
+    const button = { elementId: 'el_button', instancePath: '0/0/0/1', tagName: 'button' };
+    const rects = new Map([
+      [title, { x: 8, y: 8, width: 240, height: 30 }],
+      [button, { x: 8, y: 60, width: 120, height: 32 }],
+      [card, { x: 0, y: 0, width: 400, height: 200 }],
+      [root, { x: 0, y: 0, width: 400, height: 280 }],
+    ]);
+    const under = (y: number) => {
+      if (y < 40) return title;
+      if (y < 100) return button;
+      if (y < 200) return card;
+      return y < 280 ? root : null;
+    };
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const element =
+        command === 'select' ? title : under(typeof argument.y === 'number' ? argument.y : 0);
+      if (!element) return null;
+      const rect = rects.get(element);
+      return command === 'hover' ? { ...element, rect } : { ...element, rect, styles: {} };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const drawn = await box(frame(page, 'A').locator('.canvas-sheet'));
+  const pointAt = async (x: number, y: number) => {
+    await page.mouse.move(drawn.x + (x * drawn.width) / 400, drawn.y + (y * drawn.width) / 400);
+    await page.clock.runFor(32);
+  };
+  await pointAt(20, 20);
+  await page.mouse.down();
+  await page.mouse.up();
+  await page.clock.runFor(100);
+  await expect(page.locator('.canvas-element-outline')).toBeVisible();
+
+  const pills = page.locator('.canvas-snap-pill');
+  await page.keyboard.down('Alt');
+  // Over the picked title itself, and over the frame's empty space: its frame's edges.
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  await pointAt(300, 290);
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  // The design's root is the frame's own space too, not a parent to measure insets in.
+  await pointAt(300, 240);
+  await expect(pills).toHaveText(['8', '152', '8', '262']);
+  // The button below it lines up on the left: the space between them, and how far short its right edge stops.
+  await pointAt(20, 70);
+  await expect(pills).toHaveText(['120', '22']);
+  // The card it sits in: its four insets.
+  await pointAt(300, 150);
+  await expect(pills).toHaveText(['8', '152', '8', '162']);
+  await page.keyboard.up('Alt');
+  await expect(pills).toHaveCount(0);
+});
+test('The Display row’s ⋯ menu sets a display its segments leave out, and a hidden element keeps its panel but no outline', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    // The guest keeps the display it was last shown, and draws nothing while it is none.
+    let display = 'inline';
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const previewed = (argument.target as { styles?: Record<string, string> } | undefined)?.styles
+        ?.display;
+      if (previewed) display = previewed;
+      const drawn = { x: 8, y: 8, width: 240, height: 30 };
+      return {
+        elementId: 'el_title',
+        instancePath: '0/0',
+        rect: display === 'none' ? { x: 0, y: 0, width: 0, height: 0 } : drawn,
+        styles: { display },
+      };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  await frame(page, 'A').locator('[data-frame-header]').focus();
+  await page.keyboard.press('e');
+  await page.keyboard.press('Enter');
+  await page.clock.runFor(100);
+  const panel = page.getByRole('region', { name: 'Styles of the selected h1' });
+  const outline = page.locator('.canvas-element-outline');
+  await expect(panel).toBeVisible();
+  await expect(outline).toHaveCount(1);
+
+  // Inline lays out no layout the segments name, so ⋯ carries it.
+  const layouts = panel.getByRole('radiogroup', { name: 'Display' });
+  await expect(layouts.getByRole('radio', { checked: true })).toHaveCount(0);
+  await panel.getByRole('button', { name: 'More displays, now Inline' }).click();
+  const menu = page.getByRole('menu', { name: 'More displays' });
+  await expect(menu.getByRole('menuitemradio', { checked: true })).toHaveText('Inline');
+  await menu.getByRole('menuitemradio', { name: 'Hidden' }).click();
+  await page.clock.runFor(200);
+  await expect(menu).toHaveCount(0);
+  const changes = () =>
+    page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change));
+  expect(await changes()).toEqual([
+    { kind: 'style', styles: [{ property: 'display', value: 'none' }] },
+  ]);
+
+  // Hidden, it measures nothing: no outline or size on the board, and the panel says so.
+  await page.clock.runFor(240);
+  await expect(outline).toHaveCount(0);
+  await expect(panel.locator('header')).toContainText('Hidden');
+  await page.evaluate(() => window.boardHarness.answerEdit(0));
+  await page.clock.runFor(240);
+  await expect(panel.getByRole('status')).toHaveText(
+    'Enter saves your changes; Escape takes one back.',
+  );
+  await expect(outline).toHaveCount(0);
+
+  // With no segment checked, the arrow starts at the first, so Block shows it again.
+  await layouts.getByRole('radio', { name: 'Block' }).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.clock.runFor(200);
+  expect((await changes()).at(-1)).toEqual({
+    kind: 'style',
+    styles: [{ property: 'display', value: 'block' }],
+  });
+  await expect(outline).toHaveCount(1);
+  await expect(panel.locator('header')).toContainText('240 × 30');
+});
+
+test('Edit drags a picked path’s point, previewing each frame, commits it once, and Undo and Escape take it back', async ({
+  page,
+}) => {
+  await stubGuests(page);
+  await page.addInitScript(() => {
+    const path = { elementId: 'el_path', instancePath: '0/1' };
+    Object.assign(window, { pathData: 'M10 10 L90 10 l0 50' });
+    window.guestAnswer = (command, argument) => {
+      if (command === 'select' && !argument.target) return null;
+      const rect = { x: 10, y: 10, width: 80, height: 50 };
+      if (command !== 'shape') return { ...path, rect, styles: {} };
+      const d = (window as unknown as { pathData: string }).pathData;
+      return { d, matrix: [1, 0, 0, 1, 0, 0], rect };
+    };
+  });
+  await openBoard(page, 14, 'reduce', '&preview=guest&edit=1&paths=1');
+  await page.evaluate(() => {
+    window.boardGuestReady = true;
+  });
+  await page.clock.runFor(240);
+  await expect(page.locator('[data-preview-phase="ready"]')).toHaveCount(2);
+  // At 100% a design pixel is a screen pixel, so a drag's distance is the point's.
+  await zoomField(page).fill('100%');
+  await zoomField(page).press('Enter');
+  const board = page.getByTestId('canvas-board');
+  await board.focus();
+  await page.keyboard.press('e');
+  const sheet = await box(frame(page, 'A').locator('.canvas-sheet'));
+  await page.mouse.click(sheet.x + 50, sheet.y + 30);
+  await page.clock.runFor(100);
+  await expect(page.getByRole('region', { name: 'Styles of the selected path' })).toBeVisible();
+
+  // An anchor for each point, drawn through the path's matrix, each a 28 px press.
+  const anchors = page.locator('[data-path-grip="anchor"]');
+  await expect(anchors).toHaveCount(3);
+  const corner = await box(anchors.nth(1));
+  expect(corner.width).toBeCloseTo(28, 0);
+  expect(corner.x + corner.width / 2).toBeCloseTo(sheet.x + 90, 0);
+  expect(corner.y + corner.height / 2).toBeCloseTo(sheet.y + 10, 0);
+  const drag = async (dx: number, dy: number) => {
+    await page.mouse.move(corner.x + 14, corner.y + 14);
+    await page.mouse.down();
+    await page.mouse.move(corner.x + 14 + dx, corner.y + 14 + dy, { steps: 4 });
+    await page.clock.runFor(32);
+  };
+  const lastSelect = () =>
+    page.evaluate(
+      () => window.guestCommands.findLast(({ command }) => command === 'select')?.target,
+    );
+  const edits = () =>
+    page.evaluate(() => window.boardHarness.editCalls.map(({ edit }) => edit.change));
+
+  // The drag previews in the guest; the relative segment after it keeps its own point where it was.
+  await drag(20, 10);
+  expect(await lastSelect()).toMatchObject({ elementId: 'el_path', d: 'M10 10 L110 20 l-20 40' });
+  // Escape takes the drag back, and keeps the path picked.
+  await page.keyboard.press('Escape');
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await lastSelect()).not.toHaveProperty('d');
+  await expect(page.getByRole('region', { name: 'Styles of the selected path' })).toBeVisible();
+  expect(await edits()).toEqual([]);
+
+  // A release commits the drag as one edit, which Undo takes back.
+  await drag(20, 10);
+  await page.mouse.up();
+  expect(await edits()).toEqual([{ kind: 'path', d: 'M10 10 L110 20 l-20 40' }]);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L110 20 l-20 40' });
+    window.boardHarness.answerEdit(0);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 20, 0);
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await page.evaluate(() => window.boardHarness.switchCalls)).toMatchObject([
+    { designId: 'a', revisionId: 'rev_01', expectedRevisionId: 'rev_02' },
+  ]);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L90 10 l0 50' });
+    window.boardHarness.answerSwitch(0);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  // The guest draws the revision's own data again, not the committed preview.
+  expect(await lastSelect()).not.toHaveProperty('d');
+
+  // On a focused anchor a burst of arrows moves it by path units and commits once.
+  await anchors.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Shift+ArrowDown');
+  await page.clock.runFor(500);
+  expect((await edits()).slice(1)).toEqual([{ kind: 'path', d: 'M12 20 L90 10 l0 50' }]);
+
+  // A nudge still settling when another revision lands is taken back, not written over it.
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M12 20 L90 10 l0 50' });
+    window.boardHarness.answerEdit(1);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(0))).x).toBeCloseTo(corner.x - 78, 0);
+  await anchors.nth(0).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.clock.runFor(32);
+  expect(await lastSelect()).toMatchObject({ d: 'M13 20 L90 10 l0 50' });
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M12 20 L150 10 l0 50' });
+    window.boardHarness.editByUser('a');
+  });
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(2);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 60, 0);
+
+  // So is a press that has not dragged yet: its drag writes nothing on the revision read since.
+  const landed = await box(anchors.nth(1));
+  await page.mouse.move(landed.x + 14, landed.y + 14);
+  await page.mouse.down();
+  await board.focus();
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await page.evaluate(() => window.boardHarness.switchCalls)).toHaveLength(2);
+  await page.evaluate(() => {
+    Object.assign(window, { pathData: 'M10 10 L90.005 10 l0 50' });
+    window.boardHarness.answerSwitch(1);
+  });
+  await page.clock.runFor(240);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  await page.mouse.move(landed.x + 34, landed.y + 24, { steps: 4 });
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  expect(await edits()).toHaveLength(2);
+
+  // Nudges that cancel out write nothing, a half-hundredth number included.
+  await anchors.nth(1).focus();
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('ArrowLeft');
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(2);
+
+  // A move the source cannot write puts the point back where the path still draws it.
+  await page.keyboard.press('Shift+ArrowRight');
+  await page.clock.runFor(500);
+  expect(await edits()).toHaveLength(3);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x + 10, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(2, 'Canvas can’t write this path.'));
+  await page.clock.runFor(32);
+  await expect.poll(async () => (await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  expect(await lastSelect()).not.toHaveProperty('d');
+  // It stays back while a later style edit saves.
+  const fontSize = page
+    .getByRole('region', { name: 'Styles of the selected path' })
+    .getByLabel('Font size', { exact: true });
+  await fontSize.fill('30px');
+  await fontSize.press('Enter');
+  expect(await edits()).toHaveLength(4);
+  await page.clock.runFor(32);
+  expect((await box(anchors.nth(1))).x).toBeCloseTo(corner.x, 0);
+  await page.evaluate(() => window.boardHarness.refuseEdit(3, 'Canvas can’t set the font size.'));
+  await page.clock.runFor(32);
+
+  // A drag of the frame carries its points, and letting go leaves them where they were carried.
+  const point = await box(anchors.nth(1));
+  const start = await box(frame(page, 'A'));
+  const header = await box(frame(page, 'A').locator('[data-frame-header]'));
+  await page.mouse.move(header.x + 30, header.y + 8);
+  await page.mouse.down();
+  await page.mouse.move(header.x + 90, header.y + 48, { steps: 4 });
+  await page.clock.runFor(32);
+  const carried = await box(frame(page, 'A'));
+  expect(carried.x).toBeGreaterThan(start.x);
+  const held = await box(anchors.nth(1));
+  expect(held.x - point.x).toBeCloseTo(carried.x - start.x, 0);
+  expect(held.y - point.y).toBeCloseTo(carried.y - start.y, 0);
+  await page.mouse.up();
+  await page.clock.runFor(32);
+  const released = await box(anchors.nth(1));
+  expect(released.x).toBeCloseTo(held.x, 0);
+  expect(released.y).toBeCloseTo(held.y, 0);
 });

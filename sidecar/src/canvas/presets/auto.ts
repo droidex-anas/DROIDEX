@@ -1,5 +1,7 @@
 import { buildDocument } from '../buildDocument.js';
 import type { DesignSystem } from '../designSystems.js';
+import { KIT_CATALOG_FILE } from '../kitCatalog.js';
+import { PRIMITIVE_CATALOG } from './catalogs.js';
 import { PRIMITIVES_TSX } from './primitives.js';
 import { PRIMITIVE_EXAMPLES, PRIMITIVE_PARTS, rulesNote } from './starter.js';
 import { GEOMETRY_TOKENS, KIT_CSS } from './styles.js';
@@ -60,7 +62,7 @@ const DARK_TOKENS: Record<string, string> = {
 };
 
 const AUTO_NOTE =
-  "The user chose no design system, so this one has no look of its own. Take the style from, in order: the request itself (a product, brand, mood or reference it names), the frames already on this canvas (match their palette, type, spacing and radius), then your own judgement. Set that style as --ds-* token overrides in a stylesheet of the frame's own, for example :root { --ds-accent: …; --ds-canvas: … } in styles.css, so the primitives take it on; give dark its own values under [data-mode='dark'] when it needs them. These neutral tokens are a blank base, not a style to keep. Auto is not the DROIDEX preset: use DROIDEX's look only when the user asks for DROIDEX. Builds are not checked against a kit under Auto.\n";
+  "The user chose no design system, so this one has no look of its own. Take the style from, in order: the request itself (a product, brand, mood or reference it names; a wish to explore outranks everything after it), the project's own components, styles and tokens when the chat has a project folder, the frames already on this canvas (match their palette, type, spacing and radius), then your own judgement. Set that style as --ds-* token overrides in a stylesheet of the frame's own, for example :root { --ds-accent: …; --ds-canvas: … } in styles.css, so the primitives take it on; give dark its own values under [data-mode='dark'] when it needs them. These neutral tokens are a blank base, not a style to keep. Auto is not the DROIDEX preset: use DROIDEX's look only when the user asks for DROIDEX. Builds are not checked against a kit under Auto.\n";
 
 /** The resting kit: no style of its own, so the agent derives one per request. */
 export const AUTO_DESIGN_SYSTEM: DesignSystem = {
@@ -76,6 +78,10 @@ export const AUTO_DESIGN_SYSTEM: DesignSystem = {
     ],
     components: PRIMITIVE_PARTS,
   }),
-  files: { 'index.tsx': PRIMITIVES_TSX, 'tokens.css': KIT_CSS },
+  files: {
+    'index.tsx': PRIMITIVES_TSX,
+    [KIT_CATALOG_FILE]: PRIMITIVE_CATALOG,
+    'tokens.css': KIT_CSS,
+  },
   examples: PRIMITIVE_EXAMPLES,
 };

@@ -5,16 +5,7 @@
 // draft's token values; otherwise it shows the saved version's capture, or a
 // quiet placeholder before it has ever rendered live in this mode.
 
-import {
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type ReactNode,
-  type RefObject,
-} from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Badge } from '../../../components/ui/Badge';
 import { cn } from '../../../components/ui/cn';
 import {
@@ -30,7 +21,8 @@ import { keepKitCapture, useKitCapture } from '../kitCaptures';
 import { usePickedColor } from './pickedColor';
 import { createGuestElement } from '../previewGuestElement';
 import { startPreview, type PreviewRun } from '../previewRuntime';
-import type { DesignSystemRef } from '../protocol';
+import type { DesignSystemRef, KitPreviewTarget } from '../protocol';
+import { useFitScale } from './useFitScale';
 
 /** What every tile of one document shares. */
 export interface KitPreviewing {
@@ -42,6 +34,8 @@ export interface KitPreviewing {
   draftTokens: Readonly<Record<string, string>>;
   /** The kit's specimen tokens in the previewed mode, whose canvas colour a narrow tile sits on. */
   specimen: CSSProperties;
+  /** The same for the catalog, which is the saved version's with a draft's values, never a proposal's. */
+  catalogSpecimen: CSSProperties;
   /** The items holding a live slot. */
   live: readonly string[];
   /** The ref that tells the slots where an item's tile is. */
@@ -82,11 +76,20 @@ export function KitPreviewTile({
   const isChanged = proposalId !== null || Object.keys(draftTokens).length > 0;
   const isSavedLook = !isLive && Boolean(still) && isChanged;
   const isNeverCaptured = still === null && otherStill === null;
+  const target = useMemo(
+    (): KitPreviewTarget => ({
+      kind: 'preview',
+      ref:
+        proposalId === null
+          ? { id: kit.id, version: kit.version, mode: kit.mode }
+          : { id: kit.id, proposalId, mode: kit.mode },
+      item,
+    }),
+    [kit.id, kit.version, kit.mode, proposalId, item],
+  );
   return (
     <div
       ref={observe(item)}
-      role="img"
-      aria-label={isSavedLook ? `${label}, saved version` : label}
       className="relative w-full overflow-hidden rounded-lg"
       style={{ ...specimen, background: 'var(--ds-canvas, var(--surface))' }}
     >
@@ -94,16 +97,21 @@ export function KitPreviewTile({
         className="relative mx-auto"
         style={{ maxWidth: width, aspectRatio: `${String(width)} / ${String(height)}` }}
       >
-        <div ref={fitRef} aria-hidden className="absolute inset-0">
-          {isNeverCaptured && placeholder}
-          {otherStill && <Still src={otherStill} className="opacity-50" />}
-          {still && <Still key={kit.mode} src={still} className="kit-tile-reveal" />}
+        <div ref={fitRef} className="absolute inset-0">
+          <div
+            role="img"
+            aria-label={isSavedLook ? `${label}, saved version` : label}
+            className="absolute inset-0"
+          >
+            {isNeverCaptured && placeholder}
+            {otherStill && <Still src={otherStill} className="opacity-50" />}
+            {still && <Still key={kit.mode} src={still} className="kit-tile-reveal" />}
+          </div>
           {isLive && scale > 0 && (
             <KitGuest
               key={JSON.stringify([kit.id, kit.version, proposalId, kit.mode, item])}
               kit={kit}
-              proposalId={proposalId}
-              item={item}
+              target={target}
               width={width}
               height={height}
               scale={scale}
@@ -113,7 +121,11 @@ export function KitPreviewTile({
           )}
         </div>
       </div>
-      {isSavedLook && <Badge className="absolute right-2 top-2">Saved version</Badge>}
+      {isSavedLook && (
+        <Badge aria-hidden className="absolute right-2 top-2">
+          Saved version
+        </Badge>
+      )}
     </div>
   );
 }
@@ -124,31 +136,32 @@ type ArtifactRead =
   | { status: 'failed'; message: string };
 
 /**
- * The live guest, keyed by kit version or proposal, mode and item. Pointer
+ * The live guest, keyed by kit version or proposal, mode and target. Pointer
  * events reach it, so hover and press show the kit's states, but Tab never
- * enters it.
+ * enters it. Only a preview is captured.
  */
-function KitGuest({
+export function KitGuest({
   kit,
-  proposalId,
-  item,
+  target,
   width,
   height,
   scale,
   draftTokens,
   wantsCapture,
 }: {
+  /** The saved version: what a capture is kept for, and a draft's values change. */
   kit: DesignSystemRef;
-  proposalId: string | null;
-  item: string;
+  /** Kept stable while the guest lives: a new target is a new guest. */
+  target: KitPreviewTarget;
   width: number;
   height: number;
   scale: number;
   draftTokens: Readonly<Record<string, string>>;
-  /** The item has no capture in this mode yet, so its first render becomes one. */
+  /** The preview has no capture in this mode yet, so its first render becomes one. */
   wantsCapture: boolean;
 }) {
   const { id, version, mode } = kit;
+  const designId = target.kind === 'preview' ? target.item : target.entry;
   const host = useRef<HTMLDivElement>(null);
   const runRef = useRef<PreviewRun | null>(null);
   // A colour being chosen in the document shows live, like a draft value does.
@@ -168,8 +181,7 @@ function KitGuest({
 
   useEffect(() => {
     let wanted = true;
-    const ref = proposalId === null ? { id, version, mode } : { id, proposalId, mode };
-    canvasClient.designSystems.readPreview(ref, item).then(
+    canvasClient.designSystems.readPreview(target).then(
       (preview) => {
         if (!wanted) return;
         if (preview.status === 'ready') setRead({ status: 'ready', html: preview.artifact.html });
@@ -186,7 +198,7 @@ function KitGuest({
     return () => {
       wanted = false;
     };
-  }, [id, version, proposalId, mode, item]);
+  }, [target]);
 
   useEffect(() => {
     const container = host.current;
@@ -205,19 +217,21 @@ function KitGuest({
     // A capture keeps the saved look, so a guest showing draft values is not taken.
     const capture = () => {
       captureTimer = null;
-      if (!capturing.current || isDrafted()) return;
+      if (target.kind !== 'preview' || !capturing.current || isDrafted()) return;
+      const { item } = target;
       const requestId = crypto.randomUUID();
       captureId = requestId;
       captureCanvasPreview({
         requestId,
         guestId: guest.getWebContentsId(),
         canvasId: null,
-        designId: item,
+        designId,
         revisionId,
         generation,
         width,
         height,
         scaleFactor: window.devicePixelRatio,
+        retain: false,
       })
         .then((result) => {
           captureId = null;
@@ -247,7 +261,7 @@ function KitGuest({
       }
       run = startPreview({
         guest,
-        designId: item,
+        designId,
         revisionId,
         generation,
         html: source,
@@ -287,16 +301,20 @@ function KitGuest({
       run?.stop();
       guest.remove();
     };
-  }, [html, id, version, mode, item, width, height]);
+  }, [html, id, version, mode, target, designId, width, height]);
 
   useEffect(() => {
     runRef.current?.setTokens(shownTokens);
   }, [shownTokens]);
 
+  let note: string | null = null;
+  if (read.status === 'failed') note = read.message;
+  else if (phase === 'lost') note = 'This preview is no longer running.';
   return (
     <>
       <div
         ref={host}
+        aria-hidden
         className="kit-tile-fade absolute left-0 top-0 origin-top-left"
         style={{
           width,
@@ -305,8 +323,14 @@ function KitGuest({
           opacity: phase === 'ready' ? 1 : 0,
         }}
       />
-      {read.status === 'failed' && <TileNote text={read.message} />}
-      {phase === 'lost' && <TileNote text="This preview is no longer running." />}
+      {/* Outside the image and the hidden guest, so assistive tech reads why it failed. */}
+      <div role="status" className="absolute inset-x-2 bottom-2">
+        {note !== null && (
+          <p className="line-clamp-2 rounded-md bg-raised px-2 py-1 text-caption text-secondary shadow-sm">
+            {note}
+          </p>
+        )}
+      </div>
     </>
   );
 }
@@ -320,33 +344,4 @@ function Still({ src, className }: { src: string; className: string }) {
       className={cn('absolute inset-0 size-full object-cover', className)}
     />
   );
-}
-
-function TileNote({ text }: { text: string }) {
-  return (
-    <p className="absolute inset-x-2 bottom-2 line-clamp-2 rounded-md bg-raised px-2 py-1 text-caption text-secondary shadow-sm">
-      {text}
-    </p>
-  );
-}
-
-/** The tile's width over the item's, at most 1, or 0 before it is measured. */
-function useFitScale(ref: RefObject<HTMLElement | null>, width: number): number {
-  const [scale, setScale] = useState(0);
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const measure = (shown: number) => {
-      setScale(Math.min(1, shown / width));
-    };
-    measure(element.getBoundingClientRect().width);
-    const observer = new ResizeObserver(([entry]) => {
-      measure(entry.contentRect.width);
-    });
-    observer.observe(element);
-    return () => {
-      observer.disconnect();
-    };
-  }, [ref, width]);
-  return scale;
 }

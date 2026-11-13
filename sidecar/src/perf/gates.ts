@@ -39,6 +39,30 @@ const TERMINAL_DELIVERIES_BUDGET = 16;
 // Incremental projection should touch the live tail, not the settled prefix.
 const FEED_REBUILT_EVENTS_PER_DELTA_BUDGET = 8;
 
+// The canvas scenario's 30-frame board pans on its stage, so React commits only
+// as a pan starts and ends (2 over 61 frames), and reads layout 3 times per
+// pointer event, 2 events a frame (rects, offsets, client and scroll sizes and
+// computed style all count). Both budgets sit just above what was measured.
+const CANVAS_COMMITS_PER_PAN_FRAME_BUDGET = 0.1;
+// A wheel zoom draws its stage once a frame and the board commits with it
+// (measured 0.98–1.00); two commits a frame is a wheel event drawn on its own.
+const CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET = 1.25;
+// A hand drags frames outside React, which commits as the hold begins, as it
+// ends and as its write lands (3–5 commits over 61 frames, measured 0.05–0.08).
+const CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET = 0.1;
+// A marquee draws its band outside React and commits as it starts and ends
+// (4 commits over 62 frames, measured 0.06).
+const CANVAS_COMMITS_PER_MARQUEE_FRAME_BUDGET = 0.1;
+// An Edit hover renders only its outline, as the element under the pointer
+// changes. The sweep leaves and re-enters the design at every row's end, and
+// each outline shown or hidden is 2–3 commits with its tag (measured 0.49).
+const CANVAS_COMMITS_PER_EDIT_HOVER_FRAME_BUDGET = 0.6;
+// A pointer down the Layers rows lights each frame without React (measured 0).
+const CANVAS_COMMITS_PER_LAYERS_SWEEP_FRAME_BUDGET = 0.1;
+const CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET = 6.5;
+// 120 Hz: the main-thread work one frame may take.
+const CANVAS_FRAME_BUDGET_MS = 1000 / 120;
+
 export function expectedMarkerSamples(spec: PerfScenarioSpec): number {
   if (spec.toolMarkerEvery <= 0 || spec.deltasPerTurn <= 0) return 0;
   const pairs = Math.floor(spec.deltasPerTurn / spec.toolMarkerEvery);
@@ -138,6 +162,17 @@ export function evaluateProbeGates(options: {
   eventsRebuiltPerDelta: number | null;
   terminalDeliveriesPerFlood: number | null;
   livePrimarySessionsAfterSoak: number | null;
+  reactCommitsPerPanFrame: number | null;
+  reactCommitsPerZoomFrame: number | null;
+  reactCommitsPerDragFrame: number | null;
+  reactCommitsPerMarqueeFrame: number | null;
+  reactCommitsPerEditHoverFrame: number | null;
+  reactCommitsPerLayersSweepFrame: number | null;
+  layoutReadsPerPanFrame: number | null;
+  longTasksDuringGestures: number | null;
+  panBusyP95Ms: number | null;
+  panOverBudgetShare: number | null;
+  panRafP95Ms: number | null;
 }): GateEvaluation {
   const results: GateResult[] = [
     hard({
@@ -185,6 +220,117 @@ export function evaluateProbeGates(options: {
       justification:
         'Soak create/close must release every session. 0 live primaries is the leak invariant.',
     }),
+    hard({
+      id: 'canvas.reactCommitsPerPanFrame',
+      name: 'React commits per background-pan frame, 30-frame board',
+      unit: 'commits',
+      actual: options.reactCommitsPerPanFrame,
+      budget: CANVAS_COMMITS_PER_PAN_FRAME_BUDGET,
+      justification:
+        'Pan moves the stage, not React: a 61-frame pan commits as it starts and ends (measured 0.03). 0.1 is 6 commits a pan, far from one a frame.',
+    }),
+    hard({
+      id: 'canvas.reactCommitsPerZoomFrame',
+      name: 'React commits per pinch or ⌘-wheel zoom frame, 30-frame board',
+      unit: 'commits',
+      actual: options.reactCommitsPerZoomFrame,
+      budget: CANVAS_COMMITS_PER_ZOOM_FRAME_BUDGET,
+      justification:
+        'Wheel events arrive about twice a frame and the stage draws them once (measured 0.98–1.00); 2 a frame means each event draws.',
+    }),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerDragFrame',
+        name: 'React commits per frame of a frame drag or resize, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerDragFrame,
+        budget: CANVAS_COMMITS_PER_DRAG_FRAME_BUDGET,
+        justification:
+          'A drag draws the held frames outside React and commits as it starts, ends and lands (measured 0.05–0.08). 0.1 is 6 commits a drag, far from one a frame.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerMarqueeFrame',
+        name: 'React commits per frame of a Shift marquee, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerMarqueeFrame,
+        budget: CANVAS_COMMITS_PER_MARQUEE_FRAME_BUDGET,
+        justification:
+          'The band is drawn outside React, which commits as the marquee starts and ends (measured 0.06). 0.1 is 6 commits a marquee, far from one a frame.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerEditHoverFrame',
+        name: 'React commits per frame of an Edit hover sweep, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerEditHoverFrame,
+        budget: CANVAS_COMMITS_PER_EDIT_HOVER_FRAME_BUDGET,
+        justification:
+          'Only the outline renders, as the element under the pointer changes; the sweep leaves and re-enters the design at each row (measured 0.49). At one commit a frame, every hover would draw the board.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    measuredWithPan(
+      {
+        id: 'canvas.reactCommitsPerLayersSweepFrame',
+        name: 'React commits per frame of a pointer sweep down the Layers rows, 30-frame board',
+        unit: 'commits',
+        actual: options.reactCommitsPerLayersSweepFrame,
+        budget: CANVAS_COMMITS_PER_LAYERS_SWEEP_FRAME_BUDGET,
+        justification:
+          'A row lights its frame without React (measured 0). 0.1 is 6 commits a sweep, far from one a row.',
+      },
+      options.reactCommitsPerPanFrame !== null,
+    ),
+    hard({
+      id: 'canvas.layoutReadsPerPanFrame',
+      name: 'layout reads per background-pan frame, 30-frame board',
+      unit: 'reads',
+      actual: options.layoutReadsPerPanFrame,
+      budget: CANVAS_LAYOUT_READS_PER_PAN_FRAME_BUDGET,
+      justification:
+        'Rect, offset, client and scroll geometry and computed-style reads: 3 per pointer event at 2 events a frame (measured 5.6–6.0).',
+    }),
+    hard({
+      id: 'canvas.longTasksDuringGestures',
+      name: 'long tasks (>50 ms) during canvas gestures, 30-frame board',
+      unit: 'tasks',
+      actual: options.longTasksDuringGestures,
+      budget: 0,
+      justification:
+        'A task over 50 ms drops at least 5 frames at 120 Hz; none of the 12 gestures may have one.',
+    }),
+    warn({
+      id: 'canvas.panBusyP95Ms',
+      name: 'main-thread work per pan frame, p95',
+      unit: 'ms',
+      actual: options.panBusyP95Ms,
+      budget: CANVAS_FRAME_BUDGET_MS,
+      justification:
+        'The 120 Hz budget. Headless Chromium on a shared runner is too noisy for a hard gate.',
+    }),
+    warn({
+      id: 'canvas.panOverBudgetShare',
+      name: 'pan frames over the 8.33 ms budget',
+      unit: 'ratio',
+      actual: options.panOverBudgetShare,
+      budget: 0,
+      justification:
+        'Recorded for comparison; a share of traced frames, as noisy as the time it counts.',
+    }),
+    warn({
+      id: 'canvas.panRafP95Ms',
+      name: 'gap between pan animation frames, p95',
+      unit: 'ms',
+      actual: options.panRafP95Ms,
+      budget: Number.POSITIVE_INFINITY,
+      justification:
+        'Recorded for comparison. Headless Chromium draws at 60 Hz, so this shows dropped frames, not 120 Hz.',
+    }),
   ];
   return wrap(results);
 }
@@ -204,6 +350,18 @@ function wrap(results: GateResult[]): GateEvaluation {
 
 function hard(fields: Omit<GateResult, 'status' | 'mode'>): GateResult {
   return gateResult({ ...fields, mode: 'hard' });
+}
+
+/**
+ * A hard gate on a gesture the canvas run streams with its pan: once the pan
+ * was measured, a missing value is a gesture the run lost, which fails.
+ */
+function measuredWithPan(
+  fields: Omit<GateResult, 'status' | 'mode'>,
+  panMeasured: boolean,
+): GateResult {
+  const result = hard(fields);
+  return panMeasured && result.status === 'unmeasured' ? { ...result, status: 'fail' } : result;
 }
 
 function warn(fields: Omit<GateResult, 'status' | 'mode'>): GateResult {

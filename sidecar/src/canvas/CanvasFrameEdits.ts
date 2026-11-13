@@ -8,7 +8,6 @@ import { canvasError } from './canvasError.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import {
-  canvasChange,
   CANVAS_TOMBSTONE_LIMIT,
   mutationFingerprint,
   recordMutation,
@@ -17,13 +16,22 @@ import {
   type PersistedDesign,
   type Placement,
 } from './canvasManifest.js';
-import { recordedArrange, recordedRemove, recordedRename, recordedUndo } from './canvasReceipts.js';
-import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
+import { canvasChange, frameChange } from './canvasProjection.js';
+import {
+  recordedArrange,
+  recordedFrameEdit,
+  recordedRemove,
+  recordedReorder,
+  recordedUndo,
+} from './canvasReceipts.js';
 import {
   removeFramesInputSchema,
   renameFrameInputSchema,
   undoRemovalInputSchema,
-} from './schema.js';
+  type ReorderFramesInput,
+  type SetFrameHiddenInput,
+} from './frameEditSchema.js';
+import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
 
 export class CanvasFrameEdits {
   constructor(
@@ -39,12 +47,12 @@ export class CanvasFrameEdits {
       const designIds = input.frames.map((frame) => frame.designId);
       const fingerprint = mutationFingerprint(input);
       const manifest = this.leases.requireDesigns(scope, designIds);
-      const recorded = recordedArrange(manifest, input.mutationId, fingerprint, this.builds);
+      const recorded = recordedArrange(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
       return this.commits.publish(async () => {
         const live = this.leases.requireDesigns(scope, designIds);
-        const again = recordedArrange(live, input.mutationId, fingerprint, this.builds);
+        const again = recordedArrange(live, input.mutationId, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
         const moved: PersistedDesign[] = [];
@@ -76,7 +84,7 @@ export class CanvasFrameEdits {
           this.leases.isActive,
         );
         await this.heads.install(next, this.scopedGate(scope, designIds));
-        const change = canvasChange(next, moved, this.builds);
+        const change = frameChange(next, moved);
         return { value: change, change };
       });
     });
@@ -144,6 +152,7 @@ export class CanvasFrameEdits {
             canvasId: next.canvasId,
             sequence: next.sequence,
             frames: [],
+            builds: [],
             removedDesignIds: input.designIds,
           },
         };
@@ -242,43 +251,125 @@ export class CanvasFrameEdits {
         name,
         expectedManifestVersion,
       });
+      return this.editDesign(
+        scope,
+        'rename',
+        input,
+        'That frame changed. Refresh it, then rename again.',
+        (design) => {
+          design.name = input.name;
+        },
+      );
+    });
+  }
+
+  setHidden(scope: CanvasScope, input: SetFrameHiddenInput): Promise<CanvasChange> {
+    return this.commits.admit(async () =>
+      this.editDesign(
+        scope,
+        'hide',
+        input,
+        'That frame changed. Refresh it, then hide or show it again.',
+        (design) => {
+          if (input.hidden) design.hidden = true;
+          else delete design.hidden;
+        },
+      ),
+    );
+  }
+
+  /** Last write wins: any order naming exactly the frames on the head replaces it. */
+  reorder(scope: CanvasScope, input: ReorderFramesInput): Promise<CanvasChange> {
+    return this.commits.admit(async () => {
       this.commits.requireOpen();
-      const manifest = this.leases.requireDesigns(scope, [designId]);
       const fingerprint = mutationFingerprint(input);
-      const recorded = recordedRename(manifest, mutationId, fingerprint, this.builds);
+      const manifest = this.leases.requireDesigns(scope, input.designIds);
+      const recorded = recordedReorder(manifest, input.mutationId, fingerprint);
       if (recorded) return recorded;
 
       return this.commits.publish(async () => {
-        const live = this.leases.requireDesigns(scope, [designId]);
-        const again = recordedRename(live, mutationId, fingerprint, this.builds);
+        const live = this.leases.requireDesigns(scope, input.designIds);
+        const again = recordedReorder(live, input.mutationId, fingerprint);
         if (again) return { value: again };
         const next = structuredClone(live);
-        const design = requireDesign(next, designId);
-        if (design.manifestVersion !== input.expectedManifestVersion)
+        const byId = new Map(next.designs.map((design) => [design.designId, design]));
+        const ordered = input.designIds.flatMap((id) => byId.get(id) ?? []);
+        if (ordered.length !== input.designIds.length || ordered.length !== next.designs.length)
           throw canvasError(
             'revision_conflict',
-            'That frame changed. Refresh it, then rename again.',
+            'The frames on this canvas changed. Refresh it, then reorder again.',
           );
-        design.name = input.name;
-        design.manifestVersion += 1;
+        next.designs = ordered;
         next.sequence += 1;
         next.updatedAt = Date.now();
         recordMutation(
           next,
           {
-            kind: 'rename',
-            mutationId,
+            kind: 'reorder',
+            mutationId: input.mutationId,
             scopeId: scope.scopeId,
             fingerprint,
             sequence: next.sequence,
-            design: structuredClone(design),
+            designIds: [...input.designIds],
           },
           this.leases.isActive,
         );
-        await this.heads.install(next, this.scopedGate(scope, [designId]));
-        const change = canvasChange(next, [design], this.builds);
+        await this.heads.install(next, this.scopedGate(scope, input.designIds));
+        const change: CanvasChange = {
+          canvasId: next.canvasId,
+          sequence: next.sequence,
+          frames: [],
+          builds: [],
+          removedDesignIds: [],
+          order: [...input.designIds],
+        };
         return { value: change, change };
       });
+    });
+  }
+
+  /** One field edit of one frame, compared against its manifest version. */
+  private async editDesign(
+    scope: CanvasScope,
+    kind: 'rename' | 'hide',
+    input: { mutationId: string; designId: string; expectedManifestVersion: number },
+    conflict: string,
+    apply: (design: PersistedDesign) => void,
+  ): Promise<CanvasChange> {
+    const { mutationId, designId } = input;
+    this.commits.requireOpen();
+    const manifest = this.leases.requireDesigns(scope, [designId]);
+    const fingerprint = mutationFingerprint(input);
+    const recorded = recordedFrameEdit(manifest, mutationId, kind, fingerprint);
+    if (recorded) return recorded;
+
+    return this.commits.publish(async () => {
+      const live = this.leases.requireDesigns(scope, [designId]);
+      const again = recordedFrameEdit(live, mutationId, kind, fingerprint);
+      if (again) return { value: again };
+      const next = structuredClone(live);
+      const design = requireDesign(next, designId);
+      if (design.manifestVersion !== input.expectedManifestVersion)
+        throw canvasError('revision_conflict', conflict);
+      apply(design);
+      design.manifestVersion += 1;
+      next.sequence += 1;
+      next.updatedAt = Date.now();
+      recordMutation(
+        next,
+        {
+          kind,
+          mutationId,
+          scopeId: scope.scopeId,
+          fingerprint,
+          sequence: next.sequence,
+          design: structuredClone(design),
+        },
+        this.leases.isActive,
+      );
+      await this.heads.install(next, this.scopedGate(scope, [designId]));
+      const change = frameChange(next, [design]);
+      return { value: change, change };
     });
   }
 

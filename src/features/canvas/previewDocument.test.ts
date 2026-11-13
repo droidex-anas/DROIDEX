@@ -2,9 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   MAX_PREVIEW_SNAPSHOT_EVENTS,
+  previewHoverScript,
+  previewLocateScript,
   previewNonce,
   previewSelectScript,
+  readPreviewHover,
+  readPreviewLocations,
   readPreviewSnapshot,
+  readPreviewVector,
   type PreviewInstance,
 } from './previewDocument';
 
@@ -31,6 +36,8 @@ const selected = {
   instancePath: '0/2',
   rect: { x: -4, y: 2.5, width: 120, height: 0 },
   styles: { gap: '4px', color: 'rgb(0, 0, 0)' },
+  text: 'Welcome',
+  parentDisplay: 'flex',
 };
 
 test('every bounded event shape is accepted', () => {
@@ -88,6 +95,9 @@ test('a malformed or oversized answer is refused whole', () => {
     }),
     answer({
       events: [{ event: 'selection', sequence: 1, element: { ...selected, styles: { gap: 4 } } }],
+    }),
+    answer({
+      events: [{ event: 'selection', sequence: 1, element: { ...selected, parentDisplay: null } }],
     }),
     answer({ events: [{ event: 'diagnostics', diagnostics: [{ code: 'x' }] }] }),
     // One good event does not carry a bad one past the boundary.
@@ -150,6 +160,19 @@ test('an over-long text field is cut on a code point boundary, not refused', () 
   )?.events[0];
   assert.ok(kind?.event === 'interaction');
   assert.equal(new TextEncoder().encode(kind.kind).length, 512);
+
+  // Except an element's text: the board may write it back whole, so past the
+  // cap it is not offered at all rather than cut.
+  const long = readPreviewSnapshot(
+    answer({
+      events: [
+        { event: 'selection', sequence: 1, element: { ...selected, text: '界'.repeat(200) } },
+      ],
+    }),
+    instance,
+  )?.events[0];
+  assert.ok(long?.event === 'selection');
+  assert.equal(long.element?.text, null);
 });
 
 test('a snapshot over its own byte bound is still refused whole', () => {
@@ -164,9 +187,94 @@ test('a snapshot over its own byte bound is still refused whole', () => {
   assert.equal(readPreviewSnapshot(huge, instance), null);
 });
 
+test('a selection the size of its own cap is read, not refused', () => {
+  // The intermediate keeps one selection of up to 16 KB beside a full queue,
+  // so the snapshot bound has to leave room for it.
+  const styles = Object.fromEntries(
+    Array.from({ length: 60 }, (_, index) => [`p${String(index)}`, 'a'.repeat(250)]),
+  );
+  const fill = {
+    event: 'diagnostics',
+    diagnostics: Array.from({ length: 8 }, () => ({ code: 'e', message: 'a'.repeat(470) })),
+  };
+  const selection = { event: 'selection', sequence: 1, element: { ...selected, styles } };
+  const size = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).length;
+  assert.ok(size(fill) <= 4096 && size(selection) <= 16384);
+  const events = [
+    ...Array.from({ length: MAX_PREVIEW_SNAPSHOT_EVENTS - 1 }, () => fill),
+    selection,
+  ];
+
+  assert.equal(readPreviewSnapshot(answer({ events }), instance)?.events.length, events.length);
+});
+
+test('a hover is a fixed call, and only a well-formed answer names an element', () => {
+  assert.equal(
+    previewHoverScript({ x: 12.5, y: -3 }),
+    'globalThis.__droidexCanvasPreview.hover({"x":12.5,"y":-3})',
+  );
+  assert.equal(
+    previewHoverScript({ elementId: 'el_1', instancePath: '0/2' }),
+    'globalThis.__droidexCanvasPreview.hover({"elementId":"el_1","instancePath":"0/2"})',
+  );
+  const hovered = {
+    elementId: 'el_1',
+    instancePath: '0/2',
+    rect: selected.rect,
+    tagName: 'h1',
+    room: { above: 16, below: null },
+  };
+
+  assert.deepEqual(readPreviewHover(JSON.stringify(hovered)), hovered);
+  // A path is an identity: past the text cap it is kept whole, never cut.
+  const deep = { ...hovered, instancePath: '0/'.repeat(300) + '2' };
+  assert.deepEqual(readPreviewHover(JSON.stringify(deep)), deep);
+  for (const value of [
+    'null',
+    'invalid_request',
+    null,
+    JSON.stringify({ ...hovered, tagName: '' }),
+    JSON.stringify({ ...hovered, rect: { ...hovered.rect, height: -1 } }),
+    JSON.stringify({ ...hovered, instancePath: 2 }),
+    JSON.stringify({ ...hovered, instancePath: '0/' }),
+    JSON.stringify({ ...hovered, room: null }),
+    JSON.stringify({ ...hovered, room: { above: -1, below: null } }),
+  ]) {
+    assert.equal(readPreviewHover(value), null, String(value));
+  }
+});
+
+test('a locate is a fixed call, answered with a box or null for each element in order', () => {
+  assert.equal(
+    previewLocateScript(['el_1', '</script>']),
+    'globalThis.__droidexCanvasPreview.locate({"elementIds":["el_1","\\u003c/script>"]})',
+  );
+  const box = { x: 4, y: -8, width: 120, height: 32 };
+
+  assert.deepEqual(readPreviewLocations(JSON.stringify([box, null]), 2), [box, null]);
+  // A box that is not one is an element not drawn, not a reason to refuse the rest.
+  const unreadable = [{ ...box, width: -1 }, box];
+  assert.deepEqual(readPreviewLocations(JSON.stringify(unreadable), 2), [null, box]);
+  for (const value of ['null', 'invalid_request', null, JSON.stringify([box])]) {
+    assert.equal(readPreviewLocations(value, 2), null, String(value));
+  }
+});
+
+test('a vector answer is markup within the cap or a known refusal', () => {
+  const svg = `<svg>${'x'.repeat(8_000)}</svg>`;
+  assert.deepEqual(readPreviewVector(JSON.stringify({ svg })), { svg });
+  assert.deepEqual(readPreviewVector(JSON.stringify({ refused: 'too_large' })), {
+    refused: 'too_large',
+  });
+  const oversized = JSON.stringify({ svg: 'x'.repeat(256 * 1024 + 1) });
+  for (const value of [oversized, JSON.stringify({ refused: 'other' }), 'null', null]) {
+    assert.equal(readPreviewVector(value), null, String(value).slice(0, 40));
+  }
+});
+
 test('a selection command is a fixed call whose previewed styles are data, not code', () => {
   const script = previewSelectScript(
-    { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' }, text: '<b>' },
     ['color'],
     7,
   );
@@ -175,7 +283,12 @@ test('a selection command is a fixed call whose previewed styles are data, not c
   assert.ok(script.startsWith(call) && script.endsWith(')'));
   assert.equal(script.includes('<'), false);
   assert.deepEqual(JSON.parse(script.slice(call.length, -1)), {
-    target: { elementId: 'el_1', instancePath: '0/2', styles: { color: '</script><b>' } },
+    target: {
+      elementId: 'el_1',
+      instancePath: '0/2',
+      styles: { color: '</script><b>' },
+      text: '<b>',
+    },
     properties: ['color'],
     sequence: 7,
   });

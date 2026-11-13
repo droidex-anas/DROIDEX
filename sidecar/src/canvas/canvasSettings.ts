@@ -7,7 +7,8 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasCommits } from './canvasCommits.js';
 import { canvasError } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
-import { canvasChange, type CanvasManifest } from './canvasManifest.js';
+import type { CanvasManifest } from './canvasManifest.js';
+import { canvasChange } from './canvasProjection.js';
 import type { DesignSystemAdherence } from './protocol.js';
 
 export class CanvasSettings {

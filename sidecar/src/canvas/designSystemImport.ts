@@ -12,9 +12,9 @@ import {
   DESIGN_SYSTEM_LIMITS,
   designSystemSchema,
   type DesignSystem,
-  type DesignSystemProvenance,
   type DesignSystemSource,
 } from './designSystems.js';
+import type { DesignSystemProvenance } from './designSystemProvenance.js';
 import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import {
   LICENSED_FONTS,
@@ -41,7 +41,13 @@ import type { CanvasDiagnostic } from './protocol.js';
 import { readTokenModule } from './tokenModules.js';
 
 export type ImportDesignSystemResult =
-  | { status: 'imported'; system: DesignSystem; diagnostics: CanvasDiagnostic[] }
+  | {
+      status: 'imported';
+      system: DesignSystem;
+      diagnostics: CanvasDiagnostic[];
+      /** Each source token's name in the kit: the kit token that holds its value. */
+      kitNames: Record<string, string>;
+    }
   | { status: 'refused'; diagnostics: CanvasDiagnostic[] };
 
 /** One text a kit is made from; a project's names the file it was read from. */
@@ -112,9 +118,17 @@ const SHARED_PRIMITIVES = new Set(kitPrimitives({ files: STARTER_FILES }));
 export function unmappedKitTokens(system: Pick<DesignSystem, 'sections' | 'files'>): string[] {
   if (kitPrimitives(system).some((name) => !SHARED_PRIMITIVES.has(name))) return [];
   const others = system.sections.filter((section) => section.kind === 'tokens');
-  return Object.keys(kitModes(others).light)
+  const light = kitModes(others).light;
+  return Object.keys(light)
     .filter((name) => !CONTRACT_TOKEN_NAMES.has(name))
+    .filter((name) => !isContractAlias(name, light[name]))
     .sort();
+}
+
+/** An import alias reads as mapped: its whole value is a reference to a contract token. */
+export function isContractAlias(name: string, value: string): boolean {
+  const reference = /^var\((--ds-[a-z0-9-]+)\)$/.exec(value);
+  return reference !== null && reference[1] !== name && CONTRACT_TOKEN_NAMES.has(reference[1]);
 }
 
 /** The New menu's pasted text as a source: a config or a stylesheet, told apart by its shape. */
@@ -159,16 +173,17 @@ export function importDesignSystem(
   const unreadable = tokenRefusal(declared, diagnostics);
   if (unreadable) return unreadable;
 
+  const { modes, kitNames } = mapOntoContract(declared, diagnostics);
   const parsed = designSystemSchema.safeParse({
     id: kit.id,
     version: 1,
     name: kit.name,
-    ...starterKit(mapOntoContract(declared, diagnostics), notes),
+    ...starterKit(modes, notes),
     ...(kit.provenance ? { provenance: kit.provenance } : {}),
   });
   if (!parsed.success)
     return refused(parsed.error.issues[0]?.message ?? 'That design system is not valid.');
-  return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics) };
+  return { status: 'imported', system: parsed.data, diagnostics: bounded(diagnostics), kitNames };
 }
 
 /**
@@ -277,16 +292,33 @@ function bounded(diagnostics: CanvasDiagnostic[]): CanvasDiagnostic[] {
 function mapOntoContract(
   declared: Declared,
   diagnostics: CanvasDiagnostic[],
-): Record<Mode, Record<string, string>> {
+): { modes: Record<Mode, Record<string, string>>; kitNames: Record<string, string> } {
   const resolved = resolveValues(declared, diagnostics);
   const modes = { light: { ...CONTRACT.light }, dark: { ...CONTRACT.dark } };
+  const kitNames: Record<string, string> = {};
   const claimed = new Set<string>();
+  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
+  const kitName = (name: string): string => {
+    if (name.startsWith('--ds-')) return name;
+    const prefixed = `--ds-${name.slice('--'.length)}`;
+    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
+    return taken ? name : prefixed;
+  };
   const assign = (contractName: string, sourceName: string): void => {
     claimed.add(sourceName);
     for (const mode of MODES) {
       const value = resolved[mode].get(sourceName);
       if (value !== undefined) modes[mode][contractName] = value;
     }
+    kitNames[sourceName] = contractName;
+    if (sourceName === contractName) return;
+    // The source's own name stays as an alias, so a frame using the source's
+    // names still resolves to the contract token.
+    const alias = kitName(sourceName);
+    if (alias === contractName || Object.hasOwn(modes.light, alias)) return;
+    modes.light[alias] = `var(${contractName})`;
+    modes.dark[alias] = `var(${contractName})`;
+    kitNames[sourceName] = alias;
   };
   // A token whose value could not be used was already reported and maps nowhere.
   const usable = (name: string) => resolved.light.has(name) || resolved.dark.has(name);
@@ -299,13 +331,6 @@ function mapOntoContract(
     if (alias) assign(contractName, `--${alias}`);
   }
 
-  // A name keeps its own spelling when its --ds- form is a primitive's or another source token's.
-  const kitName = (name: string): string => {
-    if (name.startsWith('--ds-')) return name;
-    const prefixed = `--ds-${name.slice('--'.length)}`;
-    const taken = Object.hasOwn(CONTRACT.light, prefixed) || declared.places.has(prefixed);
-    return taken ? name : prefixed;
-  };
   for (const name of declared.places.keys()) {
     if (claimed.has(name)) continue;
     const light = resolved.light.get(name);
@@ -322,8 +347,9 @@ function mapOntoContract(
     const kept = kitName(name);
     modes.light[kept] = light ?? either;
     modes.dark[kept] = dark ?? either;
+    kitNames[name] = kept;
   }
-  return modes;
+  return { modes, kitNames };
 }
 
 /**
@@ -450,9 +476,11 @@ function inlineReferences(
   return { value: result };
 }
 
-// shadcn's `--primary: 222 47% 11%` is a colour only inside `hsl()`.
 function bareHsl(value: string): string {
-  return /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%(?:\s*\/\s*[\d.]+%?)?$/.test(value)
-    ? `hsl(${value})`
-    : value;
+  return isBareHsl(value) ? `hsl(${value})` : value;
+}
+
+/** Whether the value is bare HSL channels, as shadcn's `--primary: 222 47% 11%`, a colour only inside `hsl()`. */
+export function isBareHsl(value: string): boolean {
+  return /^-?[\d.]+(?:deg)?\s+[\d.]+%\s+[\d.]+%(?:\s*\/\s*[\d.]+%?)?$/.test(value);
 }

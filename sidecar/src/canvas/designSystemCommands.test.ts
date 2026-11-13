@@ -87,6 +87,41 @@ async function readKit(
   return { ...reply.system, modes: kitModes(reply.system.sections) };
 }
 
+// The answers that build are kitPreviews.test.ts's; these are refused before any compile.
+test('a kit preview names a preview by id or a saved catalog entry by name, and nothing else', async (t) => {
+  const canvas = await harness(t);
+  const ref = { id: 'droidex', version: 1, mode: 'light' } as const;
+  const proposal = { id: 'droidex', proposalId: 'proposal-one', mode: 'light' } as const;
+  const cases: [string, object, RegExp][] = [
+    ['no-preview', { kind: 'preview', ref, item: 'no-such-preview' }, /That preview is not/],
+    ['no-entry', { kind: 'catalog', ref, entry: 'No such entry' }, /That component is not/],
+    ['both', { kind: 'catalog', ref, entry: 'Icon button', item: 'cover' }, /Unrecognized key/],
+    ['proposed-entry', { kind: 'catalog', ref: proposal, entry: 'Icon button' }, /Required/],
+    ['bare', { ref, item: 'cover' }, /./],
+  ];
+  for (const [requestId, target, message] of cases) {
+    await canvas.handle({ type: 'canvas.readKitPreview', requestId, target });
+    const error = errorOf(canvas, requestId);
+    assert.equal(error.code, 'invalid_input', requestId);
+    assert.match(error.message, message, requestId);
+  }
+});
+
+test('a kit answers the tokens each editable style property accepts', async (t) => {
+  const canvas = await harness(t);
+  await canvas.handle({
+    type: 'canvas.readEditTokens',
+    requestId: 'edit-tokens',
+    ref: { id: 'droidex', version: 1 },
+  });
+  const reply = okReply(canvas, 'edit-tokens');
+  assert.ok(reply.kind === 'editTokens');
+  // Keyword-only properties have no tokens, and each listed token is in its family.
+  assert.ok(!('flexDirection' in reply.tokens));
+  assert.ok((reply.tokens['padding'] ?? []).every(({ name }) => name.startsWith('--ds-space-')));
+  assert.ok((reply.tokens['color']?.length ?? 0) > 0);
+});
+
 test('a pasted DESIGN.md becomes a kit whose starter compiles on the shared primitives', async (t) => {
   const canvas = await harness(t);
   const { ref, diagnostics } = await importKit(canvas, 'paper-and-ink', {
@@ -147,6 +182,11 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   assert.equal(css.modes.dark['--ds-focus'], 'hsl(210 40% 98%)');
   assert.equal(css.modes.light['--ds-danger'], STARTER_TOKENS.light['--ds-danger']);
   assert.deepEqual(css.unmapped, ['--ds-chart-1']);
+  // A mapped name stays in the kit as an alias of the contract token, out of unmapped.
+  assert.equal(css.modes.light['--ds-primary'], 'var(--ds-accent)');
+  assert.equal(css.modes.dark['--ds-primary'], 'var(--ds-accent)');
+  assert.equal(css.modes.light['--ds-background'], 'var(--ds-canvas)');
+  assert.equal(css.modes.light['--ds-ring'], 'var(--ds-focus)');
 
   const fromConfig = await importKit(canvas, 'from-config', {
     kind: 'cssOrTailwind',
@@ -160,6 +200,7 @@ test('CSS variables and a Tailwind config map familiar names and keep the rest u
   assert.equal(config.modes.dark['--ds-accent'], '#123456');
   assert.equal(config.modes.light['--ds-radius-lg'], '14px');
   assert.deepEqual(config.unmapped, ['--ds-color-brand-500']);
+  assert.equal(config.modes.dark['--ds-color-brand'], 'var(--ds-accent)');
 
   // A stylesheet that does not parse saves nothing.
   await canvas.handle({

@@ -25,6 +25,38 @@ export function MenuNote({ children, role }: { children: string; role?: 'status'
   );
 }
 
+/** One choice of a set, with a line under it saying what it does. */
+export function MenuRadioRow({
+  label,
+  note,
+  checked,
+  disabled,
+  onRun,
+}: {
+  label: string;
+  note: string;
+  checked: boolean;
+  disabled: boolean;
+  onRun: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitemradio"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onRun}
+      className="flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors hover:bg-accent/10 focus-visible:bg-accent/10 focus-visible:outline-none disabled:cursor-default disabled:opacity-60 disabled:hover:bg-transparent"
+    >
+      <span className="flex min-w-0 flex-1 flex-col">
+        <span className="truncate text-label font-normal text-primary">{label}</span>
+        <span className="text-caption text-muted">{note}</span>
+      </span>
+      {checked && <Check aria-hidden className="h-3.5 w-3.5 shrink-0 text-accent" />}
+    </button>
+  );
+}
+
 export function MenuRow({
   label,
   hint,

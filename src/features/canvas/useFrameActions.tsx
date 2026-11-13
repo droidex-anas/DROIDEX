@@ -1,31 +1,47 @@
 // The frame toolbar's actions bound to the chat whose pane shows the canvas,
-// and the dialogs its Make variants… and Save to library… open.
+// and the dialogs its Save to library…, Export image… and Export to project… open.
 
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { canvasClient as canvas } from './canvasClient';
-import { CanvasVariants } from './CanvasVariants';
+import { useSessionLive } from '../../hooks/useSessionLive';
+import { useStoreSelector } from '../../hooks/useStore';
+import { canvasClient as canvas, variantSets } from './canvasClient';
+import { exportableRevision } from './captureCanvasImage';
+import { useElementPins } from './elementPins';
+import { ExportImageDialog } from './ExportImageDialog';
+import { ExportToProjectDialog } from './ExportToProjectDialog';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
-import type { RevisionRef } from './protocol';
+import type { CanvasFrame, FrameRect, RevisionRef } from './protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
-import { variantSource, type VariantSource } from './variantRequests';
+import { useVariantRequests } from './useVariantRequests';
+import { variantSetSource } from './variantSets';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 /** What a dialog acts on, fixed when it opens so a later build cannot retarget it. */
-type FrameDialog =
+type OpenDialog =
   | { kind: 'save'; revision: RevisionRef; frameName: string }
-  | { kind: 'variants'; source: VariantSource };
+  | { kind: 'export'; revision: RevisionRef; frameName: string; rect: FrameRect }
+  | { kind: 'project'; revision: RevisionRef; frameName: string; appSessionId: string };
 
 export function useFrameActions(
   appSessionId: string,
   canvasId: string,
   /** This chat is attached to the canvas, so the sidecar takes its writes. */
   attached: boolean,
+  frames: readonly CanvasFrame[],
 ): { actions: FrameActions; dialog: ReactNode } {
-  const [dialog, setDialog] = useState<FrameDialog | null>(null);
+  const [open, setOpen] = useState<OpenDialog | null>(null);
   const close = useCallback(() => {
-    setDialog(null);
+    setOpen(null);
   }, []);
+  const makeVariants = useVariantRequests(appSessionId, canvasId);
+  const picks = useElementPins(appSessionId);
+  const agentWorking = useSessionLive(appSessionId);
+  const hasProject = useStoreSelector((state) => {
+    if (!Object.hasOwn(state.sessions, appSessionId)) return false;
+    const session = state.sessions[appSessionId];
+    return session.workspaceKind !== 'none' && session.cwd !== '';
+  });
   // Its identity is the toolbar's history owner, so it changes only with the chat or canvas.
   const history = useMemo(
     (): HistoryClient => ({
@@ -45,36 +61,75 @@ export function useFrameActions(
         name,
         expectedManifestVersion: frame.manifestVersion,
       }),
-    makeVariants: (frame) => {
-      const source = variantSource(canvasId, frame);
-      if (source) setDialog({ kind: 'variants', source });
-    },
+    picksIn: (frame) =>
+      picks.filter(
+        ({ canvasId: pickedOn, element }) =>
+          pickedOn === canvasId &&
+          element.designId === frame.designId &&
+          element.revisionId === frame.revisionId,
+      ),
+    makeVariants: (frame, choice, picked) =>
+      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice, picked)),
+    variantWork: variantSets.viewOf(canvasId),
+    // While the agent works, a variant may be partway to what it was asked to become.
+    sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),
+    applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),
     saveToLibrary: (frame) => {
       if (frame.revisionId)
-        setDialog({
+        setOpen({
           kind: 'save',
           revision: { designId: frame.designId, revisionId: frame.revisionId },
           frameName: frame.name,
         });
     },
+    exportImage: (frame) => {
+      const revision = exportableRevision(frame);
+      if (revision) setOpen({ kind: 'export', revision, frameName: frame.name, rect: frame.rect });
+    },
+    exportToProject: hasProject
+      ? (frame) => {
+          if (frame.revisionId)
+            setOpen({
+              kind: 'project',
+              revision: { designId: frame.designId, revisionId: frame.revisionId },
+              frameName: frame.name,
+              appSessionId,
+            });
+        }
+      : null,
   };
 
-  if (dialog?.kind === 'save')
-    return {
-      actions,
-      dialog: (
-        <SaveToLibraryDialog
-          canvasId={canvasId}
-          revision={dialog.revision}
-          frameName={dialog.frameName}
-          onClose={close}
-        />
-      ),
-    };
-  if (dialog?.kind === 'variants')
-    return {
-      actions,
-      dialog: <CanvasVariants appSessionId={appSessionId} source={dialog.source} onClose={close} />,
-    };
-  return { actions, dialog: null };
+  return { actions, dialog: open && dialogFor(canvasId, open, close) };
+}
+
+function dialogFor(canvasId: string, open: OpenDialog, onClose: () => void): ReactNode {
+  if (open.kind === 'save')
+    return (
+      <SaveToLibraryDialog
+        canvasId={canvasId}
+        revision={open.revision}
+        frameName={open.frameName}
+        onClose={onClose}
+      />
+    );
+  if (open.kind === 'project')
+    return (
+      <ExportToProjectDialog
+        appSessionId={open.appSessionId}
+        canvasId={canvasId}
+        revision={open.revision}
+        frameName={open.frameName}
+        onClose={onClose}
+      />
+    );
+  return (
+    <ExportImageDialog
+      canvasId={canvasId}
+      revision={open.revision}
+      frameName={open.frameName}
+      width={open.rect.width}
+      height={open.rect.height}
+      onClose={onClose}
+    />
+  );
 }

@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Frame, MousePointer2, PenLine } from 'lucide-react';
-import { MessageThread } from '@droidex/icons';
+import { Component, MessageThread } from '@droidex/icons';
 import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
@@ -94,7 +94,14 @@ export function UserBubble({
 }: {
   event: Pick<
     TranscriptEvent,
-    'text' | 'skills' | 'files' | 'browserRefs' | 'spoken' | 'sideChatReplies' | 'canvasFrames'
+    | 'text'
+    | 'skills'
+    | 'files'
+    | 'browserRefs'
+    | 'spoken'
+    | 'sideChatReplies'
+    | 'canvasFrames'
+    | 'canvasComponents'
   > & {
     ts?: number;
   };
@@ -111,8 +118,13 @@ export function UserBubble({
   const hasAttachments = message.files.length > 0 || browserRefs.length > 0;
   const replyCount = event.sideChatReplies?.length ?? 0;
   const frames = event.canvasFrames ?? [];
+  const components = event.canvasComponents ?? [];
   const hasChips =
-    display.skills.length > 0 || display.visualize || replyCount > 0 || frames.length > 0;
+    display.skills.length > 0 ||
+    display.visualize ||
+    replyCount > 0 ||
+    frames.length > 0 ||
+    components.length > 0;
   const hasPrompt = Boolean(display.text) || hasChips;
   const chips = hasChips ? (
     // Top-aligned because the icon, not the label, would set the row's baseline.
@@ -128,6 +140,14 @@ export function UserBubble({
       )}
       {frames.map((name, index) => (
         <PromptChip key={`frame:${String(index)}`} icon={Frame} label={name} title="Canvas frame" />
+      ))}
+      {components.map((label, index) => (
+        <PromptChip
+          key={`component:${String(index)}`}
+          icon={Component}
+          label={label}
+          title="Kit component"
+        />
       ))}
       {display.visualize && <PromptChip icon={VisualizeIcon} label="Visualize" />}
       {display.skills.map((skill) => (

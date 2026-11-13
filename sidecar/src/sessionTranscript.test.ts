@@ -392,12 +392,13 @@ for (const provider of ['claude', 'codex'] as const) {
           activity?.canvasId,
           activity?.title,
           activity?.firstArtifact,
+          activity?.revisionId,
         ]);
     assert.deepEqual(artifacts(live), [
-      ['canvas-1', 'Welcome', true],
-      ['canvas-1', undefined, undefined],
-      ['canvas-1', 'Dashboard', undefined],
-      ['canvas-1', undefined, undefined],
+      ['canvas-1', 'Welcome', true, undefined],
+      ['canvas-1', undefined, undefined, 'rev-1'],
+      ['canvas-1', 'Dashboard', undefined, undefined],
+      ['canvas-1', undefined, undefined, 'rev-2'],
     ]);
     const lazy = new SessionTranscriptReader(appSessionId, appSessionId, file.path, 'primary');
     const paged: TranscriptEvent[] = [];
@@ -433,15 +434,27 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
     ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
+  // Droid now stores a slash invocation as the composed prompt with the skill
+  // body appended, then a bare activation.
+  const pinned =
+    '<canvas_frames>\nThe user pinned these canvas frames to this request; "this" and "it" mean them.\n<frame id="design-1">Card</frame>\n</canvas_frames>';
+  const skillBody =
+    '<system-notification>\nSkills provide specialized capabilities and domain knowledge.\n<skill name="stageshow">private instructions</skill>\n</system-notification>';
+  const invocation = `/stageshow Design a card\n\n${pinned}\n\n${skillBody}`;
+  const literal =
+    'Explain this markup: <system-notification>hello</system-notification> and keep this last sentence.';
   const path = writeSession([
     userMessage('ordinary user prompt'),
     userMessage('internal child-session handoff', 'llm_only'),
     userMessage('Unable to reach https://api.factory.ai.', 'user_only'),
     userMessage('shared prompt', 'both'),
+    userMessage(literal),
     userMessage('Skill "review" activated: PR #100', 'user_only'),
     userMessage(notification),
     userMessage(RESTART_CONTINUE_PROMPT),
     assistant('Review started'),
+    userMessage(invocation),
+    userMessage('Skill "stageshow" activated', 'user_only'),
   ]);
 
   for (const events of [
@@ -459,13 +472,18 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
         ['ordinary user prompt', 'user', undefined, 'user'],
         ['Unable to reach https://api.factory.ai.', undefined, undefined, 'primary'],
         ['shared prompt', 'user', undefined, 'user'],
+        // The user's own mention of the tag is not a skill body.
+        [literal, 'user', undefined, 'user'],
         // A user-only skill activation restores the prompt and the harness
         // acknowledgement as separate rows.
         ['PR #100', 'user', ['review'], 'user'],
         ['Skill "review" activated: PR #100', undefined, undefined, 'primary'],
         ['Review started', undefined, undefined, 'primary'],
+        ['/stageshow Design a card', 'user', undefined, 'user'],
+        ['Skill "stageshow" activated', undefined, undefined, 'primary'],
       ],
     );
+    assert.deepEqual(events.at(-2)?.canvasFrames, ['Card']);
   }
 });
 

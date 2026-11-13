@@ -18,8 +18,12 @@
   transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.canvas-artifact:hover {
+.canvas-artifact:hover:not(:disabled) {
   background: var(--active);
+}
+
+.canvas-artifact:disabled {
+  cursor: progress;
 }
 
 .canvas-artifact:focus-visible {
@@ -103,7 +107,7 @@
   transition: background 120ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.canvas-artifact:hover .canvas-artifact-open,
+.canvas-artifact:hover:not(:disabled) .canvas-artifact-open,
 .canvas-artifact:focus-visible .canvas-artifact-open {
   background: color-mix(in srgb, var(--text) 12%, transparent);
 }

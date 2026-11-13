@@ -12,7 +12,7 @@ import { designPromptDisplayFromText } from './browser/designPromptDisplay.js';
 import { appPromptDisplayFromText, hasAppFence } from './appPrompt.js';
 import { branchPromptDisplayFromText } from './branchPrompt.js';
 import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
-import { canvasFramesFromPrompt } from './canvas/canvasFramesPrompt.js';
+import { canvasPinsFromPrompt } from './canvas/canvasPinsPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
 import type { SessionRole, TranscriptEvent } from './protocol.js';
@@ -211,7 +211,7 @@ function nonAssistantBlockEvent(
     });
   }
   if (messageRole === 'user' && type === 'text') {
-    const shown = userPromptDisplay(nonEmpty(stringValue(block.text)));
+    const shown = userPromptDisplay(withoutSkillBody(nonEmpty(stringValue(block.text))));
     if ((!shown.text && !shown.sideChatReplies) || isSystemText(shown.text)) return null;
     const sourceProviderSessionId = base.role === 'primary' ? 'user' : base.sourceProviderSessionId;
     return event({ ...base, sourceProviderSessionId }, index, 'text', { ...shown, author: 'user' });
@@ -220,8 +220,8 @@ function nonAssistantBlockEvent(
 }
 
 // A stored prompt as the chat shows it: plain text, never a runnable App, and
-// without the pinned frames, the side-chat answers or the branch, design, app
-// and side-chat framing it was sent with.
+// without the canvas pins, the side-chat answers or the branch, design, app and
+// side-chat framing it was sent with.
 export function userPromptDisplay(storedText: string) {
   const outer = attachedToPrompt(storedText);
   // A branch prompt carries a whole copied conversation after its request; it
@@ -242,18 +242,20 @@ export function userPromptDisplay(storedText: string) {
     sideChatReplies:
       outer.sideChatReplies ?? inner.sideChatReplies ?? designDisplay?.sideChatReplies,
     canvasFrames: outer.canvasFrames ?? inner.canvasFrames,
+    canvasComponents: outer.canvasComponents ?? inner.canvasComponents,
   };
 }
 
-// The pinned frames and side-chat answers at the end of a composed prompt, split
+// The canvas pins and side-chat answers at the end of a composed prompt, split
 // off the words they were sent with.
 function attachedToPrompt(text: string) {
-  const withFrames = canvasFramesFromPrompt(text);
-  const withReplies = sideChatRepliesFromPrompt(withFrames?.text ?? text);
+  const withPins = canvasPinsFromPrompt(text);
+  const withReplies = sideChatRepliesFromPrompt(withPins?.text ?? text);
   return {
-    text: withReplies?.text ?? withFrames?.text ?? text,
+    text: withReplies?.text ?? withPins?.text ?? text,
     sideChatReplies: withReplies?.sideChatReplies,
-    canvasFrames: withFrames?.canvasFrames,
+    canvasFrames: withPins?.canvasFrames,
+    canvasComponents: withPins?.canvasComponents,
   };
 }
 
@@ -337,13 +339,17 @@ export function parseSessionLineEvents(
       ? skillActivationFromContent(content)
       : undefined;
   if (activation) {
+    const acknowledgement = event(base, 1, 'text', { text: activation.message });
+    // Droid now stores the invocation as its own prompt row, so an activation
+    // without a prompt is only the acknowledgement the live stream shows.
+    if (!activation.prompt) return [acknowledgement];
     return [
       event({ ...base, sourceProviderSessionId: 'user', role: 'primary' }, 0, 'text', {
-        text: activation.prompt,
+        ...userPromptDisplay(activation.prompt),
         author: 'user',
         skills: [activation.skillName],
       }),
-      event(base, 1, 'text', { text: activation.message }),
+      acknowledgement,
     ];
   }
 
@@ -384,9 +390,9 @@ function canvasActivityField(block: Record<string, unknown>): { canvasActivity?:
   const activity = objectValue(block.canvasActivity);
   const toolUseId = stringValue(block.id ?? block.tool_use_id ?? block.toolUseId);
   if (!activity || !toolUseId || activity.toolUseId !== toolUseId) return {};
-  const action = (['create', 'write', 'inspect', 'arrange', 'annotate', 'theme'] as const).find(
-    (value) => value === activity.action,
-  );
+  const action = (
+    ['create', 'write', 'inspect', 'arrange', 'annotate', 'theme', 'image'] as const
+  ).find((value) => value === activity.action);
   const state = (['running', 'completed', 'failed'] as const).find(
     (value) => value === activity.state,
   );
@@ -423,6 +429,17 @@ function trimText(text: string, max: number): string {
 // larger bound. Thinking, user text, and tool output keep the shared cap.
 function trimAnswerText(text: string): string {
   return trimText(text, hasAppFence(text) ? MAX_APP_ANSWER_CHARS : MAX_TEXT_CHARS);
+}
+
+// Droid expands a slash skill into the prompt row: the user's words, then the
+// skill's body as a closing system notification that opens with this preamble.
+// Any other mention of the tag is the user's own text.
+const SKILL_BODY_START = '\n\n<system-notification>\nSkills provide specialized capabilities';
+
+function withoutSkillBody(text: string): string {
+  const start = text.indexOf(SKILL_BODY_START);
+  if (start < 0 || !text.trimEnd().endsWith('</system-notification>')) return text;
+  return text.slice(0, start).trimEnd();
 }
 
 function isSystemText(text: string): boolean {

@@ -4,6 +4,8 @@
 //
 // Kept free of `require('electron')` so it runs under plain Node.
 
+const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
+
 /**
  * The reporter that runs inside the generated frame: readiness once it has
  * painted, its content size, and its own uncaught failures as bounded
@@ -14,11 +16,30 @@
  *
  * It also answers the board's selection commands with a `selection` event for
  * the element picked or named, and again whenever that element's box moves,
- * each echoing the sequence number of the command it answers. A kit preview's
+ * each echoing the sequence number of the command it answers, and its hover
+ * command with a `hover` event naming the element under a point, or the one a
+ * path names. Its probe
+ * command selects nothing either: a `probe` event names the element at a point,
+ * or the text between two points and the element that holds it, and a `locate`
+ * event gives the box of the first drawn instance of each element it names; a
+ * `vector` event carries the design's root `<svg>` as a standalone file, a
+ * `shape` event the data, matrix and box of the `<path>` a path names, and a
+ * `tree` event one page of the marked elements in document order, starting
+ * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
  */
+/**
+ * Bytes one `selection` event may measure. It is the one event the board must
+ * never lose, so it has its own cap, and the reporter cuts long style values
+ * until its answer fits rather than let the intermediate drop it.
+ */
+const MAX_PREVIEW_SELECTION_BYTES = 16384;
+/** Elements one `tree` event may name, and the bytes it may measure; past either the walk stops. */
+const MAX_PREVIEW_TREE_NODES = 400;
+const MAX_PREVIEW_TREE_BYTES = 128 * 1024;
+
 const GENERATED_FRAME_REPORTER = `(() => {
   const nonce = '__CANVAS_PREVIEW_NONCE__';
   const post = (event, payload) => {
@@ -66,10 +87,11 @@ const GENERATED_FRAME_REPORTER = `(() => {
   renderState();
 
   // The element the board selected: its source marker, where it sits under
-  // the body, its box and the computed values of the properties the board
-  // asked for. The board's previews are inline styles on it, put back as soon
-  // as the selection moves. Commands come only from the intermediate, which is
-  // \`top\` here and, unlike \`parent\`, cannot be replaced by the design.
+  // the body, its box, the computed values of the properties the board asked
+  // for and its text. The board's previews are inline styles on it, the text
+  // it holds and a path's \`d\`, put back as soon as the selection moves.
+  // Commands come only from the intermediate, which is \`top\` here and,
+  // unlike \`parent\`, cannot be replaced by the design.
   const MARKER = 'data-droidex-element';
   const kebab = (name) => name.replace(/[A-Z]/g, (letter) => '-' + letter.toLowerCase());
   const pathOf = (node) => {
@@ -85,26 +107,96 @@ const GENERATED_FRAME_REPORTER = `(() => {
     for (const step of path.split('/')) at = at && at.children[Number(step)];
     return at || null;
   };
+  // The element a path names, while it is still the one with that marker.
+  const markedAt = (elementId, instancePath) => {
+    const node = atPath(instancePath);
+    return node && node.getAttribute(MARKER) === elementId ? node : null;
+  };
   let selected = null;
   // The command that made the current selection; every report of it echoes
   // this so the board can tell its latest command's answer from a late one.
   let commandSequence = 0;
   let previewed = [];
+  let previewedText = null;
+  let previewedPath = null;
   let lastSelection = '';
   let selectionQueued = false;
+  // Text a direct edit can write is an element's one text node. It is offered
+  // whole or not at all, within the intermediate's 512-byte text cap.
+  const soleText = (node) => {
+    const only = node.childNodes.length === 1 ? node.firstChild : null;
+    return only && only.nodeType === Node.TEXT_NODE ? only : null;
+  };
+  const encoder = new TextEncoder();
+  const bytes = (value) => encoder.encode(value).length;
+  const textOf = (node) => {
+    const value = previewedText ? previewedText.value : soleText(node)?.data;
+    return typeof value === 'string' && bytes(value) <= 512 ? value : null;
+  };
+  const rectOf = (node) => {
+    const box = node.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  };
+  // What a node beside the hovered element's ancestry paints, a box per line
+  // where it wraps, so the lines before and after an inline element count.
+  const paintedBoxes = (node) => {
+    let boxes = [];
+    if (node.nodeType === Node.TEXT_NODE && node.data.trim() !== '') {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      boxes = range.getClientRects();
+    } else if (node.nodeType === Node.ELEMENT_NODE) boxes = node.getClientRects();
+    return Array.from(boxes).filter((box) => box.width > 0 && box.height > 0);
+  };
+  // How far a box can grow up and down, across its width, before it meets
+  // anything but its own ancestors: a sibling, an ancestor's sibling or an
+  // ancestor's own text. Null where nothing is in the way.
+  const roomAround = (node) => {
+    const own = node.getBoundingClientRect();
+    let above = null;
+    let below = null;
+    for (let child = node; child.parentElement; child = child.parentElement) {
+      for (const other of child.parentElement.childNodes) {
+        if (other === child) continue;
+        for (const box of paintedBoxes(other)) {
+          if (box.right <= own.left || box.left >= own.right) continue;
+          if (box.bottom <= own.top) above = Math.min(above ?? Infinity, own.top - box.bottom);
+          if (box.top >= own.bottom) below = Math.min(below ?? Infinity, box.top - own.bottom);
+        }
+      }
+    }
+    return { above: above, below: below };
+  };
+  // Over the intermediate's cap the answer would be dropped and the board
+  // would lose the selection, so every style value is cut to the same length,
+  // shorter each round, until it fits. Cuts count code points, so none leaves
+  // half a surrogate pair. The text stays whole or goes last.
+  const SELECTION_BUDGET = ${String(MAX_PREVIEW_SELECTION_BYTES - 512)};
+  const fitted = (element) => {
+    if (bytes(JSON.stringify(element)) <= SELECTION_BUDGET) return element;
+    for (const longest of [256, 64, 16, 0]) {
+      const styles = {};
+      for (const name of Object.keys(element.styles))
+        styles[name] = Array.from(element.styles[name]).slice(0, longest).join('');
+      const candidate = Object.assign({}, element, { styles: styles });
+      if (bytes(JSON.stringify(candidate)) <= SELECTION_BUDGET) return candidate;
+    }
+    return Object.assign({}, element, { styles: {}, text: null });
+  };
   const describe = () => {
     if (!selected || !selected.node.isConnected) return null;
-    const box = selected.node.getBoundingClientRect();
-    const computed = getComputedStyle(selected.node);
+    const node = selected.node;
+    const computed = getComputedStyle(node);
     const styles = {};
-    for (const name of selected.properties)
-      styles[name] = computed.getPropertyValue(kebab(name)).slice(0, 96);
-    return {
+    for (const name of selected.properties) styles[name] = computed.getPropertyValue(kebab(name));
+    return fitted({
       elementId: selected.elementId,
       instancePath: selected.instancePath,
-      rect: { x: box.x, y: box.y, width: box.width, height: box.height },
+      rect: rectOf(node),
       styles: styles,
-    };
+      text: textOf(node),
+      parentDisplay: node.parentElement ? getComputedStyle(node.parentElement).display : '',
+    });
   };
   const reportSelection = () => {
     if (selectionQueued) return;
@@ -119,11 +211,16 @@ const GENERATED_FRAME_REPORTER = `(() => {
     });
   };
   const watchSelected = new ResizeObserver(reportSelection);
-  const select = (node, properties, styles, sequence) => {
+  const select = (node, properties, styles, text, d, sequence) => {
     commandSequence = sequence;
     for (const entry of previewed.reverse())
       entry.node.style.setProperty(entry.property, entry.value, entry.priority);
     previewed = [];
+    if (previewedText) previewedText.node.data = previewedText.value;
+    previewedText = null;
+    if (previewedPath?.value === null) previewedPath.node.removeAttribute('d');
+    else if (previewedPath) previewedPath.node.setAttribute('d', previewedPath.value);
+    previewedPath = null;
     if (selected) watchSelected.unobserve(selected.node);
     const elementId = node ? node.getAttribute(MARKER) : null;
     const instancePath = node ? pathOf(node) : null;
@@ -139,6 +236,15 @@ const GENERATED_FRAME_REPORTER = `(() => {
         });
         node.style.setProperty(property, value);
       }
+      const shown = soleText(node);
+      if (shown && typeof text === 'string') {
+        previewedText = { node: shown, value: shown.data };
+        shown.data = text;
+      }
+      if (node instanceof SVGPathElement && typeof d === 'string') {
+        previewedPath = { node: node, value: node.getAttribute('d') };
+        node.setAttribute('d', d);
+      }
       watchSelected.observe(node);
     }
     // Every command is answered, even with the selection it already had.
@@ -151,6 +257,74 @@ const GENERATED_FRAME_REPORTER = `(() => {
   addEventListener('scroll', () => {
     if (selected) reportSelection();
   }, true);
+  // A probe's text is cut so its answer stays inside the intermediate's event
+  // cap; the intermediate cuts it again, to its text cap.
+  const probe = (command) => {
+    let node = null;
+    let spanned = null;
+    if (command.at) {
+      const hit = document.elementFromPoint(command.at.x, command.at.y);
+      node = hit && hit.closest('[' + MARKER + ']');
+    } else {
+      const from = document.caretRangeFromPoint(command.from.x, command.from.y);
+      const to = document.caretRangeFromPoint(command.to.x, command.to.y);
+      if (!from || !to) return null;
+      const range = from.cloneRange();
+      if (from.compareBoundaryPoints(Range.START_TO_START, to) <= 0)
+        range.setEnd(to.startContainer, to.startOffset);
+      else range.setStart(to.startContainer, to.startOffset);
+      const holder = range.commonAncestorContainer;
+      const host = holder.nodeType === Node.ELEMENT_NODE ? holder : holder.parentElement;
+      node = host && host.closest('[' + MARKER + ']');
+      spanned = range.collapsed
+        ? null
+        : { excerpt: Array.from(range.toString()).slice(0, 512).join(''), rect: rectOf(range) };
+    }
+    const instancePath = node ? pathOf(node) : null;
+    if (!node || instancePath === null) return null;
+    return {
+      elementId: node.getAttribute(MARKER),
+      instancePath: instancePath,
+      rect: rectOf(node),
+      text: spanned,
+    };
+  };
+${SVG_REPORTER}
+  // Each marked element's depth counts the marked elements that hold it. A
+  // page starts \`from\` marked elements in, so a long tree is read a page at a
+  // time. The budget leaves the event's own fields room under the
+  // intermediate's cap.
+  const TREE_BUDGET = ${String(MAX_PREVIEW_TREE_BYTES - 1024)};
+  const tree = (from) => {
+    const nodes = [];
+    const holders = [];
+    let index = 0;
+    let used = 0;
+    let truncated = false;
+    for (const node of document.querySelectorAll('[' + MARKER + ']')) {
+      const instancePath = pathOf(node);
+      if (instancePath === null) continue;
+      while (holders.length > 0 && !holders[holders.length - 1].contains(node)) holders.pop();
+      const depth = holders.length;
+      holders.push(node);
+      index += 1;
+      if (index <= from) continue;
+      const entry = {
+        elementId: node.getAttribute(MARKER),
+        instancePath: instancePath,
+        tagName: node.localName,
+        depth: depth,
+      };
+      const size = bytes(JSON.stringify(entry)) + 1;
+      if (nodes.length === ${String(MAX_PREVIEW_TREE_NODES)} || used + size > TREE_BUDGET) {
+        truncated = true;
+        break;
+      }
+      used += size;
+      nodes.push(entry);
+    }
+    return { nodes: nodes, from: from, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: truncated };
+  };
   let draftTokens = [];
   const setTokens = (tokens) => {
     const style = document.documentElement.style;
@@ -172,18 +346,80 @@ const GENERATED_FRAME_REPORTER = `(() => {
         node = command.step === 'first' || at < 0
           ? marked[0]
           : marked[Math.min(Math.max(at + step, 0), marked.length - 1)];
+      } else if (command.instancePath !== undefined) {
+        node = markedAt(command.elementId, command.instancePath);
       } else {
         const hit = document.elementFromPoint(command.x, command.y);
         node = hit && hit.closest('[' + MARKER + ']');
       }
-      select(node || null, command.properties, {}, command.sequence);
+      if (selected && node === selected.node) {
+        // The board keeps its draft for the element it already holds, so the
+        // guest keeps showing what that draft previews and only answers, with
+        // the properties the board asks for now.
+        selected.properties = command.properties;
+        commandSequence = command.sequence;
+        lastSelection = '';
+        reportSelection();
+      } else {
+        select(node || null, command.properties, {}, null, null, command.sequence);
+      }
+    } else if (command.command === 'hover') {
+      let node = null;
+      if (command.instancePath !== undefined) {
+        node = markedAt(command.elementId, command.instancePath);
+      } else {
+        const hit = document.elementFromPoint(command.x, command.y);
+        node = hit && hit.closest('[' + MARKER + ']');
+      }
+      const instancePath = node ? pathOf(node) : null;
+      post('hover', {
+        sequence: command.sequence,
+        element:
+          node && instancePath !== null
+            ? {
+                elementId: node.getAttribute(MARKER),
+                instancePath: instancePath,
+                rect: rectOf(node),
+                tagName: node.localName,
+                room: roomAround(node),
+              }
+            : null,
+      });
+    } else if (command.command === 'probe') {
+      post('probe', { sequence: command.sequence, element: probe(command) });
+    } else if (command.command === 'locate') {
+      const marked = Array.from(document.querySelectorAll('[' + MARKER + ']'));
+      const rects = command.elementIds.map((elementId) => {
+        const node = marked.find(
+          (each) => each.getAttribute(MARKER) === elementId && paintedBoxes(each).length > 0,
+        );
+        return node ? rectOf(node) : null;
+      });
+      post('locate', { sequence: command.sequence, rects: rects });
+    } else if (command.command === 'vector') {
+      post('vector', Object.assign({ sequence: command.sequence }, vector()));
+    } else if (command.command === 'shape') {
+      const node = markedAt(command.elementId, command.instancePath);
+      post('shape', { sequence: command.sequence, shape: shape(node) });
+    } else if (command.command === 'tree') {
+      post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {
       const target = command.target;
-      const node = target ? atPath(target.instancePath) : null;
-      const found = node && node.getAttribute(MARKER) === target.elementId ? node : null;
-      select(found, command.properties, target ? target.styles : {}, command.sequence);
+      select(
+        target ? markedAt(target.elementId, target.instancePath) : null,
+        command.properties,
+        target ? target.styles : {},
+        target ? target.text : null,
+        target ? target.d : null,
+        command.sequence,
+      );
     }
   });
 })();`;
 
-module.exports = { GENERATED_FRAME_REPORTER };
+module.exports = {
+  GENERATED_FRAME_REPORTER,
+  MAX_PREVIEW_SELECTION_BYTES,
+  MAX_PREVIEW_TREE_BYTES,
+  MAX_PREVIEW_TREE_NODES,
+};

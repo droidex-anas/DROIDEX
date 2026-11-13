@@ -1,9 +1,10 @@
 // One design's source, correlated by the Canvas client like any other request:
 // read an immutable revision, write a new one from the source drawer, and make
-// one direct edit to a selected element.
+// one direct edit to a selected element or a layer.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { EditElementInput, ElementEditResult } from './elementEditProtocol';
+import type { EditElementInput, ElementEdited } from './elementEditProtocol';
+import { readPathData } from './paths/pathData';
 import type { CanvasCommand, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 export class SourceRequests {
@@ -36,12 +37,15 @@ export class SourceRequests {
     return reply(event, 'written').receipt;
   }
 
-  /** A retry with the same mutation ID answers the first run's resolution. */
+  /** A retry with the same mutation ID answers the first run's receipt, without a landing. */
   async editElement(
     appSessionId: string,
     canvasId: string,
     input: EditElementInput,
-  ): Promise<ElementEditResult> {
+  ): Promise<ElementEdited> {
+    const { edit } = input;
+    if ('element' in edit && edit.change.kind === 'path' && !readPathData(edit.change.d, 'board'))
+      throw new Error('This path data does not read as SVG path data.');
     const event = await this.send({
       type: 'canvas.editElement',
       requestId: requestId(),
@@ -49,7 +53,7 @@ export class SourceRequests {
       canvasId,
       input,
     });
-    const { receipt, resolution } = reply(event, 'edited');
-    return { receipt, resolution };
+    const { receipt, landed } = reply(event, 'edited');
+    return { receipt, landed };
   }
 }

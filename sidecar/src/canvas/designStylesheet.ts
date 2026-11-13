@@ -20,6 +20,7 @@ import type { Config } from 'tailwindcss';
 import { canvasRuntime } from './canvasRuntime.js';
 import { hostKitFonts } from './canvasFontAssets.js';
 import { kitModes } from './designSystemDocument.js';
+import { KIT_THEME_FILE, kitTailwindTheme, readProjectTheme } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
 import type { CanvasDiagnostic } from './protocol.js';
 import type { SourceFiles } from './schema.js';
@@ -54,6 +55,18 @@ export async function buildDesignStylesheet(
 
   const refusals = sources.flatMap(([file, css]) => reviewCss(file, css));
   if (refusals.length > 0) return { ok: false, diagnostics: refusals };
+  const projectTheme = readProjectTheme(system.files);
+  if ('problem' in projectTheme)
+    return {
+      ok: false,
+      diagnostics: [
+        {
+          code: 'invalid_input',
+          message: projectTheme.problem,
+          file: `${KIT_SPECIFIER}/${KIT_THEME_FILE}`,
+        },
+      ],
+    };
 
   try {
     for (const source of sources) {
@@ -238,18 +251,40 @@ export function modeTokens(modes: ReturnType<typeof kitModes>): string {
     .join('\n');
 }
 
+/**
+ * The canvas's Tailwind setup independent of any kit: dark by data-mode. It is
+ * data, written into every export, so the one plugin, tailwindcss-animate, is
+ * added where Tailwind runs (`tailwindConfig` and the export's build script).
+ */
 export const CANVAS_TAILWIND_OPTIONS = {
   darkMode: ['selector', "[data-mode='dark']"],
   theme: {},
-  plugins: [],
-} satisfies Pick<Config, 'darkMode' | 'theme' | 'plugins'>;
+} satisfies Pick<Config, 'darkMode' | 'theme'>;
 
-function tailwindConfig(files: SourceFiles, system: Pick<DesignSystem, 'files'>): Config {
+/**
+ * A frame's Tailwind: the stock setup plus the pinned kit's tokens as theme
+ * classes (bg-surface, rounded-pill, text-display) and the project theme a
+ * library kit carries.
+ */
+export function canvasTailwindOptions(
+  system: Pick<DesignSystem, 'sections' | 'files'>,
+): Pick<Config, 'darkMode' | 'theme'> {
+  return {
+    ...CANVAS_TAILWIND_OPTIONS,
+    theme: { extend: kitTailwindTheme(system) },
+  };
+}
+
+function tailwindConfig(
+  files: SourceFiles,
+  system: Pick<DesignSystem, 'files' | 'sections'>,
+): Config {
   return {
     // Every design and kit file is scanned, so a class only appears when some
     // source literally spells it out; no partial class names are guessed.
     content: [...rawSources(system.files), ...rawSources(files)],
-    ...CANVAS_TAILWIND_OPTIONS,
+    ...canvasTailwindOptions(system),
+    plugins: [canvasRuntime().tailwindcssAnimate],
   };
 }
 
