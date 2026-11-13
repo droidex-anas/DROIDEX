@@ -14,10 +14,15 @@ const NO_FRAMES: readonly CanvasFrame[] = [];
 // canvas loads it up front, so the menu has it by the time `@` is typed.
 let loadedClient: CanvasClient | null = null;
 
-async function loadCanvasClient(): Promise<CanvasClient> {
-  const { canvasClient } = await import('../../features/canvas/canvasClient');
-  loadedClient = canvasClient;
-  return canvasClient;
+// A failed load leaves the menu without frames; the next subscription loads again.
+async function loadCanvasClient(): Promise<CanvasClient | null> {
+  try {
+    const { canvasClient } = await import('../../features/canvas/canvasClient');
+    loadedClient = canvasClient;
+    return canvasClient;
+  } catch {
+    return null;
+  }
 }
 
 export function useFrameMentions(
@@ -35,7 +40,7 @@ export function useFrameMentions(
       let unsubscribe: (() => void) | null = null;
       let closed = false;
       void loadCanvasClient().then((client) => {
-        if (closed) return;
+        if (closed || client === null) return;
         unsubscribe = client.subscribeCanvas(watched, listener);
         // React read the snapshot before the client loaded; a board it already holds shows now.
         listener();

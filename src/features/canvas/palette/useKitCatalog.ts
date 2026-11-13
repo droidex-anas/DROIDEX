@@ -34,10 +34,13 @@ export function useKitCatalog(kit: DesignSystemVersionRef | undefined) {
     }, SKELETON_DELAY_MS);
     // The composer's `@` reads catalogs too, so the client loads with the canvas code, not the entry.
     const read = async (): Promise<KitCatalog> => {
-      const [{ canvasClient }, { canvasMessage }] = await Promise.all([
-        import('../canvasClient'),
-        import('../client'),
-      ]);
+      let modules;
+      try {
+        modules = await Promise.all([import('../canvasClient'), import('../client')]);
+      } catch {
+        return { state: 'failed', message: 'The canvas code did not load.' };
+      }
+      const [{ canvasClient }, { canvasMessage }] = modules;
       try {
         const { name, catalog } = await canvasClient.designSystems.read({ id, version });
         catalogs.set(key, { kitName: name, entries: catalog });
