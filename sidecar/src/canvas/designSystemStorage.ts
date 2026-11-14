@@ -4,12 +4,13 @@
 // documents spec §3), one `<mutationId>.applied` receipt per delete, Undo or
 // proposal that ran, and the captures of each version's previews.
 
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { link, lstat, mkdir, open, readdir, rename, rm, unlink } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasDir } from '../droidexPaths.js';
+import type { KitCaptureItem } from './protocol.js';
 import { canvasIdentifierSchema, type DesignSystemRef } from './schema.js';
 
 const UNREADABLE = 'That design system version is not available.';
@@ -34,9 +35,16 @@ export function versionPath(id: string, version: number): string {
   return join(kitDirectory(id), `${String(version)}.json`);
 }
 
-/** Where one capture of a version's preview lives; `item` is `cover` or a preview target id. */
-export function capturePath(ref: DesignSystemRef, item: string): string {
+/**
+ * Where one capture of a version's preview or catalog entry lives. An entry's
+ * name may hold any character, so its file is named by the name's hash.
+ */
+export function capturePath(ref: DesignSystemRef, item: KitCaptureItem): string {
   const version = String(ref.version);
+  if (typeof item !== 'string') {
+    const file = createHash('sha256').update(item.entry).digest('hex').slice(0, 32);
+    return join(kitDirectory(ref.id), `${version}.catalog`, `${file}-${ref.mode}.png`);
+  }
   if (item === 'cover') return join(kitDirectory(ref.id), `${version}.cover-${ref.mode}.png`);
   return join(kitDirectory(ref.id), `${version}.previews`, `${item}-${ref.mode}.png`);
 }

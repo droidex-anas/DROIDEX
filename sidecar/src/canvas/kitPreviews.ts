@@ -6,14 +6,17 @@
 // checked through the same compiler and never kept.
 
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
-import { entryModule } from './catalogEntryModule.js';
 import { buildFailure } from './canvasBuildFailures.js';
 import { canvasError } from './canvasError.js';
-import { CompilerWorker, type KitPreviewCompileInput } from './compiler.js';
+import {
+  CompilerWorker,
+  type KitEntryCompileInput,
+  type KitPreviewCompileInput,
+} from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
-import { readKitCatalog, type KitFailure } from './kitCatalog.js';
+import { readKitCatalog, type CatalogEntry, type KitFailure, type PropPick } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemProposalRef,
@@ -39,20 +42,19 @@ interface Answer {
   kept: boolean;
 }
 
+type KitCompileInput = KitPreviewCompileInput | KitEntryCompileInput;
+
+/** What a read compiles from the kit version or proposal it reads. */
+type KitExample =
+  | Pick<KitPreviewCompileInput, 'kind' | 'example'>
+  | Pick<KitEntryCompileInput, 'kind' | 'entry' | 'picks'>;
+
 /** What one compiler request answered, or the diagnostics its failure reports. */
 type Attempt<T> =
   | { status: 'done'; value: T }
   | { status: 'failed'; diagnostics: CanvasDiagnostic[]; kept: boolean };
 
 const MAX_KEPT_PREVIEWS = 32;
-const ENTRY_STAGE = JSON.stringify({
-  display: 'flex',
-  minHeight: '100vh',
-  alignItems: 'center',
-  justifyContent: 'center',
-  padding: 32,
-  boxSizing: 'border-box',
-});
 const SHUTTING_DOWN = 'DROIDEX is shutting down.';
 // A side-effect import, which the TypeScript loader keeps, so the kit's entry is bundled.
 const KIT_ENTRY_CHECK = `import '@droidex/design-system';
@@ -81,14 +83,23 @@ export class KitPreviews {
 
   /** The preview `item` names in that kit version or proposal, in its mode. */
   read(ref: DesignSystemRef | DesignSystemProposalRef, item: string): Promise<KitPreview> {
-    return this.readExample(ref, [item], (system) => kitExample(system, item));
+    return this.readExample(ref, [item], (system) => ({
+      kind: 'kitPreview',
+      example: kitExample(system, item),
+    }));
   }
 
-  /** The catalog entry named `entry` in that saved kit version, alone on a page. */
-  readCatalogEntry(ref: DesignSystemRef, entry: string): Promise<KitPreview> {
-    return this.readExample(ref, ['catalog', entry], (system) =>
-      catalogEntryExample(system, entry),
-    );
+  /** The catalog entry named `entry` in that saved kit version, with `picks` written on it, alone on a page. */
+  readCatalogEntry(
+    ref: DesignSystemRef,
+    entry: string,
+    picks: readonly PropPick[],
+  ): Promise<KitPreview> {
+    return this.readExample(ref, ['catalog', entry, JSON.stringify(picks)], (system) => ({
+      kind: 'kitEntry',
+      entry: catalogEntryOf(system, entry),
+      picks,
+    }));
   }
 
   /**
@@ -146,7 +157,7 @@ export class KitPreviews {
   private async readExample(
     ref: DesignSystemRef | DesignSystemProposalRef,
     target: string[],
-    example: (system: DesignSystem) => string,
+    example: (system: DesignSystem) => KitExample,
   ): Promise<KitPreview> {
     this.refuseClosed();
     const source = 'proposalId' in ref ? ref.proposalId : ref.version;
@@ -164,7 +175,7 @@ export class KitPreviews {
   private start(
     key: string,
     ref: DesignSystemRef | DesignSystemProposalRef,
-    example: (system: DesignSystem) => string,
+    example: (system: DesignSystem) => KitExample,
   ): Promise<Answer> {
     const answer = this.compileExample(ref, example);
     this.pending.set(key, answer);
@@ -193,17 +204,17 @@ export class KitPreviews {
 
   private async compileExample(
     ref: DesignSystemRef | DesignSystemProposalRef,
-    example: (system: DesignSystem) => string,
+    example: (system: DesignSystem) => KitExample,
   ): Promise<Answer> {
     const system =
       'proposalId' in ref ? await readProposedSystem(ref) : await readDesignSystem(ref);
-    const source = example(system);
+    const read = example(system);
     this.refuseClosed();
     const kit = { files: system.files, sections: system.sections };
-    return this.compile({ kind: 'kitPreview', kit, mode: ref.mode, example: source });
+    return this.compile({ ...read, kit, mode: ref.mode });
   }
 
-  private async compile(input: KitPreviewCompileInput): Promise<Answer> {
+  private async compile(input: KitCompileInput): Promise<Answer> {
     const answer = await this.attempt((compiler, signal) => compiler.compile(input, signal));
     if (answer.status === 'failed')
       return {
@@ -260,14 +271,13 @@ export function kitExample(system: DesignSystem, item: string): string {
   return source;
 }
 
-/** A catalog entry as an example: its own module, centred on an otherwise empty page. */
-function catalogEntryExample(system: DesignSystem, name: string): string {
+/** The entry `name` of this version's catalog. */
+export function catalogEntryOf(system: DesignSystem, name: string): CatalogEntry {
   const read = readKitCatalog(system.files);
   const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
   if (entry === undefined)
     throw canvasError('invalid_input', 'That component is not in this design system version.');
-  // Inline styles, because a kit's Tailwind theme may not define the usual utilities.
-  return entryModule(entry, `<main style={${ENTRY_STAGE}}>\n${entry.jsx}\n</main>`);
+  return entry;
 }
 
 function exampleName(system: DesignSystem, item: string): string | undefined {

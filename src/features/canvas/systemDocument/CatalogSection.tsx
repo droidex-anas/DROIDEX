@@ -122,6 +122,7 @@ function EntryStage({
       kind: 'catalog',
       ref: { id: kit.id, version: kit.version, mode: kit.mode },
       entry: name,
+      props: [],
     }),
     [kit.id, kit.version, kit.mode, name],
   );

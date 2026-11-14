@@ -13,6 +13,7 @@ import type {
   DesignSystemVersionEntry,
   DesignSystemVersionRef,
   EditToken,
+  KitCaptureItem,
   KitFontFace,
   KitPreview,
   KitPreviewTarget,
@@ -185,8 +186,8 @@ export class DesignSystemRequests {
     return reply(event, 'kitPreview').preview;
   }
 
-  /** `png` is base64; it replaces any earlier capture of that preview and mode. */
-  async saveCapture(ref: DesignSystemRef, item: string, png: string): Promise<void> {
+  /** `png` is base64; it replaces any earlier capture of that item and mode. */
+  async saveCapture(ref: DesignSystemRef, item: KitCaptureItem, png: string): Promise<void> {
     const event = await this.send({
       type: 'canvas.saveKitCapture',
       requestId: requestId(),
@@ -197,8 +198,8 @@ export class DesignSystemRequests {
     reply(event, 'ok');
   }
 
-  /** The base64 PNG, or null before that preview first rendered live in that mode. */
-  async readCapture(ref: DesignSystemRef, item: string): Promise<string | null> {
+  /** The base64 PNG, or null before that item first rendered live in that mode. */
+  async readCapture(ref: DesignSystemRef, item: KitCaptureItem): Promise<string | null> {
     const event = await this.send({
       type: 'canvas.readKitCapture',
       requestId: requestId(),

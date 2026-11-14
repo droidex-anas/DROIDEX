@@ -9,6 +9,7 @@ import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
+import { entryModule } from './catalogEntryModule.js';
 import {
   DamagedRuntimeError,
   ownedCanvasRuntimeDir,
@@ -25,6 +26,7 @@ import {
   type CompilerResponse,
   type CompilerUnavailableReason,
   type EditedSource,
+  type KitEntryCompileInput,
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
@@ -46,7 +48,7 @@ import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
-import { insertLayer } from './sourceInsert.js';
+import { insertLayer, withPicks } from './sourceInsert.js';
 import { editLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
@@ -54,6 +56,14 @@ import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.
 import type { SourceFiles } from './schema.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
+const ENTRY_STAGE = JSON.stringify({
+  display: 'flex',
+  minHeight: '100vh',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 32,
+  boxSizing: 'border-box',
+});
 
 /**
  * Compiles one revision into a document the preview host can load in an
@@ -68,6 +78,8 @@ export async function compileDesign(
 ): Promise<CompiledDesign> {
   if (input.kind === 'kitPreview')
     return compileUnderKit({ [DESIGN_ENTRY]: input.example }, input.kit, input.mode, signal);
+  if (input.kind === 'kitEntry')
+    return compileUnderKit({ [DESIGN_ENTRY]: stagedEntry(input) }, input.kit, input.mode, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -158,6 +170,19 @@ async function compileUnderKit(
     elements: [],
     outline: { nodes: [], truncated: false },
   };
+}
+
+/** The entry's module, centred on an otherwise empty page, with the picks written on it. */
+function stagedEntry({ entry, picks }: Pick<KitEntryCompileInput, 'entry' | 'picks'>): string {
+  let jsx: string;
+  try {
+    jsx = withPicks(entry, picks);
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    throw new CompileFailedError([{ code: 'invalid_input', message: error.message }]);
+  }
+  // Inline styles, because a kit's Tailwind theme may not define the usual utilities.
+  return entryModule(entry, `<main style={${ENTRY_STAGE}}>\n${jsx}\n</main>`);
 }
 
 /** Why the kit's catalog is unusable, else each entry on its own, then all of them built under the kit. */

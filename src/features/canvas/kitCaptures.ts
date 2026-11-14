@@ -1,6 +1,7 @@
 // The pictures of a kit version's previews (design system documents spec §3,
-// §7): what a tile shows while it holds no live slot, and the cover a picker row
-// and the composer chip show, which for an image cover is drawn from the image.
+// §7): what a tile shows while it holds no live slot, the cover a picker row
+// and the composer chip show, which for an image cover is drawn from the image,
+// and the thumbnail of each catalog entry the Components tab lists.
 // The sidecar keeps them beside the version; this window reads each when it is
 // first shown and swaps in any capture it saves.
 
@@ -9,7 +10,7 @@ import { canvasClient } from './canvasClient';
 import { base64 } from './captureCanvasImage';
 import { KitCaptureCache } from './kitCaptureCache';
 import { KitCaptureReads } from './kitCaptureReads';
-import type { DesignSystemRef } from './protocol';
+import type { DesignSystemRef, KitCaptureItem } from './protocol';
 import type { PreviewMode } from './PreviewModeToggle';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './wireValidation';
 
@@ -23,7 +24,7 @@ const captures = new KitCaptureCache(32 * 1024 * 1024);
 const reads = new KitCaptureReads(8);
 const listeners = new Set<() => void>();
 
-function captureKey(ref: DesignSystemRef, item: string): string {
+function captureKey(ref: DesignSystemRef, item: KitCaptureItem): string {
   return JSON.stringify([ref.id, ref.version, ref.mode, item]);
 }
 
@@ -32,7 +33,7 @@ function show(key: string, png: string | null): void {
   for (const listener of listeners) listener();
 }
 
-function readCapture(key: string, ref: DesignSystemRef, item: string): Promise<void> {
+function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): Promise<void> {
   return canvasClient.designSystems.readCapture(ref, item).then(
     (png) => {
       if (!captures.has(key)) show(key, png);
@@ -53,11 +54,12 @@ function subscribe(listener: () => void): () => void {
 
 /**
  * The capture's URL: undefined while it is read, null when that item has not
- * been captured in that mode yet, or when `ref` is null.
+ * been captured in that mode yet, or when `ref` is null. An entry `item` must
+ * keep its identity across renders.
  */
 export function useKitCapture(
   ref: DesignSystemRef | null,
-  item: string,
+  item: KitCaptureItem,
 ): string | null | undefined {
   const key = ref === null ? null : captureKey(ref, item);
   const capture = useSyncExternalStore(subscribe, () => (key === null ? null : captures.get(key)));
@@ -79,7 +81,7 @@ export function useKitCapture(
 /** Keeps a live preview's pixels as that item's capture, at its own size in device pixels. */
 export async function keepKitCapture(
   ref: DesignSystemRef,
-  item: string,
+  item: KitCaptureItem,
   bytes: Uint8Array,
   widthPx: number,
 ): Promise<void> {

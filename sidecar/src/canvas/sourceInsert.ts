@@ -105,7 +105,7 @@ function landing(target: Layer, uses: ComponentUses, eol: string): Paste {
  * the tag name. A value the entry writes in code, or writes more than once,
  * is left alone and refused.
  */
-function withPicks(entry: CatalogEntry, picks: readonly PropPick[]): string {
+export function withPicks(entry: CatalogEntry, picks: readonly PropPick[]): string {
   if (picks.length === 0) return entry.jsx;
   const source = ts.createSourceFile(
     'entry.tsx',
