@@ -157,7 +157,8 @@ function EntryPreview({
       className="relative mt-2 w-full overflow-hidden rounded-lg bg-elevated"
       style={{ aspectRatio: `${String(STAGE.width)} / ${String(STAGE.height)}` }}
     >
-      <div ref={fitRef} className="absolute inset-0">
+      {/* A click inside the guest would focus its own page, where Escape, ⌘Enter and ⌘L never reach this detail. */}
+      <div ref={fitRef} className="pointer-events-none absolute inset-0">
         <span
           role="img"
           aria-label={`${entry} preview`}

@@ -34,7 +34,8 @@ export function EntryThumbnail({ kit, entry }: { kit: DesignSystemRef; entry: st
     <div
       ref={box}
       aria-hidden
-      className="relative h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-elevated"
+      // A click goes to the row, not into a live guest's page, so the list keeps the keyboard.
+      className="pointer-events-none relative h-10 w-16 shrink-0 overflow-hidden rounded-sm bg-elevated"
     >
       {capture ? (
         <img
