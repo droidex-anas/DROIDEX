@@ -99,7 +99,7 @@ export function KitPreviewTile({
               height={height}
               scale={scale}
               draftTokens={draftTokens}
-              wantsCapture={still === null && proposalId === null}
+              capture={still === null && proposalId === null ? item : null}
             />
           )}
         </div>

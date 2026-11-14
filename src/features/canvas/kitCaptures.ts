@@ -78,17 +78,25 @@ export function useKitCapture(
   return capture;
 }
 
-/** Keeps a live preview's pixels as that item's capture, at its own size in device pixels. */
+/** A catalog entry's capture is a Components row's thumbnail, which `h-10 w-16` draws at this size. */
+export const ENTRY_THUMBNAIL = { width: 64, height: 40 };
+// The room left around an entry, so its edge never touches the thumbnail's.
+const THUMBNAIL_INSET_PX = 4;
+// How far a channel may stray from the page's colour and still be page: antialiasing, not content.
+const PAGE_TOLERANCE = 6;
+
+/**
+ * Keeps a live preview's pixels as that item's capture: a preview at its own
+ * size in device pixels, a catalog entry as its row thumbnail.
+ */
 export async function keepKitCapture(
   ref: DesignSystemRef,
   item: KitCaptureItem,
   bytes: Uint8Array,
   widthPx: number,
 ): Promise<void> {
-  const scale = deviceScale();
-  let png = await scaledPng(bytes, Math.round(widthPx * scale));
-  // A capture too detailed for the limit at device scale is still worth keeping at CSS scale.
-  if (png === null && scale > 1) png = await scaledPng(bytes, widthPx);
+  const png =
+    typeof item === 'string' ? await previewPng(bytes, widthPx) : await thumbnailPng(bytes);
   if (png === null) return;
   await canvasClient.designSystems.saveCapture(ref, item, png);
   show(captureKey(ref, item), png);
@@ -120,6 +128,88 @@ export async function keepImageCoverCapture(
 
 function deviceScale(): number {
   return Math.min(MAX_CAPTURE_SCALE, Math.max(1, window.devicePixelRatio));
+}
+
+async function previewPng(bytes: Uint8Array, widthPx: number): Promise<string | null> {
+  const scale = deviceScale();
+  const png = await scaledPng(bytes, Math.round(widthPx * scale));
+  // A capture too detailed for the limit at device scale is still worth keeping at CSS scale.
+  if (png === null && scale > 1) return scaledPng(bytes, widthPx);
+  return png;
+}
+
+/**
+ * An entry's pixels cropped to what differs from its page's colour, then
+ * centred on that colour in the thumbnail, scaled down to fit and never up.
+ */
+async function thumbnailPng(bytes: Uint8Array): Promise<string | null> {
+  const bitmap = await createImageBitmap(new Blob([new Uint8Array(bytes)], { type: 'image/png' }));
+  try {
+    const source = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const sourceContext = source.getContext('2d', { willReadFrequently: true });
+    const scale = deviceScale();
+    const canvas = new OffscreenCanvas(
+      ENTRY_THUMBNAIL.width * scale,
+      ENTRY_THUMBNAIL.height * scale,
+    );
+    const context = canvas.getContext('2d');
+    if (!sourceContext || !context) return null;
+    sourceContext.drawImage(bitmap, 0, 0);
+    const pixels = sourceContext.getImageData(0, 0, bitmap.width, bitmap.height);
+    const [red, green, blue, alpha] = pixels.data;
+    context.fillStyle = `rgb(${String(red)} ${String(green)} ${String(blue)} / ${String(alpha / 255)})`;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const box = contentBox(pixels);
+    if (box !== null) {
+      const room = THUMBNAIL_INSET_PX * scale;
+      const fit = Math.min(
+        (canvas.width - 2 * room) / box.width,
+        (canvas.height - 2 * room) / box.height,
+        1,
+      );
+      const width = box.width * fit;
+      const height = box.height * fit;
+      context.drawImage(
+        source,
+        box.x,
+        box.y,
+        box.width,
+        box.height,
+        (canvas.width - width) / 2,
+        (canvas.height - height) / 2,
+        width,
+        height,
+      );
+    }
+    return await encodedPng(canvas);
+  } finally {
+    bitmap.close();
+  }
+}
+
+/** The smallest box holding every pixel unlike the top-left one, the page's; null on a blank page. */
+function contentBox({ data, width, height }: ImageData) {
+  let left = width;
+  let top = height;
+  let right = -1;
+  let bottom = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const at = (y * width + x) * 4;
+      const isPage =
+        Math.abs(data[at] - data[0]) <= PAGE_TOLERANCE &&
+        Math.abs(data[at + 1] - data[1]) <= PAGE_TOLERANCE &&
+        Math.abs(data[at + 2] - data[2]) <= PAGE_TOLERANCE &&
+        Math.abs(data[at + 3] - data[3]) <= PAGE_TOLERANCE;
+      if (isPage) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = y;
+    }
+  }
+  if (right < 0) return null;
+  return { x: left, y: top, width: right - left + 1, height: bottom - top + 1 };
 }
 
 /** The PNG at most `widthPx` pixels wide as base64, or null when it is over the sidecar's limit. */

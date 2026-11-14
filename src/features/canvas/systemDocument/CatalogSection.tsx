@@ -157,7 +157,7 @@ function EntryStage({
               height={STAGE_HEIGHT}
               scale={scale}
               draftTokens={draftTokens}
-              wantsCapture={false}
+              capture={null}
             />
           )}
         </div>

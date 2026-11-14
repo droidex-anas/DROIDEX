@@ -16,8 +16,9 @@ import { canvasMessage } from './client';
 import { keepKitCapture } from './kitCaptures';
 import { createGuestElement } from './previewGuestElement';
 import { startPreview, type PreviewRun } from './previewRuntime';
-import type { DesignSystemRef, KitPreviewTarget } from './protocol';
+import type { DesignSystemRef, KitCaptureItem, KitPreviewTarget } from './protocol';
 import { usePickedColor } from './systemDocument/pickedColor';
+import './kitGuest.css';
 
 /** Long enough after `ready` for the first paint to settle, as the board waits for its thumbnails. */
 const CAPTURE_DELAY_MS = 150;
@@ -33,7 +34,7 @@ type ArtifactRead =
 /**
  * The live guest, keyed by kit version or proposal, mode and target. Pointer
  * events reach it, so hover and press show the kit's states, but Tab never
- * enters it. Only a preview is captured.
+ * enters it.
  */
 export function KitGuest({
   kit,
@@ -42,7 +43,8 @@ export function KitGuest({
   height,
   scale,
   draftTokens,
-  wantsCapture,
+  capture,
+  onFailed,
 }: {
   /** The saved version: what a capture is kept for, and a draft's values change. */
   kit: DesignSystemRef;
@@ -52,8 +54,10 @@ export function KitGuest({
   height: number;
   scale: number;
   draftTokens: Readonly<Record<string, string>>;
-  /** The preview has no capture in this mode yet, so its first render becomes one. */
-  wantsCapture: boolean;
+  /** What its first render in this mode is kept as, or null when it is not kept. */
+  capture: KitCaptureItem | null;
+  /** Takes over a failed build, run or capture: the guest then shows no note of its own. */
+  onFailed?: () => void;
 }) {
   const { id, version, mode } = kit;
   const designId = target.kind === 'preview' ? target.item : target.entry;
@@ -68,8 +72,10 @@ export function KitGuest({
   }, [picked, draftTokens, id, mode]);
   const tokens = useRef(shownTokens);
   tokens.current = shownTokens;
-  const capturing = useRef(wantsCapture);
-  capturing.current = wantsCapture;
+  const capturing = useRef(capture);
+  capturing.current = capture;
+  const failed = useRef(onFailed);
+  failed.current = onFailed;
   const [read, setRead] = useState<ArtifactRead>({ status: 'loading' });
   const [phase, setPhase] = useState<'mounting' | 'ready' | 'lost'>('mounting');
   const html = read.status === 'ready' ? read.html : null;
@@ -79,15 +85,20 @@ export function KitGuest({
     canvasClient.designSystems.readPreview(target).then(
       (preview) => {
         if (!wanted) return;
-        if (preview.status === 'ready') setRead({ status: 'ready', html: preview.artifact.html });
-        else
-          setRead({
-            status: 'failed',
-            message: preview.diagnostics.at(0)?.message ?? 'This preview did not build.',
-          });
+        if (preview.status === 'ready') {
+          setRead({ status: 'ready', html: preview.artifact.html });
+          return;
+        }
+        setRead({
+          status: 'failed',
+          message: preview.diagnostics.at(0)?.message ?? 'This preview did not build.',
+        });
+        failed.current?.();
       },
       (error: unknown) => {
-        if (wanted) setRead({ status: 'failed', message: canvasMessage(error) });
+        if (!wanted) return;
+        setRead({ status: 'failed', message: canvasMessage(error) });
+        failed.current?.();
       },
     );
     return () => {
@@ -110,10 +121,10 @@ export function KitGuest({
     const isDrafted = () => Object.keys(tokens.current).length > 0;
 
     // A capture keeps the saved look, so a guest showing draft values is not taken.
-    const capture = () => {
+    const takeCapture = () => {
       captureTimer = null;
-      if (target.kind !== 'preview' || !capturing.current || isDrafted()) return;
-      const { item } = target;
+      const item = capturing.current;
+      if (item === null || isDrafted()) return;
       const requestId = crypto.randomUUID();
       captureId = requestId;
       captureCanvasPreview({
@@ -130,11 +141,17 @@ export function KitGuest({
       })
         .then((result) => {
           captureId = null;
-          if (!result.ok || isDrafted()) return;
+          if (!mounted) return;
+          if (!result.ok) {
+            failed.current?.();
+            return;
+          }
+          if (isDrafted()) return;
           return keepKitCapture({ id, version, mode }, item, result.bytes, width);
         })
         .catch((error: unknown) => {
           console.error('A design system preview could not be captured:', error);
+          if (mounted) failed.current?.();
         });
     };
 
@@ -151,6 +168,7 @@ export function KitGuest({
       if (!mounted) return;
       if (!bound) {
         setPhase('lost');
+        failed.current?.();
         void terminateCanvasPreviewGuest(guestId);
         return;
       }
@@ -166,7 +184,7 @@ export function KitGuest({
             runRef.current = run;
             if (isDrafted()) run?.setTokens(tokens.current);
             setPhase('ready');
-            captureTimer = setTimeout(capture, CAPTURE_DELAY_MS);
+            captureTimer = setTimeout(takeCapture, CAPTURE_DELAY_MS);
           },
           onResize: () => undefined,
           onDiagnostics: () => undefined,
@@ -175,6 +193,7 @@ export function KitGuest({
             runRef.current = null;
             if (captureTimer) clearTimeout(captureTimer);
             setPhase('lost');
+            failed.current?.();
           },
         },
       });
@@ -220,7 +239,7 @@ export function KitGuest({
       />
       {/* Outside the image and the hidden guest, so assistive tech reads why it failed. */}
       <div role="status" className="absolute inset-x-2 bottom-2">
-        {note !== null && (
+        {note !== null && !onFailed && (
           <p className="line-clamp-2 rounded-md bg-raised px-2 py-1 text-caption text-secondary shadow-sm">
             {note}
           </p>

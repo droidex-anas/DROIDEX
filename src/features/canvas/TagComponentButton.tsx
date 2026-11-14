@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { cn } from '../../components/ui/cn';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { useComponentPins, type ComponentPin } from './componentPins';
-import { componentTag, toggleComponentPin } from './componentTagging';
+import { componentTag, TAG_TOOLTIPS, toggleComponentPin } from './componentTagging';
 
 export function TagComponentButton({
   appSessionId,
@@ -28,11 +28,7 @@ export function TagComponentButton({
   className?: string;
 }) {
   const tag = componentTag(useComponentPins(appSessionId), pin);
-  const tooltip = {
-    tagged: 'Tagged in chat. Untag',
-    'other-options': 'Tagged with other options. Tag these',
-    untagged: 'Tag in chat',
-  }[tag];
+  const tooltip = TAG_TOOLTIPS[tag];
   return (
     <Tooltip label={shortcut ? `${tooltip}  ${shortcut}` : tooltip} className={className}>
       <Button
