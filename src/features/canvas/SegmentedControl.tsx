@@ -139,7 +139,7 @@ export function MoreSegments({
   const chosen = options.find((option) => option.value === value);
   return (
     <>
-      <Tooltip label={chosen?.label ?? label} className="shrink-0">
+      <Tooltip label={chosen?.label ?? label} className="min-w-7 shrink-0">
         <button
           ref={anchor}
           type="button"
