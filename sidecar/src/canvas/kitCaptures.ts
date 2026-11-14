@@ -1,6 +1,6 @@
-// The pictures of a kit version's previews: its cover and each preview, per
-// mode, captured by the document from a live preview or, for an image cover,
-// drawn from that image. They are pixels of immutable source, so they sit
+// The pictures of a kit version's previews: its cover, each preview and each
+// catalog entry, per mode, captured from a live preview or, for an image
+// cover, drawn from that image. They are pixels of immutable source, so they sit
 // beside the version rather than in it, and a later capture replaces one
 // (design system documents spec §3). The same atomic write as a canvas cover,
 // with room for device pixels at the cover's full size.
@@ -13,9 +13,9 @@ import { imageMediaType } from './canvasAssets.js';
 import { canvasError, storageFailure } from './canvasError.js';
 import { capturePath, isMissing, refuseLinkedPath } from './designSystemStorage.js';
 import { readDesignSystem } from './designSystems.js';
-import { kitExample } from './kitPreviews.js';
+import { catalogEntryOf, kitExample } from './kitPreviews.js';
 import { bundledKitCapture } from './presets/droidexKit.js';
-import type { DesignSystemRef } from './protocol.js';
+import type { DesignSystemRef, KitCaptureItem } from './protocol.js';
 
 // A 1200 × 480 cover at 2x is 2400 × 960 pixels; a busy one needs more than a canvas cover's 512 KiB.
 const MAX_KIT_CAPTURE_BYTES = 2 * 1024 * 1024;
@@ -25,15 +25,16 @@ const NOT_PNG = 'A preview capture must be a PNG.';
 const SAVE_RECOVERY = 'The preview capture could not be saved.';
 const READ_RECOVERY = 'The preview capture could not be read.';
 
-/** Keeps a capture of a preview that version has; `item` names it as `readKitPreview` does. */
+/** Keeps a capture of a preview or catalog entry that version has. */
 export async function saveKitCapture(
   ref: DesignSystemRef,
-  item: string,
+  item: KitCaptureItem,
   png: Buffer,
 ): Promise<void> {
   if (imageMediaType(png) !== 'image/png') throw canvasError('invalid_input', NOT_PNG);
   const system = await readDesignSystem(ref);
-  if (item !== 'cover' || system.cover?.kind !== 'image') kitExample(system, item);
+  if (typeof item !== 'string') catalogEntryOf(system, item.entry);
+  else if (item !== 'cover' || system.cover?.kind !== 'image') kitExample(system, item);
   const target = capturePath(ref, item);
   // An orphaned `.tmp` costs only its bytes: nothing reads a name it did not ask for.
   const temporary = `${target}.${randomUUID()}.tmp`;
@@ -58,10 +59,13 @@ export async function saveKitCapture(
   }
 }
 
-/** The capture, or null when that preview has not rendered live in that mode yet. */
-export async function readKitCapture(ref: DesignSystemRef, item: string): Promise<Buffer | null> {
+/** The capture, or null when that preview or entry has not rendered live in that mode yet. */
+export async function readKitCapture(
+  ref: DesignSystemRef,
+  item: KitCaptureItem,
+): Promise<Buffer | null> {
   // A preset's shipped capture comes first; one taken in this profile fills a mode it ships none for.
-  const bundled = await bundledKitCapture(ref, item);
+  const bundled = typeof item === 'string' ? await bundledKitCapture(ref, item) : null;
   if (bundled) return bundled;
   const target = capturePath(ref, item);
   try {

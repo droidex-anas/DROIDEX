@@ -94,9 +94,21 @@ test('a kit preview names a preview by id or a saved catalog entry by name, and 
   const proposal = { id: 'droidex', proposalId: 'proposal-one', mode: 'light' } as const;
   const cases: [string, object, RegExp][] = [
     ['no-preview', { kind: 'preview', ref, item: 'no-such-preview' }, /That preview is not/],
-    ['no-entry', { kind: 'catalog', ref, entry: 'No such entry' }, /That component is not/],
-    ['both', { kind: 'catalog', ref, entry: 'Icon button', item: 'cover' }, /Unrecognized key/],
-    ['proposed-entry', { kind: 'catalog', ref: proposal, entry: 'Icon button' }, /Required/],
+    [
+      'no-entry',
+      { kind: 'catalog', ref, entry: 'No such entry', props: [] },
+      /That component is not/,
+    ],
+    [
+      'both',
+      { kind: 'catalog', ref, entry: 'Icon button', props: [], item: 'cover' },
+      /Unrecognized key/,
+    ],
+    [
+      'proposed-entry',
+      { kind: 'catalog', ref: proposal, entry: 'Icon button', props: [] },
+      /Required/,
+    ],
     ['bare', { ref, item: 'cover' }, /./],
   ];
   for (const [requestId, target, message] of cases) {

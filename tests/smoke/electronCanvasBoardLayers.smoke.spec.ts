@@ -104,6 +104,18 @@ test('Layers picks, lights and renames frames, and hands the keyboard to the boa
   await tool.click();
   await expect(row('Design X297')).toBeVisible();
   expect(await frameA.boundingBox()).toEqual(opened);
+  // Its Components tool shows the other tab in the same panel, and back.
+  const components = page.getByRole('button', { name: 'Components', exact: true });
+  await components.click();
+  await expect(page.getByRole('tab', { name: 'Components' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(components).toHaveAttribute('aria-expanded', 'true');
+  await expect(tool).toHaveAttribute('aria-expanded', 'false');
+  expect(await frameA.boundingBox()).toEqual(opened);
+  await tool.click();
+  await expect(row('Design X297')).toBeVisible();
 
   // ⌥1 closes it from inside, handing the keyboard to the row's frame.
   await tree.focus();

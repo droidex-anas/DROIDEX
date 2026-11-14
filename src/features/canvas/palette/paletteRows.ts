@@ -39,7 +39,7 @@ function matchRank(entry: CatalogListing, needle: string): number | null {
   return elsewhere ? 3 : null;
 }
 
-/** The options a row's variant menu has picked, by prop name. */
+/** The options an entry's detail has picked, by prop name. */
 export type ChosenProps = Readonly<Partial<Record<string, string>>>;
 
 /**

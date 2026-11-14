@@ -17,7 +17,7 @@ import { canvasError, storageFailure } from './canvasError.js';
 import type { ModuleDeclarations } from './compilerModules.js';
 import { compilerResponse } from './compilerResponse.js';
 import type { DesignSystem } from './designSystems.js';
-import type { KitFailure } from './kitCatalog.js';
+import type { CatalogEntry, KitFailure, PropPick } from './kitCatalog.js';
 import type {
   CanvasDiagnostic,
   DesignSystemAdherence,
@@ -50,7 +50,16 @@ export interface KitPreviewCompileInput {
   example: string;
 }
 
-export type CompileInput = DesignCompileInput | KitPreviewCompileInput;
+/** One entry of a saved kit's catalog alone on a page, with the options picked for its props written on it. */
+export interface KitEntryCompileInput {
+  kind: 'kitEntry';
+  kit: KitPreviewCompileInput['kit'];
+  mode: DesignSystemRef['mode'];
+  entry: CatalogEntry;
+  picks: readonly PropPick[];
+}
+
+export type CompileInput = DesignCompileInput | KitPreviewCompileInput | KitEntryCompileInput;
 
 export interface CompiledDesign {
   /** sha256 of `html`, so identical input names one artifact. */

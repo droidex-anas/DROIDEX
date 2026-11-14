@@ -411,12 +411,7 @@ export function CanvasBoardMount({
         ) : (
           <CanvasBoard
             ref={boardRef}
-            layers={{
-              open: layersOpen && sideTab === 'layers',
-              onToggle: () => {
-                showSide('layers');
-              },
-            }}
+            side={{ shown: layersOpen ? sideTab : null, onToggle: showSide }}
             snapshot={snapshot}
             restoredViewport={restoredViewport}
             onLeave={onLeaveBoard}

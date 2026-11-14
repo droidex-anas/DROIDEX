@@ -17,6 +17,13 @@ export const TaggingChat = createContext<string | null>(null);
 /** How the chat's next prompt holds an entry: with these options, with others, or not at all. */
 export type ComponentTag = 'tagged' | 'other-options' | 'untagged';
 
+/** What a Tag in chat toggle does next, for its tooltip wherever it shows. */
+export const TAG_TOOLTIPS: Record<ComponentTag, string> = {
+  tagged: 'Tagged in chat. Untag',
+  'other-options': 'Tagged with other options. Tag these',
+  untagged: 'Tag in chat',
+};
+
 export function componentTag(pins: readonly ComponentPin[], pin: ComponentPin): ComponentTag {
   const key = componentPinKey(pin);
   const held = pins.find((each) => componentPinKey(each) === key);

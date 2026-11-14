@@ -978,6 +978,7 @@ function Harness() {
             {sideTab === 'components' ? (
               <ComponentsPanel
                 kit={undefined}
+                chatId={null}
                 place={palette.place}
                 onAdd={palette.add}
                 onLeave={() => {
@@ -1023,13 +1024,13 @@ function Harness() {
         )}
         <CanvasBoard
           ref={board}
-          layers={
+          side={
             params.has('layers')
               ? {
-                  open: layersOpen && sideTab === 'layers',
-                  onToggle: () => {
-                    setLayersOpen(!layersOpen || sideTab !== 'layers');
-                    setSideTab('layers');
+                  shown: layersOpen ? sideTab : null,
+                  onToggle: (tab) => {
+                    setLayersOpen(!layersOpen || sideTab !== tab);
+                    setSideTab(tab);
                   },
                 }
               : undefined
