@@ -130,7 +130,7 @@ export const SAMPLE_KIT: DesignSystem = {
 };
 
 /** A catalog entry with a prop to pick, whose second option no shipped kit writes. */
-export const SAMPLE_BUTTON_ENTRY: CatalogEntry = {
+const SAMPLE_BUTTON_ENTRY: CatalogEntry = {
   name: 'Button',
   module: 'index.tsx',
   uses: ['Button'],
