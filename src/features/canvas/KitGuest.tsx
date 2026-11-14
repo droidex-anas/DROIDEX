@@ -60,7 +60,9 @@ export function KitGuest({
   onFailed?: () => void;
 }) {
   const { id, version, mode } = kit;
-  const designId = target.kind === 'preview' ? target.item : target.entry;
+  // Main takes only identifiers for a guest's design, and an entry's name may hold spaces.
+  const designId =
+    target.kind === 'preview' ? target.item : `entry-${target.entry.replace(/[^\w-]/g, '-')}`;
   const host = useRef<HTMLDivElement>(null);
   const runRef = useRef<PreviewRun | null>(null);
   // A colour being chosen in the document shows live, like a draft value does.

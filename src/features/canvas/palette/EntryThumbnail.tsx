@@ -14,15 +14,18 @@ const STAGE = { width: 480, height: 300 };
 // Each live thumbnail is a guest process, so a long catalog fills in a few at a time.
 const LIVE_SLOTS = 2;
 const NO_TOKENS: Readonly<Record<string, string>> = {};
+// Entries whose live thumbnail failed in this kit version and mode, so a list shown again does not retry them.
+const failedEntries = new Set<string>();
 
 export function EntryThumbnail({ kit, entry }: { kit: DesignSystemRef; entry: string }) {
   const box = useRef<HTMLDivElement>(null);
   const view = useView(box);
   const item = useMemo(() => ({ entry }), [entry]);
   const capture = useKitCapture(view.seen ? kit : null, item);
-  const [failed, setFailed] = useState(false);
-  const isLive = useLiveSlot(view.visible && capture === null && !failed);
   const { id, version, mode } = kit;
+  const failedKey = `${id}:${String(version)}:${mode}:${entry}`;
+  const [failed, setFailed] = useState(() => failedEntries.has(failedKey));
+  const isLive = useLiveSlot(view.visible && capture === null && !failed);
   const target = useMemo(
     (): KitPreviewTarget => ({ kind: 'catalog', ref: { id, version, mode }, entry, props: [] }),
     [id, version, mode, entry],
@@ -51,6 +54,7 @@ export function EntryThumbnail({ kit, entry }: { kit: DesignSystemRef; entry: st
             draftTokens={NO_TOKENS}
             capture={item}
             onFailed={() => {
+              failedEntries.add(failedKey);
               setFailed(true);
             }}
           />

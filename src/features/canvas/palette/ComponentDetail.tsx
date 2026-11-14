@@ -22,8 +22,8 @@ import type { PalettePlace } from './useComponentInsert';
 
 // The entry's page, scaled down to the tab's width.
 const STAGE = { width: 400, height: 250 };
-// A prop with more options than this shows the first few and a menu of the rest.
-const MAX_SEGMENTS = 4;
+// A prop with more options than this shows the first few and a menu of the rest; more words would not fit the tab's width.
+const MAX_SEGMENTS = 3;
 const NO_TOKENS: Readonly<Record<string, string>> = {};
 
 export function ComponentDetail({
