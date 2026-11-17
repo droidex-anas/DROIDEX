@@ -682,10 +682,12 @@ kit exports and lucide-react icons the entry names into that file once, refused 
 binds one of those names itself, with each prop picked in the row's variant menu written on the
 entry's first element that uses a kit component (refused where the entry writes that prop in
 code). The board's Components tab beside Layers sends it, then keeps the add only where the
-frame shows it: the preview guest keys every element it draws before the add and again once
-the new revision draws, and is asked whether the run the add drew shows, unclipped and
-uncovered. An add it does not show, or cannot measure, is switched back to the revision it was
-made on before it becomes an undo step, and the tab says why. The reply
+frame shows it: the preview build marks each element and component usage an outline row is
+written at with the row's node id (`data-droidex-layer`), and once the new revision draws, the
+preview guest is asked whether what the reply's landed row drew (the outermost elements under
+it in React's tree) shows, unclipped and uncovered. The add is an undo step from the moment it
+lands; one the frame does not show, or that the guest cannot read, is switched back to the
+revision it was made on and loses exactly that step, and the tab says why. The reply
 names the row the edit lands on in the new revision (the moved layer, the copy, the added
 element, or the row beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
 token with that value and stays raw only when the kit has none. What a style edit writes is
