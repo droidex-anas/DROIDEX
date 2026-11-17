@@ -16,6 +16,12 @@ export interface Site {
   source: ts.SourceFile;
 }
 const MARKER = 'data-droidex-element';
+/**
+ * Every JSX usage an outline row is written at, a component's too, carries the
+ * id of the first row written there as a prop, so the preview can tell which
+ * elements that usage drew even where a component draws them.
+ */
+const LAYER_MARKER = 'data-droidex-layer';
 
 /** IDs describe a canonical revision, never the derived instrumented text. */
 export function instrumentSource(
@@ -25,20 +31,30 @@ export function instrumentSource(
   const program = parseProgram(files);
   const uses = componentUses(program);
   const sites = programSites(program, uses, files, revisionId);
+  const written = new Map<string, ts.Node>();
+  const outline = sourceOutline(program, uses, sites, written);
+  const marks = new Map<ElementNode, string>();
+  const mark = (node: ElementNode, text: string) => marks.set(node, (marks.get(node) ?? '') + text);
+  for (const { node, element } of sites) mark(node, ` ${MARKER}="${element.elementId}"`);
+  const layered = new Set<ts.Node>();
+  for (const { nodeId } of outline.nodes) {
+    const node = written.get(nodeId);
+    if (!node || layered.has(node)) continue;
+    if (!ts.isJsxElement(node) && !ts.isJsxSelfClosingElement(node)) continue;
+    layered.add(node);
+    mark(node, ` ${LAYER_MARKER}="${nodeId}"`);
+  }
   const derived: SourceFiles = { ...files };
-  const byFile = new Map<ts.SourceFile, Site[]>();
-  for (const site of sites) {
-    const list = byFile.get(site.source) ?? [];
-    list.push(site);
-    byFile.set(site.source, list);
+  const byFile = new Map<ts.SourceFile, { at: number; text: string }[]>();
+  for (const [node, text] of marks) {
+    const source = node.getSourceFile();
+    const opening = ts.isJsxElement(node) ? node.openingElement : node;
+    const list = byFile.get(source) ?? [];
+    list.push({ at: opening.attributes.end, text });
+    byFile.set(source, list);
   }
   for (const [source, entries] of byFile) {
-    const inserts = entries
-      .map(({ node, element }) => {
-        const opening = ts.isJsxElement(node) ? node.openingElement : node;
-        return { at: opening.attributes.end, text: ` ${MARKER}="${element.elementId}"` };
-      })
-      .sort((a, b) => a.at - b.at);
+    const inserts = entries.sort((a, b) => a.at - b.at);
     let text = '';
     let offset = 0;
     for (const insert of inserts) {
@@ -48,11 +64,7 @@ export function instrumentSource(
     text += source.text.slice(offset);
     derived[source.fileName] = text + inlineSourceMap(source, inserts);
   }
-  return {
-    files: derived,
-    elements: sites.map((site) => site.element),
-    outline: sourceOutline(program, uses, sites),
-  };
+  return { files: derived, elements: sites.map((site) => site.element), outline };
 }
 
 /** The outline of a set of files with the node each row is written at; row ids do not depend on a revision. */
