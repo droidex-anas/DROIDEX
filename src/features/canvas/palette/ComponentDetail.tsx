@@ -55,6 +55,11 @@ export function ComponentDetail({
   useEffect(() => {
     section.current?.focus();
   }, []);
+  // Add to board turns off while it adds, which would drop the keyboard to the page from it.
+  const add = () => {
+    section.current?.focus();
+    onAdd();
+  };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === 'Escape' && !event.defaultPrevented) {
       event.preventDefault();
@@ -62,7 +67,7 @@ export function ComponentDetail({
       onBack();
     } else if (isAddKey(event)) {
       event.preventDefault();
-      if (place.canAdd && !event.repeat) onAdd();
+      if (place.canAdd && !event.repeat) add();
     } else if (isTagKey(event) && tagging) {
       event.preventDefault();
       event.stopPropagation();
@@ -118,11 +123,7 @@ export function ComponentDetail({
             className="w-full"
             disabled={!place.canAdd}
             aria-describedby={hintId}
-            onClick={() => {
-              // The button turns off while it adds, which would drop the keyboard to the page.
-              section.current?.focus();
-              onAdd();
-            }}
+            onClick={add}
           >
             Add to board
           </Button>
