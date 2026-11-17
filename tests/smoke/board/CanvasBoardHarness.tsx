@@ -9,7 +9,6 @@ import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChang
 import {
   BoardHistory,
   recordPlacements,
-  recordWithTakeBack,
   revisionEntry,
 } from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
@@ -626,12 +625,10 @@ function Harness() {
   const [runs] = useState(() => new PreviewRuns());
   const shownFrames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot]);
   // `?paths=1` makes each edit a step of the board's history, as the mount does.
-  const recordEdit = ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
+  const editEntry = ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
     const frame = shown.current.frames.find((each) => each.designId === designId);
     if (!params.has('paths') || !frame) return null;
-    const design = { designId, name: frame.name };
-    const entry = revisionEntry(askSwitch, design, revisionId, made);
-    return recordWithTakeBack(history, shown.current.canvasId, entry);
+    return revisionEntry(askSwitch, { designId, name: frame.name }, revisionId, made);
   };
   const editor = useElementEditor({
     canvasId: snapshot.canvasId,
@@ -644,11 +641,10 @@ function Harness() {
       const edited = await new Promise<ElementEdited>((resolve, reject) =>
         editReplies.push({ resolve, reject }),
       );
-      if (input.edit.change.kind !== 'insert')
-        recordEdit(
-          'element' in input.edit ? input.edit.element : input.edit.layer,
-          edited.receipt.revisionId,
-        );
+      const at = 'element' in input.edit ? input.edit.element : input.edit.layer;
+      const entry =
+        input.edit.change.kind === 'insert' ? null : editEntry(at, edited.receipt.revisionId);
+      if (entry) history.record(shown.current.canvasId, entry);
       return edited;
     },
   });
@@ -665,7 +661,13 @@ function Harness() {
     elements,
     presence,
     onEditLayer: editLayer,
-    steps: { record: recordEdit, holding: (add) => history.recording(snapshot.canvasId, add) },
+    steps: {
+      record: (layer, made) => {
+        const entry = editEntry(layer, made);
+        return entry && history.hold(shown.current.canvasId, entry);
+      },
+      holding: (add) => history.recording(snapshot.canvasId, add),
+    },
     holdReveal: () => board.current?.holdReveal(),
   });
   if (params.has('project')) projectExport.open = setExporting;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
-import { BoardHistory, recordPlacements, recordWithTakeBack, revisionEntry } from './boardHistory';
+import { BoardHistory, recordPlacements, revisionEntry } from './boardHistory';
 import { CanvasRequestError } from './client';
 import type { ArrangeFramesInput, CanvasFrame, SwitchRevisionInput } from './protocol';
 
@@ -130,45 +130,54 @@ test('a step recorded while a press runs stays on top of it, and a refused press
   assert.deepEqual(moves()[1], ['hero', 'h2', 'h3']);
 });
 
-test('an add taken back drops exactly its step; one that cannot be keeps its place under later edits', async () => {
+test('an add that cannot be taken back keeps its place under the edits made after it', async () => {
   // The add lands, the user edits the same frame, and the add can no longer be taken back.
-  const kept = fakeBoard();
-  const takeBack = recordWithTakeBack(
-    kept.history,
-    'cv',
-    revisionEntry(kept.switchRevision, hero, 'h1', 'h2'),
-  );
-  kept.edit(hero, 'h2', 'h3');
-  const taking = takeBack();
-  kept.switches[0].reject(new CanvasRequestError('revision_conflict', 'The head moved.'));
+  const { history, switchRevision, switches, edit, moves } = fakeBoard();
+  const added = history.hold('cv', revisionEntry(switchRevision, hero, 'h1', 'h2'));
+  edit(hero, 'h2', 'h3');
+  const taking = added.takeBack();
+  switches[0].reject(new CanvasRequestError('revision_conflict', 'The head moved.'));
   assert.equal(await taking, false);
   for (const index of [1, 2]) {
-    assert.equal(kept.history.undo('cv'), true);
-    kept.switches[index].resolve(undefined);
+    assert.equal(history.undo('cv'), true);
+    switches[index].resolve(undefined);
     await settle();
   }
-  assert.deepEqual(kept.moves().slice(1), [
+  assert.deepEqual(moves().slice(1), [
     ['hero', 'h2', 'h3'],
     ['hero', 'h1', 'h2'],
   ]);
-  assert.equal(kept.history.undo('cv'), false);
+  assert.equal(history.undo('cv'), false);
+});
 
-  // An add taken back as soon as it lands leaves Redo as it found it.
+test('two adds taken back leave Undo and Redo exactly as they found them', async () => {
+  // A full history, 100 steps after the oldest was pushed out, with the newest undone.
   const { history, switchRevision, switches, edit, moves } = fakeBoard();
-  edit(card, 'c1', 'c2');
+  for (let step = 1; step <= 101; step += 1) edit(card, `c${String(step)}`, `c${String(step + 1)}`);
   history.undo('cv');
   switches[0].resolve(undefined);
   await settle();
-  const withdrawn = recordWithTakeBack(
-    history,
-    'cv',
-    revisionEntry(switchRevision, hero, 'h1', 'h2'),
-  )();
-  switches[1].resolve(undefined);
-  assert.equal(await withdrawn, true);
-  assert.equal(history.undo('cv'), false);
+  // Two adds to other frames await their verdicts at once; the older is refused first.
+  const logo = { designId: 'logo', name: 'Logo' };
+  const first = history.hold('cv', revisionEntry(switchRevision, hero, 'h1', 'h2'));
+  const second = history.hold('cv', revisionEntry(switchRevision, logo, 'l1', 'l2'));
+  for (const [index, add] of [first, second].entries()) {
+    const taking = add.takeBack();
+    switches[index + 1].resolve(undefined);
+    assert.equal(await taking, true);
+  }
   assert.equal(history.redo('cv'), true);
-  assert.deepEqual(moves()[2], ['card', 'c2', 'c1']);
+  switches[3].resolve(undefined);
+  await settle();
+  assert.deepEqual(moves()[3], ['card', 'c102', 'c101']);
+  let undone = 0;
+  while (history.undo('cv')) {
+    switches.at(-1)?.resolve(undefined);
+    await settle();
+    undone += 1;
+  }
+  assert.equal(undone, 100);
+  assert.deepEqual(moves().at(-1), ['card', 'c2', 'c3']);
 });
 
 test('a deleted canvas runs none of the presses still waiting', async () => {

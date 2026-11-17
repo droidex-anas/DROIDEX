@@ -20,12 +20,7 @@ import { toast } from '../../lib/toast';
 import { isBoardEditor, sidePanelKey, type SidePanelTab } from './boardKeys';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import {
-  recordPlacements,
-  recordWithTakeBack,
-  revisionEntry,
-  type HistoryStep,
-} from './boardHistory';
+import { recordPlacements, revisionEntry, type HistoryStep } from './boardHistory';
 import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
@@ -143,28 +138,25 @@ export function CanvasBoardMount({
     [appSessionId, canvasId],
   );
   // Each edit that made a revision is a step in the board's history.
-  const recordEdit = useCallback(
+  const editEntry = useCallback(
     ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
       const frame = frames.find((each) => each.designId === designId);
       if (!frame || made === revisionId) return null;
-      const design = { designId, name: frame.name };
-      const entry = revisionEntry(switchRevision, design, revisionId, made);
-      return recordWithTakeBack(boardHistory, canvasId, entry);
+      return revisionEntry(switchRevision, { designId, name: frame.name }, revisionId, made);
     },
-    [canvasId, frames, switchRevision],
+    [frames, switchRevision],
   );
   const editElement = useCallback(
     async (input: EditElementInput) => {
       const edited = await canvas.source.editElement(appSessionId, canvasId, input);
-      // The Components tab records its adds, so it can take exactly that step back.
-      if (input.edit.change.kind !== 'insert')
-        recordEdit(
-          'element' in input.edit ? input.edit.element : input.edit.layer,
-          edited.receipt.revisionId,
-        );
+      // The Components tab holds its adds, so it can take exactly that step back.
+      const at = 'element' in input.edit ? input.edit.element : input.edit.layer;
+      const entry =
+        input.edit.change.kind === 'insert' ? null : editEntry(at, edited.receipt.revisionId);
+      if (entry) boardHistory.record(canvasId, entry);
       return edited;
     },
-    [appSessionId, canvasId, recordEdit],
+    [appSessionId, canvasId, editEntry],
   );
   const renderPreview = useCallback(
     (frame: CanvasFrame, revisionId: string, selections: PreviewSelections) => (
@@ -269,7 +261,13 @@ export function CanvasBoardMount({
     elements,
     presence,
     onEditLayer: layerEdits,
-    steps: { record: recordEdit, holding: (add) => boardHistory.recording(canvasId, add) },
+    steps: {
+      record: (layer, made) => {
+        const entry = editEntry(layer, made);
+        return entry && boardHistory.hold(canvasId, entry);
+      },
+      holding: (add) => boardHistory.recording(canvasId, add),
+    },
     holdReveal: () => boardRef.current?.holdReveal(),
   });
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');

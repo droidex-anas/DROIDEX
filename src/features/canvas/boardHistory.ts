@@ -45,32 +45,60 @@ interface Line {
   pressed: HistoryStep[];
   /** Writes on their way whose steps are recorded when they land. */
   writing: number;
+  /** Steps in `done` whose change may still be taken back; see `hold`. */
+  held: Set<HistoryEntry>;
+}
+
+/** A held step: kept once its change stays, or taken back with its change. */
+export interface HeldStep {
+  keep: () => void;
+  /**
+   * Undoes the change and drops the step. Where the undo does not apply, or
+   * fails, the change stays and the step is kept in its place.
+   */
+  takeBack: () => Promise<boolean>;
 }
 
 export class BoardHistory {
   private readonly lines = new Map<string, Line>();
 
-  /**
-   * A new step on `canvasId`: it can be undone, and nothing undone before it
-   * can be redone. The answer drops exactly this step again, for a change its
-   * maker took back itself; while it is still the newest step, the steps its
-   * record cleared from Redo or pushed off the oldest end come back too.
-   */
-  record(canvasId: string, entry: HistoryEntry): () => void {
+  /** A new step on `canvasId`: it can be undone, and nothing undone before it can be redone. */
+  record(canvasId: string, entry: HistoryEntry): void {
     const line = this.lineOf(canvasId);
-    line.done.at(-1)?.covered?.();
-    const done = [...line.done, entry];
-    const pushedOut = done.slice(0, -MAX_STEPS);
-    const cleared = line.undone;
-    line.done = done.slice(-MAX_STEPS);
-    line.undone = [];
+    line.done = [...line.done, entry];
+    settle(line, entry);
     line.pressed = [];
-    return () => {
-      const newest = line.done.at(-1) === entry && line.undone.length === 0;
-      line.done = line.done.filter((each) => each !== entry);
-      if (!newest) return;
-      line.done = [...pushedOut, ...line.done];
-      line.undone = cleared;
+  }
+
+  /**
+   * A step for a change that may still be taken back, such as an add awaiting
+   * its verdict. It takes its place now, so steps recorded meanwhile sit above
+   * it, but it clears no Redo, pushes no step out and covers none until kept.
+   * Taken back, it goes and leaves the history exactly as it was. Undo and
+   * Redo are to be held off meanwhile, as `recording` does.
+   */
+  hold(canvasId: string, entry: HistoryEntry): HeldStep {
+    const line = this.lineOf(canvasId);
+    line.done = [...line.done, entry];
+    line.held.add(entry);
+    const keep = () => {
+      if (line.held.delete(entry)) settle(line, entry);
+    };
+    const drop = () => {
+      if (line.held.delete(entry)) line.done = line.done.filter((each) => each !== entry);
+    };
+    return {
+      keep,
+      takeBack: async () => {
+        let taken = false;
+        try {
+          taken = await entry.undo();
+        } finally {
+          if (taken) drop();
+          else keep();
+        }
+        return taken;
+      },
     };
   }
 
@@ -147,13 +175,17 @@ export class BoardHistory {
       return false;
     }
     const later = line.done.filter((each) => !earlier.has(each));
+    // A step held meanwhile may yet be taken back, so it does not end this one's Redo.
+    const keptLater = later.filter((each) => !line.held.has(each));
     if (step === 'undo') {
       line.done = line.done.filter((each) => each !== entry);
-      if (later.length === 0) line.undone = [...line.undone, entry];
+      if (keptLater.length === 0) line.undone = [...line.undone, entry];
     } else {
       line.undone = line.undone.filter((each) => each !== entry);
-      if (later.length === 0) line.done.at(-1)?.covered?.();
-      line.done = [...line.done.filter((each) => earlier.has(each)), entry, ...later];
+      const below = line.done.filter((each) => earlier.has(each));
+      const newestKept = below.filter((each) => !line.held.has(each)).at(-1);
+      if (keptLater.length === 0) newestKept?.covered?.();
+      line.done = [...below, entry, ...later];
     }
     return true;
   }
@@ -161,11 +193,24 @@ export class BoardHistory {
   private lineOf(canvasId: string): Line {
     let line = this.lines.get(canvasId);
     if (!line) {
-      line = { done: [], undone: [], running: null, pressed: [], writing: 0 };
+      line = { done: [], undone: [], running: null, pressed: [], writing: 0, held: new Set() };
       this.lines.set(canvasId, line);
     }
     return line;
   }
+}
+
+/**
+ * Makes `entry`, already in `done`, a step like any other: the newest kept
+ * step below it is covered, Redo is cleared, and past the limit the oldest
+ * kept steps go. Held steps count for none of this.
+ */
+function settle(line: Line, entry: HistoryEntry): void {
+  const kept = line.done.filter((each) => !line.held.has(each));
+  kept[kept.indexOf(entry) - 1]?.covered?.();
+  line.undone = [];
+  const pushedOut = new Set(kept.slice(0, Math.max(0, kept.length - MAX_STEPS)));
+  line.done = line.done.filter((each) => !pushedOut.has(each));
 }
 
 /** Whether a step is left for this press once the presses before it have run. */
@@ -240,24 +285,6 @@ export function revisionEntry(
   };
 }
 
-/**
- * Records `entry` as a step of `canvasId`'s history the moment its change
- * lands, so a later step always sits above it. The answer takes exactly that
- * change back: it runs the step's undo and drops the step, or answers false
- * where the design moved on, which leaves the step where Undo finds it.
- */
-export function recordWithTakeBack(
-  history: BoardHistory,
-  canvasId: string,
-  entry: HistoryEntry,
-): () => Promise<boolean> {
-  const withdraw = history.record(canvasId, entry);
-  return async () => {
-    if (!(await entry.undo())) return false;
-    withdraw();
-    return true;
-  };
-}
 /**
  * `arrange`, recording each placement that lands as one step of `canvasId`'s
  * history: a released drag or resize, a nudge, an align, a distribute or a

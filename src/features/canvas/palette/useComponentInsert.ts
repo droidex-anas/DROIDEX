@@ -8,6 +8,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from '../../../lib/toast';
+import type { HeldStep } from '../boardHistory';
 import type { CanvasPresence } from '../canvasPresence';
 import type { ElementEdited, LayerRef, PropPick } from '../elementEditProtocol';
 import type { LayerElements } from '../layers/layerElements';
@@ -44,12 +45,8 @@ export interface PalettePlace {
 
 /** How an add becomes a step of the board's history, and is taken back with it. */
 export interface AddSteps {
-  /**
-   * Makes the add that moved `layer`'s design to `made` a step. The answer
-   * takes exactly that add back with its step, false where the design moved
-   * on; null where no step was recorded.
-   */
-  record: (layer: LayerRef, made: string) => (() => Promise<boolean>) | null;
+  /** Holds the add that moved `layer`'s design to `made` as a step; null where none is recorded. */
+  record: (layer: LayerRef, made: string) => HeldStep | null;
   /** Runs an add with Undo and Redo held off until it stays or is taken back. */
   holding: <Answer>(add: () => Promise<Answer>) => Promise<Answer>;
 }
@@ -156,10 +153,13 @@ async function addWhereShown(
     return { kind: 'refused', hint: UNREAD };
   const edited = await write();
   if (!edited) return { kind: 'failed' };
-  const takeBack = steps.record(layer, edited.receipt.revisionId);
+  const step = steps.record(layer, edited.receipt.revisionId);
   const verdict = await verdictOf(runs, layer.designId, edited);
-  if (verdict.kind === 'shown') return verdict;
-  if (takeBack && (await takeBack().catch(() => false))) return verdict;
+  if (verdict.kind === 'shown') {
+    step?.keep();
+    return verdict;
+  }
+  if (step && (await step.takeBack().catch(() => false))) return verdict;
   // The frame changed meanwhile, so the add stays as the step it was recorded as.
   toast.error('Added where this frame doesn’t show it. Undo takes it back.');
   return { kind: 'failed' };
@@ -173,7 +173,7 @@ async function verdictOf(
 ): Promise<Exclude<AddOutcome, { kind: 'failed' }>> {
   if (landed === null) return { kind: 'refused', hint: UNREAD };
   const run = await drawnRun(runs, designId, receipt.revisionId);
-  const shown = run ? await run.shown(landed) : null;
+  const shown = run ? await run.shown(landed).catch(() => null) : null;
   if (shown === null) return { kind: 'refused', hint: UNREAD };
   if (shown === 'unseen') return { kind: 'refused', hint: UNSEEN };
   return { kind: 'shown', revisionId: receipt.revisionId, nodeId: landed, box: shown };
