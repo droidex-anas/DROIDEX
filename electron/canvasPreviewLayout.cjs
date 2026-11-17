@@ -10,24 +10,22 @@
 const PREVIEW_LAYOUT_DEADLINE_MS = 2_000;
 
 const LAYOUT_REPORTER = `
-  // The compiler gives each JSX usage an outline row is written at the row's
-  // id as this prop, a component's usage too.
-  const LAYER = 'data-droidex-layer';
   // The elements a layer drew: the outermost ones under each React fiber whose
-  // props carry its id. A component's usage draws no element of its own, so
-  // its props are read from React's tree rather than the page. Null where no
-  // fiber carries the id, or the page has no React root to read.
+  // props object the compiler filed under the layer's id when its usage ran.
+  // A component's usage draws no element of its own, so its fiber is found
+  // in React's tree rather than the page. Null where no fiber is the layer's,
+  // or the page has no React root to read.
   const drawnBy = (nodeId) => {
+    const layers = globalThis.__droidexLayers;
     const container = Object.keys(root).find((name) => /^__reactContainer\\$/.test(name));
     const current = container ? root[container]?.stateNode?.current : null;
-    if (!current) return null;
+    if (!(layers instanceof WeakMap) || !current) return null;
     const drawn = [];
     let found = false;
     const pending = [{ fiber: current, owned: false }];
     while (pending.length > 0) {
       const { fiber, owned } = pending.pop();
-      const props = fiber.memoizedProps;
-      const mine = owned || (props !== null && typeof props === 'object' && props[LAYER] === nodeId);
+      const mine = owned || layers.get(fiber.memoizedProps) === nodeId;
       found = found || mine;
       if (mine && fiber.stateNode instanceof Element) {
         drawn.push(fiber.stateNode);
@@ -36,6 +34,13 @@ const LAYOUT_REPORTER = `
       for (let child = fiber.child; child; child = child.sibling) pending.push({ fiber: child, owned: mine });
     }
     return found ? drawn : null;
+  };
+  // What an element paints: itself where it has a box, else the boxed
+  // elements under it, as under \`display: contents\` or a portal's empty root.
+  const painted = (element) => {
+    const box = element.getBoundingClientRect();
+    if (box.width > 0 && box.height > 0) return [{ element, box }];
+    return [...element.children].flatMap(painted);
   };
   // The part of a box the frame shows: inside its viewport and every element
   // that clips what overflows it.
@@ -55,17 +60,15 @@ const LAYOUT_REPORTER = `
     }
     return { left: left, top: top, right: Math.max(left, right), bottom: Math.max(top, bottom) };
   };
-  // Whether the frame shows what a layer drew: each element with a box shows
+  // Whether the frame shows what a layer drew: each element it paints shows
   // all of it, to the pixel, and where it takes the pointer, nothing covers
   // its middle. The answer is the box around them, false where one does not
-  // show or none has a box, and null where the layer is not drawn at all.
+  // show or none paints, and null where the layer is not drawn at all.
   const shownLayer = (nodeId) => {
     const drawn = drawnBy(nodeId);
     if (drawn === null) return null;
     let shown = null;
-    for (const element of drawn) {
-      const box = element.getBoundingClientRect();
-      if (box.width <= 0 || box.height <= 0) continue;
+    for (const { element, box } of drawn.flatMap(painted)) {
       const part = shownPart(element, box);
       if (part.right - part.left < box.width - 1 || part.bottom - part.top < box.height - 1) return false;
       const middle = document.elementFromPoint((part.left + part.right) / 2, (part.top + part.bottom) / 2);

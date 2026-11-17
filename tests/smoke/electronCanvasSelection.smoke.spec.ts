@@ -399,6 +399,44 @@ export default function Full() {
       <Tag />
       {false && <Button>Never</Button>}`),
   ]);
+  // A component that refuses props it was not written with, and two whose own
+  // root has no box: a `display: contents` wrapper and a portal's empty root.
+  const kinds = compileDesign({
+    'main.tsx': `import { Portal } from 'radix-ui';
+
+function Action(props: { label: string }) {
+  const extra = Object.keys(props).filter((key) => key !== 'label');
+  if (extra.length > 0) throw new Error('Unexpected props: ' + extra.join(','));
+  return <button style={{ height: '32px' }}>{props.label}</button>;
+}
+
+function Contents() {
+  return (
+    <div style={{ display: 'contents' }}>
+      <button style={{ height: '32px' }}>Inside</button>
+    </div>
+  );
+}
+
+function Floating() {
+  return (
+    <Portal.Root>
+      <button style={{ position: 'fixed', top: '0px', left: '200px', height: '32px' }}>Floating</button>
+    </Portal.Root>
+  );
+}
+
+export default function Kinds() {
+  return (
+    <main style={{ padding: '16px' }}>
+      <Action label="Save" />
+      <Contents />
+      <Floating />
+    </main>
+  );
+}
+`,
+  });
   const rows = (design: CompiledDesign, name: string) =>
     design.outline.nodes.filter((node) => node.name === name).map((node) => node.nodeId);
 
@@ -440,5 +478,22 @@ export default function Full() {
     const tag = await shown(rows(twins, 'Tag')[0]);
     assert.ok(tag !== null && tag !== 'unseen', 'a component that passes no props on is read too');
     assert.equal(await shown(never), null);
+
+    await draw((await kinds).html);
+    const strict = await shown(rows(await kinds, 'Action')[0]);
+    assert.ok(
+      strict !== null && strict !== 'unseen',
+      'a component strict about its props still draws',
+    );
+    assert.deepEqual([strict.y, strict.height], [16, 32]);
+    const inside = await shown(rows(await kinds, 'Contents')[0]);
+    assert.ok(
+      inside !== null && inside !== 'unseen',
+      'what a display: contents wrapper paints is read',
+    );
+    assert.equal(inside.height, 32);
+    const floating = await shown(rows(await kinds, 'Floating')[0]);
+    assert.ok(floating !== null && floating !== 'unseen', 'what a portal paints is read');
+    assert.deepEqual([floating.x, floating.y, floating.height], [200, 0, 32]);
   });
 });
