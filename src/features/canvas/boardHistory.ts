@@ -192,31 +192,36 @@ export async function landed(write: Promise<unknown>): Promise<boolean> {
   }
 }
 
+type SwitchRevision = (input: SwitchRevisionInput) => Promise<unknown>;
+
+/** Moves a design's head to `revisionId` only while it is still at `expectedRevisionId`; false where it moved on. */
+export function switchHead(
+  switchRevision: SwitchRevision,
+  designId: string,
+  revisionId: string,
+  expectedRevisionId: string,
+): Promise<boolean> {
+  return landed(
+    switchRevision({ mutationId: crypto.randomUUID(), designId, revisionId, expectedRevisionId }),
+  );
+}
+
 /**
  * An edit that moved one design's head from `before` to `after`. Undo and
  * redo switch the head between the two, each only while the head is still
  * where the other left it, so neither adds a revision or overrides a later change.
  */
 export function revisionEntry(
-  switchRevision: (input: SwitchRevisionInput) => Promise<unknown>,
+  switchRevision: SwitchRevision,
   design: HistoryDesign,
   before: string,
   after: string,
 ): HistoryEntry {
-  const move = (revisionId: string, expectedRevisionId: string) =>
-    landed(
-      switchRevision({
-        mutationId: crypto.randomUUID(),
-        designId: design.designId,
-        revisionId,
-        expectedRevisionId,
-      }),
-    );
   return {
     label: 'your edit',
     designs: [design],
-    undo: () => move(before, after),
-    redo: () => move(after, before),
+    undo: () => switchHead(switchRevision, design.designId, before, after),
+    redo: () => switchHead(switchRevision, design.designId, after, before),
   };
 }
 

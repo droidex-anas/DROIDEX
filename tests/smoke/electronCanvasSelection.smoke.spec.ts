@@ -14,16 +14,18 @@ import {
   readPreviewFinding,
   readPreviewHover,
   type PreviewElement,
-  type PreviewNode,
   type PreviewPick,
   type PreviewProbe,
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
 import {
-  previewLandingScript,
-  readPreviewLanding,
-  type PreviewLandingPlace,
-} from '../../src/features/canvas/previewDocumentLanding';
+  addedRun,
+  PREVIEW_ELEMENTS_SCRIPT,
+  previewShownScript,
+  readPreviewElementKeys,
+  readPreviewShown,
+  type PreviewElementRun,
+} from '../../src/features/canvas/previewDocumentLayout';
 import {
   previewShapeScript,
   readPreviewShape,
@@ -34,6 +36,7 @@ import {
   askGuest,
   compileDesign,
   drainGuest,
+  GUEST_ELEMENT_ID,
   mountPreviewGuest,
   newInstance,
 } from './canvasPreviewHost';
@@ -366,52 +369,63 @@ export default function Mark() {
   });
 });
 
-test('[C4 landing] the production guest says whether an element added at a node would show', async () => {
+test('[C4 shown] the production guest says whether the elements an add drew show', async () => {
   // A page whose fixed, clipping top layer its content already fills, as agent-written frames often are.
-  const design = await compileDesign({
-    'main.tsx': `export default function Full() {
+  const full = (added: string) =>
+    compileDesign({
+      'main.tsx': `export default function Full() {
   return (
-    <main style={{ height: '200px', boxSizing: 'border-box', padding: '16px', overflow: 'hidden' }}>
-      <section style={{ height: '168px' }}>Everything</section>
+    <main style={{ height: '300px', boxSizing: 'border-box', padding: '16px', overflow: 'hidden' }}>
+      <section style={{ height: '200px' }}>Everything</section>
+      ${added}
     </main>
   );
 }
 `,
-  });
+    });
+  const [before, spaced, tight] = await Promise.all([
+    full(''),
+    // 84px of room is left where it would start, but its own top margin takes it wholly out of view.
+    full(`<button style={{ marginTop: '96px', height: '32px' }}>Add</button>`),
+    full(`<button style={{ height: '32px' }}>Add</button>`),
+  ]);
 
   await withCanvasHost(async (_app, page) => {
-    await mountPreviewGuest(page);
-    const instance = newInstance('landing');
-    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
-    await expect
-      .poll(
-        async () => (await drainGuest(page, instance)).events.some((e) => e.event === 'ready'),
-        { timeout: 20_000, intervals: [100] },
-      )
-      .toBe(true);
-    const nodeAt = async (at: { x: number; y: number }) => {
-      const found = readPreviewHover(await askGuest(page, previewHoverScript(at)));
-      assert.ok(found, `an element at ${at.x}, ${at.y}`);
-      return { elementId: found.elementId, instancePath: found.instancePath };
+    const draw = async (html: string) => {
+      await page.evaluate((id) => document.getElementById(id)?.remove(), GUEST_ELEMENT_ID);
+      await mountPreviewGuest(page);
+      const instance = newInstance('shown');
+      assert.equal(await askGuest(page, previewStartScript(instance, html)), PREVIEW_STARTED);
+      await expect
+        .poll(
+          async () => (await drainGuest(page, instance)).events.some((e) => e.event === 'ready'),
+          { timeout: 20_000, intervals: [100] },
+        )
+        .toBe(true);
+      const keys = readPreviewElementKeys(await askGuest(page, PREVIEW_ELEMENTS_SCRIPT));
+      assert.ok(Array.isArray(keys), 'the guest keyed what it draws');
+      return keys as readonly string[];
     };
-    const landing = async (node: PreviewNode, place: PreviewLandingPlace) =>
-      readPreviewLanding(await askGuest(page, previewLandingScript(node, place)));
-    const main = await nodeAt({ x: 4, y: 4 });
-    const section = await nodeAt({ x: 40, y: 40 });
+    const shown = async (run: PreviewElementRun) =>
+      readPreviewShown(await askGuest(page, previewShownScript(run)));
 
-    // Last inside the main, an entry would start in its bottom padding and be
-    // clipped before a control's height: the frame would not show it.
-    assert.equal(await landing(main, 'inside'), 'unseen');
-    assert.equal(await landing(section, 'after'), 'unseen');
-    // Under the main the guest has room, and the answer is where it starts.
-    const below = await landing(main, 'after');
-    assert.ok(below !== null && below !== 'unseen');
-    assert.equal(below.y, 200);
-    // The probe leaves nothing behind.
-    assert.deepEqual(await nodeAt({ x: 40, y: 40 }), section);
-    assert.equal(
-      readPreviewHover(await askGuest(page, previewHoverScript({ x: 4, y: 210 }))),
-      null,
-    );
+    const drawn = await draw(before.html);
+    // The page shows what it draws, and reading leaves it as it was.
+    const whole = await shown({ from: 0, count: drawn.length });
+    assert.ok(whole !== null && whole !== 'unseen', 'the frame shows its page');
+    assert.equal(whole.height, 300);
+    assert.deepEqual(readPreviewElementKeys(await askGuest(page, PREVIEW_ELEMENTS_SCRIPT)), drawn);
+
+    // The button alone is added, wherever the page's own elements put it in document order.
+    const clipped = addedRun(drawn, await draw(spaced.html));
+    assert.equal(clipped?.count, 1);
+    assert.equal(await shown(clipped), 'unseen');
+
+    const inView = addedRun(drawn, await draw(tight.html));
+    assert.equal(inView?.count, 1);
+    const box = await shown(inView);
+    assert.ok(box !== null && box !== 'unseen', 'the frame shows the button');
+    assert.equal(box.y, 216);
+    assert.equal(box.height, 32);
   });
 });

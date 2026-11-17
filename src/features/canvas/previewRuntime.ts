@@ -39,11 +39,14 @@ import {
   type PreviewVector,
 } from './previewDocument';
 import {
-  previewLandingScript,
-  readPreviewLanding,
-  type PreviewLanding,
-  type PreviewLandingPlace,
-} from './previewDocumentLanding';
+  PREVIEW_ELEMENTS_SCRIPT,
+  previewShownScript,
+  readPreviewElementKeys,
+  readPreviewShown,
+  type PreviewElementKeys,
+  type PreviewElementRun,
+  type PreviewShown,
+} from './previewDocumentLayout';
 import { previewShapeScript, readPreviewShape, type PreviewShape } from './previewDocumentShape';
 import { previewTreeScript, readPreviewTree, type PreviewTree } from './previewDocumentTree';
 import type { CanvasDiagnostic, FrameRect } from './protocol';
@@ -132,7 +135,7 @@ export interface PreviewRunOptions {
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
  * `setTokens` reaches the same guests and is not answered. `hover`, `probe`,
- * `locate`, `vector`, `shape`, `landing` and `tree` answer themselves, with
+ * `locate`, `vector`, `shape`, `tree`, `elements` and `shown` answer themselves, with
  * null when nothing is there or this run can no longer ask, and leave the
  * selection alone.
  */
@@ -149,10 +152,12 @@ export interface PreviewRun {
   vector(): Promise<PreviewVector | null>;
   /** A drawn `<path>`'s data, matrix and box, or why it has none. */
   shape(node: PreviewNode): Promise<PreviewShape | null>;
-  /** Where a layer added last inside a drawn instance, or right after it, would start, if the frame would show it. */
-  landing(node: PreviewNode, place: PreviewLandingPlace): Promise<PreviewLanding | null>;
   /** The marked elements in document order: the first page, or `before` with the next page added. */
   tree(before: PreviewTree | null): Promise<PreviewTree | null>;
+  /** A key for each element the page draws, in document order. */
+  elements(): Promise<PreviewElementKeys | null>;
+  /** Where the frame shows a run of those elements, if it does. */
+  shown(run: PreviewElementRun): Promise<PreviewShown | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -295,16 +300,22 @@ class GuestRun implements PreviewRun {
     return this.canAsk() ? readPreviewShape(answer) : null;
   }
 
-  async landing(node: PreviewNode, place: PreviewLandingPlace): Promise<PreviewLanding | null> {
-    if (!this.canAsk()) return null;
-    const answer = await this.ask(previewLandingScript(node, place));
-    return this.canAsk() ? readPreviewLanding(answer) : null;
-  }
-
   async tree(before: PreviewTree | null): Promise<PreviewTree | null> {
     if (!this.canAsk()) return null;
     const answer = await this.ask(previewTreeScript(before?.nodes.length ?? 0));
     return this.canAsk() ? readPreviewTree(answer, before) : null;
+  }
+
+  async elements(): Promise<PreviewElementKeys | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(PREVIEW_ELEMENTS_SCRIPT);
+    return this.canAsk() ? readPreviewElementKeys(answer) : null;
+  }
+
+  async shown(run: PreviewElementRun): Promise<PreviewShown | null> {
+    if (!this.canAsk()) return null;
+    const answer = await this.ask(previewShownScript(run));
+    return this.canAsk() ? readPreviewShown(answer) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */

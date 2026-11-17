@@ -10,6 +10,7 @@ import {
   BoardHistory,
   recordPlacements,
   revisionEntry,
+  switchHead,
 } from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
@@ -624,6 +625,15 @@ function Harness() {
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
   const [runs] = useState(() => new PreviewRuns());
   const shownFrames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot]);
+  // `?paths=1` makes each edit a step of the board's history, as the mount does.
+  const recordEdit = ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
+    const frame = shown.current.frames.find((each) => each.designId === designId);
+    if (params.has('paths') && frame)
+      history.record(
+        shown.current.canvasId,
+        revisionEntry(askSwitch, { designId, name: frame.name }, revisionId, made),
+      );
+  };
   const editor = useElementEditor({
     canvasId: snapshot.canvasId,
     frames: shownFrames,
@@ -635,19 +645,10 @@ function Harness() {
       const edited = await new Promise<ElementEdited>((resolve, reject) =>
         editReplies.push({ resolve, reject }),
       );
-      // `?paths=1` makes each edit a step of the board's history, as the mount does.
-      const { designId, revisionId } =
-        'element' in input.edit ? input.edit.element : input.edit.layer;
-      const frame = shown.current.frames.find((each) => each.designId === designId);
-      if (params.has('paths') && frame)
-        history.record(
-          shown.current.canvasId,
-          revisionEntry(
-            askSwitch,
-            { designId, name: frame.name },
-            revisionId,
-            edited.receipt.revisionId,
-          ),
+      if (input.edit.change.kind !== 'insert')
+        recordEdit(
+          'element' in input.edit ? input.edit.element : input.edit.layer,
+          edited.receipt.revisionId,
         );
       return edited;
     },
@@ -665,7 +666,12 @@ function Harness() {
     elements,
     presence,
     onEditLayer: editLayer,
-    reveal: (rect) => board.current?.reveal(rect),
+    steps: {
+      record: recordEdit,
+      takeBack: ({ designId, revisionId }, made) =>
+        switchHead(askSwitch, designId, revisionId, made),
+    },
+    holdReveal: () => board.current?.holdReveal(),
   });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');

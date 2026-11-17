@@ -4,6 +4,7 @@
 //
 // Kept free of `require('electron')` so it runs under plain Node.
 
+const { LAYOUT_REPORTER } = require('./canvasPreviewLayout.cjs');
 const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
 
 /**
@@ -25,9 +26,9 @@ const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
  * `vector` event carries the design's root `<svg>` as a standalone file, a
  * `shape` event the data, matrix and box of the `<path>` a path names, and a
  * `tree` event one page of the marked elements in document order, starting
- * its command's `from` marked elements in. A `landing` event gives the box an
- * element added last inside the element a path names, or right after it, would
- * start in, or false where it would not be seen. A kit preview's
+ * its command's `from` marked elements in. An `elements` event keys every
+ * element the page draws, in document order, and a `shown` event says
+ * whether a run of those shows in the frame. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -327,21 +328,7 @@ ${SVG_REPORTER}
     }
     return { nodes: nodes, from: from, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: truncated };
   };
-  // A probe a control tall takes the added element's place and is hit-tested
-  // at its top and bottom, so the page's own layout, clipping, viewport and
-  // overlaps decide, then leaves before anything paints. A full page's last
-  // padding still shows a few pixels, which no entry fits in.
-  const landing = (node, place) => {
-    const probe = document.createElement('div');
-    probe.style.cssText = 'all: initial; display: block; flex: none; width: 8px; height: 32px;';
-    if (place === 'inside') node.append(probe);
-    else node.after(probe);
-    const box = probe.getBoundingClientRect();
-    const hits = (y) => document.elementFromPoint(box.x + box.width / 2, y) === probe;
-    const seen = hits(box.y + 1) && hits(box.bottom - 1);
-    probe.remove();
-    return seen && { x: box.x, y: box.y, width: box.width, height: box.height };
-  };
+${LAYOUT_REPORTER}
   let draftTokens = [];
   const setTokens = (tokens) => {
     const style = document.documentElement.style;
@@ -418,9 +405,10 @@ ${SVG_REPORTER}
     } else if (command.command === 'shape') {
       const node = markedAt(command.elementId, command.instancePath);
       post('shape', { sequence: command.sequence, shape: shape(node) });
-    } else if (command.command === 'landing') {
-      const node = markedAt(command.elementId, command.instancePath);
-      post('landing', { sequence: command.sequence, landing: node && landing(node, command.place) });
+    } else if (command.command === 'elements') {
+      post('elements', { sequence: command.sequence, elements: elementKeys() });
+    } else if (command.command === 'shown') {
+      post('shown', { sequence: command.sequence, shown: shownRun(command.from, command.count) });
     } else if (command.command === 'tree') {
       post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {

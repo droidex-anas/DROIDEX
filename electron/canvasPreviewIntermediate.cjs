@@ -8,6 +8,7 @@ const {
   MAX_PREVIEW_TREE_BYTES,
   MAX_PREVIEW_TREE_NODES,
 } = require('./canvasPreviewReporter.cjs');
+const { LAYOUT_INTERMEDIATE } = require('./canvasPreviewLayout.cjs');
 const {
   MAX_PREVIEW_SHAPE_EVENT_BYTES,
   MAX_PREVIEW_VECTOR_BYTES,
@@ -59,9 +60,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
  * `vector` with the design's root `<svg>` or why it has none, `shape` with a
- * named `<path>`'s data, matrix and box or why it has none, `landing` with the
- * box an element added in or after a named one would start in (false if unseen),
- * and `tree` with a page of marked elements in document order; each waits.
+ * named `<path>`'s data, matrix and box or why it has none, `tree` with a page
+ * of marked elements in document order, `elements` with a key for each
+ * element the page draws and `shown` with whether a run of those shows; each waits.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -200,6 +201,7 @@ ${SVG_INTERMEDIATE}
     isElementId(value.elementId) && isPath(value.instancePath)
       ? { elementId: value.elementId, instancePath: value.instancePath }
       : null;
+${LAYOUT_INTERMEDIATE}
 
   // One page of the design's marked elements as the reporter walked them, the
   // one asked for; one node that is not one refuses the whole answer.
@@ -283,7 +285,9 @@ ${SVG_INTERMEDIATE}
             ? bytes(encoded) > ${String(MAX_PREVIEW_TREE_BYTES)}
             : data.event === 'shape'
               ? bytes(encoded) > ${String(MAX_PREVIEW_SHAPE_EVENT_BYTES)}
-              : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+              : data.event === 'elements'
+                ? bytes(encoded) > MAX_ELEMENTS_EVENT_BYTES
+                : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -292,7 +296,7 @@ ${SVG_INTERMEDIATE}
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (['probe', 'locate', 'vector', 'shape', 'landing', 'tree'].includes(data.event)) {
+    if (['probe', 'locate', 'vector', 'shape', 'tree', 'elements', 'shown'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -455,13 +459,8 @@ ${SVG_INTERMEDIATE}
       if (!node) return 'invalid_request';
       return askFrame(Object.assign({ command: 'shape' }, node), (data) => normalizeShape(data.shape));
     },
-    landing(request) {
-      if (!instance) throw new Error('This Canvas preview guest was never started.');
-      const node = request && typeof request === 'object' ? nodeOf(request) : null;
-      if (!node || !['inside', 'after'].includes(request.place)) return 'invalid_request';
-      const read = (data) => (data.landing === false ? false : rectOf(data.landing));
-      return askFrame(Object.assign({ command: 'landing', place: request.place }, node), read);
-    },
+    elements: askElements,
+    shown: askShown,
     tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       const from = request && typeof request === 'object' ? request.from : null;

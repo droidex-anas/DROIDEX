@@ -60,8 +60,12 @@ export interface CanvasBoardHandle {
   focusFrame: (frameId: string) => void;
   /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
   focusLabel: (frameId: string) => void;
-  /** Pans the least distance that brings a rect of the board wholly into view. */
-  reveal: (rect: FrameRect) => void;
+  /**
+   * Holds the view as it is now. The call it returns pans the least distance
+   * that brings a rect of the board wholly into view, unless the board has
+   * moved since, so a late answer never undoes the user's own pan or zoom.
+   */
+  holdReveal: () => (rect: FrameRect) => void;
 }
 
 export interface CanvasBoardProps {
@@ -253,11 +257,22 @@ export function CanvasBoard({
     [onLeave, stage],
   );
 
-  useImperativeHandle(ref, () => ({ focusFrame, focusLabel, reveal: view.reveal }), [
-    focusFrame,
-    focusLabel,
-    view.reveal,
-  ]);
+  const { reveal } = view;
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusFrame,
+      focusLabel,
+      holdReveal: () => {
+        const held = stage.viewport;
+        return (rect) => {
+          const now = stage.viewport;
+          if (now.x === held.x && now.y === held.y && now.scale === held.scale) reveal(rect);
+        };
+      },
+    }),
+    [focusFrame, focusLabel, stage, reveal],
+  );
 
   const selected = pickedOnBoard(drawn, editor.selection);
   const measured = useHoverMeasurements(board, drawn, interaction, selected, editor.hover);
