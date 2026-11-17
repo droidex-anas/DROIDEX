@@ -399,8 +399,9 @@ export default function Full() {
       <Tag />
       {false && <Button>Never</Button>}`),
   ]);
-  // A component that refuses props it was not written with, and two whose own
-  // root has no box: a `display: contents` wrapper and a portal's empty root.
+  // A component that refuses props it was not written with, and three whose own
+  // root has no box: a `display: contents` wrapper, a portal's empty root, and a
+  // portal under such a wrapper.
   const kinds = compileDesign({
     'main.tsx': `import { Portal } from 'radix-ui';
 
@@ -426,12 +427,23 @@ function Floating() {
   );
 }
 
+function Nested() {
+  return (
+    <div style={{ display: 'contents' }}>
+      <Portal.Root>
+        <button style={{ position: 'fixed', left: 120, top: 20, height: 32 }}>Visible portal</button>
+      </Portal.Root>
+    </div>
+  );
+}
+
 export default function Kinds() {
   return (
     <main style={{ padding: '16px' }}>
       <Action label="Save" />
       <Contents />
       <Floating />
+      <Nested />
     </main>
   );
 }
@@ -495,5 +507,11 @@ export default function Kinds() {
     const floating = await shown(rows(await kinds, 'Floating')[0]);
     assert.ok(floating !== null && floating !== 'unseen', 'what a portal paints is read');
     assert.deepEqual([floating.x, floating.y, floating.height], [200, 0, 32]);
+    const nested = await shown(rows(await kinds, 'Nested')[0]);
+    assert.ok(
+      nested !== null && nested !== 'unseen',
+      'a portal under a display: contents wrapper is read',
+    );
+    assert.deepEqual([nested.x, nested.y, nested.height], [120, 20, 32]);
   });
 });

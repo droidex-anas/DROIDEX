@@ -10,11 +10,13 @@
 const PREVIEW_LAYOUT_DEADLINE_MS = 2_000;
 
 const LAYOUT_REPORTER = `
-  // The elements a layer drew: the outermost ones under each React fiber whose
-  // props object the compiler filed under the layer's id when its usage ran.
-  // A component's usage draws no element of its own, so its fiber is found
-  // in React's tree rather than the page. Null where no fiber is the layer's,
-  // or the page has no React root to read.
+  // The boxes a layer paints: the outermost boxed elements under each React
+  // fiber whose props object the compiler filed under the layer's id when its
+  // usage ran. A component's usage draws no element of its own, so its fiber
+  // is found in React's tree rather than the page. Under an element with no
+  // box, as with \`display: contents\`, the walk goes on through its fibers, so
+  // it reaches the portals they render elsewhere in the page too. Null where
+  // no fiber is the layer's, or the page has no React root to read.
   const drawnBy = (nodeId) => {
     const layers = globalThis.__droidexLayers;
     const container = Object.keys(root).find((name) => /^__reactContainer\\$/.test(name));
@@ -27,16 +29,24 @@ const LAYOUT_REPORTER = `
       const { fiber, owned } = pending.pop();
       const mine = owned || layers.get(fiber.memoizedProps) === nodeId;
       found = found || mine;
-      if (mine && fiber.stateNode instanceof Element) {
-        drawn.push(fiber.stateNode);
-        continue;
+      const element = fiber.stateNode;
+      if (mine && element instanceof Element) {
+        if (!fiber.child) {
+          drawn.push(...painted(element));
+          continue;
+        }
+        const box = element.getBoundingClientRect();
+        if (box.width > 0 && box.height > 0) {
+          drawn.push({ element, box });
+          continue;
+        }
       }
       for (let child = fiber.child; child; child = child.sibling) pending.push({ fiber: child, owned: mine });
     }
     return found ? drawn : null;
   };
-  // What an element paints: itself where it has a box, else the boxed
-  // elements under it, as under \`display: contents\` or a portal's empty root.
+  // What an element with no fibers under it paints, as one holding HTML React
+  // set: itself where it has a box, else the boxed elements under it.
   const painted = (element) => {
     const box = element.getBoundingClientRect();
     if (box.width > 0 && box.height > 0) return [{ element, box }];
@@ -68,7 +78,7 @@ const LAYOUT_REPORTER = `
     const drawn = drawnBy(nodeId);
     if (drawn === null) return null;
     let shown = null;
-    for (const { element, box } of drawn.flatMap(painted)) {
+    for (const { element, box } of drawn) {
       const part = shownPart(element, box);
       if (part.right - part.left < box.width - 1 || part.bottom - part.top < box.height - 1) return false;
       const middle = document.elementFromPoint((part.left + part.right) / 2, (part.top + part.bottom) / 2);
