@@ -118,7 +118,11 @@ export function ComponentDetail({
             className="w-full"
             disabled={!place.canAdd}
             aria-describedby={hintId}
-            onClick={onAdd}
+            onClick={() => {
+              // The button turns off while it adds, which would drop the keyboard to the page.
+              section.current?.focus();
+              onAdd();
+            }}
           >
             Add to board
           </Button>
