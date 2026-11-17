@@ -61,8 +61,8 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * between two points, `locate` with the boxes of the elements it names, and
  * `vector` with the design's root `<svg>` or why it has none, `shape` with a
  * named `<path>`'s data, matrix and box or why it has none, `tree` with a page
- * of marked elements in document order, `elements` with a key for each
- * element the page draws and `shown` with whether a run of those shows; each waits.
+ * of marked elements in document order and `shown` with whether the frame
+ * shows what one layer drew; each waits.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -285,9 +285,7 @@ ${LAYOUT_INTERMEDIATE}
             ? bytes(encoded) > ${String(MAX_PREVIEW_TREE_BYTES)}
             : data.event === 'shape'
               ? bytes(encoded) > ${String(MAX_PREVIEW_SHAPE_EVENT_BYTES)}
-              : data.event === 'elements'
-                ? bytes(encoded) > MAX_ELEMENTS_EVENT_BYTES
-                : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
+              : bytes(encoded) > ${String(MAX_PREVIEW_EVENT_BYTES)};
     if (oversized) {
       dropped += 1;
       return;
@@ -296,7 +294,7 @@ ${LAYOUT_INTERMEDIATE}
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (['probe', 'locate', 'vector', 'shape', 'tree', 'elements', 'shown'].includes(data.event)) {
+    if (['probe', 'locate', 'vector', 'shape', 'tree', 'shown'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -459,7 +457,6 @@ ${LAYOUT_INTERMEDIATE}
       if (!node) return 'invalid_request';
       return askFrame(Object.assign({ command: 'shape' }, node), (data) => normalizeShape(data.shape));
     },
-    elements: askElements,
     shown: askShown,
     tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');

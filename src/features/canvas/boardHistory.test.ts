@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
-import { BoardHistory, recordPlacements, revisionEntry } from './boardHistory';
+import { BoardHistory, recordPlacements, recordWithTakeBack, revisionEntry } from './boardHistory';
 import { CanvasRequestError } from './client';
 import type { ArrangeFramesInput, CanvasFrame, SwitchRevisionInput } from './protocol';
 
@@ -23,7 +23,7 @@ function fakeBoard() {
   /** Each switch as [design, to, expected head]. */
   const moves = () =>
     switches.map((sent) => [sent.designId, sent.revisionId, sent.expectedRevisionId]);
-  return { history, switches, edit, moves };
+  return { history, switchRevision, switches, edit, moves };
 }
 
 /** Lets every settled answer run through the history. */
@@ -128,6 +128,47 @@ test('a step recorded while a press runs stays on top of it, and a refused press
   await settle();
   assert.equal(history.undo('cv'), true);
   assert.deepEqual(moves()[1], ['hero', 'h2', 'h3']);
+});
+
+test('an add taken back drops exactly its step; one that cannot be keeps its place under later edits', async () => {
+  // The add lands, the user edits the same frame, and the add can no longer be taken back.
+  const kept = fakeBoard();
+  const takeBack = recordWithTakeBack(
+    kept.history,
+    'cv',
+    revisionEntry(kept.switchRevision, hero, 'h1', 'h2'),
+  );
+  kept.edit(hero, 'h2', 'h3');
+  const taking = takeBack();
+  kept.switches[0].reject(new CanvasRequestError('revision_conflict', 'The head moved.'));
+  assert.equal(await taking, false);
+  for (const index of [1, 2]) {
+    assert.equal(kept.history.undo('cv'), true);
+    kept.switches[index].resolve(undefined);
+    await settle();
+  }
+  assert.deepEqual(kept.moves().slice(1), [
+    ['hero', 'h2', 'h3'],
+    ['hero', 'h1', 'h2'],
+  ]);
+  assert.equal(kept.history.undo('cv'), false);
+
+  // An add taken back as soon as it lands leaves Redo as it found it.
+  const { history, switchRevision, switches, edit, moves } = fakeBoard();
+  edit(card, 'c1', 'c2');
+  history.undo('cv');
+  switches[0].resolve(undefined);
+  await settle();
+  const withdrawn = recordWithTakeBack(
+    history,
+    'cv',
+    revisionEntry(switchRevision, hero, 'h1', 'h2'),
+  )();
+  switches[1].resolve(undefined);
+  assert.equal(await withdrawn, true);
+  assert.equal(history.undo('cv'), false);
+  assert.equal(history.redo('cv'), true);
+  assert.deepEqual(moves()[2], ['card', 'c2', 'c1']);
 });
 
 test('a deleted canvas runs none of the presses still waiting', async () => {

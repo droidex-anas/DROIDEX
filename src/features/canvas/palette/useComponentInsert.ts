@@ -1,9 +1,10 @@
 // Where the Components tab adds a kit entry, and the add itself: after the
 // entry it added last, else into the layer Edit has picked, else into the top
-// layer of the one selected frame. An add stays only where the frame shows it:
-// the elements it drew are measured in the revision it made, and an add the
-// frame does not show is switched back before it becomes a step. One that
-// stays is brought into view and picked in Edit, so the next entry goes after it.
+// layer of the one selected frame. An add is a step of the board's history as
+// soon as it lands, and stays only where the frame shows it: the elements the
+// row it landed on drew are measured in the revision it made, and an add the
+// frame does not show is taken back with its step. One that stays is brought
+// into view and picked in Edit, so the next entry goes after it.
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import { toast } from '../../../lib/toast';
@@ -14,7 +15,6 @@ import { drawnLayers } from '../layers/drawnLayers';
 import type { EditLayer } from '../layers/useLayerEdit';
 import { pickedLayer, type PickedLayer } from '../pickedElement';
 import type { PreviewNode } from '../previewDocument';
-import { addedRun } from '../previewDocumentLayout';
 import type { PreviewRuns } from '../previewRuns';
 import type { PreviewRun } from '../previewRuntime';
 import type { CanvasFrame, ElementRef, FrameRect, SourceOutline } from '../protocol';
@@ -42,12 +42,16 @@ export interface PalettePlace {
   canAdd: boolean;
 }
 
-/** How an add becomes a step of the board's history, or is taken back instead. */
+/** How an add becomes a step of the board's history, and is taken back with it. */
 export interface AddSteps {
-  /** Makes the add that moved `layer`'s design to `revisionId` a step. */
-  record: (layer: LayerRef, revisionId: string) => void;
-  /** Moves the design back from `revisionId` to the revision the add was made on; false where it moved on. */
-  takeBack: (layer: LayerRef, revisionId: string) => Promise<boolean>;
+  /**
+   * Makes the add that moved `layer`'s design to `made` a step. The answer
+   * takes exactly that add back with its step, false where the design moved
+   * on; null where no step was recorded.
+   */
+  record: (layer: LayerRef, made: string) => (() => Promise<boolean>) | null;
+  /** Runs an add with Undo and Redo held off until it stays or is taken back. */
+  holding: <Answer>(add: () => Promise<Answer>) => Promise<Answer>;
 }
 
 /** Why the last add at one layer of one revision did not stay. */
@@ -66,7 +70,6 @@ const UNSEEN =
   'Not added: this frame would cut it off or hide it there. Pick a layer to add it to.';
 const UNREAD =
   'Not added: can’t tell whether this frame would show it. Bring the frame into view and add again.';
-const CROWDED = 'Not added: this frame draws too many elements to tell whether it would show.';
 /** A frame builds the revision an add made before drawing it, which takes seconds. */
 const DRAWN_DEADLINE_MS = 20_000;
 
@@ -114,31 +117,33 @@ export function useComponentInsert({
     const reveal = holdReveal();
     setAdding(true);
     const write = () => onEditLayer(layer, { kind: 'insert', entry, props });
-    void addWhereShown(elements.runs, layer, write, steps).then((outcome) => {
-      setAdding(false);
-      if (outcome.kind === 'failed') return;
-      if (outcome.kind === 'refused') {
-        setRefusal({ layerKey: layerKeyOf(layer), hint: outcome.hint });
-        return;
-      }
-      const { box } = outcome;
-      setRefusal(null);
-      setAdded({
-        designId: frame.designId,
-        revisionId: outcome.revisionId,
-        nodeId: outcome.nodeId,
-        pick,
+    void steps
+      .holding(() => addWhereShown(elements.runs, layer, write, steps))
+      .then((outcome) => {
+        setAdding(false);
+        if (outcome.kind === 'failed') return;
+        if (outcome.kind === 'refused') {
+          setRefusal({ layerKey: layerKeyOf(layer), hint: outcome.hint });
+          return;
+        }
+        const { box } = outcome;
+        setRefusal(null);
+        setAdded({
+          designId: frame.designId,
+          revisionId: outcome.revisionId,
+          nodeId: outcome.nodeId,
+          pick,
+        });
+        reveal?.({ ...box, x: frame.rect.x + box.x, y: frame.rect.y + box.y });
       });
-      reveal?.({ ...box, x: frame.rect.x + box.x, y: frame.rect.y + box.y });
-    });
   };
   return { kit: (target?.frame ?? frames.at(0))?.designSystem, place, add };
 }
 
 /**
- * Writes an add and keeps it only where the frame's preview of the revision it
- * made shows the elements it drew; the keys of what the preview drew before
- * and after tell which those are. One it cannot measure is taken back too.
+ * Writes an add, makes it a step as it lands, and keeps it only where the
+ * frame's preview of the revision it made shows the elements the row it
+ * landed on drew. One it cannot measure is taken back too.
  */
 async function addWhereShown(
   runs: PreviewRuns,
@@ -146,48 +151,32 @@ async function addWhereShown(
   write: () => Promise<ElementEdited | null>,
   steps: AddSteps,
 ): Promise<AddOutcome> {
-  const held = runs.get(layer.designId);
-  const before = await keysOf(held?.revisionId === layer.revisionId ? held.run : null);
-  if ('hint' in before) return { kind: 'refused', hint: before.hint };
+  // A frame whose preview is not drawing it could not say, so nothing is written.
+  if (runs.get(layer.designId)?.revisionId !== layer.revisionId)
+    return { kind: 'refused', hint: UNREAD };
   const edited = await write();
-  if (!edited?.landed) return { kind: 'failed' };
-  const made = edited.receipt.revisionId;
-  const shown = await shownAdd(runs, layer.designId, made, before.keys);
-  if ('box' in shown) {
-    steps.record(layer, made);
-    return { kind: 'shown', revisionId: made, nodeId: edited.landed, box: shown.box };
-  }
-  if (await steps.takeBack(layer, made).catch(() => false))
-    return { kind: 'refused', hint: shown.hint };
-  // Someone changed the frame meanwhile, so the add stays where Undo can still take it back.
-  steps.record(layer, made);
+  if (!edited) return { kind: 'failed' };
+  const takeBack = steps.record(layer, edited.receipt.revisionId);
+  const verdict = await verdictOf(runs, layer.designId, edited);
+  if (verdict.kind === 'shown') return verdict;
+  if (takeBack && (await takeBack().catch(() => false))) return verdict;
+  // The frame changed meanwhile, so the add stays as the step it was recorded as.
   toast.error('Added where this frame doesn’t show it. Undo takes it back.');
   return { kind: 'failed' };
 }
 
-async function keysOf(
-  run: PreviewRun | null,
-): Promise<{ keys: readonly string[] } | { hint: string }> {
-  const keys = run ? await run.elements() : null;
-  if (keys === null) return { hint: UNREAD };
-  if (keys === 'over') return { hint: CROWDED };
-  return { keys };
-}
-
-/** Where the preview of the revision an add made shows what it added, or why it does not. */
-async function shownAdd(
+/** Where the preview of the revision an add made shows the row it landed on, or why it does not. */
+async function verdictOf(
   runs: PreviewRuns,
   designId: string,
-  revisionId: string,
-  before: readonly string[],
-): Promise<{ box: FrameRect } | { hint: string }> {
-  const run = await drawnRun(runs, designId, revisionId);
-  const after = await keysOf(run);
-  if ('hint' in after) return after;
-  const added = addedRun(before, after.keys);
-  const shown = run && added ? await run.shown(added) : null;
-  if (shown === null) return { hint: UNREAD };
-  return shown === 'unseen' ? { hint: UNSEEN } : { box: shown };
+  { receipt, landed }: ElementEdited,
+): Promise<Exclude<AddOutcome, { kind: 'failed' }>> {
+  if (landed === null) return { kind: 'refused', hint: UNREAD };
+  const run = await drawnRun(runs, designId, receipt.revisionId);
+  const shown = run ? await run.shown(landed) : null;
+  if (shown === null) return { kind: 'refused', hint: UNREAD };
+  if (shown === 'unseen') return { kind: 'refused', hint: UNSEEN };
+  return { kind: 'shown', revisionId: receipt.revisionId, nodeId: landed, box: shown };
 }
 
 /** The design's preview once it draws `revisionId`, or null when it has not by the deadline. */

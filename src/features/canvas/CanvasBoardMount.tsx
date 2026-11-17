@@ -20,7 +20,12 @@ import { toast } from '../../lib/toast';
 import { isBoardEditor, sidePanelKey, type SidePanelTab } from './boardKeys';
 import { showBoard } from './boardOnScreen';
 import { CanvasBoard, type CanvasBoardHandle } from './CanvasBoard';
-import { recordPlacements, revisionEntry, switchHead, type HistoryStep } from './boardHistory';
+import {
+  recordPlacements,
+  recordWithTakeBack,
+  revisionEntry,
+  type HistoryStep,
+} from './boardHistory';
 import { boardHistory, canvasClient as canvas, frameRemovals, reportPreview } from './canvasClient';
 import { useCoverCapture } from './canvasCovers';
 import type { Viewport } from './canvasGeometry';
@@ -141,16 +146,17 @@ export function CanvasBoardMount({
   const recordEdit = useCallback(
     ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
       const frame = frames.find((each) => each.designId === designId);
-      if (!frame || made === revisionId) return;
+      if (!frame || made === revisionId) return null;
       const design = { designId, name: frame.name };
-      boardHistory.record(canvasId, revisionEntry(switchRevision, design, revisionId, made));
+      const entry = revisionEntry(switchRevision, design, revisionId, made);
+      return recordWithTakeBack(boardHistory, canvasId, entry);
     },
     [canvasId, frames, switchRevision],
   );
   const editElement = useCallback(
     async (input: EditElementInput) => {
       const edited = await canvas.source.editElement(appSessionId, canvasId, input);
-      // An add is a step only once its frame shows it, which the Components tab decides.
+      // The Components tab records its adds, so it can take exactly that step back.
       if (input.edit.change.kind !== 'insert')
         recordEdit(
           'element' in input.edit ? input.edit.element : input.edit.layer,
@@ -263,11 +269,7 @@ export function CanvasBoardMount({
     elements,
     presence,
     onEditLayer: layerEdits,
-    steps: {
-      record: recordEdit,
-      takeBack: ({ designId, revisionId }, made) =>
-        switchHead(switchRevision, designId, revisionId, made),
-    },
+    steps: { record: recordEdit, holding: (add) => boardHistory.recording(canvasId, add) },
     holdReveal: () => boardRef.current?.holdReveal(),
   });
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');

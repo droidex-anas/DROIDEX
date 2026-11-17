@@ -9,8 +9,8 @@ import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChang
 import {
   BoardHistory,
   recordPlacements,
+  recordWithTakeBack,
   revisionEntry,
-  switchHead,
 } from '../../../src/features/canvas/boardHistory';
 import { showBoard } from '../../../src/features/canvas/boardOnScreen';
 import { CanvasColumnTabs } from '../../../src/features/canvas/CanvasColumnTabs';
@@ -628,11 +628,10 @@ function Harness() {
   // `?paths=1` makes each edit a step of the board's history, as the mount does.
   const recordEdit = ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
     const frame = shown.current.frames.find((each) => each.designId === designId);
-    if (params.has('paths') && frame)
-      history.record(
-        shown.current.canvasId,
-        revisionEntry(askSwitch, { designId, name: frame.name }, revisionId, made),
-      );
+    if (!params.has('paths') || !frame) return null;
+    const design = { designId, name: frame.name };
+    const entry = revisionEntry(askSwitch, design, revisionId, made);
+    return recordWithTakeBack(history, shown.current.canvasId, entry);
   };
   const editor = useElementEditor({
     canvasId: snapshot.canvasId,
@@ -666,11 +665,7 @@ function Harness() {
     elements,
     presence,
     onEditLayer: editLayer,
-    steps: {
-      record: recordEdit,
-      takeBack: ({ designId, revisionId }, made) =>
-        switchHead(askSwitch, designId, revisionId, made),
-    },
+    steps: { record: recordEdit, holding: (add) => history.recording(snapshot.canvasId, add) },
     holdReveal: () => board.current?.holdReveal(),
   });
   if (params.has('project')) projectExport.open = setExporting;

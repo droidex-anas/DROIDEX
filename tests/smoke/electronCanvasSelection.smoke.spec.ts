@@ -19,17 +19,14 @@ import {
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
 import {
-  addedRun,
-  PREVIEW_ELEMENTS_SCRIPT,
   previewShownScript,
-  readPreviewElementKeys,
   readPreviewShown,
-  type PreviewElementRun,
 } from '../../src/features/canvas/previewDocumentLayout';
 import {
   previewShapeScript,
   readPreviewShape,
 } from '../../src/features/canvas/previewDocumentShape';
+import type { CompiledDesign } from '../../sidecar/src/canvas/compiler';
 import { pickedElement } from '../../src/features/canvas/pickedElement';
 import type { CanvasFrame } from '../../src/features/canvas/protocol';
 import {
@@ -369,11 +366,17 @@ export default function Mark() {
   });
 });
 
-test('[C4 shown] the production guest says whether the elements an add drew show', async () => {
+test('[C4 shown] the production guest says whether the elements a layer drew show', async () => {
   // A page whose fixed, clipping top layer its content already fills, as agent-written frames often are.
   const full = (added: string) =>
     compileDesign({
-      'main.tsx': `export default function Full() {
+      'main.tsx': `import { Button } from '@droidex/design-system';
+
+function Tag() {
+  return <em style={{ position: 'absolute', left: '200px', top: '16px' }}>New</em>;
+}
+
+export default function Full() {
   return (
     <main style={{ height: '300px', boxSizing: 'border-box', padding: '16px', overflow: 'hidden' }}>
       <section style={{ height: '200px' }}>Everything</section>
@@ -383,12 +386,21 @@ test('[C4 shown] the production guest says whether the elements an add drew show
 }
 `,
     });
-  const [before, spaced, tight] = await Promise.all([
-    full(''),
+  const [spaced, tight, twins] = await Promise.all([
     // 84px of room is left where it would start, but its own top margin takes it wholly out of view.
     full(`<button style={{ marginTop: '96px', height: '32px' }}>Add</button>`),
     full(`<button style={{ height: '32px' }}>Add</button>`),
+    // Two identical kit Buttons, the second below the page's clipped bottom; a component
+    // that passes none of its props on; and a Button that is not drawn at all.
+    full(`<div style={{ display: 'flex', flexDirection: 'column', gap: '48px', marginTop: '8px' }}>
+        <Button>Add</Button>
+        <Button>Add</Button>
+      </div>
+      <Tag />
+      {false && <Button>Never</Button>}`),
   ]);
+  const rows = (design: CompiledDesign, name: string) =>
+    design.outline.nodes.filter((node) => node.name === name).map((node) => node.nodeId);
 
   await withCanvasHost(async (_app, page) => {
     const draw = async (html: string) => {
@@ -402,30 +414,31 @@ test('[C4 shown] the production guest says whether the elements an add drew show
           { timeout: 20_000, intervals: [100] },
         )
         .toBe(true);
-      const keys = readPreviewElementKeys(await askGuest(page, PREVIEW_ELEMENTS_SCRIPT));
-      assert.ok(Array.isArray(keys), 'the guest keyed what it draws');
-      return keys as readonly string[];
     };
-    const shown = async (run: PreviewElementRun) =>
-      readPreviewShown(await askGuest(page, previewShownScript(run)));
+    const shown = async (nodeId: string) =>
+      readPreviewShown(await askGuest(page, previewShownScript(nodeId)));
 
-    const drawn = await draw(before.html);
-    // The page shows what it draws, and reading leaves it as it was.
-    const whole = await shown({ from: 0, count: drawn.length });
+    await draw(spaced.html);
+    const whole = await shown(rows(spaced, 'main')[0]);
     assert.ok(whole !== null && whole !== 'unseen', 'the frame shows its page');
     assert.equal(whole.height, 300);
-    assert.deepEqual(readPreviewElementKeys(await askGuest(page, PREVIEW_ELEMENTS_SCRIPT)), drawn);
+    assert.equal(await shown(rows(spaced, 'button')[0]), 'unseen');
 
-    // The button alone is added, wherever the page's own elements put it in document order.
-    const clipped = addedRun(drawn, await draw(spaced.html));
-    assert.equal(clipped?.count, 1);
-    assert.equal(await shown(clipped), 'unseen');
-
-    const inView = addedRun(drawn, await draw(tight.html));
-    assert.equal(inView?.count, 1);
-    const box = await shown(inView);
+    await draw(tight.html);
+    const box = await shown(rows(tight, 'button')[0]);
     assert.ok(box !== null && box !== 'unseen', 'the frame shows the button');
     assert.equal(box.y, 216);
     assert.equal(box.height, 32);
+
+    await draw(twins.html);
+    const [first, second, never] = rows(twins, 'Button');
+    const firstBox = await shown(first);
+    assert.ok(firstBox !== null && firstBox !== 'unseen', 'the frame shows the first Button');
+    assert.equal(firstBox.y, 224);
+    // Its twin draws the same elements, but the clipped one is the second's own.
+    assert.equal(await shown(second), 'unseen');
+    const tag = await shown(rows(twins, 'Tag')[0]);
+    assert.ok(tag !== null && tag !== 'unseen', 'a component that passes no props on is read too');
+    assert.equal(await shown(never), null);
   });
 });

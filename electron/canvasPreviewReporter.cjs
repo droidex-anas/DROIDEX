@@ -26,9 +26,8 @@ const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
  * `vector` event carries the design's root `<svg>` as a standalone file, a
  * `shape` event the data, matrix and box of the `<path>` a path names, and a
  * `tree` event one page of the marked elements in document order, starting
- * its command's `from` marked elements in. An `elements` event keys every
- * element the page draws, in document order, and a `shown` event says
- * whether a run of those shows in the frame. A kit preview's
+ * its command's `from` marked elements in. A `shown` event says whether
+ * the frame shows the elements one layer of the outline drew. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -405,10 +404,8 @@ ${LAYOUT_REPORTER}
     } else if (command.command === 'shape') {
       const node = markedAt(command.elementId, command.instancePath);
       post('shape', { sequence: command.sequence, shape: shape(node) });
-    } else if (command.command === 'elements') {
-      post('elements', { sequence: command.sequence, elements: elementKeys() });
     } else if (command.command === 'shown') {
-      post('shown', { sequence: command.sequence, shown: shownRun(command.from, command.count) });
+      post('shown', { sequence: command.sequence, shown: shownLayer(command.nodeId) });
     } else if (command.command === 'tree') {
       post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {

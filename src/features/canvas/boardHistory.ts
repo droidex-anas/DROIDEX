@@ -50,13 +50,28 @@ interface Line {
 export class BoardHistory {
   private readonly lines = new Map<string, Line>();
 
-  /** A new step on `canvasId`: it can be undone, and nothing undone before it can be redone. */
-  record(canvasId: string, entry: HistoryEntry): void {
+  /**
+   * A new step on `canvasId`: it can be undone, and nothing undone before it
+   * can be redone. The answer drops exactly this step again, for a change its
+   * maker took back itself; while it is still the newest step, the steps its
+   * record cleared from Redo or pushed off the oldest end come back too.
+   */
+  record(canvasId: string, entry: HistoryEntry): () => void {
     const line = this.lineOf(canvasId);
     line.done.at(-1)?.covered?.();
-    line.done = [...line.done, entry].slice(-MAX_STEPS);
+    const done = [...line.done, entry];
+    const pushedOut = done.slice(0, -MAX_STEPS);
+    const cleared = line.undone;
+    line.done = done.slice(-MAX_STEPS);
     line.undone = [];
     line.pressed = [];
+    return () => {
+      const newest = line.done.at(-1) === entry && line.undone.length === 0;
+      line.done = line.done.filter((each) => each !== entry);
+      if (!newest) return;
+      line.done = [...pushedOut, ...line.done];
+      line.undone = cleared;
+    };
   }
 
   /** Takes the newest step back, after any presses still running; false when there is none. */
@@ -195,7 +210,7 @@ export async function landed(write: Promise<unknown>): Promise<boolean> {
 type SwitchRevision = (input: SwitchRevisionInput) => Promise<unknown>;
 
 /** Moves a design's head to `revisionId` only while it is still at `expectedRevisionId`; false where it moved on. */
-export function switchHead(
+function switchHead(
   switchRevision: SwitchRevision,
   designId: string,
   revisionId: string,
@@ -225,6 +240,24 @@ export function revisionEntry(
   };
 }
 
+/**
+ * Records `entry` as a step of `canvasId`'s history the moment its change
+ * lands, so a later step always sits above it. The answer takes exactly that
+ * change back: it runs the step's undo and drops the step, or answers false
+ * where the design moved on, which leaves the step where Undo finds it.
+ */
+export function recordWithTakeBack(
+  history: BoardHistory,
+  canvasId: string,
+  entry: HistoryEntry,
+): () => Promise<boolean> {
+  const withdraw = history.record(canvasId, entry);
+  return async () => {
+    if (!(await entry.undo())) return false;
+    withdraw();
+    return true;
+  };
+}
 /**
  * `arrange`, recording each placement that lands as one step of `canvasId`'s
  * history: a released drag or resize, a nudge, an align, a distribute or a
