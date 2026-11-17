@@ -53,13 +53,15 @@ import { useFrameRemoval } from './useFrameRemoval';
 import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
   focusFrame: (frameId: string) => void;
   /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
   focusLabel: (frameId: string) => void;
+  /** Pans the least distance that brings a rect of the board wholly into view. */
+  reveal: (rect: FrameRect) => void;
 }
 
 export interface CanvasBoardProps {
@@ -251,7 +253,11 @@ export function CanvasBoard({
     [onLeave, stage],
   );
 
-  useImperativeHandle(ref, () => ({ focusFrame, focusLabel }), [focusFrame, focusLabel]);
+  useImperativeHandle(ref, () => ({ focusFrame, focusLabel, reveal: view.reveal }), [
+    focusFrame,
+    focusLabel,
+    view.reveal,
+  ]);
 
   const selected = pickedOnBoard(drawn, editor.selection);
   const measured = useHoverMeasurements(board, drawn, interaction, selected, editor.hover);

@@ -262,6 +262,7 @@ export function CanvasBoardMount({
     elements,
     presence,
     onEditLayer: layerEdits,
+    reveal: (rect) => boardRef.current?.reveal(rect),
   });
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
   /** Opens the side panel on `tab`, or closes it when it already shows that tab. */

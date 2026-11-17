@@ -59,9 +59,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
  * `vector` with the design's root `<svg>` or why it has none, `shape` with a
- * named `<path>`'s data, matrix and box or why it has none, and `tree` with
- * a page of the design's marked elements in document order, from the one it
- * names; each of those waits for its own answer.
+ * named `<path>`'s data, matrix and box or why it has none, `landing` with the
+ * box an element added in or after a named one would start in (false if unseen),
+ * and `tree` with a page of marked elements in document order; each waits.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -292,7 +292,7 @@ ${SVG_INTERMEDIATE}
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (['probe', 'locate', 'vector', 'shape', 'tree'].includes(data.event)) {
+    if (['probe', 'locate', 'vector', 'shape', 'landing', 'tree'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -454,6 +454,13 @@ ${SVG_INTERMEDIATE}
       const node = request && typeof request === 'object' ? nodeOf(request) : null;
       if (!node) return 'invalid_request';
       return askFrame(Object.assign({ command: 'shape' }, node), (data) => normalizeShape(data.shape));
+    },
+    landing(request) {
+      if (!instance) throw new Error('This Canvas preview guest was never started.');
+      const node = request && typeof request === 'object' ? nodeOf(request) : null;
+      if (!node || !['inside', 'after'].includes(request.place)) return 'invalid_request';
+      const read = (data) => (data.landing === false ? false : rectOf(data.landing));
+      return askFrame(Object.assign({ command: 'landing', place: request.place }, node), read);
     },
     tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');

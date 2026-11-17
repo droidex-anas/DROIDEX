@@ -681,7 +681,9 @@ frame pins, last inside the layer when it holds others and else right after it, 
 kit exports and lucide-react icons the entry names into that file once, refused where the file
 binds one of those names itself, with each prop picked in the row's variant menu written on the
 entry's first element that uses a kit component (refused where the entry writes that prop in
-code). The board's Components tab beside Layers sends it. The reply
+code). The board's Components tab beside Layers sends it, once the frame's preview guest,
+asked to hit-test a control-sized probe in the entry's place, says the frame would show it;
+where it would land clipped or off the frame the tab says so and writes nothing. The reply
 names the row the edit lands on in the new revision (the moved layer, the copy, the added
 element, or the row beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
 token with that value and stays raw only when the kit has none. What a style edit writes is

@@ -665,6 +665,7 @@ function Harness() {
     elements,
     presence,
     onEditLayer: editLayer,
+    reveal: (rect) => board.current?.reveal(rect),
   });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');

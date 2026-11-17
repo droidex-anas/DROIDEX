@@ -1,18 +1,21 @@
 // Where the Components tab adds a kit entry, and the add itself: after the
 // entry it added last, else into the layer Edit has picked, else into the top
-// layer of the one selected frame. Once an add has built, its layer is picked
-// in Edit, so the next entry goes in after it.
+// layer of the one selected frame. An add is written only where the frame's
+// preview would show it, and the board then brings that spot into view. Once
+// it has built, its layer is picked in Edit, so the next entry goes in after it.
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore } from 'react';
 import type { CanvasPresence } from '../canvasPresence';
-import type { PropPick } from '../elementEditProtocol';
+import type { LayerRef, PropPick } from '../elementEditProtocol';
 import type { LayerElements } from '../layers/layerElements';
 import { drawnLayers } from '../layers/drawnLayers';
 import type { EditLayer } from '../layers/useLayerEdit';
 import { pickedLayer, type PickedLayer } from '../pickedElement';
 import type { PreviewNode } from '../previewDocument';
+import type { PreviewLanding } from '../previewDocumentLanding';
+import type { PreviewRuns } from '../previewRuns';
 import type { PreviewRun } from '../previewRuntime';
-import type { CanvasFrame, ElementRef, SourceOutline } from '../protocol';
+import type { CanvasFrame, ElementRef, FrameRect, OutlineNode, SourceOutline } from '../protocol';
 import { landingHint, landingOf } from './paletteRows';
 
 /** The row an add landed on, in the revision it made. */
@@ -37,12 +40,21 @@ export interface PalettePlace {
   canAdd: boolean;
 }
 
+/** Why the last add at one layer of one revision was not written. */
+interface Refusal extends PalettePlace {
+  layerKey: string;
+}
+
+const UNSEEN = 'Not added: it would land where this frame doesn’t show. Pick a layer to add it to.';
+const UNREAD = 'Can’t tell where it would show. Bring the frame into view and add again.';
+
 export function useComponentInsert({
   frames,
   selectedFrameIds,
   elements,
   presence,
   onEditLayer,
+  reveal,
 }: {
   /** The frames on the board, which Edit picks in. */
   frames: readonly CanvasFrame[];
@@ -52,9 +64,12 @@ export function useComponentInsert({
   presence: CanvasPresence;
   /** Undefined where this chat cannot change the canvas. */
   onEditLayer: EditLayer | undefined;
+  /** Brings a rect of the board into view. */
+  reveal: (rect: FrameRect) => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState<Added | null>(null);
+  const [refusal, setRefusal] = useState<Refusal | null>(null);
   const picked = elements.picked;
   // A pick since the add, or another frame selected, takes the next entry elsewhere.
   if (
@@ -64,20 +79,45 @@ export function useComponentInsert({
   )
     setAdded(null);
   const target = targetOf(frames, selectedFrameIds, picked?.element ?? null, added);
-  const place = placeOf(target, { adding, presence, canEdit: onEditLayer !== undefined });
+  const place = placeOf(target, { adding, presence, canEdit: onEditLayer !== undefined, refusal });
   usePickAdded(added, frames, elements);
 
   const add = (entry: string, props: PropPick[]) => {
     if (!target?.layer || !('row' in target.layer) || !onEditLayer || !place.canAdd) return;
-    const { designId } = target.frame;
-    setAdding(true);
-    const layer = { designId, revisionId: target.revisionId, nodeId: target.layer.row.nodeId };
+    const { frame, revisionId } = target;
+    const into = target.layer.row;
+    const layer = { designId: frame.designId, revisionId, nodeId: into.nodeId };
+    const layerKey = layerKeyOf(layer);
     const pick = picked?.pick ?? null;
-    void onEditLayer(layer, { kind: 'insert', entry, props }).then((edited) => {
+    setAdding(true);
+    void (async () => {
+      const landing = await landingFor(elements.runs, frame, revisionId, into);
+      if (landing === null || landing === 'unseen') {
+        setAdding(false);
+        setRefusal(
+          landing === null
+            ? { layerKey, hint: UNREAD, canAdd: true }
+            : { layerKey, hint: UNSEEN, canAdd: false },
+        );
+        return;
+      }
+      const edited = await onEditLayer(layer, { kind: 'insert', entry, props });
       setAdding(false);
-      if (edited?.landed)
-        setAdded({ designId, revisionId: edited.receipt.revisionId, nodeId: edited.landed, pick });
-    });
+      if (!edited?.landed) return;
+      setAdded({
+        designId: frame.designId,
+        revisionId: edited.receipt.revisionId,
+        nodeId: edited.landed,
+        pick,
+      });
+      // The rest of the frame from where the entry starts; one larger than the board shows that corner.
+      reveal({
+        x: frame.rect.x + landing.x,
+        y: frame.rect.y + landing.y,
+        width: frame.rect.width - landing.x,
+        height: frame.rect.height - landing.y,
+      });
+    })();
   };
   return { kit: (target?.frame ?? frames.at(0))?.designSystem, place, add };
 }
@@ -117,9 +157,19 @@ function rowOf(frame: CanvasFrame, nodeId: string | null): PickedLayer | null {
   return row ? { row } : null;
 }
 
+/** A refusal holds for the one layer of the one revision it was asked of. */
+function layerKeyOf({ designId, revisionId, nodeId }: LayerRef): string {
+  return `${designId}:${revisionId}:${nodeId}`;
+}
+
 function placeOf(
   target: Target | null,
-  { adding, presence, canEdit }: { adding: boolean; presence: CanvasPresence; canEdit: boolean },
+  {
+    adding,
+    presence,
+    canEdit,
+    refusal,
+  }: { adding: boolean; presence: CanvasPresence; canEdit: boolean; refusal: Refusal | null },
 ): PalettePlace {
   const refuse = (hint: string) => ({ hint, canAdd: false });
   if (!target) return refuse('Select a frame or a layer to add to.');
@@ -133,8 +183,45 @@ function placeOf(
     return refuse(
       'Can’t tell this element from the component that draws it. Pick its layer in Layers.',
     );
+  const { designId } = target.frame;
+  const layerKey = layerKeyOf({
+    designId,
+    revisionId: target.revisionId,
+    nodeId: target.layer.row.nodeId,
+  });
+  if (refusal?.layerKey === layerKey) return { hint: refusal.hint, canAdd: refusal.canAdd };
   const landing = landingOf(outline.nodes, target.layer.row);
   return { hint: landingHint(landing), canAdd: landing.kind !== 'refused' };
+}
+
+/**
+ * Where the frame's preview of `revisionId` would start an entry added at
+ * `row`, or null when it cannot tell. A row with no element of its own, a
+ * component's usage, is probed at the end of the nearest element holding it,
+ * which is where an add that went in last there left it.
+ */
+async function landingFor(
+  runs: PreviewRuns,
+  frame: CanvasFrame,
+  revisionId: string,
+  row: OutlineNode,
+): Promise<PreviewLanding | null> {
+  const held = runs.get(frame.designId);
+  const outline = builtOutline(frame);
+  if (!outline || held?.revisionId !== revisionId) return null;
+  const tree = await held.run.tree(null);
+  const landing = landingOf(outline.nodes, row);
+  if (!tree || landing.kind === 'refused') return null;
+  const { drawn } = drawnLayers(outline, tree);
+  const own = drawn.get(row.nodeId);
+  if (own?.state === 'drawn') return held.run.landing(own.node, landing.kind);
+  if (landing.kind === 'inside') return null;
+  const byId = new Map(outline.nodes.map((node) => [node.nodeId, node]));
+  for (let at = byId.get(row.parentId ?? ''); at; at = byId.get(at.parentId ?? '')) {
+    const holder = drawn.get(at.nodeId);
+    if (holder?.state === 'drawn') return held.run.landing(holder.node, 'inside');
+  }
+  return null;
 }
 
 /** The outline of the revision the frame shows, once it has built. */

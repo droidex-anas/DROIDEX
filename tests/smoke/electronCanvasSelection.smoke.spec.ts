@@ -14,10 +14,16 @@ import {
   readPreviewFinding,
   readPreviewHover,
   type PreviewElement,
+  type PreviewNode,
   type PreviewPick,
   type PreviewProbe,
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
+import {
+  previewLandingScript,
+  readPreviewLanding,
+  type PreviewLandingPlace,
+} from '../../src/features/canvas/previewDocumentLanding';
 import {
   previewShapeScript,
   readPreviewShape,
@@ -356,6 +362,56 @@ export default function Mark() {
     assert.equal(
       await askGuest(page, previewSelectScript({ ...target, d: 'M0 0\nL1 1' }, [], 99)),
       'invalid_request',
+    );
+  });
+});
+
+test('[C4 landing] the production guest says whether an element added at a node would show', async () => {
+  // A page whose fixed, clipping top layer its content already fills, as agent-written frames often are.
+  const design = await compileDesign({
+    'main.tsx': `export default function Full() {
+  return (
+    <main style={{ height: '200px', boxSizing: 'border-box', padding: '16px', overflow: 'hidden' }}>
+      <section style={{ height: '168px' }}>Everything</section>
+    </main>
+  );
+}
+`,
+  });
+
+  await withCanvasHost(async (_app, page) => {
+    await mountPreviewGuest(page);
+    const instance = newInstance('landing');
+    assert.equal(await askGuest(page, previewStartScript(instance, design.html)), PREVIEW_STARTED);
+    await expect
+      .poll(
+        async () => (await drainGuest(page, instance)).events.some((e) => e.event === 'ready'),
+        { timeout: 20_000, intervals: [100] },
+      )
+      .toBe(true);
+    const nodeAt = async (at: { x: number; y: number }) => {
+      const found = readPreviewHover(await askGuest(page, previewHoverScript(at)));
+      assert.ok(found, `an element at ${at.x}, ${at.y}`);
+      return { elementId: found.elementId, instancePath: found.instancePath };
+    };
+    const landing = async (node: PreviewNode, place: PreviewLandingPlace) =>
+      readPreviewLanding(await askGuest(page, previewLandingScript(node, place)));
+    const main = await nodeAt({ x: 4, y: 4 });
+    const section = await nodeAt({ x: 40, y: 40 });
+
+    // Last inside the main, an entry would start in its bottom padding and be
+    // clipped before a control's height: the frame would not show it.
+    assert.equal(await landing(main, 'inside'), 'unseen');
+    assert.equal(await landing(section, 'after'), 'unseen');
+    // Under the main the guest has room, and the answer is where it starts.
+    const below = await landing(main, 'after');
+    assert.ok(below !== null && below !== 'unseen');
+    assert.equal(below.y, 200);
+    // The probe leaves nothing behind.
+    assert.deepEqual(await nodeAt({ x: 40, y: 40 }), section);
+    assert.equal(
+      readPreviewHover(await askGuest(page, previewHoverScript({ x: 4, y: 210 }))),
+      null,
     );
   });
 });
