@@ -23,6 +23,7 @@ import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
 import {
+  frameNearestView,
   framesInBand,
   visibleDesignIds,
   type PlacedFrame,
@@ -62,7 +63,7 @@ export interface CanvasBoardHandle {
   showFrame: (frameId: string) => void;
   /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
   focusLabel: (frameId: string) => void;
-  /** The frame in view nearest its centre, or undefined when none is in view. */
+  /** The frame nearest the view's centre, on screen or not, or undefined on an empty board. */
   frameNearView: () => string | undefined;
 }
 
@@ -263,7 +264,7 @@ export function CanvasBoard({
       focusFrame,
       showFrame,
       focusLabel,
-      frameNearView: () => visibleDesignIds(latest.current, stage.viewport, viewSize).at(0),
+      frameNearView: () => frameNearestView(latest.current, stage.viewport, viewSize),
     }),
     [focusFrame, showFrame, focusLabel, stage, viewSize],
   );

@@ -10,6 +10,7 @@ import {
   canvasToScreen,
   distributeRects,
   fitFrames,
+  frameNearestView,
   framesInBand,
   interpolateViewport,
   arrowDirection,
@@ -495,6 +496,16 @@ test('only the frames in the board box compete for a live slot, nearest first', 
   assert.deepEqual(visibleDesignIds(PLACED, { x: 150, y: 0, scale: 1 }, box), ['near', 'right']);
   // A board with nothing measured yet has nothing visible.
   assert.deepEqual(visibleDesignIds(PLACED, { x: 0, y: 0, scale: 1 }, { x: 0, y: 0 }), []);
+});
+
+test('the frame nearest the view counts frames wholly off screen', () => {
+  const box = { x: 600, y: 400 };
+  // Panned far left into blank board: the centre is world (-2700, 200) and nothing is in view.
+  const blank = { x: 3000, y: 0, scale: 1 };
+  assert.deepEqual(visibleDesignIds(PLACED, blank, box), []);
+  assert.equal(frameNearestView(PLACED, blank, box), 'near');
+  assert.equal(frameNearestView(PLACED, { x: -6000, y: -6000, scale: 1 }, box), 'far');
+  assert.equal(frameNearestView([], blank, box), undefined);
 });
 
 test('an arrow key nudges by one world unit, and by ten with Shift', () => {
