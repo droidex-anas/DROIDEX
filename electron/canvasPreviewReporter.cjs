@@ -4,7 +4,6 @@
 //
 // Kept free of `require('electron')` so it runs under plain Node.
 
-const { LAYOUT_REPORTER } = require('./canvasPreviewLayout.cjs');
 const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
 
 /**
@@ -26,8 +25,7 @@ const { SVG_REPORTER } = require('./canvasPreviewSvg.cjs');
  * `vector` event carries the design's root `<svg>` as a standalone file, a
  * `shape` event the data, matrix and box of the `<path>` a path names, and a
  * `tree` event one page of the marked elements in document order, starting
- * its command's `from` marked elements in. A `shown` event says whether
- * the frame shows the elements one layer of the outline drew. A kit preview's
+ * its command's `from` marked elements in. A kit preview's
  * draft token values arrive as one set that replaces the last, as inline custom
  * properties on the root, which win over the kit's own root and mode rules.
  * The intermediate accepts `interaction` too, which nothing produces yet.
@@ -327,7 +325,6 @@ ${SVG_REPORTER}
     }
     return { nodes: nodes, from: from, cap: ${String(MAX_PREVIEW_TREE_NODES)}, truncated: truncated };
   };
-${LAYOUT_REPORTER}
   let draftTokens = [];
   const setTokens = (tokens) => {
     const style = document.documentElement.style;
@@ -404,8 +401,6 @@ ${LAYOUT_REPORTER}
     } else if (command.command === 'shape') {
       const node = markedAt(command.elementId, command.instancePath);
       post('shape', { sequence: command.sequence, shape: shape(node) });
-    } else if (command.command === 'shown') {
-      post('shown', { sequence: command.sequence, shown: shownLayer(command.nodeId) });
     } else if (command.command === 'tree') {
       post('tree', Object.assign({ sequence: command.sequence }, tree(command.from)));
     } else if (command.command === 'select') {

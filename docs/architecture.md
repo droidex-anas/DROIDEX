@@ -676,22 +676,16 @@ element's children within the same block of the same component, in the file's ow
 and line endings, leaving strings and templates as written; a move into or out of text, or into
 an element whose content a prop sets, is refused. It also removes a layer, closing a parent it
 leaves empty to `<ul></ul>` and keeping an instance's component, or puts a copy right after it,
-refused when the layer writes an `id`. It adds an entry of the catalog of the kit version the
-frame pins, last inside the layer when it holds others and else right after it, importing the
-kit exports and lucide-react icons the entry names into that file once, refused where the file
-binds one of those names itself, with each prop picked in the row's variant menu written on the
-entry's first element that uses a kit component (refused where the entry writes that prop in
-code). The board's Components tab beside Layers sends it, then keeps the add only where the
-frame shows it: the preview build wraps each element and component usage an outline row is
-written at in a call that files the element's props object under the row's node id and returns
-the element unchanged, and once the new revision draws, the preview guest is asked whether what
-the reply's landed row drew (the painted elements under the fibers holding those props) shows,
-unclipped and uncovered. The add is held in the board's history at its place from the moment it
-lands, clearing no Redo until it is kept; one the frame does not show, or that the guest cannot
-read, is switched back to the revision it was made on and leaves the history as it was, and the
-tab says why. The reply
-names the row the edit lands on in the new revision (the moved layer, the copy, the added
-element, or the row beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
+refused when the layer writes an `id`. The board's Components tab beside Layers adds a kit
+catalog entry as a new frame rather than an edit: a `{ kind: 'component', entry, props }` seed
+of `canvas.createFrames` names an entry of the kit the new frame pins, and staging writes the
+frame's `main.tsx` as that entry alone, centred in a box that hugs it, with each prop picked in
+the tab written on the entry's first element that uses a kit component (refused where the entry
+writes that prop in code). The tab places the frame beside the selected frame, else the one
+nearest the view's centre, records its creation as one step of the board's history that Undo
+deletes, and once its preview draws, sizes it to the entry's box and a margin. The reply
+names the row the edit lands on in the new revision (the moved layer, the copy, or the row
+beside a removed one) so the selection and the keyboard can follow it; a replayed mutation answers `landed: null`. A style value is a pinned kit token's name, or a raw value that resolves to the kit
 token with that value and stays raw only when the kit has none. What a style edit writes is
 what a person writing Tailwind would: the class that says the value in place of the classes it
 makes dead, with the style attribute only where no stock class says it or a frame-scoped class

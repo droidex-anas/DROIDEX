@@ -9,10 +9,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { boardHistory, canvasClient as canvas, frameRemovals } from '../canvasClient';
 import { canvasMessage } from '../client';
-import type { PropPick } from '../elementEditProtocol';
 import type { PreviewRuns } from '../previewRuns';
 import type { PreviewRun } from '../previewRuntime';
-import type { CanvasFrame, CatalogListing, DesignSystemRef } from '../protocol';
+import type { CanvasFrame, CatalogListing, DesignSystemRef, PropPick } from '../protocol';
 
 /** The size a new frame starts at, before its preview says how much its entry needs. */
 const FIRST_SIZE = { width: 720, height: 560 };
@@ -41,7 +40,7 @@ export function addHint(add: BoardAdd, entry: string | undefined): string {
 }
 
 /** "Button", or "Button (outline, lg)" with its picks. */
-export function addedFrameName(entry: string, picks: readonly PropPick[]): string {
+function addedFrameName(entry: string, picks: readonly PropPick[]): string {
   const name =
     picks.length === 0 ? entry : `${entry} (${picks.map((pick) => pick.value).join(', ')})`;
   return name.slice(0, MAX_NAME_LENGTH);

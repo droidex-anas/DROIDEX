@@ -9,7 +9,7 @@ import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
-import { entryModule } from './catalogEntryModule.js';
+import { entryModule, withPicks } from './catalogEntryModule.js';
 import {
   DamagedRuntimeError,
   ownedCanvasRuntimeDir,
@@ -37,18 +37,12 @@ import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
-import {
-  KIT_CATALOG_FILE,
-  readKitCatalog,
-  type CatalogEntry,
-  type KitFailure,
-} from './kitCatalog.js';
+import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
 import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
-import { insertLayer, withPicks } from './sourceInsert.js';
 import { editLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
@@ -319,12 +313,7 @@ async function runEdit(
     stopIfCancelled(signal);
     let edited: EditedSource;
     if ('layer' in edit) {
-      const { change } = edit;
-      if (change.kind === 'insert') {
-        const entry = await catalogEntry(change.entry, designSystem);
-        stopIfCancelled(signal);
-        edited = insertLayer(files, edit.layer.nodeId, entry, change.props);
-      } else edited = editLayer(files, edit.layer.nodeId, change);
+      edited = editLayer(files, edit.layer.nodeId, edit.change);
     } else {
       const change = await sourceChange(edit.change, designSystem);
       stopIfCancelled(signal);
@@ -363,18 +352,6 @@ async function runEdit(
       } satisfies CompilerResponse);
     }
   }
-}
-
-/** The entry an insert names, from the pinned kit version's catalog, which was checked when it was saved. */
-async function catalogEntry(name: string, designSystem: DesignSystemRef): Promise<CatalogEntry> {
-  const read = readKitCatalog((await readDesignSystem(designSystem)).files);
-  const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
-  if (!entry)
-    throw new SourceElementError(
-      'invalid_edit',
-      `This kit has no component called ${name} any more.`,
-    );
-  return entry;
 }
 
 /** Resolves each style of a style edit against the pinned kit. */

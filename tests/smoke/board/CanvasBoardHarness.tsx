@@ -44,7 +44,7 @@ import { layerElements } from '../../../src/features/canvas/layers/layerElements
 import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
 import { SidePanel } from '../../../src/features/canvas/layers/SidePanel';
 import { ComponentsPanel } from '../../../src/features/canvas/palette/ComponentsPanel';
-import { useComponentInsert } from '../../../src/features/canvas/palette/useComponentInsert';
+import type { BoardAdd } from '../../../src/features/canvas/palette/useAddToBoard';
 import { PreviewRuns } from '../../../src/features/canvas/previewRuns';
 import { useElementEditor } from '../../../src/features/canvas/useElementEditor';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
@@ -611,6 +611,8 @@ const readSource = (_designId: string, revisionId: string) => {
   return new Promise<typeof files>((resolve) => sourceReads.waiting.push(() => resolve(files)));
 };
 const takenOff = new Map<string, CanvasFrame>();
+// The harness reads no kit, so the Components tab lists nothing and adds nothing.
+const NO_ADD: BoardAdd = { refusal: null, adding: null, failure: null };
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
@@ -624,12 +626,6 @@ function Harness() {
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
   const [runs] = useState(() => new PreviewRuns());
   const shownFrames = useMemo(() => snapshot.frames.filter(({ hidden }) => !hidden), [snapshot]);
-  // `?paths=1` makes each edit a step of the board's history, as the mount does.
-  const editEntry = ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
-    const frame = shown.current.frames.find((each) => each.designId === designId);
-    if (!params.has('paths') || !frame) return null;
-    return revisionEntry(askSwitch, { designId, name: frame.name }, revisionId, made);
-  };
   const editor = useElementEditor({
     canvasId: snapshot.canvasId,
     frames: shownFrames,
@@ -641,10 +637,20 @@ function Harness() {
       const edited = await new Promise<ElementEdited>((resolve, reject) =>
         editReplies.push({ resolve, reject }),
       );
-      const at = 'element' in input.edit ? input.edit.element : input.edit.layer;
-      const entry =
-        input.edit.change.kind === 'insert' ? null : editEntry(at, edited.receipt.revisionId);
-      if (entry) history.record(shown.current.canvasId, entry);
+      // `?paths=1` makes each edit a step of the board's history, as the mount does.
+      const { designId, revisionId } =
+        'element' in input.edit ? input.edit.element : input.edit.layer;
+      const frame = shown.current.frames.find((each) => each.designId === designId);
+      if (params.has('paths') && frame)
+        history.record(
+          shown.current.canvasId,
+          revisionEntry(
+            askSwitch,
+            { designId, name: frame.name },
+            revisionId,
+            edited.receipt.revisionId,
+          ),
+        );
       return edited;
     },
   });
@@ -654,22 +660,6 @@ function Harness() {
       toast.error(canvasMessage(refusal));
       return null;
     });
-  // The harness reads no kit, so the tab lists nothing; its target and adds are the board's own.
-  const palette = useComponentInsert({
-    frames: shownFrames,
-    selectedFrameIds: interaction.selectedFrameIds,
-    elements,
-    presence,
-    onEditLayer: editLayer,
-    steps: {
-      record: (layer, made) => {
-        const entry = editEntry(layer, made);
-        return entry && history.hold(shown.current.canvasId, entry);
-      },
-      holding: (add) => history.recording(snapshot.canvasId, add),
-    },
-    holdReveal: () => board.current?.holdReveal(),
-  });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
   const picks = useElementPins('chat_1');
@@ -983,8 +973,8 @@ function Harness() {
               <ComponentsPanel
                 kit={undefined}
                 chatId={null}
-                place={palette.place}
-                onAdd={palette.add}
+                add={NO_ADD}
+                onAdd={() => undefined}
                 onLeave={() => {
                   focusBoard(
                     interaction.selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId,

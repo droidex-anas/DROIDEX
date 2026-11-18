@@ -53,7 +53,7 @@ import { useFrameRemoval } from './useFrameRemoval';
 import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
@@ -64,12 +64,6 @@ export interface CanvasBoardHandle {
   focusLabel: (frameId: string) => void;
   /** The frame in view nearest its centre, or undefined when none is in view. */
   frameNearView: () => string | undefined;
-  /**
-   * Holds the view as it is now. The call it returns pans the least distance
-   * that brings a rect of the board wholly into view, unless the board has
-   * moved since, so a late answer never undoes the user's own pan or zoom.
-   */
-  holdReveal: () => (rect: FrameRect) => void;
 }
 
 export interface CanvasBoardProps {
@@ -262,7 +256,7 @@ export function CanvasBoard({
     [onLeave, stage],
   );
 
-  const { reveal, size: viewSize } = view;
+  const viewSize = view.size;
   useImperativeHandle(
     ref,
     () => ({
@@ -270,15 +264,8 @@ export function CanvasBoard({
       showFrame,
       focusLabel,
       frameNearView: () => visibleDesignIds(latest.current, stage.viewport, viewSize).at(0),
-      holdReveal: () => {
-        const held = stage.viewport;
-        return (rect) => {
-          const now = stage.viewport;
-          if (now.x === held.x && now.y === held.y && now.scale === held.scale) reveal(rect);
-        };
-      },
     }),
-    [focusFrame, showFrame, focusLabel, stage, reveal, viewSize],
+    [focusFrame, showFrame, focusLabel, stage, viewSize],
   );
 
   const selected = pickedOnBoard(drawn, editor.selection);

@@ -193,7 +193,7 @@ function canHold(row: LayerEntry): row is ElementEntry {
 }
 
 /** An element written in the source, once, that can have children and has no text of its own. */
-export function holdsLayers(node: OutlineNode): boolean {
+function holdsLayers(node: OutlineNode): boolean {
   const { kind, lock, name, text, contentFromProps } = node;
   return (
     kind === 'element' &&

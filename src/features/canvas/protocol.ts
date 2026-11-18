@@ -8,7 +8,7 @@
 
 import type { AnnotateCanvasInput, Annotation, AnnotationChange } from './annotationProtocol';
 import type { DocumentSection } from './designSystemDocumentProtocol';
-import type { EditElementInput, PropPick } from './elementEditProtocol';
+import type { EditElementInput } from './elementEditProtocol';
 
 export interface DesignSystemRef {
   id: string;
@@ -147,13 +147,13 @@ export interface LibraryItem {
 /** One kit token a direct style edit may name, with its value in each mode. */
 export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
 
-/** One insertable entry of a kit's catalog, as the kit document lists it. */
+/** One entry of a kit's catalog, as the kit document lists it. */
 export interface CatalogListing {
   name: string;
   /** The kit file it shows, for grouping and search. */
   module: string | null;
   note: string | null;
-  /** The props a palette lets the user pick before it inserts the entry. */
+  /** The props the Components tab lets the user pick before it adds the entry. */
   props: CatalogProp[];
 }
 
@@ -162,6 +162,12 @@ export interface CatalogProp {
   name: string;
   options: string[];
   default: string;
+}
+
+/** One of a catalog entry's props, and the option picked for it. */
+export interface PropPick {
+  name: string;
+  value: string;
 }
 
 /** A kit version as its document shows it: everything but its source. */

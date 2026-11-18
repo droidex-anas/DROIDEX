@@ -66,7 +66,6 @@ const LAYER_EDIT_VERBS: Record<Exclude<LayerChange['kind'], 'hide'>, string> = {
   move: 'move',
   remove: 'delete',
   duplicate: 'duplicate',
-  insert: 'add to',
 };
 
 function layerEditVerb(change: LayerChange): string {
@@ -138,25 +137,26 @@ export function CanvasBoardMount({
     [appSessionId, canvasId],
   );
   // Each edit that made a revision is a step in the board's history.
-  const editEntry = useCallback(
-    ({ designId, revisionId }: Omit<LayerRef, 'nodeId'>, made: string) => {
-      const frame = frames.find((each) => each.designId === designId);
-      if (!frame || made === revisionId) return null;
-      return revisionEntry(switchRevision, { designId, name: frame.name }, revisionId, made);
-    },
-    [frames, switchRevision],
-  );
   const editElement = useCallback(
     async (input: EditElementInput) => {
       const edited = await canvas.source.editElement(appSessionId, canvasId, input);
-      // The Components tab holds its adds, so it can take exactly that step back.
-      const at = 'element' in input.edit ? input.edit.element : input.edit.layer;
-      const entry =
-        input.edit.change.kind === 'insert' ? null : editEntry(at, edited.receipt.revisionId);
-      if (entry) boardHistory.record(canvasId, entry);
+      const { receipt } = edited;
+      const { designId, revisionId } =
+        'element' in input.edit ? input.edit.element : input.edit.layer;
+      const frame = frames.find((each) => each.designId === designId);
+      if (frame && receipt.revisionId !== revisionId)
+        boardHistory.record(
+          canvasId,
+          revisionEntry(
+            switchRevision,
+            { designId, name: frame.name },
+            revisionId,
+            receipt.revisionId,
+          ),
+        );
       return edited;
     },
-    [appSessionId, canvasId, editEntry],
+    [appSessionId, canvasId, frames, switchRevision],
   );
   const renderPreview = useCallback(
     (frame: CanvasFrame, revisionId: string, selections: PreviewSelections) => (

@@ -8,7 +8,6 @@ const {
   MAX_PREVIEW_TREE_BYTES,
   MAX_PREVIEW_TREE_NODES,
 } = require('./canvasPreviewReporter.cjs');
-const { LAYOUT_INTERMEDIATE } = require('./canvasPreviewLayout.cjs');
 const {
   MAX_PREVIEW_SHAPE_EVENT_BYTES,
   MAX_PREVIEW_VECTOR_BYTES,
@@ -60,9 +59,9 @@ const PREVIEW_NONCE_PATTERN = '^[0-9a-f]{32}$';
  * `probe` answers directly too, with the element at a point or the text
  * between two points, `locate` with the boxes of the elements it names, and
  * `vector` with the design's root `<svg>` or why it has none, `shape` with a
- * named `<path>`'s data, matrix and box or why it has none, `tree` with a page
- * of marked elements in document order and `shown` with whether the frame
- * shows what one layer drew; each waits.
+ * named `<path>`'s data, matrix and box or why it has none, and `tree` with
+ * a page of the design's marked elements in document order, from the one it
+ * names; each of those waits for its own answer.
  */
 const INTERMEDIATE_SCRIPT = `(() => {
   const REPORTER = __CANVAS_PREVIEW_REPORTER__;
@@ -201,7 +200,6 @@ ${SVG_INTERMEDIATE}
     isElementId(value.elementId) && isPath(value.instancePath)
       ? { elementId: value.elementId, instancePath: value.instancePath }
       : null;
-${LAYOUT_INTERMEDIATE}
 
   // One page of the design's marked elements as the reporter walked them, the
   // one asked for; one node that is not one refuses the whole answer.
@@ -294,7 +292,7 @@ ${LAYOUT_INTERMEDIATE}
       if (hovering && data.sequence === hovering.sequence) hovering.settle(normalizeHover(data.element));
       return;
     }
-    if (['probe', 'locate', 'vector', 'shape', 'tree', 'shown'].includes(data.event)) {
+    if (['probe', 'locate', 'vector', 'shape', 'tree'].includes(data.event)) {
       const question = waiting.get(data.sequence);
       if (question?.event === data.event) question.settle(data);
       return;
@@ -457,7 +455,6 @@ ${LAYOUT_INTERMEDIATE}
       if (!node) return 'invalid_request';
       return askFrame(Object.assign({ command: 'shape' }, node), (data) => normalizeShape(data.shape));
     },
-    shown: askShown,
     tree(request) {
       if (!instance) throw new Error('This Canvas preview guest was never started.');
       const from = request && typeof request === 'object' ? request.from : null;

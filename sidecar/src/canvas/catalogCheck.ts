@@ -1,5 +1,5 @@
 // How the compiler checks a kit's catalog. Each entry must stand alone, as a
-// palette inserts it: one JSX element or fragment that is the whole of its jsx,
+// frame writes it: one JSX element or fragment that is the whole of its jsx,
 // naming only its own uses and icons, what it binds itself, and undefined. The entries are
 // then built together, each as its own module with its own imports, so a build
 // failure belongs to the entry whose module it is in. Only the compiler process

@@ -23,7 +23,7 @@ function fakeBoard() {
   /** Each switch as [design, to, expected head]. */
   const moves = () =>
     switches.map((sent) => [sent.designId, sent.revisionId, sent.expectedRevisionId]);
-  return { history, switchRevision, switches, edit, moves };
+  return { history, switches, edit, moves };
 }
 
 /** Lets every settled answer run through the history. */
@@ -128,56 +128,6 @@ test('a step recorded while a press runs stays on top of it, and a refused press
   await settle();
   assert.equal(history.undo('cv'), true);
   assert.deepEqual(moves()[1], ['hero', 'h2', 'h3']);
-});
-
-test('an add that cannot be taken back keeps its place under the edits made after it', async () => {
-  // The add lands, the user edits the same frame, and the add can no longer be taken back.
-  const { history, switchRevision, switches, edit, moves } = fakeBoard();
-  const added = history.hold('cv', revisionEntry(switchRevision, hero, 'h1', 'h2'));
-  edit(hero, 'h2', 'h3');
-  const taking = added.takeBack();
-  switches[0].reject(new CanvasRequestError('revision_conflict', 'The head moved.'));
-  assert.equal(await taking, false);
-  for (const index of [1, 2]) {
-    assert.equal(history.undo('cv'), true);
-    switches[index].resolve(undefined);
-    await settle();
-  }
-  assert.deepEqual(moves().slice(1), [
-    ['hero', 'h2', 'h3'],
-    ['hero', 'h1', 'h2'],
-  ]);
-  assert.equal(history.undo('cv'), false);
-});
-
-test('two adds taken back leave Undo and Redo exactly as they found them', async () => {
-  // A full history, 100 steps after the oldest was pushed out, with the newest undone.
-  const { history, switchRevision, switches, edit, moves } = fakeBoard();
-  for (let step = 1; step <= 101; step += 1) edit(card, `c${String(step)}`, `c${String(step + 1)}`);
-  history.undo('cv');
-  switches[0].resolve(undefined);
-  await settle();
-  // Two adds to other frames await their verdicts at once; the older is refused first.
-  const logo = { designId: 'logo', name: 'Logo' };
-  const first = history.hold('cv', revisionEntry(switchRevision, hero, 'h1', 'h2'));
-  const second = history.hold('cv', revisionEntry(switchRevision, logo, 'l1', 'l2'));
-  for (const [index, add] of [first, second].entries()) {
-    const taking = add.takeBack();
-    switches[index + 1].resolve(undefined);
-    assert.equal(await taking, true);
-  }
-  assert.equal(history.redo('cv'), true);
-  switches[3].resolve(undefined);
-  await settle();
-  assert.deepEqual(moves()[3], ['card', 'c102', 'c101']);
-  let undone = 0;
-  while (history.undo('cv')) {
-    switches.at(-1)?.resolve(undefined);
-    await settle();
-    undone += 1;
-  }
-  assert.equal(undone, 100);
-  assert.deepEqual(moves().at(-1), ['card', 'c2', 'c3']);
 });
 
 test('a deleted canvas runs none of the presses still waiting', async () => {

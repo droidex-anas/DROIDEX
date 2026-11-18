@@ -28,12 +28,6 @@ export interface EditElementInput {
       };
 }
 
-/** One of a catalog entry's props, and the option an insert gives it. */
-export interface PropPick {
-  name: string;
-  value: string;
-}
-
 /** A row of a frame's revision's outline, as a layer edit names it. */
 export interface LayerRef {
   designId: string;
@@ -47,15 +41,10 @@ export type LayerChange =
   | { kind: 'remove' }
   /** A copy right after the layer. */
   | { kind: 'duplicate' }
-  /**
-   * The kit catalog entry named `entry`, last inside the layer when it holds
-   * others, else after it, with each picked prop written on its element.
-   */
-  | { kind: 'insert'; entry: string; props: PropPick[] }
   /** The element given Tailwind's `hidden` class, or without it to show again. */
   | { kind: 'hide'; hidden: boolean };
 
-/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved or hidden layer, its copy, the added element, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
+/** An edit's revision, and the nodeId of the row a layer edit lands on in it (the moved or hidden layer, its copy, or the row a removed one leaves the keyboard to); null for any other edit, or a replay. */
 export interface ElementEdited {
   receipt: WriteReceipt;
   landed: string | null;

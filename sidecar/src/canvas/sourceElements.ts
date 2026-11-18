@@ -16,14 +16,6 @@ export interface Site {
   source: ts.SourceFile;
 }
 const MARKER = 'data-droidex-element';
-/**
- * Every JSX usage an outline row is written at, a component's too, is wrapped
- * in this call. It files the element's props object under the row's id and
- * returns the element itself, so the preview can tell what that usage drew
- * while no component gets a prop and no page gets an attribute it did not write.
- */
-const LAYER_CALL = '__droidexLayer';
-const LAYER_FUNCTION = `\nfunction ${LAYER_CALL}(nodeId, element) { (globalThis.__droidexLayers ??= new WeakMap()).set(element.props, nodeId); return element; }\n`;
 
 /** IDs describe a canonical revision, never the derived instrumented text. */
 export function instrumentSource(
@@ -33,58 +25,34 @@ export function instrumentSource(
   const program = parseProgram(files);
   const uses = componentUses(program);
   const sites = programSites(program, uses, files, revisionId);
-  const written = new Map<string, ts.Node>();
-  const outline = sourceOutline(program, uses, sites, written);
-  const inserts = new Map<ts.SourceFile, Map<number, string>>();
-  const insert = (source: ts.SourceFile, at: number, text: string) => {
-    const file = inserts.get(source) ?? new Map<number, string>();
-    file.set(at, (file.get(at) ?? '') + text);
-    inserts.set(source, file);
-  };
-  for (const { node, element, source } of sites) {
-    const opening = ts.isJsxElement(node) ? node.openingElement : node;
-    insert(source, opening.attributes.end, ` ${MARKER}="${element.elementId}"`);
-  }
-  const layered = new Map<ElementNode, string>();
-  for (const { nodeId } of outline.nodes) {
-    const node = written.get(nodeId);
-    if (!node || (!ts.isJsxElement(node) && !ts.isJsxSelfClosingElement(node))) continue;
-    if (!layered.has(node)) layered.set(node, nodeId);
-  }
-  // Closes first, so where one usage ends as the next begins its call closes before the next opens.
-  for (const node of layered.keys())
-    insert(node.getSourceFile(), node.end, inJsx(node) ? ')}' : ')');
-  for (const [node, nodeId] of layered) {
-    const source = node.getSourceFile();
-    insert(source, node.getStart(source), `${inJsx(node) ? '{' : ''}${LAYER_CALL}("${nodeId}", `);
-  }
   const derived: SourceFiles = { ...files };
-  for (const [source, file] of inserts) {
-    if (source.text.includes(LAYER_CALL))
-      throw new SourceElementError(
-        'invalid_source',
-        `${LAYER_CALL} is reserved for Canvas. Rename it and rebuild.`,
-        source.fileName,
-      );
-    insert(source, source.text.length, LAYER_FUNCTION);
-    const ordered = [...file].sort(([a], [b]) => a - b).map(([at, text]) => ({ at, text }));
+  const byFile = new Map<ts.SourceFile, Site[]>();
+  for (const site of sites) {
+    const list = byFile.get(site.source) ?? [];
+    list.push(site);
+    byFile.set(site.source, list);
+  }
+  for (const [source, entries] of byFile) {
+    const inserts = entries
+      .map(({ node, element }) => {
+        const opening = ts.isJsxElement(node) ? node.openingElement : node;
+        return { at: opening.attributes.end, text: ` ${MARKER}="${element.elementId}"` };
+      })
+      .sort((a, b) => a.at - b.at);
     let text = '';
     let offset = 0;
-    for (const each of ordered) {
-      text += source.text.slice(offset, each.at) + each.text;
-      offset = each.at;
+    for (const insert of inserts) {
+      text += source.text.slice(offset, insert.at) + insert.text;
+      offset = insert.at;
     }
     text += source.text.slice(offset);
-    derived[source.fileName] = text + inlineSourceMap(source, ordered);
+    derived[source.fileName] = text + inlineSourceMap(source, inserts);
   }
-  return { files: derived, elements: sites.map((site) => site.element), outline };
-}
-
-/** Whether a JSX usage sits where only JSX goes, so its call needs braces. */
-function inJsx(node: ElementNode): boolean {
-  return (
-    ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent) || ts.isJsxAttribute(node.parent)
-  );
+  return {
+    files: derived,
+    elements: sites.map((site) => site.element),
+    outline: sourceOutline(program, uses, sites),
+  };
 }
 
 /** The outline of a set of files with the node each row is written at; row ids do not depend on a revision. */

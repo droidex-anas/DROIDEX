@@ -1,8 +1,8 @@
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
-// like its project theme. Each entry is one JSX element a palette inserts
-// into a frame, or an agent writes after canvas_theme catalog reads it, with
-// the kit exports and lucide-react icons it names and the props a palette lets
-// the user pick before it inserts. The compiler checks
+// like its project theme. Each entry is one JSX element the Components tab
+// adds to the board as a frame of its own, or an agent writes after
+// canvas_theme catalog reads it, with the kit exports and lucide-react icons it
+// names and the props the tab lets the user pick before it adds. The compiler checks
 // that each stands alone and builds (catalogCheck.ts).
 
 import { z } from 'zod';
@@ -37,7 +37,7 @@ const propOptionSchema = z
   .regex(/^[A-Za-z0-9][\w-]*$/, 'Name an option with letters, digits, - and _, such as outline')
   .max(40);
 
-/** An attribute a palette lets the user pick a value of before it inserts the entry. */
+/** An attribute the Components tab lets the user pick a value of before it adds the entry. */
 export const catalogPropSchema = z
   .object({
     name: importNameSchema,
@@ -52,12 +52,12 @@ export const catalogPropSchema = z
 
 export type CatalogProp = z.infer<typeof catalogPropSchema>;
 
-/** The values an insert picks for an entry's props, each prop at most once. */
+/** The values picked for an entry's props, each prop at most once. */
 export const propPicksSchema = z
   .array(z.object({ name: importNameSchema, value: propOptionSchema }).strict())
   .max(CATALOG_LIMITS.maxPropsPerEntry)
   .refine((picks) => !hasDuplicate(picks.map((pick) => pick.name)), {
-    message: 'An insert picks each prop once',
+    message: 'Pick each prop once',
   });
 
 export type PropPick = z.infer<typeof propPicksSchema>[number];

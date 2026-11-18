@@ -6,8 +6,7 @@
 import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import type { DesignSystemChoice } from './designSystemChoices';
-import type { PropPick } from './elementEditProtocol';
-import type { CatalogListing, DesignSystemRef } from './protocol';
+import type { CatalogListing, DesignSystemRef, PropPick } from './protocol';
 
 /** A prompt names a few components; past that it is asking for a whole kit. */
 const MAX_PINNED_COMPONENTS = 8;

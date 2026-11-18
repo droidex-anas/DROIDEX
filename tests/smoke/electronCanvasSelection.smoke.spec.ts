@@ -19,21 +19,15 @@ import {
   type PreviewTarget,
 } from '../../src/features/canvas/previewDocument';
 import {
-  previewShownScript,
-  readPreviewShown,
-} from '../../src/features/canvas/previewDocumentLayout';
-import {
   previewShapeScript,
   readPreviewShape,
 } from '../../src/features/canvas/previewDocumentShape';
-import type { CompiledDesign } from '../../sidecar/src/canvas/compiler';
 import { pickedElement } from '../../src/features/canvas/pickedElement';
 import type { CanvasFrame } from '../../src/features/canvas/protocol';
 import {
   askGuest,
   compileDesign,
   drainGuest,
-  GUEST_ELEMENT_ID,
   mountPreviewGuest,
   newInstance,
 } from './canvasPreviewHost';
@@ -363,155 +357,5 @@ export default function Mark() {
       await askGuest(page, previewSelectScript({ ...target, d: 'M0 0\nL1 1' }, [], 99)),
       'invalid_request',
     );
-  });
-});
-
-test('[C4 shown] the production guest says whether the elements a layer drew show', async () => {
-  // A page whose fixed, clipping top layer its content already fills, as agent-written frames often are.
-  const full = (added: string) =>
-    compileDesign({
-      'main.tsx': `import { Button } from '@droidex/design-system';
-
-function Tag() {
-  return <em style={{ position: 'absolute', left: '200px', top: '16px' }}>New</em>;
-}
-
-export default function Full() {
-  return (
-    <main style={{ height: '300px', boxSizing: 'border-box', padding: '16px', overflow: 'hidden' }}>
-      <section style={{ height: '200px' }}>Everything</section>
-      ${added}
-    </main>
-  );
-}
-`,
-    });
-  const [spaced, tight, twins] = await Promise.all([
-    // 84px of room is left where it would start, but its own top margin takes it wholly out of view.
-    full(`<button style={{ marginTop: '96px', height: '32px' }}>Add</button>`),
-    full(`<button style={{ height: '32px' }}>Add</button>`),
-    // Two identical kit Buttons, the second below the page's clipped bottom; a component
-    // that passes none of its props on; and a Button that is not drawn at all.
-    full(`<div style={{ display: 'flex', flexDirection: 'column', gap: '48px', marginTop: '8px' }}>
-        <Button>Add</Button>
-        <Button>Add</Button>
-      </div>
-      <Tag />
-      {false && <Button>Never</Button>}`),
-  ]);
-  // A component that refuses props it was not written with, and three whose own
-  // root has no box: a `display: contents` wrapper, a portal's empty root, and a
-  // portal under such a wrapper.
-  const kinds = compileDesign({
-    'main.tsx': `import { Portal } from 'radix-ui';
-
-function Action(props: { label: string }) {
-  const extra = Object.keys(props).filter((key) => key !== 'label');
-  if (extra.length > 0) throw new Error('Unexpected props: ' + extra.join(','));
-  return <button style={{ height: '32px' }}>{props.label}</button>;
-}
-
-function Contents() {
-  return (
-    <div style={{ display: 'contents' }}>
-      <button style={{ height: '32px' }}>Inside</button>
-    </div>
-  );
-}
-
-function Floating() {
-  return (
-    <Portal.Root>
-      <button style={{ position: 'fixed', top: '0px', left: '200px', height: '32px' }}>Floating</button>
-    </Portal.Root>
-  );
-}
-
-function Nested() {
-  return (
-    <div style={{ display: 'contents' }}>
-      <Portal.Root>
-        <button style={{ position: 'fixed', left: 120, top: 20, height: 32 }}>Visible portal</button>
-      </Portal.Root>
-    </div>
-  );
-}
-
-export default function Kinds() {
-  return (
-    <main style={{ padding: '16px' }}>
-      <Action label="Save" />
-      <Contents />
-      <Floating />
-      <Nested />
-    </main>
-  );
-}
-`,
-  });
-  const rows = (design: CompiledDesign, name: string) =>
-    design.outline.nodes.filter((node) => node.name === name).map((node) => node.nodeId);
-
-  await withCanvasHost(async (_app, page) => {
-    const draw = async (html: string) => {
-      await page.evaluate((id) => document.getElementById(id)?.remove(), GUEST_ELEMENT_ID);
-      await mountPreviewGuest(page);
-      const instance = newInstance('shown');
-      assert.equal(await askGuest(page, previewStartScript(instance, html)), PREVIEW_STARTED);
-      await expect
-        .poll(
-          async () => (await drainGuest(page, instance)).events.some((e) => e.event === 'ready'),
-          { timeout: 20_000, intervals: [100] },
-        )
-        .toBe(true);
-    };
-    const shown = async (nodeId: string) =>
-      readPreviewShown(await askGuest(page, previewShownScript(nodeId)));
-
-    await draw(spaced.html);
-    const whole = await shown(rows(spaced, 'main')[0]);
-    assert.ok(whole !== null && whole !== 'unseen', 'the frame shows its page');
-    assert.equal(whole.height, 300);
-    assert.equal(await shown(rows(spaced, 'button')[0]), 'unseen');
-
-    await draw(tight.html);
-    const box = await shown(rows(tight, 'button')[0]);
-    assert.ok(box !== null && box !== 'unseen', 'the frame shows the button');
-    assert.equal(box.y, 216);
-    assert.equal(box.height, 32);
-
-    await draw(twins.html);
-    const [first, second, never] = rows(twins, 'Button');
-    const firstBox = await shown(first);
-    assert.ok(firstBox !== null && firstBox !== 'unseen', 'the frame shows the first Button');
-    assert.equal(firstBox.y, 224);
-    // Its twin draws the same elements, but the clipped one is the second's own.
-    assert.equal(await shown(second), 'unseen');
-    const tag = await shown(rows(twins, 'Tag')[0]);
-    assert.ok(tag !== null && tag !== 'unseen', 'a component that passes no props on is read too');
-    assert.equal(await shown(never), null);
-
-    await draw((await kinds).html);
-    const strict = await shown(rows(await kinds, 'Action')[0]);
-    assert.ok(
-      strict !== null && strict !== 'unseen',
-      'a component strict about its props still draws',
-    );
-    assert.deepEqual([strict.y, strict.height], [16, 32]);
-    const inside = await shown(rows(await kinds, 'Contents')[0]);
-    assert.ok(
-      inside !== null && inside !== 'unseen',
-      'what a display: contents wrapper paints is read',
-    );
-    assert.equal(inside.height, 32);
-    const floating = await shown(rows(await kinds, 'Floating')[0]);
-    assert.ok(floating !== null && floating !== 'unseen', 'what a portal paints is read');
-    assert.deepEqual([floating.x, floating.y, floating.height], [200, 0, 32]);
-    const nested = await shown(rows(await kinds, 'Nested')[0]);
-    assert.ok(
-      nested !== null && nested !== 'unseen',
-      'a portal under a display: contents wrapper is read',
-    );
-    assert.deepEqual([nested.x, nested.y, nested.height], [120, 20, 32]);
   });
 });

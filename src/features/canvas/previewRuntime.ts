@@ -38,7 +38,6 @@ import {
   type PreviewTarget,
   type PreviewVector,
 } from './previewDocument';
-import { previewShownScript, readPreviewShown, type PreviewShown } from './previewDocumentLayout';
 import { previewShapeScript, readPreviewShape, type PreviewShape } from './previewDocumentShape';
 import { previewTreeScript, readPreviewTree, type PreviewTree } from './previewDocumentTree';
 import type { CanvasDiagnostic, FrameRect } from './protocol';
@@ -127,9 +126,8 @@ export interface PreviewRunOptions {
  * selection commands reach a guest that has started and is still this run's,
  * and each returns the sequence number its `onSelection` answer carries.
  * `setTokens` reaches the same guests and is not answered. `hover`, `probe`,
- * `locate`, `vector`, `shape`, `tree` and `shown` answer themselves, with
- * null when nothing is there or this run can no longer ask, and leave the
- * selection alone.
+ * `locate`, `vector`, `shape` and `tree` answer themselves, with null when
+ * nothing is there or this run can no longer ask, and leave the selection alone.
  */
 export interface PreviewRun {
   stop(): void;
@@ -146,8 +144,6 @@ export interface PreviewRun {
   shape(node: PreviewNode): Promise<PreviewShape | null>;
   /** The marked elements in document order: the first page, or `before` with the next page added. */
   tree(before: PreviewTree | null): Promise<PreviewTree | null>;
-  /** Where the frame shows the elements the outline row `nodeId` drew, if it does. */
-  shown(nodeId: string): Promise<PreviewShown | null>;
   setTokens(tokens: Readonly<Record<string, string>>): void;
 }
 
@@ -294,12 +290,6 @@ class GuestRun implements PreviewRun {
     if (!this.canAsk()) return null;
     const answer = await this.ask(previewTreeScript(before?.nodes.length ?? 0));
     return this.canAsk() ? readPreviewTree(answer, before) : null;
-  }
-
-  async shown(nodeId: string): Promise<PreviewShown | null> {
-    if (!this.canAsk()) return null;
-    const answer = await this.ask(previewShownScript(nodeId));
-    return this.canAsk() ? readPreviewShown(answer) : null;
   }
 
   /** A command's answer arrives through the poll, so its own result is not read. */
