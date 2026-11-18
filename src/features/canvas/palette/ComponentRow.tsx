@@ -12,6 +12,7 @@ import type { CatalogListing, DesignSystemRef } from '../protocol';
 import { TagComponentButton } from '../TagComponentButton';
 import type { RowTagging } from './ComponentsPanel';
 import { EntryThumbnail } from './EntryThumbnail';
+import type { BoardAdd } from './useAddToBoard';
 
 export function ComponentRow({
   id,
@@ -20,7 +21,7 @@ export function ComponentRow({
   picks,
   tagging,
   active,
-  canAdd,
+  add,
   onOpen,
   onAdd,
 }: {
@@ -31,10 +32,11 @@ export function ComponentRow({
   picks: PropPick[];
   tagging: RowTagging;
   active: boolean;
-  canAdd: boolean;
+  add: BoardAdd;
   onOpen: () => void;
   onAdd: () => void;
 }) {
+  const adding = add.adding === entry.name;
   const detail =
     picks.length > 0
       ? picks.map(({ value }) => value).join(' · ')
@@ -91,11 +93,13 @@ export function ComponentRow({
             size="sm"
             icon={Plus}
             aria-label={`Add ${entry.name} to the board`}
-            disabled={!canAdd}
+            loading={adding}
+            disabled={add.refusal !== null || add.adding !== null}
             // The search keeps the keyboard; ⌘Enter adds the row it is on.
             tabIndex={-1}
             className={cn(
               !active &&
+                !adding &&
                 'opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100',
             )}
             onClick={(event) => {

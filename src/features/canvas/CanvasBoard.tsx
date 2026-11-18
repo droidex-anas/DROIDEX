@@ -58,8 +58,12 @@ import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot, FrameRect } from 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
   focusFrame: (frameId: string) => void;
+  /** Selects the acknowledged frame and pans it into view; the keyboard stays where it is. */
+  showFrame: (frameId: string) => void;
   /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
   focusLabel: (frameId: string) => void;
+  /** The frame in view nearest its centre, or undefined when none is in view. */
+  frameNearView: () => string | undefined;
   /**
    * Holds the view as it is now. The call it returns pans the least distance
    * that brings a rect of the board wholly into view, unless the board has
@@ -228,16 +232,17 @@ export function CanvasBoard({
   }));
   latest.current = drawn;
 
-  const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
-    board,
-    frames,
-    drawn,
-    selectedFrameIds: interaction.selectedFrameIds,
-    dispatch,
-    fitTo,
-    reveal: view.reveal,
-    rectFor: gestures.rectFor,
-  });
+  const { focusedId, order, tabStopId, focusFrame, showFrame, focusLabel, onFocusLabel } =
+    useFrameFocus({
+      board,
+      frames,
+      drawn,
+      selectedFrameIds: interaction.selectedFrameIds,
+      dispatch,
+      fitTo,
+      reveal: view.reveal,
+      rectFor: gestures.rectFor,
+    });
 
   const removeSelection = useFrameRemoval({
     board,
@@ -257,12 +262,14 @@ export function CanvasBoard({
     [onLeave, stage],
   );
 
-  const { reveal } = view;
+  const { reveal, size: viewSize } = view;
   useImperativeHandle(
     ref,
     () => ({
       focusFrame,
+      showFrame,
       focusLabel,
+      frameNearView: () => visibleDesignIds(latest.current, stage.viewport, viewSize).at(0),
       holdReveal: () => {
         const held = stage.viewport;
         return (rect) => {
@@ -271,7 +278,7 @@ export function CanvasBoard({
         };
       },
     }),
-    [focusFrame, focusLabel, stage, reveal],
+    [focusFrame, showFrame, focusLabel, stage, reveal, viewSize],
   );
 
   const selected = pickedOnBoard(drawn, editor.selection);

@@ -1,8 +1,8 @@
 // The Components tab beside the board: the entries of the kit catalog the
-// target frame pins, each with its thumbnail, searchable. A click or Enter
+// selected frame pins, each with its thumbnail, searchable. A click or Enter
 // opens an entry's detail, where its variants are picked and it is added to
-// the layer the line under the search names or tagged in the chat; ⌘Enter adds
-// the row the keyboard is on and ⌘L tags it without opening it. The search
+// the board as a new frame or tagged in the chat; ⌘Enter adds the row the
+// keyboard is on and ⌘L tags it without opening it. The search
 // keeps the keyboard and the arrows walk the matches through
 // aria-activedescendant, as the frame navigator does; a catalog holds at most
 // 128 entries, so every row mounts and each thumbnail loads once it is seen.
@@ -28,7 +28,7 @@ import type { CatalogListing, DesignSystemRef } from '../protocol';
 import { ComponentDetail } from './ComponentDetail';
 import { ComponentRow } from './ComponentRow';
 import { paletteRows, propPicks, type ChosenProps } from './paletteRows';
-import type { PalettePlace } from './useComponentInsert';
+import { addHint, type BoardAdd } from './useAddToBoard';
 import { useKitCatalog, type KitCatalog } from './useKitCatalog';
 import { usePaletteKeys } from './usePaletteKeys';
 
@@ -39,16 +39,16 @@ const NO_PICKS: PropPick[] = [];
 export function ComponentsPanel({
   kit,
   chatId,
-  place,
+  add,
   onAdd,
   onLeave,
 }: {
-  /** The kit version whose catalog is listed: the target frame's, else the board's first frame's. */
+  /** The kit version whose catalog is listed: the selected frame's, else the board's first frame's. */
   kit: DesignSystemRef | undefined;
   /** The chat whose next prompt the rows tag entries in; null on a board that is not the chat's own. */
   chatId: string | null;
-  place: PalettePlace;
-  onAdd: (entry: string, props: PropPick[]) => void;
+  add: BoardAdd;
+  onAdd: (entry: CatalogListing, props: PropPick[]) => void;
   /** Escape on an empty search: the keyboard goes back to the board. */
   onLeave: () => void;
 }) {
@@ -85,7 +85,7 @@ export function ComponentsPanel({
     optionId,
     onOpen: open,
     onAdd: (index) => {
-      onAdd(matches[index].name, picksOf(matches[index]));
+      onAdd(matches[index], picksOf(matches[index]));
     },
     onTag: tagging
       ? (index) => {
@@ -111,13 +111,13 @@ export function ComponentsPanel({
         entry={opened}
         chosen={openedChoices}
         picks={openedPicks}
-        place={place}
+        add={add}
         tagging={tagging}
         onPick={(prop, option) => {
           pick(opened.name, prop, option);
         }}
         onAdd={() => {
-          onAdd(opened.name, openedPicks);
+          onAdd(opened, openedPicks);
         }}
         onBack={() => {
           setOpenName(null);
@@ -133,7 +133,8 @@ export function ComponentsPanel({
         activeId={keys.activeIndex < 0 ? undefined : optionId(keys.activeIndex)}
         canTag={tagging !== null}
         query={query}
-        hint={place.hint}
+        add={add}
+        activeEntry={matches.at(keys.activeIndex)?.name}
         onSearch={keys.search}
         onKeyDown={keys.onKeyDown}
       />
@@ -155,13 +156,13 @@ export function ComponentsPanel({
               picks={picksOf(entry)}
               tagging={tagging}
               active={index === keys.activeIndex}
-              canAdd={place.canAdd}
+              add={add}
               onOpen={() => {
                 open(index);
               }}
               onAdd={() => {
                 keys.setActive(index);
-                onAdd(entry.name, picksOf(entry));
+                onAdd(entry, picksOf(entry));
               }}
             />
           ))}
@@ -186,14 +187,15 @@ function useEntryPicks(kit: DesignSystemRef | undefined) {
   };
 }
 
-/** The search over the list, which keeps the keyboard, and the line under it naming where an add goes. */
+/** The search over the list, which keeps the keyboard, and the line under it saying what an add does. */
 function ComponentSearch({
   fieldRef,
   listId,
   activeId,
   canTag,
   query,
-  hint,
+  add,
+  activeEntry,
   onSearch,
   onKeyDown,
 }: {
@@ -203,7 +205,9 @@ function ComponentSearch({
   activeId: string | undefined;
   canTag: boolean;
   query: string;
-  hint: string;
+  add: BoardAdd;
+  /** The entry of the option the keyboard is on, which ⌘Enter adds. */
+  activeEntry: string | undefined;
   onSearch: (query: string) => void;
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
 }) {
@@ -233,13 +237,19 @@ function ComponentSearch({
           onKeyDown={onKeyDown}
         />
       </div>
-      <p
-        id={hintId}
-        aria-live="polite"
-        className="shrink-0 px-5 pb-1.5 pt-2 text-caption text-muted"
-      >
-        {hint}
-      </p>
+      {add.failure ? (
+        <p id={hintId} role="alert" className="shrink-0 px-5 pb-1.5 pt-2 text-caption text-danger">
+          Couldn’t add {add.failure.entry}. {add.failure.message}
+        </p>
+      ) : (
+        <p
+          id={hintId}
+          aria-live="polite"
+          className="shrink-0 px-5 pb-1.5 pt-2 text-caption text-muted"
+        >
+          {addHint(add, activeEntry)}
+        </p>
+      )}
       <span id={keysHintId} className="sr-only">
         Enter opens the component you are on and {ADD_KEY_LABEL} adds it to the board
         {canTag ? `; ${TAG_KEY_LABEL} tags it in the chat.` : '.'}

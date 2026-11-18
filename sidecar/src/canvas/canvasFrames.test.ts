@@ -128,6 +128,30 @@ test('an SVG seed draws the canvas asset as the frame, and a retry answers the s
   });
 });
 
+test("a component seed draws the frame kit's catalog entry alone, and refuses one it does not list", async (t) => {
+  const { workspace, canvasId, scope } = await withFrame(t);
+  const seeded = (mutationId: string, entry: string, props: { name: string; value: string }[]) =>
+    workspace.create(scope, {
+      mutationId,
+      frames: [{ ...frame, name: entry, seed: { kind: 'component', entry, props } }],
+    });
+
+  const [button] = (await seeded('add-button', 'Button', [])).frames;
+  assert.ok(button?.revisionId);
+  const files = await workspace.readFiles(canvasId, {
+    designId: button.designId,
+    revisionId: button.revisionId,
+  });
+  const main = files['main.tsx'] ?? '';
+  assert.match(main, /^import \{ Button \} from '@droidex\/design-system';$/m);
+  assert.match(main, /<Button variant="primary" icon="plus">New chat<\/Button>/);
+
+  await assert.rejects(seeded('add-unknown', 'No such entry', []), { code: 'invalid_input' });
+  await assert.rejects(seeded('add-unlisted', 'Button', [{ name: 'size', value: 'huge' }]), {
+    code: 'invalid_input',
+  });
+});
+
 test('a variant is placed only while the frame it is a variant of is on the board', () => {
   const staged = [
     { designId: 'dsg_copy', revisionId: null, frame: { ...frame, variantOf: revision.designId } },

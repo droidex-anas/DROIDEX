@@ -165,3 +165,21 @@ test('an edit after a deletion is undone first, and ends the toast’s Undo', as
     ['undo-a'],
   );
 });
+
+test('an added frame is one step: Undo deletes it without its own offer, and Redo brings it back', async () => {
+  const { removals, history, removes, undos } = fakeClient();
+  history.record('cv', removals.creation('chat', 'cv', frame('a')));
+
+  assert.equal(history.undo('cv'), true);
+  assert.deepEqual(removes.at(0)?.designIds, ['a']);
+  removes.at(0)?.resolve('undo-a');
+  await settle();
+  assert.equal(shown.length, 0);
+
+  assert.equal(history.redo('cv'), true);
+  assert.equal(undos.at(0)?.undoId, 'undo-a');
+  undos.at(0)?.resolve(restored);
+  await settle();
+  assert.equal(history.undo('cv'), true);
+  assert.equal(removes.length, 2);
+});

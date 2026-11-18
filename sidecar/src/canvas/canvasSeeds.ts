@@ -5,8 +5,13 @@ import { canvasError } from './canvasError.js';
 import type { CanvasFiles } from './canvasFiles.js';
 import { readLibraryCopy } from './canvasLibrary.js';
 import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
+import { entryFrameModule } from './catalogEntryModule.js';
 import { DESIGN_ENTRY } from './designEntry.js';
-import type { CreateFramesInput, SvgImageReason } from './protocol.js';
+import { readDesignSystem } from './designSystems.js';
+import { catalogEntryOf } from './kitPreviews.js';
+import type { PropPick } from './kitCatalog.js';
+import type { CreateFramesInput, DesignSystemRef, SvgImageReason } from './protocol.js';
+import { SourceElementError } from './sourceElementError.js';
 import { svgFrameSource } from './svgJsx.js';
 
 export interface StagedSeed {
@@ -29,6 +34,10 @@ export async function stageSeed(
   let svgAsImage: SvgImageReason | null = null;
   if (seed.kind === 'library') {
     ({ files: source, images } = await readLibraryCopy(seed.itemId));
+  } else if (seed.kind === 'component') {
+    source = new Map([
+      [DESIGN_ENTRY, await componentSource(frame.designSystem, seed.entry, seed.props)],
+    ]);
   } else if (seed.kind === 'svg') {
     // The asset is already this canvas's, so the frame only refers to it.
     const { asset, bytes } = await readImageIn(join(root, canvasId), seed.assetId);
@@ -60,4 +69,19 @@ export async function stageSeed(
   // revision, an image no commit ends up referencing is harmless.
   for (const image of images) await saveOwnedAsset(root, canvasId, image.asset, image.bytes);
   return svgAsImage === null ? { revisionId } : { revisionId, svgAsImage };
+}
+
+/** The frame's kit catalog entry alone on its page, refused where the kit lists no such entry or option. */
+async function componentSource(
+  designSystem: DesignSystemRef,
+  entry: string,
+  props: readonly PropPick[],
+): Promise<string> {
+  const listed = catalogEntryOf(await readDesignSystem(designSystem), entry);
+  try {
+    return entryFrameModule(listed, props);
+  } catch (error) {
+    if (error instanceof SourceElementError) throw canvasError('invalid_input', error.message);
+    throw error;
+  }
 }

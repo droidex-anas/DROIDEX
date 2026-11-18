@@ -1,7 +1,8 @@
 // One Components entry opened in the tab: its name, file and note, the entry
-// running live with the variants picked below it, and Add to board and Tag in
-// chat for that pick. Escape or Back returns to the list as it was left; ⌘Enter
-// adds and ⌘L tags from anywhere in it.
+// running live with the variants picked below it, and Add to board, which puts
+// that pick on the board as a new frame, and Tag in chat. Escape or Back
+// returns to the list as it was left; Enter on the detail itself and ⌘Enter
+// from anywhere in it add, and ⌘L tags.
 
 import { useEffect, useId, useMemo, useRef, type KeyboardEvent } from 'react';
 import { ArrowLeft, Check, MessageThread } from '@droidex/icons';
@@ -18,7 +19,7 @@ import { MoreSegments, SegmentedControl, type Segment } from '../SegmentedContro
 import { useFitScale } from '../systemDocument/useFitScale';
 import type { RowTagging } from './ComponentsPanel';
 import type { ChosenProps } from './paletteRows';
-import type { PalettePlace } from './useComponentInsert';
+import { addHint, type BoardAdd } from './useAddToBoard';
 
 // The entry's page, scaled down to the tab's width.
 const STAGE = { width: 400, height: 250 };
@@ -31,7 +32,7 @@ export function ComponentDetail({
   entry,
   chosen,
   picks,
-  place,
+  add,
   tagging,
   onPick,
   onAdd,
@@ -42,7 +43,7 @@ export function ComponentDetail({
   chosen: ChosenProps;
   /** What `chosen` writes; kept stable while it does not change, as a new pick is a new preview. */
   picks: PropPick[];
-  place: PalettePlace;
+  add: BoardAdd;
   tagging: RowTagging;
   onPick: (prop: string, option: string) => void;
   onAdd: () => void;
@@ -55,19 +56,22 @@ export function ComponentDetail({
   useEffect(() => {
     section.current?.focus();
   }, []);
+  const canAdd = add.refusal === null && add.adding === null;
+  const failure = add.failure?.entry === entry.name ? add.failure.message : null;
   // Add to board turns off while it adds, which would drop the keyboard to the page from it.
-  const add = () => {
+  const addToBoard = () => {
     section.current?.focus();
     onAdd();
   };
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+    const onSection = event.target === event.currentTarget;
     if (event.key === 'Escape' && !event.defaultPrevented) {
       event.preventDefault();
       event.stopPropagation();
       onBack();
-    } else if (isAddKey(event)) {
+    } else if (isAddKey(event) || (event.key === 'Enter' && onSection)) {
       event.preventDefault();
-      if (place.canAdd && !event.repeat) add();
+      if (canAdd && !event.repeat) addToBoard();
     } else if (isTagKey(event) && tagging) {
       event.preventDefault();
       event.stopPropagation();
@@ -121,18 +125,25 @@ export function ComponentDetail({
           <Button
             variant="primary"
             className="w-full"
-            disabled={!place.canAdd}
+            loading={add.adding === entry.name}
+            disabled={!canAdd}
             aria-describedby={hintId}
-            onClick={add}
+            onClick={addToBoard}
           >
             Add to board
           </Button>
         </Tooltip>
         {tagging && <TagToggle chatId={tagging.chatId} pin={tagging.pinOf(entry, picks)} />}
       </div>
-      <p id={hintId} aria-live="polite" className="mt-1.5 text-caption text-muted">
-        {place.hint}
-      </p>
+      {failure === null ? (
+        <p id={hintId} aria-live="polite" className="mt-1.5 text-caption text-muted">
+          {addHint(add, entry.name)}
+        </p>
+      ) : (
+        <p id={hintId} role="alert" className="mt-1.5 text-caption text-danger">
+          Couldn’t add {entry.name}. {failure}
+        </p>
+      )}
     </section>
   );
 }

@@ -244,7 +244,9 @@ export interface RevisionRef {
 export type CanvasSeed =
   | { kind: 'revision'; canvasId: string; revision: RevisionRef }
   | { kind: 'library'; itemId: string }
-  | { kind: 'svg'; assetId: string };
+  | { kind: 'svg'; assetId: string }
+  /** The frame's kit catalog entry alone on its page, with the picked props written on it. */
+  | { kind: 'component'; entry: string; props: PropPick[] };
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
