@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { withPicks } from './catalogEntryModule.js';
 import type { CatalogEntry, PropPick } from './kitCatalog.js';
 import { SourceElementError } from './sourceElementError.js';
+import { withPicks } from './entryPicks.js';
 
 const TOGGLE: CatalogEntry = {
   name: 'Toggle',

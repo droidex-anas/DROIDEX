@@ -6,12 +6,12 @@ import type { CanvasFiles } from './canvasFiles.js';
 import { readLibraryCopy } from './canvasLibrary.js';
 import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import { entryFrameModule } from './catalogEntryModule.js';
+import { entryWithPicks } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readDesignSystem } from './designSystems.js';
 import { catalogEntryOf } from './kitPreviews.js';
 import type { PropPick } from './kitCatalog.js';
 import type { CreateFramesInput, DesignSystemRef, SvgImageReason } from './protocol.js';
-import { SourceElementError } from './sourceElementError.js';
 import { svgFrameSource } from './svgJsx.js';
 
 export interface StagedSeed {
@@ -78,10 +78,5 @@ async function componentSource(
   props: readonly PropPick[],
 ): Promise<string> {
   const listed = catalogEntryOf(await readDesignSystem(designSystem), entry);
-  try {
-    return entryFrameModule(listed, props);
-  } catch (error) {
-    if (error instanceof SourceElementError) throw canvasError('invalid_input', error.message);
-    throw error;
-  }
+  return entryFrameModule(listed, await entryWithPicks(listed, props));
 }

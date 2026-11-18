@@ -119,6 +119,7 @@ export type CompilerRequest =
       designSystem: DesignSystemRef;
     }
   | { type: 'readModules'; requestId: number; sources: string[] }
+  | { type: 'writePicks'; requestId: number; entry: CatalogEntry; picks: readonly PropPick[] }
   | { type: 'checkCatalog'; requestId: number; kit: KitPreviewCompileInput['kit'] }
   | { type: 'cancel'; requestId: number }
   | { type: 'shutdown'; requestId: number };
@@ -141,6 +142,7 @@ export type CompilerResponse =
   | ({ requestId: number; status: 'edited' } & EditedSource)
   | { requestId: number; status: 'edit_failed'; code: EditFailureCode; message: string }
   | { requestId: number; status: 'modules'; modules: ModuleDeclarations[] }
+  | { requestId: number; status: 'picked'; jsx: string }
   | { requestId: number; status: 'catalogChecked'; failures: KitFailure[] }
   | { requestId: number; status: 'failed'; diagnostics: CanvasDiagnostic[] }
   | { requestId: number; status: 'cancelled' }
@@ -218,6 +220,24 @@ export class CompilerWorker {
       signal,
       (requestId) => ({ type: 'readModules', requestId, sources }),
       (response) => (response.status === 'modules' ? response.modules : undefined),
+    );
+  }
+
+  /** The entry's JSX with `picks` written on it, by the parser-owning process; refused as invalid input. */
+  writePicks(
+    entry: CatalogEntry,
+    picks: readonly PropPick[],
+    signal: AbortSignal,
+  ): Promise<string> {
+    return this.request<string>(
+      signal,
+      (requestId) => ({ type: 'writePicks', requestId, entry, picks }),
+      (response) => {
+        if (response.status === 'picked') return response.jsx;
+        if (response.status === 'edit_failed')
+          return canvasError('invalid_input', response.message);
+        return undefined;
+      },
     );
   }
 
@@ -368,6 +388,23 @@ export async function readModules(
     return await compiler.readModules(sources, signal ?? new AbortController().signal);
   } catch (error) {
     signal?.throwIfAborted();
+    if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
+    throw error;
+  } finally {
+    await compiler.terminate();
+  }
+}
+
+/** The entry's JSX with `picks` written on it, by a compiler process that ends with the write. */
+export async function entryWithPicks(
+  entry: CatalogEntry,
+  picks: readonly PropPick[],
+): Promise<string> {
+  if (picks.length === 0) return entry.jsx;
+  const compiler = new CompilerWorker();
+  try {
+    return await compiler.writePicks(entry, picks, new AbortController().signal);
+  } catch (error) {
     if (error instanceof CompilerUnavailableError) throw storageFailure(error.message, error);
     throw error;
   } finally {

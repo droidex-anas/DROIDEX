@@ -84,11 +84,15 @@ function editResponse(
   return undefined;
 }
 
-/** The answer to a read of source rather than a build: its modules, or a catalog's failures. */
+/** The answer to a read of source rather than a build: its modules, a catalog's failures, or an entry's picks. */
 function readResponse(
   requestId: number,
-  { status, modules, failures }: Record<string, unknown>,
-): Extract<CompilerResponse, { status: 'modules' | 'catalogChecked' }> | null | undefined {
+  { status, modules, failures, jsx }: Record<string, unknown>,
+):
+  | Extract<CompilerResponse, { status: 'modules' | 'catalogChecked' | 'picked' }>
+  | null
+  | undefined {
+  if (status === 'picked') return typeof jsx === 'string' ? { requestId, status, jsx } : null;
   if (status === 'catalogChecked') {
     const parsed = kitFailureSchema.array().safeParse(failures);
     return parsed.success ? { requestId, status, failures: parsed.data } : null;

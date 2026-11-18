@@ -9,7 +9,7 @@ import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
-import { entryModule, withPicks } from './catalogEntryModule.js';
+import { entryModule } from './catalogEntryModule.js';
 import {
   DamagedRuntimeError,
   ownedCanvasRuntimeDir,
@@ -36,6 +36,7 @@ import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
+import { withPicks } from './entryPicks.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
 import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
@@ -280,6 +281,10 @@ process.on('message', (request: CompilerRequest) => {
     send({ requestId: request.requestId, status: 'modules', modules } satisfies CompilerResponse);
     return;
   }
+  if (request.type === 'writePicks') {
+    send(pickedEntry(request));
+    return;
+  }
   if (runtimeFault !== null) {
     send({
       requestId: request.requestId,
@@ -303,6 +308,19 @@ process.on('message', (request: CompilerRequest) => {
     });
   }
 });
+
+function pickedEntry({
+  requestId,
+  entry,
+  picks,
+}: Extract<CompilerRequest, { type: 'writePicks' }>): CompilerResponse {
+  try {
+    return { requestId, status: 'picked', jsx: withPicks(entry, picks) };
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    return { requestId, status: 'edit_failed', code: 'invalid_edit', message: error.message };
+  }
+}
 
 async function runEdit(
   request: Extract<CompilerRequest, { type: 'edit' }>,
