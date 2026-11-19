@@ -58,24 +58,25 @@ export class DevinEvents {
         this.tools.set(tool.toolCallId, tool);
         if (this.completed.has(tool.toolCallId)) return [];
         const terminal = tool.status === 'completed' || tool.status === 'failed';
+        let text = (tool.content ?? [])
+          .flatMap((item) =>
+            item.type === 'content' && item.content.type === 'text' ? [item.content.text] : [],
+          )
+          .join('\n');
+        if (!text && tool.rawOutput !== undefined)
+          text =
+            typeof tool.rawOutput === 'string' ? tool.rawOutput : JSON.stringify(tool.rawOutput);
         const events = [
           this.transcript({
             kind: 'tool_call',
             toolUseId: tool.toolCallId,
             toolName: devinToolName(tool),
             toolArgs: tool.rawInput,
+            ...(!terminal && tool.content != null ? { text } : {}),
           }),
         ];
         if (terminal) {
           this.completed.add(tool.toolCallId);
-          let text = (tool.content ?? [])
-            .flatMap((item) =>
-              item.type === 'content' && item.content.type === 'text' ? [item.content.text] : [],
-            )
-            .join('\n');
-          if (!text && tool.rawOutput !== undefined)
-            text =
-              typeof tool.rawOutput === 'string' ? tool.rawOutput : JSON.stringify(tool.rawOutput);
           events.push(
             this.transcript({
               kind: 'tool_result',

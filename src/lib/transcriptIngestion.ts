@@ -128,6 +128,7 @@ export function ingestTranscriptEvents(
         ...mergeTarget.existing,
         ...(toolName !== undefined ? { toolName } : {}),
         toolArgs: mergeToolArgs(mergeTarget.existing.toolArgs, event.toolArgs),
+        ...(event.text !== undefined ? { text: event.text } : {}),
         ...(canvasActivity ? { canvasActivity } : {}),
         endTs: event.endTs ?? event.ts,
       };

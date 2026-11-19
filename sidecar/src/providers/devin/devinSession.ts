@@ -15,6 +15,7 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  ProviderProcess,
 } from '../session.js';
 import { MessageQueue } from '../claude/claudeMessages.js';
 import { DevinClient } from './devinClient.js';
@@ -22,6 +23,7 @@ import { DevinEvents } from './devinEvents.js';
 import { startDevinMcp } from './devinMcp.js';
 import { devinPermission } from './devinPermissions.js';
 import { devinChildId, DevinSubagents } from './devinSubagents.js';
+import { DevinTerminals } from './devinTerminals.js';
 
 const MODES: Record<Autonomy, string> = {
   off: 'accept-edits',
@@ -34,6 +36,7 @@ type SessionInput = ProviderOpenInput | ProviderResumeInput;
 export class DevinSession implements ProviderSession {
   readonly provider = 'devin';
   private readonly client: DevinClient;
+  private readonly terminals: DevinTerminals;
   private sessionId?: string;
   private mapper?: DevinEvents;
   private subagents?: DevinSubagents;
@@ -57,7 +60,16 @@ export class DevinSession implements ProviderSession {
   ) {
     this.selectedAutonomy = input.autonomy ?? 'low';
     this.interactionMode = input.interactionMode ?? 'auto';
+    this.terminals = new DevinTerminals(
+      input.cwd ?? homedir(),
+      (sessionId) =>
+        !this.isClosed && sessionId === this.sessionId && input.interactions.isActive(),
+      (notification) => {
+        this.update(notification);
+      },
+    );
     this.client = new DevinClient(executable, input.cwd ?? homedir(), {
+      terminals: this.terminals,
       update: (notification) => {
         this.update(notification);
       },
@@ -83,7 +95,11 @@ export class DevinSession implements ProviderSession {
       input.interactions.cancelPending();
       this.queue?.close(error);
       try {
-        await this.releaseMcp();
+        try {
+          await this.terminals.close();
+        } finally {
+          await this.releaseMcp();
+        }
       } catch (cleanupError) {
         return (
           error ?? (cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)))
@@ -102,6 +118,9 @@ export class DevinSession implements ProviderSession {
   }
   get process() {
     return this.client.process;
+  }
+  onProcessRootsChanged(listener: (roots: readonly ProviderProcess[]) => void): () => void {
+    return this.terminals.onProcessRootsChanged(listener);
   }
   get isClosed(): boolean {
     return this.closing || this.client.isClosed;
@@ -171,6 +190,7 @@ export class DevinSession implements ProviderSession {
   ): AsyncGenerator<NormalizedEvent, void, undefined> {
     this.requireOpen();
     if (this.queue) throw new Error('This Devin session is already running a turn.');
+    this.terminals.startTurn();
     const queue = new MessageQueue<NormalizedEvent>();
     this.queue = queue;
     this.permissionAbort = new AbortController();
@@ -268,10 +288,15 @@ export class DevinSession implements ProviderSession {
     this.permissionAbort.abort();
     this.subagents?.cancelPermissions();
     this.input.interactions.cancelPending();
-    if (!this.isClosed && this.queue)
-      await this.client.connection.agent.notify('session/cancel', {
-        sessionId: this.providerSessionId,
-      });
+    const stopped = this.terminals.interrupt();
+    try {
+      if (!this.isClosed && this.queue)
+        await this.client.connection.agent.notify('session/cancel', {
+          sessionId: this.providerSessionId,
+        });
+    } finally {
+      await stopped;
+    }
   }
 
   async delete(): Promise<void> {
@@ -295,6 +320,7 @@ export class DevinSession implements ProviderSession {
     this.input.interactions.cancelPending();
     this.closePromise = (async () => {
       try {
+        await this.terminals.close();
         if (
           this.sessionId &&
           !this.client.isClosed &&
@@ -341,6 +367,7 @@ export class DevinSession implements ProviderSession {
       this.subagents?.replay(notification);
       return;
     }
+    notification = this.terminals.resolve(notification);
     const childEvents = this.subagents?.map(notification);
     if (childEvents) {
       for (const event of childEvents) this.emitBackground(event);

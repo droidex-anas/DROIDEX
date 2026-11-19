@@ -282,8 +282,19 @@ and discovers models from a temporary ACP session's model config options, then
 deletes and closes that session. The ACP session id is `providerSessionId`;
 resume starts a fresh process and loads it without replaying history into
 DROIDEX's app-owned transcript. In-app MCP servers use the existing per-session
-loopback HTTP endpoints. Filesystem and terminal client capabilities are not
-advertised. Native subagents share the parent's ACP connection: their agent ids
+loopback HTTP endpoints. Filesystem client capabilities are not advertised.
+ACP client terminals run shell commands in session-owned sidecar processes,
+with bounded output, cwd/environment support, separate kill/wait/release, and
+cleanup on interrupt or close. A small live group owner retains each terminal
+until ACP release and signals only its own group, never a cached PGID. Session
+`onProcessRootsChanged` snapshots report these additional work roots to
+`SessionLifecycle`, which tracks them alongside the provider through the shared
+process monitor. Unreleased terminals therefore prevent idle retirement, and
+their owners and observed descendants enter the restart journal's identity-checked
+reaping path. Closing a runtime detaches the subscription before awaiting provider
+closure and releases tracked roots after the processes close. Terminal references stream output
+into existing command transcript rows, not the utility-pane PTYs. Native
+subagents share the parent's ACP connection: their agent ids
 are provider identities resolved to app-owned logical children. Child text,
 thinking, tools and completion summaries use child-owned transcripts, including
 between parent turns; approvals remain parent-scoped and retain the native tool

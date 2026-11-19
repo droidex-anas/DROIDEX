@@ -10,154 +10,15 @@ import { SessionInteractions, type InteractionLiveSession } from '../../SessionI
 import type { ProviderApprovalRequest, ProviderInteractions } from '../interactions.js';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
+import { tolerantCommandRunner } from '../../processes/processTree.js';
 import { DevinProvider } from './DevinProvider.js';
 import type { DevinSession } from './devinSession.js';
-
-const CLI = String.raw`#!/usr/bin/env node
-const { appendFileSync, existsSync } = require('node:fs');
-const { createInterface } = require('node:readline');
-const { join } = require('node:path');
-const root = __dirname;
-if (process.argv[2] === '--version') { console.log('devin 3000.14.30821 (fake)'); process.exit(0); }
-if (process.argv[2] === 'auth') {
-  console.log(existsSync(join(root, 'signed-out')) ? 'Not logged in.' : 'Logged in.'); process.exit(0);
-}
-const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
-const result = (id, result) => send({ id, result });
-const update = (update) => send({ method: 'session/update', params: { sessionId: 'devin-one', update } });
-const childUpdate = (id, event) => update({ ...event, _meta: { ...event._meta,
-  'cognition.ai/subagent_context': { parentAgentId: id } } });
-const childStarted = (agentId) => update({ sessionUpdate: 'tool_call', toolCallId: 'spawn-' + agentId,
-  title: 'Task', _meta: { 'cognition.ai/subagent_started': {
-    agentId, title: 'Review ' + agentId, task: 'Inspect ' + agentId, model: 'swe-child' } } });
-const childCompleted = (agentId, success = true) => update({ sessionUpdate: 'tool_call_update',
-  toolCallId: 'spawn-' + agentId, _meta: { 'cognition.ai/subagent_completed': {
-    agentId, success, summary: 'Summary ' + agentId } } });
-const childText = (agentId, text) => childUpdate(agentId, { sessionUpdate: 'agent_message_chunk',
-  content: { type: 'text', text }, _meta: { 'cognition.ai/streamingMessageId': 'answer' } });
-const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
-  options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
-if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
-let pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
-createInterface({ input: process.stdin }).on('line', async (line) => {
-  const message = JSON.parse(line);
-  appendFileSync(join(root, 'requests.jsonl'), JSON.stringify(message) + '\n');
-  if (message.id === 'permission') {
-    appendFileSync(join(root, 'permission.json'), JSON.stringify(message.result) + '\n');
-    if (permissionEndsTurn) result(permission, { stopReason: 'end_turn' });
-    else childCompleted('approval-child');
-    permission = undefined;
-    if (pendingClose !== undefined) { result(pendingClose, {}); pendingClose = undefined; }
-    return;
-  }
-  const { id, method, params } = message;
-  if (method === 'initialize') {
-    if (existsSync(join(root, 'hang'))) return;
-    result(id, { protocolVersion: 1, agentCapabilities: { loadSession: true,
-      sessionCapabilities: { close: {}, delete: {} } } });
-  } else if (method === 'session/new' || method === 'session/load') {
-    servers = params.mcpServers;
-    update({ sessionUpdate: 'config_option_update', configOptions });
-    if (method === 'session/load') {
-      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
-      if (existsSync(join(root, 'replay-children'))) {
-        childStarted('background'); childText('background', 'Replayed child answer');
-        childStarted('finished'); childCompleted('finished');
-        childStarted('untracked');
-      }
-    }
-    result(id, { sessionId: 'devin-one' });
-  } else if (method === 'session/set_config_option') {
-    if (params.value === 'finish-background') {
-      childText('background', 'Background answer');
-      childCompleted('background');
-    }
-    if (params.value === 'blocked') pendingConfig = id;
-    else result(id, { configOptions });
-  }
-  else if (method === 'session/close') {
-    childStarted('late'); childText('background', 'Late output'); childCompleted('approval-child');
-    if (permission !== undefined) pendingClose = id;
-    else result(id, {});
-  }
-  else if (method === 'session/delete') result(id, {});
-  else if (method === 'session/cancel') {
-    if (pendingConfig !== undefined) { result(pendingConfig, { configOptions }); pendingConfig = undefined; }
-    if (pending !== undefined) { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
-  }
-  else if (method === 'session/prompt') {
-    const text = params.prompt[0].text;
-    if (text === 'exit') { process.stderr.write('backend failed\n'); process.exit(7); }
-    if (text === 'refuse') { result(id, { stopReason: 'refusal' }); return; }
-    if (text === 'empty') { result(id, { stopReason: 'end_turn' }); return; }
-    if (text === 'wait') { pending = id; update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'waiting' } }); return; }
-    if (text === 'background') { childStarted('background'); result(id, { stopReason: 'end_turn' }); return; }
-    if (text === 'children') {
-      childStarted('child-a'); childStarted('child-b');
-      update({ sessionUpdate: 'tool_call', toolCallId: 'shared', title: 'Parent tool', status: 'in_progress' });
-      for (const agentId of ['child-a', 'child-b']) {
-        childText(agentId, 'Answer ' + agentId);
-        childUpdate(agentId, { sessionUpdate: 'usage_update', used: 999, size: 1000 });
-        childUpdate(agentId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Think ' + agentId } });
-        childUpdate(agentId, { sessionUpdate: 'tool_call', toolCallId: 'shared', title: 'Tool', kind: 'execute',
-          status: 'in_progress', rawInput: { command: agentId }, _meta: { 'cognition.ai/inferenceToolName': 'shell' } });
-      }
-      for (const agentId of ['child-b', 'child-a']) {
-        childUpdate(agentId, { sessionUpdate: 'tool_call_update', toolCallId: 'shared',
-          status: agentId === 'child-b' ? 'failed' : 'completed', rawOutput: 'Result ' + agentId });
-        childCompleted(agentId, agentId !== 'child-b');
-      }
-      childCompleted('child-a'); childText('child-a', 'Late child output');
-      childText('unknown', 'Unknown child output');
-      update({ sessionUpdate: 'tool_call', toolCallId: 'invalid', title: 'Task',
-        _meta: { 'cognition.ai/subagent_started': { agentId: 123 } } });
-      update({ sessionUpdate: 'tool_call_update', toolCallId: 'shared', status: 'completed', rawOutput: 'Parent result' });
-      childText('root', 'Parent answer');
-      result(id, { stopReason: 'end_turn' }); return;
-    }
-    if (['approve', 'approve-child', 'approve-background', 'approve-completed', 'approve-orphan'].includes(text)) {
-      const childId = text === 'approve-orphan' ? 'unknown' : 'approval-child';
-      if (text === 'approve-child' || text === 'approve-background') childStarted(childId);
-      if (text === 'approve-completed') childCompleted(childId);
-      permission = id;
-      permissionEndsTurn = text !== 'approve-background';
-      send({ id: 'permission', method: 'session/request_permission', params: {
-        sessionId: 'devin-one', toolCall: { toolCallId: 'edit', title: 'Edit file', kind: 'edit', rawInput: { path: '/file' },
-          ...(text !== 'approve' ? { _meta: { 'cognition.ai/subagent_context': { parentAgentId: childId } } } : {}) },
-        options: [ { optionId: 'plan_bypass', name: 'Bypass', kind: 'allow_once' },
-          { optionId: 'once', name: 'Once', kind: 'allow_once' },
-          { optionId: 'always', name: 'Always', kind: 'allow_always' },
-          { optionId: 'no', name: 'No', kind: 'reject_once' } ] } });
-      if (!permissionEndsTurn) result(id, { stopReason: 'end_turn' });
-      return;
-    }
-    if (text === 'mcp') {
-      const server = servers.find((server) => server.name === 'app');
-      const response = await fetch(server.url, { method: 'POST', headers: {
-        'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
-      }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: {} } }) });
-      appendFileSync(join(root, 'mcp-result'), await response.text());
-    }
-    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'child' },
-      _meta: { 'cognition.ai/subagent_context': { parentAgentId: 'child-one' } } });
-    for (const text of ['Hello ', 'world']) update({ sessionUpdate: 'agent_message_chunk',
-      content: { type: 'text', text }, _meta: { 'cognition.ai/streamingMessageId': 'answer' } });
-    update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Think' },
-      _meta: { 'cognition.ai/streamingMessageId': 'thought' } });
-    update({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Tool', kind: 'execute',
-      status: 'in_progress', rawInput: { command: 'pwd' }, _meta: { 'cognition.ai/inferenceToolName': 'shell' } });
-    update({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed', rawOutput: '/workspace' });
-    update({ sessionUpdate: 'tool_call', toolCallId: 'failed', title: 'Fail', status: 'failed', rawOutput: 'broken' });
-    update({ sessionUpdate: 'usage_update', used: 20, size: 100 });
-    result(id, { stopReason: 'end_turn' });
-  }
-});
-`;
+import { devinAcpCli } from '../../testing/devinAcpCli.js';
 
 async function fixture(t: TestContext) {
   const cwd = await mkdtemp(join(tmpdir(), 'devin-provider-'));
   const executable = join(cwd, 'devin.cjs');
-  await writeFile(executable, CLI, { mode: 0o755 });
+  await writeFile(executable, devinAcpCli, { mode: 0o755 });
   const previous = process.env.DEVIN_PATH;
   const sessions: DevinSession[] = [];
   process.env.DEVIN_PATH = executable;
@@ -217,6 +78,132 @@ async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<Normaliz
   return events;
 }
 
+test('Devin client terminals stream shell output with cwd and env, then retain the result after release', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const events: NormalizedEvent[] = [];
+  let continued = false;
+  for await (const event of session.stream('terminal-live')) {
+    events.push(event);
+    if (
+      !continued &&
+      event.transcript?.kind === 'tool_call' &&
+      event.transcript.text?.includes('READY')
+    ) {
+      continued = true;
+      assert.equal(event.transcript.text, `READY|terminal-env|${h.cwd}`);
+      await writeFile(join(h.cwd, 'terminal-go'), 'go');
+    }
+  }
+  assert.equal(continued, true);
+  const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+  assert.equal(response.initial.exitStatus, undefined);
+  assert.equal(response.exit.exitCode, 0);
+  assert.equal(response.output.truncated, false);
+  assert.equal(response.output.output, `READY|terminal-env|${h.cwd}|DONE`);
+  assert.match(response.released.error, /Unknown Devin terminal/);
+  assert.equal(
+    events.find((event) => event.transcript?.kind === 'tool_result')?.transcript?.text,
+    response.output.output,
+  );
+});
+
+test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit kill and idempotent release', async (t) => {
+  for (const mode of ['args', 'truncate', 'empty', 'error', 'kill', 'release', 'background-exit']) {
+    await t.test(mode, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      await collect(session.stream('terminal-' + mode));
+      const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+      if (mode === 'error') {
+        assert.match(response.error, /ENOENT/);
+        return;
+      }
+      assert.match(response.released.error, /Unknown Devin terminal/);
+      if (mode === 'args') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.deepEqual(JSON.parse(response.output.output), [
+          'space value',
+          'paren(value);$(literal)',
+        ]);
+      } else if (mode === 'truncate') {
+        assert.equal(response.output.output, 'éZ');
+        assert.equal(response.output.truncated, true);
+      } else if (mode === 'empty') {
+        assert.equal(response.output.output, '');
+        assert.equal(response.output.truncated, false);
+      } else if (mode === 'kill') {
+        assert.equal(response.exit.signal, 'SIGTERM');
+        assert.deepEqual(response.output.exitStatus, response.exit);
+      } else if (mode === 'background-exit') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.match(response.output.output, /READY:/);
+      } else {
+        assert.match(response.exit.error, /Unknown Devin terminal/);
+        assert.match(response.output.error, /Unknown Devin terminal/);
+      }
+    });
+  }
+});
+
+test('Devin interrupt and close kill running terminal descendants', async (t) => {
+  for (const action of ['interrupt', 'close', 'background'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session
+        .stream(action === 'background' ? 'terminal-background' : 'terminal-wait')
+        [Symbol.asyncIterator]();
+      let pid: number | undefined;
+      while (pid === undefined) {
+        const next = await stream.next();
+        assert.equal(next.done, false);
+        const text = next.value?.transcript?.text;
+        if (text?.startsWith('READY:')) pid = Number(text.slice(6));
+      }
+      process.kill(pid, 0);
+      await session[action === 'background' ? 'interrupt' : action]();
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      if (action !== 'close') {
+        await session.setModel({ modelId: 'terminal-sync' });
+        const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+        if (action === 'background') assert.equal(response.exit.exitCode, 0);
+        else assert.equal(response.exit.signal, 'SIGTERM');
+      }
+    });
+  }
+});
+
+test('Devin cleans redirected background jobs after their shell and output pipes close', async (t) => {
+  for (const action of ['release', 'interrupt', 'close'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session.stream('terminal-redirected-' + action)[Symbol.asyncIterator]();
+      if (action !== 'release') {
+        const next = await stream.next();
+        assert.match(next.value?.transcript?.text ?? '', /^REDIRECTED:\d+$/);
+        if (action === 'interrupt') await collect({ [Symbol.asyncIterator]: () => stream });
+        const roots: number[][] = [];
+        const unsubscribe = session.onProcessRootsChanged((live) => {
+          roots.push(live.map((root) => root.pid));
+        });
+        assert.equal(roots[0]?.length, 1);
+        assert.notEqual(roots[0]?.[0], session.process?.pid);
+        await session[action]();
+        assert.deepEqual(roots.at(-1), []);
+        unsubscribe();
+      }
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      const pid = Number(await readFile(join(h.cwd, 'redirected-pid'), 'utf8'));
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
+    });
+  }
+});
+
 test('Devin maps streamed text, reasoning, tools and context without leaking child updates', async (t) => {
   const h = await fixture(t);
   const session = await h.create();
@@ -248,7 +235,10 @@ test('Devin maps streamed text, reasoning, tools and context without leaking chi
   const sent = await h.requests();
   assert.deepEqual(
     sent.find((request) => request.method === 'initialize')?.params?.clientCapabilities,
-    { _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true } },
+    {
+      terminal: true,
+      _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+    },
   );
   assert.deepEqual(sent.find((request) => request.method === 'session/prompt')?.params?.prompt, [
     { type: 'text', text: 'hello' },
