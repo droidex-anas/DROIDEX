@@ -76,9 +76,6 @@
     },
     "@typescript-eslint/no-unnecessary-type-parameters": {
       "count": 1
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
-      "count": 28
     }
   },
   "sidecar/src/skillSignals.ts": {
