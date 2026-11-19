@@ -1,7 +1,8 @@
-import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { useRef, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ChildAccess, ChildRuntimeState } from '../hooks/storeChildSession';
 import { useRepoStatus } from '../hooks/useRepoStatus';
+import { useFollowLatest } from '../hooks/useFollowLatest';
 import { interruptVisibleSession, newClientRef, updateSessionSettings } from '../lib/commands';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -106,12 +107,10 @@ function ChatArea({
   big?: boolean;
 }) {
   const toolActivity = useStoreSelector((state) => state.toolActivity);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { scrollRef, followLatest } = useFollowLatest();
   const renderEvents = events.length > 900 ? events.slice(-900) : events;
   const hidden = events.length - renderEvents.length;
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [events.length, pending]);
+  useLayoutEffect(followLatest, [events.length, pending, followLatest]);
 
   return (
     <div
@@ -120,7 +119,7 @@ function ChatArea({
     >
       <div className={`mx-auto min-w-0 ${big ? 'max-w-3xl' : 'max-w-2xl'}`}>
         {hidden > 0 && (
-          <div className="mb-4 text-center text-[12px] text-muted">
+          <div className="mb-4 text-center text-caption text-muted">
             Showing latest {renderEvents.length.toLocaleString()} of{' '}
             {events.length.toLocaleString()} events.
           </div>
@@ -136,10 +135,11 @@ function ChatArea({
           inlineDiffs={toolActivity.inlineDiffs}
           childSessionActivity={childSessionActivity}
           scrollElementRef={scrollRef}
+          onListResize={followLatest}
         />
 
         {events.length === 0 && !pending && (
-          <div className="py-24 text-center text-[13px] text-muted">
+          <div className="py-24 text-center text-body text-muted">
             {live ? 'Waiting for the agent…' : 'Direct the orchestrator to begin.'}
           </div>
         )}
@@ -1108,7 +1108,7 @@ export default function MissionControl() {
                   </button>
                 </>
               ) : (
-                <span className="text-[11px] text-muted capitalize">{phaseLabel}</span>
+                <span className="text-caption text-muted capitalize">{phaseLabel}</span>
               )}
             </div>
           </div>
@@ -1124,6 +1124,7 @@ export default function MissionControl() {
             />
           ) : (
             <ChatArea
+              key={`${mission.appSessionId}:${visibleChildSessionId ?? 'primary'}`}
               events={events}
               live={visibleIsLive}
               pending={visibleSessionIsPending(visibleTarget, isLive, isLive ? 'primary' : null)}
