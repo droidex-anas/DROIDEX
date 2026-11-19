@@ -20,8 +20,7 @@ import {
   type ChildSessionInfo,
   type ChildSessionStore,
 } from './storeChildSession';
-
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
+import { lookup, lookupChild } from './storeLookup';
 
 interface SessionRestoreStore extends ChildSessionStore {
   progress: Record<string, ProgressEntry[]>;
@@ -36,7 +35,7 @@ function withHistoricalCompactionGeneration<S extends SessionRestoreStore>(
   appSessionId: string,
   transcript: TranscriptEvent[],
 ): S {
-  const session = state.sessions[appSessionId];
+  const session = lookup(state.sessions, appSessionId);
   if (!session) return state;
 
   const compactionMarkers = transcript.filter(
@@ -102,7 +101,7 @@ export function reduceSessionHistoryFailed<S extends SessionRestoreStore>(
   action: { appSessionId: string; childSessionId?: string; message: string },
 ): S {
   if (action.childSessionId) {
-    const prev = state.childHistory[action.appSessionId]?.[action.childSessionId];
+    const prev = lookupChild(state.childHistory, action.appSessionId, action.childSessionId);
     return withChildHistory(state, action.appSessionId, action.childSessionId, {
       status: 'failed',
       loadedCount: prev?.loadedCount ?? 0,
@@ -144,7 +143,7 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
     hasMore?: boolean;
   },
 ): S {
-  const existing = state.transcripts[action.appSessionId] ?? [];
+  const existing = lookup(state.transcripts, action.appSessionId) ?? [];
   const hasMore = Boolean(action.olderCursor);
 
   if (action.childSessionId) {
@@ -162,7 +161,7 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
       hasMore,
     );
     const transcriptChanged = reconciled.transcript !== existing;
-    const previousHistory = state.childHistory[action.appSessionId]?.[childSessionId];
+    const previousHistory = lookupChild(state.childHistory, action.appSessionId, childSessionId);
     const preservesPagination =
       action.mode === 'refresh' && !restartsHistory && previousHistory?.isLoaded;
     const olderCursor = preservesPagination ? previousHistory.olderCursor : action.olderCursor;
@@ -230,12 +229,12 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
   const mergedTranscript = reconcileRestoredTranscript(existing, action.transcripts, !hasMore);
   const transcriptChanged = mergedTranscript !== existing;
   const historicalChildren = action.childSessions ?? [];
-  const existingChildSessions = state.childSessions[action.appSessionId] ?? {};
+  const existingChildSessions = lookup(state.childSessions, action.appSessionId) ?? {};
   let childSessions: Record<string, Record<string, ChildSessionInfo>> = state.childSessions;
   if (historicalChildren.length > 0) {
     const byChild = { ...existingChildSessions };
     for (const child of historicalChildren)
-      byChild[child.childSessionId] = byChild[child.childSessionId] ?? child;
+      byChild[child.childSessionId] = lookup(byChild, child.childSessionId) ?? child;
     childSessions = {
       ...state.childSessions,
       [action.appSessionId]: byChild,
@@ -244,7 +243,7 @@ export function reduceSessionHistory<S extends SessionRestoreStore>(
   // An empty restore (e.g. a live session with no persisted history yet)
   // must not wipe progress already delivered by live events; only adopt the
   // replayed progress when it actually carries entries.
-  const existingProgress = state.progress[action.appSessionId] ?? [];
+  const existingProgress = lookup(state.progress, action.appSessionId) ?? [];
   const mergedProgress = action.progress.length > 0 ? action.progress : existingProgress;
   const historyState = {
     ...state,

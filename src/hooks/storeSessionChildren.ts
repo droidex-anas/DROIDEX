@@ -6,8 +6,8 @@ import {
 } from '../lib/transcriptMutation';
 import { isWorkingAgent } from '../lib/childSessions';
 import { releaseInactiveChildTranscript, type ChildSessionStore } from './storeChildSession';
+import { lookupChild } from './storeLookup';
 
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- keyed child records are sparse despite their Record types */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- remove invalidated child context and settled parent flags */
 
 interface ChildUpdate {
@@ -36,8 +36,8 @@ export function reduceSessionChildren<S extends ChildSessionStore>(
   const workingParents = new Set<string>();
   for (const { child, runtimeAvailable, runtimeGeneration } of actions) {
     const { parentAppSessionId: parentId, childSessionId: childId } = child;
-    const previousChild = next.childSessions[parentId]?.[childId];
-    const previousRuntime = next.childRuntime[parentId]?.[childId];
+    const previousChild = lookupChild(next.childSessions, parentId, childId);
+    const previousRuntime = lookupChild(next.childRuntime, parentId, childId);
     if (previousRuntime && runtimeGeneration < previousRuntime.runtimeGeneration) continue;
     const settledWhileInactive =
       previousChild?.status === 'running' &&
@@ -68,7 +68,7 @@ export function reduceSessionChildren<S extends ChildSessionStore>(
     ) {
       next.childRuntime = writableParent(state.childRuntime, next.childRuntime, parentId);
       next.childRuntime[parentId][childId] = { available: runtimeAvailable, runtimeGeneration };
-      const access = next.childAccess[parentId]?.[childId];
+      const access = lookupChild(next.childAccess, parentId, childId);
       // Queued is waiting for a slot, not a finished open.
       if (
         !runtimeAvailable &&

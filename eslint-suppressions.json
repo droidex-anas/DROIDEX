@@ -204,9 +204,6 @@
       "count": 5
     },
     "@typescript-eslint/no-unnecessary-condition": {
-      "count": 15
-    },
-    "@typescript-eslint/prefer-nullish-coalescing": {
       "count": 1
     }
   },
