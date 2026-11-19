@@ -1,36 +1,36 @@
 import { useEffect, useMemo, useRef, useState, type Dispatch } from 'react';
-import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { Action, AppState } from '../hooks/useStore';
 import { readFile } from '../lib/desktop';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
 
 export function useChatSpec({
-  activeSession,
+  activeAppSessionId,
+  isSpecMode,
   allTranscript,
   transcriptMutation,
   capturedPlan,
   storedSpec,
   dispatch,
 }: {
-  activeSession: SessionSummary | null;
+  activeAppSessionId: string | undefined;
+  isSpecMode: boolean;
   allTranscript: TranscriptEvent[];
   transcriptMutation: TranscriptMutation | undefined;
   capturedPlan: string | undefined;
   storedSpec: AppState['sessionSpecs'][string] | undefined;
   dispatch: Dispatch<Action>;
 }) {
-  const activeAppSessionId = activeSession?.appSessionId;
   const specPathProjectorRef = useRef<ReturnType<typeof createTranscriptSpecPathProjector> | null>(
     null,
   );
   specPathProjectorRef.current ??= createTranscriptSpecPathProjector();
 
-  const isSpec = activeSession?.interactionMode === 'spec';
   // The spec stays available after exiting spec mode: keep detecting/loading it
   // whenever this session ever produced one (live mode, captured plan, or a
   // previously stored spec).
-  const hadSpec = isSpec || !!capturedPlan || !!storedSpec;
+  const hadSpec = isSpecMode || !!capturedPlan || !!storedSpec;
 
   // The real deliverable in spec mode is a markdown file written to disk
   // (e.g. ~/.factory/specs/<date>-<slug>.md). Detect that path anywhere in the

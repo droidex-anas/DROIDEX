@@ -548,11 +548,14 @@ export default function ChatView({
   const { startingCompose } = state;
 
   const specContent = useChatSpec({
-    activeSession,
+    activeAppSessionId,
+    isSpecMode: activeSession?.interactionMode === 'spec',
     allTranscript,
     transcriptMutation: state.transcriptMutation,
-    capturedPlan: activeSession ? state.specPlans[activeSession.appSessionId] : undefined,
-    storedSpec: activeSession ? state.sessionSpecs[activeSession.appSessionId] : undefined,
+    capturedPlan:
+      activeAppSessionId !== undefined ? state.specPlans[activeAppSessionId] : undefined,
+    storedSpec:
+      activeAppSessionId !== undefined ? state.sessionSpecs[activeAppSessionId] : undefined,
     dispatch,
   });
 
