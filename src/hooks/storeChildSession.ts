@@ -3,7 +3,7 @@ import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemor
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
 import type { UtilityPanelState } from '../lib/utilityPanel';
-import { lookup, lookupChild } from './storeLookup';
+import { lookupChild } from './storeLookup';
 
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
 
@@ -74,7 +74,7 @@ function withChildAccess<S extends ChildSessionStore>(
   childSessionId: string,
   access: ChildAccess,
 ): S {
-  const parent = lookup(state.childAccess, parentAppSessionId) ?? {};
+  const parent = state.childAccess[parentAppSessionId] ?? {};
   return {
     ...state,
     childAccess: {
@@ -89,7 +89,7 @@ function withoutChildAccess<S extends ChildSessionStore>(
   parentAppSessionId: string,
   childSessionId: string,
 ): S {
-  const parent = { ...(lookup(state.childAccess, parentAppSessionId) ?? {}) };
+  const parent = { ...(state.childAccess[parentAppSessionId] ?? {}) };
   delete parent[childSessionId];
   const childAccess = { ...state.childAccess };
   if (Object.keys(parent).length === 0) delete childAccess[parentAppSessionId];
@@ -103,7 +103,7 @@ function withChildRuntime<S extends ChildSessionStore>(
   childSessionId: string,
   runtime: ChildRuntimeState,
 ): S {
-  const parent = lookup(state.childRuntime, parentAppSessionId) ?? {};
+  const parent = state.childRuntime[parentAppSessionId] ?? {};
   return {
     ...state,
     childRuntime: {
@@ -136,7 +136,8 @@ export function releaseInactiveChildTranscript<S extends ChildSessionStore>(
   parentAppSessionId: string,
   childSessionId: string,
 ): S {
-  const panel = lookup(state.utilityPanels, parentAppSessionId);
+  const panels: Partial<ChildSessionStore['utilityPanels']> = state.utilityPanels;
+  const panel = panels[parentAppSessionId];
   const readingInPane =
     state.activeAppSessionId === parentAppSessionId &&
     panel?.open &&
@@ -386,7 +387,7 @@ export function reduceSelectChild<S extends ChildSessionStore>(
     });
     const history = lookupChild(opening.childHistory, parentAppSessionId, childSessionId);
     if (history?.isLoaded) return opening;
-    const loadedCount = (lookup(opening.transcripts, parentAppSessionId) ?? []).filter(
+    const loadedCount = (opening.transcripts[parentAppSessionId] ?? []).filter(
       (event) => event.sourceSessionId === childSessionId,
     ).length;
     return withChildHistory(opening, parentAppSessionId, childSessionId, {
