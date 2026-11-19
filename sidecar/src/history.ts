@@ -653,7 +653,6 @@ export function hydrateHistoricalSession(
   opts: { cursor?: string; limit?: number } = {},
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
-  if (!dir) throw new Error(`Mission history not found for ${missionId}`);
 
   const { summary, storedProgress } = loadMissionControlSession(dir);
   const progress = projectMissionProgress(
@@ -1116,7 +1115,8 @@ function missionDirs(): string[] {
     });
 }
 
-function resolveMissionDir(missionId: string): string | null {
+function resolveMissionDir(missionId: string): string {
+  const unreadableDirs: string[] = [];
   for (const dir of missionDirs()) {
     if (basename(dir) === missionId) return dir;
     try {
@@ -1124,9 +1124,15 @@ function resolveMissionDir(missionId: string): string | null {
       if (state.baseSessionId === missionId || state.missionId === missionId) return dir;
     } catch (error) {
       reportUnreadableMission(dir, error);
+      unreadableDirs.push(dir);
     }
   }
-  return null;
+  // An unreadable state.json hides which mission it belongs to, so name those directories.
+  const skipped =
+    unreadableDirs.length > 0
+      ? `; unreadable mission directories: ${unreadableDirs.join(', ')}`
+      : '';
+  throw new Error(`Mission history not found for ${missionId}${skipped}`);
 }
 
 // Every registry rebuild re-enumerates missions, so each unreadable directory is logged once.

@@ -91,7 +91,7 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
   const warnings = t.mock.method(console, 'warn', () => undefined);
   const brokenDir = join(home, '.factory', 'missions', 'a-broken');
   mkdirSync(brokenDir, { recursive: true });
-  writeFileSync(join(brokenDir, 'state.json'), '{"missionId": "secret-partial-wri');
+  writeFileSync(join(brokenDir, 'state.json'), '{"baseSessionId": "broken-app", "secret-partial');
   const healthyDir = join(home, '.factory', 'missions', 'mission-healthy');
   mkdirSync(healthyDir, { recursive: true });
   writeFileSync(
@@ -114,7 +114,13 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
     ['mission-healthy'],
   );
   assert.doesNotThrow(() => hydrateHistoricalSession('healthy-app'));
-  assert.throws(() => hydrateHistoricalSession('a-broken'), SyntaxError);
+  assert.throws(
+    () => hydrateHistoricalSession('broken-app'),
+    (error: Error) =>
+      error.message.includes('Mission history not found for broken-app') &&
+      error.message.includes(brokenDir) &&
+      !error.message.includes('secret-partial'),
+  );
 
   assert.equal(warnings.mock.callCount(), 1);
   const warning = String(warnings.mock.calls[0]?.arguments[0]);
