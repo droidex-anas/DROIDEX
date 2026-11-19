@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { ChildAccess, ChildSessionInfo } from '../hooks/storeChildSession';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import {
   childSessionActivityForTarget,
   childSessionIdForFeature,

@@ -6,7 +6,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { canvasClient } from './canvasClient';
 import { onCanvasImageCaptured } from './captureCanvasImage';
 import { frameTile } from './frameTile';
-import type { CanvasFrame, RevisionRef } from './protocol';
+import type { CanvasFrame, RevisionRef } from '@droidex/protocol';
 
 /** About twice a card's width on the home, so a cover stays sharp on a Retina screen. */
 const COVER_WIDTH_PX = 480;

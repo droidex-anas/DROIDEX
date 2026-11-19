@@ -1,4 +1,4 @@
-import type { AgentProcess } from '../protocol.js';
+import type { AgentProcess } from '@droidex/protocol';
 import type { ProcessRecord } from './processTree.js';
 
 // Longer than any heartbeat a harness restarts around a command: Droid's

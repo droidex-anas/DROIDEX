@@ -7,7 +7,7 @@ import {
   isCopyableFinalResponse,
   projectFinalResponseKeys,
 } from './messageFeedState';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function event(id: string, extra: Partial<TranscriptEvent> = {}): TranscriptEvent {
   return {

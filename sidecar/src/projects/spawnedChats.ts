@@ -1,5 +1,5 @@
-import type { DroidProfile } from '../droidProfiles.js';
-import type { SessionSummary } from '../protocol.js';
+import type { DroidProfile, SessionSummary } from '@droidex/protocol';
+
 import type { ProjectPort } from './sessions.js';
 import {
   CHAT_BRIEF,

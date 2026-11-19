@@ -28,8 +28,9 @@ autonomy.
 
 ## Bridge contract
 
-`src/types/bridge.ts` mirrors `sidecar/src/protocol.ts`. Update both sides
-atomically.
+`packages/protocol/src/` owns the bridge, MCP, and Canvas wire contracts.
+Renderer and sidecar consumers import `@droidex/protocol` directly.
+Runtime validation remains sidecar-owned.
 
 ### Session commands
 

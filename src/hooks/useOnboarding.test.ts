@@ -9,7 +9,7 @@ import {
   shouldShowOnboarding,
   subscribeOnboardingState,
 } from './useOnboarding';
-import type { EnvironmentReport } from '../types/bridge';
+import type { EnvironmentReport } from '@droidex/protocol';
 
 function env(partial: Partial<EnvironmentReport>): EnvironmentReport {
   return {

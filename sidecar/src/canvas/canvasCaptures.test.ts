@@ -7,7 +7,7 @@ import {
   harness,
   turnScope,
 } from '../testing/canvasBridgeSupport.js';
-import type { CaptureImage } from '../canvas/protocol.js';
+import type { CaptureImage } from '@droidex/protocol';
 import { CANVAS_PNG } from '../testing/canvasStorageSupport.js';
 
 const png = CANVAS_PNG.toString('base64');

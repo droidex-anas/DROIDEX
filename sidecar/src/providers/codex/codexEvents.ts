@@ -6,7 +6,7 @@
 // repeats the whole message, so re-emitting it would double every sentence. The
 // completed item backfills one case, a message that streamed nothing at all.
 import type { NormalizedEvent } from '../../normalize.js';
-import type { TranscriptEvent } from '../../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
 import { reasoningValue } from '../../modelCatalog.js';

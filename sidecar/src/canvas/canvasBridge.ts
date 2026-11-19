@@ -7,7 +7,15 @@ import { CanvasCaptures, type CanvasCapture } from './canvasCaptures.js';
 import { CanvasWatches } from './canvasWatches.js';
 import { createHash, randomUUID } from 'node:crypto';
 import type { z } from 'zod';
-import type { ServerEvent } from '../protocol.js';
+import type {
+  ServerEvent,
+  CanvasCommand,
+  CanvasError,
+  CanvasEvent,
+  CanvasReply,
+  OwnedAsset,
+  PreviewArtifact,
+} from '@droidex/protocol';
 import type { CanvasBuilds } from './CanvasBuilds.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { resolveCanvasAssetReferences } from './canvasAssets.js';
@@ -24,14 +32,6 @@ import { answerRemovalCommand, isRemovalCommand } from './canvasRemoval.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type {
-  CanvasCommand,
-  CanvasError,
-  CanvasEvent,
-  CanvasReply,
-  OwnedAsset,
-  PreviewArtifact,
-} from './protocol.js';
 
 const MAX_PENDING_REQUESTS = 128;
 

@@ -1,13 +1,13 @@
 import { componentLabels, type ComponentPin } from '../features/canvas/componentPins';
 import type { ElementPin } from '../features/canvas/elementPins';
 import type { FramePin } from '../features/canvas/framePins';
-import type { CanvasTurnContext } from '../features/canvas/protocol';
 import type {
+  CanvasTurnContext,
   BrowserTranscriptReference,
   DesignReference,
   ProviderMention,
   TranscriptEvent,
-} from '../types/bridge';
+} from '@droidex/protocol';
 
 interface QueuedDesignContext {
   browserKey: string;

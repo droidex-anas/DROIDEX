@@ -3,14 +3,14 @@ import { isReasoningEffort } from '../../lib/reasoningEffort';
 import { cronExpressionIssue, isTimeZone, validTime } from './schedule';
 import type {
   Automation,
-  AutomationDraft,
   AutomationProposal,
   AutomationRun,
   AutomationSchedule,
   AutomationSessionOrigin,
   AutomationSnapshot,
   AutomationTarget,
-} from './types';
+} from '@droidex/protocol';
+import type { AutomationDraft } from './types';
 
 const RUN_STATUSES = new Set(['queued', 'starting', 'running', 'completed', 'failed']);
 export function isAutomationSnapshot(value: unknown): value is AutomationSnapshot {

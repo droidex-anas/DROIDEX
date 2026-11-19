@@ -1,7 +1,7 @@
 // Provider runtimes cost hundreds of MiB each; keep at most three settled
 // off-screen runtimes live, releasing the longest idle first. History survives.
 import type { LiveSession } from './SessionLifecycle.js';
-import type { SessionPhase } from './protocol.js';
+import type { SessionPhase } from '@droidex/protocol';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 
 // The three most recently idle runtimes retain the 30-minute budget; selecting

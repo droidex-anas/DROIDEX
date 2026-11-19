@@ -6,7 +6,7 @@ import { useSyncExternalStore } from 'react';
 import { toast } from '../../lib/toast';
 import { attachedBoard } from './framePins';
 import type { PickedElement } from './pickedElement';
-import type { CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasSnapshot } from '@droidex/protocol';
 
 /** The sidecar's limit on the elements one request may pin. */
 const MAX_PINNED_ELEMENTS = 32;

@@ -2,7 +2,7 @@
 // over JSON-RPC and mission `features.json` on disk — are both untrusted at
 // runtime, so validation lives here rather than in each caller. Keeping it out
 // of `normalize.ts` also keeps the SDK runtime out of the history worker.
-import type { BridgeFeature, FeatureStatus } from './protocol.js';
+import type { BridgeFeature, FeatureStatus } from '@droidex/protocol';
 import { objectValue, trimmedString } from './values.js';
 
 export function bridgeFeature(value: unknown): BridgeFeature {

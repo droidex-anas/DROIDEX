@@ -3,7 +3,7 @@
 // are fenced, thinking folds into a details block, compaction becomes a
 // divider. Oversized payloads are truncated so a huge tool dump cannot make
 // the clipboard payload unusable.
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 const MAX_TOOL_CHARS = 2_000;
 const MAX_THINKING_CHARS = 4_000;

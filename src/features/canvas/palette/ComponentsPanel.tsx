@@ -23,7 +23,7 @@ import { Input } from '../../../components/ui/Field';
 import { ADD_KEY_LABEL, TAG_KEY_LABEL } from '../boardKeys';
 import type { ComponentPin } from '../componentPins';
 import { toggleComponentPin } from '../componentTagging';
-import type { CatalogListing, DesignSystemRef, PropPick } from '../protocol';
+import type { CatalogListing, DesignSystemRef, PropPick } from '@droidex/protocol';
 import { ComponentDetail } from './ComponentDetail';
 import { ComponentRow } from './ComponentRow';
 import { paletteRows, propPicks, type ChosenProps } from './paletteRows';

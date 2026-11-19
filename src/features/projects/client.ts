@@ -1,9 +1,13 @@
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
 import { projectsAnswered } from '../../lib/projectThreads';
-import type { ServerEvent } from '../../types/bridge';
-import type { ProjectCommand, ProjectEvent } from './protocol';
-import type { ProjectView, ThreadInput } from './types';
+import type {
+  ServerEvent,
+  ProjectCommand,
+  ProjectEvent,
+  ProjectView,
+  ThreadInput,
+} from '@droidex/protocol';
 
 type Result = Extract<ProjectEvent, { type: 'project.result'; ok: true }>;
 

@@ -4,7 +4,7 @@ import type {
   HistoryPersistenceBatch,
   HistoryPersistenceResult,
 } from './historyPersistenceProtocol.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 export const MAX_PERSISTENCE_BATCH_ROWS = 512;
 export const MAX_PERSISTENCE_BATCH_BYTES = 512 * 1024;

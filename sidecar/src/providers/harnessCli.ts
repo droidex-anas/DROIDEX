@@ -19,7 +19,7 @@ import type {
   HarnessInstallSource,
   InstallChannel,
   ServerEvent,
-} from '../protocol.js';
+} from '@droidex/protocol';
 import { resolveClaudePath } from './claude/claudeExecutable.js';
 import { resolveCodexPath } from './codex/codexExecutable.js';
 import { childEnv } from '../childEnv.js';

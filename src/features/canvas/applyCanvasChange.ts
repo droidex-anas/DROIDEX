@@ -1,4 +1,4 @@
-import type { CanvasChange, CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasChange, CanvasFrame, CanvasSnapshot } from '@droidex/protocol';
 
 /**
  * The projection a change produces from the one it extends. Changed frames

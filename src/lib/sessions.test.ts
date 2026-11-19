@@ -6,7 +6,7 @@ import {
   sessionIsLive,
   sessionIsUnread,
 } from './sessions';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 function session(over: Partial<SessionSummary>): SessionSummary {
   return { appSessionId: 'session', cwd: '', phase: 'completed', ...over } as SessionSummary;

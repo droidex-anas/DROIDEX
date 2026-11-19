@@ -18,7 +18,7 @@ import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from '@droidex/icons
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
-import type { ModelInfo, VoiceNarration } from '../types/bridge';
+import type { ModelInfo, VoiceNarration } from '@droidex/protocol';
 import { useOnboarding } from '../hooks/useOnboarding';
 import { Switch } from './Switch';
 import { getAppVersion, type AppUpdateInfo } from '../lib/onboarding';

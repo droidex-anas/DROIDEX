@@ -1,4 +1,4 @@
-import type { ServerEvent } from '../types/bridge';
+import type { ServerEvent } from '@droidex/protocol';
 
 type HistoryPersistenceHealth = 'ok' | 'degraded' | 'unavailable';
 type HistorySearchHealth = 'ok' | 'unavailable';

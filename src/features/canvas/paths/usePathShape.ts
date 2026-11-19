@@ -12,7 +12,7 @@ import {
 } from '../previewDocumentShape';
 import type { PreviewRuns } from '../previewRuns';
 import type { PreviewRun } from '../previewRuntime';
-import type { ElementRef } from '../protocol';
+import type { ElementRef } from '@droidex/protocol';
 import { readPathData, type PathSegment } from './pathData';
 import { writePath } from './pathModel';
 

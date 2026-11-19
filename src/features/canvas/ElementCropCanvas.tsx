@@ -7,7 +7,7 @@ import { MousePointerSquareDashed } from '@droidex/icons';
 import { readCanvasThumbnail } from '../../lib/desktop';
 import { onCanvasImageCaptured } from './captureCanvasImage';
 import type { ElementPin } from './elementPins';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 export function ElementCropCanvas({
   pin,

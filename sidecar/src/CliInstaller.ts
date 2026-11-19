@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { childEnv } from './childEnv.js';
-import type { InstallChannel } from './protocol.js';
+import type { InstallChannel } from '@droidex/protocol';
 
 export interface ShellCommand {
   command: string;

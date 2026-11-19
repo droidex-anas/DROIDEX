@@ -10,7 +10,7 @@ import {
 } from './autoCompactionWatchdog.js';
 import { extractCompactionNotification } from './normalize.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import type { FactoryDefaultSettings, SessionInteractionMode } from './protocol.js';
+import type { FactoryDefaultSettings, SessionInteractionMode } from '@droidex/protocol';
 import type {
   ChildOperationTarget,
   LiveOperationTarget,

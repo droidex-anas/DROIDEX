@@ -9,7 +9,7 @@ import { exportCanvasToProject } from '../../lib/desktop';
 import { toast } from '../../lib/toast';
 import { CanvasDialog } from './CanvasDialog';
 import { canvasMessage } from './client';
-import type { RevisionRef } from './protocol';
+import type { RevisionRef } from '@droidex/protocol';
 
 /** The folder suggested for a frame: `design/` and its name in lower-case words. */
 function projectExportFolder(frameName: string): string {

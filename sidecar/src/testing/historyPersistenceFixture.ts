@@ -10,7 +10,7 @@ import {
   type HistoryPersistenceBatch,
   type HistoryWriterLease,
 } from '../historyPersistenceProtocol.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 const testWriterLease: HistoryWriterLease = {
   owner: 'history-persistence-test-fixture',

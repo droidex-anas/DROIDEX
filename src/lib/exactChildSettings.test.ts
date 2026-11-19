@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ModelInfo } from '../types/bridge.js';
+import type { ModelInfo } from '@droidex/protocol';
 import {
   buildSelectedChildSettingsTarget,
   buildVisibleChildSettingsTarget,

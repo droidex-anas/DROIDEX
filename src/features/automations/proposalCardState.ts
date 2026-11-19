@@ -1,10 +1,10 @@
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent, AutomationProposal, AutomationSchedule } from '@droidex/protocol';
 import { normalizeAutonomy } from '../../lib/autonomy';
 import { isReasoningEffort } from '../../lib/reasoningEffort';
 import { cronExpressionIssue, deviceTimeZone, isTimeZone, validTime } from './schedule';
 import { parseToolResultObject } from './toolNames';
 import { isAutomationFiles, isAutomationTarget } from './wireValidation';
-import type { AutomationDraft, AutomationProposal, AutomationSchedule } from './types';
+import type { AutomationDraft } from './types';
 
 export interface ProposalCardState {
   kind: 'preparing' | 'ready' | 'review' | 'scheduled' | 'failed';

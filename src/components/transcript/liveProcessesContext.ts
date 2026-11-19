@@ -1,6 +1,6 @@
 import { createContext } from 'react';
 import { commandLineContains } from '../../lib/commandLineMatch';
-import type { AgentProcess } from '../../types/bridge';
+import type { AgentProcess } from '@droidex/protocol';
 
 // The transcript's leaf cards read the session's live agent processes from
 // here rather than from the store, so a card can render standalone (tests,

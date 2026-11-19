@@ -1,5 +1,5 @@
 import type { FeedItem } from './chatFeed';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 export interface FinalResponseKeyState {
   identity: string;

@@ -17,8 +17,8 @@ import type {
   KitFontFace,
   KitPreview,
   KitPreviewTarget,
-} from './protocol';
-import type { DocumentSection } from './designSystemDocumentProtocol';
+  DocumentSection,
+} from '@droidex/protocol';
 
 export interface SavedDesignSystem {
   ref: DesignSystemVersionRef;

@@ -3,12 +3,8 @@ import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
 import { parseAutomationStore } from './automationStoreParsing.js';
 import { mkdir, open, readFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
-import type {
-  AutomationRun,
-  AutomationRunStatus,
-  AutomationSnapshot,
-  AutomationStore,
-} from './types.js';
+import type { AutomationRun, AutomationRunStatus, AutomationSnapshot } from '@droidex/protocol';
+import type { AutomationStore } from './types.js';
 
 // Retention is deliberately tight: the whole store is serialized on every state
 // change and the snapshot is broadcast to every renderer, so history costs both

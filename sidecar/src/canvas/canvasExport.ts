@@ -32,7 +32,7 @@ import {
 import type { ProjectExportAdmission } from './projectExports.js';
 import { libraryExport } from './projectLibraryExport.js';
 import { isInsideProject, MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
-import type { RevisionRef } from './protocol.js';
+import type { RevisionRef } from '@droidex/protocol';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 
 const COLLISION = 'The chosen folder is not empty. Choose an empty folder.';

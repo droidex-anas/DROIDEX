@@ -1,13 +1,15 @@
 import type { ActivityDigest } from '../../lib/activityDigest';
 import type { SessionAttentionKind } from '../../lib/sessionAttention';
-import {
-  ACTIVITY_GROUPS,
-  ACTIVITY_LABELS,
-  sessionActivityStatus,
-  type SessionActivityStatus,
-} from '../../lib/sidebarActivity';
-import type { DroidProfile, ProviderKind, SessionSummary } from '../../types/bridge';
-import type { ProjectStep, ProjectThread, ProjectView } from './types';
+import type {
+  SessionActivityStatus,
+  DroidProfile,
+  ProviderKind,
+  SessionSummary,
+  ProjectStep,
+  ProjectThread,
+  ProjectView,
+} from '@droidex/protocol';
+import { ACTIVITY_GROUPS, ACTIVITY_LABELS, sessionActivityStatus } from '../../lib/sidebarActivity';
 
 /* What the Threads surfaces show. A thread is an ordinary DROIDEX conversation,
    so its state is the one the inbox already computes for a chat, with the same

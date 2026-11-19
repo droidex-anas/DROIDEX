@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { CanvasClient } from '../../features/canvas/client';
 import { toggleFramePins, untagsFrames, useFramePins } from '../../features/canvas/framePins';
-import type { CanvasFrame } from '../../features/canvas/protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { frameRowKey } from './menuItems';
 
 const NO_FRAMES: readonly CanvasFrame[] = [];

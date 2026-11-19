@@ -1,4 +1,4 @@
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 
 /**
  * Whether voice mode can run on a chat or on a draft that has not started yet.

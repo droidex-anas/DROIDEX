@@ -4,7 +4,7 @@
 
 import { readPathData } from './paths/pathData';
 import { jsonArgument, readAnswer, readRect, record, type PreviewNode } from './previewDocument';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 /** Bytes a path's `d` may measure in an answer, as the reporter caps it. */
 export const MAX_PREVIEW_PATH_DATA_BYTES = 16 * 1024;

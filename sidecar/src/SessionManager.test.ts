@@ -12,7 +12,7 @@ import {
   SettingsLevel,
 } from '@factory/droid-sdk';
 
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { HistoricalSummaryFilter } from './history.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';

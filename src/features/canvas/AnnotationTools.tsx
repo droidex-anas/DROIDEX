@@ -5,7 +5,7 @@
 
 import { useState } from 'react';
 import { PenLine } from '@droidex/icons';
-import type { AnnotationColor } from './annotationProtocol';
+import type { AnnotationColor } from '@droidex/protocol';
 import { isShapeTool, type AnnotationTool, type ShapeTool } from './annotationGeometry';
 import { Tool } from './BoardTool';
 

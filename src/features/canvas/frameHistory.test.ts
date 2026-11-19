@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CanvasRequestError } from './client';
 import { CHANGED_SINCE_READ, FrameHistory, revisionNumber } from './frameHistory';
-import type { RevisionSummary, SwitchRevisionInput } from './protocol';
+import type { RevisionSummary, SwitchRevisionInput } from '@droidex/protocol';
 
 function revision(revisionId: string, version: number): RevisionSummary {
   return {

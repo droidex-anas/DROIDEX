@@ -6,7 +6,7 @@ import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { starterKit } from './designSystemImport.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import { AUTO_DESIGN_SYSTEM_REF, readDesignSystem, type DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
 
 // The shared primitives on the starter's tokens, so the cases below read a kit that never changes.

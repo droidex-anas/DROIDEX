@@ -5,7 +5,7 @@
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasManifest } from './canvasManifest.js';
-import type { CanvasScope } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
 
 export interface CanvasLeaseRegistry {
   /** False once the owning turn settled or its provider session was replaced. */

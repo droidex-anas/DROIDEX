@@ -9,7 +9,7 @@ import type { BoardInteraction } from './canvasState';
 import type { PreviewSelections } from './DesignPreview';
 import { NO_SHOWN_REVISIONS, shownRevisions } from './previewLabels';
 import { NO_PREVIEW_SLOTS, reducePreviewSlots } from './previewSlots';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 export function useBoardPreviews(
   frames: CanvasFrame[],

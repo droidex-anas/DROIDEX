@@ -10,7 +10,7 @@ import type { HistoryStep } from './boardHistory';
 import type { ZoomCommand } from './ZoomControl';
 import { arrowDirection, nudgeStep, type Point } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 const COMMAND_DIGITS = new Map<string, ZoomCommand>([
   ['Digit1', 'fit'],

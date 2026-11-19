@@ -1,17 +1,21 @@
-import type { BrowserColorScheme, BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
+import type {
+  BrowserColorScheme,
+  BrowserNativeRequest,
+  BrowserNativeResult,
+  BrowserElementInspection,
+  BrowserConsoleEvent,
+  BrowserNetworkEvent,
+  BrowserViewport,
+  BrowserViewportMode,
+} from '@droidex/protocol';
 import type { BrowserRuntime } from './BrowserSessionManager.js';
 import type {
   BrowserActionResult,
   BrowserClickOptions,
-  BrowserElementInspection,
-  BrowserConsoleEvent,
-  BrowserNetworkEvent,
   BrowserReadOptions,
   BrowserScreenshot,
   BrowserScreenshotOptions,
   BrowserTarget,
-  BrowserViewport,
-  BrowserViewportMode,
   BrowserWaitCondition,
   ScrollDirection,
 } from './types.js';

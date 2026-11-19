@@ -9,7 +9,7 @@ import {
   NO_PREVIEW_SLOTS,
   reducePreviewSlots,
 } from '../previewSlots';
-import type { DesignSystemDocumentView } from '../protocol';
+import type { DesignSystemDocumentView } from '@droidex/protocol';
 
 const NONE: readonly string[] = [];
 

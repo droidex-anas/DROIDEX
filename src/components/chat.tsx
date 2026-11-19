@@ -13,7 +13,7 @@ import {
   type ChildSessionTarget,
 } from '../lib/childSessions';
 import { DEFAULT_TOOL_ACTIVITY, type ToolActivityDensity } from '../lib/toolActivity';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { MessageBody } from './MessageBody';
 import { DiffCard } from './DiffView';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';

@@ -1,7 +1,7 @@
 // What a successful Canvas request is answered with, its narrowing to the reply
 // kind the request expects, and the ID that correlates the two.
 
-import type { CanvasEvent, CanvasReply } from './protocol';
+import type { CanvasEvent, CanvasReply } from '@droidex/protocol';
 
 /** Everything a successful request is answered with. */
 export type ReplyEvent =

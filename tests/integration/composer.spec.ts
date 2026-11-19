@@ -1,6 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { sessionSummary } from '../../src/test/sessionSummary';
-import type { ClientCommand, ServerEvent } from '../../src/types/bridge';
+import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 

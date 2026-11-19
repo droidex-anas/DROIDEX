@@ -1,4 +1,4 @@
-import type { ServerEventBatch } from './protocol.js';
+import type { ServerEventBatch } from '@droidex/protocol';
 
 const DEFAULT_MAX_REPLAY_BYTES = 32 * 1024 * 1024;
 const DEFAULT_MAX_REPLAY_BATCHES = 4_096;

@@ -19,10 +19,11 @@ import type {
   ReasoningEffort,
   SessionInteractionMode,
   SessionPurpose,
-} from '../../protocol.js';
+  SkillInfo,
+} from '@droidex/protocol';
 import { errMsg } from '../../errors.js';
 import { UsageLimitError } from '../usageLimit.js';
-import type { SkillInfo } from '../catalog.js';
+
 import type { ProviderInteractions } from '../interactions.js';
 import type {
   DelegatedTurnEnd,

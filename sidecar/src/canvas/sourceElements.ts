@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { componentUses, functionName, type ComponentUses } from './componentUses.js';
 import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
-import type { SourceElement, SourceFiles, SourceOutline } from './protocol.js';
+import type { SourceElement, SourceFiles, SourceOutline } from '@droidex/protocol';
 import { resolveRelative } from './relativeImport.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { SourceElementError } from './sourceElementError.js';

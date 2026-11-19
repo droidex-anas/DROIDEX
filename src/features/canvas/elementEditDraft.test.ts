@@ -14,7 +14,7 @@ import {
   settleCommit,
   type ElementEditDraft,
 } from './elementEditDraft';
-import type { CanvasBuildOutcome, CanvasFrame, SourceElement } from './protocol';
+import type { CanvasBuildOutcome, CanvasFrame, SourceElement } from '@droidex/protocol';
 
 const element = { designId: 'design', revisionId: 'r1', elementId: 'el_1', instancePath: '0' };
 const site: SourceElement = {

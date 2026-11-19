@@ -1,4 +1,4 @@
-import type { SourceFiles } from '../schema.js';
+import type { SourceFiles } from '@droidex/protocol';
 
 // A design built the way shadcn/ui builds components: Radix primitives, both as
 // the radix-ui umbrella and as a single package, cva variants and a `cn`

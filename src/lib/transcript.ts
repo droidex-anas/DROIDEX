@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { isChildSessionTool, isTodoTool } from './tools';
 import { extractFileChange } from './diff';
 

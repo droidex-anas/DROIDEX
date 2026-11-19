@@ -3,7 +3,7 @@ import type {
   ChildStatus,
   StreamFidelity,
   TranscriptEvent,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { childSessionKey, childSessionLatest, type ChildSessionActivity } from './childSessions';
 
 export const CHILD_STREAM_PREVIEW_MAX_LINES = 3;

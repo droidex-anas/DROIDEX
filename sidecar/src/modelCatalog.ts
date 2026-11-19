@@ -1,4 +1,4 @@
-import type { ModelInfo, ReasoningEffort } from './protocol.js';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 
 type ModelRecord = Record<string, unknown>;
 

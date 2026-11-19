@@ -4,7 +4,7 @@
 
 import { readCanvasThumbnail } from '../../lib/desktop';
 import { base64 } from './captureCanvasImage';
-import type { RevisionRef } from './protocol';
+import type { RevisionRef } from '@droidex/protocol';
 import { MAX_TILE_BASE64_LENGTH } from './wireValidation';
 
 /** Five times a library picker row's 64 px tile. */

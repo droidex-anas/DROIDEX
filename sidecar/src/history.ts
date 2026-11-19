@@ -4,18 +4,19 @@ import { homedir } from 'node:os';
 import { basename, join, sep } from 'node:path';
 import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
-import type {
-  SessionRole,
-  BridgeFeature,
-  ContextWindowTokens,
-  FactoryDefaultSettings,
-  SessionHistoryEntry,
-  SessionPhase,
-  SessionSummary,
-  ProgressEntry,
-  ReasoningEffort,
-  TranscriptEvent,
-} from './protocol.js';
+import {
+  type SessionRole,
+  type BridgeFeature,
+  type ContextWindowTokens,
+  type FactoryDefaultSettings,
+  type SessionHistoryEntry,
+  type SessionPhase,
+  type SessionSummary,
+  type ProgressEntry,
+  type ReasoningEffort,
+  type TranscriptEvent,
+  DROID_PROFILES,
+} from '@droidex/protocol';
 import { bridgeFeature } from './missionFeatures.js';
 import { normalizeCompactionTokenLimit } from './compaction.js';
 import {
@@ -47,7 +48,7 @@ import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
-import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX, DROID_PROFILES } from './droidProfiles.js';
+import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
 import { sessionNoticesRevision } from './sessionNotices.js';
 import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
 

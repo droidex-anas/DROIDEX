@@ -20,7 +20,7 @@ import {
   MAX_PERSISTENCE_QUEUE_BYTES,
   MAX_PERSISTENCE_QUEUE_ROWS,
 } from './historyPersistenceQueueValues.js';
-import type { SessionSummary, TranscriptEvent } from './protocol.js';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 export {
   HistoryPersistenceBackpressureError,

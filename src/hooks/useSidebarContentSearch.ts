@@ -4,7 +4,7 @@ import { bridge } from '../lib/bridge';
 import { searchSessions } from '../lib/commands';
 import { useHistoryHealth } from './useHistoryHealth';
 import { SIDEBAR_CONTENT_SEARCH_MIN_QUERY } from '../lib/sidebarSearchStatus';
-import type { SessionSearchMatch } from '../types/bridge';
+import type { SessionSearchMatch } from '@droidex/protocol';
 
 const DEBOUNCE_MS = 250;
 

@@ -11,7 +11,7 @@ import type { Point } from './canvasGeometry';
 import { picksElements } from './canvasState';
 import type { DesignFrameProps } from './DesignFrame';
 import type { PreviewTextRange } from './previewDocument';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import type { DesignPress } from './useDesignPicker';
 
 type OverlayProps = Pick<

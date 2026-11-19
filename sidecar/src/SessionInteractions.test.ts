@@ -9,7 +9,7 @@ import {
 } from '@factory/droid-sdk';
 
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
 import {

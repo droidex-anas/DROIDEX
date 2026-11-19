@@ -5,7 +5,7 @@
 import { useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { ChildSessionInfo } from '../hooks/storeChildSession';
-import type { ChildStatus, ModelInfo } from '../types/bridge';
+import type { ChildStatus, ModelInfo } from '@droidex/protocol';
 import {
   childSessionMeta,
   isPendingChildPlaceholder,

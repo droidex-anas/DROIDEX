@@ -8,7 +8,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { OverlayStore } from '../overlayStore';
 import { PreviewRuns } from '../previewRuns';
-import type { CanvasFrame, FrameRect, OutlineNode } from '../protocol';
+import type { CanvasFrame, FrameRect, OutlineNode } from '@droidex/protocol';
 import type { HoveredElement } from '../useElementHover';
 import { LayersPanel, type LayersPanelProps } from './LayersPanel';
 

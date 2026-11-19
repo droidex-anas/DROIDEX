@@ -5,7 +5,7 @@ import { DROID_PROFILE_LOGINS, PROVIDER_LABELS } from '../../features/providers/
 import { paceWarning } from '../../features/usage/usagePace';
 import { useProviderUsage, type UsageWatch } from '../../features/usage/useProviderUsage';
 import { useRuntimeHealth } from '../../hooks/useRuntimeHealth';
-import type { DroidProfile, ProviderKind, ProviderUsage, UsageLimit } from '../../types/bridge';
+import type { DroidProfile, ProviderKind, ProviderUsage, UsageLimit } from '@droidex/protocol';
 import { UsageLimitTab, UsageWarningTab } from './UsageLimitTab';
 
 // /usage opens on demand, so its panel loads with the first open.

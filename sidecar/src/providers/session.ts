@@ -14,12 +14,15 @@ import type {
   SessionSummary,
   UsageMeter,
   VoiceNarration,
-} from '../protocol.js';
-import type { ProviderMention, SkillInfo } from './catalog.js';
+  ProviderMention,
+  SkillInfo,
+  DroidProfile,
+  ProviderKind,
+} from '@droidex/protocol';
+
 import type { DroidLaunchSettings } from './droid/droidLaunch.js';
 import type { ProviderInteractions } from './interactions.js';
-import type { DroidProfile } from '../droidProfiles.js';
-import type { ProviderKind } from './providerKind.js';
+
 import type { ProviderProbe } from './providerProbes.js';
 
 export interface ProviderOpenInput {
@@ -109,7 +112,6 @@ export interface ProviderModelSettings {
 // A live voice conversation on the same session: the client negotiates WebRTC
 // with the provider's own service, so audio never reaches the sidecar. The
 // session relays the handshake and reports what was said.
-export type { VoiceNarration };
 
 export interface ProviderVoiceStart {
   // The client's SDP offer, built from its microphone and audio sink.

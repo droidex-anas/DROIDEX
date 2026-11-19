@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { ProgressLogEntryType, type DroidStreamEvent } from '@factory/droid-sdk';
 
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { SessionFileChange } from './sessionFileCache.js';
 import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
 import {

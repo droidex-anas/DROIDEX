@@ -1,4 +1,4 @@
-import type { ModelSwitch, TranscriptEvent } from '../protocol.js';
+import type { ModelSwitch, TranscriptEvent } from '@droidex/protocol';
 import { LEDGER_LIMITS } from './store.js';
 
 /** The kinds a model produces while answering; the rest are the app talking. */

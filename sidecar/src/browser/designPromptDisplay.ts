@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import type { BrowserTranscriptReference } from '../protocol.js';
-import type { DesignPromptPack, DesignReference } from './types.js';
+import type { BrowserTranscriptReference } from '@droidex/protocol';
+import type { DesignPromptPack, StoredDesignReference } from './types.js';
 import { isBrowserAssetPath } from './browserPaths.js';
 import { appPromptDisplayFromText } from '../appPrompt.js';
 import { sideChatPromptDisplayFromText } from '../sideChatPrompt.js';
@@ -54,7 +54,7 @@ function readBrowserRefsFromPack(
 }
 
 function browserTranscriptReferenceFromDesignReference(
-  reference: Partial<DesignReference>,
+  reference: Partial<StoredDesignReference>,
 ): BrowserTranscriptReference | null {
   const anchor = reference.anchor;
   const id = reference.id ?? anchor?.id;

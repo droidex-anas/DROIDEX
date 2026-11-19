@@ -7,7 +7,7 @@ import {
   AutomationTimeInput,
   clampNumber,
 } from './TimeFields';
-import type { AutomationSchedule } from './types';
+import type { AutomationSchedule } from '@droidex/protocol';
 
 export function ScheduleControls({
   schedule,

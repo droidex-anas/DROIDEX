@@ -1,5 +1,5 @@
 import type { HarnessModels, SideChatDefaultPlacement } from '../hooks/persistedUiPreferences';
-import type { ProviderKind, ReasoningEffort, SessionSummary } from '../types/bridge';
+import type { ProviderKind, ReasoningEffort, SessionSummary } from '@droidex/protocol';
 import { isChatHidden, type ChatMetadataMap } from './chatMetadata';
 
 // The side chat of a session: a short conversation branched from it that never

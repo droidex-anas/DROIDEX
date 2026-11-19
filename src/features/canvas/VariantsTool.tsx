@@ -14,7 +14,7 @@ import { Popover } from '../../components/ui/Popover';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { elementLabel, elementName, type ElementPin } from './elementPins';
 import type { ToolButtonProps, ToolId } from './FrameToolbar';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { SegmentedControl, type Segment } from './SegmentedControl';
 import {
   DEFAULT_VARIANT_CHOICE,

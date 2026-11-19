@@ -3,7 +3,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { droidexHistoryDir } from '../droidexPaths.js';
 
-import type * as Protocol from '../protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { SessionFileChange } from '../sessionFileCache.js';
 import type { SessionManagerDependencies } from '../SessionManager.js';
 import {

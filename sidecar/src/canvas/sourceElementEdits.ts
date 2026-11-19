@@ -4,7 +4,7 @@
 import ts from 'typescript';
 import { attribute, attributeValue, isLiteral } from './jsxAttributes.js';
 import type { KitTheme } from './kitTailwindTheme.js';
-import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from './protocol.js';
+import type { ElementEdit, ElementRef, SourceElement, SourceFiles } from '@droidex/protocol';
 import { SourceElementError } from './sourceElementError.js';
 import { ambiguous, sourceSites, type ElementNode } from './sourceElements.js';
 import { styleReplacements, type ResolvedStyle } from './sourceStyles.js';

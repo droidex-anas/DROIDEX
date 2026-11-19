@@ -20,7 +20,7 @@ import type {
   DroidProxyProviderState,
   DroidProxyStatus,
   ServerEvent,
-} from '../protocol.js';
+} from '@droidex/protocol';
 
 const execFileAsync = promisify(execFile);
 

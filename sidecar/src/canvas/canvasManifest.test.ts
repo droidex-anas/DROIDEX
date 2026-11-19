@@ -10,7 +10,7 @@ import {
   type PersistedMutation,
 } from './canvasManifest.js';
 import { recordedArrange, recordedCreate, recordedRevision } from './canvasReceipts.js';
-import type { CanvasBuildState } from './protocol.js';
+import type { CanvasBuildState } from '@droidex/protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 

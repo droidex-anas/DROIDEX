@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { DesignSystemDocumentView } from '../../../sidecar/src/canvas/designSystemCommands.js';
+import type { DesignSystemDocumentView, CanvasEvent, DocumentSection } from '@droidex/protocol';
 import { documentSectionsSchema } from '../../../sidecar/src/canvas/designSystemDocument.js';
 import { designSystemProvenanceSchema } from '../../../sidecar/src/canvas/designSystemProvenance.js';
 import { catalogListing, catalogPropSchema } from '../../../sidecar/src/canvas/kitCatalog.js';
 import { STARTER_FILES, STARTER_TOKENS } from '../../../sidecar/src/canvas/presets/starter.js';
-import type { CanvasEvent } from '../../../sidecar/src/canvas/protocol.js';
+
 import { editTokens } from '../../../sidecar/src/canvas/styleEdits.js';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../../../sidecar/src/testing/droidexDocument.js';
-import type { DocumentSection } from './designSystemDocumentProtocol';
+
 import { isDocumentSections, isKitDocument } from './designSystemDocumentValidation';
 import { isCanvasEvent } from './wireValidation';
 

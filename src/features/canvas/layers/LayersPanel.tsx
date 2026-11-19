@@ -14,7 +14,7 @@ import type { AnchorPoint } from '../../../components/ui/usePopoverPosition';
 import type { HistoryStep } from '../boardHistory';
 import { historyStep, isLayersKey } from '../boardKeys';
 import { frameStatus } from '../previewLabels';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import type { ElementEntry } from './ElementRow';
 import { LayerDropLine } from './LayerDropLine';
 import { LayerListRow } from './LayerListRow';

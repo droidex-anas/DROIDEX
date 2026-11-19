@@ -3,7 +3,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Check } from 'lucide-react';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondQuestion } from '../lib/commands';
-import type { QuestionAnswer, SessionQuestion } from '../types/bridge';
+import type { QuestionAnswer, SessionQuestion } from '@droidex/protocol';
 import { inlineCardMotion } from './inlineCardMotion';
 import { Button } from './ui/Button';
 import {

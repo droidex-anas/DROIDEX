@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { withLocalStorageMap } from '../test/localStorage';
-import type { SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import {
   collectFinishedSessions,
   decideFinishNotification,

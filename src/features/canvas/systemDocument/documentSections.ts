@@ -2,10 +2,10 @@
 // against another, and what was removed put back in place to show struck
 // through. A draft is compared with its base; slice 2b compares a proposal.
 
-import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
+import type { DocumentSection, DocumentToken, DesignSystemCover } from '@droidex/protocol';
 import { isTokenName, isTokenValue } from '../designSystemDocumentValidation';
 import type { PreviewMode } from '../PreviewModeToggle';
-import type { DesignSystemCover } from '../protocol';
+
 import { modeValue } from './specimenStyle';
 
 export type DocumentItem = DocumentSection['items'][number];

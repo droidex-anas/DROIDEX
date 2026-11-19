@@ -1,5 +1,5 @@
 import { createElement, useCallback, useMemo, useState, type SetStateAction } from 'react';
-import type { SkillInfo } from '../../types/bridge';
+import type { SkillInfo } from '@droidex/protocol';
 import { CatalogRowIcon } from './CatalogRowIcon';
 import { catalogLabel } from './menuItems';
 import { VisualizeIcon } from '../icons/VisualizeIcon';

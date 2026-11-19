@@ -11,7 +11,7 @@ import { ExportImageDialog } from './ExportImageDialog';
 import { ExportToProjectDialog } from './ExportToProjectDialog';
 import type { HistoryClient } from './frameHistory';
 import type { FrameActions } from './FrameToolbar';
-import type { CanvasFrame, FrameRect, RevisionRef } from './protocol';
+import type { CanvasFrame, FrameRect, RevisionRef } from '@droidex/protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useVariantRequests } from './useVariantRequests';
 import { variantSetSource } from './variantSets';

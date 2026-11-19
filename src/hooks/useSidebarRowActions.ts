@@ -4,7 +4,7 @@ import { useStoreDispatch } from './useStore';
 import { chatDisplayTitle, isChatHidden, type ChatMetadataMap } from '../lib/chatMetadata';
 import { exportSessionMarkdown, renameSession } from '../lib/commands';
 import { toast } from '../lib/toast';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 // "Copy as Markdown" flow: the sidecar renders the full transcript from the
 // stored session file (works for chats never opened this run); here we only

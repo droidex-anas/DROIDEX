@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { shouldStopTurnStarting } from './PromptInput';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { hasAppContextForTranscript } from '../lib/composePrompt';
 import {
   queuedSend,

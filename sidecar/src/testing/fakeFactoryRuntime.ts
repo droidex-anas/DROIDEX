@@ -15,7 +15,7 @@ import {
   type UpdateSessionSettingsRequestParams,
 } from '@factory/droid-sdk';
 
-import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import type { Autonomy, ReasoningEffort } from '@droidex/protocol';
 import { mapAutonomy } from '../DroidRuntime.js';
 import type {
   CreateRuntimeSessionOptions,

@@ -11,7 +11,7 @@
 // payload degrades to no snapshot instead of breaking the store. The key is
 // versioned; bump it when the stored shape changes.
 
-import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { BridgeFeature, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 const SESSION_SNAPSHOT_STORAGE_KEY = 'droid-session-snapshot-v2';
 // Nothing reads it; a v2 write clears what earlier builds left behind.

@@ -1,6 +1,6 @@
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { MAX_RUNNING_SIDE_CHATS, sideChatPanel, sideChatSettings } from '../../lib/sideChats';
-import type { SessionSummary } from '../../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { SideChatComposer } from './SideChatComposer';
 import { SideChatHarnessPicker } from './SideChatHarnessPicker';
 import { runningSideChatCount, useAskSideChat } from './useAskSideChat';

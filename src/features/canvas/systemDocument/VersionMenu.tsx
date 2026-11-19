@@ -10,7 +10,7 @@ import { Menu } from '../../../components/ui/Menu';
 import { formatRelativeTime } from '../../../lib/time';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
-import type { DesignSystemDocumentView, DesignSystemVersionEntry } from '../protocol';
+import type { DesignSystemDocumentView, DesignSystemVersionEntry } from '@droidex/protocol';
 import { changeSummary } from './documentSections';
 
 type VersionList =
