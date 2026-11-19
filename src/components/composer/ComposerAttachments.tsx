@@ -24,9 +24,9 @@ interface ComposerAttachmentsProps {
   onRemovePath: (path: string) => void;
 }
 
-function basename(p: string): string {
-  const i = p.lastIndexOf('/');
-  return i >= 0 ? p.slice(i + 1) : p;
+function basename(path: string): string {
+  const i = path.lastIndexOf('/');
+  return i >= 0 ? path.slice(i + 1) : path;
 }
 
 export function ComposerAttachments({
@@ -58,27 +58,27 @@ export function ComposerAttachments({
           }}
         />
       ))}
-      {images.map((img) => {
-        const reference = canvasReferenceOf(img.sequence);
+      {images.map((image) => {
+        const reference = canvasReferenceOf(image.sequence);
         const open = () => {
-          onOpenImage(img);
+          onOpenImage(image);
         };
         const remove = () => {
-          onRemoveImage(img);
+          onRemoveImage(image);
         };
         return reference ? (
           <CanvasImageChip
-            key={img.id}
-            src={img.preview}
+            key={image.id}
+            src={image.preview}
             reference={reference}
             onOpen={open}
             onRemove={remove}
           />
         ) : (
           <ImageChip
-            key={img.id}
-            src={img.preview}
-            label={basename(img.path)}
+            key={image.id}
+            src={image.preview}
+            label={basename(image.path)}
             onOpen={open}
             onRemove={remove}
           />
@@ -113,12 +113,12 @@ export function ComposerAttachments({
           />
         );
       })}
-      {attachedDocumentPaths.map((f) => (
+      {attachedDocumentPaths.map((path) => (
         <FileChip
-          key={f}
-          path={f}
+          key={path}
+          path={path}
           onRemove={() => {
-            onRemovePath(f);
+            onRemovePath(path);
           }}
         />
       ))}

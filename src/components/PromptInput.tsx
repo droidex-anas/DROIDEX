@@ -444,7 +444,8 @@ export default function PromptInput({
     imageAttachments.remove(image.id);
     canvasImages.remove([image.sequence]);
   };
-  // No discard: these files belong to an already-composed prompt.
+  // No discard: the file was written for an already-composed prompt,
+  // and the attachments store sweeps it.
   const removeAttachedPath = (path: string) => {
     attachedFileSeqRef.current.delete(path);
     setAttachedFiles((prev) => prev.filter((x) => x !== path));
