@@ -62,7 +62,7 @@ export async function runPrimaryTurn(
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.
   const stoppedBeforeStart = () => liveSession.turn.interrupting;
-  let delegatedTurns = liveSession.turn.delegatedTurns;
+  let delegatedTurn = liveSession.turn.delegatedTurn;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -133,11 +133,11 @@ export async function runPrimaryTurn(
       context.stopPolling();
       return;
     }
-    if (liveSession.turn.delegatedTurns !== delegatedTurns)
+    if (!liveSession.turn.isCurrentDelegated(delegatedTurn))
       d.updateSummary(appSessionId, {
         phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
       });
-    delegatedTurns = liveSession.turn.delegatedTurns;
+    delegatedTurn = liveSession.turn.delegatedTurn;
     for await (const normalized of providerSession.stream(prompt, mentions)) {
       // The runtime answered, so the prompt is accepted even if this turn stops
       // applying events; acknowledgement must never depend on the turn's outcome.
@@ -146,7 +146,7 @@ export async function runPrimaryTurn(
       // Codex can end this turn and start one of its own in the same batch.
       // Once any turn has begun since this one, this turn's end is stale: the
       // source is that turn's, and whoever finishes last closes it.
-      if (normalized.done && liveSession.turn.delegatedTurns !== delegatedTurns) continue;
+      if (normalized.done && !liveSession.turn.isCurrentDelegated(delegatedTurn)) continue;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
         reportedError = true;
@@ -169,7 +169,7 @@ export async function runPrimaryTurn(
   if (!isCurrent()) return;
   // A newer provider-started turn owns the outcome, but a refusal from either
   // turn must hold the chat, even when their replies overlapped.
-  const superseded = liveSession.turn.delegatedTurns !== delegatedTurns;
+  const superseded = !liveSession.turn.isCurrentDelegated(delegatedTurn);
   if (turnError) {
     if (!superseded || turnError instanceof UsageLimitError)
       settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);

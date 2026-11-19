@@ -18,6 +18,7 @@ import {
   queuedThread,
 } from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
+import type { LiveSession } from './SessionLifecycle.js';
 import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
@@ -262,6 +263,39 @@ test('a create or resume that fails at any stage closes what it opened and publi
       .filter((call) => call.method.startsWith('processes.') && call.method !== 'processes.track')
       .map((call) => call.method),
     ['processes.killSession', 'processes.untrack'],
+  );
+});
+
+test('failed registration retains queued sends and steers when process cleanup fails', async (t) => {
+  const harness = createHarness();
+  queueCreate(harness, 'unregistered');
+  const prompt = { text: 'waiting', order: 1, steerId: 'waiting-steer' };
+  let failedOpen: LiveSession | undefined;
+  t.mock.method(harness.registry, 'register', async (live: LiveSession) => {
+    failedOpen = live;
+    live.turn.updateQueue({ pendingSends: [prompt], steers: [prompt] });
+    throw new Error('registration failed');
+  });
+  harness.setProcessKiller(async () => {
+    throw new Error('process discovery unavailable');
+  });
+
+  await harness.lifecycle.create(createCommand());
+
+  assert.ok(failedOpen);
+  assert.equal(failedOpen.turn.closeMode, undefined);
+  assert.deepEqual(failedOpen.turn.pendingSends, [prompt]);
+  assert.deepEqual(failedOpen.turn.steers, [prompt]);
+  assert.equal(harness.registry.getLive('unregistered'), undefined);
+  assert.equal(
+    harness.calls.some((call) => call.method === 'session.close'),
+    false,
+  );
+  assert.equal(
+    harness.events.some(
+      (event) => event.type === 'error' && event.message === 'registration failed',
+    ),
+    true,
   );
 });
 
@@ -927,7 +961,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.turn.settle();
   live.turn.clearStop();
   live.compacting = true;
-  live.turn.replacePending([{ text: 'drop', order: 0 }]);
+  live.turn.updateQueue({ pendingSends: [{ text: 'drop', order: 0 }] });
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.turn.pendingSends, []);
@@ -1356,7 +1390,7 @@ test('closeAll records a cleanup failure and still closes later sessions', async
   assert.equal(harness.registry.liveSessionsSnapshot().length, 0);
 });
 
-test('closing an active session discards queued sends without reopening it', async () => {
+test('closing an active session discards queued sends without stopping its draining turn', async (t) => {
   const harness = createHarness();
   const provider = queueCreate(harness, 'closing');
   const gate = provider.deferNextStream();
@@ -1364,11 +1398,19 @@ test('closing an active session discards queued sends without reopening it', asy
   await provider.waitForPrompts(1);
   await harness.lifecycle.send('closing', 'queued');
   const live = requireLive(harness, 'closing');
+  const turn = live.turn.turnPromise;
+  assert.ok(turn);
+  t.mock.method(provider, 'close', async () => {
+    harness.calls.push({ target: 'cleanup', method: 'session.close', args: ['closing'] });
+  });
 
   await harness.lifecycle.close('closing');
+  assert.equal(live.turn.streaming, true);
+  assert.equal(live.turn.summaryFields(false).streaming, true);
   gate.resolve();
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await turn;
 
+  assert.equal(live.turn.streaming, false);
   assert.deepEqual(provider.prompts, ['active']);
   assert.deepEqual(live.turn.pendingSends, []);
   assert.equal(harness.runtime.loadCalls.length, 0);
@@ -1391,7 +1433,7 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.turn.replacePending([{ text: 'preserve unless user closes', order: 0 }]);
+  live.turn.updateQueue({ pendingSends: [{ text: 'preserve unless user closes', order: 0 }] });
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1568,13 +1610,15 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.turn.enqueue({ text: 'user prompt', order: 0 });
+  live.turn.updateQueue({
+    pendingSends: [...live.turn.pendingSends, { text: 'user prompt', order: 0 }],
+  });
   await busy();
   assert.deepEqual(
     live.turn.pendingSends.map((pending) => pending.text),
     ['user prompt'],
   );
-  live.turn.replacePending([]);
+  live.turn.updateQueue({ pendingSends: [] });
   harness.setSettingsWait(() => {
     simulatedTurn = live.turn.beginTypedTurn();
     return Promise.resolve();

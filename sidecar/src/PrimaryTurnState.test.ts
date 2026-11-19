@@ -56,7 +56,8 @@ test('Send now keeps the next typed turn reserved until its interrupt is release
   assert.equal(state.settle(), false);
   assert.throws(() => state.beginTypedTurn());
   state.releaseSendNowInterrupt(Promise.resolve());
-  assert.equal(state.sendNowInterrupt, interrupt);
+  assert.equal(state.settle(), false);
+  assert.throws(() => state.beginTypedTurn());
   resolve();
   await interrupt;
   state.releaseSendNowInterrupt(interrupt);
@@ -71,16 +72,15 @@ test('overlapping typed and delegated turns reserve settlement for the last owne
     const state = new PrimaryTurnState();
     const typed = state.beginTypedTurn();
     const reservation = Promise.resolve();
-    state.beginDelegatedTurn(reservation);
-    assert.equal(state.delegatedTurns, 1);
+    const delegated = state.beginDelegatedTurn(reservation);
     assert.equal(state.delegatedTurnOpen, true);
     state.endDelegatedTurn();
     assert.equal(state.delegatedTurnOpen, false);
     assert.equal(state.delegatedTurnSettled, reservation);
     if (typedEndsFirst) assert.equal(state.endTypedTurn(typed), false);
-    else state.releaseDelegatedTurn(reservation);
+    else state.releaseDelegatedTurn(delegated);
     assert.equal(state.settle(), false);
-    if (typedEndsFirst) state.releaseDelegatedTurn(reservation);
+    if (typedEndsFirst) state.releaseDelegatedTurn(delegated);
     else assert.equal(state.endTypedTurn(typed), true);
     assert.equal(state.settle(), true);
     assert.equal(state.streaming, false);
@@ -89,22 +89,23 @@ test('overlapping typed and delegated turns reserve settlement for the last owne
 
 test('a stale delegated flush cannot release a newer delegated turn', () => {
   const state = new PrimaryTurnState();
-  const first = Promise.resolve();
-  state.beginDelegatedTurn(first);
+  const settled = Promise.resolve();
+  const firstTurn = state.beginDelegatedTurn(settled);
   state.endDelegatedTurn();
-  const next = Promise.resolve();
-  state.beginDelegatedTurn(next);
-  assert.equal(state.releaseDelegatedTurn(first), false);
-  assert.equal(state.delegatedTurns, 2);
-  assert.equal(state.delegatedTurnSettled, next);
+  const nextTurn = state.beginDelegatedTurn(settled);
+  assert.equal(state.releaseDelegatedTurn(firstTurn), false);
+  assert.equal(state.isCurrentDelegated(firstTurn), false);
   assert.equal(state.settle(), false);
+  assert.equal(state.releaseDelegatedTurn(nextTurn), true);
+  assert.equal(state.settle(), true);
+  assert.equal(state.isCurrentDelegated(nextTurn), true);
 });
 
 test('close preserves or discards both queues, cannot downgrade, and failure reopens', () => {
   const state = new PrimaryTurnState();
   const prompt = { text: 'waiting', order: 1, steerId: 'steer' };
-  state.enqueue(prompt);
-  state.holdSteer(prompt);
+  state.updateQueue({ pendingSends: [...state.pendingSends, prompt] });
+  state.updateQueue({ steers: [...state.steers, prompt] });
   state.beginClose('preserve-pending');
   assert.deepEqual(state.pendingSends, [prompt]);
   assert.deepEqual(state.steers, [prompt]);
@@ -118,11 +119,29 @@ test('close preserves or discards both queues, cannot downgrade, and failure reo
   assert.equal(state.closeMode, 'discard-pending');
   assert.deepEqual(state.pendingSends, []);
   assert.deepEqual(state.steers, []);
-  state.completeClose();
-  assert.equal(state.streaming, false);
+  assert.equal(state.streaming, true);
+  assert.equal(state.summaryFields(false).streaming, true);
   state.endTypedTurn(turn);
   state.settle();
   assert.equal(state.streaming, false);
+});
+
+test('failed-open cleanup retains both queues when process cleanup fails and reopens', () => {
+  const state = new PrimaryTurnState();
+  const prompt = { text: 'waiting', order: 1, steerId: 'steer' };
+  state.updateQueue({ pendingSends: [prompt], steers: [prompt] });
+  state.beginFailedOpenCleanup();
+  assert.equal(state.closeMode, 'discard-pending');
+  assert.throws(() => state.beginTypedTurn());
+  state.reopenAfterFailedClose();
+  assert.deepEqual(state.summaryFields(false), {
+    streaming: false,
+    queuedSends: 1,
+    pendingSteers: [{ id: 'steer', text: 'waiting', canWithdraw: false }],
+  });
+  assert.equal(state.takePending(1)[0], prompt);
+  state.beginTypedTurn();
+  assert.equal(state.streaming, true);
 });
 
 test('interrupt refusal clears only its own Stop or Send now request', () => {
@@ -151,9 +170,9 @@ test('queue projections deduplicate steers, preserve order and reflect harness w
   const state = new PrimaryTurnState();
   const first = { text: 'first', order: 1, steerId: 'one' };
   const second = { text: 'second', order: 2, steerId: 'two' };
-  state.enqueue(second);
-  state.prepend([first]);
-  state.holdSteer(first);
+  state.updateQueue({ pendingSends: [...state.pendingSends, second] });
+  state.updateQueue({ pendingSends: [first, ...state.pendingSends] });
+  state.updateQueue({ steers: [...state.steers, first] });
   assert.deepEqual(state.summaryFields(false), {
     streaming: false,
     queuedSends: 2,
@@ -163,18 +182,18 @@ test('queue projections deduplicate steers, preserve order and reflect harness w
     ],
   });
   assert.equal(state.summaryFields(true).pendingSteers?.[0].canWithdraw, true);
-  assert.equal(state.removeSteer(first), true);
-  assert.equal(state.removeSteer(first), false);
-  assert.equal(state.shift(), first);
+  assert.equal(state.removePrompt(first, 'steer'), true);
+  assert.equal(state.removePrompt(first, 'steer'), false);
+  assert.equal(state.takePending(1)[0], first);
   assert.deepEqual(state.takePending(), [second]);
-  assert.equal(state.shift(), undefined);
-  state.replacePending([first, second]);
-  assert.equal(state.removePending(first), true);
-  assert.equal(state.removePending(first), false);
-  state.clearPending();
+  assert.equal(state.takePending(1)[0], undefined);
+  state.updateQueue({ pendingSends: [first, second] });
+  assert.equal(state.removePrompt(first, 'pending'), true);
+  assert.equal(state.removePrompt(first, 'pending'), false);
+  state.updateQueue({ pendingSends: [] });
   assert.equal(state.summaryFields(false).queuedSends, 0);
-  state.enqueue(first);
-  state.holdSteer(second);
+  state.updateQueue({ pendingSends: [...state.pendingSends, first] });
+  state.updateQueue({ steers: [...state.steers, second] });
   state.clearQueue();
   assert.deepEqual(state.summaryFields(false).pendingSteers, []);
 });

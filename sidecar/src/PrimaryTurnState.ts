@@ -6,10 +6,14 @@ export type SessionCloseMode = 'discard-pending' | 'preserve-pending';
 export interface TypedTurn {
   readonly identity: symbol;
 }
+export interface DelegatedTurn {
+  readonly identity: symbol;
+}
 type TypedOwner =
   | { kind: 'preparing'; turn: TypedTurn }
   | { kind: 'running'; turn: TypedTurn; promise: Promise<void> };
 interface DelegatedOwner {
+  turn: DelegatedTurn;
   open: boolean;
   settled: Promise<void>;
 }
@@ -21,15 +25,15 @@ type Activity =
   | { kind: 'overlapping'; typed: TypedOwner; delegated: DelegatedOwner };
 type Runtime =
   | { kind: 'live'; activity: Activity }
-  | { kind: 'closing' | 'closed'; mode: SessionCloseMode; activity: Activity };
-type StopRequest = 'none' | 'stop' | 'send-now' | 'both';
+  | { kind: 'closing'; mode: SessionCloseMode; activity: Activity };
 
 export class PrimaryTurnState {
   private runtime: Runtime = { kind: 'live', activity: { kind: 'idle' } };
-  private stop: StopRequest = 'none';
+  private stopRequested = false;
+  private sendNowRequested = false;
   private sends: SessionPrompt[] = [];
   private heldSteers: SessionPrompt[] = [];
-  private delegatedGeneration = 0;
+  private latestDelegatedTurn: DelegatedTurn | undefined;
   private interrupt: Promise<void> | undefined;
 
   private get typed(): TypedOwner | undefined {
@@ -47,7 +51,7 @@ export class PrimaryTurnState {
   }
 
   get streaming(): boolean {
-    return this.runtime.kind !== 'closed' && this.runtime.activity.kind !== 'idle';
+    return this.runtime.activity.kind !== 'idle';
   }
   get turnPromise(): Promise<void> | undefined {
     const typed = this.typed;
@@ -56,8 +60,8 @@ export class PrimaryTurnState {
   get hasTypedTurn(): boolean {
     return this.typed !== undefined;
   }
-  get delegatedTurns(): number {
-    return this.delegatedGeneration;
+  get delegatedTurn(): DelegatedTurn | undefined {
+    return this.latestDelegatedTurn;
   }
   get delegatedTurnOpen(): boolean {
     return this.delegated?.open === true;
@@ -69,10 +73,10 @@ export class PrimaryTurnState {
     return this.runtime.kind !== 'live' ? this.runtime.mode : undefined;
   }
   get interrupting(): boolean {
-    return this.stop === 'stop' || this.stop === 'both';
+    return this.stopRequested;
   }
   get interruptingToSend(): boolean {
-    return this.stop === 'send-now' || this.stop === 'both';
+    return this.sendNowRequested;
   }
   get sendNowInterrupt(): Promise<void> | undefined {
     return this.interrupt;
@@ -110,27 +114,33 @@ export class PrimaryTurnState {
     return !this.delegated;
   }
 
-  beginDelegatedTurn(settled: Promise<void>): void {
+  beginDelegatedTurn(settled: Promise<void>): DelegatedTurn {
     if (this.closeMode) throw new Error('Primary session is closing');
-    this.delegatedGeneration++;
-    this.setOwners(this.typed, { open: true, settled });
+    const turn = { identity: Symbol('delegated turn') };
+    this.latestDelegatedTurn = turn;
+    this.setOwners(this.typed, { turn, open: true, settled });
+    return turn;
   }
 
   endDelegatedTurn(): void {
     if (this.delegated) this.delegated.open = false;
   }
 
-  releaseDelegatedTurn(reservation: Promise<void> | undefined): boolean {
-    if (!this.delegated || this.delegated.settled !== reservation) return false;
+  isCurrentDelegated(turn: DelegatedTurn | undefined): boolean {
+    return this.latestDelegatedTurn === turn;
+  }
+
+  releaseDelegatedTurn(turn: DelegatedTurn | undefined): boolean {
+    if (!this.delegated || this.delegated.turn !== turn) return false;
     this.setOwners(this.typed, undefined);
     return true;
   }
 
   requestStop(): void {
-    this.stop = this.interruptingToSend ? 'both' : 'stop';
+    this.stopRequested = true;
   }
   clearStop(): void {
-    this.stop = this.interruptingToSend ? 'send-now' : 'none';
+    this.stopRequested = false;
   }
   acknowledgeStop(stoppedTurn: Promise<void> | undefined): boolean {
     if (this.turnPromise && this.turnPromise !== stoppedTurn) return false;
@@ -138,10 +148,10 @@ export class PrimaryTurnState {
     return true;
   }
   requestSendNow(): void {
-    this.stop = this.interrupting ? 'both' : 'send-now';
+    this.sendNowRequested = true;
   }
   refuseSendNow(): void {
-    this.stop = this.interrupting ? 'stop' : 'none';
+    this.sendNowRequested = false;
   }
   trackSendNowInterrupt(promise: Promise<void>): void {
     this.interrupt = promise;
@@ -151,10 +161,12 @@ export class PrimaryTurnState {
   }
 
   settle(): boolean {
+    // Duplicate settlement must not publish or drain the queue again.
     if (this.typed || this.delegated || this.interrupt || this.runtime.activity.kind === 'idle')
       return false;
     this.runtime.activity = { kind: 'idle' };
-    this.stop = 'none';
+    this.stopRequested = false;
+    this.sendNowRequested = false;
     return true;
   }
 
@@ -166,44 +178,26 @@ export class PrimaryTurnState {
   reopenAfterFailedClose(): void {
     this.runtime = { kind: 'live', activity: this.runtime.activity };
   }
-  completeClose(): void {
-    if (this.runtime.kind !== 'closing') throw new Error('Primary session is not closing');
-    this.runtime = { ...this.runtime, kind: 'closed' };
+  beginFailedOpenCleanup(): void {
+    this.runtime = { kind: 'closing', mode: 'discard-pending', activity: this.runtime.activity };
   }
 
-  enqueue(prompt: SessionPrompt): void {
-    this.sends.push(prompt);
+  updateQueue(queue: {
+    pendingSends?: readonly SessionPrompt[];
+    steers?: readonly SessionPrompt[];
+  }): void {
+    if (queue.pendingSends) this.sends = [...queue.pendingSends];
+    if (queue.steers) this.heldSteers = [...queue.steers];
   }
-  prepend(prompts: readonly SessionPrompt[]): void {
-    this.sends.unshift(...prompts);
-  }
-  shift(): SessionPrompt | undefined {
-    return this.sends.shift();
-  }
-  takePending(): SessionPrompt[] {
-    return this.sends.splice(0);
-  }
-  clearPending(): void {
-    this.sends = [];
-  }
-  replacePending(prompts: SessionPrompt[]): void {
-    this.sends = [...prompts];
-  }
-  holdSteer(prompt: SessionPrompt): void {
-    this.heldSteers.push(prompt);
+  takePending(count = this.sends.length): SessionPrompt[] {
+    return this.sends.splice(0, count);
   }
   clearQueue(): void {
     this.sends = [];
     this.heldSteers = [];
   }
-  removePending(prompt: SessionPrompt): boolean {
-    return this.remove(this.sends, prompt);
-  }
-  removeSteer(prompt: SessionPrompt): boolean {
-    return this.remove(this.heldSteers, prompt);
-  }
-
-  private remove(prompts: SessionPrompt[], prompt: SessionPrompt): boolean {
+  removePrompt(prompt: SessionPrompt, queue: 'pending' | 'steer'): boolean {
+    const prompts = queue === 'pending' ? this.sends : this.heldSteers;
     const index = prompts.indexOf(prompt);
     if (index < 0) return false;
     prompts.splice(index, 1);
