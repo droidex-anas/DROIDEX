@@ -24,7 +24,7 @@ const SIZE: Record<DialogSize, string> = {
   confirm: 'max-w-dialog-confirm',
   form: 'max-w-dialog-form',
   content: 'max-w-dialog-content',
-  expanded: 'max-w-dialog-expanded h-dialog-expanded',
+  expanded: 'max-w-dialog-expanded h-dialog-expanded overflow-hidden',
 };
 
 // feel.md: dialogs enter in 180ms smooth-out and leave in 120ms ease-in.

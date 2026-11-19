@@ -56,7 +56,7 @@ In code this is `usePopoverPosition` (`src/components/ui/usePopoverPosition.ts`)
 | Icons | 16px in controls, 14px inside 12–13px text |
 | Menus | 200–320px wide, items 30px tall |
 | Tooltips | max 240px wide, `label` text |
-| Dialogs | 440px (confirm), 560px (form), 720px (content) |
+| Dialogs | 440px (confirm), 560px (form), 720px (content), 768px wide × 82vh tall (expanded) |
 | Command palette | 576px |
 | Reading column | `max-w-2xl` (672px) transcript rows; replies fill the row |
 

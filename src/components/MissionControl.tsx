@@ -162,7 +162,12 @@ function FeaturesColumn({
   }, [features]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-4 pt-2 space-y-4">
+    <div
+      role="region"
+      aria-label="Features"
+      tabIndex={0}
+      className={`flex-1 min-h-0 overflow-y-auto pb-4 space-y-4 ${big ? '-mx-6 -mb-6 px-4' : 'px-2.5 pt-2'}`}
+    >
       {milestones.map(([milestone, feats]) => (
         <div key={milestone}>
           <span className="block px-2 mb-1 text-[11px] font-medium text-muted/70 uppercase tracking-wider">
@@ -228,7 +233,7 @@ function ExpansionHeader({ title, onClose }: { title: string; onClose: () => voi
       <DialogTitle className="min-w-0">
         <span className="block truncate">{title}</span>
       </DialogTitle>
-      <Button variant="ghost" size="sm" icon={X} aria-label="Close dialog" onClick={onClose} />
+      <Button variant="ghost" size="sm" icon={X} aria-label={`Close ${title}`} onClick={onClose} />
     </div>
   );
 }
@@ -495,6 +500,12 @@ export default function MissionControl() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<'features' | 'context' | null>(null);
   const [openDiff, setOpenDiff] = useState<FileChange | null>(null);
+  const closeExpanded = () => {
+    setExpanded(null);
+  };
+  const closeDiff = () => {
+    setOpenDiff(null);
+  };
   const visibleEventsProjectorRef = useRef<ReturnType<
     typeof createIncrementalTranscriptFilter
   > | null>(null);
@@ -748,19 +759,8 @@ export default function MissionControl() {
       {/* ─── Expand overlays ─── */}
       <AnimatePresence>
         {expanded === 'features' && (
-          <Dialog
-            key="features"
-            size="expanded"
-            onClose={() => {
-              setExpanded(null);
-            }}
-          >
-            <ExpansionHeader
-              title="Features"
-              onClose={() => {
-                setExpanded(null);
-              }}
-            />
+          <Dialog key="features" size="expanded" onClose={closeExpanded}>
+            <ExpansionHeader title="Features" onClose={closeExpanded} />
             <FeaturesColumn
               features={features}
               selectedId={selectedFeatureId}
@@ -774,19 +774,8 @@ export default function MissionControl() {
           </Dialog>
         )}
         {expanded === 'context' && (
-          <Dialog
-            key="context"
-            size="expanded"
-            onClose={() => {
-              setExpanded(null);
-            }}
-          >
-            <ExpansionHeader
-              title="Context"
-              onClose={() => {
-                setExpanded(null);
-              }}
-            />
+          <Dialog key="context" size="expanded" onClose={closeExpanded}>
+            <ExpansionHeader title="Context" onClose={closeExpanded} />
             <ContextColumn
               mission={mission}
               childSessions={childSessions}
@@ -805,22 +794,9 @@ export default function MissionControl() {
           </Dialog>
         )}
         {openDiff && (
-          <Dialog
-            key="diff"
-            size="expanded"
-            onClose={() => {
-              setOpenDiff(null);
-            }}
-          >
-            <ExpansionHeader
-              title={displayPath(openDiff.path, mission.cwd)}
-              onClose={() => {
-                setOpenDiff(null);
-              }}
-            />
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-              <DiffFull change={openDiff} cwd={mission.cwd} />
-            </div>
+          <Dialog key="diff" size="expanded" onClose={closeDiff}>
+            <ExpansionHeader title={displayPath(openDiff.path, mission.cwd)} onClose={closeDiff} />
+            <DiffFull change={openDiff} cwd={mission.cwd} />
           </Dialog>
         )}
       </AnimatePresence>

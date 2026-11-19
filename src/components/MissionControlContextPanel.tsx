@@ -90,7 +90,12 @@ export default function ContextColumn({
   const env = environmentLabels(mission.cwd, repoStatus);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-5">
+    <div
+      role="region"
+      aria-label="Context"
+      tabIndex={0}
+      className={`flex-1 min-h-0 overflow-y-auto space-y-5 ${big ? '-mx-6 -mb-6 px-4 pb-4' : 'px-3 py-3'}`}
+    >
       {/* Environment */}
       <section>
         <div className="flex items-center justify-between px-2 mb-1">

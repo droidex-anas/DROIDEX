@@ -125,3 +125,86 @@ test('Mission Control follows new output only while the reader is at the bottom'
   await expect(page.getByText('Mission output 42', { exact: true })).toBeInViewport();
   await expect.poll(remaining).toBeLessThan(2);
 });
+
+test('expanded file diffs can be scrolled from the keyboard and return focus on Escape', async ({
+  page,
+}) => {
+  const appSessionId = 'mission-diff-keyboard';
+  const mission = sessionSummary(appSessionId, {
+    cwd: '/repo',
+    title: 'Keyboard diff review',
+    sessionPurpose: 'mission-control',
+    interactionMode: 'agi',
+  });
+  const edit: TranscriptEvent = {
+    id: 'edit',
+    appSessionId,
+    sourceSessionId: appSessionId,
+    role: 'primary',
+    kind: 'tool_call',
+    toolName: 'Edit',
+    toolUseId: 'edit',
+    ts: 1,
+    toolArgs: {
+      file_path: '/repo/src/recovery.ts',
+      old_string: 'const enabled = false;',
+      new_string: Array.from(
+        { length: 150 },
+        (_, index) => `const scenario${String(index)} = true;`,
+      ).join('\n'),
+    },
+  };
+  await page.addInitScript(() => {
+    localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+  });
+  await page.routeWebSocket(
+    (url) => url.searchParams.has('bridgeProtocol'),
+    (socket) => {
+      let seq = 0;
+      const emit = (event: ServerEvent) => {
+        seq += 1;
+        socket.send(
+          JSON.stringify({
+            type: 'events.batch',
+            generation: 'keyboard-diff',
+            firstSeq: seq,
+            lastSeq: seq,
+            events: [{ seq, event }],
+          }),
+        );
+      };
+      socket.onMessage((message) => {
+        if (typeof message !== 'string') return;
+        const command = JSON.parse(message) as ClientCommand;
+        if (command.type === 'connect') emit({ type: 'connection', status: 'connected' });
+        if (command.type === 'sessions.list')
+          emit({ type: 'sessions.list', sessions: [mission], earlierSessionsByCwd: {} });
+        if (command.type === 'projects.list') emit({ type: 'projects.snapshot', projects: [] });
+        if (command.type === 'session.loadHistory')
+          emit({ type: 'session.history', appSessionId, progress: [], transcripts: [edit] });
+      });
+    },
+  );
+  await page.goto(process.env.DROIDEX_TEST_URL || '/');
+  await page.getByTestId('session-row').filter({ hasText: mission.title }).click();
+  await page.getByRole('button', { name: /^Worked/ }).click();
+  const trigger = page.getByRole('button', { name: 'Edit src/recovery.ts', exact: true });
+  await trigger.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'src/recovery.ts', exact: true });
+  const close = dialog.getByRole('button', { name: 'Close src/recovery.ts', exact: true });
+  const scroller = dialog.getByRole('region', { name: 'Diff for src/recovery.ts' });
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(scroller).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  const position = await scroller.evaluate((el) => el.scrollTop);
+  await page.keyboard.press('PageDown');
+  await expect.poll(() => scroller.evaluate((el) => el.scrollTop)).toBeGreaterThan(position);
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(trigger).toBeFocused();
+});
