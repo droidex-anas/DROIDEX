@@ -1,7 +1,7 @@
 import type { McpServerConfig, SdkMcpServer } from '@factory/droid-sdk';
 import type { McpServer } from '@agentclientprotocol/sdk';
 
-export function devinMcpServers(configs: McpServerConfig[]): McpServer[] {
+function devinMcpServers(configs: McpServerConfig[]): McpServer[] {
   return configs.map((config) =>
     'command' in config
       ? {
