@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bold,
   ClipboardCopy,
@@ -101,14 +102,16 @@ export default function SelectionMenu({
 
   return (
     <>
-      {menu && (
-        <span
-          ref={pointRef}
-          aria-hidden="true"
-          className="pointer-events-none fixed size-0"
-          style={{ left: menu.x, top: menu.y }}
-        />
-      )}
+      {menu &&
+        createPortal(
+          <span
+            ref={pointRef}
+            aria-hidden="true"
+            className="pointer-events-none fixed size-0"
+            style={{ left: menu.x, top: menu.y }}
+          />,
+          document.body,
+        )}
       <Menu
         open={menu !== null}
         onClose={onClose}
