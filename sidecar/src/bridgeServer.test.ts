@@ -11,7 +11,7 @@ import {
   type ClientCommand,
   type ServerEvent,
   type ServerEventBatch,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 interface Harness {

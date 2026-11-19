@@ -16,7 +16,7 @@ import type {
   SessionFileReconciliation,
   SessionFileSnapshot,
 } from './sessionFileCache.js';
-import type { HistorySearchReply } from './protocol.js';
+import type { HistorySearchReply } from '@droidex/protocol';
 
 const DEFAULT_TRANSPORT_TIMEOUT_MS = 10_000;
 const SEARCH_TRANSPORT_TIMEOUT_MS = 60_000;

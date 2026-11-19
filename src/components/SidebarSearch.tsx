@@ -13,7 +13,7 @@ import { isSideChat } from '../lib/sideChats';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
-import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
+import type { SessionSearchMatch, SessionSummary } from '@droidex/protocol';
 import PaletteShell from './PaletteShell';
 import SidebarSearchNotice from './SidebarSearchNotice';
 import { usePaletteNavigation } from './usePaletteNavigation';

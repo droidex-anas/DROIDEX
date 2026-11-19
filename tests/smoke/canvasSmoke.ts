@@ -14,8 +14,12 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
-import type { CanvasEvent, CanvasReply } from '../../sidecar/src/canvas/protocol';
-import { BRIDGE_PROTOCOL_VERSION, type ServerWireMessage } from '../../sidecar/src/protocol';
+import {
+  type CanvasEvent,
+  type CanvasReply,
+  BRIDGE_PROTOCOL_VERSION,
+  type ServerWireMessage,
+} from '@droidex/protocol';
 
 const PREVIEW_CSP =
   "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; worker-src 'none'; img-src data: blob:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'";

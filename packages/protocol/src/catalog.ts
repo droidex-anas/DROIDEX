@@ -1,9 +1,12 @@
-import type { ProviderKind } from './bridge';
+import type { ProviderKind } from './providers.js';
 
-type SkillLocation = 'project' | 'personal' | 'builtin';
-type CatalogItemKind = 'skill' | 'command' | 'app' | 'plugin';
-type CatalogExecution = 'client' | 'harness';
-type CatalogIcon = { url: string } | { path: string } | { host: string };
+export type SkillLocation = 'project' | 'personal' | 'builtin';
+
+export type CatalogItemKind = 'skill' | 'command' | 'app' | 'plugin';
+
+export type CatalogExecution = 'client' | 'harness';
+
+export type CatalogIcon = { url: string } | { path: string } | { host: string };
 
 export interface SkillInfo {
   provider: ProviderKind;
@@ -25,7 +28,8 @@ export interface SkillInfo {
   version?: string;
 }
 
-type MentionKind = 'skill' | 'app' | 'plugin';
+export type MentionKind = 'skill' | 'app' | 'plugin';
+
 export interface ProviderMention {
   kind: MentionKind;
   name: string;

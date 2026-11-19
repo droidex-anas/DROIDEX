@@ -13,7 +13,7 @@ import {
 } from './liveRuntimeJournal.js';
 import { RESTART_CONTINUE_PROMPT, SessionAdoption } from './sessionAdoption.js';
 import { SESSION_RUNTIME_IDLE_RETIREMENT_MS } from './sessionRuntimeRetirement.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 import { drain, harness, summary as projectSummary } from './testing/projectServiceHarness.js';
 import type { Project } from './projects/types.js';

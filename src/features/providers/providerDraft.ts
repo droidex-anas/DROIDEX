@@ -1,4 +1,4 @@
-import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../types/bridge';
+import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '@droidex/protocol';
 
 // The provider the next new session is created on. Sticky: the last pick is
 // what the composer offers on the next chat and after a restart.

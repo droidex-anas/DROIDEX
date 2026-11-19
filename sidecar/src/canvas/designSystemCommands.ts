@@ -1,16 +1,20 @@
+import type {
+  DesignSystemDocumentView,
+  DesignSystemVersionRef,
+  CanvasCommand,
+  CanvasReply,
+  SavedBy,
+} from '@droidex/protocol';
+
 // The design system document's commands (design system documents spec §14).
 // Kits are global, so these need no canvas, attachment or scope; they read and
 // save through the same owner as the agent's canvas_theme tool.
 
 import { canvasError } from './canvasError.js';
-import { kitModes, type DocumentSection } from './designSystemDocument.js';
+import { kitModes } from './designSystemDocument.js';
 import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';
-import {
-  acceptProposal,
-  discardProposal,
-  readProposal,
-  type DesignSystemProposal,
-} from './designSystemProposals.js';
+import { acceptProposal, discardProposal, readProposal } from './designSystemProposals.js';
+
 import {
   designSystemKind,
   listDesignSystems,
@@ -19,41 +23,13 @@ import {
   saveDesignSystem,
   setDesignSystemDeleted,
   type DesignSystem,
-  type DesignSystemCover,
-  type DesignSystemSummary,
-  type SavedBy,
 } from './designSystems.js';
-import type { DesignSystemProvenance } from './designSystemProvenance.js';
+
 import { readKitCapture, saveKitCapture } from './kitCaptures.js';
-import { catalogListing, type CatalogListing } from './kitCatalog.js';
+import { catalogListing } from './kitCatalog.js';
 import { editTokens } from './styleEdits.js';
 import { readKitFonts } from './kitFonts.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type { CanvasCommand, CanvasReply, DesignSystemVersionRef } from './protocol.js';
-
-/** A kit version as its document shows it: everything but its source. */
-export interface DesignSystemDocumentView {
-  id: string;
-  version: number;
-  /** The kit's newest version, which a save must build on. */
-  latestVersion: number;
-  name: string;
-  kind: DesignSystemSummary['kind'];
-  cover: DesignSystemCover;
-  sections: DocumentSection[];
-  /** The example file names its previews may name. */
-  examples: string[];
-  /** The entries of the kit's catalog.json, in its order. */
-  catalog: CatalogListing[];
-  /** Tokens a kit built on the shared primitives has beyond the ones they read. */
-  unmapped: string[];
-  provenance: DesignSystemProvenance | null;
-  /** When and by whom this version was saved; a built-in kit was never saved. */
-  savedAt: string | null;
-  savedBy: SavedBy | null;
-  /** The agent proposal waiting for review, if there is one. */
-  proposal: DesignSystemProposal | null;
-}
 
 export type DesignSystemCommand = Extract<
   CanvasCommand,

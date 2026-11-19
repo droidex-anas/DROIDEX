@@ -7,8 +7,8 @@ import { useRef, useState } from 'react';
 import { ImageOff, Notebook, Pencil } from '@droidex/icons';
 import { cn } from '../../../components/ui/cn';
 import { DropCue } from '../../tabs/TileDropTarget';
-import type { DocumentAsset } from '../designSystemDocumentProtocol';
-import type { OwnedAsset } from '../protocol';
+import type { DocumentAsset, OwnedAsset } from '@droidex/protocol';
+
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { MAX_ASSET_NAME_LENGTH, type DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';

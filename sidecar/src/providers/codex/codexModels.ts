@@ -1,7 +1,7 @@
 // The Codex model catalogue as DROIDEX model info: one page at a time, and only
 // the entries a picker can actually show and select.
 import { reasoningValue } from '../../modelCatalog.js';
-import type { ModelInfo, ReasoningEffort } from '../../protocol.js';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 import type { AppServerClient } from './appServer.js';
 
 interface CodexModel {

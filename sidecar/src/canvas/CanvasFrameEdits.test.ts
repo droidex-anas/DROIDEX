@@ -12,7 +12,7 @@ import {
 import { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasFileSystem } from './canvasFiles.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from './CanvasWorkspace.js';
-import type { CanvasScope } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const SOURCE = 'export default function Hey(){return <h1>Hey</h1>}';

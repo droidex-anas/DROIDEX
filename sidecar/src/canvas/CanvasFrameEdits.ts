@@ -24,14 +24,19 @@ import {
   recordedReorder,
   recordedUndo,
 } from './canvasReceipts.js';
+import type {
+  ReorderFramesInput,
+  SetFrameHiddenInput,
+  ArrangeFramesInput,
+  CanvasChange,
+  FrameRect,
+} from '@droidex/protocol';
 import {
   removeFramesInputSchema,
   renameFrameInputSchema,
   undoRemovalInputSchema,
-  type ReorderFramesInput,
-  type SetFrameHiddenInput,
 } from './frameEditSchema.js';
-import type { ArrangeFramesInput, CanvasChange, CanvasScope, FrameRect } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
 
 export class CanvasFrameEdits {
   constructor(

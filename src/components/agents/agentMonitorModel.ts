@@ -1,4 +1,4 @@
-import type { ChildSessionSummary, ChildStatus, ModelInfo } from '../../types/bridge';
+import type { ChildSessionSummary, ChildStatus, ModelInfo } from '@droidex/protocol';
 import {
   childSessionKey,
   childSessionLabel,

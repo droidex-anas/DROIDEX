@@ -5,18 +5,7 @@ import type {
   DesignAnchor,
   DesignAnchorDetail,
   DesignSelectionScreenshot,
-} from '../protocol.js';
-
-export type {
-  BrowserConsoleEvent,
-  BrowserElementInspection,
-  BrowserNetworkEvent,
-  BrowserViewport,
-  BrowserViewportMode,
-  DesignAnchor,
-  DesignAnchorDetail,
-  DesignSelectionScreenshot,
-} from '../protocol.js';
+} from '@droidex/protocol';
 
 export interface BrowserScreenshotOptions {
   /** Crop to this element from browser_read_page. */

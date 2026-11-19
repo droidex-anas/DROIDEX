@@ -23,7 +23,7 @@ import {
 import { KIT_CATALOG_FILE, type KitFailure } from './kitCatalog.js';
 import type { KitPreviews } from './kitPreviews.js';
 import { leaveOutFailingSeeds } from './libraryCatalog.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 import {
   canvasIdentifierSchema,
   designSystemVersionRefSchema,

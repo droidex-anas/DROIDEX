@@ -4,25 +4,28 @@ import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
 import { normalizeBrowserUrl } from './browserUrl.js';
 import { formatDesignPrompt, writeDesignPromptPack } from './designPromptPacks.js';
-import type { BrowserColorScheme, ClientCommand } from '../protocol.js';
 import type {
-  BrowserActionResult,
-  BrowserClickOptions,
+  BrowserColorScheme,
+  ClientCommand,
   BrowserConsoleEvent,
   BrowserElementInspection,
   BrowserNetworkEvent,
+  BrowserViewport,
+  BrowserViewportMode,
+  DesignAnchor,
+  DesignAnchorDetail,
+  DesignSelectionScreenshot,
+} from '@droidex/protocol';
+import type {
+  BrowserActionResult,
+  BrowserClickOptions,
   BrowserReadOptions,
   BrowserScreenshot,
   BrowserScreenshotOptions,
   BrowserState,
   BrowserTarget,
-  BrowserViewport,
-  BrowserViewportMode,
   BrowserWaitCondition,
-  DesignAnchor,
-  DesignAnchorDetail,
   DesignReference,
-  DesignSelectionScreenshot,
   ScrollDirection,
 } from './types.js';
 

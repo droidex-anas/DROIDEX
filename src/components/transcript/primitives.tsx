@@ -6,7 +6,7 @@ import { openExternal } from '../../lib/onboarding';
 import { useStoreSelector } from '../../hooks/useStore';
 import { PROVIDER_LABELS, providerModelCatalog } from '../../features/providers/providerIdentity';
 import { resetLabel } from '../../lib/usageLimit';
-import type { ModelInfo, TranscriptEvent } from '../../types/bridge';
+import type { ModelInfo, TranscriptEvent } from '@droidex/protocol';
 import { GitFork as ForkIcon } from '@droidex/icons';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';

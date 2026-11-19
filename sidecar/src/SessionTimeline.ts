@@ -13,7 +13,7 @@ import type {
   SessionRole,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { CompactType } from './compaction.js';
 import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';

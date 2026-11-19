@@ -10,7 +10,7 @@ import type {
   RemoveFramesInput,
   SwitchRevisionInput,
   UndoRemovalInput,
-} from './protocol';
+} from '@droidex/protocol';
 
 function frame(designId: string): CanvasFrame {
   return {

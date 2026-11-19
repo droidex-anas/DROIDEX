@@ -15,7 +15,7 @@ import { onBoard, type Box, type PickedOnBoard } from './elementOnBoard';
 import { OutlineGlide, type GlideAnchor } from './outlineGlide';
 import type { OverlayStore } from './overlayStore';
 import type { PreviewHover } from './previewDocument';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 import { isPicked, type HoveredElement } from './useElementHover';
 import { useScreenSize } from './useScreenSize';
 

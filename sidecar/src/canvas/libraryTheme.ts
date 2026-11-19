@@ -14,7 +14,7 @@ import {
   type KitTheme,
   type ThemeNamespace,
 } from './kitTailwindTheme.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 
 /** A project text and the project file it was read from. */
 export interface LibraryFile {

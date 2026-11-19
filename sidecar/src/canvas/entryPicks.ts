@@ -3,7 +3,8 @@
 // the sidecar asks it through `entryWithPicks`.
 
 import ts from 'typescript';
-import type { CatalogEntry, PropPick } from './kitCatalog.js';
+import type { PropPick } from '@droidex/protocol';
+import type { CatalogEntry } from './kitCatalog.js';
 import { SourceElementError } from './sourceElementError.js';
 import { splice } from './sourceLines.js';
 

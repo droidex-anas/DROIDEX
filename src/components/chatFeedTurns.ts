@@ -1,7 +1,7 @@
 import { feedItemTailId } from '../hooks/conversationViewportAnchor';
 import { promptDisplayText } from '../lib/composePrompt';
 import { classifyEvent } from '../lib/transcript';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import {
   buildFeed,
   collectTurnFiles,

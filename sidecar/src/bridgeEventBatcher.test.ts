@@ -12,7 +12,7 @@ import type {
   ServerEventBatch,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
 interface FakeTimer {

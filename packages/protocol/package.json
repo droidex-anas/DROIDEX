@@ -1,0 +1,8 @@
+{
+  "name": "@droidex/protocol",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}

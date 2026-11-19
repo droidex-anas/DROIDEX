@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type * as Renderer from '../../../src/features/canvas/designSystemDocumentProtocol.js';
+import type * as Contract from '@droidex/protocol';
 import { DROIDEX_DOCUMENT_SECTIONS } from '../testing/droidexDocument.js';
 import {
   CANONICAL_SECTION_ORDER,
@@ -19,8 +19,8 @@ function emptySection(kind: DocumentSection['kind'], id: string = kind): Documen
   return { kind, id, title: kind, items: [] };
 }
 
-test('the renderer mirrors the document types exactly, and the DROIDEX fixture is a document', () => {
-  const isExact: Equals<DocumentSection, Renderer.DocumentSection> = true;
+test('the document schema matches the shared contract exactly, and the DROIDEX fixture is a document', () => {
+  const isExact: Equals<DocumentSection, Contract.DocumentSection> = true;
   assert.ok(isExact);
   assert.deepEqual(
     documentSectionsSchema.parse(DROIDEX_DOCUMENT_SECTIONS),

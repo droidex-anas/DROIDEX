@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CatalogEntry, PropPick } from './kitCatalog.js';
+import type { PropPick } from '@droidex/protocol';
+import type { CatalogEntry } from './kitCatalog.js';
 import { SourceElementError } from './sourceElementError.js';
 import { withPicks } from './entryPicks.js';
 

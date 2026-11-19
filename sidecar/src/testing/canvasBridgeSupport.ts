@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
-import type { ServerEvent } from '../protocol.js';
+import type {
+  ServerEvent,
+  CanvasEvent,
+  CanvasReply,
+  CanvasError,
+  ElementRef,
+} from '@droidex/protocol';
 import { CompileCancelledError } from '../canvas/compiler.js';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { listCanvasAssets } from '../canvas/canvasAssets.js';
@@ -11,13 +17,7 @@ import { CanvasScopes } from '../canvas/canvasScopes.js';
 import { CanvasTurns } from '../canvas/canvasTurnContext.js';
 import { CanvasWorkspace } from '../canvas/CanvasWorkspace.js';
 import { KitPreviews } from '../canvas/kitPreviews.js';
-import type {
-  CanvasEvent,
-  CanvasReply,
-  CanvasError,
-  CanvasScope,
-  ElementRef,
-} from '../canvas/protocol.js';
+import type { CanvasScope } from '../canvas/canvasScopes.js';
 import { CompilerFleet, fakeDeadlines } from './canvasBuildSupport.js';
 import {
   canvasRoot,

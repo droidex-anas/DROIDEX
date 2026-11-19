@@ -7,7 +7,14 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { elementStep, historyStep, isDeleteKey } from './boardKeys';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
+import type {
+  EditElementInput,
+  ElementEdited,
+  LayerChange,
+  LayerRef,
+  CanvasFrame,
+  ElementRef,
+} from '@droidex/protocol';
 import {
   commitPath,
   commitStyles,
@@ -28,7 +35,7 @@ import { elementSite, pickedLayer } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame, ElementRef } from './protocol';
+
 import { STYLE_PROPERTIES } from './styleProperties';
 import { useEditTokens } from './useEditTokens';
 import { useElementHover } from './useElementHover';

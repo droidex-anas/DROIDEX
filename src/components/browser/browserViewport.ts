@@ -1,4 +1,4 @@
-import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
+import type { BrowserViewport, BrowserViewportMode } from '@droidex/protocol';
 import type { Size } from './browserGeometry';
 
 const FIT_FALLBACK_VIEWPORT: BrowserViewport = {

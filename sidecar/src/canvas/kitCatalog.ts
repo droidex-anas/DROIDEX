@@ -1,3 +1,5 @@
+import type { CatalogListing, CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
+
 // A kit's catalog: catalog.json in the kit's files, read as data and never run,
 // like its project theme. Each entry is one JSX element the Components tab
 // adds to the board as a frame of its own, or an agent writes after
@@ -8,8 +10,8 @@
 import { z } from 'zod';
 import { canvasDiagnosticSchema, truncateDiagnosticText } from './canvasDiagnostics.js';
 import { canvasError } from './canvasError.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import { hasDuplicate, sourcePathSchema, type SourceFiles } from './schema.js';
+
+import { hasDuplicate, sourcePathSchema } from './schema.js';
 
 export const KIT_CATALOG_FILE = 'catalog.json';
 
@@ -134,14 +136,6 @@ export function readKitCatalog(
 /** The catalog file holding these entries. */
 export function catalogFile(catalog: readonly CatalogEntry[]): string {
   return `${JSON.stringify(catalog, null, 2)}\n`;
-}
-
-/** What the kit document lists of an entry; its JSX stays in the sidecar. */
-export interface CatalogListing {
-  name: string;
-  module: string | null;
-  note: string | null;
-  props: CatalogProp[];
 }
 
 /** The listing of a saved version's catalog, which was checked when it was saved. */

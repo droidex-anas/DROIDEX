@@ -1,7 +1,13 @@
-import type { DroidProfile } from '../droidProfiles.js';
-import type { Autonomy, ContextWindowTokens, ReasoningEffort } from '../protocol.js';
-import type { ProviderKind } from '../providers/providerKind.js';
-import type { ThreadState } from './projectTurns.js';
+import type {
+  ThreadInput,
+  ProjectStep,
+  ProjectDone,
+  ProjectTodo as ProjectTodoContract,
+  DroidProfile,
+  Autonomy,
+  ReasoningEffort,
+} from '@droidex/protocol';
+
 import type { ThreadCheckout } from './threadStart.js';
 
 export interface RuntimeLoad {
@@ -11,32 +17,9 @@ export interface RuntimeLoad {
   limit: number;
 }
 
-export type ThreadWait =
-  | { kind: 'slot'; position: number }
-  | { kind: 'turn' }
-  | { kind: 'start'; position: number };
-
-export interface ProjectTodo {
-  id: string;
-  text: string;
-  after?: string;
-  dueAt?: number;
-  due?: true;
+export interface ProjectTodo extends ProjectTodoContract {
   /** A report or reminder already carries this follow-up. */
   notified?: true;
-}
-
-export interface ThreadInput {
-  droidProfile?: DroidProfile;
-  title: string;
-  prompt: string;
-  provider: ProviderKind;
-  modelId?: string;
-  reasoningEffort?: ReasoningEffort;
-  fastMode?: boolean;
-  contextWindowTokens?: ContextWindowTokens;
-  autonomy: Autonomy;
-  cwd?: string;
 }
 
 /** What the chat that owns a thread may retune on it, within its own limits. */
@@ -67,19 +50,6 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
     step?: string;
     profile?: 'main' | DroidProfile;
   };
-
-/** The lead owns step progress independently of a linked conversation. */
-export interface ProjectStep {
-  id: string;
-  title: string;
-  /** Optional grouping, the way a mission groups features under milestones. */
-  milestone?: string;
-  state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
-  /** The thread carrying the step. */
-  threadAppSessionId?: string;
-  /** One line of outcome or blocker, in the lead's words. */
-  note?: string;
-}
 
 export interface ProjectThread {
   appSessionId: string;
@@ -170,60 +140,3 @@ export interface Project {
   delivery?: { state: 'sending' | 'uncertain'; messages: ThreadMessage[] };
   error?: string;
 }
-
-/** The lead's word that the project's goal is achieved, and what it achieved. */
-interface ProjectDone {
-  at: number;
-  outcome: string;
-}
-
-export interface ProjectView {
-  id: string;
-  title: string;
-  startedAt?: number;
-  done?: ProjectDone;
-  // The main conversation's workspace, when its session is still known.
-  cwd?: string;
-  paused: boolean;
-  leadStopped?: true;
-  launching: number;
-  brief?: string;
-  plan: ProjectStep[];
-  todos: Omit<ProjectTodo, 'notified'>[];
-  runtimeLoad: RuntimeLoad;
-  threads: (Pick<
-    ProjectThread,
-    'appSessionId' | 'title' | 'waiting' | 'ownerAppSessionId' | 'unread'
-  > & {
-    droidProfile?: DroidProfile;
-    state: ThreadState;
-    wait?: ThreadWait;
-    approval?: { requestId: string; summary: string };
-    resetsAt?: number;
-  })[];
-  queued: number;
-  uncertain: number;
-  error?: string;
-}
-
-export type ProjectCommand =
-  | { type: 'projects.list' }
-  | { type: 'project.create'; requestId: string; input: ThreadInput; clientRef?: string }
-  | {
-      type: 'project.pause';
-      requestId: string;
-      projectId: string;
-      paused: boolean;
-      acknowledgeDelivery?: boolean;
-    };
-
-export type ProjectEvent =
-  | { type: 'projects.snapshot'; projects: ProjectView[] }
-  | {
-      type: 'project.result';
-      requestId: string;
-      ok: true;
-      projectId?: string;
-      appSessionId?: string;
-    }
-  | { type: 'project.result'; requestId: string; ok: false; error: string };

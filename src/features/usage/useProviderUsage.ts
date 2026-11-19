@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { useStoreSelector } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
-import type { ProviderKind, ProviderUsage } from '../../types/bridge';
+import type { ProviderKind, ProviderUsage } from '@droidex/protocol';
 
 // While /usage is open it asks again on the sidecar's own light cadence.
 const PANEL_REFRESH_MS = 5 * 60_000;

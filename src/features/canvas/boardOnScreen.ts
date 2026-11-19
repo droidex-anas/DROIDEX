@@ -4,7 +4,7 @@
 // App sizes the chat column by the columns docked beside the board.
 
 import { useSyncExternalStore } from 'react';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 export interface BoardOnScreen {
   appSessionId: string;

@@ -2,8 +2,7 @@ import type { CanvasBuilds } from './canvas/CanvasBuilds.js';
 import type { CanvasScopes } from './canvas/canvasScopes.js';
 import type { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import type { KitPreviews } from './canvas/kitPreviews.js';
-import type { CanvasEvent } from './canvas/protocol.js';
-import type { ClientCommand } from './protocol.js';
+import type { CanvasEvent, ClientCommand } from '@droidex/protocol';
 
 export interface SidecarShutdownStages {
   closeCanvasAdmission: () => void;

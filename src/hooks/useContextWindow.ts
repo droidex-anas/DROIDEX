@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from './useStore';
 import { updateSessionSettings } from '../lib/commands';
-import type { ContextWindowTokens } from '../types/bridge';
+import type { ContextWindowTokens } from '@droidex/protocol';
 
 /**
  * The window a chat is pinned to and the one way to change it. A live session

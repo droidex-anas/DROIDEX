@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { armLibrarySeed, oweCreatedCanvasSeed, takeCreatedCanvasSeed } from './librarySeed';
-import type { LibraryItem } from './protocol';
+import type { LibraryItem } from '@droidex/protocol';
 
 const hero: LibraryItem = {
   itemId: 'item-hero',

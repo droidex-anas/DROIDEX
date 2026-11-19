@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { MIN_FRAME_PX } from './canvasGeometry';
 import { snapFrameRect, snapGroupMove } from './frameSnap';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 function rect(x: number, y: number, width: number, height: number): FrameRect {
   return { x, y, width, height };

@@ -1,7 +1,7 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
 import { ChevronRight } from '@droidex/icons';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import type { ChatMetadataMap, ChatPullRequest } from '../lib/chatMetadata';
 import { prKind, prKindLabel } from '../lib/github';
 import { PrStateIcon } from './environment/GithubIcons';

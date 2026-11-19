@@ -11,18 +11,23 @@ import {
   type HarnessModelSwitch,
   type NormalizedEvent,
 } from '../../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
+import type {
+  Autonomy,
+  ReasoningEffort,
+  SessionInteractionMode,
+  ProviderMention,
+  DroidProfile,
+} from '@droidex/protocol';
 import { normalizeAutonomy } from '../../values.js';
 import { SessionAutonomy } from '../sessionAutonomy.js';
 import { errMsg } from '../../errors.js';
 import { hotPathMetrics } from '../../telemetry/hotPathMetrics.js';
-import type { ProviderMention } from '../catalog.js';
+
 import type { ProviderModelSettings, ProviderSession, SteerOutcome } from '../session.js';
 import { UsageLimitError } from '../usageLimit.js';
 import { droidErrorDetails, droidSessionNotice } from './droidErrors.js';
 import { factoryRefusalLimit, readFactoryUsage } from './factoryUsage.js';
 import { requireAltDroidModel } from './droidModels.js';
-import type { DroidProfile } from '../../droidProfiles.js';
 
 type DroidProcessRuntime = Pick<
   FactoryRuntime,

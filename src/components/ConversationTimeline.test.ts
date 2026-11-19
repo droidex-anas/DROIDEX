@@ -7,7 +7,7 @@ import {
   shouldPrimeConversationTimeline,
 } from '../hooks/useConversationTimeline';
 import type { FeedItem } from './chatFeed';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function message(
   id: string,

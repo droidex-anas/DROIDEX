@@ -10,13 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { accessSync, constants } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { CanvasTurnContext } from './canvas/protocol.js';
-import type { CanvasTurnLeases, CanvasTurns } from './canvas/canvasTurnContext.js';
-import type { ProjectExports } from './canvas/projectExports.js';
-import type { FactorySession } from './DroidRuntime.js';
-import { droidexUserDataDir } from './droidexPaths.js';
-import { sessionFilePath } from './history.js';
 import type {
+  CanvasTurnContext,
   ClientCommand,
   FactoryDefaultSettings,
   ProviderMention,
@@ -25,7 +20,14 @@ import type {
   SessionPurpose,
   SessionSummary,
   SkillInfo,
-} from './protocol.js';
+  ProviderKind,
+} from '@droidex/protocol';
+import type { CanvasTurnLeases, CanvasTurns } from './canvas/canvasTurnContext.js';
+import type { ProjectExports } from './canvas/projectExports.js';
+import type { FactorySession } from './DroidRuntime.js';
+import { droidexUserDataDir } from './droidexPaths.js';
+import { sessionFilePath } from './history.js';
+
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { PrimaryAutomaticCompactionTarget, SessionCompaction } from './SessionCompaction.js';
 import type { SessionEventFlow } from './SessionEventFlow.js';
@@ -46,7 +48,7 @@ import {
   resumeHandle,
 } from './sessionOpening.js';
 import type { ProviderInteractions } from './providers/interactions.js';
-import { requireProviderKind, type ProviderKind } from './providers/providerKind.js';
+import { requireProviderKind } from './providers/providerKind.js';
 import { failedTurnSummary, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import { UsageLimitError, usageLimitDetails } from './providers/usageLimit.js';
 import {

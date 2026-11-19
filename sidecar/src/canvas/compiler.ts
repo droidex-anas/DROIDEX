@@ -17,16 +17,17 @@ import { canvasError, storageFailure } from './canvasError.js';
 import type { ModuleDeclarations } from './compilerModules.js';
 import { compilerResponse } from './compilerResponse.js';
 import type { DesignSystem } from './designSystems.js';
-import type { CatalogEntry, KitFailure, PropPick } from './kitCatalog.js';
 import type {
+  PropPick,
   CanvasDiagnostic,
   DesignSystemAdherence,
   DesignSystemRef,
   ElementEdit,
   SourceElement,
   SourceOutline,
-} from './protocol.js';
-import type { SourceFiles } from './schema.js';
+  SourceFiles,
+} from '@droidex/protocol';
+import type { CatalogEntry, KitFailure } from './kitCatalog.js';
 
 /** One frame revision's compile. */
 export interface DesignCompileInput {

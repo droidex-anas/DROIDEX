@@ -7,7 +7,7 @@ import type {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { SkillInfo } from '../catalog.js';
+import type { SkillInfo } from '@droidex/protocol';
 
 interface ClaudePlugin {
   name: string;

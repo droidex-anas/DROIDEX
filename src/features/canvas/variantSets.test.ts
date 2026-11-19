@@ -10,7 +10,7 @@ import type {
   SwitchRevisionInput,
   WriteFilesInput,
   WriteReceipt,
-} from './protocol';
+} from '@droidex/protocol';
 import { variantSetSource, VariantSets } from './variantSets';
 
 function frame(designId: string, variantOf: string | null = null): CanvasFrame {

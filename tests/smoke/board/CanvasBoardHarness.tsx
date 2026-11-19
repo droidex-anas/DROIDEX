@@ -4,7 +4,25 @@ import Toaster from '../../../src/components/ui/Toaster';
 import type {
   Annotation,
   AnnotateCanvasInput,
-} from '../../../src/features/canvas/annotationProtocol';
+  EditElementInput,
+  ElementEdited,
+  LayerChange,
+  LayerRef,
+  ArrangeFramesInput,
+  CanvasChange,
+  CanvasFrame,
+  CanvasSnapshot,
+  FrameRect,
+  RemoveFramesInput,
+  RenameFrameInput,
+  SwitchRevisionInput,
+  RevisionSummary,
+  SourceElement,
+  SourceOutline,
+  UndoRemovalInput,
+  WriteFilesInput,
+  WriteReceipt,
+} from '@droidex/protocol';
 import { applyCanvasChange } from '../../../src/features/canvas/applyCanvasChange';
 import {
   BoardHistory,
@@ -54,12 +72,7 @@ import {
   type VariantChoice,
 } from '../../../src/features/canvas/variantRequests';
 import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
-import type {
-  EditElementInput,
-  ElementEdited,
-  LayerChange,
-  LayerRef,
-} from '../../../src/features/canvas/elementEditProtocol';
+
 import {
   elementPins,
   pickElement,
@@ -67,22 +80,7 @@ import {
   unpinElements,
   useElementPins,
 } from '../../../src/features/canvas/elementPins';
-import type {
-  ArrangeFramesInput,
-  CanvasChange,
-  CanvasFrame,
-  CanvasSnapshot,
-  FrameRect,
-  RemoveFramesInput,
-  RenameFrameInput,
-  SwitchRevisionInput,
-  RevisionSummary,
-  SourceElement,
-  SourceOutline,
-  UndoRemovalInput,
-  WriteFilesInput,
-  WriteReceipt,
-} from '../../../src/features/canvas/protocol';
+
 import { applyTheme, BUILT_IN_THEMES } from '../../../src/lib/theme';
 import { subscribeToasts, toast, type ToastItem } from '../../../src/lib/toast';
 import '../../../src/index.css';

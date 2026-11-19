@@ -10,7 +10,7 @@
 
 import type { ComponentVariants, ModuleElement } from './compilerModules.js';
 import { kitPrimitives } from './designSystemBrief.js';
-import type { LibrarySkip } from './designSystemProvenance.js';
+import type { LibrarySkip, CatalogProp, CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 import type { DesignSystem } from './designSystems.js';
 import {
   CATALOG_LIMITS,
@@ -19,12 +19,10 @@ import {
   KIT_CATALOG_FILE,
   readKitCatalog,
   type CatalogEntry,
-  type CatalogProp,
   type KitFailure,
 } from './kitCatalog.js';
 import { entryExports, kitComponentPath, type LibraryComponent } from './libraryComponents.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+
 import seeds from './libraryCatalogSeeds.json' with { type: 'json' };
 
 export const LIBRARY_CATALOG_NOTICE = 'licenses/shadcn-ui.txt';

@@ -5,7 +5,7 @@ import {
   isWorktreeDiscoveryStable,
 } from './useSessionWorkingDirectory';
 import type { GitWorktree } from '../types/vcs';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { initialState, reducer } from './useStore';
 import { withUpdatedTranscript } from '../lib/transcriptStoreMemory';
 import { textEvent } from '../test/textEvent';

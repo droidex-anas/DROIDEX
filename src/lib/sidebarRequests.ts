@@ -1,14 +1,16 @@
 import type { AppState } from '../hooks/useStore';
-import type { SessionSummary } from '../types/bridge';
+import type {
+  SessionSummary,
+  SidebarMark,
+  SidebarMarkOutcome,
+  SidebarRequest,
+  SidebarResult,
+  SidebarRow,
+  SessionActivityStatus,
+} from '@droidex/protocol';
+
 import { isChatInView } from '../features/tabs/tabStrip';
-import {
-  SIDEBAR_ROW_LIMITS as LIMITS,
-  type SidebarMark,
-  type SidebarMarkOutcome,
-  type SidebarRequest,
-  type SidebarResult,
-  type SidebarRow,
-} from '../types/sidebar';
+
 import { chatDisplayTitle, isChatHidden, isChatPinned, type ChatMetadataMap } from './chatMetadata';
 import { projectThreadIds } from './projectThreads';
 import { isSideChat } from './sideChats';
@@ -17,7 +19,6 @@ import {
   canSettleSession,
   chatActivitySignals,
   sessionActivityStatus,
-  type SessionActivityStatus,
   type SidebarActivityPreferences,
 } from './sidebarActivity';
 import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferences';
@@ -31,6 +32,16 @@ import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferenc
 // the answer to reach it, so the window never applies a change the sidecar
 // has already reported as failed.
 const EXPIRY_MARGIN_MS = 1_000;
+
+const LIMITS = {
+  rows: 5_000,
+  title: 200,
+  permissionDetail: 2_000,
+  questions: 16,
+  questionText: 2_000,
+  options: 16,
+  optionText: 500,
+} as const;
 
 type SidebarState = Pick<
   AppState,

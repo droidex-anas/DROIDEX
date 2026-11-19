@@ -1,3 +1,9 @@
+import type {
+  DesignSystemSummary,
+  DesignSystemVersionEntry,
+  DesignSystemRef,
+  DesignSystemVersionRef,
+} from '@droidex/protocol';
 // Versioned executable design kits (spec §10). A kit version is a document
 // (design system documents spec §2) with React primitives and the examples its
 // previews render; a revision pins one `id` and `version`, and that version
@@ -40,7 +46,7 @@ import {
 import { designSystemProvenanceSchema } from './designSystemProvenance.js';
 import { refuseUnknownKitAssets } from './kitAssets.js';
 import { catalogProblem } from './kitCatalog.js';
-import type { DesignSystemRef, DesignSystemVersionRef } from './protocol.js';
+
 import {
   boundedSourceFilesSchema,
   canvasIdentifierSchema,
@@ -137,33 +143,6 @@ const headerSchema = z
   })
   .strict();
 type VersionHeader = z.infer<typeof headerSchema>;
-
-/** A row of the design-system list: Auto, the DROIDEX preset, then each user kit's latest version. */
-export interface DesignSystemSummary {
-  id: string;
-  version: number;
-  name: string;
-  kind: 'auto' | 'preset' | 'user';
-  swatches: VersionHeader['swatches'];
-  cover: boolean;
-  /** When the listed version was saved; a built-in kit was never saved. */
-  savedAt: string | null;
-  /** Whether an agent proposal waits for review. */
-  proposal: boolean;
-}
-
-/** One saved version as the version history lists it. */
-export interface DesignSystemVersionEntry {
-  version: number;
-  savedAt: string;
-  savedBy: SavedBy;
-}
-
-/** A new kit's source from the New menu. */
-export interface DesignSystemSource {
-  kind: 'designMd' | 'cssOrTailwind';
-  text: string;
-}
 
 const savedVersionSchema = z
   .object({

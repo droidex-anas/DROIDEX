@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { Check, ChevronDown } from '@droidex/icons';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../../features/providers/providerIdentity';
 import { EDITOR_OPTIONS, editorLabel, type EditorId } from '../../lib/editorOpen';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { EditorIcon } from '../EditorIcon';
 import { ModelIcon } from '../ModelIcon';
 import { SettingRow } from '../settingsKit';

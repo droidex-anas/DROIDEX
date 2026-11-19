@@ -1,5 +1,5 @@
 import { useEffect, useEffectEvent, useState } from 'react';
-import type { ElementEdited, LayerChange, LayerRef } from '../elementEditProtocol';
+import type { ElementEdited, LayerChange, LayerRef } from '@droidex/protocol';
 import type { PreviewNode } from '../previewDocument';
 import type { Drawn } from './drawnLayers';
 import type { ElementEntry } from './ElementRow';

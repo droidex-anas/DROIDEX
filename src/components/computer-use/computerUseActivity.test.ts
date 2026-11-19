@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { computerUseActivity } from './computerUseActivity';
 
 function event(id: string, extra: Partial<TranscriptEvent> = {}): TranscriptEvent {

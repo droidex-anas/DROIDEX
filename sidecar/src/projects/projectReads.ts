@@ -1,15 +1,8 @@
-import type { DroidProfile } from '../droidProfiles.js';
+import type { DroidProfile, ProjectView, ThreadWait } from '@droidex/protocol';
 import { hasUndeliveredReport } from './projectInbox.js';
 import type { ProjectPort } from './sessions.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import type {
-  Project,
-  ProjectThread,
-  ProjectTodo,
-  ProjectView,
-  RuntimeLoad,
-  ThreadWait,
-} from './types.js';
+import type { Project, ProjectThread, ProjectTodo, RuntimeLoad } from './types.js';
 import {
   requireThread,
   scopedThreads,

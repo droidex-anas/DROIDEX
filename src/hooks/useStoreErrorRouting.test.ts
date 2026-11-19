@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { adaptEvent, initialState, reducer, toastMessageForEvent } from './useStore';
-import type { ServerEvent } from '../types/bridge';
+import type { ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 
 const session = sessionSummary('app-1', {

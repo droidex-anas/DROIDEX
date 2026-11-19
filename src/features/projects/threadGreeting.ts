@@ -1,6 +1,6 @@
 import { workspaceName } from '../../lib/workspaces';
 import { formatDuration } from '../usage/usageCopy';
-import type { ProjectDone } from './types';
+import type { ProjectDone } from '@droidex/protocol';
 
 const MINUTE = 60_000;
 

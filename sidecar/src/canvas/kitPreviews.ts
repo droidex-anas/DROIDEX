@@ -1,3 +1,11 @@
+import type {
+  KitPreview,
+  CanvasDiagnostic,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+  PropPick,
+} from '@droidex/protocol';
+
 // A kit's previews (design system documents spec §7): one example of one kit
 // version or of the proposal waiting for review, compiled in one mode through
 // the same compiler as frames, with no revision to select in and no adherence.
@@ -16,18 +24,8 @@ import {
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
-import { readKitCatalog, type CatalogEntry, type KitFailure, type PropPick } from './kitCatalog.js';
-import type {
-  CanvasDiagnostic,
-  DesignSystemProposalRef,
-  DesignSystemRef,
-  PreviewArtifact,
-} from './protocol.js';
 
-/** What a preview tile loads, or the diagnostics it shows instead. */
-export type KitPreview =
-  | { status: 'ready'; artifact: PreviewArtifact }
-  | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
+import { readKitCatalog, type CatalogEntry, type KitFailure } from './kitCatalog.js';
 
 type KitCompiler = Pick<CompilerWorker, 'compile' | 'checkCatalog' | 'terminate'>;
 

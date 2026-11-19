@@ -1,7 +1,7 @@
 import type { ComponentType, ReactNode } from 'react';
 import { Frame, MousePointer2, PenLine } from 'lucide-react';
 import { Component, MessageThread } from '@droidex/icons';
-import type { BrowserTranscriptReference, TranscriptEvent } from '../../types/bridge';
+import type { BrowserTranscriptReference, TranscriptEvent } from '@droidex/protocol';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { ImageAttachmentChip } from '../media/ImageAttachmentChip';
 import { FileChip } from '../composer/FileChip';

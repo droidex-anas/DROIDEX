@@ -4,8 +4,8 @@
 // takes the selection along without the previews it made stale. A commit the
 // source cannot take leaves the revision as it was, so only its previews go.
 
-import type { EditElementInput } from './elementEditProtocol';
-import type { CanvasFrame, ElementRef, SourceElement } from './protocol';
+import type { EditElementInput, CanvasFrame, ElementRef, SourceElement } from '@droidex/protocol';
+
 import { STYLE_PROPERTIES } from './styleProperties';
 
 export interface ElementEditDraft {

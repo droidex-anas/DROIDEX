@@ -1,5 +1,5 @@
 import { isAutonomy, isReasoningEffort, nonBlankOrNull, trimmedOrNull } from './automationInput.js';
-import type { AutomationAutonomy, AutomationReasoningEffort } from './types.js';
+import type { AutomationAutonomy, AutomationReasoningEffort } from '@droidex/protocol';
 
 export interface AutomationSessionContext {
   cwd: string | null;

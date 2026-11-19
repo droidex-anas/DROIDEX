@@ -4,7 +4,7 @@
 // layer above. The sidecar refuses what the source cannot take; these refuse
 // early only what the rows already say, so a drag shows it before the drop.
 
-import type { OutlineNode } from '../protocol';
+import type { OutlineNode } from '@droidex/protocol';
 import type { ElementEntry } from './ElementRow';
 import type { LayerEntry } from './layerRows';
 

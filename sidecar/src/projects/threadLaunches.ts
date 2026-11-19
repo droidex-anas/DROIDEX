@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { SessionSummary } from '../protocol.js';
+import type { SessionSummary, ThreadInput } from '@droidex/protocol';
 import type { ProjectPort } from './sessions.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import type { Project, ProjectThread, ThreadInput } from './types.js';
+import type { Project, ProjectThread } from './types.js';
 import {
   checkWithinAutonomy,
   THREAD_BRIEF,

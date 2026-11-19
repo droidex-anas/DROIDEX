@@ -1,6 +1,7 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { ProjectPort } from './sessions.js';
-import type { Project, ProjectThread, ThreadMessage, ThreadWait } from './types.js';
+import type { ThreadWait } from '@droidex/protocol';
+import type { Project, ProjectThread, ThreadMessage } from './types.js';
 import { wakePrompt, isAsked, isOwnerUpdate, batch } from './projectMessages.js';
 
 const MAX_ACTIVE = 2;

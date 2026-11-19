@@ -6,7 +6,7 @@
 import { dismissToast, pushToast, toast } from '../../lib/toast';
 import { designsLabel, landed, type BoardHistory, type HistoryEntry } from './boardHistory';
 import { CanvasRequestError, canvasMessage, type CanvasClient } from './client';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 /** How long the Undo toast stays up, before hovering or focus pauses it. */
 const UNDO_WINDOW_MS = 8000;

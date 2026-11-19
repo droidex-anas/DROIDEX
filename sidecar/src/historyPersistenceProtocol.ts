@@ -7,7 +7,7 @@ import type {
   SessionFileReconciliation,
   SessionFileSnapshot,
 } from './sessionFileCache.js';
-import type { HistorySearchReply, SessionSummary, TranscriptEvent } from './protocol.js';
+import type { HistorySearchReply, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 export interface PersistedEventMetadata {
   id: string;

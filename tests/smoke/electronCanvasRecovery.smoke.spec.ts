@@ -51,7 +51,7 @@ import type {
   CanvasBuildState,
   CanvasFrame,
   CanvasSnapshot,
-} from '../../src/features/canvas/protocol';
+} from '@droidex/protocol';
 
 const probe = { reads: 0, available: false };
 

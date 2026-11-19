@@ -1,4 +1,4 @@
-import type { UsageLimit, UsageWindow } from '../types/bridge';
+import type { UsageLimit, UsageWindow } from '@droidex/protocol';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

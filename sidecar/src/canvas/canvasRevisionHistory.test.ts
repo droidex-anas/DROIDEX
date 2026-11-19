@@ -3,7 +3,7 @@ import { readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent, CanvasCommand, RevisionSummary, SourceFiles } from '@droidex/protocol';
 import { canvasCommandHandler } from '../testing/canvasBridgeSupport.js';
 import { board } from '../testing/canvasBuildSupport.js';
 import {
@@ -15,7 +15,7 @@ import {
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { CanvasFiles, type CanvasFileSystem } from './canvasFiles.js';
 import { CanvasScopes } from './canvasScopes.js';
-import type { CanvasCommand, CanvasScope, RevisionSummary, SourceFiles } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;

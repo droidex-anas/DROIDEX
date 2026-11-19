@@ -15,8 +15,7 @@ import {
   type CatalogEntry,
   type KitFailure,
 } from './kitCatalog.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 
 const NOT_ONE_ELEMENT =
   'Its jsx must be one JSX element or fragment and nothing else, with no statement, semicolon or comment around it.';

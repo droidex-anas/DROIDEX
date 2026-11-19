@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, type AppState } from '../hooks/useStore';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { appendTranscriptEvent, appendTranscriptEvents } from './transcriptStoreMemory';
 import { textEvent } from '../test/textEvent';
 

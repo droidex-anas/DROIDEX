@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 /** A paused Droid chat summary; tests override only the fields they depend on. */
 export function sessionSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {

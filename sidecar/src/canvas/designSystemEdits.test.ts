@@ -5,7 +5,7 @@ import {
   documentChangesSchema,
   type DocumentChange,
 } from './designSystemEdits.js';
-import type { DocumentSection } from './designSystemDocument.js';
+import type { DocumentSection } from '@droidex/protocol';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 
 const base = SAMPLE_KIT.sections;

@@ -1,4 +1,4 @@
-import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '../../types/bridge';
+import { PROVIDER_KINDS, type ProviderKind, type ProviderStatus } from '@droidex/protocol';
 import { ModelIcon } from '../../components/ModelIcon';
 import { harnessChoice, PROVIDER_MARKS } from './providerIdentity';
 

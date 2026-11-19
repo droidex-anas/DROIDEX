@@ -1,7 +1,8 @@
 import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
-import type { BrowserState, BrowserViewportMode, DesignReference } from './types.js';
+import type { BrowserViewportMode } from '@droidex/protocol';
+import type { BrowserState, DesignReference } from './types.js';
 import { redactBrowserUrl } from './browserUrl.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import {

@@ -6,7 +6,12 @@
 import { toast } from '../../lib/toast';
 import { sameRect } from './canvasGeometry';
 import { CanvasRequestError, canvasMessage } from './client';
-import type { ArrangeFramesInput, CanvasFrame, FrameRect, SwitchRevisionInput } from './protocol';
+import type {
+  ArrangeFramesInput,
+  CanvasFrame,
+  FrameRect,
+  SwitchRevisionInput,
+} from '@droidex/protocol';
 
 /** How many steps a canvas keeps; the oldest go first. */
 const MAX_STEPS = 100;

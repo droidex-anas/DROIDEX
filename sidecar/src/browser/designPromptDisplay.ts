@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { BrowserTranscriptReference } from '../protocol.js';
+import type { BrowserTranscriptReference } from '@droidex/protocol';
 import type { DesignPromptPack, DesignReference } from './types.js';
 import { isBrowserAssetPath } from './browserPaths.js';
 import { appPromptDisplayFromText } from '../appPrompt.js';

@@ -1,4 +1,9 @@
-import type { ClientCommand, HistorySearchReply, ServerEvent, SessionSummary } from './protocol.js';
+import type {
+  ClientCommand,
+  HistorySearchReply,
+  ServerEvent,
+  SessionSummary,
+} from '@droidex/protocol';
 import { loadSessionTranscriptWindow, resolveSessionChain } from './history.js';
 import { isHistorySearchUnavailableError } from './historySearchSchema.js';
 import { errMsg } from './errors.js';

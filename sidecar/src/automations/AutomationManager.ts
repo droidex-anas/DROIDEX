@@ -2,7 +2,18 @@ import { AutomationAttachments } from './automationAttachments.js';
 import { AutomationDeliveries, type DeliverAutomationMessage } from './automationDeliveries.js';
 import { automationCommandSchema } from './automationSchemas.js';
 import { join } from 'node:path';
-import type { ServerEvent } from '../protocol.js';
+import type {
+  ServerEvent,
+  Automation,
+  AutomationBridgeCommand,
+  AutomationBridgeEvent,
+  AutomationInput,
+  AutomationPatch,
+  AutomationProposal,
+  AutomationReasoningEffort,
+  AutomationRun,
+  AutomationSnapshot,
+} from '@droidex/protocol';
 import { AutomationCatalog } from './automationCatalog.js';
 import { hasModelSelection } from './automationInput.js';
 import { AutomationProposals } from './automationProposals.js';
@@ -22,18 +33,7 @@ import {
   SessionContextCache,
   type AutomationSessionContext,
 } from './sessionContexts.js';
-import type {
-  Automation,
-  AutomationBridgeCommand,
-  AutomationBridgeEvent,
-  AutomationInput,
-  AutomationPatch,
-  AutomationProposal,
-  AutomationReasoningEffort,
-  AutomationRun,
-  AutomationSnapshot,
-  AutomationStore,
-} from './types.js';
+import type { AutomationStore } from './types.js';
 import {
   createAutomationWorkspace,
   releaseAutomationWorkspace,

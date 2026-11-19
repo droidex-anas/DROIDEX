@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { onNativeBrowserDesignEvent } from '../../lib/nativeBrowser';
-import type { BrowserBox, DesignReference } from '../../types/bridge';
+import type { BrowserBox, DesignReference } from '@droidex/protocol';
 import { CompactComposer } from '../composer/CompactComposer';
 import type { Size } from './browserGeometry';
 import { useElementSize } from './useElementSize';

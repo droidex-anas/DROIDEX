@@ -8,7 +8,7 @@ import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
 
-import type { DroidProxyInstallPhase } from '../protocol.js';
+import type { DroidProxyInstallPhase } from '@droidex/protocol';
 import {
   droidProxyAppPath,
   droidProxyBundleComplete,

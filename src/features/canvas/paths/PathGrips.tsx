@@ -16,7 +16,7 @@ import {
   type PointerEvent,
 } from 'react';
 import { MAX_PREVIEW_PATH_DATA_BYTES, type PreviewMatrix } from '../previewDocumentShape';
-import type { ElementRef } from '../protocol';
+import type { ElementRef } from '@droidex/protocol';
 import type { PathSegment } from './pathData';
 import { movedData, moveGrip, pathGrips, type PathGrip, type Point } from './pathModel';
 import type { PathShape } from './usePathShape';

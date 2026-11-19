@@ -6,7 +6,7 @@
 // waits for that one. An arrange never touches source or revisions.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, FrameRect } from '@droidex/protocol';
 
 /** One frame's new rect and the layout version it was read at. */
 type FramePlacement = ArrangeFramesInput['frames'][number];

@@ -5,7 +5,7 @@
 // nothing. It has no alpha either, so a value keeps its own, zero included.
 
 import { useEffect, useEffectEvent, useRef, useState, type CSSProperties } from 'react';
-import type { DocumentToken } from '../designSystemDocumentProtocol';
+import type { DocumentToken } from '@droidex/protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { showPickedColor } from './pickedColor';
 import { isPaintable } from './specimenStyle';

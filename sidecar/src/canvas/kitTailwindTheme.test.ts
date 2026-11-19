@@ -9,7 +9,8 @@ import {
 import { CompilerWorker } from './compiler.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
-import type { DocumentSection, TokenSectionKind } from './designSystemDocument.js';
+import type { DocumentSection } from '@droidex/protocol';
+import type { TokenSectionKind } from './designSystemDocument.js';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
 
 function tokenSection(kind: TokenSectionKind, names: string[]): DocumentSection {

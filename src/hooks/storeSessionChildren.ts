@@ -1,4 +1,4 @@
-import type { ChildSessionSummary } from '../types/bridge';
+import type { ChildSessionSummary } from '@droidex/protocol';
 import {
   aggregateTranscriptMutationBatch,
   observeTranscriptMutationChanges,

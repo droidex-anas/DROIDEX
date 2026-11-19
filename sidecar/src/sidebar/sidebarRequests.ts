@@ -1,18 +1,40 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import type { ServerEvent } from '../protocol.js';
-import {
-  SESSION_ACTIVITY_STATUSES,
-  SIDEBAR_ROW_LIMITS as LIMITS,
-  type SidebarMark,
-  type SidebarMarkOutcome,
-  type SidebarRequest,
-  type SidebarResult,
-  type SidebarRow,
-} from './protocol.js';
+import type {
+  ServerEvent,
+  SidebarMark,
+  SidebarMarkOutcome,
+  SidebarRequest,
+  SidebarResult,
+  SidebarRow,
+} from '@droidex/protocol';
 
 export const SIDEBAR_REQUEST_TIMEOUT_MS = 3_000;
 const MAX_WAITING = 16;
+
+const SESSION_ACTIVITY_STATUSES = [
+  'working',
+  'approval',
+  'input',
+  'plan',
+  'failed',
+  'interrupted',
+  'reply',
+  'review',
+  'ship',
+  'ready',
+  'settled',
+] as const;
+
+const LIMITS = {
+  rows: 5_000,
+  title: 200,
+  permissionDetail: 2_000,
+  questions: 16,
+  questionText: 2_000,
+  options: 16,
+  optionText: 500,
+} as const;
 
 const UNREADABLE = 'The DROIDEX window sent an answer this build cannot read.';
 

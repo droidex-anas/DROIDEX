@@ -3,7 +3,7 @@ import { asChunkedSequence, replaceChunkedSequenceSuffix } from '../lib/chunkedS
 import { noteFeedProjection } from '../lib/rendererPerf';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { FeedItem } from './chatFeed';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';
 import { projectPrependedFeed } from './chatFeedPrependProjector';

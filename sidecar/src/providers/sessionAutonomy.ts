@@ -1,4 +1,4 @@
-import type { Autonomy } from '../protocol.js';
+import type { Autonomy } from '@droidex/protocol';
 
 const LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 

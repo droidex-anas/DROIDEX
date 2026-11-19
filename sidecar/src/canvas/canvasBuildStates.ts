@@ -5,7 +5,7 @@
 // lets a published result prove it was the attempt the frame still wanted.
 
 import type { RestoredBuild } from './canvasBuildCache.js';
-import type { CanvasBuildOutcome, CanvasBuildState } from './protocol.js';
+import type { CanvasBuildOutcome, CanvasBuildState } from '@droidex/protocol';
 
 /** Nothing has been attempted for a design this registry has never heard of. */
 const UNKNOWN: CanvasBuildState = { status: 'pending', generation: 0 };

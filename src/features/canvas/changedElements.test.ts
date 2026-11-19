@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { changedElements } from './changedElements';
-import type { SourceElement } from './protocol';
+import type { SourceElement } from '@droidex/protocol';
 
 const BEFORE = `export default function Card() {
   return (

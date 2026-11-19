@@ -1,7 +1,13 @@
 import { canvasIntentForDraft } from '../../features/canvas/canvasChatIntent';
 import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../../features/canvas/designSystemChoices';
 import { oweCreatedCanvasSeed } from '../../features/canvas/librarySeed';
-import type { CanvasTurnContext } from '../../features/canvas/protocol';
+import type {
+  CanvasTurnContext,
+  Autonomy,
+  ProviderKind,
+  ProviderMention,
+  ResponseFormat,
+} from '@droidex/protocol';
 import type { Action, AppState, CanvasDraft } from '../../hooks/useStore';
 import { missionStartAllowed } from '../../lib/autonomy';
 import { draftChatTitle } from '../../lib/chatMetadata';
@@ -11,7 +17,6 @@ import { compactionSettingsSnapshot } from '../../lib/compactionSettings';
 import { pickDirectory } from '../../lib/desktop';
 import { markGitTurnStart } from '../../lib/git';
 import { composePrompt } from '../../lib/composePrompt';
-import type { Autonomy, ProviderKind, ProviderMention, ResponseFormat } from '../../types/bridge';
 
 export interface TurnStartingFeedback {
   start: (clientRef?: string) => void;

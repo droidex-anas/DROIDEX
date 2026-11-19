@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CanvasFrame, OutlineNode, SourceOutline } from '../protocol';
+import type { CanvasFrame, OutlineNode, SourceOutline } from '@droidex/protocol';
 import { dropLine, isHideable, isMovable, stepPlace } from './layerMoves';
 import { layerEntries, type LayerEntry } from './layerRows';
 

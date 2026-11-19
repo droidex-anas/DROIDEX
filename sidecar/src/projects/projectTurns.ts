@@ -1,10 +1,16 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { failureReport, inboxFull, questionText } from './projectMessages.js';
-import type { ModelSwitch, ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
+import type {
+  ModelSwitch,
+  ServerEvent,
+  SessionQuestion,
+  SessionSummary,
+  ThreadWait,
+} from '@droidex/protocol';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
-import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
+import type { Project, ProjectThread, RuntimeLoad, ThreadMessage } from './types.js';
 
 export type ThreadState =
   | 'working'

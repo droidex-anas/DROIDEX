@@ -31,7 +31,7 @@ import {
   type CompilerResponse,
 } from '../sidecar/src/canvas/compiler.js';
 import { listDesignSystems, readDesignSystem } from '../sidecar/src/canvas/designSystems.js';
-import type { DesignSystemRef } from '../sidecar/src/canvas/protocol.js';
+import type { DesignSystemRef } from '@droidex/protocol';
 import { CHART_DESIGN } from '../sidecar/src/canvas/fixtures/chart.js';
 import { LIBRARY_DESIGN } from '../sidecar/src/canvas/fixtures/library.js';
 import { verifyCanvasRuntime } from './verifyCanvasRuntime.mjs';

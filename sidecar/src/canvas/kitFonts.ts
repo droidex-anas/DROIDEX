@@ -1,3 +1,4 @@
+import type { KitFontFace } from '@droidex/protocol';
 // The fonts a kit version embeds, which its document loads to set the kit's own
 // words in its type. Only WOFF2 data a kit stylesheet holds reaches the
 // renderer, so the document never fetches a font a kit names by URL.
@@ -10,15 +11,6 @@ import type { DesignSystem } from './designSystems.js';
 /** A kit rarely needs more than a few faces; past this the rest are left out. */
 const MAX_KIT_FONT_FACES = 16;
 const MAX_FONT_DESCRIPTOR_LENGTH = 1024;
-
-/** One `@font-face` a kit declares, its descriptors as written and its WOFF2 file as base64. */
-export interface KitFontFace {
-  family: string;
-  style: string;
-  weight: string;
-  unicodeRange: string;
-  woff2: string;
-}
 
 /**
  * The first faces the kit's stylesheets embed, in path order. A face whose
