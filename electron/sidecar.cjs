@@ -416,7 +416,13 @@ function createSidecarSupervisor(options) {
     return allExited;
   }
 
+  function registerIpc(desktopIpc) {
+    desktopIpc.handle('bridge-info', getBridgeInfo);
+    desktopIpc.handle('sidecar-status', snapshot);
+  }
+
   return {
+    registerIpc,
     start,
     getBridgeInfo,
     canvasAssetSecret: () => canvasAssetSecret,
