@@ -173,6 +173,16 @@ const SEQ_SEGMENT_STRIDE = 1 << 27;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 
+function missionWorkingDirectory(state: StoredMissionState): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty directories fall back to the next source.
+  return state.workingDirectory || state.cwd || '';
+}
+
+function sessionTitle(start: StoredSessionStart, providerSessionId: string): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
+  return start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+}
+
 export function loadMissionControlSessions(
   options: HistoricalSummaryFilter = {},
 ): HistoricalSession[] {
@@ -185,8 +195,7 @@ export function loadMissionControlSessions(
       if (!workspaceCwds && !options.includePlainChats) return true;
       const state = readJson<StoredMissionState>(join(dir, 'state.json'));
       return shouldIncludeCwd(
-        // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty directories fall back to the next source.
-        state.workingDirectory || state.cwd || '',
+        missionWorkingDirectory(state),
         workspaceCwds,
         options.includePlainChats,
       );
@@ -202,8 +211,7 @@ export function loadSessionHistory(): SessionHistoryEntry[] {
     const start = readSessionStart(path, stat.size);
     rows.push({
       providerSessionId,
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
-      title: start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`,
+      title: sessionTitle(start, providerSessionId),
       cwd: start.cwd,
       modifiedTime: stat.mtimeMs,
       createdTime: stat.birthtimeMs,
@@ -286,7 +294,7 @@ export class HistoryIndex {
     for (const cached of this.sessionFiles.summaries()) {
       const summary = applyCachedSummary(cached, patches);
       if (
-        (workspaceCwds ?? options.includePlainChats) &&
+        (workspaceCwds || options.includePlainChats) &&
         !shouldIncludeCwd(summary.cwd, workspaceCwds, options.includePlainChats)
       )
         continue;
@@ -928,8 +936,7 @@ function loadMissionControlSession(dir: string): HistoricalSession & {
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
   const providerSessionId = state.baseSessionId || dirId;
   const firstProgressTitle = progress.find((p) => p.title)?.title;
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty directories fall back to the next source.
-  const cwd = state.workingDirectory || state.cwd || '';
+  const cwd = missionWorkingDirectory(state);
   /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty titles and mission IDs fall back to the next source. */
   const title =
     firstProgressTitle ||
@@ -1272,8 +1279,7 @@ function summarizeSessionFile(
   // App-owned transcripts persist the prompt and provider binding before a reply.
   const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
   if (!classification || !isDurable) return { summary: null, ...cachedLaunch };
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
-  const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+  const title = sessionTitle(start, providerSessionId);
   const droidProfile = altSessionRoots().find(({ root }) =>
     file.path.startsWith(`${root}${sep}`),
   )?.profile;
