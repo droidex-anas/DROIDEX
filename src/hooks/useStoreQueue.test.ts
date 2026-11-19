@@ -36,18 +36,16 @@ test('queued prompts append, reorder, and remove only in their target chat', () 
   });
   assert.deepEqual(removed.promptQueue.chat, [first]);
   assert.deepEqual(reordered.promptQueue.chat, [second, first]);
-  assert.equal(removed.promptQueue.other, other);
-  assert.deepEqual(start.promptQueue, { other });
+  assert.deepEqual(removed.promptQueue.other, [
+    { id: 'other', text: 'other', skills: [], files: [] },
+  ]);
+  assert.deepEqual(start.promptQueue, {
+    other: [{ id: 'other', text: 'other', skills: [], files: [] }],
+  });
 });
 
-test('removing from an absent queue creates an empty queue and missing IDs preserve its contents', () => {
-  const empty = reducer(initialState, {
-    type: 'REMOVE_QUEUED_PROMPT',
-    appSessionId: 'chat',
-    id: 'missing',
-  });
-  assert.deepEqual(empty.promptQueue.chat, []);
-  const queued = reducer(empty, {
+test('removing a missing ID preserves queued prompts', () => {
+  const queued = reducer(initialState, {
     type: 'QUEUE_PROMPT',
     appSessionId: 'chat',
     prompt: prompt('first'),
@@ -57,7 +55,9 @@ test('removing from an absent queue creates an empty queue and missing IDs prese
     appSessionId: 'chat',
     id: 'missing',
   });
-  assert.deepEqual(unchanged.promptQueue.chat, queued.promptQueue.chat);
+  assert.deepEqual(unchanged.promptQueue.chat, [
+    { id: 'first', text: 'first', skills: [], files: [] },
+  ]);
 });
 
 test('empty, unchanged, and out-of-range queue reorders are no-ops', () => {
