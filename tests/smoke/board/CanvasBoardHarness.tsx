@@ -72,7 +72,6 @@ import {
   type VariantChoice,
 } from '../../../src/features/canvas/variantRequests';
 import { variantSetSource, VariantSets } from '../../../src/features/canvas/variantSets';
-
 import {
   elementPins,
   pickElement,

@@ -1,8 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { SIDEBAR_ROW_LIMITS } from '@droidex/protocol';
+import { SESSION_ACTIVITY_STATUSES, SIDEBAR_ROW_LIMITS } from '@droidex/protocol';
 import type {
-  SessionActivityStatus,
   ServerEvent,
   SidebarMark,
   SidebarMarkOutcome,
@@ -13,20 +12,6 @@ import type {
 
 export const SIDEBAR_REQUEST_TIMEOUT_MS = 3_000;
 const MAX_WAITING = 16;
-
-const SESSION_ACTIVITY_STATUSES = [
-  'working',
-  'approval',
-  'input',
-  'plan',
-  'failed',
-  'interrupted',
-  'reply',
-  'review',
-  'ship',
-  'ready',
-  'settled',
-] as const satisfies readonly SessionActivityStatus[];
 
 const UNREADABLE = 'The DROIDEX window sent an answer this build cannot read.';
 

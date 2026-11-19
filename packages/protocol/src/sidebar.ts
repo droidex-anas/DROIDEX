@@ -57,15 +57,18 @@ export interface SidebarRow {
   question?: { requestId: string; questions: SessionQuestion['questions'] };
 }
 
-export type SessionActivityStatus =
-  | 'working'
-  | 'approval'
-  | 'input'
-  | 'plan'
-  | 'failed'
-  | 'interrupted'
-  | 'reply'
-  | 'review'
-  | 'ship'
-  | 'ready'
-  | 'settled';
+export const SESSION_ACTIVITY_STATUSES = [
+  'working',
+  'approval',
+  'input',
+  'plan',
+  'failed',
+  'interrupted',
+  'reply',
+  'review',
+  'ship',
+  'ready',
+  'settled',
+] as const;
+
+export type SessionActivityStatus = (typeof SESSION_ACTIVITY_STATUSES)[number];
