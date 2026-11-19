@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { AppState } from './useStore';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary, SessionActivityStatus } from '@droidex/protocol';
 import type { GitDiffStat } from '../types/vcs';
 import { linkedPrsDone } from '../lib/chatMetadata';
 import { sessionIsLive } from '../lib/sessions';
@@ -14,7 +14,6 @@ import {
   pruneSettledSessions,
   inActivityScope,
   sessionActivityStatus,
-  type SessionActivityStatus,
   type SidebarActivityPreferences,
 } from '../lib/sidebarActivity';
 import {

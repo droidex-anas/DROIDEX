@@ -1,7 +1,3 @@
-// Board annotation DTOs, mirrored by hand from
-// sidecar/src/canvas/canvasAnnotationSchema.ts like the rest of protocol.ts;
-// sidecar/src/canvas/schema.test.ts stops compiling when the two drift.
-
 /** Token names the board resolves against its theme; a raw colour never crosses the wire. */
 export type AnnotationColor = 'ink' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'violet';
 
@@ -43,7 +39,7 @@ export type AnnotationDraft =
   // Saved simplified, so the stroke that comes back may have fewer points.
   | { id: string; color: AnnotationColor; kind: 'path'; points: AnnotationPoint[] };
 
-interface AnnotationStamp {
+export interface AnnotationStamp {
   author: AnnotationAuthor;
   createdAt: number;
   updatedAt: number;

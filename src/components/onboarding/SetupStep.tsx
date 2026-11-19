@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ChevronDown, RefreshCw, Spinner } from '@droidex/icons';
 import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
-import type { InstallChannel, ProviderKind } from '../../types/bridge';
+import type { InstallChannel, ProviderKind } from '@droidex/protocol';
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { Expand } from '../transcript/primitives';
 import { Button } from '../ui/Button';

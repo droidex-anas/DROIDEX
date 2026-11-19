@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { adaptEvent, initialState, reducer, type AppState } from './useStore';
 import { visibleSessionTarget } from '../lib/childSessions';
-import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
+import type { ChildSessionSummary, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 import { childSummary } from '../test/childSummary';
 

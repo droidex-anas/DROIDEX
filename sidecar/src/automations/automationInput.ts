@@ -8,7 +8,7 @@ import type {
   AutomationProposalMissingField,
   AutomationReasoningEffort,
   NormalizedAutomationInput,
-} from './types.js';
+} from '@droidex/protocol';
 
 export const MODEL_SELECTION_REQUIRED =
   'Choose a model and reasoning level from the DROIDEX model selector before running this automation.';

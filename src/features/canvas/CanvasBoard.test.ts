@@ -17,8 +17,7 @@ import type { FrameActions } from './FrameToolbar';
 import { PreviewRuns } from './previewRuns';
 import { useElementEditor } from './useElementEditor';
 import { SELECT_MODE, type BoardInteraction } from './canvasState';
-import type { Annotation } from './annotationProtocol';
-import type { CanvasFrame, CanvasSnapshot, FrameRect } from './protocol';
+import type { Annotation, CanvasFrame, CanvasSnapshot, FrameRect } from '@droidex/protocol';
 
 const ACKNOWLEDGED: FrameRect = { x: 100, y: 50, width: 400, height: 300 };
 

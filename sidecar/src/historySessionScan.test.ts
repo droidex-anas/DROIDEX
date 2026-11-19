@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import type { ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+import type { ServerEvent, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { SessionTimeline } from './SessionTimeline.js';
 import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';

@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import type { CanvasTurnContext } from './canvas/protocol.js';
+import type {
+  CanvasTurnContext,
+  ProviderMention,
+  ServerEvent,
+  SessionSummary,
+  TranscriptEvent,
+} from '@droidex/protocol';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
 import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
@@ -8,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ReasoningEffort } from '@factory/droid-sdk';
-import type { ProviderMention, ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+
 import {
   harness as projectHarness,
   drain,

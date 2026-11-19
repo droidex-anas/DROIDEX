@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { transcriptRehydrationLimit } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { initialState, reducer, type Action, type AppState } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
 import { childSummary } from '../test/childSummary';

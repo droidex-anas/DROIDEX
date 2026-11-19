@@ -75,9 +75,9 @@ import {
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
-import type { ProjectView } from '../features/projects/types';
 import type { DesignModes } from './designModeState';
 import type {
+  ProjectView,
   AgentProcess,
   Autonomy,
   ContextWindowTokens,
@@ -97,7 +97,7 @@ import type {
   ContextStatsSnapshot,
   BrowserState,
   VoiceNarration,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { addWorkspaceCwd, removeWorkspaceCwd, withRevealedCwds } from '../lib/workspaces';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';

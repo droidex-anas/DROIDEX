@@ -28,7 +28,7 @@ import { Popover } from '../../../components/ui/Popover';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import { pushEscapeLayer } from '../../../components/ui/escapeStack';
-import type { DocumentSection } from '../designSystemDocumentProtocol';
+import type { DocumentSection } from '@droidex/protocol';
 import { FilesRow } from './FilesRow';
 import type { KitFile } from './kitFiles';
 

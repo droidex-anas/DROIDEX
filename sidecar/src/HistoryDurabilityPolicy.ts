@@ -1,6 +1,6 @@
 import type { PersistedChildSession } from './history.js';
 import { persistenceChildKey, persistenceChildKeyPrefix } from './historyPersistenceQueueValues.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 interface SummaryState {
   phase: SessionSummary['phase'];

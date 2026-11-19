@@ -1,7 +1,11 @@
-import type { PermissionRequest, SessionQuestion, SessionSummary } from '../types/bridge';
+import type {
+  PermissionRequest,
+  SessionQuestion,
+  SessionSummary,
+  SessionActivityStatus,
+} from '@droidex/protocol';
 import type { GitDiffStat } from '../types/vcs';
 import type { ActivityDigest } from './activityDigest';
-import type { SessionActivityStatus } from './sidebarActivity';
 
 export interface ActivityContext {
   session: SessionSummary;

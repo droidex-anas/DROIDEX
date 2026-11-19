@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { UsageLimit } from '../../types/bridge';
+import type { UsageLimit } from '@droidex/protocol';
 
 // Browsers fire a longer timer at once, and a monthly reset is further away.
 const MAX_TIMER_MS = 2 ** 31 - 1;

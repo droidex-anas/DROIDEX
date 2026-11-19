@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { activeDraftTileId } from '../features/tabs/tabNavigation';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { initialState, reducer, type Action, type AppState } from './useStore';
 
 const seedsFor = (state: AppState, appSessionId: string | null) =>

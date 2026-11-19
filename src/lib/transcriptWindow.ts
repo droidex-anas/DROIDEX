@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 const KIB = 1024;
 const MIB = 1024 * KIB;

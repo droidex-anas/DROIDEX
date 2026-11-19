@@ -2,7 +2,7 @@
 // catalog spells it inside `resolvedModel` rather than publishing a row of its
 // own, so everything that has to read a window out of a model id lives here.
 import type { ModelInfo } from '@anthropic-ai/claude-agent-sdk';
-import type { ContextWindowTokens } from '../../protocol.js';
+import type { ContextWindowTokens } from '@droidex/protocol';
 
 const EXTENDED_CONTEXT = /\[1m\]$/i;
 // Some catalogs name the window in prose instead of in the id.

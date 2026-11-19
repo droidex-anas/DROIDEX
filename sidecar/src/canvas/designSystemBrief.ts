@@ -20,7 +20,7 @@ import {
 } from './designSystems.js';
 import { readKitCatalog } from './kitCatalog.js';
 import { isFileSystemError } from './projectPaths.js';
-import type { DesignSystemRef } from './protocol.js';
+import type { DesignSystemRef } from '@droidex/protocol';
 
 /** What the name lists may cost, counting the JSON quotes, commas and keys around them. */
 const NAME_LIST_BYTES = 4 * 1024;

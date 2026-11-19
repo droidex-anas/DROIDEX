@@ -6,7 +6,7 @@
 // is also a control the keyboard can reach, through the marks' one tab stop.
 
 import { useRef, type PointerEvent } from 'react';
-import type { AnnotationDraft, AnnotationRect } from './annotationProtocol';
+import type { AnnotationDraft, AnnotationRect, CanvasFrame } from '@droidex/protocol';
 import {
   draftBounds,
   isTextDraft,
@@ -18,7 +18,7 @@ import {
   type TextDraft,
 } from './annotationGeometry';
 import type { ShownMark } from './annotationWrites';
-import type { CanvasFrame } from './protocol';
+
 import type { MarkGrip } from './useAnnotationEditor';
 
 /** Screen pixels: a mark's stroke, the band around it that takes a press, and its arrowheads. */

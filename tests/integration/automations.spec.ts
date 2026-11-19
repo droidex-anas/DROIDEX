@@ -1,6 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { Automation, AutomationSnapshot } from '../../src/features/automations/types';
-import type { ServerEvent, SessionSummary } from '../../src/types/bridge';
+import type {
+  Automation,
+  AutomationSnapshot,
+  ServerEvent,
+  SessionSummary,
+} from '@droidex/protocol';
+
 import { defaultAutomationDraft } from '../../src/features/automations/schedule';
 import { automationCommandSchema } from '../../sidecar/src/automations/automationSchemas';
 import {

@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { canvasClient } from '../canvasClient';
-import type { DesignSystemProvenance } from '../protocol';
+import type { DesignSystemProvenance } from '@droidex/protocol';
 import { ImportReview } from './ImportReview';
 
 export function ProvenanceLine({

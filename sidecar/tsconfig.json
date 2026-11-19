@@ -10,7 +10,10 @@
     "skipLibCheck": true,
     "noEmit": true,
     "resolveJsonModule": true,
-    "allowJs": true
+    "allowJs": true,
+    "paths": {
+      "@droidex/protocol": ["../packages/protocol/src/index.ts"]
+    }
   },
   "include": ["src", "regression", "../tools/canvas-compiler-probe.ts"]
 }

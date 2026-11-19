@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Check, RefreshCw } from '@droidex/icons';
 import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { Button } from '../ui/Button';
 import { AgentTile } from './AgentTile';

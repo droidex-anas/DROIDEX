@@ -14,8 +14,7 @@ import { discardProposal, proposeDesignSystem, readProposal } from './designSyst
 import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { KitPreviews, kitExample } from './kitPreviews.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import type { DesignSystemProposalRef, DesignSystemRef, SourceFiles } from '@droidex/protocol';
 
 pinScratchProfile();
 

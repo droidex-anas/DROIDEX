@@ -8,7 +8,8 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { CompilerWorker, type CompiledDesign } from '../../sidecar/src/canvas/compiler';
-import type { DesignSystemRef, SourceFiles } from '../../sidecar/src/canvas/schema';
+import type { DesignSystemRef, SourceFiles } from '@droidex/protocol';
+
 import {
   PREVIEW_POLL_SCRIPT,
   previewNonce,

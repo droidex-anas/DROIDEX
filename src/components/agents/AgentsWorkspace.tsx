@@ -5,7 +5,7 @@ import { useSessionLive } from '../../hooks/useSessionLive';
 import { isWorkingAgent, spawnedChildSessions } from '../../lib/childSessions';
 import { loadChildHistory, watchChildHistory } from '../../lib/commands';
 import { transcriptRehydrationLimit } from '../../lib/transcriptStoreMemory';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { UtilityTab } from '../../lib/utilityPanel';
 import { AgentPaneBody } from './AgentPaneBody';
 

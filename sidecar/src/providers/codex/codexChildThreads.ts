@@ -1,5 +1,5 @@
 import type { NormalizedEvent } from '../../normalize.js';
-import type { ChildRole } from '../../protocol.js';
+import type { ChildRole } from '@droidex/protocol';
 import { errMsg } from '../../errors.js';
 import type { ProviderChildSession, ProviderModelSettings } from '../session.js';
 import type { AppServerClient } from './appServer.js';

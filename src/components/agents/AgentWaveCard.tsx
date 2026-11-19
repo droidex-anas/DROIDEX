@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react';
-import type { ChildSessionSummary } from '../../types/bridge';
+import type { ChildSessionSummary } from '@droidex/protocol';
 import {
   resolveWaveSessions,
   type ChildSessionActivity,

@@ -1,8 +1,7 @@
 // A design system version as a document the user reads and edits (design system
 // documents spec §2): ordered sections of notes, token groups, previews and
 // assets. The kit's light and dark tokens and the text its agent reads are
-// derived from the sections, never stored beside them. The renderer mirrors
-// these types by hand in src/features/canvas/designSystemDocumentProtocol.ts.
+// derived from the sections, never stored beside them.
 
 import { z } from 'zod';
 import { sourcePathSchema } from './schema.js';

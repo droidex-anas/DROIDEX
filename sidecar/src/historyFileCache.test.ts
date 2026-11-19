@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import type { HistoryIndex as HistoryIndexType } from './history.js';
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import {
   SessionFileCache,
   type SessionFileChange,

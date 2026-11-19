@@ -3,7 +3,7 @@
 // lists, so placing them is its own small job: the drawer marks what it can
 // show the user, and states the rest plainly instead of guessing a line.
 
-import type { CanvasBuildState, CanvasDiagnostic } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic } from '@droidex/protocol';
 
 /**
  * The diagnostics a build left behind. A build that has not produced any yet

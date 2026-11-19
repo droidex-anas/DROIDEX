@@ -10,7 +10,7 @@ import type {
 } from '@anthropic-ai/claude-agent-sdk';
 
 import { mcpGrantSignature } from '../../mcpGrant.js';
-import type { Autonomy, PermissionKind, SessionQuestion } from '../../protocol.js';
+import type { Autonomy, PermissionKind, SessionQuestion } from '@droidex/protocol';
 import { SESSIONS_MCP_SERVER_NAME, sessionsToolDisplay } from '../../sessionsMcpPolicy.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 

@@ -4,7 +4,8 @@ import { canvasRoot, quietBuilds } from '../testing/canvasStorageSupport.js';
 import { applyDesignSystem } from './applyDesignSystem.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { readDesignSystem } from './designSystems.js';
-import type { CanvasScope, SourceFiles } from './protocol.js';
+import type { SourceFiles } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 
 // Auto declares none of the --ds-* names the unmapped cases use; DROIDEX declares --ds-brand.
 const system = { id: 'auto', version: 1, mode: 'dark' } as const;

@@ -35,13 +35,13 @@ import { CANVAS_MCP_SERVER_NAME } from './canvasMcpNames.js';
 import { DESIGN_CANVAS_MCP_INSTRUCTIONS } from './designSessionGuidance.js';
 import { designSystemBrief } from './designSystemBrief.js';
 import type { ToolHandlerResult } from '../mcpToolUtils.js';
-import type { SessionPurpose } from '../protocol.js';
+import type { SessionPurpose, CanvasFrame, CanvasSnapshot, CaptureImage } from '@droidex/protocol';
 import type { CanvasCapture } from './canvasCaptures.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { CanvasTurns } from './canvasTurnContext.js';
 import type { ImportProjectImage } from './desktopImageChannel.js';
 import type { KitPreviews } from './kitPreviews.js';
-import type { CanvasFrame, CanvasScope, CanvasSnapshot, CaptureImage } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
 import { canvasIdentifierSchema, designSystemRefSchema, writeFilesInputSchema } from './schema.js';
 import { listDesignSystems, readDesignSystem } from './designSystems.js';
 

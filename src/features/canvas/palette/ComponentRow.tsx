@@ -7,7 +7,7 @@ import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { ADD_KEY_LABEL, TAG_KEY_LABEL } from '../boardKeys';
-import type { CatalogListing, DesignSystemRef, PropPick } from '../protocol';
+import type { CatalogListing, DesignSystemRef, PropPick } from '@droidex/protocol';
 import { TagComponentButton } from '../TagComponentButton';
 import type { RowTagging } from './ComponentsPanel';
 import { EntryThumbnail } from './EntryThumbnail';

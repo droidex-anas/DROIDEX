@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { QuestionCard } from './AskUserInline.js';
-import type { SessionQuestion } from '../types/bridge.js';
+import type { SessionQuestion } from '@droidex/protocol';
 
 function makeQuestion(questions: SessionQuestion['questions']): SessionQuestion {
   return { appSessionId: 'app-1', requestId: 'req-1', questions };

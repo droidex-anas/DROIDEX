@@ -6,9 +6,9 @@
 import path from 'node:path';
 import type { ModuleDeclarations, ModuleExport } from './compilerModules.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
-import { MAX_LIBRARY_EXPORTS, type LibrarySkip } from './designSystemProvenance.js';
+import type { LibrarySkip, CanvasDiagnostic } from '@droidex/protocol';
+import { MAX_LIBRARY_EXPORTS } from './designSystemProvenance.js';
 import { withKitTokens } from './libraryTheme.js';
-import type { CanvasDiagnostic } from './protocol.js';
 
 /** Where the kit keeps the library's cn() helper. */
 export const KIT_UTILS_FILE = 'lib/utils.ts';

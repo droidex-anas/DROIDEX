@@ -4,7 +4,7 @@ import type {
   ProgressEntry,
   SessionSummary,
   TranscriptEvent,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import {
   isDisjointLatestPage,
   reconcilePrependedTranscript,

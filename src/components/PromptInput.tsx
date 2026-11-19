@@ -158,7 +158,7 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
+import type { Autonomy, SkillInfo, ProviderMention } from '@droidex/protocol';
 import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
@@ -1492,6 +1492,7 @@ export default function PromptInput({
     appSessionId: activeSession?.appSessionId ?? null,
     cwd: primaryWorkingDirectory,
     isLive: primaryIsLive,
+    hasQueuedPrompt: queue.length > 0,
     usageLimited: usageLimit !== undefined,
     appUpdateInstalling,
     appUpdateInstallResult,

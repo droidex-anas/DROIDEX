@@ -21,7 +21,6 @@ import {
   CONVERSATION_LIST_PIN_THRESHOLD_PX,
   estimatedListEndOffset,
   findConversationRowIndex,
-  isConversationAtLatest,
   nearestOverflowParent,
   shouldAdjustConversationRowOnSizeChange,
 } from './conversationListState';
@@ -30,8 +29,6 @@ import { useConversationListLayout } from './useConversationListLayout';
 
 export interface ConversationListHandle {
   scrollToRow: (rowId: string) => void;
-  scrollToLatest: () => void;
-  isAtLatest: () => boolean;
 }
 
 export interface ConversationListProps {
@@ -172,21 +169,8 @@ export function ConversationList({
         if (index == null) return;
         virtualizer.scrollToIndex(index, { align: 'start' });
       },
-      scrollToLatest() {
-        if (itemsRef.current.length === 0) return;
-        virtualizer.scrollToIndex(itemsRef.current.length - 1, { align: 'end' });
-      },
-      isAtLatest() {
-        const element = getScrollElement();
-        if (!element) return true;
-        return isConversationAtLatest(
-          element.scrollHeight,
-          element.scrollTop,
-          element.clientHeight,
-        );
-      },
     }),
-    [getScrollElement, virtualizer],
+    [virtualizer],
   );
 
   return (

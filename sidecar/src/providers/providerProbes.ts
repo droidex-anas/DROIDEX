@@ -1,5 +1,4 @@
-import type { ProviderStatus, SkillInfo } from '../protocol.js';
-import type { ProviderKind } from './providerKind.js';
+import type { ProviderStatus, SkillInfo, ProviderKind } from '@droidex/protocol';
 
 // Readiness comes back as soon as the CLI answers. A catalog that takes longer
 // follows through `publishItems` from the same process, each call carrying

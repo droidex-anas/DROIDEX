@@ -23,7 +23,7 @@ import {
   updateCli,
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
-import { getApiKey, isRemoteClient, setAppIcon, terminalHasChildren } from './lib/desktop';
+import { getApiKey, isRemoteClient, terminalHasChildren } from './lib/desktop';
 import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
@@ -38,7 +38,7 @@ import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
-import { applyTheme, findPreset, resolveVariant } from './lib/theme';
+import { useThemeSync } from './hooks/useThemeSync';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
@@ -210,7 +210,6 @@ export default function App() {
       activeTabSplit: activeGrid(current.tabStrip) !== null,
       childAccess: current.childAccess,
       commandPaletteOpen: current.commandPaletteOpen,
-      customThemes: current.customThemes,
       hasSessionContent: Boolean(
         activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
       ),
@@ -227,7 +226,6 @@ export default function App() {
       // A design draft's canvas lands only once its chat exists.
       canvasChatRequests: current.canvasChatRequests,
       tabStripShown: showsTabStrip(current),
-      theme: current.theme,
       utilityPanels: current.utilityPanels,
       workspaceCwds: current.workspaceCwds,
     };
@@ -560,9 +558,7 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    applyTheme(state.theme);
-  }, [state.theme]);
+  useThemeSync(embedded);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -572,28 +568,6 @@ export default function App() {
       root.removeAttribute('data-window-hidden');
     };
   }, [documentVisible]);
-
-  useEffect(() => {
-    if (embedded) return;
-    void setAppIcon(state.theme.appIconMode).catch((error: unknown) => {
-      console.error('Failed to update app icon', error);
-    });
-  }, [embedded, state.theme.appIconMode]);
-
-  useEffect(() => {
-    if (state.theme.mode !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = () => {
-      // Follow the OS scheme with the active preset's matching variant.
-      // Hand-edited (custom) colors have no second variant, so they stay put.
-      const preset = findPreset(state.theme.presetId, state.customThemes);
-      if (preset) dispatch({ type: 'SET_THEME', theme: resolveVariant(preset, 'system') });
-    };
-    mq.addEventListener('change', onChange);
-    return () => {
-      mq.removeEventListener('change', onChange);
-    };
-  }, [state.theme.mode, state.theme.presetId, state.customThemes, dispatch]);
 
   useEffect(() => {
     if (embedded) return;

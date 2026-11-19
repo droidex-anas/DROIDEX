@@ -1,17 +1,10 @@
 // Correlated Canvas requests and feature-local board projections.
 // Canonical state stays in the sidecar.
 
-import type { ClientCommand, ServerEvent } from '../../types/bridge';
-import type { AnnotateCanvasInput } from './annotationProtocol';
-import { applyCanvasChange } from './applyCanvasChange';
-import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
-import { DesignSystemRequests } from './designSystemRequests';
-import { LayerRequests } from './layerRequests';
-import { LibraryRequests } from './libraryRequests';
-import { RemovalRequests } from './removalRequests';
-import { RevisionRequests } from './revisionRequests';
-import { SourceRequests } from './sourceRequests';
 import type {
+  ClientCommand,
+  ServerEvent,
+  AnnotateCanvasInput,
   ArrangeFramesInput,
   CanvasAttachment,
   CanvasChange,
@@ -29,7 +22,16 @@ import type {
   RemoveFramesInput,
   RenameFrameInput,
   UndoRemovalInput,
-} from './protocol';
+} from '@droidex/protocol';
+
+import { applyCanvasChange } from './applyCanvasChange';
+import { reply, requestId, wrongReply, type ReplyEvent } from './canvasReply';
+import { DesignSystemRequests } from './designSystemRequests';
+import { LayerRequests } from './layerRequests';
+import { LibraryRequests } from './libraryRequests';
+import { RemovalRequests } from './removalRequests';
+import { RevisionRequests } from './revisionRequests';
+import { SourceRequests } from './sourceRequests';
 
 const MAX_PENDING_REQUESTS = 32;
 const REQUEST_TIMEOUT_MS = 30_000;

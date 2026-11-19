@@ -67,6 +67,7 @@ export default tseslint.config(
       'src/**/*.{ts,tsx}',
       'sidecar/src/**/*.ts',
       'packages/icons/src/**/*.{ts,tsx}',
+      'packages/protocol/src/**/*.ts',
       'packages/remote/src/**/*.ts',
       'remote-web/src/**/*.{ts,tsx}',
       'relay/src/**/*.ts',

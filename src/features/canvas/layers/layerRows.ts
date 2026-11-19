@@ -4,7 +4,7 @@
 // does not write, without what is inside a row that is closed. A row says
 // whether its children show, or null when it has none to show.
 
-import type { CanvasFrame, OutlineNode, SourceOutline } from '../protocol';
+import type { CanvasFrame, OutlineNode, SourceOutline } from '@droidex/protocol';
 import type { Drawn, DrawnLayers } from './drawnLayers';
 
 /** An open frame's layers: its outline, and where its live preview draws them as far as read. */

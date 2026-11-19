@@ -1,6 +1,6 @@
 import { useLayoutEffect, useState, type RefObject } from 'react';
 import { flushSync } from 'react-dom';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 /**
  * The frame whose row holds the name field, among the rows `keys`. A frame

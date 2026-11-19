@@ -1,4 +1,4 @@
-import type { Autonomy } from '../types/bridge';
+import type { Autonomy } from '@droidex/protocol';
 import { loadDefaultAutonomy, normalizeAutonomy } from './autonomy';
 
 const REVISION_KEY = 'droid-permission-semantics-revision';

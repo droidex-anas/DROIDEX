@@ -25,7 +25,7 @@ import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHist
 import { MENU_WIDTH_PX, MenuRow } from './menuRows';
 import type { ElementPin } from './elementPins';
 import { exportableRevision } from './captureCanvasImage';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { RevisionHistory } from './RevisionHistory';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
 import type { VariantChoice } from './variantRequests';

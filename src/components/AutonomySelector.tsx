@@ -2,7 +2,7 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import type { Placement } from '@floating-ui/react';
 import { AcceptEdits, AutoApprove, Check, FullAccess, Spinner, Supervised } from '@droidex/icons';
 
-import type { Autonomy, ProviderKind } from '../types/bridge';
+import type { Autonomy, ProviderKind } from '@droidex/protocol';
 import {
   autonomyConsequence,
   AUTONOMY_DESCRIPTIONS,

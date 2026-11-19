@@ -1,6 +1,10 @@
-import type { SessionSummary } from '../../types/bridge';
+import type {
+  SessionSummary,
+  CanvasFrame,
+  CanvasRemovalPreview,
+  CanvasSnapshot,
+} from '@droidex/protocol';
 import type { Viewport } from './canvasGeometry';
-import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
 
 export type CanvasPaneState =
   // Reading which canvas this chat is attached to.

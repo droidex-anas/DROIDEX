@@ -4,7 +4,7 @@
 // behavior from silently diverging across copies. Catalog parsers
 // (modelCatalog, DroidCliCatalog) intentionally use looser coercion and
 // keep their own variants.
-import type { Autonomy } from './protocol.js';
+import type { Autonomy } from '@droidex/protocol';
 
 export function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;

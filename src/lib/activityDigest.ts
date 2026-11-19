@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { toolMeta, type ToolCat } from './tools';
 
 // A tiny summary of where a chat's conversation stands, derived from its

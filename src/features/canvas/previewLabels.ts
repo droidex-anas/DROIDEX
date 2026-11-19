@@ -5,7 +5,7 @@
 
 import type { CanvasActivityStage } from './canvasMotion';
 import { blockedByStrictRule } from './designSystemRule';
-import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic, CanvasFrame } from '@droidex/protocol';
 
 /** The board's stage for a frame, and the revision whose picture it can show. */
 export interface FrameStatus {

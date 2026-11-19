@@ -5,7 +5,7 @@ import { useId, useState } from 'react';
 import { ChevronRight } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
-import type { LibraryProvenance } from '../protocol';
+import type { LibraryProvenance } from '@droidex/protocol';
 import { importReview } from './importReviewGroups';
 
 export function ImportReview({ library }: { library: LibraryProvenance }) {

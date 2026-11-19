@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT } from '../lib/workspaces';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 export interface SidebarSessionListProps {
   sessions: SessionSummary[];

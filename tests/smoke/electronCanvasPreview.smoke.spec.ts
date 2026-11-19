@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { expect, test, type Page } from '@playwright/test';
-import type { SourceFiles } from '../../sidecar/src/canvas/schema';
+import type { SourceFiles } from '@droidex/protocol';
 import { CHART_DESIGN } from '../../sidecar/src/canvas/fixtures/chart';
 import { readDesignSystem } from '../../sidecar/src/canvas/designSystems';
 import {

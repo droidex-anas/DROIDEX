@@ -9,7 +9,7 @@ import { changedElements } from './changedElements';
 import type { CanvasPresence, LandedWrites, PresenceAgent } from './canvasPresence';
 import { isDrawn, MAX_PREVIEW_LOCATE_ELEMENTS } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
-import type { CanvasFrame, SourceFiles } from './protocol';
+import type { CanvasFrame, SourceFiles } from '@droidex/protocol';
 
 /** A point on a frame, as a share of its width and height. */
 export interface TourStop {

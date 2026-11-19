@@ -5,7 +5,7 @@ import { browserPageOf, browserStepLabel, isWholeUrl } from '../../lib/browserTo
 import { describeLink } from '../../lib/linkPresentation';
 import { openExternal } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { Button } from '../ui/Button';
 import { Menu } from '../ui/Menu';
 import { LinkBadge } from '../transcript/LinkBadge';

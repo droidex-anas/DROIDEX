@@ -17,7 +17,7 @@ import {
   type CanvasSourceState,
 } from './canvasSourceState';
 import { CanvasRequestError } from './client';
-import type { WriteFilesInput, WriteReceipt } from './protocol';
+import type { WriteFilesInput, WriteReceipt } from '@droidex/protocol';
 
 const states = new Map<string, { state: CanvasSourceState }>();
 const listeners = new Map<string, Set<() => void>>();

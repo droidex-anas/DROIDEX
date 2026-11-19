@@ -20,7 +20,7 @@ import { canvasActivity } from '../canvasMotion';
 import { FoldCaret, RowGrip } from './ElementRow';
 import { FrameNameField } from '../FrameNameField';
 import type { FrameStatus } from '../previewLabels';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { splitVariantName } from '../variantRequests';
 
 const GLYPH = 'size-icon-md';

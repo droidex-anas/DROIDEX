@@ -3,8 +3,8 @@ import { dirname, join, resolve } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { providerSessionsDir } from './droidexPaths.js';
-import type { Autonomy } from './protocol.js';
-import { providerKind, type ProviderKind } from './providers/providerKind.js';
+import type { Autonomy, ProviderKind } from '@droidex/protocol';
+import { providerKind } from './providers/providerKind.js';
 import { readSessionStart } from './sessionFileHead.js';
 import { objectValue } from './values.js';
 

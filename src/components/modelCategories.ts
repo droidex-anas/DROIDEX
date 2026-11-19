@@ -1,4 +1,4 @@
-import type { ModelInfo } from '../types/bridge';
+import type { ModelInfo } from '@droidex/protocol';
 
 export type ModelCategory = 'core' | 'factory' | 'claude' | 'custom';
 

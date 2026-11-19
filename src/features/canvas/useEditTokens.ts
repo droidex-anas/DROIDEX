@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { canvasClient } from './canvasClient';
-import type { EditToken } from './protocol';
+import type { EditToken } from '@droidex/protocol';
 
 export interface EditTokens {
   /** The tokens by the property whose edit accepts them; null until they load. */

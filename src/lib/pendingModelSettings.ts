@@ -1,4 +1,4 @@
-import type { ContextWindowTokens, ReasoningEffort, SessionSummary } from '../types/bridge';
+import type { ContextWindowTokens, ReasoningEffort, SessionSummary } from '@droidex/protocol';
 
 /**
  * A chat's model, effort, fast mode or window change, shown before the sidecar

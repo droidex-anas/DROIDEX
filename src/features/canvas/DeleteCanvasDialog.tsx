@@ -9,7 +9,7 @@ import { canvasClient } from './canvasClient';
 import { CanvasDialog, QUIET_BUTTON_CLASS } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
 import { reduceCanvasRemoval, REVIEWING_REMOVAL } from './canvasState';
-import type { CanvasRemovalPreview } from './protocol';
+import type { CanvasRemovalPreview } from '@droidex/protocol';
 
 const DELETE_BUTTON_CLASS =
   'rounded-lg bg-danger/10 px-3 py-1.5 text-label font-semibold text-danger transition-colors hover:bg-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring disabled:cursor-default disabled:opacity-60';

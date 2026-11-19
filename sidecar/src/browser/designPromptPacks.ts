@@ -2,14 +2,14 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { browserDesignReferenceDir } from './browserPaths.js';
 import { redactBrowserUrl } from './browserUrl.js';
-import type { DesignPromptPack, DesignReference } from './types.js';
+import type { DesignPromptPack, StoredDesignReference } from './types.js';
 
 export interface WriteDesignPromptPackOptions {
   appSessionId: string;
   /** The browser the marks were picked in, while it is open. */
   browserSessionId?: string;
   instruction: string;
-  references: DesignReference[];
+  references: StoredDesignReference[];
   baseDir?: string;
   now?: () => Date;
 }
@@ -48,7 +48,7 @@ export function isDesignPrompt(text: string): boolean {
 export function formatDesignPrompt(
   packPath: string,
   instruction: string,
-  references: DesignReference[],
+  references: StoredDesignReference[],
 ): string {
   const first = references[0];
   return [
@@ -88,7 +88,7 @@ function sanitizeInline(value: string, max = 500): string {
   return cleaned.length > max ? `${cleaned.slice(0, max)}…` : cleaned;
 }
 
-function formatReferenceLine(reference: DesignReference): string {
+function formatReferenceLine(reference: StoredDesignReference): string {
   const anchor = reference.anchor;
   const mark = Number.isInteger(anchor.mark) ? `@${String(anchor.mark)}: ` : '';
   const parts = [

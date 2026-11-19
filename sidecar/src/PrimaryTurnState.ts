@@ -1,5 +1,5 @@
 import type { SessionPrompt } from './SessionLifecycle.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { userPromptDisplay } from './sessionTranscriptParser.js';
 
 export type SessionCloseMode = 'discard-pending' | 'preserve-pending';

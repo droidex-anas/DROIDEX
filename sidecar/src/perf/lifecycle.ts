@@ -12,7 +12,7 @@ import type { ReplayReport } from './report.js';
 import { ReplayFactoryRuntime } from './replayRuntime.js';
 import type { ReplayTickHelpers } from './runner.js';
 import type { PerfScenarioSpec } from './scenario.js';
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
 
 export function sessionSwitchTick(spec: PerfScenarioSpec): (helpers: ReplayTickHelpers) => void {

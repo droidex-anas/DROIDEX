@@ -17,7 +17,7 @@ import { KitThumbnail } from './KitThumbnail';
 import { MenuHeading, MenuNote } from './menuRows';
 import { NewDesignSystemMenu, type FromProject } from './NewDesignSystemMenu';
 import { PreviewModeToggle, type PreviewMode } from './PreviewModeToggle';
-import type { DesignSystemRef, DesignSystemSource, DesignSystemSummary } from './protocol';
+import type { DesignSystemRef, DesignSystemSource, DesignSystemSummary } from '@droidex/protocol';
 
 export const PICKER_WIDTH_PX = 320;
 

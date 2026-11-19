@@ -31,7 +31,7 @@ import { DeleteCanvasDialog } from './DeleteCanvasDialog';
 import { DESIGN_SYSTEM_RULES } from './designSystemRule';
 import { tagFramesLabel, toggleFramePins, useFramePins } from './framePins';
 import { useLeaveDeletedCanvas } from './leaveDeletedCanvas';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 import { useCanvases, type Canvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
 

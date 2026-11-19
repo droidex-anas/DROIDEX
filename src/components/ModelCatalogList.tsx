@@ -1,6 +1,6 @@
 import { memo, useCallback, useRef } from 'react';
 import { offersReasoningEffort, reasoningEffortLabel } from '../lib/reasoningEffort';
-import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '@droidex/protocol';
 import {
   ModelIcon,
   DroidProxyMark,

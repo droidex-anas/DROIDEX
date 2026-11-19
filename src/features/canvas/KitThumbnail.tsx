@@ -5,7 +5,7 @@
 import { cn } from '../../components/ui/cn';
 import { useKitCapture } from './kitCaptures';
 import type { PreviewMode } from './PreviewModeToggle';
-import type { DesignSystemSummary } from './protocol';
+import type { DesignSystemSummary } from '@droidex/protocol';
 
 const SIZE = {
   row: { tile: 'w-16 rounded-sm', swatches: 'px-2', accent: 'h-2.5 w-6' },

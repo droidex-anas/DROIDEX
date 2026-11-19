@@ -5,7 +5,7 @@
  * derived database directly.
  */
 import type { DatabaseSync, StatementSync } from 'node:sqlite';
-import type { ReasoningEffort, SessionSummary } from './protocol.js';
+import type { ReasoningEffort, SessionSummary } from '@droidex/protocol';
 import {
   parseCachedSessionSummary,
   SESSION_FILE_REASONING_EFFORTS,

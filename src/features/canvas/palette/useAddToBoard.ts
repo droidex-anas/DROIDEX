@@ -11,7 +11,7 @@ import { boardHistory, canvasClient as canvas, frameRemovals } from '../canvasCl
 import { canvasMessage } from '../client';
 import type { PreviewRuns } from '../previewRuns';
 import type { PreviewRun } from '../previewRuntime';
-import type { CanvasFrame, CatalogListing, DesignSystemRef, PropPick } from '../protocol';
+import type { CanvasFrame, CatalogListing, DesignSystemRef, PropPick } from '@droidex/protocol';
 
 /** The size a new frame starts at, before its preview says how much its entry needs. */
 const FIRST_SIZE = { width: 720, height: 560 };

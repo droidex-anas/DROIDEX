@@ -25,7 +25,7 @@ import {
   BRIDGE_PROTOCOL_VERSION,
   type ServerWireMessage,
   type TranscriptEvent,
-} from '../protocol.js';
+} from '@droidex/protocol';
 
 export interface ReplayTickHelpers {
   send: (command: Parameters<SessionManager['handle']>[0]) => void;

@@ -1,8 +1,4 @@
-// Direct element edit DTOs, mirrored by hand from sidecar/src/canvas/schema.ts
-// like the rest of protocol.ts; sidecar/src/canvas/schema.test.ts stops
-// compiling when the two drift.
-
-import type { ElementRef, WriteReceipt } from './protocol';
+import type { ElementRef, WriteReceipt } from './canvas-state.js';
 
 /** One property's new value: a kit token's name (`--ds-space-2`) or a raw CSS value. */
 export interface StyleValue {
@@ -49,3 +45,5 @@ export interface ElementEdited {
   receipt: WriteReceipt;
   landed: string | null;
 }
+
+export type ElementEdit = EditElementInput['edit'];

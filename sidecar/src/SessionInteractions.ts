@@ -15,7 +15,7 @@ import type {
   ServerEvent,
   SessionQuestion,
   SessionSummary,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   nextInteractionRequestId,
   type ProviderApprovalRequest,

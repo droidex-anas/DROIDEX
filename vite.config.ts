@@ -19,6 +19,10 @@ export default defineConfig(async () => ({
   resolve: {
     alias: [
       {
+        find: /^@droidex\/protocol$/,
+        replacement: fileURLToPath(new URL('./packages/protocol/src/index.ts', import.meta.url)),
+      },
+      {
         find: /^@droidex\/icons$/,
         replacement: fileURLToPath(new URL('./packages/icons/src/index.ts', import.meta.url)),
       },

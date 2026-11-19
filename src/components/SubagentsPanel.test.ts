@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SubagentPanelRow, SubagentsSection } from './SubagentsPanel';
-import type { ChildSessionSummary, ChildStatus } from '../types/bridge';
+import type { ChildSessionSummary, ChildStatus } from '@droidex/protocol';
 
 let seq = 0;
 function child(

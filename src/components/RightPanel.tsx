@@ -26,7 +26,7 @@ import { useOpenAgent } from './agents/useOpenAgent';
 import { Row, SectionHeader } from './ui/Row';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
-import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '../types/bridge';
+import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '@droidex/protocol';
 import { diffModeToReviewScope } from '../lib/reviewScopes';
 import {
   childSessionIsLive,

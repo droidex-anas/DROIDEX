@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { EffortLevel, Options } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Autonomy, ReasoningEffort } from '../../protocol.js';
+import type { Autonomy, ReasoningEffort } from '@droidex/protocol';
 import type { ClaudeSessionInput } from './claudeSession.js';
 import { childEnv } from '../../childEnv.js';
 import { claudeContextEnv } from './claudeContextWindow.js';

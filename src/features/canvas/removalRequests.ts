@@ -2,7 +2,7 @@
 // removal that carries that preview back so a canvas changed since is refused.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { CanvasCommand, CanvasRemovalPreview } from './protocol';
+import type { CanvasCommand, CanvasRemovalPreview } from '@droidex/protocol';
 
 export class RemovalRequests {
   constructor(private readonly send: (command: CanvasCommand) => Promise<ReplyEvent>) {}

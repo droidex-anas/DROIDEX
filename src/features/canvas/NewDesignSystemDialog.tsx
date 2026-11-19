@@ -3,7 +3,7 @@
 
 import { Dialog } from '../../components/ui/Dialog';
 import { NewDesignSystemForm } from './NewDesignSystemForm';
-import type { DesignSystemSource } from './protocol';
+import type { DesignSystemSource } from '@droidex/protocol';
 
 export function NewDesignSystemDialog({
   kind,

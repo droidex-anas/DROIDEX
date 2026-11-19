@@ -1,4 +1,4 @@
-import type { AgentProcess } from '../protocol.js';
+import type { AgentProcess } from '@droidex/protocol';
 import {
   AgentProcessMonitor,
   type AgentProcessMonitorDependencies,

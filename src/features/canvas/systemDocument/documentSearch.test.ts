@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { DocumentSection } from '../designSystemDocumentProtocol';
-import type { CatalogListing } from '../protocol';
+import type { DocumentSection, CatalogListing } from '@droidex/protocol';
+
 import { CATALOG_SECTION_ID, itemCount, searchSections } from './documentSearch';
 
 const COLORS: DocumentSection = {

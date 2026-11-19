@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionRow, areSessionRowPropsEqual, type SessionRowProps } from './SidebarSessionRow';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   return {

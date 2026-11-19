@@ -3,7 +3,7 @@
 // and the kit replies of its designSystemCommands.ts; wireValidation.ts owns
 // the rest of the reply.
 
-import type { DocumentSection } from './designSystemDocumentProtocol';
+import type { DocumentSection } from '@droidex/protocol';
 import { boundedList, boundedText, count, id, isAppSessionId, record } from './wireChecks';
 
 const MAX_SECTIONS = 16;

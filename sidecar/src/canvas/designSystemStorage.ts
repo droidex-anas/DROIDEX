@@ -10,8 +10,8 @@ import { link, lstat, mkdir, open, readdir, rename, rm, unlink } from 'node:fs/p
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasDir } from '../droidexPaths.js';
-import type { KitCaptureItem } from './protocol.js';
-import { canvasIdentifierSchema, type DesignSystemRef } from './schema.js';
+import type { KitCaptureItem, DesignSystemRef } from '@droidex/protocol';
+import { canvasIdentifierSchema } from './schema.js';
 
 const UNREADABLE = 'That design system version is not available.';
 const SAVE_RECOVERY = 'The design system could not be saved.';

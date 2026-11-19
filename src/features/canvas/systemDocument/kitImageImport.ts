@@ -5,7 +5,7 @@
 import { useEffect, useLayoutEffect, useState, type DragEvent } from 'react';
 import { importKitImage, pickKitImage } from '../../../lib/desktop';
 import { pushToast } from '../../../lib/toast';
-import type { DesignSystemDocumentView, OwnedAsset } from '../protocol';
+import type { DesignSystemDocumentView, OwnedAsset } from '@droidex/protocol';
 import {
   currentDraft,
   draftOf,

@@ -4,7 +4,7 @@ import { useStoreDispatch } from '../../hooks/useStore';
 import { canvasClient as canvas } from './canvasClient';
 import { canvasMessage } from './client';
 import { outdatedCanvasMessage } from './canvasState';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 import { useOpenCanvas } from './useOpenCanvas';
 import { DESIGN_STARTERS, StarterSketch } from './designStarters';
 

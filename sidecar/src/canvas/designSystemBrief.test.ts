@@ -6,12 +6,8 @@ import test from 'node:test';
 import { canvasDir } from '../droidexPaths.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { designSystemBrief } from './designSystemBrief.js';
-import {
-  DOCUMENT_LIMITS,
-  kitModes,
-  writtenTextBytes,
-  type DocumentSection,
-} from './designSystemDocument.js';
+import type { DocumentSection } from '@droidex/protocol';
+import { DOCUMENT_LIMITS, kitModes, writtenTextBytes } from './designSystemDocument.js';
 import { AUTO_DESIGN_SYSTEM_REF, DESIGN_SYSTEM_LIMITS, saveDesignSystem } from './designSystems.js';
 import { catalogFile } from './kitCatalog.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';

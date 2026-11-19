@@ -8,7 +8,7 @@ import {
   type NormalizedSideEffects,
   type NormalizedTokenUsage,
 } from './SessionEventFlow.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { assistantTextDelta, successfulResultEvent } from './testing/fakeFactoryRuntime.js';
 
 function createHarness(

@@ -19,7 +19,7 @@ import {
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
 import { editElementInputSchema } from './elementEditSchema.js';
-import type { CanvasCommand } from './protocol.js';
+import type { CanvasCommand } from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,

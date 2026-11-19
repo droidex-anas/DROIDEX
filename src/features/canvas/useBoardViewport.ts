@@ -24,7 +24,7 @@ import {
   type Point,
   type Viewport,
 } from './canvasGeometry';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 /**
  * A wheel gesture has no end event — trackpad momentum keeps arriving after the

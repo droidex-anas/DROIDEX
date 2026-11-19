@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 /** A primary text event; tests override only the fields their assertions read. */
 export function textEvent(id: string, overrides: Partial<TranscriptEvent> = {}): TranscriptEvent {

@@ -18,10 +18,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@droidex/icons": ["packages/icons/src/index.ts"]
+      "@droidex/icons": ["packages/icons/src/index.ts"],
+      "@droidex/protocol": ["packages/protocol/src/index.ts"]
     }
   },
-  "include": ["src", "packages/icons/src", "packages/remote/src"],
+  "include": ["src", "packages/icons/src", "packages/remote/src", "packages/protocol/src"],
   "exclude": ["src/**/*.test.ts"],
   "references": [
     {

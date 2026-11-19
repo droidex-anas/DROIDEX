@@ -1,4 +1,4 @@
-import type { DesignReference } from '../../types/bridge';
+import type { DesignReference } from '@droidex/protocol';
 import { designMarkColor, designMarkLabel } from '../browser/designMarks';
 import { ChipRemoveButton } from './ChipRemoveButton';
 
