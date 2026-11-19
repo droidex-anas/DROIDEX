@@ -48,7 +48,10 @@ let nativeBrowserSeq = 0;
 const nextNativeBrowserRequestId = () =>
   `browser-native-${Date.now().toString(36)}-${(nativeBrowserSeq++).toString(36)}`;
 
-type BrowserCommand = Extract<ClientCommand, { type: `browser.${string}` }>;
+type BrowserCommand = Exclude<
+  Extract<ClientCommand, { type: `browser.${string}` }>,
+  { type: 'browser.close' }
+>;
 
 export class SessionBrowser {
   constructor(private readonly d: SessionBrowserDependencies) {}
@@ -71,9 +74,6 @@ export class SessionBrowser {
     switch (cmd.type) {
       case 'browser.open':
         await this.open(cmd);
-        return;
-      case 'browser.close':
-        await this.close(cmd);
         return;
       case 'browser.restore':
         await this.restore(cmd);
@@ -106,7 +106,7 @@ export class SessionBrowser {
     );
   }
 
-  private async close(cmd: Extract<ClientCommand, { type: 'browser.close' }>): Promise<void> {
+  async close(cmd: Extract<ClientCommand, { type: 'browser.close' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
       const appSessionId = this.requireBrowserAppSessionId(cmd.appSessionId);
       await this.d.browsers.close(appSessionId);
