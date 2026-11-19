@@ -173,6 +173,16 @@ const SEQ_SEGMENT_STRIDE = 1 << 27;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 
+function missionWorkingDirectory(state: StoredMissionState): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty directories fall back to the next source.
+  return state.workingDirectory || state.cwd || '';
+}
+
+function sessionTitle(start: StoredSessionStart, providerSessionId: string): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
+  return start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+}
+
 export function loadMissionControlSessions(
   options: HistoricalSummaryFilter = {},
 ): HistoricalSession[] {
@@ -185,7 +195,7 @@ export function loadMissionControlSessions(
       if (!workspaceCwds && !options.includePlainChats) return true;
       const state = readJson<StoredMissionState>(join(dir, 'state.json'));
       return shouldIncludeCwd(
-        state.workingDirectory || state.cwd || '',
+        missionWorkingDirectory(state),
         workspaceCwds,
         options.includePlainChats,
       );
@@ -201,7 +211,7 @@ export function loadSessionHistory(): SessionHistoryEntry[] {
     const start = readSessionStart(path, stat.size);
     rows.push({
       providerSessionId,
-      title: start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`,
+      title: sessionTitle(start, providerSessionId),
       cwd: start.cwd,
       modifiedTime: stat.mtimeMs,
       createdTime: stat.birthtimeMs,
@@ -873,8 +883,10 @@ export function readFactoryDefaults(home = homedir()): FactoryDefaults {
   const session = objectValue(settings.sessionDefaultSettings) ?? {};
   const missionControlSettings = objectValue(settings.missionModelSettings) ?? {};
   return {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     modelId: stringValue(session.model) || stringValue(session.modelId),
     reasoningEffort: reasoningValue(session.reasoningEffort),
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     compactionModel: stringValue(settings.compactionModel) || stringValue(session.compactionModel),
     compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
     compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
@@ -921,14 +933,17 @@ function loadMissionControlSession(dir: string): HistoricalSession & {
   const progress = storedProgress.map(publicProgressEntry);
   const features = readFeatures(join(dir, 'features.json'));
   const dirId = basename(dir);
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
   const providerSessionId = state.baseSessionId || dirId;
   const firstProgressTitle = progress.find((p) => p.title)?.title;
-  const cwd = state.workingDirectory || state.cwd || '';
+  const cwd = missionWorkingDirectory(state);
+  /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty titles and mission IDs fall back to the next source. */
   const title =
     firstProgressTitle ||
     state.missionId ||
     lastPathSegment(cwd) ||
     `Mission ${providerSessionId.slice(0, 8)}`;
+  /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
   const createdAt =
     dateMs(state.createdAt) || dateMs(progress[0]?.timestamp) || statSync(dir).birthtimeMs;
   const updatedAt =
@@ -947,6 +962,7 @@ function loadMissionControlSession(dir: string): HistoricalSession & {
       interactionMode: 'agi',
       role: 'primary',
       title,
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty progress messages use the title.
       goal: progress[0]?.message || title,
       cwd,
       workspaceKind: cwd ? 'folder' : 'none',
@@ -972,6 +988,7 @@ function readMissionModelSettings(dir: string): FactoryDefaults {
   if (!existsSync(path)) return {};
   const settings = readJson<StoredModelSettings>(path);
   return {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     modelId: settings.model || settings.modelId,
     reasoningEffort: reasoningValue(settings.reasoningEffort),
     compactionModel: settings.compactionModel,
@@ -991,6 +1008,7 @@ function readProgress(path: string): StoredProgressEntry[] {
     const handoff = objectValue(entry.handoff);
     const validation = objectValue(entry.validation);
     return {
+      /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty progress fields fall back to the next source. */
       type: stringValue(entry.type) || 'entry',
       timestamp: stringValue(entry.timestamp) || new Date().toISOString(),
       title: stringValue(entry.title) || titleFromProgressType(stringValue(entry.type)),
@@ -999,6 +1017,7 @@ function readProgress(path: string): StoredProgressEntry[] {
         stringValue(handoff?.salientSummary) ||
         stringValue(validation?.summary) ||
         stringValue(entry.reason),
+      /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
       featureId: stringValue(entry.featureId),
       ...whenString(entry.workerSessionId, (workerProviderSessionId) => ({
         workerProviderSessionId,
@@ -1260,7 +1279,7 @@ function summarizeSessionFile(
   // App-owned transcripts persist the prompt and provider binding before a reply.
   const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
   if (!classification || !isDurable) return { summary: null, ...cachedLaunch };
-  const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+  const title = sessionTitle(start, providerSessionId);
   const droidProfile = altSessionRoots().find(({ root }) =>
     file.path.startsWith(`${root}${sep}`),
   )?.profile;
@@ -1368,6 +1387,7 @@ function readSessionModelSettings(
     // Once the sidecar names the model the head line is history, including when
     // it names none: that is the record of a chat reset to its provider's own
     // default, not an absent setting to fall back from.
+    /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty model names and reasoning efforts fall back to the next source. */
     modelId: Object.hasOwn(sidecarSettings, 'modelId')
       ? stringValue(sidecarSettings.modelId)
       : stringValue(sidecarSettings.model) ||
@@ -1380,15 +1400,18 @@ function readSessionModelSettings(
         ? stringValue(sidecarSettings.reasoningEffort)
         : stringValue(settings.reasoningEffort) || stringValue(raw.reasoningEffort),
     ),
+    /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
     contextWindowTokens: contextWindowTokensValue(
       sidecarSettings.contextWindowTokens !== undefined
         ? sidecarSettings.contextWindowTokens
         : raw.contextWindowTokens,
     ),
+    /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source. */
     compactionModel:
       stringValue(sidecarSettings.compactionModel) ||
       stringValue(settings.compactionModel) ||
       stringValue(raw.compactionModel),
+    /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
     compactionTokenLimit:
       tokenLimitValue(sidecarSettings.compactionTokenLimit) ??
       tokenLimitValue(settings.compactionTokenLimit) ??
