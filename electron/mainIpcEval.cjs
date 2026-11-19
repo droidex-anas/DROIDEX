@@ -1,4 +1,4 @@
-// Readies main.cjs under the mainBootEval electron stub, then either calls its
+// Readies main.cjs and its owners under the mainBootEval electron stub, then calls
 // IPC handlers as the main window's top frame and as renderers they must reject,
 // or (argv[2] === 'window') checks the main window's guards and teardown.
 const assert = require('node:assert/strict');
@@ -81,8 +81,8 @@ async function senderCheck(handler, event) {
   return rejection ?? posted[0] ?? PASSED;
 }
 
-// Records what main.cjs asks of the modules that would spawn gh or ptys, and of
-// app lifecycle calls Electron only honours before ready.
+// Records what the main-process owners ask of modules that spawn gh or ptys,
+// and of app lifecycle calls Electron only honours before ready.
 function observeMain(electron) {
   const calls = [];
   const boot = { privilegedSchemes: [], protocolHandlers: new Map() };
@@ -308,7 +308,7 @@ async function checkMainWindow({ electron, channels, mainWindow, root, calls, bo
   await call('github-authenticate');
   assert.deepEqual(deviceCodes, [{ code: 'ABCD-1234' }]);
 
-  // The window closes last: afterwards main.cjs has no main window to address.
+  // The window closes last: afterwards mainWindow.cjs has no main window to address.
   const teardowns = {
     'renderer navigation': () => contents.emit('will-frame-navigate', {}, 'x', false, true),
     'renderer crash': () => contents.emit('render-process-gone', {}, { reason: 'crashed' }),

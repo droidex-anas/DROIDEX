@@ -66,7 +66,12 @@ function createAppUpdater(options) {
     return { status: 'downloaded' };
   }
 
-  return { check, downloadAndInstall };
+  function registerIpc(desktopIpc) {
+    desktopIpc.handle('app-check-update', check);
+    desktopIpc.handle('app-download-update', downloadAndInstall);
+  }
+
+  return { registerIpc, check, downloadAndInstall };
 }
 
 async function defaultFetchText(url) {

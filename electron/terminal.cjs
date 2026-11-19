@@ -1,5 +1,5 @@
 // Isolated PTY host for the utility-pane terminal. Owns every node-pty instance
-// for the app and exposes a small manager API that `electron/main.cjs` wires to
+// for the app and exposes a small manager API that `electron/terminalIpc.cjs` wires to
 // IPC channels. The module deliberately never imports Electron or renderer
 // concerns: events are delivered to caller-provided subscriber callbacks, so
 // the host can be unit-tested with mock PTYs and reused outside Electron.

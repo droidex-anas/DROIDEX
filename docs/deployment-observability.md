@@ -330,7 +330,7 @@ Set these for the signed release build. They are configured in the
 `macos-release` environment and consumed by `.github/workflows/release-macos.yml`,
 which passes them to `electron-builder.config.cjs`; that config embeds them in
 the packaged `package.json` under `datadog`, which `readBuildMetadata()` in
-`electron/main.cjs` reads at startup.
+`electron/appPaths.cjs` reads at startup.
 
 | Variable | Kind | Value |
 | --- | --- | --- |

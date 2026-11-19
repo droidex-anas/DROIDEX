@@ -1,5 +1,5 @@
-// Require-time boot of main.cjs under a Node `electron` stub. Does not ready
-// the app, create windows, dispatch IPC, or spawn the sidecar.
+// Require-time boot of main.cjs and its owners under a Node `electron` stub.
+// Does not ready the app, create windows, dispatch IPC, or spawn the sidecar.
 const Module = require('node:module');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');

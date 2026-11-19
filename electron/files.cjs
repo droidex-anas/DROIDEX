@@ -8,7 +8,7 @@
  *
  * This module is intentionally free of `require('electron')` at module load
  * so it can be unit-tested under plain Node. Callers in the main process
- * (electron/main.cjs) inject the Electron `shell` object when wiring up the
+ * (electron/filesIpc.cjs) inject the Electron `shell` object when wiring up the
  * `openDefault` / `revealInFolder` IPC handlers, which keeps these helpers
  * deterministic and testable.
  *
