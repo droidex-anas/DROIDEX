@@ -48,6 +48,11 @@ let nativeBrowserSeq = 0;
 const nextNativeBrowserRequestId = () =>
   `browser-native-${Date.now().toString(36)}-${(nativeBrowserSeq++).toString(36)}`;
 
+type BrowserCommand = Exclude<
+  Extract<ClientCommand, { type: `browser.${string}` }>,
+  { type: 'browser.close' }
+>;
+
 export class SessionBrowser {
   constructor(private readonly d: SessionBrowserDependencies) {}
 
@@ -65,7 +70,34 @@ export class SessionBrowser {
     });
   }
 
-  async open(cmd: Extract<ClientCommand, { type: 'browser.open' }>): Promise<void> {
+  async handle(cmd: BrowserCommand): Promise<void> {
+    switch (cmd.type) {
+      case 'browser.open':
+        await this.open(cmd);
+        return;
+      case 'browser.restore':
+        await this.restore(cmd);
+        return;
+      case 'browser.reload':
+        await this.reload(cmd);
+        return;
+      case 'browser.resizeViewport':
+        await this.resizeViewport(cmd);
+        return;
+      case 'browser.design.addReference':
+        await this.addReference(cmd);
+        return;
+      case 'browser.design.removeReferences':
+        this.d.browsers.removeReferences(cmd.appSessionId, cmd.ids);
+        return;
+      case 'browser.design.sendPrompt':
+        await this.sendDesignPrompt(cmd);
+        return;
+    }
+    cmd satisfies never;
+  }
+
+  private async open(cmd: Extract<ClientCommand, { type: 'browser.open' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
       this.d.browsers.open({
         ...cmd,
@@ -84,7 +116,7 @@ export class SessionBrowser {
     });
   }
 
-  async restore(cmd: Extract<ClientCommand, { type: 'browser.restore' }>): Promise<void> {
+  private async restore(cmd: Extract<ClientCommand, { type: 'browser.restore' }>): Promise<void> {
     await this.handleBrowser(undefined, () => {
       // A browser closed while the app was away is closed for it too.
       for (const appSessionId of this.d.browsers.restore(cmd.browsers))
@@ -92,13 +124,13 @@ export class SessionBrowser {
     });
   }
 
-  async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
+  private async reload(cmd: Extract<ClientCommand, { type: 'browser.reload' }>): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
       this.d.browsers.reload(this.requireBrowserAppSessionId(cmd.appSessionId)),
     );
   }
 
-  async resizeViewport(
+  private async resizeViewport(
     cmd: Extract<ClientCommand, { type: 'browser.resizeViewport' }>,
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, () =>
@@ -109,7 +141,7 @@ export class SessionBrowser {
     );
   }
 
-  async addReference(
+  private async addReference(
     cmd: Extract<ClientCommand, { type: 'browser.design.addReference' }>,
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
@@ -121,7 +153,7 @@ export class SessionBrowser {
     });
   }
 
-  async sendDesignPrompt(
+  private async sendDesignPrompt(
     cmd: Extract<ClientCommand, { type: 'browser.design.sendPrompt' }>,
   ): Promise<void> {
     await this.handleBrowser(cmd.appSessionId, async () => {
