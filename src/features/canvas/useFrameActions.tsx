@@ -51,53 +51,67 @@ export function useFrameActions(
     }),
     [appSessionId, canvasId],
   );
-  const actions: FrameActions = {
-    history,
-    canEdit: attached,
-    rename: (frame, name) =>
-      canvas.renameFrame(appSessionId, canvasId, {
-        mutationId: crypto.randomUUID(),
-        designId: frame.designId,
-        name,
-        expectedManifestVersion: frame.manifestVersion,
-      }),
-    picksIn: (frame) =>
-      picks.filter(
-        ({ canvasId: pickedOn, element }) =>
-          pickedOn === canvasId &&
-          element.designId === frame.designId &&
-          element.revisionId === frame.revisionId,
-      ),
-    makeVariants: (frame, choice, picked) =>
-      variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice, picked)),
-    variantWork: variantSets.viewOf(canvasId),
-    // While the agent works, a variant may be partway to what it was asked to become.
-    sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),
-    applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),
-    saveToLibrary: (frame) => {
-      if (frame.revisionId)
-        setOpen({
-          kind: 'save',
-          revision: { designId: frame.designId, revisionId: frame.revisionId },
-          frameName: frame.name,
-        });
-    },
-    exportImage: (frame) => {
-      const revision = exportableRevision(frame);
-      if (revision) setOpen({ kind: 'export', revision, frameName: frame.name, rect: frame.rect });
-    },
-    exportToProject: hasProject
-      ? (frame) => {
-          if (frame.revisionId)
-            setOpen({
-              kind: 'project',
-              revision: { designId: frame.designId, revisionId: frame.revisionId },
-              frameName: frame.name,
-              appSessionId,
-            });
-        }
-      : null,
-  };
+  const actions = useMemo(
+    (): FrameActions => ({
+      history,
+      canEdit: attached,
+      rename: (frame, name) =>
+        canvas.renameFrame(appSessionId, canvasId, {
+          mutationId: crypto.randomUUID(),
+          designId: frame.designId,
+          name,
+          expectedManifestVersion: frame.manifestVersion,
+        }),
+      picksIn: (frame) =>
+        picks.filter(
+          ({ canvasId: pickedOn, element }) =>
+            pickedOn === canvasId &&
+            element.designId === frame.designId &&
+            element.revisionId === frame.revisionId,
+        ),
+      makeVariants: (frame, choice, picked) =>
+        variantSets.make(canvasId, frame.designId, () => makeVariants(frame, choice, picked)),
+      variantWork: variantSets.viewOf(canvasId),
+      // While the agent works, a variant may be partway to what it was asked to become.
+      sourceOf: (frame) => (attached && !agentWorking ? variantSetSource(frames, frame) : null),
+      applyVariant: (variant, source) => variantSets.apply(appSessionId, canvasId, variant, source),
+      saveToLibrary: (frame) => {
+        if (frame.revisionId)
+          setOpen({
+            kind: 'save',
+            revision: { designId: frame.designId, revisionId: frame.revisionId },
+            frameName: frame.name,
+          });
+      },
+      exportImage: (frame) => {
+        const revision = exportableRevision(frame);
+        if (revision)
+          setOpen({ kind: 'export', revision, frameName: frame.name, rect: frame.rect });
+      },
+      exportToProject: hasProject
+        ? (frame) => {
+            if (frame.revisionId)
+              setOpen({
+                kind: 'project',
+                revision: { designId: frame.designId, revisionId: frame.revisionId },
+                frameName: frame.name,
+                appSessionId,
+              });
+          }
+        : null,
+    }),
+    [
+      appSessionId,
+      canvasId,
+      history,
+      attached,
+      picks,
+      makeVariants,
+      agentWorking,
+      frames,
+      hasProject,
+    ],
+  );
 
   return { actions, dialog: open && dialogFor(canvasId, open, close) };
 }

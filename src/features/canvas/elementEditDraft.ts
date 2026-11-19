@@ -62,7 +62,7 @@ export function previewStyle(
   value: string,
   drawn: string,
 ): ElementEditDraft {
-  if (!STYLE_PROPERTIES.includes(property)) return draft;
+  if (!STYLE_PROPERTIES.includes(property) || draft.values[property] === value) return draft;
   return {
     ...draft,
     values: { ...draft.values, [property]: value },

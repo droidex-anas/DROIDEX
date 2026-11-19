@@ -103,6 +103,7 @@ export function BoardWorld({
     onResize,
     onDesignPress,
     onFocusLabel,
+    onTagFrames,
   });
   return (
     <div ref={stage.attach} className="absolute left-0 top-0" style={{ transformOrigin: '0 0' }}>
@@ -134,7 +135,7 @@ export function BoardWorld({
           onExitInteract={handlers.onExitInteract}
           onOpenSource={onOpenSource}
           tagged={pinnedIds?.has(frame.designId) ?? false}
-          onTagFrames={onTagFrames}
+          onTagFrames={onTagFrames ? handlers.onTagFrames : undefined}
           actions={frameActions}
           onDelete={handlers.onDelete}
           onHold={handlers.onHold}
@@ -169,6 +170,7 @@ type FrameHandlers = Pick<
   | 'onEditEnter'
   | 'onFocusLabel'
   | 'onExitInteract'
+  | 'onTagFrames'
 >;
 
 /**
@@ -187,6 +189,7 @@ function useFrameHandlers(
     | 'onResize'
     | 'onDesignPress'
     | 'onFocusLabel'
+    | 'onTagFrames'
   >,
 ): FrameHandlers {
   const latest = useRef(inputs);
@@ -225,6 +228,9 @@ function useFrameHandlers(
       },
       onFocusLabel: (frame) => {
         now().onFocusLabel(frame);
+      },
+      onTagFrames: (designIds) => {
+        now().onTagFrames?.(designIds);
       },
       onExitInteract: () => {
         now().dispatch({ type: 'escape' });
