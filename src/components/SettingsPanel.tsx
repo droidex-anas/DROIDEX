@@ -547,8 +547,6 @@ export default function SettingsPanel() {
   );
 }
 
-/* theme application lives in ../lib/theme (imported above) */
-
 function ProfileSection() {
   const { state, error } = useRemoteAccess();
   if (!state) return <p className="text-body text-muted">{error || 'Loading profile…'}</p>;
