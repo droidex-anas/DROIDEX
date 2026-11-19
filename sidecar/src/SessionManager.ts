@@ -1392,11 +1392,7 @@ export class SessionManager {
   }
 
   private handleUnknownCommand(cmd: ClientCommand): void {
-    // Wire commands are JSON-parsed without runtime validation, so a
-    // renderer running newer code than this sidecar (e.g. a dev app that
-    // kept running across a sidecar rebuild) can send a command this
-    // build does not know. Fail visibly instead of falling through
-    // silently while the caller waits out its timeout.
+    // The bridge does not reject unknown command types, so reply explicitly to newer renderers.
     const unknown = cmd as { type?: unknown; requestId?: unknown };
     const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
     // Echo the command's requestId so a waiter rejects only for its own
