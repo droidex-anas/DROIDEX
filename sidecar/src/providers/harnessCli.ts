@@ -134,10 +134,7 @@ function findInstall(provider: HarnessCliProvider): InstalledCli | undefined {
   const path = resolveHarnessPath(provider);
   if (!path) return undefined;
   try {
-    const install = locateInstall(path, realpathSync(path));
-    return provider === 'devin'
-      ? { ...install, update: { command: path, args: ['update'] } }
-      : install;
+    return locateInstall(path, realpathSync(path));
   } catch {
     return undefined;
   }
