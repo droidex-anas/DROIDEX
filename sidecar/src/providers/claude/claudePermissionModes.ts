@@ -1,6 +1,6 @@
 import type { PermissionMode, Query } from '@anthropic-ai/claude-agent-sdk';
 
-import type { Autonomy } from '../../protocol.js';
+import type { Autonomy } from '@droidex/protocol';
 import { SessionAutonomy } from '../sessionAutonomy.js';
 import { claudePermissionMode } from './claudePermissions.js';
 

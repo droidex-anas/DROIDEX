@@ -8,7 +8,7 @@ import { lineAt, sourceTokens } from './designSystemTokens.js';
 import { PRIMITIVES_TSX } from './presets/primitives.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 import { KIT_CSS } from './presets/styles.js';
-import type { CanvasDiagnostic, RevisionRef, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, RevisionRef, SourceFiles } from '@droidex/protocol';
 import { sourceFilesSchema } from './schema.js';
 
 export interface ExtractDesignSystemInput {

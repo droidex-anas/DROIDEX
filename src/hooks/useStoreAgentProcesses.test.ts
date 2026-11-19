@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer } from './useStore';
-import type { AgentProcess } from '../types/bridge';
+import type { AgentProcess } from '@droidex/protocol';
 
 function process(overrides: Partial<AgentProcess> = {}): AgentProcess {
   return {

@@ -10,7 +10,7 @@ import { useStoreApi, useStoreDispatch, useStoreSelector } from '../../hooks/use
 import { livePage, pageShowsChat, tabPage } from '../tabs/tabStrip';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { recentAttachedChat } from './canvasChats';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 
 export function useOpenCanvas(): {
   /** Opens this canvas, starting a chat on it when none of its chats is loaded here. */

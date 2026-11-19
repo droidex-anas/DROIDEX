@@ -3,7 +3,7 @@
 // that picks, shows or sends an element uses this one shape.
 
 import type { PreviewFinding } from './previewDocument';
-import type { CanvasFrame, FrameRect, OutlineNode } from './protocol';
+import type { CanvasFrame, FrameRect, OutlineNode } from '@droidex/protocol';
 
 export interface PickedElement {
   designId: string;

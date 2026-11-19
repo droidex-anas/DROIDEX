@@ -5,6 +5,13 @@
 // in memory and compiled once while it is kept. An agent's unsaved kit is
 // checked through the same compiler and never kept.
 
+import type {
+  KitPreview,
+  CanvasDiagnostic,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+  PropPick,
+} from '@droidex/protocol';
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
 import { buildFailure } from './canvasBuildFailures.js';
 import { canvasError } from './canvasError.js';
@@ -16,18 +23,8 @@ import {
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readProposedSystem } from './designSystemProposals.js';
 import { KIT_ENTRY, readDesignSystem, type DesignSystem } from './designSystems.js';
-import { readKitCatalog, type CatalogEntry, type KitFailure, type PropPick } from './kitCatalog.js';
-import type {
-  CanvasDiagnostic,
-  DesignSystemProposalRef,
-  DesignSystemRef,
-  PreviewArtifact,
-} from './protocol.js';
 
-/** What a preview tile loads, or the diagnostics it shows instead. */
-export type KitPreview =
-  | { status: 'ready'; artifact: PreviewArtifact }
-  | { status: 'failed'; diagnostics: CanvasDiagnostic[] };
+import { readKitCatalog, type CatalogEntry, type KitFailure } from './kitCatalog.js';
 
 type KitCompiler = Pick<CompilerWorker, 'compile' | 'checkCatalog' | 'terminate'>;
 

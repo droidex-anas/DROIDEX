@@ -6,8 +6,9 @@ import type {
   ReasoningEffort,
   SessionInteractionMode,
   SessionSummary,
-} from '../../protocol.js';
-import { DEFAULT_PROVIDER, type ProviderKind } from '../providerKind.js';
+  ProviderKind,
+} from '@droidex/protocol';
+import { DEFAULT_PROVIDER } from '../providerKind.js';
 
 // What a Droid session launches with beyond the settings every provider shares.
 export type DroidLaunchSettings = Pick<

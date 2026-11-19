@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import { initialState, reducer, type AppState } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';

@@ -1,5 +1,5 @@
 import type { DroidSession } from '@factory/droid-sdk';
-import type { FactoryDefaultSettings } from './protocol.js';
+import type { FactoryDefaultSettings } from '@droidex/protocol';
 
 export type CompactType = 'auto' | 'manual';
 

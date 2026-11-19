@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { ProviderUsage } from '../../types/bridge';
+import type { ProviderUsage } from '@droidex/protocol';
 import { UsagePanel } from './UsagePanel';
 
 test('Alt usage shows its limitation instead of the main account meters or actions', () => {

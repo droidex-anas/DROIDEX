@@ -18,7 +18,7 @@ import {
   selectorScopes,
   type TokenScope,
 } from './designSystemTokens.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 
 export type Mode = 'light' | 'dark';
 

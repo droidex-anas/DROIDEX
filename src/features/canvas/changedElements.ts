@@ -2,7 +2,7 @@
 // replaced and the source it wrote. An element's id is minted per revision, so
 // its source text is what carries over from one revision to the next.
 
-import type { SourceElement, SourceFiles } from './protocol';
+import type { SourceElement, SourceFiles } from '@droidex/protocol';
 
 /**
  * The elements of the written revision whose source the revision before held

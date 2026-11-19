@@ -15,7 +15,7 @@ import {
   readCanvasSource,
   subscribeCanvasSource,
 } from './canvasSourceStore';
-import type { WriteReceipt } from './protocol';
+import type { WriteReceipt } from '@droidex/protocol';
 
 const ENTRY = 'App.tsx';
 

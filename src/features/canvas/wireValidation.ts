@@ -18,7 +18,7 @@ import {
   isTokenName,
   isTokenValue,
 } from './designSystemDocumentValidation';
-import type { CanvasEvent } from './protocol';
+import type { CanvasEvent } from '@droidex/protocol';
 import {
   boundedList,
   boundedText,

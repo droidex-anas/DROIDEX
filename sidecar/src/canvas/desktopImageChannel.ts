@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { BrowserChannelProcess } from '../browser/desktopBrowserChannel.js';
 import { ownedAssetSchema } from './canvasAssets.js';
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
-import type { OwnedAsset } from './protocol.js';
+import type { OwnedAsset } from '@droidex/protocol';
 
 // Electron main decodes raster images, so an image an agent names in its
 // project goes through the same importer as one the user picks: main reads and

@@ -12,7 +12,7 @@ import { canvasError, CanvasCommandError, storageFailure } from './canvasError.j
 import type { ExportFile } from './canvasExport.js';
 import type { DesignSystem } from './designSystems.js';
 import { exists, flushAncestors, refuseLinkedPath, systemsRoot } from './designSystemStorage.js';
-import type { OwnedAsset } from './protocol.js';
+import type { OwnedAsset } from '@droidex/protocol';
 
 const KIT_ASSET_REFERENCE = /kit-asset:([0-9a-f]{64})\b/g;
 const MISSING_KIT_ASSET = 'An image this design system uses is not in DROIDEX. Import it first.';

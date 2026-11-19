@@ -4,7 +4,7 @@
 // render-only feed props, so changes apply live without a restart.
 
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ToolActivityDensity, ToolActivitySettings } from '../lib/toolActivity';
 import { GroupLabel, SettingRow } from './settingsKit';
 import { Switch } from './Switch';

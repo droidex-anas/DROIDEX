@@ -14,7 +14,7 @@ import {
   type StoredMessageLine,
   type StoredSessionStart,
 } from './sessionTranscriptParser.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from '@droidex/protocol';
 import { readSessionNotices, sessionNoticesRevision } from './sessionNotices.js';
 import {
   CanvasToolPresentation,

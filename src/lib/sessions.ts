@@ -1,4 +1,4 @@
-import type { ChildSessionSummary, SessionSummary } from '../types/bridge';
+import type { ChildSessionSummary, SessionSummary } from '@droidex/protocol';
 import { childSessionIsLive } from './childSessions';
 
 // Phases where the session is waiting on the user (or finished) — never "working".

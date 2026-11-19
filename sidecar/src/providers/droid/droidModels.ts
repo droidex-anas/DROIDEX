@@ -1,5 +1,6 @@
 import type { FactorySession } from '../../DroidRuntime.js';
-import { droidProfileLabel, type DroidProfile } from '../../droidProfiles.js';
+import type { DroidProfile } from '@droidex/protocol';
+import { droidProfileLabel } from '../../droidProfiles.js';
 import { mergeModelCatalog } from '../../modelCatalog.js';
 
 export function requireAltDroidModel(

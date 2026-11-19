@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
 import { ScheduleControls } from './ScheduleControls';
 import { AutomationRequestUnconfirmedError } from './client';
-import type { AutomationSchedule } from './types';
+import type { AutomationSchedule } from '@droidex/protocol';
 
 export default function SchedulePromptPopover({
   anchorRef,

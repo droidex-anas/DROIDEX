@@ -1,7 +1,11 @@
-import type { BridgeFeature, SessionSummary } from './protocol.js';
-import type { ReasoningEffort } from './protocol.js';
-import { DROID_PROFILES } from './droidProfiles.js';
-import { PROVIDER_KINDS } from './providers/providerKind.js';
+import {
+  type BridgeFeature,
+  type SessionSummary,
+  type ReasoningEffort,
+  DROID_PROFILES,
+  PROVIDER_KINDS,
+} from '@droidex/protocol';
+
 import { objectValue, stringValue } from './values.js';
 
 interface PersistedSessionFileSummary {

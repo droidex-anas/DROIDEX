@@ -4,7 +4,8 @@
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import type { CanvasManifest } from './canvasManifest.js';
-import type { CanvasScope, RevisionAuthor, RevisionSummary } from './protocol.js';
+import type { RevisionAuthor, RevisionSummary } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 import { canvasIdentifierSchema, designSystemRefSchema, sourcePathSchema } from './schema.js';
 
 export const REVISION_METADATA_VERSION = 1;

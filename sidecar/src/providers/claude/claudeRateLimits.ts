@@ -10,7 +10,7 @@ import {
   type SDKRateLimitInfo,
 } from '@anthropic-ai/claude-agent-sdk';
 
-import type { UsageExtra, UsageLimit } from '../../protocol.js';
+import type { UsageExtra, UsageLimit } from '@droidex/protocol';
 import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
 import { futureResetAt, resetAtMillis, UsageLimitError, windowUsage } from '../usageLimit.js';
 

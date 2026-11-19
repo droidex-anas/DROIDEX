@@ -11,7 +11,13 @@ import {
   type ThreadState,
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type {
+  ServerEvent,
+  SessionSummary,
+  ProjectStep,
+  ProjectView,
+  ThreadInput,
+} from '@droidex/protocol';
 import { findPlanStep, planFromSteps, stepNumber } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
@@ -33,11 +39,8 @@ import {
 } from './threadStart.js';
 import type {
   Project,
-  ProjectStep,
   ProjectTodo,
-  ProjectView,
   ThreadDelivery,
-  ThreadInput,
   ThreadSettings,
   ThreadSpawnInput,
   RuntimeLoad,

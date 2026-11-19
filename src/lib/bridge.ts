@@ -9,7 +9,7 @@ import {
   type ClientCommand,
   type ServerEvent,
   type ServerEventBatch,
-} from '../types/bridge';
+} from '@droidex/protocol';
 
 type Listener = (event: ServerEvent) => void;
 // `fromSnapshot` marks the events a fresh stream starts from: what the last

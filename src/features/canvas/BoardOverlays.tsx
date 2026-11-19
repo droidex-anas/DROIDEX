@@ -13,7 +13,7 @@ import type { PickedOnBoard } from './elementOnBoard';
 import { ElementOutlines, type PickOutline } from './ElementOutlines';
 import { PathGrips } from './paths/PathGrips';
 import type { PreviewRuns } from './previewRuns';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { SelectionBounds } from './SelectionBounds';
 import type { ReadSource } from './useChangeTours';
 import type { ElementEditor } from './useElementEditor';

@@ -30,7 +30,7 @@ import type { FromProject } from './NewDesignSystemMenu';
 import { NewDesignSystemDialog } from './NewDesignSystemDialog';
 import { useOpenCanvasPane } from './openCanvasPane';
 import type { PreviewMode } from './PreviewModeToggle';
-import type { DesignSystemSource, DesignSystemSummary } from './protocol';
+import type { DesignSystemSource, DesignSystemSummary } from '@droidex/protocol';
 import { useKitList } from './useKitList';
 
 const FROM_PROJECT_PROMPT = 'Create a design system from this project.';

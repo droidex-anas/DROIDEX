@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import type { ChildStatus } from '../../types/bridge';
+import type { ChildStatus } from '@droidex/protocol';
 import { AGENT_STATUS_LABEL } from './agentMonitorModel';
 
 export type AgentPillStatus = ChildStatus | 'queued';

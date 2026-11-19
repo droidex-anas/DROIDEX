@@ -1,4 +1,4 @@
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { AGENTS, type AgentStatus } from './agents';
 import type { SetupStepId } from './StepProgress';
 import type { InstallRun } from './useAgentSetup';

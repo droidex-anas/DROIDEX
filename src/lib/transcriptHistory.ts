@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { composePrompt } from './composePrompt';
 import { promptWithSideChatReplies } from './sideChats';
 import { hasCompleteAppBlock, hasIncompleteAppBlock } from './appBlocks';

@@ -13,7 +13,7 @@ import {
   onCanvasPreviewShown,
   readCanvasVector,
 } from './captureCanvasImage';
-import type { RevisionRef } from './protocol';
+import type { RevisionRef } from '@droidex/protocol';
 import { SegmentedControl, type Segment } from './SegmentedControl';
 
 type Scale = 1 | 2 | 3;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ProviderStatus } from '../protocol.js';
-import type { ProviderKind } from './providerKind.js';
+import type { ProviderStatus, ProviderKind } from '@droidex/protocol';
+
 import { ProviderProbes, type ProviderProbe } from './providerProbes.js';
 
 test('a provider that answers is announced while its sibling is still probing', async () => {

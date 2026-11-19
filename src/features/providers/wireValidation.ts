@@ -1,4 +1,4 @@
-import { DROID_PROFILES, PROVIDER_KINDS, PROVIDER_READINESS } from '../../types/bridge';
+import { DROID_PROFILES, PROVIDER_KINDS, PROVIDER_READINESS } from '@droidex/protocol';
 
 // Wire validation for the provider surface, kept beside the feature the way
 // features/automations/wireValidation.ts is. Models live here too: a catalog is

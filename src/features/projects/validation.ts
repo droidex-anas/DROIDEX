@@ -1,5 +1,5 @@
 import { isDroidProfile } from '../providers/wireValidation';
-import type { ProjectStep, ProjectThread, ProjectView } from './types';
+import type { ProjectStep, ProjectThread, ProjectView } from '@droidex/protocol';
 
 export function isProjectView(value: unknown): value is ProjectView {
   if (!record(value) || !isProjectMetadata(value) || !isThreadList(value.threads)) return false;

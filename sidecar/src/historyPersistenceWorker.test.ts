@@ -11,7 +11,7 @@ import { HistoryWorkerClient } from './HistoryWorkerClient.js';
 import { HistoryPersistence } from './HistoryPersistence.js';
 import { SESSION_INDEX_FILENAME, SESSION_SEARCH_INDEX_FILENAME } from './history.js';
 import type { HistoryPersistenceBatch } from './historyPersistenceProtocol.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import {
   HistorySearchUnavailableError,
   isHistorySearchUnavailableError,

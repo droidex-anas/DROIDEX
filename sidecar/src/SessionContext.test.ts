@@ -4,7 +4,7 @@ import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 import {
   SessionContext,
   type ChildOperationTarget,

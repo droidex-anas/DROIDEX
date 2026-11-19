@@ -9,7 +9,7 @@ import { SessionEventFlow } from './SessionEventFlow.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { CodexEventMapper } from './providers/codex/codexEvents.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function ev(overrides: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'kind'>): TranscriptEvent {
   return {

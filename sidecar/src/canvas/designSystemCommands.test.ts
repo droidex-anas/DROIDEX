@@ -7,14 +7,18 @@ import { startBridgeServer } from '../bridgeServer.js';
 import { errorOf, harness, okReply, type Harness } from '../testing/canvasBridgeSupport.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { CompilerWorker } from './compiler.js';
-import type { DesignSystemDocumentView } from './designSystemCommands.js';
+import type {
+  DesignSystemDocumentView,
+  DesignSystemSource,
+  CanvasDiagnostic,
+  DesignSystemVersionRef,
+} from '@droidex/protocol';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { proposeDesignSystem } from './designSystemProposals.js';
-import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
+import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 import { PRICING_TSX, SAMPLE_KIT } from '../testing/sampleKit.js';
-import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
 
 pinScratchProfile();
 

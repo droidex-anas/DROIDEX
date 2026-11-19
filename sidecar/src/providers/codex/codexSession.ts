@@ -4,8 +4,14 @@
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SdkMcpServer } from '@factory/droid-sdk';
 import { CANVAS_MCP_SERVER_NAME } from '../../canvas/canvasMcpNames.js';
-import type { Autonomy, SessionPurpose, SessionSummary } from '../../protocol.js';
-import type { ProviderMention, SkillInfo } from '../catalog.js';
+import type {
+  Autonomy,
+  SessionPurpose,
+  SessionSummary,
+  ProviderMention,
+  SkillInfo,
+} from '@droidex/protocol';
+
 import type { ProviderInteractions } from '../interactions.js';
 import type {
   DelegatedTurnEnd,

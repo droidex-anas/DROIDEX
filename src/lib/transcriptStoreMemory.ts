@@ -4,7 +4,7 @@ import type {
   ChildSessionStore,
   SessionRestore,
 } from '../hooks/storeChildSession';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { sessionIsLive } from './sessions';
 import { ingestTranscriptEvents, normalizeTranscriptUpdate } from './transcriptIngestion';
 import { nextTranscriptMutation, type TranscriptMutationChange } from './transcriptMutation';

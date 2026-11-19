@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { TranscriptEvent } from '../../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
 

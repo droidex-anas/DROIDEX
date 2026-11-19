@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ServerEvent } from '../protocol.js';
-import type { SidebarRequest, SidebarRow } from './protocol.js';
+import type { ServerEvent, SidebarRequest, SidebarRow } from '@droidex/protocol';
+
 import { SIDEBAR_REQUEST_TIMEOUT_MS, SidebarRequests } from './sidebarRequests.js';
 
 function harness() {

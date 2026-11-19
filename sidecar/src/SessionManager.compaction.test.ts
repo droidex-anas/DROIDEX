@@ -5,7 +5,7 @@ import test from 'node:test';
 
 import { ContextStatsAccuracy } from '@factory/droid-sdk';
 
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import type { HistoricalSummaryFilter } from './history.js';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';

@@ -10,7 +10,7 @@ import {
   type StoredMessageLine,
   type StoredSessionStart,
 } from './sessionTranscriptParser.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
 import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 

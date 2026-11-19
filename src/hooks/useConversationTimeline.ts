@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { FeedItem } from '../components/chatFeed';
 import { promptAnchorsFromItems, type ConversationAnchor } from '../components/chatFeedTurns';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { SessionRestoreStatus } from './storeChildSession';
 
 const TIMELINE_TARGET_ANCHORS = 12;

@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 export function isChildSessionTool(name?: string, args?: unknown): boolean {
   if (/\b(task|agent|subagent|delegate|workflow)\b/i.test(name ?? '')) return true;

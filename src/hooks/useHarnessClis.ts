@@ -3,7 +3,7 @@ import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
 import { bridge } from '../lib/bridge';
 import { checkHarnessClis, updateHarnessCli } from '../lib/commands';
 import { toast } from '../lib/toast';
-import type { HarnessCliProvider, HarnessCliState } from '../types/bridge';
+import type { HarnessCliProvider, HarnessCliState } from '@droidex/protocol';
 
 const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex'];
 

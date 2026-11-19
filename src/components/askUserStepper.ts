@@ -6,7 +6,7 @@
 // Answers are keyed by the question's own index, not by step position, so
 // stepping back and forth never reassigns an answer to a different question.
 
-import type { QuestionAnswer, SessionQuestion } from '../types/bridge';
+import type { QuestionAnswer, SessionQuestion } from '@droidex/protocol';
 
 /** What one question is holding: what was picked, what was typed, and whether
     the type-your-own field is open. */

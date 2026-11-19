@@ -4,7 +4,7 @@
 // canonical: it is the latest report per design, for whichever revision ran.
 
 import { designKey } from './canvasBuildStates.js';
-import type { CanvasFrame, PreviewReport } from './protocol.js';
+import type { CanvasFrame, PreviewReport } from '@droidex/protocol';
 
 type PreviewListener = (canvasId: string, report: PreviewReport) => void;
 

@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent, AutomationProposal } from '@droidex/protocol';
 import { compactError, findProposalForCall } from './proposalCardState';
 import { automationProposalIdFromText } from './toolNames';
-import type { AutomationProposal } from './types';
 
 test('proposal cards decode automation JSON and MCP text results without guessing IDs', () => {
   const result = JSON.stringify({ ok: true, proposalId: 'p1' });

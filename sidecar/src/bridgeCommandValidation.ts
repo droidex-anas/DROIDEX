@@ -1,4 +1,4 @@
-import { DROID_PROFILES } from './droidProfiles.js';
+import { DROID_PROFILES } from '@droidex/protocol';
 import { assertValidInteractionResponse } from './interactionResponses.js';
 import { assertValidResponseFormat } from './appPrompt.js';
 import { assertValidMentions } from './providers/catalog.js';

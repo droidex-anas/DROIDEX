@@ -30,7 +30,7 @@ import {
 } from './designSystemAdherenceKit.js';
 import { AUTO_DESIGN_SYSTEM_REF, type DesignSystem } from './designSystems.js';
 import { arbitraryUtility, withoutVariants } from './tailwindClasses.js';
-import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from '@droidex/protocol';
 
 export type AdherenceResult =
   | { status: 'passed'; diagnostics: CanvasDiagnostic[] }

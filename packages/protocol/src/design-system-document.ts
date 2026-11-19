@@ -1,7 +1,3 @@
-// Design system document DTOs, mirrored by hand from
-// sidecar/src/canvas/designSystemDocument.ts; designSystemDocument.test.ts there
-// stops compiling when the two drift.
-
 export type TokenKind =
   | 'colors'
   | 'typography'

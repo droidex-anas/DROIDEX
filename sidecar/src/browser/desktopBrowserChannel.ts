@@ -1,4 +1,4 @@
-import type { BrowserNativeRequest, BrowserNativeResult } from '../protocol.js';
+import type { BrowserNativeRequest, BrowserNativeResult } from '@droidex/protocol';
 import { boundedInt } from '../values.js';
 
 // The desktop app's main process owns the browser pages, and spawns this

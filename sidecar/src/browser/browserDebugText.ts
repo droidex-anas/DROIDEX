@@ -5,7 +5,7 @@ import type {
   BrowserConsoleEvent,
   BrowserElementInspection,
   BrowserNetworkEvent,
-} from './types.js';
+} from '@droidex/protocol';
 
 const LEVELS = ['debug', 'info', 'warning', 'error'];
 

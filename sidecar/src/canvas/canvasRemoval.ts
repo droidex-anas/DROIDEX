@@ -19,7 +19,7 @@ import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import type { CanvasWatches } from './canvasWatches.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
-import type { CanvasCommand, CanvasRemovalPreview, CanvasReply } from './protocol.js';
+import type { CanvasCommand, CanvasRemovalPreview, CanvasReply } from '@droidex/protocol';
 
 // Not an identifier, so a directory on its way out is never loaded as a canvas.
 const REMOVED_PREFIX = '.removed-';

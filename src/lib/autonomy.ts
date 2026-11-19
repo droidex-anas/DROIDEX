@@ -1,4 +1,4 @@
-import type { Autonomy, ProviderKind } from '../types/bridge';
+import type { Autonomy, ProviderKind } from '@droidex/protocol';
 
 // The four autonomy levels are the app's four permission modes, in one
 // vocabulary every harness speaks. The persisted app default lives in

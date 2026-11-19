@@ -8,7 +8,7 @@ import { Button } from '../../components/ui/Button';
 import { PlanMeter, ProjectPlan } from './ProjectPlan';
 import { AttentionThreadRow, ThreadRow } from './ThreadRow';
 import { finishedSteps, threadGroups, type ThreadRow as ThreadRowModel } from './threadBoard';
-import type { ProjectDone, ProjectStep } from './types';
+import type { ProjectDone, ProjectStep } from '@droidex/protocol';
 import { projectTimeline } from './threadGreeting';
 
 /* The Threads list: the project, how long it has run and how far its plan has

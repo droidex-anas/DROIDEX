@@ -1,5 +1,5 @@
 import { LEDGER_LIMITS } from './store.js';
-import type { ProjectStep } from './types.js';
+import type { ProjectStep } from '@droidex/protocol';
 
 /** Retains existing identities through reordering; explicit ids also survive renaming. */
 export function planFromSteps(

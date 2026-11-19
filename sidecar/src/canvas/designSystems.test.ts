@@ -11,6 +11,7 @@ import { CanvasCommandError } from './canvasError.js';
 import { CompilerWorker } from './compiler.js';
 import { buildDocument, type DocumentPart } from './buildDocument.js';
 import { kitModes } from './designSystemDocument.js';
+import type { SavedBy } from '@droidex/protocol';
 import {
   DESIGN_SYSTEM_LIMITS,
   designSystemSchema,
@@ -20,7 +21,6 @@ import {
   saveDesignSystem,
   setDesignSystemDeleted,
   type DesignSystem,
-  type SavedBy,
 } from './designSystems.js';
 import { CANVAS_LIMITS } from './schema.js';
 import { DROIDEX_KIT } from './presets/droidexKit.js';

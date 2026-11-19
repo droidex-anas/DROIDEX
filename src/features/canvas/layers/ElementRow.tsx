@@ -21,7 +21,7 @@ import { cn } from '../../../components/ui/cn';
 import { Row, RowCaret } from '../../../components/ui/Row';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import type { PreviewNode } from '../previewDocument';
-import type { OutlineNode } from '../protocol';
+import type { OutlineNode } from '@droidex/protocol';
 import type { Drawn } from './drawnLayers';
 import { layerKind } from './elementKind';
 import { HIDE_KEY_LABEL } from './layerKeys';

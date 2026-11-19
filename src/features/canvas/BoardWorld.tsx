@@ -11,7 +11,7 @@ import type { CanvasPresence } from './canvasPresence';
 import { DesignFrame, type DesignFrameProps } from './DesignFrame';
 import type { FrameActions } from './FrameToolbar';
 import type { HeldFrames } from './heldFrames';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { toolbarRoom } from './toolbarPlacement';
 import type { useBoardPreviews } from './useBoardPreviews';
 import type { ElementEditor } from './useElementEditor';

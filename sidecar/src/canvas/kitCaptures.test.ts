@@ -5,7 +5,7 @@ import { errorOf, harness, okReply } from '../testing/canvasBridgeSupport.js';
 import { CANVAS_PNG, pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { SAMPLE_CATALOG_KIT } from '../testing/sampleKit.js';
 import { saveDesignSystem } from './designSystems.js';
-import type { DesignSystemRef, KitCaptureItem } from './protocol.js';
+import type { DesignSystemRef, KitCaptureItem } from '@droidex/protocol';
 
 pinScratchProfile();
 

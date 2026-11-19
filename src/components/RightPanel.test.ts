@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
-import type { ModelInfo, ReasoningEffort, SessionSummary } from '../types/bridge.js';
+import type { ModelInfo, ReasoningEffort, SessionSummary } from '@droidex/protocol';
 import RightPanel from './RightPanel.js';
 import { EnvironmentSection } from './environment/EnvironmentSection.js';
 import type { GithubAvailability, GitEnvironment } from '../types/vcs.js';

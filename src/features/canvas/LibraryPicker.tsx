@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { canvasClient } from './canvasClient';
 import { CanvasDialog, FIELD_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
 import { canvasMessage } from './client';
-import type { CanvasSummary, LibraryItem } from './protocol';
+import type { CanvasSummary, LibraryItem } from '@droidex/protocol';
 import { useCanvases } from './useCanvases';
 
 type Listing =

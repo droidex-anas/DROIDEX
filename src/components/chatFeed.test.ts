@@ -19,7 +19,7 @@ import {
   isWholeUrl,
 } from '../lib/browserTools';
 import { describeToolCall, hasTodoPayload } from '../lib/tools';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { isRenderedTranscriptEvent } from './MissionControl';
 
 let seq = 0;

@@ -10,7 +10,7 @@ import {
   readSessionRawWindow,
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';

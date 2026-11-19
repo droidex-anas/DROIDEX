@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Annotation } from './annotationProtocol';
+import type { Annotation, CanvasFrame, CanvasSnapshot, ChangedFrame } from '@droidex/protocol';
 import { applyCanvasChange } from './applyCanvasChange';
-import type { CanvasFrame, CanvasSnapshot, ChangedFrame } from './protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 

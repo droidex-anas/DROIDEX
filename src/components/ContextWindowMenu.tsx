@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Check, ChevronDown } from '@droidex/icons';
-import type { ContextWindowTokens } from '../types/bridge';
+import type { ContextWindowTokens } from '@droidex/protocol';
 import { CONTEXT_WINDOW_LABEL, type ContextWindowOption } from '../lib/contextWindow';
 import { Menu } from './ui/Menu';
 

@@ -5,7 +5,7 @@
 
 import type { CanvasChangeFeed } from './canvasChangeFeed.js';
 import { canvasError } from './canvasError.js';
-import type { CanvasChange } from './protocol.js';
+import type { CanvasChange } from '@droidex/protocol';
 
 /** What a mutation admitted before the workspace closed is refused with. */
 export const CLOSING = 'The Canvas workspace is closing.';

@@ -6,7 +6,7 @@ import {
   type ChildSettings,
 } from './ChildSessionState.js';
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
-import type { ProgressEntry, ServerEvent, SessionPhase } from './protocol.js';
+import type { ProgressEntry, ServerEvent, SessionPhase } from '@droidex/protocol';
 import type { SessionRegistry } from './SessionRegistry.js';
 
 const STATE_TO_PHASE: Record<string, SessionPhase> = {

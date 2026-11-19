@@ -8,8 +8,9 @@ import type {
   ServerEvent,
   SessionSummary,
   TranscriptEvent,
-} from '../protocol.js';
-import type { RuntimeLoad, ThreadInput, ThreadSettings } from './types.js';
+  ThreadInput,
+} from '@droidex/protocol';
+import type { RuntimeLoad, ThreadSettings } from './types.js';
 
 export interface ProjectPort {
   transcriptTail(appSessionId: string, limit: number): Promise<TranscriptEvent[]>;

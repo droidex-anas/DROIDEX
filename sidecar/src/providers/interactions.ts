@@ -4,7 +4,7 @@ import type {
   QuestionAnswer,
   SessionQuestion,
   SessionSummary,
-} from '../protocol.js';
+} from '@droidex/protocol';
 
 // An approval a provider runtime needs from the user, in DROIDEX's own terms:
 // the request the renderer receives, plus what the session layer decides with.

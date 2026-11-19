@@ -11,8 +11,13 @@ import { REVISION_METADATA_VERSION, type NewRevision } from './canvasRevisionMet
 import { stageSeed } from './canvasSeeds.js';
 import { designEntryDiagnostic } from './designEntry.js';
 import { FRAME_GAP_PX, placeVariants } from './canvasVariantPlacement.js';
-import type { CreateFramesInput, SvgImageReason, WriteFilesInput } from './protocol.js';
-import { mergedRevisionViolation, type FrameRect } from './schema.js';
+import type {
+  CreateFramesInput,
+  SvgImageReason,
+  WriteFilesInput,
+  FrameRect,
+} from '@droidex/protocol';
+import { mergedRevisionViolation } from './schema.js';
 
 export interface SourceWriteOptions {
   mutation?: SourceRevisionMutation;

@@ -7,7 +7,7 @@ import { Plus } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { pushEscapeLayer } from '../../../components/ui/escapeStack';
-import type { TokenKind } from '../designSystemDocumentProtocol';
+import type { TokenKind } from '@droidex/protocol';
 import { isTokenName } from '../designSystemDocumentValidation';
 import type { DraftChange } from './documentDraft';
 import { cssTokenValue, fullTokenName, selfReferenceProblem } from './documentSections';

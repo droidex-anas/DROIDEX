@@ -17,8 +17,8 @@ import type {
   AutomationProposal,
   AutomationRun,
   AutomationRunStatus,
-  AutomationStore,
-} from './types.js';
+} from '@droidex/protocol';
+import type { AutomationStore } from './types.js';
 
 const STORE_VERSION = 1;
 

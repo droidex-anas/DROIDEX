@@ -4,7 +4,7 @@ import {
   browserTranscriptReferenceFromDesignReference,
   normalizeBrowserReferenceLabel,
 } from './browserTranscriptReferences';
-import type { DesignReference } from '../../types/bridge';
+import type { DesignReference } from '@droidex/protocol';
 
 test('normalizeBrowserReferenceLabel creates compact mention labels', () => {
   assert.equal(normalizeBrowserReferenceLabel('Hero title', 'element'), 'Hero-title');

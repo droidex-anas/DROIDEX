@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { sessionAttention } from './sessionAttention';
-import type { PermissionRequest, SessionQuestion } from '../types/bridge';
+import type { PermissionRequest, SessionQuestion } from '@droidex/protocol';
 
 function makePermission(appSessionId: string): PermissionRequest {
   return {

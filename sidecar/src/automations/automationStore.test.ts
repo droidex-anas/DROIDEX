@@ -12,7 +12,7 @@ import {
   trimAutomationStore,
 } from './automationStore.js';
 import { parseAutomationStore } from './automationStoreParsing.js';
-import type { AutomationInput, AutomationProposal } from './types.js';
+import type { AutomationInput, AutomationProposal } from '@droidex/protocol';
 
 function automation(now: number, overrides: Partial<AutomationInput> = {}) {
   return createAutomationRecord(

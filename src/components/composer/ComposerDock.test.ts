@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '../../types/bridge';
+import type { ChildSessionSummary, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { initialState, shallowEqual, type AppState } from '../../hooks/useStore';
 import { selectDockedAgents } from './ComposerDock';
 

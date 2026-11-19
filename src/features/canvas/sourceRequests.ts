@@ -3,9 +3,15 @@
 // one direct edit to a selected element or a layer.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { EditElementInput, ElementEdited } from './elementEditProtocol';
+import type {
+  EditElementInput,
+  ElementEdited,
+  CanvasCommand,
+  SourceFiles,
+  WriteFilesInput,
+  WriteReceipt,
+} from '@droidex/protocol';
 import { readPathData } from './paths/pathData';
-import type { CanvasCommand, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
 
 export class SourceRequests {
   constructor(private readonly send: (command: CanvasCommand) => Promise<ReplyEvent>) {}

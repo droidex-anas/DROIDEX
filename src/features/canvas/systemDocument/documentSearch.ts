@@ -2,8 +2,8 @@
 // the title it reads as or text, previews and assets by title, and catalog
 // entries by name, module or note. Sections with no match drop out.
 
-import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
-import type { CatalogListing } from '../protocol';
+import type { DocumentSection, DocumentToken, CatalogListing } from '@droidex/protocol';
+
 import { noteTitle, tokenKey, withItems, type DocumentItem } from './documentSections';
 
 /** A section as the document shows it; the Components section also lists the kit's catalog. */

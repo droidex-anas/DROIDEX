@@ -8,7 +8,7 @@ import type {
   RevisionPage,
   RevisionSummary,
   WriteReceipt,
-} from './protocol';
+} from '@droidex/protocol';
 
 export class RevisionRequests {
   constructor(private readonly send: (command: CanvasCommand) => Promise<ReplyEvent>) {}

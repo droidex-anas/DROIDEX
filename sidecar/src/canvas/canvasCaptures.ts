@@ -6,7 +6,7 @@
 import { randomUUID } from 'node:crypto';
 import { imageMediaType } from './canvasAssets.js';
 import { canvasError, type CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
-import type { CanvasCommand, CanvasEvent, CaptureImage, RevisionRef } from './protocol.js';
+import type { CanvasCommand, CanvasEvent, CaptureImage, RevisionRef } from '@droidex/protocol';
 
 /** The renderer's six-second capture deadline plus the bridge round trip. */
 const CAPTURE_WAIT_MS = 7_000;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { FeedItem } from '../../components/chatFeed';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { copyTextForFeedItem, copyTextForFeedItemRange } from './transcriptCopy';
 
 let seq = 0;

@@ -2,7 +2,7 @@ import { picksElements, reduceBoardInteraction, type BoardInteraction } from '..
 import type { PreviewNode } from '../previewDocument';
 import type { OverlayStore } from '../overlayStore';
 import type { PreviewRuns } from '../previewRuns';
-import type { ElementRef } from '../protocol';
+import type { ElementRef } from '@droidex/protocol';
 import type { ElementEditor } from '../useElementEditor';
 import type { HoveredElement } from '../useElementHover';
 

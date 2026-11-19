@@ -7,7 +7,7 @@ import type {
   DroidProxyInstallPhase,
   DroidProxyProviderKey,
   DroidProxyStatus,
-} from '../types/bridge';
+} from '@droidex/protocol';
 
 export interface DroidProxyInstallState {
   phase: DroidProxyInstallPhase;

@@ -8,7 +8,7 @@ import {
 } from './canvasAssets.js';
 import { CanvasCommandError } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
-import type { OwnedAsset } from './protocol.js';
+import type { OwnedAsset } from '@droidex/protocol';
 
 /** A vector design's markup, as the preview reporter caps it. */
 const MAX_SANITISED_SVG_BYTES = 256 * 1024;

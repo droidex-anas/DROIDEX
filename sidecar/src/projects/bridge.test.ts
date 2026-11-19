@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { createProjectCommandHandler } from './bridge.js';
 import {
   drain,

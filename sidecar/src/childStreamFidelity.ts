@@ -1,4 +1,4 @@
-import type { StreamFidelity } from './protocol.js';
+import type { StreamFidelity } from '@droidex/protocol';
 
 export const CHILD_TOKEN_STREAM_OPTIONS = { includePartialMessages: true } as const;
 

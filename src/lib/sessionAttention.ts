@@ -1,4 +1,4 @@
-import type { PermissionRequest, SessionQuestion } from '../types/bridge';
+import type { PermissionRequest, SessionQuestion } from '@droidex/protocol';
 
 // A session "needs attention" when it is blocked on the user rather than the
 // model: a pending permission approval or a pending AskUser question. Pending

@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 
 import { providerSessionsDir } from '../droidexPaths.js';
 import { PERMISSION_SEMANTICS_REVISION } from '../permissionSemantics.js';
-import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '../protocol.js';
+import type { ContextWindowTokens, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import type { StoredMessageLine, StoredSessionStart } from '../sessionTranscriptParser.js';
 import { STEER_MESSAGE_PREFIX } from '../sessionTranscriptParser.js';
 import { storedNoticeLine } from '../sessionNotices.js';

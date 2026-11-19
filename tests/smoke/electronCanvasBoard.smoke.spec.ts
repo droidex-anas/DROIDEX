@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { FrameRect } from '../../src/features/canvas/protocol';
+import type { FrameRect } from '@droidex/protocol';
 import {
   box,
   boardUrl,

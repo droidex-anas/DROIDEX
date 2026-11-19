@@ -1,4 +1,4 @@
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { AGENTS } from './agents';
 import { FADE_WIDTH, type Figure } from './stage';
 
