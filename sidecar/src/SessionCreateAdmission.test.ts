@@ -150,12 +150,12 @@ for (const pendingRunning of [false, true]) {
       }
       await session.waitForPrompts(1);
       await new Promise((resolve) => setImmediate(resolve));
-      const firstTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const firstTurn = requireLive(h, 'pending-delegated').turn.turnPromise;
       const firstScope = turnLease(h, 'pending-delegated');
-      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
+      assert.equal(requireLive(h, 'pending-delegated').turn.streaming, true);
       notify(true);
       notify(false);
-      assert.equal(requireLive(h, 'pending-delegated').streaming, true);
+      assert.equal(requireLive(h, 'pending-delegated').turn.streaming, true);
       await h.lifecycle.send('pending-delegated', 'second');
       assert.deepEqual(session.prompts, ['initial']);
       assert.equal(h.canvasTurns.requireScope(firstScope.scopeId), firstScope);
@@ -163,7 +163,7 @@ for (const pendingRunning of [false, true]) {
       first.resolve();
       await firstTurn;
       await session.waitForPrompts(2);
-      const secondTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const secondTurn = requireLive(h, 'pending-delegated').turn.turnPromise;
       const secondScope = turnLease(h, 'pending-delegated');
       assert.throws(() => h.canvasTurns.requireScope(firstScope.scopeId), {
         code: 'scope_expired',
@@ -177,7 +177,7 @@ for (const pendingRunning of [false, true]) {
       second.resolve();
       await secondTurn;
       await session.waitForPrompts(3);
-      const thirdTurn = requireLive(h, 'pending-delegated').turnPromise;
+      const thirdTurn = requireLive(h, 'pending-delegated').turn.turnPromise;
       const thirdScope = turnLease(h, 'pending-delegated');
       assert.throws(() => h.canvasTurns.requireScope(secondScope.scopeId), {
         code: 'scope_expired',

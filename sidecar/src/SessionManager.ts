@@ -1046,7 +1046,7 @@ export class SessionManager {
       .liveSessionsSnapshot()
       .filter(
         (live) =>
-          live.streaming ||
+          live.turn.streaming ||
           live.summary.streaming === true ||
           live.compacting === true ||
           live.autoCompacting,
@@ -1503,7 +1503,7 @@ export class SessionManager {
     if (this.shutdownPromise) return null;
     // A closed chat keeps its summary, and its exports were already ended.
     const liveSession = this.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode === 'discard-pending') return null;
+    if (!liveSession || liveSession.turn.closeMode === 'discard-pending') return null;
     const folder = this.projectFolder(appSessionId);
     return folder === null ? null : this.projectExports.admit(appSessionId, folder);
   }
@@ -2066,7 +2066,7 @@ export class SessionManager {
       return;
     }
     if (
-      previousLiveSession?.streaming ||
+      previousLiveSession?.turn.streaming ||
       previousLiveSession?.compacting ||
       previousLiveSession?.autoCompacting
     ) {
@@ -2518,7 +2518,7 @@ function requireUniqueMcpNames(names: readonly string[]): void {
 }
 
 function hasSessionCloseStarted(liveSession: LiveSession): boolean {
-  return liveSession.closeMode !== undefined;
+  return liveSession.turn.closeMode !== undefined;
 }
 
 function childSessionSettingsFromInit(init: SessionInitResult): ChildSettings {

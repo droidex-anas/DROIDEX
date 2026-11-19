@@ -12,6 +12,7 @@ import type {
 } from './protocol.js';
 import { reasoningValue } from './modelCatalog.js';
 import { normalizeAutonomy } from './values.js';
+import type { PrimaryTurnState } from './PrimaryTurnState.js';
 /* eslint-disable @typescript-eslint/no-unused-vars -- persisted-only fields are intentionally omitted. */
 export interface ChildIdentity {
   parentAppSessionId: string;
@@ -52,7 +53,7 @@ export interface ChildParentLease {
   // Opening a child runtime is supported only through the parent's SDK session.
   droid?: FactorySession;
   mcpConfigs: McpServerConfig[];
-  closeMode?: 'discard-pending' | 'preserve-pending';
+  readonly turn: Pick<PrimaryTurnState, 'closeMode'>;
 }
 
 export function parentDroidSession(lease: ChildParentLease): FactorySession {

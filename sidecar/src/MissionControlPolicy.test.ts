@@ -33,6 +33,7 @@ function createHarness(
   const rejectedProviders = new Set<string>();
   const summary = missionSummary(sessionPurpose, interactionMode);
   const live: ChildParentLease = {
+    turn: { closeMode: undefined },
     summary,
     droid: new FakeFactorySession('parent-provider', {}, calls, {
       settings: {

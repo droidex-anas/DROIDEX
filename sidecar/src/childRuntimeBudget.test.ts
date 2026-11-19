@@ -54,6 +54,7 @@ function parentOf(...children: ChildSessionState[]): ParentChildSessions {
     parentAppSessionId: 'parent',
     generation: 1,
     lease: {
+      turn: { closeMode: undefined },
       summary: {} as ParentChildSessions['lease']['summary'],
       droid: new FakeFactorySession('parent-provider', {}, []),
       mcpConfigs: [],

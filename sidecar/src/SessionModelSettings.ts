@@ -121,8 +121,8 @@ export class SessionModelSettings {
     return this.serialize(
       requestedId,
       async (appSessionId, live, isCurrent) => {
-        if (agent === 'primary' && live?.summary.provider === 'claude' && live.turnPromise)
-          await live.turnPromise.catch(() => undefined);
+        if (agent === 'primary' && live?.summary.provider === 'claude' && live.turn.turnPromise)
+          await live.turn.turnPromise.catch(() => undefined);
         if (!isCurrent()) return false;
         const summary = this.d.registry.getCanonicalSummary(appSessionId);
         if (agent !== 'primary' && summary && summary.sessionPurpose !== 'mission-control') {
@@ -353,7 +353,7 @@ export class SessionModelSettings {
       !this.d.isShutdownStarted() &&
       queue.generation === generation &&
       this.d.registry.getLive(appSessionId) === live &&
-      (!live || (live.session === session && live.closeMode === undefined)) &&
+      (!live || (live.session === session && live.turn.closeMode === undefined)) &&
       (live !== undefined ||
         this.d.registry.getCanonicalSummary(appSessionId)?.providerSessionId ===
           summary?.providerSessionId);
