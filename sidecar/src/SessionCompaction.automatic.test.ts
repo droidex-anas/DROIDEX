@@ -154,7 +154,7 @@ function addPrimary(
     sourceSessionId: appSessionId,
     session,
     liveSession: live,
-    isCurrent: () => current && !live.closeMode && live.droid === session,
+    isCurrent: () => current && !live.turn.closeMode && live.droid === session,
   };
   h.targets.set(resourceId({ kind: 'primary', appSessionId }), target);
   return { live, session, target, setCurrent: (value) => (current = value) };
@@ -207,7 +207,7 @@ function addChild(
     isStreaming: () => false,
     isCurrent: () =>
       current &&
-      !parent.closeMode &&
+      !parent.turn.closeMode &&
       child.session === session &&
       child.parentGeneration === snapshot.parentGeneration &&
       child.runtimeGeneration === snapshot.runtimeGeneration &&
@@ -367,7 +367,7 @@ test(
 test('session_compacted is authoritative when the start notification was missed', () => {
   const h = createHarness();
   const primary = addPrimary(h, 'app-1');
-  primary.live.streaming = true;
+  primary.live.turn.beginTypedTurn();
   h.compaction.subscribePrimary(primary.target);
   h.trace.length = 0;
 

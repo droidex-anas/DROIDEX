@@ -1,3 +1,4 @@
+import { PrimaryTurnState } from '../PrimaryTurnState.js';
 import { ReasoningEffort } from '@factory/droid-sdk';
 
 import type { FactoryRuntime, FactorySession } from '../DroidRuntime.js';
@@ -46,10 +47,8 @@ export function createCompactionTestLiveSession(
     },
     session: new DroidProviderSession(appSessionId, session, runtime),
     droid: session,
-    streaming: false,
+    turn: new PrimaryTurnState(),
     autoCompacting: false,
-    pendingSends: [],
-    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };
