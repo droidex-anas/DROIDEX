@@ -1,6 +1,4 @@
 const { app, dialog, ipcMain } = require('electron');
-const os = require('node:os');
-const path = require('node:path');
 const attachments = require('./attachments.cjs');
 const { canvasImageImportResult, pastedSvgDataUrl } = require('./canvasImageImport.cjs');
 const { readKitImage } = require('./canvasPreviewAssets.cjs');
@@ -56,7 +54,7 @@ function registerCanvasIpc({
     assertMainRenderer(event);
     return readKitImage(kitStoreRoot(app), assetId);
   });
-  const attachmentsDir = path.join(os.tmpdir(), 'droidex-attachments');
+  const attachmentsDir = attachments.attachmentDirectory();
   // The importer reads a path, so pasted SVG markup passes through the
   // attachments dir; the day-old sweep removes a file discard could not.
   ipcMain.handle('canvas-paste-svg', (event, { canvasId, svg }) => {

@@ -298,7 +298,7 @@ window's top frame through local Electron IPC.
 
 **Components:**
 
-- `electron/appPreferencesIpc.cjs`, `electron/filesIpc.cjs`, `electron/sourceControlIpc.cjs`, `electron/sidecarIpc.cjs`
+- `electron/appPreferencesIpc.cjs`, `electron/filesIpc.cjs`, `electron/sourceControlIpc.cjs`, `electron/sidecar.cjs`
 
 **Attack Vector:**
 
@@ -682,7 +682,7 @@ const safeSvg = useMemo(() => {
 // Sender-guarded, but arbitrary paths are not root-confined.
 // electron/filesIpc.cjs
 desktopIpc.handle('list-files', ({ dir }) => listFiles(dir));
-desktopIpc.handle('read-file', ({ filePath }) => readFile(filePath));
+desktopIpc.handle('read-file', ({ path: filePath }) => readFile(filePath));
 ```
 
 ```javascript
@@ -1284,7 +1284,7 @@ ipcMain.handle('canvas-image-save', (event, request) => {
 url.searchParams.set('token', TOKEN); // leaks in logs, ps, browser history
 
 // PATTERN 2: Token returned to renderer via IPC (MEDIUM)
-// Found in: electron/sidecarIpc.cjs, src/lib/desktop.ts:225-228
+// Found in: electron/sidecar.cjs, src/lib/desktop.ts:225-228
 const { port, token } = await getBridgeInfo(); // token in renderer memory
 
 // SAFE ALTERNATIVE: Use Authorization header or Sec-WebSocket-Protocol

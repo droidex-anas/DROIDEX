@@ -1,6 +1,5 @@
 const { app, dialog, session, shell } = require('electron');
 const fsp = require('node:fs/promises');
-const os = require('node:os');
 const path = require('node:path');
 const files = require('./files.cjs');
 const attachments = require('./attachments.cjs');
@@ -36,7 +35,7 @@ function registerFilesIpc({ desktopIpc, filesRootAccess }) {
   });
   // Composer image pastes/drops land in a temp dir and travel to Droid as
   // ordinary @-mentioned paths; discard only ever unlinks inside that dir.
-  const attachmentsDir = path.join(os.tmpdir(), 'droidex-attachments');
+  const attachmentsDir = attachments.attachmentDirectory();
   desktopIpc.handle('save-image', ({ dataUrl }) => {
     return attachments.save(attachmentsDir, dataUrl);
   });

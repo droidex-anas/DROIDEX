@@ -71,13 +71,11 @@ const {
 } = require('./mainWindow.cjs');
 const { getAppIconMode, applyAppIcon } = require('./appIcon.cjs');
 const { createNotificationActivation } = require('./notificationActivation.cjs');
-const { registerSidecarIpc } = require('./sidecarIpc.cjs');
 const { registerNotificationIpc } = require('./notificationIpc.cjs');
 const { registerPerformanceIpc } = require('./performanceIpc.cjs');
 const { registerRendererStorageIpc } = require('./rendererStorageIpc.cjs');
 const { registerAppUpdaterIpc } = require('./appUpdaterIpc.cjs');
 const { registerDiagnosticsIpc } = require('./diagnosticsIpc.cjs');
-const { registerUsageAnalyticsIpc } = require('./usageAnalyticsIpc.cjs');
 const { registerAppPreferencesIpc } = require('./appPreferencesIpc.cjs');
 const { registerFilesIpc } = require('./filesIpc.cjs');
 const { registerCanvasIpc } = require('./canvasIpc.cjs');
@@ -303,12 +301,12 @@ const { createMainWindow, reloadFromMenu } = createMainWindowController({
   devInstance,
   installWebviewAttachment,
   deliverPendingNotificationOpen,
-  reloadFocusedBrowser: (contents) => nativeBrowserManager.reloadFocused(contents),
+  reloadFocusedBrowser: nativeBrowserManager.reloadFocused,
   closeRendererOwnedTerminals: () => {
     terminalSubscriptions.clear();
     terminalManager.closeAll();
   },
-  forgetBrowserWatchers: () => nativeBrowserManager.forgetWatchers(),
+  forgetBrowserWatchers: nativeBrowserManager.forgetWatchers,
   cleanupClosedWindow: () => {
     nativeBrowserManager.closeAll();
     terminalManager.closeAll();
@@ -316,14 +314,10 @@ const { createMainWindow, reloadFromMenu } = createMainWindowController({
     filesRootAccess.clear();
     canvasPreviewHosts.clear();
   },
-  attachPowerTier: (window) => powerTier.attachWindow(window),
+  attachPowerTier: powerTier.attachWindow,
 });
-/**
- * Resolves once the preview guest session's network is off. Every path that can
- * create the app window goes through `openMainWindow`, so no window — and
- * therefore no guest — can exist before that, and an `activate` that arrives
- * during startup waits here instead of racing it into a second window.
- */
+// Startup and activation wait for the preview guest session's network to be off.
+// An activation during startup waits here rather than racing a second window.
 const previewSessionReady = app.whenReady().then(() => registerCanvasPreviewProtocol());
 
 function openMainWindow() {
@@ -351,13 +345,13 @@ app.whenReady().then(async () => {
   });
   remoteAccess.registerIpc(desktopIpc);
   profileUsage.registerIpc(desktopIpc);
-  registerSidecarIpc({ desktopIpc, sidecarSupervisor });
+  sidecarSupervisor.registerIpc(desktopIpc);
   registerNotificationIpc({ desktopIpc, remoteAccess, notificationActivation });
   registerPerformanceIpc({ desktopIpc, performanceMetrics, powerTier });
   registerRendererStorageIpc({ desktopIpc, remoteDesktop });
   registerAppUpdaterIpc({ desktopIpc, appUpdater });
   registerDiagnosticsIpc({ desktopIpc, diagnostics });
-  registerUsageAnalyticsIpc({ desktopIpc, usageAnalytics });
+  usageAnalytics.registerIpc(desktopIpc);
   registerAppPreferencesIpc({ desktopIpc, hardwareAccelerationPreferencePath, relaunchApp });
   registerFilesIpc({ desktopIpc, filesRootAccess });
   registerCanvasIpc({ sidecarSupervisor, importCanvasImage, canvasPreviewHosts, saveCanvasImage });
