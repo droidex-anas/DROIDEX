@@ -1494,7 +1494,7 @@ function scanSessionFileTree(): SessionFileScan {
       if (stat.isDirectory()) walk(path, depth + 1, isAlt);
       else if (name.endsWith('.jsonl')) {
         const id = name.slice(0, -'.jsonl'.length);
-        if (isAlt && (files.has(id) || unreadableProviderSessionIds.has(id))) continue;
+        if (isAlt && files.has(id)) continue;
         files.set(id, {
           path,
           birthtimeMs: stat.birthtimeMs,

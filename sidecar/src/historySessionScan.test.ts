@@ -165,34 +165,6 @@ test('a watcher keeps an unreadable file and removes it after real deletion', (t
   );
 });
 
-test('an unreadable Main transcript prevents admission of its Alt copy', (t) => {
-  const id = 'unreadable-main-copy';
-  writeSession(id, 'Main copy');
-  const previousAltHome = process.env.DROIDEX_ALT_HOME;
-  const altHome = join(home, 'unreadable-main-alt');
-  const altSessions = join(altHome, '.factory', 'sessions');
-  mkdirSync(altSessions, { recursive: true });
-  writeFileSync(
-    join(altSessions, `${id}.jsonl`),
-    providerSessionJsonl({ type: 'session_start', cwd: '', sessionTitle: 'Alt copy' }),
-  );
-  process.env.DROIDEX_ALT_HOME = altHome;
-  t.after(() => {
-    if (previousAltHome === undefined) delete process.env.DROIDEX_ALT_HOME;
-    else process.env.DROIDEX_ALT_HOME = previousAltHome;
-  });
-  const { restore } = denySessionStat(t, join(home, '.factory', 'sessions', `${id}.jsonl`));
-  const cache = sessionScanCache(t);
-  cache.reconcileChanges();
-  assert.equal(
-    cache.summaries().some((row) => row.appSessionId === id),
-    false,
-  );
-  restore();
-  cache.reconcileChanges();
-  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.title, 'Main copy');
-});
-
 // The one cross-provider contract in this path: what ProviderTranscriptFile
 // writes for a non-Droid session is what the scan admits and the parser
 // replays. Nothing types can check — a drifted head key or content block reads
