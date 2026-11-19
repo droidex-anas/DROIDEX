@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
+import type { ClientCommand, ServerEvent, TranscriptEvent } from '@droidex/protocol';
 import { CONVERSATION_LIST_PIN_THRESHOLD_PX } from '../../src/components/conversationListState';
 import { sessionSummary } from '../../src/test/sessionSummary';
-import type { ClientCommand, ServerEvent, TranscriptEvent } from '../../src/types/bridge';
 
 test('Mission Control follows new output only while the reader is at the bottom', async ({
   page,
