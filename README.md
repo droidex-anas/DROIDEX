@@ -33,8 +33,8 @@ Devin runs through the Devin CLI's ACP connection (`devin acp`), using your
 existing CLI sign-in, not an API key. Setup offers the official script or
 `brew install --cask devin-cli`; sign in in a terminal with `devin auth login`.
 Devin chats can lead Projects and run project threads. They support streaming,
-tools, approvals, Stop, model selection, planning, and resume. Steering waits
-until the current turn finishes. Conversation copying, native subagent views,
+tools, approvals, Stop, model selection, planning, resume, and native subagent
+views. Steering waits until the current turn finishes. Conversation copying
 and account usage meters are not supported. Devin accepts edits in both
 Supervised and Auto-accept edits: it has no mode that asks before edits.
 

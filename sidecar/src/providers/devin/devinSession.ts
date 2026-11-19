@@ -11,6 +11,7 @@ import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
 import type { ProviderMention } from '../catalog.js';
 import type {
   ProviderModelSettings,
+  ProviderChildSession,
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
@@ -20,6 +21,7 @@ import { DevinClient } from './devinClient.js';
 import { DevinEvents } from './devinEvents.js';
 import { startDevinMcp } from './devinMcp.js';
 import { devinPermission } from './devinPermissions.js';
+import { devinChildId, DevinSubagents } from './devinSubagents.js';
 
 const MODES: Record<Autonomy, string> = {
   off: 'accept-edits',
@@ -34,6 +36,8 @@ export class DevinSession implements ProviderSession {
   private readonly client: DevinClient;
   private sessionId?: string;
   private mapper?: DevinEvents;
+  private subagents?: DevinSubagents;
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
   private capabilities?: InitializeResponse['agentCapabilities'];
   private queue?: MessageQueue<NormalizedEvent>;
   private permissionAbort = new AbortController();
@@ -58,18 +62,24 @@ export class DevinSession implements ProviderSession {
         this.update(notification);
       },
       permission: (request) => {
-        if (this.closing || !this.queue || request.sessionId !== this.sessionId)
+        const childId = devinChildId(request.toolCall);
+        let signal: AbortSignal | undefined;
+        if (childId) signal = this.subagents?.permissionSignal(childId);
+        else if (this.queue) signal = this.permissionAbort.signal;
+        if (this.isClosed || !signal || request.sessionId !== this.sessionId)
           return Promise.resolve({ outcome: { outcome: 'cancelled' } });
         return devinPermission(
           input.appSessionId ?? this.providerSessionId,
           request,
           input.interactions,
-          this.permissionAbort.signal,
+          signal,
         );
       },
     });
     this.closed = this.client.closed.then(async (error) => {
       this.permissionAbort.abort();
+      this.subagents?.close();
+      this.backgroundListeners.clear();
       input.interactions.cancelPending();
       this.queue?.close(error);
       try {
@@ -134,6 +144,10 @@ export class DevinSession implements ProviderSession {
         if (created.configOptions) this.configOptions = created.configOptions;
       }
       this.mapper = new DevinEvents(
+        this.input.appSessionId ?? this.providerSessionId,
+        this.providerSessionId,
+      );
+      this.subagents = new DevinSubagents(
         this.input.appSessionId ?? this.providerSessionId,
         this.providerSessionId,
       );
@@ -216,6 +230,17 @@ export class DevinSession implements ProviderSession {
     return Promise.resolve(false);
   }
 
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    if (!this.isClosed) this.backgroundListeners.add(listener);
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
+  }
+
+  restoreChildren(children: readonly ProviderChildSession[]): void {
+    if (!this.isClosed) this.subagents?.restore(children);
+  }
+
   setAutonomy(autonomy: Autonomy): Promise<void> {
     return this.change(async () => {
       await this.configure('mode', this.interactionMode === 'spec' ? 'plan' : MODES[autonomy]);
@@ -238,6 +263,7 @@ export class DevinSession implements ProviderSession {
 
   async interrupt(): Promise<void> {
     this.permissionAbort.abort();
+    this.subagents?.cancelPermissions();
     this.input.interactions.cancelPending();
     if (!this.isClosed && this.queue)
       await this.client.connection.agent.notify('session/cancel', {
@@ -261,6 +287,8 @@ export class DevinSession implements ProviderSession {
     if (this.closePromise) return this.closePromise;
     this.closing = true;
     this.permissionAbort.abort();
+    this.subagents?.close();
+    this.backgroundListeners.clear();
     this.input.interactions.cancelPending();
     this.closePromise = (async () => {
       try {
@@ -306,6 +334,14 @@ export class DevinSession implements ProviderSession {
     if (this.isClosed || (this.sessionId && notification.sessionId !== this.sessionId)) return;
     if (notification.update.sessionUpdate === 'config_option_update')
       this.configOptions = notification.update.configOptions;
+    const childEvents = this.subagents?.map(notification);
+    if (childEvents) {
+      for (const event of childEvents) {
+        if (!this.input.interactions.isActive()) return;
+        for (const listener of this.backgroundListeners) listener(event);
+      }
+      return;
+    }
     if (!this.queue || !this.mapper) return;
     for (const event of this.mapper.map(notification)) this.queue.push(event);
   }
