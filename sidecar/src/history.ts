@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { basename, join, sep } from 'node:path';
 import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
+import { errMsg } from './errors.js';
 import {
   type SessionRole,
   type BridgeFeature,
@@ -190,18 +191,21 @@ export function loadMissionControlSessions(
     ? new Set(options.workspaceCwds.filter(Boolean))
     : null;
   if (workspaceCwds?.size === 0 && !options.includePlainChats) return [];
-  return missionDirs()
-    .filter((dir) => {
-      if (!workspaceCwds && !options.includePlainChats) return true;
-      const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-      return shouldIncludeCwd(
-        missionWorkingDirectory(state),
-        workspaceCwds,
-        options.includePlainChats,
-      );
-    })
-    .map((dir) => loadMissionControlSession(dir))
-    .sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
+  const isFiltered = workspaceCwds !== null || options.includePlainChats === true;
+  const sessions: HistoricalSession[] = [];
+  for (const dir of missionDirs()) {
+    try {
+      if (isFiltered) {
+        const state = readJson<StoredMissionState>(join(dir, 'state.json'));
+        const cwd = missionWorkingDirectory(state);
+        if (!shouldIncludeCwd(cwd, workspaceCwds, options.includePlainChats)) continue;
+      }
+      sessions.push(loadMissionControlSession(dir));
+    } catch (error) {
+      reportUnreadableMission(dir, error);
+    }
+  }
+  return sessions.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
 export function loadSessionHistory(): SessionHistoryEntry[] {
@@ -649,7 +653,6 @@ export function hydrateHistoricalSession(
   opts: { cursor?: string; limit?: number } = {},
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
-  if (!dir) throw new Error(`Mission history not found for ${missionId}`);
 
   const { summary, storedProgress } = loadMissionControlSession(dir);
   const progress = projectMissionProgress(
@@ -1112,17 +1115,35 @@ function missionDirs(): string[] {
     });
 }
 
-function resolveMissionDir(missionId: string): string | null {
+function resolveMissionDir(missionId: string): string {
+  const unreadableDirs: string[] = [];
   for (const dir of missionDirs()) {
-    const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-    if (
-      basename(dir) === missionId ||
-      state.baseSessionId === missionId ||
-      state.missionId === missionId
-    )
-      return dir;
+    if (basename(dir) === missionId) return dir;
+    try {
+      const state = readJson<StoredMissionState>(join(dir, 'state.json'));
+      if (state.baseSessionId === missionId || state.missionId === missionId) return dir;
+    } catch (error) {
+      reportUnreadableMission(dir, error);
+      unreadableDirs.push(dir);
+    }
   }
-  return null;
+  // An unreadable state.json hides which mission it belongs to, so name those directories.
+  const skipped =
+    unreadableDirs.length > 0
+      ? `; unreadable mission directories: ${unreadableDirs.join(', ')}`
+      : '';
+  throw new Error(`Mission history not found for ${missionId}${skipped}`);
+}
+
+// Every registry rebuild re-enumerates missions, so each unreadable directory is logged once.
+const reportedUnreadableMissionDirs = new Set<string>();
+
+function reportUnreadableMission(dir: string, error: unknown): void {
+  if (reportedUnreadableMissionDirs.has(dir)) return;
+  reportedUnreadableMissionDirs.add(dir);
+  // JSON.parse messages quote the file's contents, so name the failure instead.
+  const reason = error instanceof SyntaxError ? 'a mission file is not valid JSON' : errMsg(error);
+  console.warn(`Mission history ${dir} was skipped: ${reason}. Repair or remove the directory.`);
 }
 
 function shouldIncludeCwd(
