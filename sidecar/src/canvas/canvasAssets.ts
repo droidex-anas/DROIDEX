@@ -5,7 +5,7 @@ import { isAbsolute, join } from 'node:path';
 import { z } from 'zod';
 import { canvasError, CanvasCommandError, EXPIRED_TURN } from './canvasError.js';
 import { sanitiseSvg } from './canvasSvg.js';
-import type { OwnedAsset } from './protocol.js';
+import type { OwnedAsset } from '@droidex/protocol';
 import { canvasIdentifierSchema } from './schema.js';
 
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;

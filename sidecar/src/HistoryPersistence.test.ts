@@ -13,7 +13,7 @@ import type {
   HistoryPersistenceBatch,
   HistoryPersistenceResult,
 } from './historyPersistenceProtocol.js';
-import type { HistorySearchReply, SessionSummary, TranscriptEvent } from './protocol.js';
+import type { HistorySearchReply, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { persistTestChild } from './testing/historyPersistenceFixture.js';

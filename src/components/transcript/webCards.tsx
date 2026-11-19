@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { ProseFileLinks } from './ProseFileLink';
 import { Markdown } from '../Markdown';
 import { TranscriptImage } from '../media/TranscriptImage';

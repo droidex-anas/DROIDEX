@@ -1,7 +1,7 @@
 import { isCommandStillRunning } from '../../components/transcript/liveProcessesContext';
 import { correlateResults } from '../../components/transcript/rows';
 import { shellCommandOf, toolMeta } from '../../lib/tools';
-import type { AgentProcess, TranscriptEvent } from '../../types/bridge';
+import type { AgentProcess, TranscriptEvent } from '@droidex/protocol';
 
 /* What the Background tab knows about a chat's commands: the processes they
    left running, which come from the sidecar's process scan, and the commands

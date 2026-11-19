@@ -7,7 +7,7 @@ import { useCallback, useMemo, useRef } from 'react';
 import { useStoreSelector, type AppState } from '../../hooks/useStore';
 import { isWorkingAgent } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent, CanvasFrame } from '@droidex/protocol';
 import {
   canvasPresence,
   landedWrites,
@@ -17,7 +17,6 @@ import {
   type LandedWrites,
   type PresenceSources,
 } from './canvasPresence';
-import type { CanvasFrame } from './protocol';
 
 const NO_EVENTS: TranscriptEvent[] = [];
 

@@ -20,7 +20,7 @@ import type {
   ProgressEntry,
   ReasoningEffort,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { toolResultParts } from './toolResultImages.js';
 import { trimmedString as str, uniqueStrings } from './values.js';
 import {

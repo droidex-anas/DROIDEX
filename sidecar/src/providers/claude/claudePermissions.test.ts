@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { PermissionMode, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
 
 import type { ProviderApprovalRequest } from '../interactions.js';
-import type { Autonomy } from '../../protocol.js';
+import type { Autonomy } from '@droidex/protocol';
 import { ClaudePermissionModes } from './claudePermissionModes.js';
 import { claudeCanUseTool, claudePermissionMode } from './claudePermissions.js';
 import { sessionOptions } from './claudeOptions.js';

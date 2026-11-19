@@ -8,7 +8,7 @@ import { openBrowser, stopAgentProcess } from '../../lib/commands';
 import { sessionIsLive } from '../../lib/sessions';
 import { formatRelativeTime } from '../../lib/time';
 import { formatDuration } from '../../lib/tools';
-import type { AgentProcess, TranscriptEvent } from '../../types/bridge';
+import type { AgentProcess, TranscriptEvent } from '@droidex/protocol';
 import { finishedCommands, type FinishedCommand } from './backgroundActivity';
 import { ProcessCard } from './ProcessCard';
 

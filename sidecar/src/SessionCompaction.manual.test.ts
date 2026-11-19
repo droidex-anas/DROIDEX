@@ -3,7 +3,7 @@ import test from 'node:test';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import { SessionCompaction } from './SessionCompaction.js';
 import type { LiveSession } from './SessionLifecycle.js';

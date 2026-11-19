@@ -25,7 +25,7 @@ import type { BoardMode } from './canvasState';
 import { snapFrameRect, snapGroupMove } from './frameSnap';
 import { HeldFrames, type DrawnAt, type HeldFrame } from './heldFrames';
 import { OverlayStore } from './overlayStore';
-import type { ArrangeFramesInput, CanvasFrame, FrameRect } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, FrameRect } from '@droidex/protocol';
 import { useLayoutWrites } from './useLayoutWrites';
 
 /** Movement in board pixels before a frame press becomes a captured drag. */

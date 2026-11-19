@@ -11,11 +11,11 @@ import { basename, join } from 'node:path';
 import { after, type TestContext } from 'node:test';
 import { CanvasBuilds } from '../canvas/CanvasBuilds.js';
 import { CanvasWorkspace, type CanvasWorkspaceDeps } from '../canvas/CanvasWorkspace.js';
-import type { AnnotationDraft } from '../canvas/canvasAnnotationSchema.js';
-import type { CanvasScope } from '../canvas/protocol.js';
+import type { AnnotationDraft, WriteFilesInput, CreateFramesInput } from '@droidex/protocol';
+import type { CanvasScope } from '../canvas/canvasScopes.js';
 import { CanvasFiles, nodeCanvasFileSystem, type CanvasFileSystem } from '../canvas/canvasFiles.js';
 import { CompileCancelledError } from '../canvas/compiler.js';
-import type { WriteFilesInput, CreateFramesInput } from '../canvas/protocol.js';
+
 import {
   canvasManifestSchema,
   mutationFingerprint,

@@ -47,8 +47,12 @@ import { instrumentSource } from './sourceElements.js';
 import { editLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
-import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import type {
+  CanvasDiagnostic,
+  DesignSystemRef,
+  ElementEdit,
+  SourceFiles,
+} from '@droidex/protocol';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
 const ENTRY_STAGE = JSON.stringify({

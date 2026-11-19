@@ -20,7 +20,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { AppBlockRepairSessionContext } from './appBlockRepairContext';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
-import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
+import type { AgentProcess, ChildSessionSummary } from '@droidex/protocol';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { PendingSteers } from './transcript/PendingSteers';
 import { JumpToLatest } from './transcript/JumpToLatest';

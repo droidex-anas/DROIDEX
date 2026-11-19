@@ -8,7 +8,7 @@ import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
 import { useStoreSelector } from '../../../hooks/useStore';
 import { chatDisplayTitle } from '../../../lib/chatMetadata';
-import type { DesignSystemProposal } from '../protocol';
+import type { DesignSystemProposal } from '@droidex/protocol';
 import { DocumentNotice } from './DocumentHeader';
 import type { ProposalDecision } from './proposalReview';
 

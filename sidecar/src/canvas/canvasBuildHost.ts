@@ -1,4 +1,9 @@
-import type { CanvasFrame, DesignSystemAdherence, RevisionRef, SourceFiles } from './protocol.js';
+import type {
+  CanvasFrame,
+  DesignSystemAdherence,
+  RevisionRef,
+  SourceFiles,
+} from '@droidex/protocol';
 
 /** What a build pins its result to, as the canvas stands right now. */
 export interface BuildTarget {

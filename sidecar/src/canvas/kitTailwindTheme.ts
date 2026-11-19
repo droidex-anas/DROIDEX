@@ -17,14 +17,9 @@ import setupContextUtils, { type TailwindContext } from 'tailwindcss/lib/lib/set
 import nameClass from 'tailwindcss/lib/util/nameClass';
 import resolveConfig from 'tailwindcss/resolveConfig';
 import { z } from 'zod';
-import {
-  TOKEN_KINDS,
-  tokenValueSchema,
-  type DocumentSection,
-  type TokenSectionKind,
-} from './designSystemDocument.js';
+import type { DocumentSection, SourceFiles } from '@droidex/protocol';
+import { TOKEN_KINDS, tokenValueSchema, type TokenSectionKind } from './designSystemDocument.js';
 import type { DesignSystem } from './designSystems.js';
-import type { SourceFiles } from './schema.js';
 
 export const THEME_NAMESPACES = [
   'colors',

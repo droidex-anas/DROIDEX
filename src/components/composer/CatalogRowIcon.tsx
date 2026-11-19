@@ -3,7 +3,7 @@ import { ModelIcon } from '../ModelIcon';
 import { SkillIcon } from '../icons/SkillIcon';
 import { PROVIDER_MARKS } from '../../features/providers/providerIdentity';
 import { faviconUrl } from '../../lib/linkPresentation';
-import type { SkillInfo } from '../../types/bridge';
+import type { SkillInfo } from '@droidex/protocol';
 
 // Icons come from the desktop app's main process (the favicon protocol for a
 // remote logo, the local-image protocol for one on disk); a renderer running

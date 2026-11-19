@@ -13,7 +13,7 @@ import type {
   SessionHistoryEntry,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   SessionTimeline,
   type SessionTimelineLoaders,

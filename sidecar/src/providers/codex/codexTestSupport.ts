@@ -1,5 +1,5 @@
 import type { AppServerClient } from './appServer.js';
-import type { PermissionOutcome } from '../../protocol.js';
+import type { PermissionOutcome } from '@droidex/protocol';
 import { CodexSession } from './codexSession.js';
 
 /**

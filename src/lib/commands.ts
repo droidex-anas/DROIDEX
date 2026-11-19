@@ -1,8 +1,8 @@
 import { bridge } from './bridge';
 import { getRuntimeHealth, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
-import type { CanvasTurnContext } from '../features/canvas/protocol';
 import type {
+  CanvasTurnContext,
   Autonomy,
   BrowserState,
   BrowserViewport,
@@ -25,8 +25,8 @@ import type {
   SessionLineage,
   SessionPurpose,
   VoiceNarration,
-} from '../types/bridge';
-import type { SidebarResult } from '../types/sidebar';
+  SidebarResult,
+} from '@droidex/protocol';
 
 let refCounter = 0;
 

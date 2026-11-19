@@ -1,12 +1,8 @@
-import type {
-  Autonomy,
-  ContextWindowTokens,
-  DroidProfile,
-  ProviderKind,
-  ReasoningEffort,
-} from '../../types/bridge';
+import type { DroidProfile, ProviderKind } from './providers.js';
+import type { Autonomy, ContextWindowTokens, ReasoningEffort } from './sessions.js';
 
 export interface ThreadInput {
+  droidProfile?: DroidProfile;
   title: string;
   prompt: string;
   provider: ProviderKind;
@@ -21,9 +17,12 @@ export interface ThreadInput {
 export interface ProjectStep {
   id: string;
   title: string;
+  /** Optional grouping, the way a mission groups features under milestones. */
   milestone?: string;
   state?: 'planned' | 'doing' | 'review' | 'done' | 'blocked';
+  /** The thread carrying the step. */
   threadAppSessionId?: string;
+  /** One line of outcome or blocker, in the lead's words. */
   note?: string;
 }
 
@@ -86,3 +85,25 @@ export interface ProjectView {
   uncertain: number;
   error?: string;
 }
+
+export type ProjectCommand =
+  | { type: 'projects.list' }
+  | { type: 'project.create'; requestId: string; input: ThreadInput; clientRef?: string }
+  | {
+      type: 'project.pause';
+      requestId: string;
+      projectId: string;
+      paused: boolean;
+      acknowledgeDelivery?: boolean;
+    };
+
+export type ProjectEvent =
+  | { type: 'projects.snapshot'; projects: ProjectView[] }
+  | {
+      type: 'project.result';
+      requestId: string;
+      ok: true;
+      projectId?: string;
+      appSessionId?: string;
+    }
+  | { type: 'project.result'; requestId: string; ok: false; error: string };

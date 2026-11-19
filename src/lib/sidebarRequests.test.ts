@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { SessionSummary } from '../types/bridge';
-import type { SidebarRequest } from '../types/sidebar';
+import type { SessionSummary, SidebarRequest } from '@droidex/protocol';
+
 import { withLocalStorageMap } from '../test/localStorage';
 import { initialTabStrip } from '../features/tabs/tabStrip';
 import { DEFAULT_SIDEBAR_PREFERENCES } from './sidebarActivity';

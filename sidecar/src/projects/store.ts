@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, rename, stat, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute } from 'node:path';
 import { z } from 'zod';
-import { DROID_PROFILES } from '../droidProfiles.js';
-import { PROVIDER_KINDS } from '../providers/providerKind.js';
-import type { Project, ThreadInput } from './types.js';
+import { DROID_PROFILES, PROVIDER_KINDS, type ThreadInput } from '@droidex/protocol';
+
+import type { Project } from './types.js';
 
 const id = z.string().min(1).max(200);
 

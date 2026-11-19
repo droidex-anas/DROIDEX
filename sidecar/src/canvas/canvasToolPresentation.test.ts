@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { TranscriptEvent } from '../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from '../SessionEventFlow.js';
 import { SessionTimeline } from '../SessionTimeline.js';
 import { ProviderTranscriptFile } from '../providers/ProviderTranscriptFile.js';

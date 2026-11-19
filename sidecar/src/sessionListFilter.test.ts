@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import {
   FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE,
   filterSessionListSummaries,

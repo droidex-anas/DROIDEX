@@ -11,7 +11,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
-import type { ModelInfo } from '../../types/bridge';
+import type { ModelInfo, Automation, AutomationRun } from '@droidex/protocol';
 import {
   formatAutomationRunStatus,
   formatNextRun,
@@ -19,7 +19,6 @@ import {
   isAutomationRunActive,
   workspaceLabel,
 } from './schedule';
-import type { Automation, AutomationRun } from './types';
 
 /** One row of the Automations list: its schedule, its run state, and its actions. */
 export function AutomationRow({

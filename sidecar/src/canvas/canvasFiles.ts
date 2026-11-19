@@ -10,7 +10,7 @@ import { lstat, mkdir, open, readdir, rename, rm } from 'node:fs/promises';
 import { dirname, join, relative, sep } from 'node:path';
 import { canvasError, storageFailure } from './canvasError.js';
 import { canvasManifestSchema, manifestMismatch, type CanvasManifest } from './canvasManifest.js';
-import type { RevisionRef } from './protocol.js';
+import type { RevisionRef } from '@droidex/protocol';
 import { canvasIdentifierSchema, sourcePathSchema } from './schema.js';
 import {
   revisionMetadataSchema,

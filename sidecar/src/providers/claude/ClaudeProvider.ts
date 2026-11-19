@@ -17,7 +17,7 @@ import { join } from 'node:path';
 import { nonEmptyEnv } from '../../droidexPaths.js';
 import { reasoningValue } from '../../modelCatalog.js';
 import { objectValue } from '../../values.js';
-import type { ProviderStatus, ReasoningEffort } from '../../protocol.js';
+import type { ProviderStatus, ReasoningEffort } from '@droidex/protocol';
 import type {
   Provider,
   ProviderForkHandle,

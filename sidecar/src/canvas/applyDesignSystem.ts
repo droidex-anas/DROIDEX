@@ -3,7 +3,8 @@ import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem } from './designSystems.js';
 import { unmappedTokens } from './designSystemTokens.js';
-import type { CanvasDiagnostic, CanvasScope, DesignSystemRef, WriteReceipt } from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemRef, WriteReceipt } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 
 export interface ApplyDesignSystemInput {
   designId: string;

@@ -1,5 +1,5 @@
 import { threadCounts, type ThreadCounts, type ThreadRow } from './threadBoard';
-import type { ProjectView } from './types';
+import type { ProjectView } from '@droidex/protocol';
 
 /* What a project looks like on the Projects list: whether anything is waiting
    on the user, whether anything is moving, and when it last did. The navigation

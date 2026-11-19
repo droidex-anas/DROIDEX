@@ -7,7 +7,7 @@ import type {
   DesignAnchorDetail,
   DesignSelectionScreenshot,
   DesignStrokePoint,
-} from '../types/bridge';
+} from '@droidex/protocol';
 
 export interface NativeBrowserSelection {
   browserSessionId?: string;

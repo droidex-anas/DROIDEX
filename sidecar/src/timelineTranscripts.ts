@@ -1,4 +1,4 @@
-import type { SessionSummary, TranscriptEvent } from './protocol.js';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { appendSessionNotice } from './sessionNotices.js';
 import { errMsg } from './errors.js';
 

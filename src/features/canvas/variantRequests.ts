@@ -4,7 +4,12 @@
 
 import { elementName } from './elementPins';
 import type { PickedElement } from './pickedElement';
-import type { CanvasFrame, CreateFramesInput, DesignSystemRef, RevisionRef } from './protocol';
+import type {
+  CanvasFrame,
+  CreateFramesInput,
+  DesignSystemRef,
+  RevisionRef,
+} from '@droidex/protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 /** What changes; `explore` may leave the kit and the project's look behind. */

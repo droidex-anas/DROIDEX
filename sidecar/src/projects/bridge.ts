@@ -1,8 +1,7 @@
 import { z } from 'zod';
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent, ProjectEvent } from '@droidex/protocol';
 import type { ProjectService } from './ProjectService.js';
 import { threadInputSchema } from './store.js';
-import type { ProjectEvent } from './types.js';
 
 const id = z.string().min(1).max(200);
 const requestId = { requestId: id };

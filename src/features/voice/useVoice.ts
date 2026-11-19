@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { VoiceNarration } from '../../types/bridge';
+import type { VoiceNarration } from '@droidex/protocol';
 import { useSessionLive } from '../../hooks/useSessionLive';
 import { useVoiceSession, type VoiceSession } from './useVoiceSession';
 import type { VoiceActivity } from './voiceStatus';

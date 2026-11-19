@@ -36,7 +36,7 @@ import type {
   SessionSearchResult,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { SessionFileChange, SessionFileReconciliation } from './sessionFileCache.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 

@@ -1,6 +1,6 @@
 import { applyCachedSummary, type HistoricalSession, type HistoryIndex } from './history.js';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { BridgeFeature, SessionSummary } from './protocol.js';
+import type { BridgeFeature, SessionSummary } from '@droidex/protocol';
 import {
   filterSessionListSummaries,
   type SessionListFilterOptions,

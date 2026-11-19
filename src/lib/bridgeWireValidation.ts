@@ -10,7 +10,7 @@ import type {
   ServerEventBatch,
   ServerWireMessage,
   StreamFidelity,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
 import {
   isDroidProfile,

@@ -14,7 +14,7 @@
 // from storage are sanitized: a corrupt or bloated entry degrades to an empty
 // map instead of breaking the sidebar.
 
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { markdownToPlainText } from './markdownText';
 import { toast } from './toast';
 import { prKind } from './github';

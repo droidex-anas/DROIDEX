@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { Provider, ProviderForkSource, ProviderSession } from './providers/session.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { readProviderTranscript } from './providers/ProviderTranscriptFile.js';

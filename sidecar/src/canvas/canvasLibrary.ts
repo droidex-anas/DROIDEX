@@ -28,7 +28,7 @@ import type {
   DesignSystemRef,
   LibraryItem,
   RevisionRef,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,

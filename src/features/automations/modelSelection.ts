@@ -1,4 +1,4 @@
-import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 
 export function reasoningForModel(
   model: ModelInfo | undefined,

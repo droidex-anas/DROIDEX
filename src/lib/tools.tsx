@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { browserToolOf, describeBrowserCall } from './browserTools';
 import { isChildSessionTool } from './childSessionEvents';
 export { childSessionInfo, isChildSessionTool } from './childSessionEvents';

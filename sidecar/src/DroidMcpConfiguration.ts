@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import type { McpServerInput } from './protocol.js';
+import type { McpServerInput } from '@droidex/protocol';
 import { buildDroidInvocation } from './Environment.js';
 import { childEnv } from './childEnv.js';
 

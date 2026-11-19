@@ -4,7 +4,7 @@
 import type { MouseEvent, PointerEvent } from 'react';
 import type { PreviewNode } from '../previewDocument';
 import type { FrameStatus } from '../previewLabels';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { ElementRow, NoteRow, type ElementEntry } from './ElementRow';
 import { isMovable, isOutlineRow } from './layerMoves';
 import { LayerRow } from './LayerRow';

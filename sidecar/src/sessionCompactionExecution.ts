@@ -2,7 +2,7 @@ import type { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import { runCompaction } from './compaction.js';
 import type { FactoryRuntime, FactorySession } from './DroidRuntime.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import {

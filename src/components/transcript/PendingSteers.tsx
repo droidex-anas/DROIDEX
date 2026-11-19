@@ -15,7 +15,7 @@ import {
 import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { sessionIsLive } from '../../lib/sessions';
 import { toast } from '../../lib/toast';
-import type { ProviderMention, TranscriptEvent } from '../../types/bridge';
+import type { ProviderMention, TranscriptEvent } from '@droidex/protocol';
 import { ThreadReportNotice } from '../chat';
 import { PromptActions } from './ResponseActions';
 import { UserBubble } from './UserBubble';

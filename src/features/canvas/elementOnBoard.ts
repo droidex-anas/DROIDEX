@@ -4,7 +4,7 @@
 
 import type { PlacedFrame } from './canvasGeometry';
 import { isDrawn } from './previewDocument';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 import type { ElementSelection } from './useElementEditor';
 
 export interface Box {

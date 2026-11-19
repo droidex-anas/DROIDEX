@@ -17,7 +17,7 @@ import type {
   SessionFileReconciliation,
   SessionFileSnapshot,
 } from './sessionFileCache.js';
-import type { SessionSearchResult } from './protocol.js';
+import type { SessionSearchResult } from '@droidex/protocol';
 
 const RECENT_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
 const RECENT_SLICE_DELAY_MS = 2_000;

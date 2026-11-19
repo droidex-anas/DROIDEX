@@ -19,7 +19,12 @@ import {
   removeMcpServer,
   toggleMcpServer,
 } from '../lib/commands';
-import type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } from '../types/bridge';
+import type {
+  McpServerInfo,
+  McpServerInput,
+  McpStatusSummary,
+  McpToolInfo,
+} from '@droidex/protocol';
 import { AddMcpServerDialog } from './McpServerForm';
 import { GroupLabel, SectionTitle } from './settingsKit';
 import { Switch } from './Switch';

@@ -15,7 +15,7 @@ import { capturePath, isMissing, refuseLinkedPath } from './designSystemStorage.
 import { readDesignSystem } from './designSystems.js';
 import { catalogEntryOf, kitExample } from './kitPreviews.js';
 import { bundledKitCapture } from './presets/droidexKit.js';
-import type { DesignSystemRef, KitCaptureItem } from './protocol.js';
+import type { DesignSystemRef, KitCaptureItem } from '@droidex/protocol';
 
 // A 1200 × 480 cover at 2x is 2400 × 960 pixels; a busy one needs more than a canvas cover's 512 KiB.
 const MAX_KIT_CAPTURE_BYTES = 2 * 1024 * 1024;

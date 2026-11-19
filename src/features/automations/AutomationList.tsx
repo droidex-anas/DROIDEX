@@ -1,9 +1,8 @@
 import { useMemo, useRef } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { ModelInfo, SessionSummary } from '../../types/bridge';
+import type { ModelInfo, SessionSummary, Automation, AutomationRun } from '@droidex/protocol';
 import { AutomationRow } from './AutomationRow';
 import { automationModelSelectionIssue } from './modelSelection';
-import type { Automation, AutomationRun } from './types';
 
 export function AutomationList({
   automations,

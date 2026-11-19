@@ -7,7 +7,7 @@ import { Upload } from '@droidex/icons';
 import { DialogTitle } from '../../components/ui/Dialog';
 import { FIELD_CLASS, PRIMARY_BUTTON_CLASS, QUIET_BUTTON_CLASS } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
-import type { DesignSystemSource } from './protocol';
+import type { DesignSystemSource } from '@droidex/protocol';
 import { MAX_KIT_NAME_LENGTH } from './designSystemDocumentValidation';
 
 // The sidecar's own bound on kit guidance; a larger file cannot be a DESIGN.md.

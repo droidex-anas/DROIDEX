@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type AppState } from './useStore';
 import { currentSideChat } from '../lib/sideChats';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 
 const chat = (appSessionId: string, overrides: Partial<SessionSummary> = {}) =>

@@ -8,7 +8,7 @@ import { ChevronDown, Pencil } from '@droidex/icons';
 import { Markdown } from '../../../components/Markdown';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
-import type { DocumentNote } from '../designSystemDocumentProtocol';
+import type { DocumentNote } from '@droidex/protocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import { noteLabel, noteTitle, type DraftMark } from './documentSections';

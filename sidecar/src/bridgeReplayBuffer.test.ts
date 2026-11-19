@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { BridgeReplayBuffer } from './bridgeReplayBuffer.js';
-import type { ServerEventBatch } from './protocol.js';
+import type { ServerEventBatch } from '@droidex/protocol';
 
 function batch(firstSeq: number, lastSeq = firstSeq): ServerEventBatch {
   return {

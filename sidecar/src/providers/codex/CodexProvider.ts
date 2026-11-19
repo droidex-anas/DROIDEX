@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
+import type { ModelInfo, ProviderStatus, SkillInfo } from '@droidex/protocol';
 import type {
   Provider,
   ProviderForkHandle,

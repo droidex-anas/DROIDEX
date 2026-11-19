@@ -1,4 +1,4 @@
-import type { ServerEvent, ServerWireMessage } from '../protocol.js';
+import type { ServerEvent, ServerWireMessage } from '@droidex/protocol';
 
 export interface ReplayWireCursor {
   generation: string | null;

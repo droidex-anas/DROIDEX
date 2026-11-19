@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { MAX_LIBRARY_SKIPS, type LibrarySkip } from './designSystemProvenance.js';
+import type { LibrarySkip } from '@droidex/protocol';
+import { MAX_LIBRARY_SKIPS } from './designSystemProvenance.js';
 import { libraryReview } from './libraryReview.js';
 
 test('a review lists what fits its bounds and counts every record, listed or not', () => {

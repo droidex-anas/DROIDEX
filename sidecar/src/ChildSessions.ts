@@ -6,7 +6,7 @@ import type {
   ChildSessionSummary,
   ChildStatus,
   ClientCommand,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { ChildOperationTarget } from './SessionContext.js';
 import {
   matchesChildGenerationSnapshot,

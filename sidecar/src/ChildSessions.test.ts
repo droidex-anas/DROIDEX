@@ -11,7 +11,7 @@ import type {
   AutoCompactionSettlement,
   ChildAutomaticCompactionTarget,
 } from './SessionCompaction.js';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   FakeFactoryRuntime,

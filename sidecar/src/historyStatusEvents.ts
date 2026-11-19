@@ -1,5 +1,5 @@
 import type { HistoryPersistenceStatus } from './HistoryPersistence.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 
 export function serverEventForHistoryStatus(status: HistoryPersistenceStatus): ServerEvent {
   switch (status.state) {

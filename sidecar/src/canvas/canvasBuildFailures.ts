@@ -12,7 +12,7 @@ import {
   CompilerUnavailableError,
   RUNTIME_UNAVAILABLE,
 } from './compiler.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 const SOURCE_UNREADABLE = 'The saved source for this design could not be read.';

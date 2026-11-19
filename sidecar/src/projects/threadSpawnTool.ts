@@ -1,8 +1,9 @@
 import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
-import { DROID_PROFILES, enabledDroidProfiles } from '../droidProfiles.js';
+import { DROID_PROFILES, PROVIDER_KINDS } from '@droidex/protocol';
+import { enabledDroidProfiles } from '../droidProfiles.js';
 import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
-import { PROVIDER_KINDS } from '../providers/providerKind.js';
+
 import { requireProjectService } from './service.js';
 import { LEDGER_LIMITS } from './store.js';
 

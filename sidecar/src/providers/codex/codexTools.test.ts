@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { createCanvasMcpServer } from '../../canvas/canvasMcpServer.js';
 import { CanvasScopes } from '../../canvas/canvasScopes.js';
 import { CanvasTurns } from '../../canvas/canvasTurnContext.js';
-import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
+import type { PermissionOutcome, ServerEvent } from '@droidex/protocol';
 import { SessionInteractions } from '../../SessionInteractions.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 import type { ProviderApprovalRequest } from '../interactions.js';

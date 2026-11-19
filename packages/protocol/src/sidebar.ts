@@ -1,23 +1,14 @@
-// Mirrored in src/types/sidebar.ts. Keep both files in sync.
+import type { SessionQuestion } from './transcript.js';
 
-import type { SessionQuestion } from '../protocol.js';
-
-// The sidebar's own status for a chat, worked out by the window
-// (src/lib/sidebarActivity.ts) and reported in its rows.
-export const SESSION_ACTIVITY_STATUSES = [
-  'working',
-  'approval',
-  'input',
-  'plan',
-  'failed',
-  'interrupted',
-  'reply',
-  'review',
-  'ship',
-  'ready',
-  'settled',
-] as const;
-export type SessionActivityStatus = (typeof SESSION_ACTIVITY_STATUSES)[number];
+export const SIDEBAR_ROW_LIMITS = {
+  rows: 5_000,
+  title: 200,
+  permissionDetail: 2_000,
+  questions: 16,
+  questionText: 2_000,
+  options: 16,
+  optionText: 500,
+} as const;
 
 export type SidebarMark = 'settled' | 'reopened' | 'archived';
 
@@ -49,7 +40,7 @@ export interface SidebarMarkOutcome {
   reason?: string;
 }
 
-// A chat as the sidebar shows it, with text cut to SIDEBAR_ROW_LIMITS.
+// A chat as the sidebar shows it, with text cut to the sidebar's row limits.
 export interface SidebarRow {
   appSessionId: string;
   title: string;
@@ -66,12 +57,18 @@ export interface SidebarRow {
   question?: { requestId: string; questions: SessionQuestion['questions'] };
 }
 
-export const SIDEBAR_ROW_LIMITS = {
-  rows: 5_000,
-  title: 200,
-  permissionDetail: 2_000,
-  questions: 16,
-  questionText: 2_000,
-  options: 16,
-  optionText: 500,
-} as const;
+export const SESSION_ACTIVITY_STATUSES = [
+  'working',
+  'approval',
+  'input',
+  'plan',
+  'failed',
+  'interrupted',
+  'reply',
+  'review',
+  'ship',
+  'ready',
+  'settled',
+] as const;
+
+export type SessionActivityStatus = (typeof SESSION_ACTIVITY_STATUSES)[number];

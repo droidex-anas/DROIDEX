@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 export function browserKeyForSession(session: SessionSummary | undefined): string | undefined {
   if (!session) return undefined;

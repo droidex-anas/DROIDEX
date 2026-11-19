@@ -5,7 +5,8 @@
 // sections follow the canonical order. A note longer than one holds continues in
 // name-2.md and on, so nothing is cut.
 
-import { DOCUMENT_LIMITS, TOKEN_KINDS, type DocumentSection } from './designSystemDocument.js';
+import type { DocumentSection } from '@droidex/protocol';
+import { DOCUMENT_LIMITS, TOKEN_KINDS } from './designSystemDocument.js';
 
 type TokenKind = (typeof TOKEN_KINDS)[number];
 type DocumentItem = DocumentSection['items'][number];

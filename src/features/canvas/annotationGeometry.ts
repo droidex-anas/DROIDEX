@@ -8,7 +8,7 @@ import type {
   AnnotationDraft,
   AnnotationPoint,
   AnnotationRect,
-} from './annotationProtocol';
+} from '@droidex/protocol';
 
 /** What the next press on the board draws. */
 export type AnnotationTool = 'draw' | 'rect' | 'ellipse' | 'line' | 'arrow' | 'text' | 'note';

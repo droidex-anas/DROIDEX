@@ -11,7 +11,7 @@ import {
   type NativeBrowserLoadFailed,
   type NativeBrowserLoaded,
 } from '../../lib/nativeBrowser';
-import type { BrowserViewport, BrowserViewportMode, DesignReference } from '../../types/bridge';
+import type { BrowserViewport, BrowserViewportMode, DesignReference } from '@droidex/protocol';
 import type { Size } from './browserGeometry';
 import { pageLayout } from './browserViewport';
 import { designMarkColor } from './designMarks';

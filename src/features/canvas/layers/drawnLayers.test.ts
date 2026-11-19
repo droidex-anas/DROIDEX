@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { PreviewTree } from '../previewDocumentTree';
-import type { OutlineNode, SourceOutline } from '../protocol';
+import type { OutlineNode, SourceOutline } from '@droidex/protocol';
 import { drawnLayers } from './drawnLayers';
 
 const row = (

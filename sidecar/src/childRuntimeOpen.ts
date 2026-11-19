@@ -2,7 +2,7 @@ import type { FactorySession } from './DroidRuntime.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvas/canvasMcpNames.js';
 import { normalizeMcpServerName } from './automations/permissionPolicy.js';
 import type { PersistedChildSession } from './history.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { errMsg } from './errors.js';
 import type { ChildAutomaticCompactionTarget } from './SessionCompaction.js';

@@ -1,9 +1,9 @@
 import { isDesignPrompt } from '../browser/designPromptPacks.js';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { ServerEvent, SessionSummary, ProviderMention } from '@droidex/protocol';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../errors.js';
-import type { ProviderMention } from './catalog.js';
+
 import type { LiveSession } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';

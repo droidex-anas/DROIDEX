@@ -7,7 +7,7 @@ import { tagComponent, useComponentPins } from '../../features/canvas/componentP
 import { useDesignSystemChoice } from '../../features/canvas/designSystemChoices';
 import { requestDesignSystem, useFramePins } from '../../features/canvas/framePins';
 import { useKitCatalog } from '../../features/canvas/palette/useKitCatalog';
-import type { CatalogListing } from '../../features/canvas/protocol';
+import type { CatalogListing } from '@droidex/protocol';
 import { componentRowKey } from './menuItems';
 
 const NO_COMPONENTS: readonly CatalogListing[] = [];

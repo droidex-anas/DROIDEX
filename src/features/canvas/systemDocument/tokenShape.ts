@@ -5,7 +5,7 @@
 // calc(), takes what its section holds, or in a section of mixed tokens what
 // its group's title names.
 
-import type { TokenKind } from '../designSystemDocumentProtocol';
+import type { TokenKind } from '@droidex/protocol';
 import { parseShadow } from './shadowLayers';
 
 export type TokenShape = 'color' | 'shadow' | 'radius' | 'length' | 'type' | 'text';

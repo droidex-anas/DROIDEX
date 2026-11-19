@@ -6,7 +6,7 @@ import {
   useStoreSelector,
   type AppState,
 } from '../../hooks/useStore';
-import type { VoiceNarration } from '../../types/bridge';
+import type { VoiceNarration } from '@droidex/protocol';
 import { useMicStream } from './useMicStream';
 import { isAssistantSpeaking, voiceSessionOf, type VoiceStatus } from './voiceSessions';
 

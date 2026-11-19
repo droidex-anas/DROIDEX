@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { adaptEvent, initialState, reducer } from './useStore';
-import type { PermissionRequest, SessionQuestion } from '../types/bridge';
+import type { PermissionRequest, SessionQuestion } from '@droidex/protocol';
 
 function makePermission(appSessionId: string, kind: PermissionRequest['kind'] = 'exec') {
   const request: PermissionRequest = {

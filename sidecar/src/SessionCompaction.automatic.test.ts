@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
-import type { PermissionOutcome } from './protocol.js';
+import type { PermissionOutcome } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   SessionCompaction,

@@ -14,7 +14,7 @@ import {
   shouldAnimateFeedRow,
 } from './conversationListState';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function messageItem(
   id: string,

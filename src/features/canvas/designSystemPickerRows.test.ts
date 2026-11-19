@@ -10,7 +10,7 @@ import {
   type PickerRow,
 } from './designSystemPickerRows';
 import { canvasContextOf, type FramePin } from './framePins';
-import type { DesignSystemRef, DesignSystemSummary } from './protocol';
+import type { DesignSystemRef, DesignSystemSummary } from '@droidex/protocol';
 
 function kit(
   id: string,

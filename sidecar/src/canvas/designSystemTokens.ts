@@ -1,6 +1,6 @@
 import postcss from 'postcss';
 import valueParser from 'postcss-value-parser';
-import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 
 interface TokenReference {
   token: string;

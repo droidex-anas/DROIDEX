@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { ProcessRecord } from './processes/processTree.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';

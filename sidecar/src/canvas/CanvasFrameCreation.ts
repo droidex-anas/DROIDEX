@@ -20,7 +20,8 @@ import {
 } from './canvasManifest.js';
 import { canvasChange, toFrame } from './canvasProjection.js';
 import { recordedCreate } from './canvasReceipts.js';
-import type { CanvasScope, CreateFramesInput, CreateFramesResult } from './protocol.js';
+import type { CreateFramesInput, CreateFramesResult } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 
 const ATTACHED_SINCE = 'This chat was attached to a canvas after that request.';
 

@@ -6,7 +6,7 @@ import type {
   ProviderKind,
   ReasoningEffort,
   VoiceNarration,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { isReasoningEffort } from '../lib/reasoningEffort';
 import { DIFF_SCOPES, type DiffScope } from '../types/vcs';
 import type { ImagePasteQuality } from '../lib/images';

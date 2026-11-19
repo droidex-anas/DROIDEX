@@ -8,7 +8,7 @@ import {
   revertStyle,
   type ElementEditDraft,
 } from './elementEditDraft';
-import type { SourceElement } from './protocol';
+import type { SourceElement } from '@droidex/protocol';
 import { pickPreview, type PickerHover } from './usePickPreview';
 
 const element = { designId: 'design', revisionId: 'r1', elementId: 'el_1', instancePath: '0' };

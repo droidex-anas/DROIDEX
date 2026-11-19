@@ -10,7 +10,7 @@ import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
 import { cn } from '../../../components/ui/cn';
 import { pushToast } from '../../../lib/toast';
-import type { DocumentToken, TokenGroup, TokenKind } from '../designSystemDocumentProtocol';
+import type { DocumentToken, TokenGroup, TokenKind } from '@droidex/protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddToken } from './AddToken';

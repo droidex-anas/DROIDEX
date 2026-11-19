@@ -1,4 +1,4 @@
-import type { ChildStatus, ProgressEntry, TranscriptEvent } from '../types/bridge';
+import type { ChildStatus, ProgressEntry, TranscriptEvent } from '@droidex/protocol';
 import type { ChildAccess, ChildSessionInfo } from '../hooks/storeChildSession';
 import { toolMeta, CAT_LABEL } from './tools';
 import { childSessionInfo } from './childSessionEvents';

@@ -7,7 +7,7 @@ import { CanvasScopes } from './canvasScopes.js';
 import { assertCanvasTurnContext, CanvasTurns } from './canvasTurnContext.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
-import type { CanvasTurnContext } from './protocol.js';
+import type { CanvasTurnContext } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;

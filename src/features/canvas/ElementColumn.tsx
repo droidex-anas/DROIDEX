@@ -3,7 +3,7 @@
 
 import type { HistoryStep } from './boardHistory';
 import { ElementPanel, EmptyElementPanel } from './ElementPanel';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import type { ElementEditor } from './useElementEditor';
 
 export function ElementColumn({

@@ -1,13 +1,20 @@
 import { droidHome } from '../droidProfiles.js';
-import type { Autonomy, ModelInfo, ProviderStatus, SessionSummary } from '../protocol.js';
-import type { ProviderKind } from '../providers/providerKind.js';
+import type {
+  Autonomy,
+  ModelInfo,
+  ProviderStatus,
+  SessionSummary,
+  ProviderKind,
+  ThreadInput,
+} from '@droidex/protocol';
+
 import { LEDGER_LIMITS } from './store.js';
 import {
   createThreadWorkspace,
   removeThreadWorkspace,
   type ThreadWorkspace,
 } from './threadWorkspace.js';
-import type { Project, ThreadInput, ThreadSpawnInput } from './types.js';
+import type { Project, ThreadSpawnInput } from './types.js';
 
 /* Turning a spawn request into something launchable: which model it means,
    what it inherits from the chat that asked, what to call it, and which

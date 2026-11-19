@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { readKitImage } from '../../../lib/desktop';
-import type { OwnedAsset } from '../protocol';
+import type { OwnedAsset } from '@droidex/protocol';
 
 export type KitImage =
   | { status: 'loading' }

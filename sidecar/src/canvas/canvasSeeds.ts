@@ -10,8 +10,13 @@ import { entryWithPicks } from './compiler.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { readDesignSystem } from './designSystems.js';
 import { catalogEntryOf } from './kitPreviews.js';
-import type { PropPick } from './kitCatalog.js';
-import type { CreateFramesInput, DesignSystemRef, SvgImageReason } from './protocol.js';
+import type {
+  PropPick,
+  CreateFramesInput,
+  DesignSystemRef,
+  SvgImageReason,
+} from '@droidex/protocol';
+
 import { svgFrameSource } from './svgJsx.js';
 
 export interface StagedSeed {

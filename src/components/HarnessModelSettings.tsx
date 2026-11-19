@@ -16,7 +16,7 @@ import {
   providerModelSelection,
   providerUnavailableReason,
 } from '../features/providers/providerIdentity';
-import type { ModelInfo, ProviderKind, ProviderStatus } from '../types/bridge';
+import type { ModelInfo, ProviderKind, ProviderStatus } from '@droidex/protocol';
 import { ModelIcon, providerOf } from './ModelIcon';
 import { Dropdown } from './settingsKit';
 

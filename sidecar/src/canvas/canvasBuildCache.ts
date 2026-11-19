@@ -14,7 +14,7 @@ import type {
   DesignSystemAdherence,
   PreviewArtifact,
   SourceElement,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,

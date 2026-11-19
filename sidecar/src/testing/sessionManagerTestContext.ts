@@ -13,7 +13,7 @@ import {
 } from '../SessionManager.js';
 import { HistoryIndex } from '../history.js';
 import { NO_PROVIDER_PROBES } from '../providers/providerProbes.js';
-import type * as Protocol from '../protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { SessionFileChange } from '../sessionFileCache.js';
 import { FakeBrowserSessionManager } from './browserCharacterizationSupport.js';
 import {

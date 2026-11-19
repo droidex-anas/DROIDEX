@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ServerEvent } from '../../protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { SessionVoice } from '../SessionVoice.js';
 import { codexSession, fakeClient } from './codexTestSupport.js';
 

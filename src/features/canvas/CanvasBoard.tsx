@@ -12,7 +12,12 @@ import {
   type ReactNode,
   type Ref,
 } from 'react';
-import type { AnnotateCanvasInput } from './annotationProtocol';
+import type {
+  AnnotateCanvasInput,
+  ArrangeFramesInput,
+  CanvasFrame,
+  CanvasSnapshot,
+} from '@droidex/protocol';
 import { DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { boardCommands } from './boardCommands';
@@ -54,7 +59,6 @@ import { useFrameRemoval } from './useFrameRemoval';
 import { useHoverMeasurements } from './useHoverMeasurements';
 import { useInteractionDispatch } from './useInteractionDispatch';
 import { useOverlayCapture } from './useOverlayCapture';
-import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol';
 
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */

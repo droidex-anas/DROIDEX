@@ -1,8 +1,7 @@
 // The kit's files (spec §2): its notes, the example files its cover and
 // previews render, and its images, each with where the document shows it.
 
-import type { DocumentSection } from '../designSystemDocumentProtocol';
-import type { DesignSystemCover } from '../protocol';
+import type { DocumentSection, DesignSystemCover } from '@droidex/protocol';
 
 export interface KitFile {
   name: string;

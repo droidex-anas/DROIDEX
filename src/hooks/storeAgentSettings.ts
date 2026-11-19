@@ -17,7 +17,7 @@ import {
   type ProviderUsage,
   type ReasoningEffort,
   type SkillInfo,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { sanitizeAgentConfig, type HarnessModel, type MissionRole } from './persistedUiPreferences';
 import type { AppState } from './useStore';
 

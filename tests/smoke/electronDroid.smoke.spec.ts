@@ -23,7 +23,7 @@ import {
 } from '@playwright/test';
 
 import { resolveDroidPath } from '../../sidecar/src/Environment.ts';
-import { BRIDGE_PROTOCOL_VERSION } from '../../src/types/bridge.ts';
+import { BRIDGE_PROTOCOL_VERSION } from '@droidex/protocol';
 
 type SmokeResult = { appSessionId: string; assistantText: string };
 type BridgeInfo = { port: number; token: string };

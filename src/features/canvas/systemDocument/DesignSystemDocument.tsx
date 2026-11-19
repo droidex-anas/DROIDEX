@@ -20,8 +20,8 @@ import { resolveScheme } from '../../../lib/theme';
 import { pushToast } from '../../../lib/toast';
 import { CanvasAction, CanvasNote, CanvasPlate, CanvasStatus } from '../CanvasPaneStates';
 import { chooseDesignSystem, useDesignSystemChoice } from '../designSystemChoices';
-import type { DocumentSection } from '../designSystemDocumentProtocol';
-import type { DesignSystemDocumentView } from '../protocol';
+import type { DocumentSection, DesignSystemDocumentView } from '@droidex/protocol';
+
 import { PreviewModeButton, type PreviewMode } from '../PreviewModeToggle';
 import { revealFile, revealSection } from './columnScroll';
 import { DocumentCover } from './DocumentCover';

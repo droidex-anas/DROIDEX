@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NO_SHOWN_REVISIONS, missingLabel, sheetState, shownRevisions } from './previewLabels';
-import type { CanvasBuildState } from './protocol';
+import type { CanvasBuildState } from '@droidex/protocol';
 
 const READY: CanvasBuildState = {
   status: 'ready',
