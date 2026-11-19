@@ -26,7 +26,7 @@ const SOURCE_LABELS: Record<HarnessInstallSource, string> = {
 };
 
 /**
- * Claude Code and Codex as installed on this machine. Each updates through
+ * Agent CLIs installed on this machine. Each updates through
  * whichever installer owns its binary, detected from where the binary lives.
  */
 export function HarnessCliSettings({
@@ -42,7 +42,7 @@ export function HarnessCliSettings({
   return (
     <div className="rounded-xl bg-surface shadow-lg mb-8">
       {clis === null ? (
-        <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
+        <SettingRow label="Agent CLIs" description="Detecting installed CLIs…">
           <span />
         </SettingRow>
       ) : (
@@ -55,11 +55,11 @@ export function HarnessCliSettings({
         ))
       )}
       <SettingRow
-        label="Keep Claude Code and Codex up to date"
+        label="Keep agent CLIs up to date"
         description="Updates installed CLIs on launch."
       >
         <Switch
-          label="Keep Claude Code and Codex up to date"
+          label="Keep agent CLIs up to date"
           checked={autoUpdate}
           onChange={onAutoUpdateChange}
         />
