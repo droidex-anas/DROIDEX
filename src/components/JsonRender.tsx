@@ -28,16 +28,26 @@ const MAX_NODES = 1000;
 const MAX_ITEMS = 2000;
 const MAX_TABLE_COLUMNS = 40;
 
-interface RawElement {
-  type?: string;
-  props?: Record<string, unknown>;
-  children?: unknown;
-  [key: string]: unknown;
+interface Spec {
+  root: unknown;
+  elements: Record<string, unknown>;
 }
 
-interface Spec {
-  root?: string;
-  elements?: Record<string, RawElement>;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSpec(value: unknown): value is Spec {
+  return isRecord(value) && !!value.root && isRecord(value.elements);
+}
+
+function parseSpec(source: string): Spec | null {
+  try {
+    const value: unknown = JSON.parse(source.trim());
+    return isSpec(value) ? value : null;
+  } catch {
+    return null;
+  }
 }
 
 const COLOR_MAP: Record<string, string> = {
@@ -86,8 +96,8 @@ function asNumber(v: unknown): number | undefined {
   return undefined;
 }
 
-function asArray<T = unknown>(v: unknown): T[] {
-  return Array.isArray(v) ? (v as T[]).slice(0, MAX_ITEMS) : [];
+function asArray(v: unknown): unknown[] {
+  return Array.isArray(v) ? v.slice(0, MAX_ITEMS) : [];
 }
 
 // Like asArray but drops entries that are not plain objects, so components can
@@ -96,20 +106,17 @@ function asArray<T = unknown>(v: unknown): T[] {
 function asRecordArray(v: unknown): Record<string, unknown>[] {
   return Array.isArray(v)
     ? v
-        .filter(
-          (e): e is Record<string, unknown> =>
-            typeof e === 'object' && e !== null && !Array.isArray(e),
-        )
+        .filter((e): e is Record<string, unknown> => isRecord(e) && !Array.isArray(e))
         .slice(0, MAX_ITEMS)
     : [];
 }
 
 /* Merge stray top-level keys into props so malformed specs still render. */
-function mergedProps(el: RawElement): Record<string, unknown> {
+function mergedProps(el: Record<string, unknown>): Record<string, unknown> {
   const { type: _t, props, children: _c, ...rest } = el;
   void _t;
   void _c;
-  return { ...rest, ...(props && typeof props === 'object' ? props : {}) };
+  return { ...rest, ...(isRecord(props) ? props : {}) };
 }
 
 // Semantic status → themed color. success/warning/error use the fixed semantic
@@ -144,7 +151,6 @@ function BoxEl({
   framed: boolean;
   children: ReactNode;
 }) {
-  // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
   return (
     <div
       className={framed ? 'rounded-lg bg-elevated/50' : undefined}
@@ -170,13 +176,13 @@ function TextEl({ text, color, bold }: { text: string; color?: string; bold: boo
   );
 }
 
+const HEADING_CLASSES = new Map([
+  ['h1', 'text-heading'],
+  ['h3', 'text-body-strong text-secondary'],
+]);
+
 function HeadingEl({ level, text }: { level: string; text: string }) {
-  const cls =
-    level === 'h1'
-      ? 'text-heading'
-      : level === 'h3'
-        ? 'text-body-strong text-secondary'
-        : 'text-subheading';
+  const cls = HEADING_CLASSES.get(level) ?? 'text-subheading';
   return <div className={`${cls} text-primary break-words`}>{text}</div>;
 }
 
@@ -195,31 +201,27 @@ function BarChartEl({
   data,
   showPercentage,
 }: {
-  data: { value?: unknown; color?: unknown; label?: unknown }[];
+  data: { value: number; color: string; label: string }[];
   showPercentage: boolean;
 }) {
-  const max = Math.max(1, ...data.map((d) => asNumber(d.value) ?? 0));
-  const total = data.reduce((s, d) => s + (asNumber(d.value) ?? 0), 0) || 1;
+  const max = Math.max(1, ...data.map((d) => d.value));
+  const total = data.reduce((s, d) => s + d.value, 0) || 1;
   return (
     <div className="flex flex-col gap-1.5 w-full">
-      {data.map((d, i) => {
-        const value = asNumber(d.value) ?? 0;
-        const color = resolveColor(d.color) ?? 'var(--accent)';
-        const label = showPercentage
+      {data.map(({ value, color, label }, i) => {
+        const displayValue = showPercentage
           ? `${String(Math.round((value / total) * 100))}%`
           : String(value);
         return (
           <div key={i} className="flex items-center gap-2 text-caption">
-            <span className="w-24 shrink-0 truncate text-secondary text-right">
-              {asString(d.label)}
-            </span>
+            <span className="w-24 shrink-0 truncate text-secondary text-right">{label}</span>
             <div className="flex-1 h-3.5 rounded-xs bg-elevated/60 overflow-hidden">
               <div
                 className="h-full rounded-xs"
                 style={{ width: `${String((value / max) * 100)}%`, backgroundColor: color }}
               />
             </div>
-            <span className="w-12 shrink-0 tabular-nums text-muted">{label}</span>
+            <span className="w-12 shrink-0 tabular-nums text-muted">{displayValue}</span>
           </div>
         );
       })}
@@ -252,7 +254,7 @@ function TableEl({
   rows,
   headerColor = 'var(--text)',
 }: {
-  columns: { key?: unknown; header?: unknown; width?: unknown }[];
+  columns: { key: string; header: string; width?: number }[];
   rows: Record<string, unknown>[];
   headerColor?: string;
 }) {
@@ -272,9 +274,9 @@ function TableEl({
               <th
                 key={i}
                 className="text-left align-top text-body-strong whitespace-nowrap px-2.5 py-1.5"
-                style={{ color: headerColor, width: asNumber(c.width) }}
+                style={{ color: headerColor, width: c.width }}
               >
-                {asString(c.header ?? c.key)}
+                {c.header}
               </th>
             ))}
           </tr>
@@ -287,7 +289,7 @@ function TableEl({
                   key={ci}
                   className="align-top text-secondary first:whitespace-nowrap first:pr-4 first:font-medium first:text-primary px-2.5 py-1.5"
                 >
-                  {asString(r[asString(c.key)])}
+                  {asString(r[c.key])}
                 </td>
               ))}
             </tr>
@@ -387,16 +389,19 @@ function ProgressBarEl({ progress = 0, label }: { progress?: number; label: stri
   );
 }
 
+const METRIC_TRENDS = new Map([
+  ['up', { color: 'var(--success)', icon: ArrowUp }],
+  ['down', { color: 'var(--danger)', icon: ArrowDown }],
+]);
+
 function MetricEl({ trend, label, value }: { trend: string; label: string; value: string }) {
-  const trendColor =
-    trend === 'up' ? 'var(--success)' : trend === 'down' ? 'var(--danger)' : undefined;
-  const TrendIcon = trend === 'up' ? ArrowUp : trend === 'down' ? ArrowDown : null;
+  const { icon: TrendIcon, color } = METRIC_TRENDS.get(trend) ?? {};
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-caption text-muted">{label}</span>
       <span className="inline-flex items-center gap-1 text-heading tabular-nums text-primary">
         {value}
-        {TrendIcon && <TrendIcon className="w-4 h-4" style={{ color: trendColor }} />}
+        {TrendIcon && <TrendIcon className="w-4 h-4" style={{ color }} />}
       </span>
     </div>
   );
@@ -442,28 +447,20 @@ function CalloutEl({
   );
 }
 
-function TimelineEl({
-  items,
-}: {
-  items: { status?: unknown; title?: unknown; description?: unknown }[];
-}) {
+function TimelineEl({ items }: { items: { color: string; title: string; description: string }[] }) {
   return (
     <div className="flex flex-col">
-      {items.map((it, i) => {
-        const status = asString(it.status).toLowerCase();
-        const dot = statusColor(status);
+      {items.map(({ color, title, description }, i) => {
         const last = i === items.length - 1;
         return (
           <div key={i} className="flex gap-2.5">
             <div className="flex flex-col items-center">
-              <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: dot }} />
+              <span className="mt-1 w-2 h-2 rounded-full shrink-0" style={{ background: color }} />
               {!last && <span className="w-px flex-1 bg-muted/30 my-1" />}
             </div>
             <div className={`flex flex-col gap-0.5 ${last ? '' : 'pb-3'}`}>
-              <span className="text-body-strong text-primary">{asString(it.title)}</span>
-              {asString(it.description) && (
-                <span className="text-caption text-secondary">{asString(it.description)}</span>
-              )}
+              <span className="text-body-strong text-primary">{title}</span>
+              {description && <span className="text-caption text-secondary">{description}</span>}
             </div>
           </div>
         );
@@ -480,17 +477,20 @@ function renderElement(
   children: ReactNode,
 ): ReactNode {
   switch (type) {
-    case 'Box':
+    case 'Box': {
+      // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
+      const framed = !!props.borderStyle;
       return (
         <BoxEl
           row={props.flexDirection === 'row'}
           padding={asNumber(props.padding)}
           gap={asNumber(props.gap)}
-          framed={!!props.borderStyle}
+          framed={framed}
         >
           {children}
         </BoxEl>
       );
+    }
     case 'Text':
       return (
         <TextEl text={asString(props.text)} color={resolveColor(props.color)} bold={!!props.bold} />
@@ -507,7 +507,14 @@ function renderElement(
       return <div style={{ flex: 1 }} />;
     case 'BarChart':
       return (
-        <BarChartEl data={asRecordArray(props.data)} showPercentage={!!props.showPercentage} />
+        <BarChartEl
+          data={asRecordArray(props.data).map((item) => ({
+            label: asString(item.label),
+            value: asNumber(item.value) ?? 0,
+            color: resolveColor(item.color) ?? 'var(--accent)',
+          }))}
+          showPercentage={!!props.showPercentage}
+        />
       );
     case 'Sparkline':
       return (
@@ -519,7 +526,13 @@ function renderElement(
     case 'Table':
       return (
         <TableEl
-          columns={asRecordArray(props.columns).slice(0, MAX_TABLE_COLUMNS)}
+          columns={asRecordArray(props.columns)
+            .slice(0, MAX_TABLE_COLUMNS)
+            .map((column) => ({
+              key: asString(column.key),
+              header: asString(column.header ?? column.key),
+              width: asNumber(column.width),
+            }))}
           rows={asRecordArray(props.rows)}
           headerColor={resolveColor(props.headerColor)}
         />
@@ -566,23 +579,31 @@ function renderElement(
         </CalloutEl>
       );
     case 'Timeline':
-      return <TimelineEl items={asRecordArray(props.items)} />;
+      return (
+        <TimelineEl
+          items={asRecordArray(props.items).map((item) => ({
+            color: statusColor(asString(item.status).toLowerCase()),
+            title: asString(item.title),
+            description: asString(item.description),
+          }))}
+        />
+      );
     default:
       return children ?? null;
   }
 }
 
 function renderNode(
-  id: string,
+  id: unknown,
   spec: Spec,
-  seen: Set<string>,
+  seen: Set<unknown>,
   depth: number,
   budget: { count: number },
 ): ReactNode {
   if (depth > MAX_DEPTH || seen.has(id) || budget.count >= MAX_NODES) return null;
   budget.count++;
-  const el = spec.elements?.[id];
-  if (!el || typeof el !== 'object') return null;
+  const el = spec.elements[String(id)];
+  if (!isRecord(el)) return null;
   const props = mergedProps(el);
   const childIds = asArray(el.children ?? props.children).filter(
     (c): c is string => typeof c === 'string',
@@ -610,16 +631,9 @@ function ErrorFallback({ raw }: { raw: string }) {
 }
 
 export const JsonRender = memo(function JsonRender({ source }: { source: string }) {
-  const parsed = useMemo<Spec | null>(() => {
-    try {
-      const obj: unknown = JSON.parse(source.trim());
-      return obj && typeof obj === 'object' ? obj : null;
-    } catch {
-      return null;
-    }
-  }, [source]);
+  const parsed = useMemo(() => parseSpec(source), [source]);
 
-  if (!parsed?.elements || !parsed.root) {
+  if (!parsed) {
     return <ErrorFallback raw={source.trim()} />;
   }
 
@@ -676,7 +690,7 @@ export const __statusColorForTest = statusColor;
 // the global budget can be asserted without a DOM. Returns at most MAX_NODES.
 export function __renderBudgetForTest(spec: Spec): number {
   const budget = { count: 0 };
-  void renderNode(spec.root ?? '', spec, new Set(), 0, budget);
+  void renderNode(spec.root, spec, new Set(), 0, budget);
   return budget.count;
 }
 export const __MAX_NODES_FOR_TEST = MAX_NODES;

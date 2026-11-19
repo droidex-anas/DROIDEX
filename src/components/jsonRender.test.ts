@@ -91,6 +91,16 @@ test('statusColor resolves real statuses and falls back for prototype keys', () 
   }
 });
 
+test('a numeric root indexes an element array without changing cycle detection', () => {
+  const source = JSON.stringify({
+    root: 1,
+    elements: [null, { type: 'Card', title: 'Numeric root', children: ['1'] }],
+  });
+  const markup = renderToStaticMarkup(createElement(JsonRender, { source }));
+
+  assert.equal(markup.match(/Numeric root/g)?.length, 2);
+});
+
 test('huge Sparkline and BarChart data arrays render without blowing the call stack', () => {
   // Before the collection cap, SparklineEl's `Math.min(...data)` spread on a
   // 200k-element array threw RangeError and froze the chat. The cap must keep
