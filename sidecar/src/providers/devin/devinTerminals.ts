@@ -9,6 +9,7 @@ import {
   type WaitForTerminalExitResponse,
 } from '@agentclientprotocol/sdk';
 import { childEnv } from '../../childEnv.js';
+import type { ProviderProcess } from '../session.js';
 import { DevinTerminalProcess } from './devinTerminalProcess.js';
 
 const DEFAULT_OUTPUT_BYTES = 1024 * 1024;
@@ -26,12 +27,12 @@ interface Terminal {
   released: boolean;
   exitStatus?: WaitForTerminalExitResponse;
   exited: Promise<WaitForTerminalExitResponse>;
-  killing?: Promise<void>;
 }
 
 export class DevinTerminals {
   private readonly terminals = new Map<string, Terminal>();
   private readonly bindings = new Map<string, SessionNotification>();
+  private readonly processListeners = new Set<(roots: readonly ProviderProcess[]) => void>();
   private accepting = true;
   private closed = false;
   private generation = 0;
@@ -95,15 +96,19 @@ export class DevinTerminals {
       exited: process.exited,
     };
     this.terminals.set(id, terminal);
+    void process.closed.then(() => {
+      this.publishProcesses();
+    });
     void process.exited.then((status) => {
       terminal.exitStatus = status;
     });
     try {
+      this.publishProcesses();
       await process.started;
       this.requireSession(request.sessionId);
       if (generation !== this.generation) throw new Error('Devin terminal creation was cancelled.');
     } catch (error) {
-      await this.killTerminal(terminal);
+      await terminal.process.stop();
       this.terminals.delete(id);
       throw RequestError.internalError(
         undefined,
@@ -122,7 +127,7 @@ export class DevinTerminals {
   }
 
   async kill(request: TerminalOutputRequest): Promise<Record<string, never>> {
-    await this.killTerminal(this.requireTerminal(request));
+    await this.requireTerminal(request).process.stop();
     return {};
   }
 
@@ -131,7 +136,7 @@ export class DevinTerminals {
     const terminal = this.terminals.get(request.terminalId);
     if (!terminal) return {};
     terminal.released = true;
-    await this.killTerminal(terminal);
+    await terminal.process.stop();
     return {};
   }
 
@@ -139,11 +144,33 @@ export class DevinTerminals {
     if (!this.closed) this.accepting = true;
   }
 
+  onProcessRootsChanged(listener: (roots: readonly ProviderProcess[]) => void): () => void {
+    if (!this.closed) this.processListeners.add(listener);
+    listener(this.processRoots());
+    return () => {
+      this.processListeners.delete(listener);
+    };
+  }
+
+  private processRoots(): ProviderProcess[] {
+    return [...this.terminals.values()].flatMap(({ process }) => {
+      const pid = process.child.pid;
+      return pid !== undefined && process.isAlive()
+        ? [{ pid, isAlive: () => process.isAlive() }]
+        : [];
+    });
+  }
+
+  private publishProcesses(): void {
+    const roots = this.processRoots();
+    for (const listener of this.processListeners) listener(roots);
+  }
+
   interrupt(): Promise<void> {
     this.accepting = false;
     this.generation += 1;
     return Promise.all(
-      [...this.terminals.values()].map((terminal) => this.killTerminal(terminal)),
+      [...this.terminals.values()].map((terminal) => terminal.process.stop()),
     ).then(() => undefined);
   }
 
@@ -153,6 +180,7 @@ export class DevinTerminals {
     this.bindings.clear();
     this.closing = this.interrupt().then(() => {
       this.terminals.clear();
+      this.processListeners.clear();
     });
     return this.closing;
   }
@@ -263,11 +291,5 @@ export class DevinTerminals {
       this.trim(terminal, Math.max(0, before - (bytes - MAX_TOTAL_BYTES)));
       bytes -= before - terminal.buffer.length;
     }
-  }
-
-  private killTerminal(terminal: Terminal): Promise<void> {
-    if (terminal.killing) return terminal.killing;
-    terminal.killing = terminal.process.stop();
-    return terminal.killing;
   }
 }

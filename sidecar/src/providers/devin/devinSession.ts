@@ -15,6 +15,7 @@ import type {
   ProviderOpenInput,
   ProviderResumeInput,
   ProviderSession,
+  ProviderProcess,
 } from '../session.js';
 import { MessageQueue } from '../claude/claudeMessages.js';
 import { DevinClient } from './devinClient.js';
@@ -117,6 +118,9 @@ export class DevinSession implements ProviderSession {
   }
   get process() {
     return this.client.process;
+  }
+  onProcessRootsChanged(listener: (roots: readonly ProviderProcess[]) => void): () => void {
+    return this.terminals.onProcessRootsChanged(listener);
   }
   get isClosed(): boolean {
     return this.closing || this.client.isClosed;

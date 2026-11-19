@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import type { WaitForTerminalExitResponse } from '@agentclientprotocol/sdk';
 import { childEnv } from '../../childEnv.js';
+import { tolerantCommandRunner } from '../../processes/processTree.js';
 
 // Keep the group leader alive until release; only a live member may signal its group.
 const GROUP_OWNER = String.raw`
@@ -27,6 +28,7 @@ const stop = () => {
 };
 process.on('SIGTERM', stop);
 process.on('disconnect', killGroup);
+process.on('error', killGroup);
 process.once('message', ({ command: executable, args, env }) => {
   if (stopping) return;
   process.title = 'devin-terminal ' + executable;
@@ -54,7 +56,22 @@ type TerminalMessage =
   | { type: 'exit'; status: WaitForTerminalExitResponse }
   | { type: 'error'; message: string };
 
+async function waitForGroupExit(pgid: number): Promise<void> {
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    const table = await tolerantCommandRunner('ps', ['-axo', 'pgid=,stat=']);
+    const running = table.split('\n').some((line) => {
+      const row = /^\s*(\d+)\s+(\S+)/.exec(line);
+      return row !== null && Number(row[1]) === pgid && !row[2].startsWith('Z');
+    });
+    if (!running) return;
+    if (Date.now() >= deadline) throw new Error('Devin terminal process group did not exit.');
+    await new Promise<void>((resolve) => setTimeout(resolve, 25));
+  }
+}
+
 export class DevinTerminalProcess {
+  private stopping?: Promise<void>;
   readonly child: ChildProcess;
   readonly started: Promise<void>;
   readonly exited: Promise<WaitForTerminalExitResponse>;
@@ -87,13 +104,20 @@ export class DevinTerminalProcess {
       resolveExit = resolve;
     });
     this.closed = new Promise((resolve) => {
-      child.once('close', (exitCode, signal) => {
+      const finish = (exitCode: number | null, signal: NodeJS.Signals | null) => {
         rejectStarted(
           new Error(`Devin terminal exited before starting (${String(signal ?? exitCode)}).`),
         );
         resolveExit(status ?? { exitCode, signal });
         resolve();
-      });
+      };
+      child.once('close', finish);
+      // Explicit IPC disconnection can suppress close even after the owner exits.
+      const finishDisconnected = () => {
+        if (!child.connected && !this.isAlive()) finish(child.exitCode, child.signalCode);
+      };
+      child.once('exit', finishDisconnected);
+      child.once('disconnect', finishDisconnected);
     });
     child.once('error', rejectStarted);
     child.once('spawn', () => {
@@ -126,7 +150,17 @@ export class DevinTerminalProcess {
   }
 
   stop(): Promise<void> {
+    this.stopping ??= this.stopGroup().catch((error: unknown) => {
+      this.stopping = undefined;
+      throw error;
+    });
+    return this.stopping;
+  }
+
+  private async stopGroup(): Promise<void> {
     if (this.isAlive()) this.child.kill('SIGTERM');
-    return this.closed;
+    await this.closed;
+    if (process.platform !== 'win32' && this.child.pid !== undefined)
+      await waitForGroupExit(this.child.pid);
   }
 }

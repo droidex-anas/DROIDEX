@@ -24,7 +24,7 @@ const PORT_SCAN_EVERY = 3;
 type TrackedRoot = {
   appSessionId: string;
 } & (
-  | { kind: 'provider' | 'provisional'; isAlive: () => boolean; startedAt?: number }
+  | { kind: 'provider' | 'provisional' | 'work'; isAlive: () => boolean; startedAt?: number }
   | { kind: 'adopted'; startedAt: number }
 );
 
@@ -80,7 +80,7 @@ export class AgentProcessMonitor {
     appSessionId: string,
     rootPid: number,
     isAlive: () => boolean,
-    kind: 'provider' | 'provisional' = 'provider',
+    kind: 'provider' | 'provisional' | 'work' = 'provider',
   ): void {
     if (this.disposed || this.closing.has(appSessionId) || !isAlive()) return;
     const previous = this.roots.get(rootPid);
@@ -336,8 +336,9 @@ export class AgentProcessMonitor {
     const byPid = new Map(table.map((row) => [row.pid, row]));
     const computed = new Map<string, ProcessRecord[]>();
     for (const [appSessionId, rootPids] of bySession) {
-      const adopted = rootPids.flatMap((pid) => {
-        const row = this.roots.get(pid)?.kind === 'adopted' ? byPid.get(pid) : undefined;
+      const workRoots = rootPids.flatMap((pid) => {
+        const kind = this.roots.get(pid)?.kind;
+        const row = kind === 'adopted' || kind === 'work' ? byPid.get(pid) : undefined;
         return row ? [row] : [];
       });
       // During the compaction adopt window the retiring provider is still a
@@ -345,7 +346,7 @@ export class AgentProcessMonitor {
       // them from both — first occurrence wins.
       const rows = this.withoutIgnored(
         appSessionId,
-        dedupeByPid([...adopted, ...descendantsOf(table, rootPids)]),
+        dedupeByPid([...workRoots, ...descendantsOf(table, rootPids)]),
         table,
       );
       const known = new Set((this.descendants.get(appSessionId) ?? []).map((row) => row.pid));

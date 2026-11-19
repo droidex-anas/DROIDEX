@@ -18,7 +18,13 @@ import {
   queuedThread,
 } from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
-import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
+import type {
+  DelegatedTurnEnd,
+  Provider,
+  ProviderResumeInput,
+  ProviderProcess,
+} from './providers/session.js';
+import { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
@@ -127,6 +133,65 @@ test('create and cold resume publish only after registration', async () => {
   );
   assert.equal(resumed.runtime.loadCalls[0]?.handlers.cwd, '/workspace');
   assert.equal(resumed.publicationRegistration.every(Boolean), true);
+});
+
+test('extra provider roots reach retirement visibility and recovery, and ignore stale notifications', async (t) => {
+  const root = { pid: 12345, isAlive: () => true };
+  const row = { pid: root.pid, ppid: 1, startedAt: 0, command: 'devin-terminal watcher' };
+  let table = [row];
+  const killed: number[] = [];
+  const monitor = new AgentProcessMonitor({
+    listProcesses: async () => table,
+    listListeningPorts: async () => new Map(),
+    kill: (pid) => {
+      killed.push(pid);
+      table = table.filter((item) => item.pid !== pid);
+    },
+    emit: () => undefined,
+    schedule: () => ({ cancel() {} }),
+    scheduleKillPoll: (callback) => {
+      setImmediate(callback);
+      return { cancel() {} };
+    },
+    now: () => 100_000,
+  });
+  t.after(() => monitor.dispose());
+  const h = createHarness([], undefined, { agentProcesses: monitor });
+  queueCreate(h, 'app-processes');
+  const provider = new DroidProvider(h.runtime, () => undefined);
+  const create = provider.create.bind(provider);
+  let notify: (roots: readonly ProviderProcess[]) => void = () => undefined;
+  let unsubscribed = false;
+  provider.create = async (input) =>
+    Object.assign(await create(input), {
+      onProcessRootsChanged: (listener: typeof notify) => {
+        notify = listener;
+        listener([root]);
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    });
+  h.setProvider(provider);
+  await h.lifecycle.create(createCommand());
+  await monitor.scan();
+  assert.equal(monitor.hasProcesses('app-processes'), true);
+  const recorded = monitor.snapshotPids();
+  assert.deepEqual(recorded, [{ appSessionId: 'app-processes', pid: root.pid, startedAt: 0 }]);
+  notify([]);
+  assert.equal(monitor.hasProcesses('app-processes'), false);
+  assert.deepEqual(monitor.snapshotPids(), []);
+  notify([root]);
+  await monitor.scan();
+  await monitor.killRecorded(recorded);
+  assert.deepEqual(killed, [root.pid]);
+  await h.lifecycle.close('app-processes');
+  assert.equal(unsubscribed, true);
+  table = [row];
+  notify([root]);
+  await monitor.scan();
+  assert.equal(monitor.hasProcesses('app-processes'), false);
+  assert.deepEqual(monitor.snapshotPids(), []);
 });
 
 test('folder-less chats run and resume in the DROIDEX chats directory', async (t) => {
