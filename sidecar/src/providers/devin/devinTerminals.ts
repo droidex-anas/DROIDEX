@@ -1,4 +1,3 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { isAbsolute } from 'node:path';
 import {
@@ -10,7 +9,7 @@ import {
   type WaitForTerminalExitResponse,
 } from '@agentclientprotocol/sdk';
 import { childEnv } from '../../childEnv.js';
-import { createAgentProcessMonitor } from '../../processes/createAgentProcessMonitor.js';
+import { DevinTerminalProcess } from './devinTerminalProcess.js';
 
 const DEFAULT_OUTPUT_BYTES = 1024 * 1024;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -20,24 +19,19 @@ const MAX_RUNNING = 16;
 
 interface Terminal {
   id: string;
-  child: ChildProcessWithoutNullStreams;
+  process: DevinTerminalProcess;
   buffer: Buffer;
   limit: number;
   truncated: boolean;
   released: boolean;
   exitStatus?: WaitForTerminalExitResponse;
   exited: Promise<WaitForTerminalExitResponse>;
-  closed: Promise<void>;
   killing?: Promise<void>;
 }
 
 export class DevinTerminals {
   private readonly terminals = new Map<string, Terminal>();
   private readonly bindings = new Map<string, SessionNotification>();
-  private readonly processes = createAgentProcessMonitor({
-    emit: () => undefined,
-    listListeningPorts: () => Promise.resolve(null),
-  });
   private accepting = true;
   private closed = false;
   private generation = 0;
@@ -63,7 +57,7 @@ export class DevinTerminals {
       );
     if (request.cwd && !isAbsolute(request.cwd))
       throw RequestError.invalidParams(undefined, 'Terminal cwd must be absolute.');
-    const running = [...this.terminals.values()].filter((terminal) => !terminal.exitStatus);
+    const running = [...this.terminals.values()].filter((terminal) => terminal.process.isAlive());
     if (running.length >= MAX_RUNNING)
       throw RequestError.invalidParams(undefined, 'Too many running Devin terminals.');
     for (const [id, terminal] of this.terminals) {
@@ -78,68 +72,34 @@ export class DevinTerminals {
       ...childEnv(),
       ...Object.fromEntries((request.env ?? []).map(({ name, value }) => [name, value])),
     };
-    const child = spawn(request.command, request.args ?? [], {
-      shell: (request.args?.length ?? 0) === 0,
-      cwd: request.cwd ?? this.cwd,
+    const process = new DevinTerminalProcess(
+      request.command,
+      request.args ?? [],
+      request.cwd ?? this.cwd,
       env,
-      stdio: 'pipe',
-      windowsHide: true,
-      detached: process.platform !== 'win32',
-    });
-    let settle!: (status: WaitForTerminalExitResponse) => void;
-    let settleClose!: () => void;
+      (chunk) => {
+        if (this.closed) return;
+        terminal.buffer = Buffer.concat([terminal.buffer, Buffer.from(chunk)]);
+        this.trim(terminal, terminal.limit);
+        this.trimTotal();
+        this.publish(id);
+      },
+    );
     const terminal: Terminal = {
       id,
-      child,
+      process,
       buffer: Buffer.alloc(0),
       limit: Math.min(request.outputByteLimit ?? DEFAULT_OUTPUT_BYTES, MAX_OUTPUT_BYTES),
       truncated: false,
       released: false,
-      exited: new Promise((resolve) => {
-        settle = resolve;
-      }),
-      closed: new Promise((resolve) => {
-        settleClose = resolve;
-      }),
+      exited: process.exited,
     };
     this.terminals.set(id, terminal);
-    if (child.pid !== undefined)
-      this.processes.track(
-        id,
-        child.pid,
-        () => child.exitCode === null && child.signalCode === null,
-        'provisional',
-      );
-    child.stdin.end();
-    const append = (chunk: string) => {
-      if (this.closed) return;
-      terminal.buffer = Buffer.concat([terminal.buffer, Buffer.from(chunk)]);
-      this.trim(terminal, terminal.limit);
-      this.trimTotal();
-      this.publish(id);
-    };
-    child.stdout.setEncoding('utf8').on('data', append);
-    child.stderr.setEncoding('utf8').on('data', append);
-    let drain: ReturnType<typeof setTimeout> | undefined;
-    child.on('exit', (exitCode, signal) => {
-      const status = { exitCode, signal };
+    void process.exited.then((status) => {
       terminal.exitStatus = status;
-      drain = setTimeout(() => {
-        settle(status);
-      }, 1000);
-    });
-    child.on('close', (exitCode, signal) => {
-      clearTimeout(drain);
-      terminal.exitStatus = { exitCode, signal };
-      if (child.pid !== undefined) this.processes.untrack(child.pid, id);
-      settle(terminal.exitStatus);
-      settleClose();
     });
     try {
-      await new Promise<void>((resolve, reject) => {
-        child.once('spawn', resolve);
-        child.once('error', reject);
-      });
+      await process.started;
       this.requireSession(request.sessionId);
       if (generation !== this.generation) throw new Error('Devin terminal creation was cancelled.');
     } catch (error) {
@@ -192,7 +152,6 @@ export class DevinTerminals {
     this.closed = true;
     this.bindings.clear();
     this.closing = this.interrupt().then(() => {
-      this.processes.dispose();
       this.terminals.clear();
     });
     return this.closing;
@@ -308,20 +267,7 @@ export class DevinTerminals {
 
   private killTerminal(terminal: Terminal): Promise<void> {
     if (terminal.killing) return terminal.killing;
-    terminal.killing = this.processes.killSession(terminal.id).then(async () => {
-      // Background jobs can outlive both their shell and its output pipes.
-      if (terminal.child.pid !== undefined) {
-        if (process.platform === 'win32') terminal.child.kill('SIGKILL');
-        else {
-          try {
-            process.kill(-terminal.child.pid, 'SIGKILL');
-          } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
-          }
-        }
-      }
-      await terminal.closed;
-    });
+    terminal.killing = terminal.process.stop();
     return terminal.killing;
   }
 }
