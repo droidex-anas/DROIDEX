@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ChevronDown, Keyboard, Mic, MicOff, Settings2, X } from 'lucide-react';
@@ -217,7 +217,9 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
  */
 function SpokenFeed({ appSessionId }: { appSessionId: string }) {
   const lines = useVoiceTranscript(appSessionId);
-  const { scrollRef } = useFollowLatest();
+  const { scrollRef, followLatest } = useFollowLatest();
+  const newestLineId = lines.at(-1)?.id;
+  useLayoutEffect(followLatest, [newestLineId, followLatest]);
 
   return (
     <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">

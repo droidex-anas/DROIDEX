@@ -53,12 +53,7 @@ async function mockBridge(
 
 async function checkFollowing(line: (index: number) => Locator, append: (index: number) => void) {
   await expect(line(40)).toBeInViewport();
-  const scroll = await line(40).evaluateHandle((row) => {
-    for (let parent = row.parentElement; parent; parent = parent.parentElement) {
-      if (['auto', 'scroll'].includes(getComputedStyle(parent).overflowY)) return parent;
-    }
-    throw new Error('Could not find the transcript scroller');
-  });
+  const scroll = await transcriptScroller(line(40));
   const remaining = () => scroll.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
   const scrollTo = (edge: 'top' | 'bottom') =>
     scroll.evaluate(
@@ -85,9 +80,25 @@ async function checkFollowing(line: (index: number) => Locator, append: (index: 
   await expect.poll(remaining).toBeLessThan(2);
 }
 
-test('the voice surface follows output only while the reader is at the bottom', async ({
-  page,
-}) => {
+async function transcriptScroller(line: Locator) {
+  return line.evaluateHandle((row) => {
+    for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+      if (['auto', 'scroll'].includes(getComputedStyle(parent).overflowY)) return parent;
+    }
+    throw new Error('Could not find the transcript scroller');
+  });
+}
+
+async function finishLayout(page: Page) {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+}
+
+async function openVoice(page: Page, lineCount = 40) {
   const appSessionId = 'voice-scroll';
   const session = sessionSummary(appSessionId, { provider: 'codex', cwd: '/repo' });
   const output = (index: number): ServerEvent => ({
@@ -119,7 +130,7 @@ test('the voice surface follows output only while the reader is at the bottom', 
       }, command.sdp);
       send({ type: 'voice.answer', appSessionId, attempt: command.attempt, sdp });
       send({ type: 'voice.state', appSessionId, status: 'live' });
-      for (let index = 1; index <= 40; index += 1) send(output(index));
+      for (let index = 1; index <= lineCount; index += 1) send(output(index));
     }
   });
   await page.goto(process.env.DROIDEX_TEST_URL || '/');
@@ -127,11 +138,94 @@ test('the voice surface follows output only while the reader is at the bottom', 
   await page.getByRole('button', { name: 'Start voice mode', exact: true }).click();
   await page.getByRole('button', { name: 'Open the voice surface', exact: true }).click();
   const surface = page.getByRole('dialog', { name: 'Voice mode', exact: true });
-  await checkFollowing(
-    (index) => surface.getByText(`Output ${String(index)}`, { exact: true }),
-    (index) => emit(output(index)),
+  const line = (index: number) => surface.getByText(`Output ${String(index)}`, { exact: true });
+  await expect(line(lineCount)).toBeInViewport();
+  const scroll = await transcriptScroller(line(lineCount));
+  return {
+    surface,
+    line,
+    scroll,
+    append: (index: number) => emit(output(index)),
+    gap: () => scroll.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop),
+  };
+}
+
+test('the voice surface preserves a reader 40px above the tail and resumes following', async ({
+  page,
+}) => {
+  const { surface, line, scroll, append, gap } = await openVoice(page);
+  await expect.poll(gap).toBeLessThan(2);
+  const position = await scroll.evaluate(
+    (el) =>
+      new Promise<number>((resolve) => {
+        el.addEventListener('scroll', () => resolve(el.scrollTop), { once: true });
+        el.scrollTop = el.scrollHeight - el.clientHeight - 40;
+      }),
   );
+  await expect.poll(gap).toBe(40);
+  const height = await scroll.evaluate((el) => el.scrollHeight);
+  append(41);
+  await expect(line(41)).toBeAttached();
+  await expect.poll(() => scroll.evaluate((el) => el.scrollHeight)).toBeGreaterThan(height);
+  await finishLayout(page);
+  await expect.poll(() => scroll.evaluate((el) => el.scrollTop)).toBe(position);
+
+  await scroll.evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        el.addEventListener('scroll', () => resolve(), { once: true });
+        el.scrollTop = el.scrollHeight;
+      }),
+  );
+  append(42);
+  await expect(line(42)).toBeInViewport();
+  await expect.poll(gap).toBeLessThan(2);
   await surface.getByRole('button', { name: 'End voice mode', exact: true }).click();
+});
+
+test('the voice surface stays pinned when its 200-line cap rolls over', async ({ page }) => {
+  const { line, scroll, append, gap } = await openVoice(page, 200);
+  const height = await scroll.evaluate((el) => el.scrollHeight);
+  await expect.poll(gap).toBeLessThan(2);
+  for (let index = 201; index <= 208; index += 1) {
+    append(index);
+    await expect(line(index)).toBeAttached();
+    await expect(line(index - 200)).toHaveCount(0);
+    await finishLayout(page);
+    await expect.poll(() => scroll.evaluate((el) => el.scrollHeight)).toBe(height);
+    await expect.poll(gap).toBeLessThan(2);
+  }
+});
+
+test('the voice surface stays pinned when only the viewport height shrinks', async ({ page }) => {
+  const { line, scroll, append, gap } = await openVoice(page);
+  await scroll.evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        el.addEventListener('scroll', () => resolve(), { once: true });
+        el.scrollTop -= 40;
+      }),
+  );
+  await scroll.evaluate(
+    (el) =>
+      new Promise<void>((resolve) => {
+        el.addEventListener('scroll', () => resolve(), { once: true });
+        el.scrollTop = el.scrollHeight;
+      }),
+  );
+  append(41);
+  await expect(line(41)).toBeInViewport();
+  await expect.poll(gap).toBeLessThan(2);
+  await finishLayout(page);
+  const height = await scroll.evaluate((el) => el.clientHeight);
+  const contentHeight = await scroll.evaluate((el) => el.scrollHeight);
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error('The voice test needs a fixed viewport');
+  await page.setViewportSize({ width: viewport.width, height: viewport.height - 150 });
+  await expect.poll(() => scroll.evaluate((el) => el.clientHeight)).toBeLessThan(height);
+  await finishLayout(page);
+  await expect.poll(() => scroll.evaluate((el) => el.scrollHeight)).toBe(contentHeight);
+  await expect.poll(gap).toBeLessThan(2);
 });
 
 test('the agent pane preserves scrollback and follows output when pinned', async ({ page }) => {
