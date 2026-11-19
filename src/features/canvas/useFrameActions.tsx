@@ -51,6 +51,7 @@ export function useFrameActions(
     }),
     [appSessionId, canvasId],
   );
+  // Every frame receives these, so a stable identity keeps memoized frames from re-rendering.
   const actions = useMemo(
     (): FrameActions => ({
       history,
