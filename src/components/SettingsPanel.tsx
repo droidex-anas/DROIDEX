@@ -171,7 +171,6 @@ const CompactionModelOption = memo(function CompactionModelOption({
   id,
   label,
   sub,
-  current,
   active,
   model,
   onSelect,
@@ -179,7 +178,6 @@ const CompactionModelOption = memo(function CompactionModelOption({
   id: string;
   label: string;
   sub?: string;
-  current?: boolean;
   active: boolean;
   model?: ModelInfo;
   onSelect: (id: string) => void;
@@ -194,7 +192,7 @@ const CompactionModelOption = memo(function CompactionModelOption({
         active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
       }`}
     >
-      {!current && <ModelIcon provider={providerOf(model, id)} size={16} />}
+      {model && <ModelIcon provider={providerOf(model, id)} size={16} />}
       <div className="min-w-0 flex-1">
         <div className="truncate text-body text-primary">{label}</div>
         {sub && <div className="truncate text-caption text-muted">{sub}</div>}
@@ -288,7 +286,6 @@ function CompactionModelPicker({
             id="current-model"
             label="Current model"
             sub="Use whatever model the session runs"
-            current
             active={isCurrent}
             onSelect={choose}
           />
