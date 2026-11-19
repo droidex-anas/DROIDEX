@@ -287,6 +287,18 @@ test('date editing keeps the schedule open and Escape restores focus on a narrow
   await expect(composer).toBeFocused();
 });
 
+test('scheduling opens from a composer inside a transformed container', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await automationBridge(page);
+  await openConversation(page);
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Continue later');
+  await page.getByRole('main').evaluate((element) => {
+    element.style.transform = 'translateX(200px)';
+  });
+  await openSchedule(page);
+  await expect(page.getByRole('dialog', { name: 'Schedule prompt', exact: true })).toBeVisible();
+});
+
 test('an unacknowledged save preserves the draft and requires checking Automations before retrying', async ({
   page,
 }) => {
