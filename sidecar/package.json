@@ -22,7 +22,6 @@
     "build:remote": "esbuild src/remote/host.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/remoteHost.mjs"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^2.8.0",
     "@anthropic-ai/claude-agent-sdk": "^0.3.270",
     "@factory/droid-sdk": "^0.6.0",
     "@modelcontextprotocol/sdk": "1.30.0",

@@ -227,7 +227,6 @@ export default function OnboardingWizard({
       droid: agentProgress(statuses.droid, runs.droid),
       claude: agentProgress(statuses.claude, runs.claude),
       codex: agentProgress(statuses.codex, runs.codex),
-      devin: agentProgress(statuses.devin, runs.devin),
     },
   });
 

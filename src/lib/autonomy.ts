@@ -32,8 +32,6 @@ export function autonomyConsequence(
 ): string | undefined {
   if (provider === 'claude' && level === 'medium') return "Auto uses Claude Code's classifier.";
   if (provider === 'codex') return 'Approvals update now; native sandbox changes on the next turn.';
-  if (provider === 'devin' && (level === 'off' || level === 'low'))
-    return 'Devin accepts file edits in both modes; it has no mode that asks before edits.';
   if (provider === 'droid' && level === 'high') return "Droid's safety checks can still ask.";
   return undefined;
 }

@@ -2,7 +2,7 @@
 
 **One desktop app for all your coding agents.**
 
-Run Factory Droid, Claude Code, Codex, and Devin side by side, and keep every chat,
+Run Factory Droid, Claude Code, and Codex side by side, and keep every chat,
 terminal, browser session, diff, and pull request attached to the work that
 produced it.
 
@@ -26,17 +26,8 @@ work happening inside it, not around one model or one chat window.
 ## What you can do
 
 **Use every agent from one app.** Start sessions with Factory Droid, Claude
-Code, Codex, or Devin using the CLIs and accounts you already have. Each session keeps
+Code, or Codex using the CLIs and accounts you already have. Each session keeps
 the agent it started with, so switching projects never switches tools under you.
-
-Devin runs through the Devin CLI's ACP connection (`devin acp`), using your
-existing CLI sign-in, not an API key. Setup offers the official script or
-`brew install --cask devin-cli`; sign in in a terminal with `devin auth login`.
-Devin chats can lead Projects and run project threads. They support streaming,
-tools, approvals, Stop, model selection, planning, and resume. Steering waits
-until the current turn finishes. Conversation copying, native subagent views,
-and account usage meters are not supported. Devin accepts edits in both
-Supervised and Auto-accept edits: it has no mode that asks before edits.
 
 **Run work in parallel without losing track.** The sidebar sorts conversations
 by what they need from you: waiting for input, still working, ready to review,

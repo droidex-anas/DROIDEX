@@ -668,7 +668,7 @@ function isEnvironmentReport(value: unknown): boolean {
 }
 
 function isHarnessCliProvider(value: unknown): boolean {
-  return value === 'claude' || value === 'codex' || value === 'devin';
+  return value === 'claude' || value === 'codex';
 }
 
 function isHarnessCliState(value: unknown): boolean {

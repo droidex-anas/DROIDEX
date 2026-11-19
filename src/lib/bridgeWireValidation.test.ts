@@ -87,7 +87,6 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
   const status = { provider: 'droid', readiness: 'ready', message: 'ok', models: [model] };
   const providerStatus = (statuses: unknown) => ({ type: 'provider.status', statuses });
   assertAccepted(providerStatus([status]));
-  assertAccepted(providerStatus([{ ...status, provider: 'devin' }]));
   assertAccepted(providerStatus([{ ...status, defaultModelId: 'droid-core' }]));
   for (const malformed of [
     { ...status, provider: 'aider' },
@@ -100,19 +99,6 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
     assertRejected(providerStatus([malformed]));
   }
   assertRejected(providerStatus({}));
-});
-
-test('Devin CLI reports and install and update outcomes pass the bridge boundary', () => {
-  assertAccepted({ type: 'harness.cli.report', clis: [{ provider: 'devin', installed: false }] });
-  assertAccepted({
-    type: 'harness.cli.install.progress',
-    provider: 'devin',
-    stream: 'stdout',
-    line: 'Installing',
-  });
-  assertAccepted({ type: 'harness.cli.install.done', provider: 'devin', ok: true, exitCode: 0 });
-  assertAccepted({ type: 'harness.cli.update.done', provider: 'devin', ok: false });
-  assertRejected({ type: 'harness.cli.report', clis: [{ provider: 'unknown', installed: false }] });
 });
 
 test('search results require the indexing flag and object rows; object payloads reject arrays', () => {

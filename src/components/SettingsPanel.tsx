@@ -662,7 +662,7 @@ function SetupSection({ onClose }: { onClose: () => void }) {
         </SettingRow>
       </div>
 
-      <GroupLabel>Agent CLIs</GroupLabel>
+      <GroupLabel>Claude Code and Codex</GroupLabel>
       <HarnessCliSettings
         autoUpdate={onboarding?.harnessCliAutoUpdate ?? true}
         onAutoUpdateChange={(enabled) => void onboard.patch({ harnessCliAutoUpdate: enabled })}

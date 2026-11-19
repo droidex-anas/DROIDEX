@@ -33,7 +33,7 @@ export function recheckAgents(): void {
 
 // The live state of each agent's CLI, and the installs setup runs for them.
 // Droid installs through the onboarding controller, which App also watches;
-// The other agents install through the sidecar's harness installer.
+// Claude Code and Codex install through the sidecar's harness installer.
 export function useAgentSetup(controller: OnboardingController) {
   const { env, installing, installLog, lastResult, install: installDroid } = controller;
   const providerStatuses = useStoreSelector((state) => state.providerStatuses);
@@ -42,7 +42,6 @@ export function useAgentSetup(controller: OnboardingController) {
   const [harnessRuns, setHarnessRuns] = useState<Record<HarnessCliProvider, InstallRun | null>>({
     claude: null,
     codex: null,
-    devin: null,
   });
 
   useEffect(
@@ -73,12 +72,7 @@ export function useAgentSetup(controller: OnboardingController) {
         providerStatuses.find((status) => status.provider === provider),
         clis?.find((cli) => cli.provider === provider),
       );
-    return {
-      droid: droidStatus(env),
-      claude: harness('claude'),
-      codex: harness('codex'),
-      devin: harness('devin'),
-    };
+    return { droid: droidStatus(env), claude: harness('claude'), codex: harness('codex') };
   }, [env, providerStatuses, clis]);
 
   let droidRun: InstallRun | null = null;

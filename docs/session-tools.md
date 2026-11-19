@@ -1,7 +1,7 @@
 # Session tools
 
-An ordinary chat on Droid, Claude Code, Codex or Devin is given DROIDEX's in-app
-session tools, whether or not it belongs to a project. On Droid, Claude Code and Devin,
+An ordinary chat on Droid, Claude Code or Codex is given DROIDEX's in-app
+session tools, whether or not it belongs to a project. On Droid and Claude Code,
 `droidex-sessions` carries all twenty-one tools on one listener per session. Codex
 receives the same tools as deferred dynamic tools in the `droidex_sessions`
 namespace, with no local MCP listener. Unattended automation runs, missions and

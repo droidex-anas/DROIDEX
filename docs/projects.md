@@ -118,8 +118,8 @@ it is one of the sidebar's announcements (`src/lib/sidebarCards.ts`, id
 
 ## Starting threads
 
-A chat on Droid, Claude Code, Codex or Devin is given DROIDEX's in-app session tools.
-Droid, Claude Code and Devin receive the `droidex-sessions` MCP server; Codex receives
+A chat on Droid, Claude Code or Codex is given DROIDEX's in-app session tools.
+Droid and Claude Code receive the `droidex-sessions` MCP server; Codex receives
 the same tools as deferred dynamic tools in `droidex_sessions`. Sixteen run a
 project: `thread_spawn`, `thread_send`, `thread_list`, `thread_read`,
 `thread_configure`, `thread_stop`, `thread_answer`, `thread_approve`,
@@ -130,12 +130,6 @@ user's sidebar. A Codex chat started before these tools were added resumes
 without them because Codex cannot add dynamic tools to an existing thread;
 start a new Codex chat to use them. Asking a chat to run work in parallel is
 enough; it has the tools to start the work itself.
-
-The project's new-chat composer offers Devin through the same harness picker
-as an ordinary chat. A thread inherits its owner's provider unless
-`thread_spawn` explicitly selects another one, including `provider: 'devin'`.
-Devin uses the existing CLI login (`devin auth login`) and serves in-app MCP
-tools over a session-owned loopback HTTP endpoint.
 
 `thread_spawn` takes a required `reportBack`. With `true` it starts a thread,
 which reports back to the chat that started it. That chat becomes a project's
@@ -209,8 +203,7 @@ user can decide the request in the thread.
 `thread_send` reaches a working thread the way the user's Steer does: the
 harness takes the message at its next step inside the running turn, with its
 own steer on Droid, Claude Code and Codex alike, or right after that turn when
-it cannot take it sooner. Devin always queues steering until the turn ends.
-`delivery: 'interrupt'` is Send now: DROIDEX
+it cannot take it sooner. `delivery: 'interrupt'` is Send now: DROIDEX
 stops the running turn and the message runs next. `delivery: 'queue'` waits for
 the turn to end. A stopped or idle thread queues the message through the
 project's queue and waits for a runtime slot when capacity is full. When a
