@@ -1492,6 +1492,7 @@ export default function PromptInput({
     appSessionId: activeSession?.appSessionId ?? null,
     cwd: primaryWorkingDirectory,
     isLive: primaryIsLive,
+    hasQueuedPrompt: queue.length > 0,
     usageLimited: usageLimit !== undefined,
     appUpdateInstalling,
     appUpdateInstallResult,
