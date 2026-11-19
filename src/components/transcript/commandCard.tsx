@@ -123,10 +123,8 @@ export function CommandLine({
       <span className="min-w-0 truncate text-muted">{command}</span>
     </>
   );
-  // Only a still-running turn hides the expander: a finished call whose
-  // process is still alive already has captured output, and that output must
-  // stay reachable. It keeps the Running indicator in place of "Ran".
-  if (running) {
+  // Captured output stays reachable even while the call is still running.
+  if (running && !output && !images?.length) {
     return <div className="flex min-w-0 items-center gap-1.5 text-body">{label}</div>;
   }
   return (

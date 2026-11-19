@@ -10,6 +10,7 @@ import {
   type SessionNotification,
 } from '@agentclientprotocol/sdk';
 import { childEnv } from '../../childEnv.js';
+import type { DevinTerminals } from './devinTerminals.js';
 
 export class DevinClient {
   readonly connection: ClientConnection;
@@ -28,6 +29,7 @@ export class DevinClient {
     handlers: {
       update: (notification: SessionNotification) => void;
       permission: (request: RequestPermissionRequest) => Promise<RequestPermissionResponse>;
+      terminals: DevinTerminals;
     },
   ) {
     this.closed = new Promise((resolve) => {
@@ -53,6 +55,11 @@ export class DevinClient {
         handlers.update(params);
       })
       .onRequest('session/request_permission', ({ params }) => handlers.permission(params))
+      .onRequest('terminal/create', ({ params }) => handlers.terminals.create(params))
+      .onRequest('terminal/output', ({ params }) => handlers.terminals.output(params))
+      .onRequest('terminal/wait_for_exit', ({ params }) => handlers.terminals.waitForExit(params))
+      .onRequest('terminal/kill', ({ params }) => handlers.terminals.kill(params))
+      .onRequest('terminal/release', ({ params }) => handlers.terminals.release(params))
       .connect(ndJsonStream(Writable.toWeb(this.child.stdin), readable));
     this.child.on('error', (error) => {
       this.finish(error);
@@ -81,6 +88,7 @@ export class DevinClient {
       protocolVersion: 1,
       clientInfo: { name: 'droidex', version: '1.0.0' },
       clientCapabilities: {
+        terminal: true,
         _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
       },
     });

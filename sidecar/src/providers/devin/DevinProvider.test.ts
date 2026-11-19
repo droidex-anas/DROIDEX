@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,9 +40,23 @@ const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValu
   options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
 if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
 let pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
+let terminalSequence = 0, terminalDone = Promise.resolve(), terminalFinished;
+const terminalRequests = new Map();
+const terminalCall = (method, params) => new Promise((resolve, reject) => {
+  const id = 'terminal-' + ++terminalSequence;
+  terminalRequests.set(id, { resolve, reject });
+  send({ id, method: 'terminal/' + method, params: { sessionId: 'devin-one', ...params } });
+});
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const message = JSON.parse(line);
   appendFileSync(join(root, 'requests.jsonl'), JSON.stringify(message) + '\n');
+  if (terminalRequests.has(message.id)) {
+    const { resolve, reject } = terminalRequests.get(message.id);
+    terminalRequests.delete(message.id);
+    if (message.error) reject(new Error(message.error.message));
+    else resolve(message.result);
+    return;
+  }
   if (message.id === 'permission') {
     appendFileSync(join(root, 'permission.json'), JSON.stringify(message.result) + '\n');
     if (permissionEndsTurn) result(permission, { stopReason: 'end_turn' });
@@ -51,6 +66,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     return;
   }
   const { id, method, params } = message;
+  if (method === 'session/set_config_option' && params.value === 'terminal-sync') await terminalDone;
   if (method === 'initialize') {
     if (existsSync(join(root, 'hang'))) return;
     result(id, { protocolVersion: 1, agentCapabilities: { loadSession: true,
@@ -129,6 +145,40 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           { optionId: 'always', name: 'Always', kind: 'allow_always' },
           { optionId: 'no', name: 'No', kind: 'reject_once' } ] } });
       if (!permissionEndsTurn) result(id, { stopReason: 'end_turn' });
+      return;
+    }
+    if (text.startsWith('terminal-')) {
+      terminalDone = new Promise((resolve) => { terminalFinished = resolve; });
+      const script = text === 'terminal-live'
+        ? 'const fs = require("fs"); process.stdout.write("READY|" + process.env.ACP_TEST + "|" + process.cwd()); const watch = fs.watch(' + JSON.stringify(root) + ', () => { if (fs.existsSync(' + JSON.stringify(join(root, 'terminal-go')) + ')) { watch.close(); process.stdout.write("|DONE"); } });'
+        : 'process.stdout.write("READY:" + process.pid); setInterval(() => {}, 1000);';
+      const command = text === 'terminal-truncate' ? "printf '123ééZ'"
+        : text === 'terminal-empty' ? 'true'
+        : JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(script) + (text === 'terminal-background' ? ' &' : '');
+      try {
+        const { terminalId } = await terminalCall('create', { command,
+          cwd: text === 'terminal-error' ? join(root, 'missing') : root,
+          env: [{ name: 'ACP_TEST', value: 'terminal-env' }],
+          ...(text === 'terminal-truncate' ? { outputByteLimit: 4 } : {}) });
+        const terminal = { terminalId };
+        update({ sessionUpdate: 'tool_call', toolCallId: 'terminal-tool', title: 'shell',
+          kind: 'execute', status: 'in_progress', rawInput: { command },
+          content: [{ type: 'terminal', terminalId }] });
+        if (text === 'terminal-wait' || text === 'terminal-background') pending = id;
+        if (text === 'terminal-release') await terminalCall('release', terminal);
+        if (text === 'terminal-kill') await terminalCall('kill', terminal);
+        const exit = await terminalCall('wait_for_exit', terminal).catch((error) => ({ error: error.message }));
+        const output = await terminalCall('output', terminal).catch((error) => ({ error: error.message }));
+        await terminalCall('release', terminal);
+        await terminalCall('release', terminal);
+        const released = await terminalCall('output', terminal).catch((error) => ({ error: error.message }));
+        appendFileSync(join(root, 'terminal-result'), JSON.stringify({ exit, output, released }));
+        update({ sessionUpdate: 'tool_call_update', toolCallId: 'terminal-tool', status: 'completed',
+          content: [{ type: 'terminal', terminalId }] });
+      } catch (error) {
+        appendFileSync(join(root, 'terminal-result'), JSON.stringify({ error: error.message }));
+      } finally { terminalFinished(); }
+      if (text !== 'terminal-wait' && text !== 'terminal-background') result(id, { stopReason: 'end_turn' });
       return;
     }
     if (text === 'mcp') {
@@ -217,6 +267,96 @@ async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<Normaliz
   return events;
 }
 
+test('Devin client terminals stream shell output with cwd and env, then retain the result after release', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const events: NormalizedEvent[] = [];
+  let continued = false;
+  for await (const event of session.stream('terminal-live')) {
+    events.push(event);
+    if (
+      !continued &&
+      event.transcript?.kind === 'tool_call' &&
+      event.transcript.text?.includes('READY')
+    ) {
+      continued = true;
+      assert.equal(event.transcript.text, `READY|terminal-env|${h.cwd}`);
+      await writeFile(join(h.cwd, 'terminal-go'), 'go');
+    }
+  }
+  assert.equal(continued, true);
+  const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+  assert.equal(response.exit.exitCode, 0);
+  assert.equal(response.output.truncated, false);
+  assert.equal(response.output.output, `READY|terminal-env|${h.cwd}|DONE`);
+  assert.match(response.released.error, /Unknown Devin terminal/);
+  assert.equal(
+    events.find((event) => event.transcript?.kind === 'tool_result')?.transcript?.text,
+    response.output.output,
+  );
+});
+
+test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit kill and idempotent release', async (t) => {
+  for (const mode of ['truncate', 'empty', 'error', 'kill', 'release']) {
+    await t.test(mode, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      await collect(session.stream('terminal-' + mode));
+      const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+      if (mode === 'error') {
+        assert.match(response.error, /ENOENT/);
+        return;
+      }
+      assert.match(response.released.error, /Unknown Devin terminal/);
+      if (mode === 'truncate') {
+        assert.equal(response.output.output, 'éZ');
+        assert.equal(response.output.truncated, true);
+      } else if (mode === 'empty') {
+        assert.equal(response.output.output, '');
+        assert.equal(response.output.truncated, false);
+      } else if (mode === 'kill') {
+        assert.equal(response.exit.signal, 'SIGTERM');
+        assert.deepEqual(response.output.exitStatus, response.exit);
+      } else {
+        assert.match(response.exit.error, /Unknown Devin terminal/);
+        assert.match(response.output.error, /Unknown Devin terminal/);
+      }
+    });
+  }
+});
+
+test('Devin interrupt and close kill running terminal descendants', async (t) => {
+  for (const action of ['interrupt', 'close', 'background'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session
+        .stream(action === 'background' ? 'terminal-background' : 'terminal-wait')
+        [Symbol.asyncIterator]();
+      let pid: number | undefined;
+      while (pid === undefined) {
+        const next = await stream.next();
+        assert.equal(next.done, false);
+        const text = next.value?.transcript?.text;
+        if (text?.startsWith('READY:')) pid = Number(text.slice(6));
+      }
+      process.kill(pid, 0);
+      await session[action === 'background' ? 'interrupt' : action]();
+      const status = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
+      assert.equal(status.error, undefined);
+      assert.ok(status.status === 0 || status.status === 1);
+      assert.match(status.stdout.trim(), /^(?:Z.*)?$/);
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      if (action !== 'close') {
+        await session.setModel({ modelId: 'terminal-sync' });
+        const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+        if (action === 'background') assert.equal(response.exit.exitCode, 0);
+        else assert.equal(response.exit.signal, 'SIGTERM');
+      }
+    });
+  }
+});
+
 test('Devin maps streamed text, reasoning, tools and context without leaking child updates', async (t) => {
   const h = await fixture(t);
   const session = await h.create();
@@ -248,7 +388,10 @@ test('Devin maps streamed text, reasoning, tools and context without leaking chi
   const sent = await h.requests();
   assert.deepEqual(
     sent.find((request) => request.method === 'initialize')?.params?.clientCapabilities,
-    { _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true } },
+    {
+      terminal: true,
+      _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+    },
   );
   assert.deepEqual(sent.find((request) => request.method === 'session/prompt')?.params?.prompt, [
     { type: 'text', text: 'hello' },

@@ -249,6 +249,7 @@ function mergeStreamingDelta(
       ...previous,
       toolName: next.toolName ?? previous.toolName,
       toolArgs: mergeToolArgs(previous.toolArgs, next.toolArgs),
+      ...(next.text !== undefined ? { text: next.text } : {}),
       ...(canvasActivity ? { canvasActivity } : {}),
       endTs: next.endTs ?? next.ts,
     };
