@@ -38,6 +38,7 @@ test('settings search ranks controls under their shipped tabs and jumps to the r
   assert.equal(bestTabForQuery('sentry'), 'Privacy & diagnostics');
   assert.equal(bestTabForQuery('hotkeys'), 'Keyboard shortcuts');
   assert.equal(bestTabForQuery('mcp'), 'MCP servers');
+  assert.equal(bestTabForQuery('connect devin'), 'Setup & updates');
   assert.equal(bestTabForQuery('zzzz-no-match'), null);
   assert.equal(bestTabForQuery(''), null);
 });

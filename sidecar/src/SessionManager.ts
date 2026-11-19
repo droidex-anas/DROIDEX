@@ -371,6 +371,10 @@ export class SessionManager {
       this.accountUsage.pushed('codex', meters);
     });
   });
+  private readonly devinProvider = new LazyProvider('devin', async () => {
+    const { DevinProvider } = await import('./providers/devin/DevinProvider.js');
+    return new DevinProvider();
+  });
   private readonly accountUsage = new AccountUsage({
     // A chat that has begun closing still holds a connection, but not for long.
     liveSession: (provider) =>
@@ -411,6 +415,7 @@ export class SessionManager {
             (signal, publish) => this.claudeProvider.probe(signal, publish),
           ],
           [this.codexProvider.kind, (signal, publish) => this.codexProvider.probe(signal, publish)],
+          [this.devinProvider.kind, (signal, publish) => this.devinProvider.probe(signal, publish)],
         ]),
       () => {
         void this.emitProviderStatus();
@@ -2314,6 +2319,8 @@ export class SessionManager {
         return this.claudeProvider;
       case 'codex':
         return this.codexProvider;
+      case 'devin':
+        return this.devinProvider;
     }
   }
 

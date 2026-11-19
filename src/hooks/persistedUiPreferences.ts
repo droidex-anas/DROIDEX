@@ -55,7 +55,7 @@ export type HarnessModels = Record<ProviderKind, HarnessModel>;
 const HARNESS_MODELS_STORAGE_KEY = 'droid-harness-models-v1';
 
 export function loadHarnessModels(): HarnessModels {
-  const models: HarnessModels = { droid: {}, claude: {}, codex: {} };
+  const models: HarnessModels = { droid: {}, claude: {}, codex: {}, devin: {} };
   try {
     const raw = getLocalStorage()?.getItem(HARNESS_MODELS_STORAGE_KEY);
     if (!raw) return models;

@@ -69,6 +69,7 @@ test('loadHarnessModels restores current per-harness defaults', () => {
     droid: { modelId: 'model-a', reasoning: 'low' },
     claude: { modelId: 'model-b', reasoning: 'high' },
     codex: {},
+    devin: { modelId: 'swe-1-6-fast' },
   };
   withLocalStorageMap(
     {
