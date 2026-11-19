@@ -88,13 +88,17 @@ export function loadMissionControlSessions(
   return sessions.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
-export function loadMissionControlSession(dir: string): HistoricalSession & {
+export function loadMissionControlSession(
+  dir: string,
+  options: { includeProgress?: boolean } = {},
+): HistoricalSession & {
   state: StoredMissionState;
   features: BridgeFeature[];
   storedProgress: StoredProgressEntry[];
 } {
   const state = readJson(join(dir, 'state.json')) as StoredMissionState;
-  const storedProgress = readProgress(join(dir, 'progress_log.jsonl'));
+  const storedProgress =
+    options.includeProgress === false ? [] : readProgress(join(dir, 'progress_log.jsonl'));
   const progress = storedProgress.map(publicProgressEntry);
   const features = readFeatures(join(dir, 'features.json'));
   const dirId = basename(dir);

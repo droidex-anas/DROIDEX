@@ -582,11 +582,9 @@ export function hydrateHistoricalSession(
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
 
-  const { summary, storedProgress } = loadMissionControlSession(dir);
-  const progress = projectMissionProgress(
-    storedProgress,
-    readStoredChildSessions(summary.appSessionId),
-  );
+  const { summary, storedProgress } = loadMissionControlSession(dir, {
+    includeProgress: !opts.cursor,
+  });
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that
@@ -601,6 +599,10 @@ export function hydrateHistoricalSession(
     return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
   }
 
+  const progress = projectMissionProgress(
+    storedProgress,
+    readStoredChildSessions(summary.appSessionId),
+  );
   return { progress, transcripts: window.events, olderCursor: window.olderCursor };
 }
 
