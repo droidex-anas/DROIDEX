@@ -161,6 +161,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           env: [{ name: 'ACP_TEST', value: 'terminal-env' }],
           ...(text === 'terminal-truncate' ? { outputByteLimit: 4 } : {}) });
         const terminal = { terminalId };
+        const initial = await terminalCall('output', terminal);
         update({ sessionUpdate: 'tool_call', toolCallId: 'terminal-tool', title: 'shell',
           kind: 'execute', status: 'in_progress', rawInput: { command },
           content: [{ type: 'terminal', terminalId }] });
@@ -172,7 +173,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         await terminalCall('release', terminal);
         await terminalCall('release', terminal);
         const released = await terminalCall('output', terminal).catch((error) => ({ error: error.message }));
-        appendFileSync(join(root, 'terminal-result'), JSON.stringify({ exit, output, released }));
+        appendFileSync(join(root, 'terminal-result'), JSON.stringify({ initial, exit, output, released }));
         update({ sessionUpdate: 'tool_call_update', toolCallId: 'terminal-tool', status: 'completed',
           content: [{ type: 'terminal', terminalId }] });
       } catch (error) {
@@ -286,6 +287,7 @@ test('Devin client terminals stream shell output with cwd and env, then retain t
   }
   assert.equal(continued, true);
   const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+  assert.equal(response.initial.exitStatus, undefined);
   assert.equal(response.exit.exitCode, 0);
   assert.equal(response.output.truncated, false);
   assert.equal(response.output.output, `READY|terminal-env|${h.cwd}|DONE`);
