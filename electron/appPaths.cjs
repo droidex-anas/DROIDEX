@@ -1,6 +1,7 @@
+const { app } = require('electron');
 const path = require('node:path');
 
-function appRoot(app) {
+function appRoot() {
   // Packaged app files (renderer dist, electron/) live inside app.asar, which
   // Electron resolves transparently for loadFile/loadURL.
   return app.isPackaged
@@ -8,23 +9,27 @@ function appRoot(app) {
     : path.resolve(__dirname, '..');
 }
 
-function sidecarEntry(app) {
+function sidecarEntry() {
   // The sidecar ships as an extraResource beside the asar so it can be spawned
   // as a plain Node script; an asar path would not survive as a child cwd/argv.
   if (!app.isPackaged && process.env.SIDECAR_ENTRY) return process.env.SIDECAR_ENTRY;
   return app.isPackaged
     ? path.join(process.resourcesPath, 'sidecar/dist/sidecar.mjs')
-    : path.join(appRoot(app), 'sidecar/dist/sidecar.mjs');
+    : path.join(appRoot(), 'sidecar/dist/sidecar.mjs');
 }
 
-function canvasRuntimeDir(app) {
+function canvasRuntimeDir() {
   // The design compiler's esbuild, Tailwind, PostCSS and React ship beside the
   // sidecar bundle (electron-builder.config.cjs). A checkout stages no runtime,
   // so the sidecar keeps resolving them from its own node_modules.
   return app.isPackaged ? path.join(process.resourcesPath, 'sidecar/canvas-runtime') : undefined;
 }
 
-function readBuildMetadata(app) {
+function sidecarCwd() {
+  return app.isPackaged ? process.resourcesPath : appRoot();
+}
+
+function readBuildMetadata() {
   if (!app.isPackaged) {
     return {
       sentryDsn: process.env.SENTRY_DSN || '',
@@ -65,4 +70,4 @@ function readDatadogMetadata(source) {
   };
 }
 
-module.exports = { appRoot, sidecarEntry, canvasRuntimeDir, readBuildMetadata };
+module.exports = { appRoot, sidecarEntry, canvasRuntimeDir, sidecarCwd, readBuildMetadata };

@@ -11,7 +11,7 @@
  * must never be redirected and discard()'s path boundary must stay real.
  *
  * Kept free of `require('electron')` so it can be unit-tested under plain Node;
- * main.cjs injects the attachments directory.
+ * filesIpc.cjs injects the attachments directory.
  */
 
 const fsp = require('node:fs/promises');

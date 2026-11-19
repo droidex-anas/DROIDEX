@@ -53,7 +53,13 @@ const {
   readHardwareAccelerationPreferenceSync,
 } = require('./hardwareAcceleration.cjs');
 const { closeAllDesktopNotifications } = require('./notifications.cjs');
-const { appRoot, sidecarEntry, canvasRuntimeDir, readBuildMetadata } = require('./appPaths.cjs');
+const {
+  appRoot,
+  sidecarEntry,
+  canvasRuntimeDir,
+  sidecarCwd,
+  readBuildMetadata,
+} = require('./appPaths.cjs');
 const { createAppProtocols } = require('./appProtocols.cjs');
 const { createWebContentsPolicy } = require('./webContentsPolicy.cjs');
 const {
@@ -65,7 +71,14 @@ const {
 } = require('./mainWindow.cjs');
 const { getAppIconMode, applyAppIcon } = require('./appIcon.cjs');
 const { createNotificationActivation } = require('./notificationActivation.cjs');
-const { registerAppIpc } = require('./appIpc.cjs');
+const { registerSidecarIpc } = require('./sidecarIpc.cjs');
+const { registerNotificationIpc } = require('./notificationIpc.cjs');
+const { registerPerformanceIpc } = require('./performanceIpc.cjs');
+const { registerRendererStorageIpc } = require('./rendererStorageIpc.cjs');
+const { registerAppUpdaterIpc } = require('./appUpdaterIpc.cjs');
+const { registerDiagnosticsIpc } = require('./diagnosticsIpc.cjs');
+const { registerUsageAnalyticsIpc } = require('./usageAnalyticsIpc.cjs');
+const { registerAppPreferencesIpc } = require('./appPreferencesIpc.cjs');
 const { registerFilesIpc } = require('./filesIpc.cjs');
 const { registerCanvasIpc } = require('./canvasIpc.cjs');
 const { registerSourceControlIpc } = require('./sourceControlIpc.cjs');
@@ -86,7 +99,7 @@ if (userDataOverride && !path.isAbsolute(userDataOverride)) {
 const devInstance = app.isPackaged ? null : describeDevInstance();
 // Set only by quit paths that know their cause; a Dock, menu or signal quit leaves it null.
 let quitReason = null;
-const buildMetadata = readBuildMetadata(app);
+const buildMetadata = readBuildMetadata();
 const terminalManager = createTerminalManager({
   defaultCwd: async () => {
     const chatCwd = path.join(app.getPath('userData'), 'chats');
@@ -122,9 +135,9 @@ const usageAnalytics = createUsageAnalytics({
   logError: (message, error) => console.error('[usage-analytics] %s:', message, error),
 });
 const sidecarSupervisor = createSidecarSupervisor({
-  entryPath: () => sidecarEntry(app),
-  canvasRuntimeDir: () => canvasRuntimeDir(app),
-  cwd: () => (app.isPackaged ? process.resourcesPath : appRoot(app)),
+  entryPath: sidecarEntry,
+  canvasRuntimeDir,
+  cwd: sidecarCwd,
   userData: () => app.getPath('userData'),
   historyDir: () => (userDataOverride ? path.join(userDataOverride, 'history') : undefined),
   onUnexpectedExit: (error) => diagnostics.captureException(error, { process: 'sidecar' }),
@@ -136,8 +149,9 @@ const sidecarSupervisor = createSidecarSupervisor({
 const importCanvasImage = createCanvasImageImporter(nativeImage, sidecarSupervisor);
 const projectImageRequests = createProjectImageRequests(importCanvasImage, sidecarSupervisor);
 sidecarSupervisor.subscribe((status) => {
-  if (getMainWindow() && !getMainWindow().isDestroyed()) {
-    getMainWindow().webContents.send('sidecar-status', status);
+  const mainWindow = getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('sidecar-status', status);
   }
   remoteDesktop.broadcast('sidecar-status', status);
 });
@@ -265,7 +279,7 @@ const remoteAccess = createRemoteAccess({
   safeStorage,
   powerSaveBlocker,
   hostModule: path.join(
-    app.isPackaged ? process.resourcesPath : appRoot(app),
+    app.isPackaged ? process.resourcesPath : appRoot(),
     'sidecar/dist/remoteHost.mjs',
   ),
   bridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
@@ -289,12 +303,20 @@ const { createMainWindow, reloadFromMenu } = createMainWindowController({
   devInstance,
   installWebviewAttachment,
   deliverPendingNotificationOpen,
-  nativeBrowserManager,
-  terminalManager,
-  terminalSubscriptions,
-  filesRootAccess,
-  canvasPreviewHosts,
-  powerTier,
+  reloadFocusedBrowser: (contents) => nativeBrowserManager.reloadFocused(contents),
+  closeRendererOwnedTerminals: () => {
+    terminalSubscriptions.clear();
+    terminalManager.closeAll();
+  },
+  forgetBrowserWatchers: () => nativeBrowserManager.forgetWatchers(),
+  cleanupClosedWindow: () => {
+    nativeBrowserManager.closeAll();
+    terminalManager.closeAll();
+    terminalSubscriptions.clear();
+    filesRootAccess.clear();
+    canvasPreviewHosts.clear();
+  },
+  attachPowerTier: (window) => powerTier.attachWindow(window),
 });
 /**
  * Resolves once the preview guest session's network is off. Every path that can
@@ -329,20 +351,14 @@ app.whenReady().then(async () => {
   });
   remoteAccess.registerIpc(desktopIpc);
   profileUsage.registerIpc(desktopIpc);
-  registerAppIpc({
-    desktopIpc,
-    sidecarSupervisor,
-    remoteAccess,
-    remoteDesktop,
-    performanceMetrics,
-    powerTier,
-    appUpdater,
-    diagnostics,
-    usageAnalytics,
-    hardwareAccelerationPreferencePath,
-    relaunchApp,
-    notificationActivation,
-  });
+  registerSidecarIpc({ desktopIpc, sidecarSupervisor });
+  registerNotificationIpc({ desktopIpc, remoteAccess, notificationActivation });
+  registerPerformanceIpc({ desktopIpc, performanceMetrics, powerTier });
+  registerRendererStorageIpc({ desktopIpc, remoteDesktop });
+  registerAppUpdaterIpc({ desktopIpc, appUpdater });
+  registerDiagnosticsIpc({ desktopIpc, diagnostics });
+  registerUsageAnalyticsIpc({ desktopIpc, usageAnalytics });
+  registerAppPreferencesIpc({ desktopIpc, hardwareAccelerationPreferencePath, relaunchApp });
   registerFilesIpc({ desktopIpc, filesRootAccess });
   registerCanvasIpc({ sidecarSupervisor, importCanvasImage, canvasPreviewHosts, saveCanvasImage });
   registerSourceControlIpc({ desktopIpc });

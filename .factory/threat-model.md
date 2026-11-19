@@ -290,51 +290,32 @@ function validateBridgeAuth(req: IncomingMessage, token: string): boolean {
 
 ---
 
-#### Threat: IPC Sender Spoofing on Legacy Channels
+#### Threat: Privileged IPC Abuse from a Compromised Main Renderer
 
-**Scenario:** A compromised renderer (via XSS) or an injected iframe calls IPC handlers that do not validate `event.sender`, impersonating the main window to access privileged operations.
+**Scenario:** XSS in the main renderer invokes privileged APIs as the authorized
+sender. An unrelated renderer or injected subframe cannot impersonate the main
+window's top frame through local Electron IPC.
 
-**Vulnerable Components:**
+**Components:**
 
-- `electron/appIpc.cjs`, `electron/filesIpc.cjs`, `electron/sourceControlIpc.cjs` (~33 handlers: `bridge-info`, `get-api-key`, `set-api-key`, `list-files`, `read-file`, `git-*`, `github-*`, `onboarding-*`, `app-*`, `open-external`)
+- `electron/appPreferencesIpc.cjs`, `electron/filesIpc.cjs`, `electron/sourceControlIpc.cjs`, `electron/sidecarIpc.cjs`
 
 **Attack Vector:**
 
-1. Attacker achieves XSS in the renderer (see Threat: Model-Emitted SVG XSS)
-2. Attacker calls `window.droidex.getApiKey()` to exfiltrate the decrypted API key
-3. Attacker calls `window.droidex.readFile('/etc/passwd')` or `readFile('/Users/<user>/.ssh/id_rsa')` for arbitrary file read
-4. Attacker calls `window.droidex.openProject({dir, editor})` to spawn processes
-5. Attacker calls `window.droidex.setApiKey('attacker-key')` to swap the key
-
-**Code Pattern to Look For:**
-
-```javascript
-// VULNERABLE: No sender validation on privileged handler
-// electron/filesIpc.cjs
-ipcMain.handle('list-files', (_event, dir) => listFiles(dir));
-ipcMain.handle('read-file', (_event, filePath) => readFile(filePath)); // arbitrary path
-
-ipcMain.handle('get-api-key', (_event) => getApiKey()); // returns decrypted key
-```
-
-```javascript
-// SAFE: Validate sender on every privileged handler
-ipcMain.handle('list-files', (event, dir) => {
-  assertMainRenderer(event);  // throws if sender !== mainWindow.webContents
-  return listFiles(dir);
-});
-```
+1. Attacker achieves XSS in the main renderer (see Threat: Model-Emitted SVG XSS)
+2. Attacker invokes exposed APIs to read a decrypted API key, read arbitrary file paths, or launch a project in an editor
 
 **Existing Mitigations:**
 
-- `contextIsolation: true` + `nodeIntegration: false` (no direct `require('electron')` in renderer)
-- Only one renderer window exists (reduces practical attack surface)
+- `desktopIpc.handle` validates both `event.sender` and `event.senderFrame` through `assertMainRenderer` before calling a local handler
+- `contextIsolation: true` + `nodeIntegration: false` prevent direct Electron imports in renderer code
+- Paired Remote callers reach the same handlers through the authenticated Remote bridge
 
 **Gaps:**
 
-- ~33 handlers skip `assertMainRenderer`
+- Sender validation does not protect against code already executing in the authorized main renderer
 - `read-file`/`list-files` have no root confinement (unlike the token-gated `files-*` handlers)
-- `get-api-key` returns plaintext decrypted key to any caller
+- `get-api-key` returns the decrypted key to authorized callers
 
 **Severity:** HIGH | **Likelihood:** MEDIUM
 
@@ -686,22 +667,22 @@ const safeSvg = useMemo(() => {
 
 **Vulnerable Components:**
 
-- `electron/filesIpc.cjs` (`ipcMain.handle('list-files', ...)` / `ipcMain.handle('read-file', ...)`)
+- `electron/filesIpc.cjs` (`desktopIpc.handle('list-files', ...)` / `desktopIpc.handle('read-file', ...)`)
 
 **Attack Vector:**
 
 1. Attacker achieves renderer XSS (see Threat: Model-Emitted SVG XSS)
 2. Attacker calls `window.droidex.readFile('/Users/<user>/.ssh/id_rsa')` or `readFile('/etc/passwd')`
-3. The `read-file` handler calls `readFile(filePath)` with no root confinement, no token gate, no sender validation
+3. The `read-file` handler calls `readFile(filePath)` with no root confinement or file-root token gate. Local IPC is restricted to the main window’s top frame by `desktopIpc.handle`; a compromised authorized renderer still controls the path
 4. File contents returned to the compromised renderer
 
 **Code Pattern to Look For:**
 
 ```javascript
-// VULNERABLE: Arbitrary path, no confinement, no validation
+// Sender-guarded, but arbitrary paths are not root-confined.
 // electron/filesIpc.cjs
-ipcMain.handle('list-files', (_event, dir) => listFiles(dir));
-ipcMain.handle('read-file', (_event, filePath) => readFile(filePath));
+desktopIpc.handle('list-files', ({ dir }) => listFiles(dir));
+desktopIpc.handle('read-file', ({ filePath }) => readFile(filePath));
 ```
 
 ```javascript
@@ -1263,25 +1244,35 @@ if (pending.connectionId !== currentConnectionId) {
 
 ### IPC Sender Authorization Patterns
 
-```javascript
-// PATTERN 1: Missing assertMainRenderer on privileged handlers (HIGH)
-// Found in: electron/appIpc.cjs, electron/filesIpc.cjs, electron/sourceControlIpc.cjs
-ipcMain.handle('get-api-key', (_event) => getApiKey()); // returns decrypted key, no sender check
-ipcMain.handle('set-api-key', (_event, key) => setApiKey(key)); // overwrites key, no sender check
+Local handlers registered with `desktopIpc.handle` are guarded centrally by
+`assertMainRenderer`: only the main window's top frame may invoke them.
+Paired Remote clients invoke the registered handlers through the authenticated
+Remote bridge rather than Electron IPC. Sender authorization is separate from
+file-root confinement; the legacy file reads above lack the latter.
 
-// PATTERN 2: Correct sender validation (used on ~27 channels)
-// Found in: electron/mainWindow.cjs
+```javascript
+// electron/desktopIpc.cjs
+ipcMain.handle(channel, (event, payload) => {
+  assertRenderer(event);
+  return handler(payload, event.sender);
+});
+
+// electron/mainWindow.cjs
 function assertMainRenderer(event) {
-  if (!mainWindow || event.sender !== mainWindow.webContents) {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    event.senderFrame !== mainWindow.webContents.mainFrame
+  ) {
     throw new Error('Desktop request rejected for unknown renderer.');
   }
 }
-// Applied to: terminal-*, native-browser-*, files-*
 
-// SAFE ALTERNATIVE: Apply assertMainRenderer to ALL privileged handlers
-ipcMain.handle('get-api-key', (event) => {
+// Raw privileged IPC, such as Canvas handlers, asserts the sender explicitly.
+// electron/canvasIpc.cjs
+ipcMain.handle('canvas-image-save', (event, request) => {
   assertMainRenderer(event);
-  return getApiKey();
+  return saveCanvasImage(request);
 });
 ```
 
@@ -1293,7 +1284,7 @@ ipcMain.handle('get-api-key', (event) => {
 url.searchParams.set('token', TOKEN); // leaks in logs, ps, browser history
 
 // PATTERN 2: Token returned to renderer via IPC (MEDIUM)
-// Found in: electron/appIpc.cjs, src/lib/desktop.ts:225-228
+// Found in: electron/sidecarIpc.cjs, src/lib/desktop.ts:225-228
 const { port, token } = await getBridgeInfo(); // token in renderer memory
 
 // SAFE ALTERNATIVE: Use Authorization header or Sec-WebSocket-Protocol

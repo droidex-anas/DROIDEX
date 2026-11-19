@@ -1,5 +1,5 @@
 // Per-subscription MessagePort data plane for utility-pane terminals.
-// Control IPC (create/resize/kill/list) stays in main.cjs. This registry owns
+// Control IPC (create/resize/kill/list) stays in terminalIpc.cjs. This registry owns
 // port lifetime, output batching, and bounded pending-byte backpressure.
 //
 // Cleanup is idempotent: unsubscribe, PTY exit, port close, sender destroy,

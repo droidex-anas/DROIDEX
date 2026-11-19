@@ -42,17 +42,16 @@ function createMainWindowController({
   devInstance,
   installWebviewAttachment,
   deliverPendingNotificationOpen,
-  nativeBrowserManager,
-  terminalManager,
-  terminalSubscriptions,
-  filesRootAccess,
-  canvasPreviewHosts,
-  powerTier,
+  reloadFocusedBrowser,
+  closeRendererOwnedTerminals,
+  forgetBrowserWatchers,
+  cleanupClosedWindow,
+  attachPowerTier,
 }) {
   const rendererOomRecovery = createRendererOomRecovery();
   function createMainWindow() {
     const devStartUrl = app.isPackaged ? undefined : process.env.ELECTRON_START_URL;
-    const rendererFile = path.join(appRoot(app), 'dist/index.html');
+    const rendererFile = path.join(appRoot(), 'dist/index.html');
     const rendererEntryUrl = devStartUrl || pathToFileURL(rendererFile).toString();
     mainWindow = new BrowserWindow({
       width: 1440,
@@ -114,20 +113,15 @@ function createMainWindowController({
     mainWindow.on('closed', () => {
       rendererOomRecovery.cancel();
       githubVcs.cancelSetup();
-      nativeBrowserManager.closeAll();
-      terminalManager.closeAll();
-      terminalSubscriptions.clear();
-      filesRootAccess.clear();
-      canvasPreviewHosts.clear();
+      cleanupClosedWindow();
       mainWindow = null;
     });
-    powerTier.attachWindow(mainWindow);
+    attachPowerTier(mainWindow);
   }
   // With a browser page focused, Reload from the menu means that page;
   // reloading the shell would destroy every mounted page.
   function reloadFromMenu(ignoreCache) {
-    if (!ignoreCache && nativeBrowserManager.reloadFocused(webContents.getFocusedWebContents()))
-      return;
+    if (!ignoreCache && reloadFocusedBrowser(webContents.getFocusedWebContents())) return;
     reloadShell(ignoreCache);
   }
 
@@ -147,7 +141,7 @@ function createMainWindowController({
       cleanedForNavigation = true;
       githubVcs.cancelSetup();
       closeRendererOwnedTerminals();
-      nativeBrowserManager.forgetWatchers();
+      forgetBrowserWatchers();
     };
 
     contents.on('did-finish-load', () => {
@@ -179,10 +173,6 @@ function createMainWindowController({
     });
   }
 
-  function closeRendererOwnedTerminals() {
-    terminalSubscriptions.clear();
-    terminalManager.closeAll();
-  }
   return { createMainWindow, reloadFromMenu };
 }
 
