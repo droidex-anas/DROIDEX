@@ -1,7 +1,7 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
 import type { PermissionKind } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
-import { devinToolName, isDevinChild } from './devinEvents.js';
+import { devinToolName } from './devinEvents.js';
 
 export async function devinPermission(
   appSessionId: string,
@@ -11,7 +11,7 @@ export async function devinPermission(
 ): Promise<RequestPermissionResponse> {
   const cancelled: RequestPermissionResponse = { outcome: { outcome: 'cancelled' } };
   const isCancelled = () => signal.aborted || !interactions.isActive();
-  if (isCancelled() || isDevinChild(request.toolCall)) return cancelled;
+  if (isCancelled()) return cancelled;
   const options = request.options.filter((option) => option.optionId.trim() !== 'plan_bypass');
   let kind: PermissionKind = 'other';
   switch (request.toolCall.kind) {

@@ -80,7 +80,9 @@ export class DevinClient {
     return this.connection.agent.request('initialize', {
       protocolVersion: 1,
       clientInfo: { name: 'droidex', version: '1.0.0' },
-      clientCapabilities: { _meta: { 'cognition.ai/messageGrouping': true } },
+      clientCapabilities: {
+        _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+      },
     });
   }
 

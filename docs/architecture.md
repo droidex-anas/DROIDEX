@@ -283,9 +283,13 @@ deletes and closes that session. The ACP session id is `providerSessionId`;
 resume starts a fresh process and loads it without replaying history into
 DROIDEX's app-owned transcript. In-app MCP servers use the existing per-session
 loopback HTTP endpoints. Filesystem and terminal client capabilities are not
-advertised. Native subagent notifications are ignored, copying conversations
-is unavailable, usage meters are unavailable, and steering queues for the next
-turn. Spec maps to `plan`; Auto maps autonomy off/low to `accept-edits`, medium
+advertised. Native subagents share the parent's ACP connection: their agent ids
+are provider identities resolved to app-owned logical children. Child text,
+thinking, tools and completion summaries use child-owned transcripts, including
+between parent turns; approvals remain parent-scoped and retain the native tool
+context. Model-less child observations await exact model metadata before admission.
+Copying conversations is unavailable, usage meters are unavailable, and steering
+queues for the next turn. Spec maps to `plan`; Auto maps autonomy off/low to `accept-edits`, medium
 to `smart`, and high to `bypass`. Devin has no mode that asks before edits.
 
 - DROIDEX runs the Claude Code, Codex and Devin CLIs but does not ship them. The sidecar's `HarnessCliInstaller` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command. Homebrew Devin installs use `brew upgrade --cask devin-cli`; native installs use `devin update`. The Codex CLI bundled inside `ChatGPT.app` is found last, after PATH, and is left to the ChatGPT app to update. An updater writes its output to a temporary file and runs in its own process group, so quitting DROIDEX mid-update cannot leave a package manager half-done.

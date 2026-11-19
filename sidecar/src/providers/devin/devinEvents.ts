@@ -1,14 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionNotification, ToolCallUpdate } from '@agentclientprotocol/sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { TranscriptEvent } from '../../protocol.js';
-
-export function isDevinChild(update: { _meta?: Record<string, unknown> | null }): boolean {
-  const context = update._meta?.['cognition.ai/subagent_context'];
-  if (typeof context !== 'object' || context === null || !('parentAgentId' in context))
-    return false;
-  return typeof context.parentAgentId === 'string' && context.parentAgentId !== 'root';
-}
+import type { SessionRole, TranscriptEvent } from '../../protocol.js';
 
 export function devinToolName(tool: ToolCallUpdate): string {
   const name = tool._meta?.['cognition.ai/inferenceToolName'];
@@ -23,6 +16,7 @@ export class DevinEvents {
   constructor(
     private readonly appSessionId: string,
     private readonly sessionId: string,
+    private readonly role: SessionRole = 'primary',
   ) {}
 
   interrupt(): NormalizedEvent[] {
@@ -45,7 +39,6 @@ export class DevinEvents {
   }
 
   map({ update }: SessionNotification): NormalizedEvent[] {
-    if (isDevinChild(update)) return [];
     switch (update.sessionUpdate) {
       case 'agent_message_chunk':
       case 'agent_thought_chunk': {
@@ -61,11 +54,6 @@ export class DevinEvents {
       }
       case 'tool_call':
       case 'tool_call_update': {
-        if (
-          update._meta?.['cognition.ai/subagent_started'] ||
-          update._meta?.['cognition.ai/subagent_completed']
-        )
-          return [];
         const tool = { ...this.tools.get(update.toolCallId), ...update };
         this.tools.set(tool.toolCallId, tool);
         if (this.completed.has(tool.toolCallId)) return [];
@@ -124,7 +112,7 @@ export class DevinEvents {
         id: randomUUID(),
         appSessionId: this.appSessionId,
         sourceSessionId: this.sessionId,
-        role: 'primary',
+        role: this.role,
         ts: Date.now(),
         ...event,
       },
