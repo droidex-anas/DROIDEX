@@ -15,7 +15,7 @@ import type {
   SideChatDefaultPlacement,
 } from '../hooks/persistedUiPreferences';
 import { ChevronLeft, ChevronDown, Search, Check, X, Plus } from '@droidex/icons';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import AutonomySelector from './AutonomySelector';
 import { ModelIcon, providerOf } from './ModelIcon';
 import type { ModelInfo, VoiceNarration } from '../types/bridge';
@@ -167,6 +167,43 @@ function TokenLimitSelect({
 }
 
 /* ── compaction model picker (collapsed trigger + searchable popover) ── */
+const CompactionModelOption = memo(function CompactionModelOption({
+  id,
+  label,
+  sub,
+  current,
+  active,
+  model,
+  onSelect,
+}: {
+  id: string;
+  label: string;
+  sub?: string;
+  current?: boolean;
+  active: boolean;
+  model?: ModelInfo;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onSelect(id);
+      }}
+      className={`flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left ${
+        active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
+      }`}
+    >
+      {!current && <ModelIcon provider={providerOf(model, id)} size={16} />}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-body text-primary">{label}</div>
+        {sub && <div className="truncate text-caption text-muted">{sub}</div>}
+      </div>
+      {active && <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />}
+    </button>
+  );
+});
+
 function CompactionModelPicker({
   selected,
   models,
@@ -195,50 +232,13 @@ function CompactionModelPicker({
       )
     : models;
 
-  const choose = (id: string) => {
-    onSelect(id);
-    close();
-  };
-
-  const Option = ({
-    id,
-    label: l,
-    sub,
-    current,
-  }: {
-    id: string;
-    label: string;
-    sub?: string;
-    current?: boolean;
-  }) => {
-    const active = selected === id;
-    return (
-      <button
-        type="button"
-        onClick={() => {
-          choose(id);
-        }}
-        className={`flex w-full select-none items-center gap-2 rounded-md px-2 py-1.5 text-left ${
-          active ? 'bg-active' : 'hover:bg-elevated dark:hover:bg-active'
-        }`}
-      >
-        {!current && (
-          <ModelIcon
-            provider={providerOf(
-              models.find((m) => m.id === id),
-              id,
-            )}
-            size={16}
-          />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-body text-primary">{l}</div>
-          {sub && <div className="truncate text-caption text-muted">{sub}</div>}
-        </div>
-        {active && <Check aria-hidden="true" className="size-icon-sm shrink-0 text-accent" />}
-      </button>
-    );
-  };
+  const choose = useCallback(
+    (id: string) => {
+      onSelect(id);
+      close();
+    },
+    [onSelect, close],
+  );
 
   return (
     <div className="shrink-0">
@@ -284,14 +284,24 @@ function CompactionModelPicker({
           />
         </div>
         <div className="min-h-0 overflow-y-auto px-1.5 pb-1.5">
-          <Option
+          <CompactionModelOption
             id="current-model"
             label="Current model"
             sub="Use whatever model the session runs"
             current
+            active={isCurrent}
+            onSelect={choose}
           />
           {filtered.map((m) => (
-            <Option key={m.id} id={m.id} label={m.displayName} sub={m.provider} />
+            <CompactionModelOption
+              key={m.id}
+              id={m.id}
+              label={m.displayName}
+              sub={m.provider}
+              active={selected === m.id}
+              model={m}
+              onSelect={choose}
+            />
           ))}
           {filtered.length === 0 && (
             <div className="px-2 py-4 text-center text-body text-muted">No models match.</div>
