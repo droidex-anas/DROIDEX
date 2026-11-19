@@ -8,10 +8,11 @@ const path = require('node:path');
 // terminal, and both go on to run shells, so neither gets the app's variables.
 const { childEnv } = require('./childEnv.cjs');
 const editorApps = require('./editorApps.cjs');
-const git = require('./git.cjs');
+const { projectRoot } = require('./gitRepository.cjs');
+const { workingTreeDiff } = require('./gitDiff.cjs');
 
 async function openProject(dir, editor, target) {
-  const root = await git.projectRoot(dir);
+  const root = await projectRoot(dir);
   const pathToOpen = target === 'diff' ? await writeDiffFile(root) : root;
   await launch(editor, pathToOpen, root, target);
 }
@@ -19,7 +20,7 @@ async function openProject(dir, editor, target) {
 async function writeDiffFile(root) {
   let diff;
   try {
-    diff = await git.workingTreeDiff(root);
+    diff = await workingTreeDiff(root);
   } catch (err) {
     diff = `Unable to read git diff: ${err.message}\n`;
   }
