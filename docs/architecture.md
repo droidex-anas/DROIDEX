@@ -603,10 +603,16 @@ the privileged `droidex-canvas-preview` scheme, the one guest document, its
 restrictive CSP, the trusted intermediate and the registry of guests main
 attached; `electron/canvasPreviewSession.cjs` shuts the guests' session off from
 the network. `electron/canvasPreviewAssets.cjs` serves only signed canvas images
-and content-addressed kit images and fonts through that same scheme. `electron/mainWindow.cjs` sets `webviewTag` on the
-app window alone and installs `will-attach-webview` before that window loads
-anything, so renderer content can only ever attach the owned source, with any
-requested preload deleted and Node, nested Node and nested guests off.
+and content-addressed kit images and fonts through that same scheme.
+`electron/mainWindow.cjs` enables `webviewTag` on the app window and installs
+the attachment policy from `electron/webContentsPolicy.cjs` before loading it.
+That policy routes the owned Canvas preview source through preview hardening:
+any requested preload is deleted, Node, nested Node and nested guests are off,
+and the sandboxed guest uses the isolated preview session. Other sources must
+carry a one-time Browser reservation; `electron/browserGuests.cjs` validates
+the reservation against the host, replaces the guest preferences and parameters,
+and binds the guest to its Browser session. Browser guests do not use the
+Canvas preview hardening or preview session.
 
 The intermediate holds the compiled design in an opaque-origin
 `sandbox="allow-scripts"` iframe, so generated `top.postMessage` reaches the

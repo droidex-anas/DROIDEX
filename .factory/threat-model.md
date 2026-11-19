@@ -72,9 +72,9 @@ The system has **5 trust zones**:
 3. **Local IPC Zone** - Electron main process IPC handlers
 
    - Assumes: Only the app's own renderer should call these, but a compromised renderer is the threat model
-   - Entry Points: ~60 `ipcMain.handle` / `ipcMain.on` channels
-   - Validated by: `assertMainRenderer(event)` on terminal/native-browser/files channels (~27 channels)
-   - Risk: ~33 legacy channels lack sender validation; `read-file`/`list-files` have no root confinement
+   - Entry Points: `desktopIpc.handle` channels and raw `ipcMain.handle` / `ipcMain.on` handlers
+   - Validated by: `desktopIpc.handle` centrally checks the main window's top-frame sender; raw privileged handlers assert the sender explicitly, while Browser guest events validate their guest identity
+   - Risk: Authorized callers of `read-file`/`list-files` can supply arbitrary paths without file-root confinement
 
 4. **Loopback WebSocket Zone** - Sidecar bridge on `127.0.0.1`
 
@@ -94,10 +94,10 @@ The system has **5 trust zones**:
 
 The app has no traditional user authentication; it is a single-user desktop application. Trust is established through process boundaries:
 
-- **Renderer -> Main:** IPC channel names are the only "auth"; `assertMainRenderer` validates `event.sender === mainWindow.webContents` on privileged channels.
+- **Renderer -> Main:** `desktopIpc.handle` calls `assertMainRenderer` to validate both `event.sender === mainWindow.webContents` and `event.senderFrame === mainWindow.webContents.mainFrame`. Raw privileged handlers assert explicitly; Browser guest events use guest identity checks. Paired Remote callers use the authenticated Remote bridge.
 - **Renderer -> Sidecar:** `BRIDGE_TOKEN` (16 random bytes hex, generated per session) passed as a WebSocket query-string parameter. The sidecar compares it with `!==` (non-constant-time).
 - **Main -> Sidecar:** The token is injected into the sidecar's env via `BRIDGE_TOKEN`. In dev mode, `BRIDGE_ALLOW_LOCAL_NO_TOKEN='1'` bypasses the check entirely.
-- **Files root access:** `createRootAccessRegistry` issues a 32-byte random token per authorized root; all subsequent file operations require this token.
+- **Files root access:** `createRootAccessRegistry` issues a 32-byte random token per authorized root; token-scoped `files-*` operations require it. Legacy `read-file`/`list-files` do not.
 - **Credential consent:** Browser credential autofill requires explicit user consent (`browser-credentials.consent` state machine: `unset` -> `enabled`/`disabled`).
 - **Developer-tools consent:** The agent tool `browser_evaluate` runs script in a browser page only on an origin the user allowed for it (`browserDevTools.cjs`): the exact origin, asked for by name in a native dialog, kept in memory until the app quits, never the app's own pages. The origin is checked inside the same evaluated step as the script. On an allowed origin script can read what the other browser tools mask, including field values; the dialog says so.
 
@@ -128,14 +128,18 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 #### IPC Channels (Renderer -> Main)
 
+Local `desktopIpc.handle` registrations below share the main-window top-frame
+sender guard. That guard does not prevent abuse by code already executing in
+the authorized renderer, nor does it impose file-root confinement.
+
 - **`get-api-key` / `set-api-key`** - Manage encrypted FACTORY_API_KEY
-  - **Risk:** No sender validation; compromised renderer can read/overwrite/destroy the key
+  - **Risk:** A compromised authorized renderer can read/overwrite/destroy the key
 - **`list-files` / `read-file`** (legacy) - Arbitrary path filesystem access
   - **Risk:** No root confinement, no token gate; arbitrary file read from any path
 - **`git-*` (13 channels)** - Git operations on arbitrary repo paths
-  - **Risk:** No sender validation; ref/branch validation lives in the Git branch and worktree modules but repo path is attacker-controlled
+  - **Risk:** Ref/branch validation lives in the Git branch and worktree modules, but an authorized caller controls the repo path
 - **`github-*` (6 channels)** - `gh` CLI invocations
-  - **Risk:** No sender validation; PR body is free text
+  - **Risk:** An authorized caller supplies free-text PR content
 - **`open-external`** - Opens URL in OS default browser
   - **Validation:** `http(s)` scheme gate. **Safe.**
 - **`app-download-update`** - Downloads app update from renderer-supplied URL
@@ -663,7 +667,7 @@ const safeSvg = useMemo(() => {
 
 #### Threat: Arbitrary File Read via Legacy IPC
 
-**Scenario:** A compromised renderer (via XSS) calls the unvalidated `read-file` or `list-files` IPC handlers to read any file on the system, bypassing the root-confinement system used by the mission-scoped Files tab.
+**Scenario:** A compromised authorized renderer (via XSS) calls the sender-guarded `read-file` or `list-files` IPC handlers with arbitrary paths, bypassing the root-confinement system used by the mission-scoped Files tab.
 
 **Vulnerable Components:**
 
@@ -686,11 +690,9 @@ desktopIpc.handle('read-file', ({ path: filePath }) => readFile(filePath));
 ```
 
 ```javascript
-// SAFE: Require root authorization token + relative paths
-ipcMain.handle('read-file', (event, token, relativePath) => {
-  assertMainRenderer(event);
-  const root = filesRootAccess.resolve(token);  // throws EACCES if invalid
-  return readPreview(root, relativePath);  // multi-layer confinement
+// Root-confined alternative: the actual token-scoped preview handler.
+desktopIpc.handle('files-preview', ({ accessToken, relative }) => {
+  return files.readPreview(filesRootAccess.resolve(accessToken), relative);
 });
 ```
 
@@ -702,7 +704,7 @@ ipcMain.handle('read-file', (event, token, relativePath) => {
 **Gaps:**
 
 - Legacy `read-file`/`list-files` bypass the entire confinement system
-- No sender validation on these handlers
+- The top-frame sender guard does not confine paths supplied by an authorized caller
 
 **Severity:** HIGH | **Likelihood:** MEDIUM
 
@@ -1174,10 +1176,10 @@ if (process.env.DROID_PATH && isExecutable(process.env.DROID_PATH)) return proce
 ### Path Traversal Patterns
 
 ```javascript
-// PATTERN 1: Legacy read-file/list-files with no root confinement (HIGH)
+// PATTERN 1: Sender-guarded legacy reads lack file-root confinement (HIGH)
 // Found in: electron/filesIpc.cjs
-ipcMain.handle('read-file', (_event, filePath) => readFile(filePath)); // arbitrary path
-ipcMain.handle('list-files', (_event, dir) => listFiles(dir)); // arbitrary directory
+desktopIpc.handle('read-file', ({ path: filePath }) => readFile(filePath)); // arbitrary path
+desktopIpc.handle('list-files', ({ dir }) => listFiles(dir)); // arbitrary directory
 
 // PATTERN 2: file: URL in browser pane allows local file read (MEDIUM)
 // Found in: electron/nativeBrowserUrls.cjs, sidecar/src/browser/browserUrl.ts:8
@@ -1393,7 +1395,7 @@ if (!safeRegex(PACK_PATH_RE)) throw new Error('unsafe regex detected');
 Human review is required for:
 
 - CRITICAL/HIGH findings from `commit-security-scan`
-- Changes to `electron/*Ipc.cjs` IPC handlers (especially new handlers without `assertMainRenderer`)
+- All main-process IPC handler changes, regardless of filename: entrypoint wiring, focused registrars, and service owners such as `appUpdater.cjs`, `sidecar.cjs`, and `usageAnalytics.cjs`. Review sender authorization (`desktopIpc.handle` or explicit raw-handler checks) separately from payload validation and file-root confinement.
 - Changes to `electron/nativeBrowserPreload.cjs` (high-risk preload in untrusted context)
 - Changes to `electron/files.cjs` path confinement logic
 - Changes to `sidecar/src/index.ts` WebSocket auth
@@ -1421,7 +1423,7 @@ Human review is required for:
 1. **No Content-Security-Policy** - The main window and browser pane have no CSP. Accepted because `contextIsolation: true` + `nodeIntegration: false` limits XSS damage to the renderer context, but this weakens defense-in-depth. Mitigation timeline: add CSP in a future hardening pass.
 2. **`sandbox: false` on all preloads** - Preloads run with full Node access. Required for current functionality (file I/O, crypto, pty in preload). Accepted because `contextIsolation: true` isolates the preload from page context, but a preload bug could be catastrophic. Mitigation timeline: enable `sandbox: true` for `nativeBrowserPreload.cjs` (highest risk) by refactoring to IPC-only.
 3. **Shared persistent browser partition** - All missions share `persist:droidex-browser`. Accepted for user convenience (persistent logins). Cross-mission cookie leakage is a known trade-off. Mitigation timeline: add per-mission ephemeral partitions as an option.
-4. **Legacy IPC handlers without sender validation** - ~33 handlers skip `assertMainRenderer`. Accepted because there is only one renderer, but this violates defense-in-depth. Mitigation timeline: add `assertMainRenderer` to all privileged handlers.
+4. **Legacy file reads lack root confinement** - `read-file`/`list-files` use `desktopIpc.handle` and its main-window top-frame sender guard, but authorized callers can supply arbitrary paths without a file-root token. A compromised authorized renderer can therefore read outside a project. Further hardening would require root confinement, not another sender check.
 5. **`BRIDGE_ALLOW_LOCAL_NO_TOKEN` in dev** - Dev mode allows unauthenticated WebSocket connections. Accepted for development convenience. Packaged builds force `'0'`.
 6. **`file:` URLs in browser pane** - Allowed for local file browsing convenience. Accepted with the understanding that the agent could read local files via the browser. Mitigation timeline: add user consent prompt for `file:` navigation.
 7. **Token in WebSocket URL query string** - Accepted for simplicity. Loopback-only binding limits exposure. Non-constant-time comparison is a theoretical timing risk with low practical impact on loopback.
@@ -1436,7 +1438,7 @@ Human review is required for:
 - STRIDE analysis completed for all components: React renderer, Electron main, preloads, files module, terminal module, git/GitHub modules, sidecar WebSocket server, MissionManager, BrowserSessionManager, DroidRuntime, CliInstaller
 - Vulnerability pattern library established with 10 categories: XSS, command injection, path traversal, auth bypass, IDOR, IPC sender authorization, local WebSocket token validation, filesystem TOCTOU, resource exhaustion, unsafe URL handling, regex DoS
 - Identified 2 CRITICAL threats (model-emitted SVG XSS, mermaid loose security)
-- Identified 6 HIGH threats (WebSocket token forgery, IPC sender spoofing, WS command schema bypass, arbitrary file read via legacy IPC, native browser preload Node escalation, unvalidated SVG/mermaid rendering)
+- Identified 6 HIGH threats (WebSocket token forgery, privileged IPC abuse from a compromised main renderer, WS command schema bypass, arbitrary file read via legacy IPC, native browser preload Node escalation, unvalidated SVG/mermaid rendering)
 - Identified 9 MEDIUM threats (browser request hijacking, env var leak, file URL read, shared partition leakage, WS message bomb, terminal shell override, curl|sh installer, DROID_PATH trust, no audit trail)
 - Identified 4 LOW threats (filesystem TOCTOU mitigated, ReDoS pack path, dev-mode auth bypass, downloadAppUpdate URL round-trip)
 - Trust boundaries mapped across 5 zones: untrusted web, renderer, local IPC, loopback WebSocket, host OS
