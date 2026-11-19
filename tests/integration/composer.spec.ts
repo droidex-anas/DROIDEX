@@ -200,9 +200,7 @@ test('the draft renders markdown as it is typed and sends the raw text', async (
   await expect(composer).toHaveText('Planship now');
 });
 
-test('the first prompt opens a chat and a queued follow-up waits for its turn', async ({
-  page,
-}) => {
+async function startComposerTurn(page: Page) {
   const submissions: ClientCommand[] = [];
   let finishFirstTurn: (() => void) | undefined;
   await page.routeWebSocket(
@@ -254,7 +252,14 @@ test('the first prompt opens a chat and a queued follow-up waits for its turn', 
     .toMatchObject([{ type: 'session.create', goal: 'ship **now**' }]);
   await expect(composer).not.toContainText('ship now');
   await expect(page.getByRole('button', { name: 'Stop turn' })).toBeVisible();
+  if (!finishFirstTurn) throw new Error('The test chat did not start a turn');
+  return { composer, submissions, finishFirstTurn };
+}
 
+test('the first prompt opens a chat and a queued follow-up waits for its turn', async ({
+  page,
+}) => {
+  const { composer, submissions, finishFirstTurn } = await startComposerTurn(page);
   await composer.fill('Keep going');
   await composer.press('ControlOrMeta+Enter');
   const queue = page.getByText('Queued · sends after the current turn');
@@ -262,7 +267,7 @@ test('the first prompt opens a chat and a queued follow-up waits for its turn', 
   await expect(composer).not.toContainText('Keep going');
   expect(submissions).toHaveLength(1);
 
-  finishFirstTurn?.();
+  finishFirstTurn();
   await expect
     .poll(() => submissions.at(1))
     .toEqual({
@@ -271,4 +276,53 @@ test('the first prompt opens a chat and a queued follow-up waits for its turn', 
       text: 'Keep going',
     });
   await expect(queue).not.toBeVisible();
+});
+
+test('a queued follow-up sends when its attachment finishes after the current turn', async ({
+  page,
+}) => {
+  const { composer, submissions, finishFirstTurn } = await startComposerTurn(page);
+  const savedAttachment = Promise.withResolvers<string>();
+  let savingAttachment = false;
+  await page.exposeFunction('saveTestAttachment', () => {
+    savingAttachment = true;
+    return savedAttachment.promise;
+  });
+  await composer.evaluate((editor) => {
+    // Stub the desktop save only; the renderer still reads and awaits the pasted file.
+    Object.defineProperty(window, 'droidex', {
+      configurable: true,
+      value: {
+        saveAttachment: () => {
+          Reflect.deleteProperty(window, 'droidex');
+          return Reflect.get(window, 'saveTestAttachment')();
+        },
+      },
+    });
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(new File(['Review notes'], 'notes.txt', { type: 'text/plain' }));
+    editor.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData }));
+  });
+  await expect.poll(() => savingAttachment).toBe(true);
+
+  await composer.fill('Read my notes');
+  await composer.press('ControlOrMeta+Enter');
+  const working = page.getByTestId('chat-view').getByText('Working', { exact: true });
+  await expect(working).toBeVisible();
+  finishFirstTurn();
+  await expect(working).toHaveCount(0);
+  expect(submissions).toHaveLength(1);
+
+  savedAttachment.resolve('/tmp/notes.txt');
+  await expect(composer).not.toContainText('Read my notes');
+  await expect
+    .poll(() => submissions.slice(1))
+    .toEqual([
+      {
+        type: 'session.send',
+        appSessionId: 'composer-test-chat',
+        text: 'Read my notes\n\n@/tmp/notes.txt',
+      },
+    ]);
+  await expect(page.getByText('Queued · sends after the current turn')).not.toBeVisible();
 });

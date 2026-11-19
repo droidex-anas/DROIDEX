@@ -23,6 +23,7 @@ export function useQueuedPromptDelivery({
   appSessionId,
   cwd,
   isLive,
+  hasQueuedPrompt,
   usageLimited,
   appUpdateInstalling,
   appUpdateInstallResult,
@@ -30,6 +31,7 @@ export function useQueuedPromptDelivery({
   appSessionId: string | null;
   cwd: string | null;
   isLive: boolean;
+  hasQueuedPrompt: boolean;
   // The chat is held on a usage limit: its queue waits until the limit lifts.
   usageLimited: boolean;
   appUpdateInstalling: boolean;
@@ -39,12 +41,13 @@ export function useQueuedPromptDelivery({
   const dispatch = useStoreDispatch();
   const guard = useMemo(createPromptQueueDeliveryGuard, []);
   const generation = useRef(0);
-  const previous = useRef<{ appSessionId: string | null; live: boolean; limited: boolean }>({
-    appSessionId: null,
-    live: false,
-    limited: false,
+  const previous = useRef({
+    appSessionId,
+    isLive,
+    hasQueuedPrompt: false,
+    usageLimited,
+    appUpdateInstalling,
   });
-  const previousInstalling = useRef(appUpdateInstalling);
   // Committed limit state only: a render React drops must not open or shut
   // the gate a delivery in flight reads.
   const limited = useRef(usageLimited);
@@ -131,35 +134,41 @@ export function useQueuedPromptDelivery({
 
   useEffect(() => {
     const was = previous.current;
-    // This session just settled, the user came back to one that settled while
-    // they were away, or the limit an idle one was held on lifted; each leaves
-    // its queue to drain here.
-    const sameSession = was.appSessionId === appSessionId;
-    const settled = was.live && !isLive && sameSession;
-    const returned = !sameSession && !isLive;
-    const lifted = was.limited && !usageLimited && !isLive && sameSession;
-    previous.current = { appSessionId, live: isLive, limited: usageLimited };
-    if (!settled && !returned && !lifted) return;
-    if (appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length)
-      void deliverPrompt();
-  }, [appSessionId, deliverPrompt, isLive, store, usageLimited]);
-
-  useEffect(() => {
-    const hasQueued = Boolean(
-      appSessionId && (store.getState().promptQueue[appSessionId] ?? []).length,
+    previous.current = {
+      appSessionId,
+      isLive,
+      hasQueuedPrompt,
+      usageLimited,
+      appUpdateInstalling,
+    };
+    if (isLive || !hasQueuedPrompt) return;
+    // A first prompt can finish staging after the turn has already settled.
+    // Watch the empty-to-nonempty edge, not edits or removal of a sent head.
+    const queueBecameReady = !was.hasQueuedPrompt;
+    const resumedAfterUpdate = shouldResumeQueuedPromptAfterUpdate(
+      was.appUpdateInstalling,
+      appUpdateInstalling,
+      isLive,
+      hasQueuedPrompt,
+      appUpdateInstallResult,
     );
     if (
-      shouldResumeQueuedPromptAfterUpdate(
-        previousInstalling.current,
-        appUpdateInstalling,
-        isLive,
-        hasQueued,
-        appUpdateInstallResult,
-      )
+      queueBecameReady ||
+      was.isLive ||
+      was.appSessionId !== appSessionId ||
+      (was.usageLimited && !usageLimited) ||
+      resumedAfterUpdate
     )
       void deliverPrompt();
-    previousInstalling.current = appUpdateInstalling;
-  }, [appSessionId, appUpdateInstalling, appUpdateInstallResult, deliverPrompt, isLive, store]);
+  }, [
+    appSessionId,
+    appUpdateInstalling,
+    appUpdateInstallResult,
+    deliverPrompt,
+    hasQueuedPrompt,
+    isLive,
+    usageLimited,
+  ]);
 }
 
 /** What a queued prompt is sent with: everything as it was when it was queued. */
