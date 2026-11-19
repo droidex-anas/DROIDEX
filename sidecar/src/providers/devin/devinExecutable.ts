@@ -8,6 +8,8 @@ export function resolveDevinPath(): string | undefined {
     process.env.DEVIN_PATH,
     resolveOnPathSync('devin'),
     join(homedir(), '.local', 'bin', 'devin'),
+    '/opt/homebrew/bin/devin',
+    '/usr/local/bin/devin',
   ];
   return candidates.find((path): path is string =>
     Boolean(path && isExecutable(path) && statSync(path, { throwIfNoEntry: false })?.isFile()),

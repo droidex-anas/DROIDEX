@@ -275,7 +275,8 @@ Inspected screenshots stay open until the user closes them.
 ### Harness CLI updates
 
 Devin runs `devin acp` over stdio through the official ACP SDK. Resolution uses
-`DEVIN_PATH`, then PATH, then `~/.local/bin/devin`. It uses the CLI's existing
+`DEVIN_PATH`, then PATH, then `~/.local/bin/devin`, `/opt/homebrew/bin/devin`
+and `/usr/local/bin/devin`. It uses the CLI's existing
 login (`devin auth login`), never an API key. The probe checks `devin auth status`
 and discovers models from a temporary ACP session's model config options, then
 deletes and closes that session. The ACP session id is `providerSessionId`;
