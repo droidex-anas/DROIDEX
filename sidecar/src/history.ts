@@ -1116,10 +1116,16 @@ function shouldIncludeCwd(
   return workspaceCwds.has(cwd);
 }
 
+function isMissingSessionPath(error: unknown): boolean {
+  const { code } = error as NodeJS.ErrnoException;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 // Enumeration, replay and search share these roots, including the optional
 // Alt logins and transcripts DROIDEX writes for other providers.
 function scanSessionFileTree(): SessionFileScan {
   const files = new Map<string, SessionFileStat>();
+  const unreadablePaths = new Set<string>();
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
   // Alt profiles are private extra logins, so they never replace or break a Main
@@ -1143,7 +1149,11 @@ function scanSessionFileTree(): SessionFileScan {
       let stat;
       try {
         stat = statSync(path);
-      } catch {
+      } catch (error) {
+        if (!isMissingSessionPath(error)) {
+          if (name.endsWith('.jsonl')) unreadablePaths.add(path);
+          else if (!name.endsWith('.settings.json')) isComplete = false;
+        }
         continue;
       }
       if (stat.isDirectory()) walk(path, depth + 1, isAlt);
@@ -1169,11 +1179,11 @@ function scanSessionFileTree(): SessionFileScan {
     file.settingsMtimeMs =
       settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
   }
-  return { files, isComplete };
+  return { files, unreadablePaths, isComplete };
 }
 
-// Stats one session file and its settings sidecar, or returns null when the
-// file is gone (deleted between a watcher event and the reconcile).
+// Stats one session file and its settings sidecar. Null means the file is gone;
+// other inspection failures throw so reconciliation can retry later.
 function statSessionFile(path: string): SessionFileStat | null {
   try {
     const stat = statSync(path);
@@ -1190,8 +1200,9 @@ function statSessionFile(path: string): SessionFileStat | null {
       sizeBytes: stat.size,
       settingsMtimeMs,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if (isMissingSessionPath(error)) return null;
+    throw error;
   }
 }
 

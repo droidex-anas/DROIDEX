@@ -38,8 +38,10 @@ export interface SessionFileChange {
 
 export interface SessionFileScan {
   files: Map<string, SessionFileStat>;
-  // False when any subtree vanished or became unreadable during the walk.
-  // Upserts are still authoritative, but absences cannot prove deletion.
+  // Failed transcript stats cannot prove those paths were deleted.
+  unreadablePaths: Set<string>;
+  // False when a possible subtree could not be inspected. Upserts are still
+  // authoritative, but no absence can prove deletion.
   isComplete: boolean;
 }
 
@@ -145,8 +147,8 @@ export class SessionFileCache {
       providerSessionId: string,
       file: SessionFileStat,
     ) => SessionFileSummary,
-    // Stats one session file and its settings sidecar; null when the file is
-    // gone. Used by the targeted reconcile so watcher events do not trigger
+    // Stats one session file and its settings sidecar; null means gone, while
+    // inspection failures throw. Targeted reconciles avoid triggering
     // a full sessions-tree walk.
     private readonly statFile: (path: string) => SessionFileStat | null,
     private readonly retainOwnedSummary: (summary: SessionSummary) => boolean = () => false,
@@ -219,13 +221,13 @@ export class SessionFileCache {
   // entries written or removed.
   reconcileChanges(): SessionFileReconciliation {
     const previousRevision = this.revisionValue;
-    const { files: onDisk, isComplete } = this.scanFiles();
+    const { files: onDisk, unreadablePaths, isComplete } = this.scanFiles();
     if (isComplete) {
-      for (const id of this.files.keys()) {
-        if (!onDisk.has(id)) this.unavailableFiles.add(id);
+      for (const [id, cached] of this.files) {
+        if (!onDisk.has(id) && !unreadablePaths.has(cached.path)) this.unavailableFiles.add(id);
       }
     }
-    const removals = this.collectRemovals(onDisk, isComplete);
+    const removals = this.collectRemovals(onDisk, unreadablePaths, isComplete);
     const candidates = this.collectCandidates(onDisk);
     // Provider files that cannot be read are omitted from candidates and
     // retried on the next watcher event or full reconcile. Once candidates
@@ -256,12 +258,21 @@ export class SessionFileCache {
     return changed;
   }
 
-  private collectRemovals(onDisk: Map<string, SessionFileStat>, isComplete: boolean): string[] {
+  private collectRemovals(
+    onDisk: Map<string, SessionFileStat>,
+    unreadablePaths: Set<string>,
+    isComplete: boolean,
+  ): string[] {
     // A partial scan cannot distinguish a deleted file from a temporarily
     // unreadable subtree. Preserve unmatched rows until a complete scan can
     // authoritatively remove them.
     if (!isComplete) return [];
-    return [...this.files.keys()].filter((id) => !onDisk.has(id) && !this.retainsSummary(id));
+    return [...this.files]
+      .filter(
+        ([id, cached]) =>
+          !onDisk.has(id) && !unreadablePaths.has(cached.path) && !this.retainsSummary(id),
+      )
+      .map(([id]) => id);
   }
 
   retainsSummary(providerSessionId: string): boolean {
@@ -274,16 +285,16 @@ export class SessionFileCache {
   private collectCandidates(onDisk: Map<string, SessionFileStat>): SessionFileCacheEntry[] {
     const candidates: SessionFileCacheEntry[] = [];
     for (const [id, scanned] of onDisk) {
-      const file = this.fileToSummarize(id, scanned);
-      const cached = this.files.get(id);
-      if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
       try {
+        const file = this.fileToSummarize(id, scanned);
+        const cached = this.files.get(id);
+        if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
         const entry = this.summarizeEntry(id, file);
         if (!entry) continue;
         candidates.push(entry);
         this.unavailableFiles.delete(id);
       } catch {
-        // The file was deleted or rotated between the scan and the read;
+        // The file could not be inspected or read during reconciliation;
         // the next watcher event or boot reconcile retries it.
       }
     }
@@ -343,30 +354,30 @@ export class SessionFileCache {
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
     for (const { providerSessionId, path } of changes) {
-      const reported = this.statFile(path);
-      const cached = this.files.get(providerSessionId);
-      if (!reported) {
-        // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
-        if (cached?.path !== path) continue;
-        this.unavailableFiles.add(providerSessionId);
-        if (!this.retainsSummary(providerSessionId))
-          removedProviderSessionIds.push(providerSessionId);
-        continue;
-      }
-      const file = this.fileToSummarize(providerSessionId, reported);
-      if (
-        cached &&
-        !this.unavailableFiles.has(providerSessionId) &&
-        matchesFreshnessKey(cached, file)
-      )
-        continue;
       try {
+        const reported = this.statFile(path);
+        const cached = this.files.get(providerSessionId);
+        if (!reported) {
+          // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
+          if (cached?.path !== path) continue;
+          this.unavailableFiles.add(providerSessionId);
+          if (!this.retainsSummary(providerSessionId))
+            removedProviderSessionIds.push(providerSessionId);
+          continue;
+        }
+        const file = this.fileToSummarize(providerSessionId, reported);
+        if (
+          cached &&
+          !this.unavailableFiles.has(providerSessionId) &&
+          matchesFreshnessKey(cached, file)
+        )
+          continue;
         const entry = this.summarizeEntry(providerSessionId, file);
         if (!entry) continue;
         upserts.push(entry);
         this.unavailableFiles.delete(providerSessionId);
       } catch {
-        // The file was deleted or rotated between the stat and the read;
+        // The file could not be inspected or read during reconciliation;
         // the next watcher event or boot reconcile retries it.
       }
     }

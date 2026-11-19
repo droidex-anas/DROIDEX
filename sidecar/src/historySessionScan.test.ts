@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import fs, {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 import type { ServerEvent, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from './SessionEventFlow.js';
@@ -73,6 +81,116 @@ test('files created, rewritten, given settings, or deleted between scans show in
 
   unlinkSync(join(home, '.factory', 'sessions', `${id}.jsonl`));
   assert.equal(scanned(), undefined);
+});
+
+function sessionScanCache(t: TestContext) {
+  const index = new HistoryIndex();
+  const db = new DatabaseSync(':memory:');
+  const canonical = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
+  t.after(() => {
+    canonical.close();
+    db.close();
+    index.close();
+  });
+  return createHistorySessionFileCache(db, canonical);
+}
+
+function denySessionStat(t: TestContext, path: string) {
+  const stat = fs.statSync;
+  const mocked = t.mock.method(fs, 'statSync', (...args: Parameters<typeof fs.statSync>) => {
+    if (args[0] === path) throw Object.assign(new Error('stat failed'), { code: 'EACCES' });
+    return stat(...args);
+  });
+  syncBuiltinESMExports();
+  const restore = () => {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  };
+  t.after(restore);
+  return { mocked, restore };
+}
+
+test('a full scan keeps an unreadable file but removes a different deleted file', (t) => {
+  writeSession('scan-unreadable', 'cached summary');
+  writeSession('scan-deleted', 'deleted summary');
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
+    'cached summary',
+  );
+  const path = join(home, '.factory', 'sessions', 'scan-unreadable.jsonl');
+  const { mocked } = denySessionStat(t, path);
+  unlinkSync(join(home, '.factory', 'sessions', 'scan-deleted.jsonl'));
+
+  const result = cache.reconcileChanges();
+  assert.ok(mocked.mock.calls.some((call) => call.arguments[0] === path));
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
+    'cached summary',
+  );
+  assert.equal(cache.unavailableProviderSessionIds.includes('scan-unreadable'), false);
+  assert.deepEqual(result.removedProviderSessionIds, ['scan-deleted']);
+});
+
+test('a deleted Alt copy is removed even when its Main copy cannot be inspected', (t) => {
+  const id = 'deleted-alt-unreadable-main';
+  const previousAltHome = process.env.DROIDEX_ALT_HOME;
+  const altHome = join(home, 'deleted-alt-home');
+  const altSessions = join(altHome, '.factory', 'sessions');
+  mkdirSync(altSessions, { recursive: true });
+  const altPath = join(altSessions, `${id}.jsonl`);
+  writeFileSync(
+    altPath,
+    providerSessionJsonl({ type: 'session_start', cwd: '', sessionTitle: 'Alt copy' }),
+  );
+  process.env.DROIDEX_ALT_HOME = altHome;
+  t.after(() => {
+    if (previousAltHome === undefined) delete process.env.DROIDEX_ALT_HOME;
+    else process.env.DROIDEX_ALT_HOME = previousAltHome;
+  });
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.droidProfile, 'alt');
+  writeSession(id, 'Main copy');
+  const { restore } = denySessionStat(t, join(home, '.factory', 'sessions', `${id}.jsonl`));
+  unlinkSync(altPath);
+  assert.deepEqual(cache.reconcileChanges().removedProviderSessionIds, [id]);
+  restore();
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.title, 'Main copy');
+});
+
+test('a watcher keeps an unreadable file and removes it after real deletion', (t) => {
+  const providerSessionId = 'watcher-unreadable';
+  writeSession(providerSessionId, 'cached summary');
+  const path = join(home, '.factory', 'sessions', `${providerSessionId}.jsonl`);
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  const { restore } = denySessionStat(t, path);
+
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [],
+  );
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === providerSessionId)?.title,
+    'cached summary',
+  );
+  assert.equal(cache.unavailableProviderSessionIds.includes(providerSessionId), false);
+
+  restore();
+  unlinkSync(path);
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [providerSessionId],
+  );
+  assert.equal(
+    cache.summaries().some((row) => row.appSessionId === providerSessionId),
+    false,
+  );
 });
 
 // The one cross-provider contract in this path: what ProviderTranscriptFile
