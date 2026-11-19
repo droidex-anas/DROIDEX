@@ -3,8 +3,8 @@ import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemor
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
 import type { UtilityPanelState } from '../lib/utilityPanel';
+import { lookupChild } from './storeLookup';
 
-/* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
 /* eslint-disable @typescript-eslint/no-dynamic-delete -- sparse childAccess parent keys */
 
 export type ChildSessionInfo = ChildSessionSummary;
@@ -136,7 +136,8 @@ export function releaseInactiveChildTranscript<S extends ChildSessionStore>(
   parentAppSessionId: string,
   childSessionId: string,
 ): S {
-  const panel = state.utilityPanels[parentAppSessionId];
+  const panels: Partial<ChildSessionStore['utilityPanels']> = state.utilityPanels;
+  const panel = panels[parentAppSessionId];
   const readingInPane =
     state.activeAppSessionId === parentAppSessionId &&
     panel?.open &&
@@ -145,12 +146,10 @@ export function releaseInactiveChildTranscript<S extends ChildSessionStore>(
         tab.id === panel.activeTabId && tab.tool === 'agents' && tab.agentId === childSessionId,
     );
   if (readingInPane) return state;
-  // These keyed renderer maps are intentionally sparse at runtime despite
-  // their long-standing Record types.
-  const history = state.childHistory[parentAppSessionId]?.[childSessionId];
+  const history = lookupChild(state.childHistory, parentAppSessionId, childSessionId);
   if (history && (!history.isLoaded || !history.isViewportPinned)) return state;
-  const child = state.childSessions[parentAppSessionId]?.[childSessionId];
-  const runtime = state.childRuntime[parentAppSessionId]?.[childSessionId];
+  const child = lookupChild(state.childSessions, parentAppSessionId, childSessionId);
+  const runtime = lookupChild(state.childRuntime, parentAppSessionId, childSessionId);
   if (child?.status === 'running' && runtime?.available) return state;
   return releaseSessionChildTranscriptWindow(
     state,
@@ -170,7 +169,11 @@ export function releaseInactiveSelectedChild<S extends ChildSessionStore>(state:
 export function invalidateSelectedChildOpening<S extends ChildSessionStore>(state: S): S {
   const selected = state.selectedChild;
   if (!selected) return state;
-  const access = state.childAccess[selected.parentAppSessionId]?.[selected.childSessionId];
+  const access = lookupChild(
+    state.childAccess,
+    selected.parentAppSessionId,
+    selected.childSessionId,
+  );
   return access?.state === 'opening'
     ? withChildAccess(state, selected.parentAppSessionId, selected.childSessionId, {
         state: 'closed',
@@ -201,9 +204,9 @@ export function reduceChildUpdated<S extends ChildSessionStore>(
     state.selectedChild.childSessionId !== action.childSessionId
   )
     return state;
-  const current = state.childAccess[action.parentAppSessionId]?.[action.childSessionId];
+  const current = lookupChild(state.childAccess, action.parentAppSessionId, action.childSessionId);
   if (current?.state !== 'opening' || current.requestId !== action.requestId) return state;
-  const runtime = state.childRuntime[action.parentAppSessionId]?.[action.childSessionId];
+  const runtime = lookupChild(state.childRuntime, action.parentAppSessionId, action.childSessionId);
   if (
     action.access === 'ready' &&
     runtime &&
@@ -242,7 +245,11 @@ export function reduceChildError<S extends ChildSessionStore>(
   },
 ): S {
   if (action.operation === 'loadHistory') {
-    const previous = state.childHistory[action.parentAppSessionId]?.[action.childSessionId];
+    const previous = lookupChild(
+      state.childHistory,
+      action.parentAppSessionId,
+      action.childSessionId,
+    );
     const next = withChildHistory(state, action.parentAppSessionId, action.childSessionId, {
       status: 'failed',
       loadedCount: previous?.loadedCount ?? 0,
@@ -261,7 +268,7 @@ export function reduceChildError<S extends ChildSessionStore>(
     state.selectedChild.childSessionId !== action.childSessionId
   )
     return state;
-  const current = state.childAccess[action.parentAppSessionId]?.[action.childSessionId];
+  const current = lookupChild(state.childAccess, action.parentAppSessionId, action.childSessionId);
   if (current?.state !== 'opening' || current.requestId !== action.requestId) return state;
   return withChildAccess(state, action.parentAppSessionId, action.childSessionId, {
     state: 'failed',
@@ -273,7 +280,11 @@ export function reduceChildHistoryLoading<S extends ChildSessionStore>(
   state: S,
   action: { parentAppSessionId: string; childSessionId: string },
 ): S {
-  const previous = state.childHistory[action.parentAppSessionId]?.[action.childSessionId];
+  const previous = lookupChild(
+    state.childHistory,
+    action.parentAppSessionId,
+    action.childSessionId,
+  );
   return withChildHistory(state, action.parentAppSessionId, action.childSessionId, {
     status: 'loading',
     loadedCount: previous?.loadedCount ?? 0,
@@ -289,7 +300,11 @@ export function reduceChildHistoryLoadingOlder<S extends ChildSessionStore>(
   state: S,
   action: { parentAppSessionId: string; childSessionId: string },
 ): S {
-  const previous = state.childHistory[action.parentAppSessionId]?.[action.childSessionId];
+  const previous = lookupChild(
+    state.childHistory,
+    action.parentAppSessionId,
+    action.childSessionId,
+  );
   if (!previous || previous.isLoadingOlder) return state;
   return withChildHistory(state, action.parentAppSessionId, action.childSessionId, {
     ...previous,
@@ -301,7 +316,11 @@ export function reduceChildTranscriptViewport<S extends ChildSessionStore>(
   state: S,
   action: { parentAppSessionId: string; childSessionId: string; pinned: boolean },
 ): S {
-  const previous = state.childHistory[action.parentAppSessionId]?.[action.childSessionId];
+  const previous = lookupChild(
+    state.childHistory,
+    action.parentAppSessionId,
+    action.childSessionId,
+  );
   if (!previous || previous.isViewportPinned === action.pinned) return state;
   return {
     ...state,
@@ -329,10 +348,10 @@ export function reduceChildTranscriptReleaseViewport<S extends ChildSessionStore
   ) {
     return state;
   }
-  const history = state.childHistory[action.parentAppSessionId]?.[action.childSessionId];
+  const history = lookupChild(state.childHistory, action.parentAppSessionId, action.childSessionId);
   if (!history?.isLoaded || !history.isViewportPinned) return state;
-  const child = state.childSessions[action.parentAppSessionId]?.[action.childSessionId];
-  const runtime = state.childRuntime[action.parentAppSessionId]?.[action.childSessionId];
+  const child = lookupChild(state.childSessions, action.parentAppSessionId, action.childSessionId);
+  const runtime = lookupChild(state.childRuntime, action.parentAppSessionId, action.childSessionId);
   if (child?.status === 'running' && runtime?.available) return state;
   return releaseSessionChildTranscriptWindow(
     state,
@@ -357,7 +376,7 @@ export function reduceSelectChild<S extends ChildSessionStore>(
   const { parentAppSessionId, childSessionId } = action.selection;
   if (
     next.activeAppSessionId !== parentAppSessionId ||
-    !next.childSessions[parentAppSessionId]?.[childSessionId]
+    !lookupChild(next.childSessions, parentAppSessionId, childSessionId)
   )
     return { ...next, selectedChild: null };
   next = { ...next, selectedChild: action.selection };
@@ -366,7 +385,7 @@ export function reduceSelectChild<S extends ChildSessionStore>(
       state: 'opening',
       requestId: action.requestId,
     });
-    const history = opening.childHistory[parentAppSessionId]?.[childSessionId];
+    const history = lookupChild(opening.childHistory, parentAppSessionId, childSessionId);
     if (history?.isLoaded) return opening;
     const loadedCount = (opening.transcripts[parentAppSessionId] ?? []).filter(
       (event) => event.sourceSessionId === childSessionId,
@@ -380,7 +399,7 @@ export function reduceSelectChild<S extends ChildSessionStore>(
       isViewportPinned: history?.isViewportPinned ?? true,
     });
   }
-  const access = next.childAccess[parentAppSessionId]?.[childSessionId];
+  const access = lookupChild(next.childAccess, parentAppSessionId, childSessionId);
   return access?.state === 'failed' || access?.state === 'closed'
     ? withoutChildAccess(next, parentAppSessionId, childSessionId)
     : next;

@@ -67,29 +67,20 @@ import {
   loadShortcutBindings,
   loadSideChatPlacement,
   loadWorkspaceCwds,
-  sanitizeAgentConfig,
   type AgentConfig,
   type DiffViewMode,
-  type HarnessModel,
   type HarnessModels,
   type LiveEnterBehavior,
   type MainView,
-  type MissionRole,
   type SideChatDefaultPlacement,
 } from './persistedUiPreferences';
 import type { ShortcutAction, ShortcutBindings } from '../lib/shortcuts';
 import type { ProjectView } from '../features/projects/types';
-import {
-  clearDesignMode,
-  setDesignMode,
-  toggleDesignMode,
-  type DesignModes,
-} from './designModeState';
+import type { DesignModes } from './designModeState';
 import type {
   AgentProcess,
   Autonomy,
   ContextWindowTokens,
-  FactoryDefaultSettings,
   ServerEvent,
   SessionLineage,
   SessionSummary,
@@ -103,33 +94,22 @@ import type {
   ProviderUsage,
   ChildSessionSummary,
   SkillInfo,
-  ReasoningEffort,
   ContextStatsSnapshot,
   BrowserState,
   VoiceNarration,
 } from '../types/bridge';
-import { PROVIDER_KINDS } from '../types/bridge';
 import { addWorkspaceCwd, removeWorkspaceCwd, withRevealedCwds } from '../lib/workspaces';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { isHistoryStatusError, applyHistoryServerEvent } from '../lib/historyHealth';
 import { loadDefaultPermissionMode } from '../lib/permissionSemantics';
-import {
-  mergePendingModelSettings,
-  type PendingModelSettings,
-  type PendingModelUpdate,
-} from '../lib/pendingModelSettings';
+import type { PendingModelUpdate } from '../lib/pendingModelSettings';
 import { loadDraftProvider } from '../features/providers/providerDraft';
-import { reuseUnchangedStatuses } from '../features/providers/providerIdentity';
 import { loadToolActivity, type ToolActivitySettings } from '../lib/toolActivity';
 import {
-  applyFactoryCompactionDefaults,
   compactionSettingsSnapshot,
   loadCompactionTokenLimit,
   loadCompactionTokenLimitPerModel,
-  normalizeTokenLimit,
-  saveCompactionTokenLimit,
-  saveCompactionTokenLimitPerModel,
 } from '../lib/compactionSettings';
 import { sanitizeForLog } from '../lib/sensitiveLogRedaction';
 import { sessionIsLive } from '../lib/sessions';
@@ -160,16 +140,10 @@ import { createComposerSeed, type ComposerSeed } from '../lib/composerReset';
 import { toast } from '../lib/toast';
 import { type DiffScope } from '../types/vcs';
 import {
-  activateUtilityTab,
-  closeUtilityTab,
-  openUtilityTool,
   removeSessionPanel,
   removeUtilityTool,
-  setUtilityPanelOpen,
-  updateUtilityTab,
   utilityPanelForSession,
   type UtilityPanelState,
-  type UtilityTool,
 } from '../lib/utilityPanel';
 import {
   currentSideChat,
@@ -182,7 +156,6 @@ import {
   type SideChatView,
 } from '../lib/sideChats';
 import type { FileChange } from '../lib/diff';
-import { applyOpenReviewAt, clearReviewFocus, type OpenReviewAtAction } from '../lib/reviewFocus';
 import type { ImagePasteQuality } from '../lib/images';
 import {
   estimateTranscriptCost,
@@ -199,6 +172,12 @@ import {
 import { type TranscriptMutation } from '../lib/transcriptMutation';
 import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
+import { reduceAgentSettings, type AgentSettingsAction } from './storeAgentSettings';
+import {
+  reduceSessionInteractions,
+  type SessionInteractionsAction,
+} from './storeSessionInteractions';
+import { reduceUtilityPanels, type UtilityPanelsAction } from './storeUtilityPanels';
 import { persistStoreChanges } from './storePersistence';
 import {
   invalidateSelectedChildOpening,
@@ -620,11 +599,7 @@ export type Action =
   | { type: 'QUEUE_PROMPT'; appSessionId: string; prompt: QueuedPrompt }
   | { type: 'REMOVE_QUEUED_PROMPT'; appSessionId: string; id: string }
   | { type: 'REORDER_QUEUE'; appSessionId: string; from: number; to: number }
-  | { type: 'SPEC_SET'; appSessionId: string; path?: string; title: string; content: string }
-  | { type: 'SPEC_OPEN_WIKI'; appSessionId: string }
-  | { type: 'SPEC_CLOSE_WIKI' }
-  | { type: 'SESSION_PERMISSION'; request: PermissionRequest }
-  | { type: 'SESSION_QUESTION'; question: SessionQuestion }
+  | SessionInteractionsAction
   | {
       type: 'SESSION_ERROR';
       appSessionId?: string;
@@ -678,63 +653,19 @@ export type Action =
       parentAppSessionId: string;
       childSessionId: string;
     }
-  | { type: 'CLEAR_PERMISSION'; appSessionId: string; requestId: string }
-  | { type: 'CLEAR_QUESTION'; appSessionId: string; requestId: string }
-  | { type: 'CLEAR_INTERACTION'; appSessionId: string; requestId: string }
 
   // UI
   | { type: 'SET_ACTIVE_SESSION'; id: string | null }
   | { type: 'MARK_ALL_SESSIONS_READ'; seenAt: number }
-  | { type: 'SET_RIGHT_PANEL'; open: boolean }
-  | {
-      type: 'OPEN_UTILITY_TOOL';
-      tool: UtilityTool;
-      // The chat the pane belongs to, when it is not the one on screen.
-      appSessionId?: string;
-      tabId?: string;
-      terminalId?: string;
-      cwd?: string;
-      filePath?: string;
-      agentId?: string;
-      threadId?: string;
-      canvasId?: string | null;
-      frameId?: string | null;
-      designSystemId?: string | null;
-      designSystemVersion?: number | null;
-    }
-  | { type: 'CLOSE_UTILITY_TAB'; tabId: string; appSessionId?: string }
-  | { type: 'ACTIVATE_UTILITY_TAB'; tabId: string }
-  | {
-      type: 'UPDATE_UTILITY_TAB';
-      tabId: string;
-      appSessionId?: string;
-      terminalId?: string;
-      cwd?: string;
-      filePath?: string;
-      label?: string;
-      agentId?: string | null;
-      threadId?: string | null;
-    }
-  | { type: 'SET_UTILITY_PANEL_OPEN'; open: boolean }
+  | UtilityPanelsAction
   | { type: 'SET_CANVAS_ATTACHMENT'; appSessionId: string; canvasId: string | null }
   // The design bootstrap finished with this chat, either way; it must not run again.
   | { type: 'CANVAS_CHAT_SETTLED'; appSessionId: string }
   | { type: 'SET_PRODUCT_MODE'; mode: ProductMode }
   | { type: 'SET_DRAFT_PRODUCT'; mode: ProductMode }
-  | { type: 'SET_REVIEW_OPEN'; open: boolean }
-  | { type: 'SET_REVIEW_SCOPE'; scope: DiffScope }
-  | OpenReviewAtAction
-  | { type: 'CLEAR_REVIEW_FOCUS' }
-  | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
   | { type: 'TOGGLE_COMMAND_PALETTE' }
   | { type: 'CLOSE_COMMAND_PALETTE' }
   | { type: 'TOGGLE_SIDEBAR' }
-  | { type: 'TOGGLE_SPEC_MODE' }
-  | {
-      type: 'SESSION_SET_INTERACTION_MODE';
-      appSessionId: string;
-      interactionMode: SessionSummary['interactionMode'];
-    }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'OPEN_SETTINGS'; request: SettingsRequest }
   | { type: 'TOGGLE_MISSION_CONTROL' }
@@ -775,75 +706,18 @@ export type Action =
   | { type: 'REMOVE_WORKSPACE'; cwd: string }
   | { type: 'SET_WORKSPACE_CWDS'; cwds: string[] }
   | { type: 'REVEAL_EARLIER_SESSIONS'; executionCwds: readonly string[] }
-  | { type: 'TOGGLE_BROWSER' }
-  | { type: 'SET_BROWSER_OPEN'; open: boolean }
-  | { type: 'BROWSER_UPDATED'; browser: BrowserState }
-  | {
-      type: 'BROWSER_NAVIGATED';
-      appSessionId: string;
-      browserSessionId: string;
-      url: string;
-      canGoBack?: boolean;
-      canGoForward?: boolean;
-    }
-  | { type: 'BROWSER_CLOSED'; appSessionId: string; keepPane?: boolean }
-  | { type: 'BROWSER_ERROR'; appSessionId?: string; message: string }
-  | { type: 'TOGGLE_DESIGN_MODE'; appSessionId: string }
-  | { type: 'SET_DESIGN_MODE'; appSessionId: string; open: boolean }
   | { type: 'SET_THEME'; theme: Partial<ThemeConfig> }
   | { type: 'SAVE_CUSTOM_THEME'; preset: ThemePreset }
   | { type: 'DELETE_CUSTOM_THEME'; id: string }
   | { type: 'SELECT_FEATURE'; id: string | null }
   | { type: 'SELECT_CHILD'; selection: ChildSelection | null; requestId?: string }
-
-  // Models / per-agent config
-  | { type: 'MODELS_LIST'; models: ModelInfo[] }
-  | { type: 'PROVIDER_STATUSES'; statuses: ProviderStatus[] }
-  | { type: 'USAGE_UPDATED'; usage: ProviderUsage }
-  | { type: 'BRIDGE_SNAPSHOT' }
-  | { type: 'SET_DRAFT_PROVIDER'; provider: ProviderKind }
-  | {
-      type: 'SKILLS_LIST';
-      skills: SkillInfo[];
-      providerSessionId: string | null;
-    }
-  | { type: 'FACTORY_DEFAULTS'; defaults: FactoryDefaultSettings }
-  | { type: 'SET_HARNESS_MODEL'; provider: ProviderKind; model: HarnessModel }
-  | { type: 'SET_AGENT_MODEL'; agent: MissionRole; modelId?: string }
-  | { type: 'SET_AGENT_REASONING'; agent: MissionRole; reasoning: ReasoningEffort | undefined }
-  | { type: 'SET_COMPACTION_MODEL_GLOBAL'; compactionModel: string }
-  | { type: 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL'; limit?: number }
-  | { type: 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL'; modelId: string; limit?: number }
+  | AgentSettingsAction
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
   | { type: 'SET_DEFAULT_VOICE'; voice: string }
   | { type: 'SET_NARRATION_MODE'; mode: VoiceNarration }
   | { type: 'SET_SHORTCUT_BINDING'; shortcut: ShortcutAction; chord: string }
-  | { type: 'SET_DEFAULT_AUTONOMY'; autonomy: Autonomy }
-  | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings }
-  | { type: 'SET_DRAFT_AUTONOMY'; autonomy: Autonomy }
-  | { type: 'SET_DRAFT_FAST_MODE'; fastMode: boolean }
-  | { type: 'SET_DRAFT_CONTEXT_WINDOW'; contextWindowTokens: ContextWindowTokens | null }
-  | {
-      type: 'AUTONOMY_UPDATE_REQUESTED';
-      appSessionId: string;
-      requestId: string;
-      autonomy: Autonomy;
-    }
-  | { type: 'AUTONOMY_UPDATE_SETTLED'; appSessionId: string; requestId: string }
-  | {
-      type: 'MODEL_UPDATE_REQUESTED';
-      appSessionId: string;
-      requestId: string;
-      settings: PendingModelSettings;
-    }
-  | { type: 'MODEL_UPDATE_SETTLED'; appSessionId: string; requestId: string }
-  // The sidecar was replaced: nothing it was working on will be answered.
-  | {
-      type: 'SETTINGS_UPDATES_UNANSWERED';
-      liveAppSessionIds: ReadonlySet<string>;
-      resentRequestIds: ReadonlySet<string>;
-    };
+  | { type: 'SET_TOOL_ACTIVITY'; settings: ToolActivitySettings };
 
 // Loaded once at module scope so the theme loader can match saved colors
 // against custom presets when recovering a missing presetId.
@@ -989,24 +863,6 @@ function progressKey(entry: ProgressEntry): string {
   return `${entry.timestamp}|${entry.type}|${entry.featureId ?? ''}|${entry.workerChildSessionId ?? ''}|${entry.title ?? ''}`;
 }
 
-function activeBrowserKey(state: AppState): string | undefined {
-  if (!state.activeAppSessionId) return undefined;
-  // Browser state and open-keys are keyed by the stable app session id
-  // (`appSessionId`), matching the backend; the provider session is swapped by
-  // compaction and would desync the open state from the backend's updates.
-  return state.sessions[state.activeAppSessionId]?.appSessionId ?? state.activeAppSessionId;
-}
-
-function closeActiveUtilityPanel(state: AppState): AppState {
-  const appSessionId = state.activeAppSessionId;
-  if (!appSessionId) return state;
-  const current = utilityPanelForSession(state.utilityPanels, appSessionId);
-  const panel = setUtilityPanelOpen(current, false);
-  return panel === current
-    ? state
-    : { ...state, utilityPanels: { ...state.utilityPanels, [appSessionId]: panel } };
-}
-
 // A minimized side chat floats again and one on screen or still open stays put.
 // Only a side chat that is not open yet, docked with no tab and no chat behind
 // it, opens where Settings says.
@@ -1020,40 +876,6 @@ function sideChatPlacementToShow(state: AppState, sourceAppSessionId: string): S
     return 'docked';
   }
   return state.sideChatDefaultPlacement;
-}
-
-// Settle only the matching request, retaining the order of everything still pending.
-function withoutPendingRequest<T extends { requestId: string }>(
-  pending: Partial<Record<string, T[]>>,
-  appSessionId: string,
-  requestId: string,
-): Partial<Record<string, T[]>> {
-  const requests = pending[appSessionId];
-  if (!requests?.some((request) => request.requestId === requestId)) return pending;
-  const remaining = requests.filter((request) => request.requestId !== requestId);
-  if (remaining.length) return { ...pending, [appSessionId]: remaining };
-  return Object.fromEntries(Object.entries(pending).filter(([id]) => id !== appSessionId));
-}
-
-// The plan the approval bar and the spec reader show is the one of the oldest
-// approval still waiting, which is the one the bar answers. A richer spec file
-// for that plan (SPEC_SET) is kept while its content is unchanged.
-function withShownPlan(state: AppState, appSessionId: string): AppState {
-  const shown = state.pendingPermissions[appSessionId]?.[0];
-  if (!shown?.plan || (shown.kind !== 'spec' && shown.kind !== 'mission_plan')) return state;
-  const existingSpec = state.sessionSpecs[appSessionId];
-  return {
-    ...state,
-    specPlans:
-      shown.kind === 'spec' ? { ...state.specPlans, [appSessionId]: shown.plan } : state.specPlans,
-    sessionSpecs:
-      existingSpec?.content === shown.plan
-        ? state.sessionSpecs
-        : {
-            ...state.sessionSpecs,
-            [appSessionId]: { path: existingSpec?.path, title: shown.title, content: shown.plan },
-          },
-  };
 }
 
 function withoutKey<T>(
@@ -1193,6 +1015,7 @@ function withoutLeftDrafts(state: AppState): AppState {
 }
 
 function reduceAction(state: AppState, action: Action): AppState {
+  const sessionsById: Partial<AppState['sessions']> = state.sessions;
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -1261,7 +1084,8 @@ function reduceAction(state: AppState, action: Action): AppState {
       // Seed the first user message: the goal is the user's opening prompt and the
       // backend never echoes it back, so without this the first message never shows.
       let seed: TranscriptEvent | undefined;
-      const hasTranscript = (state.transcripts[action.session.appSessionId]?.length ?? 0) > 0;
+      const transcripts: Partial<AppState['transcripts']> = state.transcripts;
+      const hasTranscript = (transcripts[action.session.appSessionId]?.length ?? 0) > 0;
       if (action.session.goal && !hasTranscript) {
         seed = {
           id: `seed-${action.session.appSessionId}`,
@@ -1529,7 +1353,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
 
     case 'SESSION_UPDATED': {
-      const previous = state.sessions[action.session.appSessionId];
+      const previous = sessionsById[action.session.appSessionId];
       const incoming = action.session;
       // Compaction generations are monotonic. A delayed resume summary must not
       // put a restored session back on generation zero after history already
@@ -1707,7 +1531,7 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_FEATURES': {
       const mid = action.appSessionId;
-      const existing = state.sessions[mid];
+      const existing = sessionsById[mid];
       if (!existing) return state;
       return {
         ...state,
@@ -1743,7 +1567,7 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_TOKENS': {
       const mid = action.appSessionId;
-      const existing = state.sessions[mid];
+      const existing = sessionsById[mid];
       if (!existing) return state;
       return {
         ...state,
@@ -1761,7 +1585,7 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     case 'CONTEXT_UPDATED': {
-      const existing = state.sessions[action.appSessionId];
+      const existing = sessionsById[action.appSessionId];
       if (action.parentAppSessionId && action.childSessionId) {
         const parent = state.contextStats.child[action.parentAppSessionId] ?? {};
         return {
@@ -1814,15 +1638,13 @@ function reduceAction(state: AppState, action: Action): AppState {
             },
           };
 
-    /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
     case 'TRANSCRIPT_RELEASE_VIEWPORT': {
       if (!isChatInView(state, action.appSessionId)) return state;
       if (state.transcriptViewportPinned[action.appSessionId] === false) return state;
-      const session = state.sessions[action.appSessionId];
+      const session = sessionsById[action.appSessionId];
       if (!session || sessionIsLive(session)) return state;
       return releaseSessionTranscriptWindow(state, action.appSessionId, VIEWPORT_TRANSCRIPT_POLICY);
     }
-    /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
     case 'MEMORY_PRESSURE':
       return applyMemoryPressureRelease(state);
@@ -1869,74 +1691,17 @@ function reduceAction(state: AppState, action: Action): AppState {
       return { ...state, promptQueue: { ...state.promptQueue, [action.appSessionId]: next } };
     }
 
-    case 'SPEC_SET': {
-      const prev = state.sessionSpecs[action.appSessionId];
-      if (
-        // Keep the existence guard because the following comparisons dereference prev.
-        // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-        prev &&
-        prev.content === action.content &&
-        prev.path === action.path &&
-        prev.title === action.title
-      ) {
-        return state;
-      }
-      return {
-        ...state,
-        sessionSpecs: {
-          ...state.sessionSpecs,
-          [action.appSessionId]: {
-            path: action.path,
-            title: action.title,
-            content: action.content,
-          },
-        },
-      };
-    }
-
+    case 'SPEC_SET':
     case 'SPEC_OPEN_WIKI':
-      return { ...state, specWikiAppSessionId: action.appSessionId };
-
     case 'SPEC_CLOSE_WIKI':
-      return { ...state, specWikiAppSessionId: null };
-
-    case 'SESSION_PERMISSION': {
-      const r = action.request;
-      if (
-        state.pendingPermissions[r.appSessionId]?.some(
-          (request) => request.requestId === r.requestId,
-        )
-      )
-        return state;
-      return withShownPlan(
-        {
-          ...state,
-          pendingPermissions: {
-            ...state.pendingPermissions,
-            [r.appSessionId]: [...(state.pendingPermissions[r.appSessionId] ?? []), r],
-          },
-        },
-        r.appSessionId,
-      );
-    }
-
+    case 'SESSION_PERMISSION':
     case 'SESSION_QUESTION':
-      if (
-        state.pendingQuestions[action.question.appSessionId]?.some(
-          (question) => question.requestId === action.question.requestId,
-        )
-      )
-        return state;
-      return {
-        ...state,
-        pendingQuestions: {
-          ...state.pendingQuestions,
-          [action.question.appSessionId]: [
-            ...(state.pendingQuestions[action.question.appSessionId] ?? []),
-            action.question,
-          ],
-        },
-      };
+    case 'CLEAR_PERMISSION':
+    case 'CLEAR_QUESTION':
+    case 'CLEAR_INTERACTION':
+    case 'TOGGLE_SPEC_MODE':
+    case 'SESSION_SET_INTERACTION_MODE':
+      return reduceSessionInteractions(state, action);
 
     case 'SESSION_CREATE_FAILED':
       return {
@@ -1956,18 +1721,16 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
 
     case 'SESSION_ERROR': {
-      let next = state;
-      if (action.appSessionId && state.sessions[action.appSessionId]) {
-        const m = state.sessions[action.appSessionId];
-        next = {
-          ...state,
-          sessions: {
-            ...state.sessions,
-            [action.appSessionId]: { ...m, phase: 'failed' as const },
-          },
-        };
-      }
-      return next;
+      if (!action.appSessionId) return state;
+      const session = sessionsById[action.appSessionId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [action.appSessionId]: { ...session, phase: 'failed' },
+        },
+      };
     }
 
     case 'SESSION_LIST': {
@@ -1985,6 +1748,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       for (const m of action.sessions) {
         map[m.appSessionId] = m;
       }
+      const mapById: Partial<AppState['sessions']> = map;
       const order = [
         ...new Set([
           ...action.sessions.map((m) => m.appSessionId),
@@ -1992,7 +1756,7 @@ function reduceAction(state: AppState, action: Action): AppState {
           ...Object.keys(state.sessions),
         ]),
       ]
-        .filter((id) => map[id])
+        .filter((id) => mapById[id])
         .sort((a, b) => map[b].updatedAt - map[a].updatedAt);
       const retainedSessionIds = new Set(Object.keys(map));
       const retainedState = pruneRemovedSessionState(state, retainedSessionIds);
@@ -2000,15 +1764,15 @@ function reduceAction(state: AppState, action: Action): AppState {
       // history is not retroactively marked unread; only activity that arrives
       // after this point (a newer updatedAt) flips a row to unread.
       const seededLastSeen = { ...retainedState.sessionLastSeen };
+      const lastSeenById: Partial<AppState['sessionLastSeen']> = seededLastSeen;
       for (const m of action.sessions) {
-        if (seededLastSeen[m.appSessionId] === undefined) {
+        if (lastSeenById[m.appSessionId] === undefined) {
           seededLastSeen[m.appSessionId] = m.updatedAt;
         }
       }
       // If the active session was pruned above (a hydrated snapshot row the
       // sidecar no longer reports), clear the dangling id so the UI does not
       // point at a session that no longer exists.
-      const mapById: Partial<Record<string, SessionSummary>> = map;
       const activeAppSessionId =
         state.activeAppSessionId !== null && mapById[state.activeAppSessionId] !== undefined
           ? state.activeAppSessionId
@@ -2065,68 +1829,20 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'SESSION_HISTORY':
       return reduceSessionHistory(state, action);
 
-    case 'CLEAR_PERMISSION':
-      return withShownPlan(
-        {
-          ...state,
-          pendingPermissions: withoutPendingRequest(
-            state.pendingPermissions,
-            action.appSessionId,
-            action.requestId,
-          ),
-        },
-        action.appSessionId,
-      );
-
-    case 'CLEAR_QUESTION':
-      return {
-        ...state,
-        pendingQuestions: withoutPendingRequest(
-          state.pendingQuestions,
-          action.appSessionId,
-          action.requestId,
-        ),
-      };
-
-    // A request that stopped waiting without this window answering it: the
-    // sidecar gave up on it, or another chat answered it. Matched on the request
-    // id so a late event cannot clear a newer card.
-    case 'CLEAR_INTERACTION': {
-      const { appSessionId, requestId } = action;
-      const pendingPermissions = withoutPendingRequest(
-        state.pendingPermissions,
-        appSessionId,
-        requestId,
-      );
-      const pendingQuestions = withoutPendingRequest(
-        state.pendingQuestions,
-        appSessionId,
-        requestId,
-      );
-      const cleared =
-        pendingPermissions !== state.pendingPermissions ||
-        pendingQuestions !== state.pendingQuestions;
-      return cleared
-        ? withShownPlan({ ...state, pendingPermissions, pendingQuestions }, appSessionId)
-        : state;
-    }
-
     case 'SET_ACTIVE_SESSION': {
       // Stamp "seen now" on both the session being left (so responses received
       // while it was open count as read) and the one being opened (clears its
       // unread state immediately).
       const now = Date.now();
       const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && state.sessions[state.activeAppSessionId]) {
+      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
         sessionLastSeen[state.activeAppSessionId] = now;
       }
       if (action.id) sessionLastSeen[action.id] = now;
       const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state, null);
       let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
       const outgoingAppSessionId = state.activeAppSessionId;
-      const outgoingSession = outgoingAppSessionId
-        ? state.sessions[outgoingAppSessionId]
-        : undefined;
+      const outgoingSession = outgoingAppSessionId ? sessionsById[outgoingAppSessionId] : undefined;
       if (
         outgoingAppSessionId &&
         outgoingSession &&
@@ -2171,10 +1887,9 @@ function reduceAction(state: AppState, action: Action): AppState {
       const sessionLastSeen = { ...state.sessionLastSeen };
       let changed = false;
       for (const appSessionId of state.sessionOrder) {
-        const session = state.sessions[appSessionId];
+        const session = sessionsById[appSessionId];
         // Persisted renderer state can briefly contain an order entry whose
         // session was already removed.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!session) continue;
         const seenAt = Math.max(action.seenAt, session.updatedAt);
         if (sessionLastSeen[appSessionId] === seenAt) continue;
@@ -2185,108 +1900,25 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     case 'SET_RIGHT_PANEL':
-      return action.open
-        ? closeActiveUtilityPanel({ ...state, rightPanelOpen: true })
-        : { ...state, rightPanelOpen: false };
-
-    case 'OPEN_UTILITY_TOOL': {
-      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
-      if (!appSessionId) return state;
-      if (action.tool === 'canvas') {
-        // The board's previews are the laptop window's own views, out of a Remote browser's reach.
-        if (isRemoteClient()) return state;
-        if (state.listConfirmedSessionIds !== null && !(appSessionId in state.sessions))
-          return state;
-      }
-      const panel = openUtilityTool(
-        state.utilityPanels[appSessionId],
-        action.tool,
-        () => action.tabId ?? `${action.tool}:${appSessionId}`,
-        {
-          terminalId: action.terminalId,
-          cwd: action.cwd,
-          filePath: action.filePath,
-          agentId: action.agentId,
-          threadId: action.threadId,
-          canvasId: action.canvasId,
-          frameId: action.frameId,
-          designSystemId: action.designSystemId,
-          designSystemVersion: action.designSystemVersion,
-        },
-      );
-      return {
-        ...state,
-        // Context is one app-wide panel; a background chat's pane must not close it.
-        rightPanelOpen: appSessionId === state.activeAppSessionId ? false : state.rightPanelOpen,
-        utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
-        reviewOpenAppSessionId:
-          action.tool === 'review' ? appSessionId : state.reviewOpenAppSessionId,
-      };
-    }
-
-    case 'CLOSE_UTILITY_TAB': {
-      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
-      if (!appSessionId) return state;
-      const current = state.utilityPanels[appSessionId];
-      const closing = current?.tabs.find((tab) => tab.id === action.tabId);
-      const panel = closeUtilityTab(current, action.tabId);
-      if (panel === current) return state;
-      return {
-        ...state,
-        utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
-        reviewOpenAppSessionId:
-          closing?.tool === 'review' && state.reviewOpenAppSessionId === appSessionId
-            ? null
-            : state.reviewOpenAppSessionId,
-        reviewFocusPath: closing?.tool === 'review' ? null : state.reviewFocusPath,
-        reviewFocusChange: closing?.tool === 'review' ? null : state.reviewFocusChange,
-      };
-    }
-
-    case 'ACTIVATE_UTILITY_TAB': {
-      const appSessionId = state.activeAppSessionId;
-      if (!appSessionId) return state;
-      const current = state.utilityPanels[appSessionId];
-      const panel = activateUtilityTab(current, action.tabId);
-      if (panel === current) return state;
-      return {
-        ...state,
-        rightPanelOpen: false,
-        utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
-      };
-    }
-
-    case 'UPDATE_UTILITY_TAB': {
-      const appSessionId = action.appSessionId ?? state.activeAppSessionId;
-      if (!appSessionId) return state;
-      const current = state.utilityPanels[appSessionId];
-      const panel = updateUtilityTab(current, action.tabId, {
-        terminalId: action.terminalId,
-        cwd: action.cwd,
-        filePath: action.filePath,
-        label: action.label,
-        agentId: action.agentId,
-        threadId: action.threadId,
-      });
-      if (panel === current) return state;
-      return {
-        ...state,
-        utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
-      };
-    }
-
-    case 'SET_UTILITY_PANEL_OPEN': {
-      const appSessionId = state.activeAppSessionId;
-      if (!appSessionId) return state;
-      const current = utilityPanelForSession(state.utilityPanels, appSessionId);
-      const panel = setUtilityPanelOpen(current, action.open);
-      if (panel === current && (!action.open || !state.rightPanelOpen)) return state;
-      return {
-        ...state,
-        rightPanelOpen: action.open ? false : state.rightPanelOpen,
-        utilityPanels: { ...state.utilityPanels, [appSessionId]: panel },
-      };
-    }
+    case 'OPEN_UTILITY_TOOL':
+    case 'CLOSE_UTILITY_TAB':
+    case 'ACTIVATE_UTILITY_TAB':
+    case 'UPDATE_UTILITY_TAB':
+    case 'SET_UTILITY_PANEL_OPEN':
+    case 'SET_REVIEW_OPEN':
+    case 'SET_REVIEW_SCOPE':
+    case 'OPEN_REVIEW_AT':
+    case 'CLEAR_REVIEW_FOCUS':
+    case 'SET_DIFF_VIEW':
+    case 'TOGGLE_BROWSER':
+    case 'SET_BROWSER_OPEN':
+    case 'BROWSER_UPDATED':
+    case 'BROWSER_NAVIGATED':
+    case 'BROWSER_CLOSED':
+    case 'BROWSER_ERROR':
+    case 'TOGGLE_DESIGN_MODE':
+    case 'SET_DESIGN_MODE':
+      return reduceUtilityPanels(state, action);
 
     case 'SET_CANVAS_ATTACHMENT': {
       const { appSessionId, canvasId } = action;
@@ -2335,88 +1967,6 @@ function reduceAction(state: AppState, action: Action): AppState {
       );
     }
 
-    case 'SET_REVIEW_OPEN':
-      // Closing while already closed AND no pending focus is a true no-op; bail
-      // before allocating a new state object so subscribers don't re-render. The
-      // path and captured-change checks are essential: a close dispatched when
-      // the pane is already shut but a focus request is still pending would
-      // otherwise skip the clear and leave stale focus to fire on the next open.
-      if (
-        !action.open &&
-        state.reviewOpenAppSessionId === null &&
-        state.reviewFocusPath === null &&
-        state.reviewFocusChange === null &&
-        !utilityPanelForSession(state.utilityPanels, state.activeAppSessionId).tabs.some(
-          (tab) => tab.tool === 'review',
-        )
-      )
-        return state;
-      // Scope the open state to the active session so it never leaks into the
-      // next chat; switching back to this session restores it.
-      if (action.open && state.activeAppSessionId) {
-        const appSessionId = state.activeAppSessionId;
-        return {
-          ...state,
-          rightPanelOpen: false,
-          reviewOpenAppSessionId: appSessionId,
-          utilityPanels: {
-            ...state.utilityPanels,
-            [appSessionId]: openUtilityTool(
-              state.utilityPanels[appSessionId],
-              'review',
-              () => `review:${appSessionId}`,
-            ),
-          },
-        };
-      }
-      return {
-        ...state,
-        reviewOpenAppSessionId: null,
-        reviewFocusPath: null,
-        reviewFocusChange: null,
-        utilityPanels: state.activeAppSessionId
-          ? {
-              ...state.utilityPanels,
-              [state.activeAppSessionId]: removeUtilityTool(
-                state.utilityPanels[state.activeAppSessionId],
-                'review',
-              ),
-            }
-          : state.utilityPanels,
-      };
-
-    case 'SET_REVIEW_SCOPE':
-      return { ...state, reviewScope: action.scope };
-
-    case 'OPEN_REVIEW_AT': {
-      // Open the Review pane for the active session at a given scope, optionally
-      // asking it to jump to a specific file once the diff list has loaded.
-      const focused = applyOpenReviewAt(state, action);
-      if (!state.activeAppSessionId) {
-        return { ...focused, reviewScope: action.scope };
-      }
-      return {
-        ...focused,
-        rightPanelOpen: false,
-        reviewOpenAppSessionId: state.activeAppSessionId,
-        reviewScope: action.scope,
-        utilityPanels: {
-          ...state.utilityPanels,
-          [state.activeAppSessionId]: openUtilityTool(
-            state.utilityPanels[state.activeAppSessionId],
-            'review',
-            () => `review:${state.activeAppSessionId}`,
-          ),
-        },
-      };
-    }
-
-    case 'CLEAR_REVIEW_FOCUS':
-      return clearReviewFocus(state);
-
-    case 'SET_DIFF_VIEW':
-      return { ...state, diffView: action.mode };
-
     case 'TOGGLE_COMMAND_PALETTE':
       return { ...state, commandPaletteOpen: !state.commandPaletteOpen };
 
@@ -2425,23 +1975,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'TOGGLE_SIDEBAR':
       return { ...state, sidebarCollapsed: !state.sidebarCollapsed };
-
-    case 'TOGGLE_SPEC_MODE':
-      return { ...state, specMode: !state.specMode };
-
-    case 'SESSION_SET_INTERACTION_MODE': {
-      // Optimistic interaction-mode flip so the spec toggle reflects instantly;
-      // a later SESSION_UPDATED from the backend confirms (or corrects) it.
-      const session = state.sessions[action.appSessionId];
-      if (!session || session.interactionMode === action.interactionMode) return state;
-      return {
-        ...state,
-        sessions: {
-          ...state.sessions,
-          [action.appSessionId]: { ...session, interactionMode: action.interactionMode },
-        },
-      };
-    }
 
     case 'TOGGLE_SETTINGS':
       return { ...state, settingsOpen: !state.settingsOpen, settingsRequest: null };
@@ -2563,7 +2096,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       // Stamp the session being left so model output produced while it was
       // open doesn't surface as an unread badge after starting a new chat.
       const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && state.sessions[state.activeAppSessionId]) {
+      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
         sessionLastSeen[state.activeAppSessionId] = Date.now();
       }
       const next = invalidateSelectedChildOpening(state);
@@ -2665,114 +2198,6 @@ function reduceAction(state: AppState, action: Action): AppState {
         : { ...state, revealEarlierCwds };
     }
 
-    case 'TOGGLE_BROWSER': {
-      const key = activeBrowserKey(state);
-      if (!key) return state;
-      const current = utilityPanelForSession(state.utilityPanels, key);
-      const existing = current.tabs.find((tab) => tab.tool === 'browser');
-      const opening = !existing || !current.open || current.activeTabId !== existing.id;
-      return {
-        ...state,
-        rightPanelOpen: opening ? false : state.rightPanelOpen,
-        utilityPanels: {
-          ...state.utilityPanels,
-          [key]: opening
-            ? openUtilityTool(current, 'browser', () => `browser:${key}`)
-            : setUtilityPanelOpen(current, false),
-        },
-      };
-    }
-
-    case 'SET_BROWSER_OPEN': {
-      const key = activeBrowserKey(state);
-      if (!key) return state;
-      return {
-        ...state,
-        rightPanelOpen: action.open ? false : state.rightPanelOpen,
-        utilityPanels: {
-          ...state.utilityPanels,
-          [key]: action.open
-            ? openUtilityTool(state.utilityPanels[key], 'browser', () => `browser:${key}`)
-            : removeUtilityTool(state.utilityPanels[key], 'browser'),
-        },
-      };
-    }
-
-    case 'BROWSER_UPDATED': {
-      if (!action.browser.appSessionId) return state;
-      const appSessionId = action.browser.appSessionId;
-      // Only records the page: agent work never opens or switches the pane.
-      return {
-        ...state,
-        browsers: { ...state.browsers, [appSessionId]: action.browser },
-        browserErrors: Object.fromEntries(
-          Object.entries(state.browserErrors).filter(([id]) => id !== appSessionId),
-        ),
-      };
-    }
-
-    case 'BROWSER_NAVIGATED': {
-      const browser = state.browsers[action.appSessionId];
-      // Keep the existence guard because the update below dereferences browser.
-      // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-      if (!browser || browser.browserSessionId !== action.browserSessionId) return state;
-      return {
-        ...state,
-        browsers: {
-          ...state.browsers,
-          [action.appSessionId]: {
-            ...browser,
-            url: action.url,
-            canGoBack: action.canGoBack ?? browser.canGoBack,
-            canGoForward: action.canGoForward ?? browser.canGoForward,
-          },
-        },
-      };
-    }
-
-    case 'BROWSER_CLOSED':
-      // Full close: drop the session's browser, design mode, and open flag so a
-      // later reopen starts fresh (and it is excluded from persistence). A
-      // browser closed with its chat's runtime leaves the pane open.
-      return {
-        ...state,
-        browsers: Object.fromEntries(
-          Object.entries(state.browsers).filter(([id]) => id !== action.appSessionId),
-        ),
-        browserErrors: Object.fromEntries(
-          Object.entries(state.browserErrors).filter(([id]) => id !== action.appSessionId),
-        ),
-        designModes: clearDesignMode(state.designModes, action.appSessionId),
-        utilityPanels: action.keepPane
-          ? state.utilityPanels
-          : {
-              ...state.utilityPanels,
-              [action.appSessionId]: removeUtilityTool(
-                state.utilityPanels[action.appSessionId],
-                'browser',
-              ),
-            },
-      };
-
-    case 'BROWSER_ERROR':
-      if (!action.appSessionId) return { ...state, browserGlobalError: action.message };
-      return {
-        ...state,
-        browserErrors: { ...state.browserErrors, [action.appSessionId]: action.message },
-      };
-
-    case 'TOGGLE_DESIGN_MODE':
-      return {
-        ...state,
-        designModes: toggleDesignMode(state.designModes, action.appSessionId),
-      };
-
-    case 'SET_DESIGN_MODE':
-      return {
-        ...state,
-        designModes: setDesignMode(state.designModes, action.appSessionId, action.open),
-      };
-
     case 'SET_THEME':
       return { ...state, theme: { ...state.theme, ...action.theme } };
 
@@ -2790,122 +2215,28 @@ function reduceAction(state: AppState, action: Action): AppState {
       return reduceSelectChild(state, action);
 
     case 'MODELS_LIST':
-      return {
-        ...state,
-        models: action.models,
-        agentConfig: sanitizeAgentConfig(state.agentConfig, action.models),
-      };
-
-    case 'PROVIDER_STATUSES': {
-      const providerStatuses = reuseUnchangedStatuses(state.providerStatuses, action.statuses);
-      return providerStatuses === state.providerStatuses ? state : { ...state, providerStatuses };
-    }
-
+    case 'PROVIDER_STATUSES':
     case 'SET_DRAFT_PROVIDER':
-      return { ...state, draftProvider: action.provider };
-
     case 'USAGE_UPDATED':
-      return { ...state, usage: { ...state.usage, [action.usage.provider]: action.usage } };
-
-    // A fresh stream may come from a new sidecar, maybe on another account:
-    // the usage the last one read is unconfirmed until this one answers.
-    case 'BRIDGE_SNAPSHOT': {
-      const usage: AppState['usage'] = {};
-      for (const provider of PROVIDER_KINDS) {
-        const known = state.usage[provider];
-        if (known) usage[provider] = { ...known, stale: true };
-      }
-      return { ...state, usage };
-    }
-
+    case 'BRIDGE_SNAPSHOT':
     case 'SKILLS_LIST':
-      return {
-        ...state,
-        skills: action.skills,
-        skillsProviderSessionId: action.providerSessionId,
-      };
-
-    case 'FACTORY_DEFAULTS': {
-      const next = sanitizeAgentConfig(
-        {
-          worker: {
-            modelId: state.agentConfig.worker.modelId ?? action.defaults.workerModelId,
-            reasoning: state.agentConfig.worker.modelId
-              ? state.agentConfig.worker.reasoning
-              : (action.defaults.workerReasoningEffort ?? state.agentConfig.worker.reasoning),
-          },
-          validator: {
-            modelId: state.agentConfig.validator.modelId ?? action.defaults.validatorModelId,
-            reasoning: state.agentConfig.validator.modelId
-              ? state.agentConfig.validator.reasoning
-              : (action.defaults.validatorReasoningEffort ?? state.agentConfig.validator.reasoning),
-          },
-        },
-        state.models,
-      );
-
-      // Seed Factory defaults only before local compaction settings exist. An
-      // explicit clear stores an empty local value and must not resurrect
-      // Factory's old per-model/default threshold on the next defaults event.
-      const compactionDefaults = applyFactoryCompactionDefaults(state, action.defaults);
-
-      return {
-        ...state,
-        agentConfig: next,
-        ...compactionDefaults,
-        compactionSettingsRev: state.compactionSettingsRev + 1,
-      };
-    }
-
+    case 'FACTORY_DEFAULTS':
     case 'SET_HARNESS_MODEL':
-      return {
-        ...state,
-        harnessModels: { ...state.harnessModels, [action.provider]: action.model },
-      };
-
     case 'SET_AGENT_MODEL':
-      return {
-        ...state,
-        agentConfig: {
-          ...state.agentConfig,
-          [action.agent]: { ...state.agentConfig[action.agent], modelId: action.modelId },
-        },
-      };
-
     case 'SET_AGENT_REASONING':
-      return {
-        ...state,
-        agentConfig: {
-          ...state.agentConfig,
-          [action.agent]: { ...state.agentConfig[action.agent], reasoning: action.reasoning },
-        },
-      };
-
     case 'SET_COMPACTION_MODEL_GLOBAL':
-      return { ...state, compactionModel: action.compactionModel };
-
-    case 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL': {
-      const limit = normalizeTokenLimit(action.limit);
-      saveCompactionTokenLimit(limit);
-      return {
-        ...state,
-        compactionTokenLimit: limit,
-        compactionSettingsRev: state.compactionSettingsRev + 1,
-      };
-    }
-
-    case 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL': {
-      const limit = normalizeTokenLimit(action.limit);
-      const next = { ...state.compactionTokenLimitPerModel };
-      if (limit === undefined) delete next[action.modelId];
-      else next[action.modelId] = limit;
-      saveCompactionTokenLimitPerModel(next);
-      return {
-        ...state,
-        compactionTokenLimitPerModel: next,
-        compactionSettingsRev: state.compactionSettingsRev + 1,
-      };
-    }
+    case 'SET_COMPACTION_TOKEN_LIMIT_GLOBAL':
+    case 'SET_COMPACTION_TOKEN_LIMIT_FOR_MODEL':
+    case 'SET_DEFAULT_AUTONOMY':
+    case 'SET_DRAFT_AUTONOMY':
+    case 'SET_DRAFT_FAST_MODE':
+    case 'SET_DRAFT_CONTEXT_WINDOW':
+    case 'AUTONOMY_UPDATE_REQUESTED':
+    case 'AUTONOMY_UPDATE_SETTLED':
+    case 'MODEL_UPDATE_REQUESTED':
+    case 'SETTINGS_UPDATES_UNANSWERED':
+    case 'MODEL_UPDATE_SETTLED':
+      return reduceAgentSettings(state, action);
 
     case 'SET_LIVE_ENTER_BEHAVIOR':
       return { ...state, liveEnterBehavior: action.behavior };
@@ -2925,91 +2256,8 @@ function reduceAction(state: AppState, action: Action): AppState {
         shortcutBindings: { ...state.shortcutBindings, [action.shortcut]: action.chord },
       };
 
-    case 'SET_DEFAULT_AUTONOMY':
-      return { ...state, defaultAutonomy: action.autonomy };
-
     case 'SET_TOOL_ACTIVITY':
       return { ...state, toolActivity: action.settings };
-
-    case 'SET_DRAFT_AUTONOMY':
-      return { ...state, draftAutonomy: action.autonomy };
-
-    case 'SET_DRAFT_FAST_MODE':
-      return { ...state, draftFastMode: action.fastMode };
-
-    case 'SET_DRAFT_CONTEXT_WINDOW':
-      return { ...state, draftContextWindowTokens: action.contextWindowTokens };
-
-    case 'AUTONOMY_UPDATE_REQUESTED':
-      return {
-        ...state,
-        pendingAutonomy: {
-          ...state.pendingAutonomy,
-          [action.appSessionId]: { requestId: action.requestId, autonomy: action.autonomy },
-        },
-      };
-
-    case 'AUTONOMY_UPDATE_SETTLED': {
-      if (state.pendingAutonomy[action.appSessionId]?.requestId !== action.requestId) return state;
-      return {
-        ...state,
-        pendingAutonomy: Object.fromEntries(
-          Object.entries(state.pendingAutonomy).filter(([id]) => id !== action.appSessionId),
-        ),
-      };
-    }
-
-    case 'MODEL_UPDATE_REQUESTED':
-      return {
-        ...state,
-        pendingModelUpdates: {
-          ...state.pendingModelUpdates,
-          [action.appSessionId]: {
-            requestId: action.requestId,
-            settings: mergePendingModelSettings(
-              state.pendingModelUpdates[action.appSessionId]?.settings,
-              action.settings,
-            ),
-          },
-        },
-      };
-
-    case 'SETTINGS_UPDATES_UNANSWERED': {
-      // Only a live chat's change the old sidecar took is lost: the snapshot
-      // carries that chat's confirmed settings, which then show. A closed chat
-      // gets no summary here, and a request resent on reconnect is answered by
-      // the new sidecar.
-      const kept = Object.entries(state.pendingModelUpdates).filter(
-        ([appSessionId, pending]) =>
-          !action.liveAppSessionIds.has(appSessionId) ||
-          (pending !== undefined && action.resentRequestIds.has(pending.requestId)),
-      );
-      // Unresent autonomy requests cannot settle in the replacement, even for absent chats.
-      const keptAutonomy = Object.entries(state.pendingAutonomy).filter(
-        ([, pending]) => pending !== undefined && action.resentRequestIds.has(pending.requestId),
-      );
-      if (
-        kept.length === Object.keys(state.pendingModelUpdates).length &&
-        keptAutonomy.length === Object.keys(state.pendingAutonomy).length
-      )
-        return state;
-      return {
-        ...state,
-        pendingModelUpdates: Object.fromEntries(kept),
-        pendingAutonomy: Object.fromEntries(keptAutonomy),
-      };
-    }
-
-    case 'MODEL_UPDATE_SETTLED': {
-      if (state.pendingModelUpdates[action.appSessionId]?.requestId !== action.requestId)
-        return state;
-      return {
-        ...state,
-        pendingModelUpdates: Object.fromEntries(
-          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
-        ),
-      };
-    }
 
     default:
       return state;

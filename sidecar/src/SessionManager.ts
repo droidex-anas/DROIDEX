@@ -1,5 +1,7 @@
 import type { SteeredReportDelivery } from './SessionLifecycle.js';
-import type { AutomationDeliveryReceipt } from './automations/types.js';
+import type { AutomationBridgeCommand, AutomationDeliveryReceipt } from './automations/types.js';
+import type { CanvasCommand } from './canvas/protocol.js';
+import type { ProjectCommand } from './projects/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { ProjectExports, type ProjectExportAdmission } from './canvas/projectExports.js';
@@ -395,9 +397,14 @@ export class SessionManager {
     },
     () => this.providerProbes.refresh(),
   );
-  private readonly droidProxy = new DroidProxyController((event) => {
-    this.emit(event);
-  });
+  private readonly droidProxy = new DroidProxyController(
+    (event) => {
+      this.emit(event);
+    },
+    () => {
+      void this.refreshModelsAfterFactoryChange();
+    },
+  );
 
   constructor(
     private readonly emit: Emit,
@@ -1113,7 +1120,7 @@ export class SessionManager {
     };
   }
 
-  // eslint-disable-next-line complexity -- Public command dispatch is intentionally unchanged in PR 3.
+  // eslint-disable-next-line complexity -- Routes command families while retaining session-owned dispatch.
   async handle(cmd: ClientCommand): Promise<void> {
     if (this.shutdownPromise) throw new Error('Session manager is shutting down.');
     switch (cmd.type) {
@@ -1134,37 +1141,19 @@ export class SessionManager {
         await this.runCliUpdate(cmd.channel);
         return;
       case 'harness.cli.check':
-        await this.harnessClis.report();
-        return;
       case 'harness.cli.install':
-        await this.harnessClis.install(cmd.provider, cmd.channel);
-        return;
       case 'harness.cli.update':
-        await this.harnessClis.update(cmd.provider);
+        await this.harnessClis.handle(cmd);
         return;
       case 'droidproxy.status':
-        await this.droidProxy.report();
-        return;
       case 'droidproxy.launch':
-        await this.droidProxy.launchApp();
-        return;
       case 'droidproxy.login':
-        await this.droidProxy.login(cmd.provider);
-        return;
       case 'droidproxy.login.cancel':
-        this.droidProxy.cancelLogin();
-        return;
       case 'droidproxy.account.setEnabled':
-        await this.droidProxy.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
-        return;
       case 'droidproxy.install':
-        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
-        return;
       case 'droidproxy.install.cancel':
-        this.droidProxy.cancelInstall();
-        return;
       case 'droidproxy.factoryModels.apply':
-        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
+        await this.droidProxy.handle(cmd);
         return;
       case 'catalog.models': {
         const models = await this.getModels();
@@ -1232,15 +1221,8 @@ export class SessionManager {
         return;
       }
       case 'approval.respond':
-        await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
-        return;
       case 'question.respond':
-        this.interactions.respondToQuestion(
-          cmd.appSessionId,
-          cmd.requestId,
-          cmd.cancelled,
-          cmd.answers,
-        );
+        await this.interactions.handle(cmd);
         return;
       case 'session.interrupt':
         await this.lifecycle.interrupt(cmd.appSessionId);
@@ -1381,54 +1363,47 @@ export class SessionManager {
         await this.compaction.updateLimits(cmd, this.compactionRetuneTargets());
         return;
       case 'browser.open':
-        await this.sessionBrowser.open(cmd);
+      case 'browser.restore':
+      case 'browser.reload':
+      case 'browser.resizeViewport':
+      case 'browser.design.addReference':
+      case 'browser.design.removeReferences':
+      case 'browser.design.sendPrompt':
+        await this.sessionBrowser.handle(cmd);
         return;
       case 'browser.close':
         await this.sessionBrowser.close(cmd);
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
-      case 'browser.restore':
-        await this.sessionBrowser.restore(cmd);
-        return;
-      case 'browser.reload':
-        await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.resizeViewport':
-        await this.sessionBrowser.resizeViewport(cmd);
-        return;
-      case 'browser.design.addReference':
-        await this.sessionBrowser.addReference(cmd);
-        return;
-      case 'browser.design.removeReferences':
-        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
-        return;
-      case 'browser.design.sendPrompt':
-        await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);
         return;
-      default: {
-        // Wire commands are JSON-parsed without runtime validation, so a
-        // renderer running newer code than this sidecar (e.g. a dev app that
-        // kept running across a sidecar rebuild) can send a command this
-        // build does not know. Fail visibly instead of falling through
-        // silently while the caller waits out its timeout.
-        const unknown = cmd as { type?: unknown; requestId?: unknown };
-        const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
-        // Echo the command's requestId so a waiter rejects only for its own
-        // unsupported command, not a foreign one failing concurrently.
-        const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
-        this.emit({
-          type: 'error',
-          code: 'bridge.unsupported_command',
-          ...(requestId !== undefined ? { requestId } : {}),
-          message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
-        });
+      default:
+        // These command families are dispatched upstream of the session manager.
+        cmd satisfies
+          | CanvasCommand
+          | ProjectCommand
+          | AutomationBridgeCommand
+          | Extract<ClientCommand, { type: 'child.watchHistory' }>;
+        this.handleUnknownCommand(cmd);
         return;
-      }
     }
+  }
+
+  private handleUnknownCommand(cmd: ClientCommand): void {
+    // The bridge does not reject unknown command types, so reply explicitly to newer renderers.
+    const unknown = cmd as { type?: unknown; requestId?: unknown };
+    const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
+    // Echo the command's requestId so a waiter rejects only for its own
+    // unsupported command, not a foreign one failing concurrently.
+    const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
+    this.emit({
+      type: 'error',
+      code: 'bridge.unsupported_command',
+      ...(requestId !== undefined ? { requestId } : {}),
+      message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
+    });
   }
 
   automaticRuntimeLoad(): { live: number; limit: number } {
