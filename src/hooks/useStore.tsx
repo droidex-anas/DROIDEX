@@ -181,19 +181,14 @@ import { reduceUtilityPanels, type UtilityPanelsAction } from './storeUtilityPan
 import { persistStoreChanges } from './storePersistence';
 import {
   invalidateSelectedChildOpening,
-  reduceChildError,
-  reduceChildHistoryLoading,
-  reduceChildHistoryLoadingOlder,
-  reduceChildTranscriptReleaseViewport,
-  reduceChildTranscriptViewport,
-  reduceChildUpdated,
-  reduceSelectChild,
+  reduceChildSession,
   releaseInactiveChildTranscript,
   releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
   type ChildRuntimeState,
   type ChildSelection,
+  type ChildSessionAction,
   type ChildSessionInfo,
   type SessionRestore,
 } from './storeChildSession';
@@ -551,31 +546,7 @@ export type Action =
       runtimeAvailable: boolean;
       runtimeGeneration: number;
     }
-  | (
-      | {
-          type: 'CHILD_UPDATED';
-          parentAppSessionId: string;
-          childSessionId: string;
-          requestId: string;
-          access: 'ready';
-          runtimeGeneration: number;
-        }
-      | {
-          type: 'CHILD_UPDATED';
-          parentAppSessionId: string;
-          childSessionId: string;
-          requestId: string;
-          access: 'history';
-        }
-    )
-  | {
-      type: 'CHILD_ERROR';
-      parentAppSessionId: string;
-      childSessionId: string;
-      requestId: string | null;
-      operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
-      message: string;
-    }
+  | ChildSessionAction
   | {
       type: 'SESSION_TOKENS';
       appSessionId: string;
@@ -632,27 +603,6 @@ export type Action =
       message: string;
     }
   | { type: 'SESSION_HISTORY_LOADING_OLDER'; appSessionId: string }
-  | {
-      type: 'CHILD_HISTORY_LOADING';
-      parentAppSessionId: string;
-      childSessionId: string;
-    }
-  | {
-      type: 'CHILD_HISTORY_LOADING_OLDER';
-      parentAppSessionId: string;
-      childSessionId: string;
-    }
-  | {
-      type: 'CHILD_TRANSCRIPT_VIEWPORT';
-      parentAppSessionId: string;
-      childSessionId: string;
-      pinned: boolean;
-    }
-  | {
-      type: 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT';
-      parentAppSessionId: string;
-      childSessionId: string;
-    }
 
   // UI
   | { type: 'SET_ACTIVE_SESSION'; id: string | null }
@@ -710,7 +660,6 @@ export type Action =
   | { type: 'SAVE_CUSTOM_THEME'; preset: ThemePreset }
   | { type: 'DELETE_CUSTOM_THEME'; id: string }
   | { type: 'SELECT_FEATURE'; id: string | null }
-  | { type: 'SELECT_CHILD'; selection: ChildSelection | null; requestId?: string }
   | AgentSettingsAction
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
@@ -1560,10 +1509,13 @@ function reduceAction(state: AppState, action: Action): AppState {
       return reduceSessionChildren(state, [action]);
 
     case 'CHILD_UPDATED':
-      return reduceChildUpdated(state, action);
-
     case 'CHILD_ERROR':
-      return reduceChildError(state, action);
+    case 'CHILD_HISTORY_LOADING':
+    case 'CHILD_HISTORY_LOADING_OLDER':
+    case 'CHILD_TRANSCRIPT_VIEWPORT':
+    case 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT':
+    case 'SELECT_CHILD':
+      return reduceChildSession(state, action);
 
     case 'SESSION_TOKENS': {
       const mid = action.appSessionId;
@@ -1648,12 +1600,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'MEMORY_PRESSURE':
       return applyMemoryPressureRelease(state);
-
-    case 'CHILD_TRANSCRIPT_VIEWPORT':
-      return reduceChildTranscriptViewport(state, action);
-
-    case 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT':
-      return reduceChildTranscriptReleaseViewport(state, action);
 
     case 'QUEUE_PROMPT': {
       const prev = state.promptQueue[action.appSessionId] ?? [];
@@ -1813,12 +1759,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_HISTORY_LOADING_OLDER':
       return reduceSessionHistoryLoadingOlder(state, action);
-
-    case 'CHILD_HISTORY_LOADING':
-      return reduceChildHistoryLoading(state, action);
-
-    case 'CHILD_HISTORY_LOADING_OLDER':
-      return reduceChildHistoryLoadingOlder(state, action);
 
     case 'SESSION_RESTORE_START':
       return reduceSessionRestoreStart(state, action);
@@ -1990,16 +1930,7 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'VOICE_STATE':
     case 'VOICE_ERROR':
     case 'VOICE_ENDED':
-      return reduceVoice(state, action);
-
-    // Settings has no conversation to ask what the harness offers, so what it
-    // offers is what the harness last answered here.
-    case 'VOICE_VOICES': {
-      const next = reduceVoice(state, action);
-      if (sameVoices(state.knownVoices, action.voices)) return next;
-      return { ...next, knownVoices: action.voices };
-    }
-
+    case 'VOICE_VOICES':
     case 'VOICE_TRANSCRIPT':
       return reduceVoice(state, action);
 
@@ -2150,7 +2081,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       // A prompt sent with a chat's marks goes out as it is consumed, to that
       // chat and never to a child open in it, which would get it without them.
       return seed.send && state.selectedChild?.parentAppSessionId === seed.appSessionId
-        ? reduceSelectChild(next, { selection: null })
+        ? reduceChildSession(next, { type: 'SELECT_CHILD', selection: null })
         : next;
     }
 
@@ -2211,9 +2142,6 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'SELECT_FEATURE':
       return { ...state, selectedFeatureId: action.id };
 
-    case 'SELECT_CHILD':
-      return reduceSelectChild(state, action);
-
     case 'MODELS_LIST':
     case 'PROVIDER_STATUSES':
     case 'SET_DRAFT_PROVIDER':
@@ -2259,8 +2187,11 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'SET_TOOL_ACTIVITY':
       return { ...state, toolActivity: action.settings };
 
-    default:
+    default: {
+      const unhandled: never = action;
+      void unhandled;
       return state;
+    }
   }
 }
 
@@ -2285,11 +2216,6 @@ export function toastMessageForEvent(ev: ServerEvent): string | undefined {
     return ev.message;
   }
   return ev.type === 'child.error' && ev.operation !== 'open' ? ev.message : undefined;
-}
-
-// Two lists of the same voices in the same order are the same answer.
-function sameVoices(current: string[], next: string[]): boolean {
-  return current.length === next.length && current.every((voice, at) => voice === next[at]);
 }
 
 export function adaptEvent(ev: ServerEvent): Action | null {
