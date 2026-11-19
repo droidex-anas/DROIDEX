@@ -88,6 +88,7 @@ import { createBrowserMcpServer } from './browser/browserMcpServer.js';
 import { SessionRegistry } from './SessionRegistry.js';
 import { SessionEventFlow, type NormalizedSideEffects } from './SessionEventFlow.js';
 import { SessionInteractions } from './SessionInteractions.js';
+import type { RuntimeCommand, SessionCommand, HistoryCommand } from './sessionManagerCommands.js';
 import { SessionTimeline } from './SessionTimeline.js';
 import { SessionContext, type LiveOperationTarget } from './SessionContext.js';
 import {
@@ -395,9 +396,14 @@ export class SessionManager {
     },
     () => this.providerProbes.refresh(),
   );
-  private readonly droidProxy = new DroidProxyController((event) => {
-    this.emit(event);
-  });
+  private readonly droidProxy = new DroidProxyController(
+    (event) => {
+      this.emit(event);
+    },
+    () => {
+      void this.refreshModelsAfterFactoryChange();
+    },
+  );
 
   constructor(
     private readonly emit: Emit,
@@ -1113,9 +1119,126 @@ export class SessionManager {
     };
   }
 
-  // eslint-disable-next-line complexity -- Public command dispatch is intentionally unchanged in PR 3.
   async handle(cmd: ClientCommand): Promise<void> {
     if (this.shutdownPromise) throw new Error('Session manager is shutting down.');
+    switch (cmd.type) {
+      case 'connect':
+      case 'runtime.status':
+      case 'auth.status':
+      case 'env.detect':
+      case 'cli.install':
+      case 'cli.update':
+      case 'catalog.models':
+      case 'provider.refresh':
+      case 'usage.refresh':
+      case 'catalog.tools':
+      case 'catalog.skills':
+      case 'settings.defaults':
+      case 'app.backgroundWork':
+      case 'settings.agent.update':
+      case 'settings.compaction.update':
+        return this.handleRuntimeCommand(cmd);
+      case 'session.create':
+      case 'session.send':
+      case 'session.repairApp':
+      case 'session.sendNow':
+      case 'session.withdrawSteer':
+      case 'session.interrupt':
+      case 'session.updateSettings':
+      case 'session.compact':
+      case 'session.fork':
+      case 'session.rename':
+      case 'session.rewindInfo':
+      case 'session.rewind':
+      case 'session.resume':
+      case 'session.close':
+      case 'session.processes.stop':
+        return this.handleSessionCommand(cmd);
+      case 'session.exportMarkdown':
+      case 'sessions.reanchorCwd':
+      case 'sessions.list':
+      case 'history.list':
+      case 'history.page':
+      case 'session.loadHistory':
+      case 'sessions.search':
+      case 'history.indexingIdle':
+        return this.handleHistoryCommand(cmd);
+      case 'child.open':
+        await this.childSessions.open(cmd);
+        return;
+      case 'child.send':
+        await this.childSessions.send(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
+        return;
+      case 'child.interrupt':
+        await this.childSessions.interrupt(cmd);
+        return;
+      case 'child.loadHistory':
+        await this.sessionFiles.whenBootReconciled();
+        await this.childSessions.loadHistory(cmd);
+        return;
+      case 'child.updateSettings':
+        await this.childSessions.updateSettings(cmd);
+        return;
+      case 'droidproxy.status':
+      case 'droidproxy.launch':
+      case 'droidproxy.login':
+      case 'droidproxy.login.cancel':
+      case 'droidproxy.account.setEnabled':
+      case 'droidproxy.install':
+      case 'droidproxy.install.cancel':
+      case 'droidproxy.factoryModels.apply':
+        return this.droidProxy.handle(cmd);
+      case 'harness.cli.check':
+      case 'harness.cli.install':
+      case 'harness.cli.update':
+        return this.harnessClis.handle(cmd);
+      case 'approval.respond':
+      case 'question.respond':
+        return this.interactions.handle(cmd);
+      case 'browser.open':
+      case 'browser.close':
+      case 'browser.restore':
+      case 'browser.reload':
+      case 'browser.resizeViewport':
+      case 'browser.design.addReference':
+      case 'browser.design.removeReferences':
+      case 'browser.design.sendPrompt':
+        await this.sessionBrowser.handle(cmd);
+        if (cmd.type === 'browser.close') this.runtimeRetirement.arm();
+        return;
+      case 'mcp.list':
+      case 'mcp.add':
+      case 'mcp.remove':
+      case 'mcp.toggle':
+      case 'mcp.authenticate':
+        if (!this.ready) this.connect();
+        await this.mcpSettings.handle(cmd);
+        return;
+      case 'voice.start':
+        await this.sessionVoice.handle(cmd);
+        this.runtimeRetirement.arm();
+        return;
+      case 'voice.stop': {
+        // Stopping clears the live flag before Codex acknowledges the request.
+        // Recheck retirement now so a missing acknowledgement cannot pin it.
+        const stoppingVoice = this.sessionVoice.handle(cmd);
+        this.runtimeRetirement.arm();
+        await stoppingVoice;
+        return;
+      }
+      case 'voice.voices':
+        await this.sessionVoice.handle(cmd);
+        return;
+      case 'sidebar.result':
+        this.sidebarRequests.answer(cmd.result);
+        return;
+      default:
+        this.handleUnknownCommand(cmd);
+        return;
+    }
+  }
+
+  private async handleRuntimeCommand(cmd: RuntimeCommand): Promise<void> {
     switch (cmd.type) {
       case 'connect':
         this.connect(cmd.apiKey);
@@ -1132,39 +1255,6 @@ export class SessionManager {
         return;
       case 'cli.update':
         await this.runCliUpdate(cmd.channel);
-        return;
-      case 'harness.cli.check':
-        await this.harnessClis.report();
-        return;
-      case 'harness.cli.install':
-        await this.harnessClis.install(cmd.provider, cmd.channel);
-        return;
-      case 'harness.cli.update':
-        await this.harnessClis.update(cmd.provider);
-        return;
-      case 'droidproxy.status':
-        await this.droidProxy.report();
-        return;
-      case 'droidproxy.launch':
-        await this.droidProxy.launchApp();
-        return;
-      case 'droidproxy.login':
-        await this.droidProxy.login(cmd.provider);
-        return;
-      case 'droidproxy.login.cancel':
-        this.droidProxy.cancelLogin();
-        return;
-      case 'droidproxy.account.setEnabled':
-        await this.droidProxy.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
-        return;
-      case 'droidproxy.install':
-        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
-        return;
-      case 'droidproxy.install.cancel':
-        this.droidProxy.cancelInstall();
-        return;
-      case 'droidproxy.factoryModels.apply':
-        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
         return;
       case 'catalog.models': {
         const models = await this.getModels();
@@ -1186,17 +1276,34 @@ export class SessionManager {
       case 'catalog.skills':
         await this.emitSkillCatalog(cmd.providerSessionId);
         return;
-      case 'mcp.list':
-      case 'mcp.add':
-      case 'mcp.remove':
-      case 'mcp.toggle':
-      case 'mcp.authenticate':
-        if (!this.ready) this.connect();
-        await this.mcpSettings.handle(cmd);
-        return;
       case 'settings.defaults':
         this.emitFactoryDefaults();
         return;
+      case 'app.backgroundWork': {
+        const previouslyFocused = this.context.focusedSession();
+        const previouslyOnScreen = this.context.onScreenSessions();
+        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId, cmd.visibleAppSessionIds);
+        this.runtimeRetirement.noteOnScreen(previouslyOnScreen);
+        // Only a change of chat is a new selection; the tier moves on its own
+        // whenever the window is hidden or the machine goes on battery.
+        if (cmd.focusedAppSessionId !== previouslyFocused) {
+          this.runtimeWarmUp.selected(cmd.focusedAppSessionId);
+        }
+        return;
+      }
+      case 'settings.agent.update':
+        assertProviderUnchanged(cmd);
+        await this.modelSettings.updateAgent(cmd);
+        return;
+      case 'settings.compaction.update':
+        await this.compaction.updateLimits(cmd, this.compactionRetuneTargets());
+        return;
+    }
+    cmd satisfies never;
+  }
+
+  private async handleSessionCommand(cmd: SessionCommand): Promise<void> {
+    switch (cmd.type) {
       case 'session.create':
         await this.lifecycle.create({
           ...cmd,
@@ -1231,50 +1338,8 @@ export class SessionManager {
         });
         return;
       }
-      case 'approval.respond':
-        await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
-        return;
-      case 'question.respond':
-        this.interactions.respondToQuestion(
-          cmd.appSessionId,
-          cmd.requestId,
-          cmd.cancelled,
-          cmd.answers,
-        );
-        return;
       case 'session.interrupt':
         await this.lifecycle.interrupt(cmd.appSessionId);
-        return;
-      case 'voice.start':
-        await this.sessionVoice.handle(cmd);
-        this.runtimeRetirement.arm();
-        return;
-      case 'voice.stop': {
-        // Stopping clears the live flag before Codex acknowledges the request.
-        // Recheck retirement now so a missing acknowledgement cannot pin it.
-        const stoppingVoice = this.sessionVoice.handle(cmd);
-        this.runtimeRetirement.arm();
-        await stoppingVoice;
-        return;
-      }
-      case 'voice.voices':
-        await this.sessionVoice.handle(cmd);
-        return;
-      case 'child.open':
-        await this.childSessions.open(cmd);
-        return;
-      case 'child.send':
-        await this.childSessions.send(cmd, formatResponsePrompt(cmd.text, cmd.responseFormat));
-        return;
-      case 'child.interrupt':
-        await this.childSessions.interrupt(cmd);
-        return;
-      case 'child.loadHistory':
-        await this.sessionFiles.whenBootReconciled();
-        await this.childSessions.loadHistory(cmd);
-        return;
-      case 'child.updateSettings':
-        await this.childSessions.updateSettings(cmd);
         return;
       case 'session.updateSettings':
         assertProviderUnchanged(cmd);
@@ -1299,6 +1364,32 @@ export class SessionManager {
       case 'session.rename':
         await this.renameSession(cmd.appSessionId, cmd.title);
         return;
+      case 'session.rewindInfo':
+        await this.withSession(cmd.appSessionId, (session) => session.getRewindInfo({} as never));
+        return;
+      case 'session.rewind':
+        await this.withSession(cmd.appSessionId, (session) =>
+          session.executeRewind({ rewindId: cmd.rewindId } as never),
+        );
+        return;
+      case 'session.resume':
+        await this.lifecycle.resume(cmd.appSessionId);
+        return;
+      case 'session.close':
+        this.childHistoryWatch.clearParent(cmd.appSessionId);
+        await this.lifecycle.close(cmd.appSessionId);
+        return;
+      case 'session.processes.stop':
+        await this.agentProcesses.stop(cmd.appSessionId, cmd.pid);
+        // Stopping the last process a session was holding can make it retirable.
+        this.runtimeRetirement.arm();
+        return;
+    }
+    cmd satisfies never;
+  }
+
+  private async handleHistoryCommand(cmd: HistoryCommand): Promise<void> {
+    switch (cmd.type) {
       case 'session.exportMarkdown':
         this.historyQueries.exportMarkdown(cmd);
         return;
@@ -1321,26 +1412,6 @@ export class SessionManager {
           });
         }
         return;
-      case 'session.rewindInfo':
-        await this.withSession(cmd.appSessionId, (session) => session.getRewindInfo({} as never));
-        return;
-      case 'session.rewind':
-        await this.withSession(cmd.appSessionId, (session) =>
-          session.executeRewind({ rewindId: cmd.rewindId } as never),
-        );
-        return;
-      case 'session.resume':
-        await this.lifecycle.resume(cmd.appSessionId);
-        return;
-      case 'session.close':
-        this.childHistoryWatch.clearParent(cmd.appSessionId);
-        await this.lifecycle.close(cmd.appSessionId);
-        return;
-      case 'session.processes.stop':
-        await this.agentProcesses.stop(cmd.appSessionId, cmd.pid);
-        // Stopping the last process a session was holding can make it retirable.
-        this.runtimeRetirement.arm();
-        return;
       case 'sessions.list':
         await this.sessionFiles.list(cmd);
         this.emit({ type: 'sessions.processes', processes: this.agentProcesses.snapshot() });
@@ -1361,74 +1432,27 @@ export class SessionManager {
       case 'history.indexingIdle':
         await this.history.setIndexingIdle(cmd.isIdle);
         return;
-      case 'app.backgroundWork': {
-        const previouslyFocused = this.context.focusedSession();
-        const previouslyOnScreen = this.context.onScreenSessions();
-        this.context.setBackgroundWork(cmd.tier, cmd.focusedAppSessionId, cmd.visibleAppSessionIds);
-        this.runtimeRetirement.noteOnScreen(previouslyOnScreen);
-        // Only a change of chat is a new selection; the tier moves on its own
-        // whenever the window is hidden or the machine goes on battery.
-        if (cmd.focusedAppSessionId !== previouslyFocused) {
-          this.runtimeWarmUp.selected(cmd.focusedAppSessionId);
-        }
-        return;
-      }
-      case 'settings.agent.update':
-        assertProviderUnchanged(cmd);
-        await this.modelSettings.updateAgent(cmd);
-        return;
-      case 'settings.compaction.update':
-        await this.compaction.updateLimits(cmd, this.compactionRetuneTargets());
-        return;
-      case 'browser.open':
-        await this.sessionBrowser.open(cmd);
-        return;
-      case 'browser.close':
-        await this.sessionBrowser.close(cmd);
-        // Closing the last resource a session was holding can make it retirable.
-        this.runtimeRetirement.arm();
-        return;
-      case 'browser.restore':
-        await this.sessionBrowser.restore(cmd);
-        return;
-      case 'browser.reload':
-        await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.resizeViewport':
-        await this.sessionBrowser.resizeViewport(cmd);
-        return;
-      case 'browser.design.addReference':
-        await this.sessionBrowser.addReference(cmd);
-        return;
-      case 'browser.design.removeReferences':
-        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
-        return;
-      case 'browser.design.sendPrompt':
-        await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
-      case 'sidebar.result':
-        this.sidebarRequests.answer(cmd.result);
-        return;
-      default: {
-        // Wire commands are JSON-parsed without runtime validation, so a
-        // renderer running newer code than this sidecar (e.g. a dev app that
-        // kept running across a sidecar rebuild) can send a command this
-        // build does not know. Fail visibly instead of falling through
-        // silently while the caller waits out its timeout.
-        const unknown = cmd as { type?: unknown; requestId?: unknown };
-        const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
-        // Echo the command's requestId so a waiter rejects only for its own
-        // unsupported command, not a foreign one failing concurrently.
-        const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
-        this.emit({
-          type: 'error',
-          code: 'bridge.unsupported_command',
-          ...(requestId !== undefined ? { requestId } : {}),
-          message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
-        });
-        return;
-      }
     }
+    cmd satisfies never;
+  }
+
+  private handleUnknownCommand(cmd: ClientCommand): void {
+    // Wire commands are JSON-parsed without runtime validation, so a
+    // renderer running newer code than this sidecar (e.g. a dev app that
+    // kept running across a sidecar rebuild) can send a command this
+    // build does not know. Fail visibly instead of falling through
+    // silently while the caller waits out its timeout.
+    const unknown = cmd as { type?: unknown; requestId?: unknown };
+    const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
+    // Echo the command's requestId so a waiter rejects only for its own
+    // unsupported command, not a foreign one failing concurrently.
+    const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
+    this.emit({
+      type: 'error',
+      code: 'bridge.unsupported_command',
+      ...(requestId !== undefined ? { requestId } : {}),
+      message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
+    });
   }
 
   automaticRuntimeLoad(): { live: number; limit: number } {

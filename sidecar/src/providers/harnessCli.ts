@@ -13,6 +13,7 @@ import {
 } from '../CliInstaller.js';
 import { isExecutable } from '../Environment.js';
 import type {
+  ClientCommand,
   HarnessCliProvider,
   HarnessCliState,
   HarnessInstallSource,
@@ -174,6 +175,8 @@ async function runUpdater(cmd: ShellCommand): Promise<{ exitCode: number; lastLi
   }
 }
 
+type HarnessCliCommand = Extract<ClientCommand, { type: `harness.cli.${string}` }>;
+
 // Detects, installs and updates the Claude Code and Codex CLIs, updating
 // through whichever installer owns each binary. One install or update per
 // harness runs at a time.
@@ -188,14 +191,29 @@ export class HarnessCliInstaller {
     private readonly afterChange: () => Promise<void>,
   ) {}
 
-  async report(): Promise<void> {
+  async handle(cmd: HarnessCliCommand): Promise<void> {
+    switch (cmd.type) {
+      case 'harness.cli.check':
+        await this.report();
+        return;
+      case 'harness.cli.install':
+        await this.install(cmd.provider, cmd.channel);
+        return;
+      case 'harness.cli.update':
+        await this.update(cmd.provider);
+        return;
+    }
+    cmd satisfies never;
+  }
+
+  private async report(): Promise<void> {
     const clis = await Promise.all(HARNESS_CLI_PROVIDERS.map((provider) => this.state(provider)));
     this.emit({ type: 'harness.cli.report', clis });
   }
 
   // A first install has no old version to lose if DROIDEX quits halfway, so
   // unlike an update it streams its output for the onboarding log.
-  async install(provider: HarnessCliProvider, channel: InstallChannel): Promise<void> {
+  private async install(provider: HarnessCliProvider, channel: InstallChannel): Promise<void> {
     const command = buildHarnessInstallCommand(provider, channel);
     if (this.busy.has(provider)) return;
     this.busy.add(provider);
@@ -213,7 +231,7 @@ export class HarnessCliInstaller {
     if (ok) await this.afterChange();
   }
 
-  async update(provider: HarnessCliProvider): Promise<void> {
+  private async update(provider: HarnessCliProvider): Promise<void> {
     if (!HARNESS_CLI_PROVIDERS.includes(provider)) {
       throw new Error(`No updatable CLI for provider: ${provider}`);
     }
