@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { CONVERSATION_LIST_PIN_THRESHOLD_PX } from '../../src/components/conversationListState';
 import { sessionSummary } from '../../src/test/sessionSummary';
 import type { ClientCommand, ServerEvent, TranscriptEvent } from '../../src/types/bridge';
 
@@ -82,10 +83,15 @@ test('Mission Control follows new output only while the reader is at the bottom'
   await page.getByTestId('session-row').filter({ hasText: mission.title }).click();
   await expect(page.getByRole('heading', { name: mission.title })).toBeVisible();
 
-  const scrollback = page
-    .getByRole('heading', { name: mission.title })
-    .locator('../..')
-    .locator('div.overflow-y-auto');
+  const latestReply = page.getByRole('paragraph').filter({ hasText: /^Mission output 40$/ });
+  await expect(latestReply).toBeInViewport();
+  const scrollback = await latestReply.evaluateHandle((row) => {
+    for (let parent = row.parentElement; parent; parent = parent.parentElement) {
+      const { overflowY } = getComputedStyle(parent);
+      if (overflowY === 'auto' || overflowY === 'scroll') return parent;
+    }
+    throw new Error('Could not find the transcript scroller');
+  });
   const position = () => scrollback.evaluate((el) => el.scrollTop);
   const remaining = () =>
     scrollback.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
@@ -99,24 +105,22 @@ test('Mission Control follows new output only while the reader is at the bottom'
       edge,
     );
 
-  await expect(page.getByText('Mission output 40', { exact: true })).toBeInViewport();
-  await expect.poll(remaining).toBeLessThan(80);
+  await expect.poll(remaining).toBeLessThan(CONVERSATION_LIST_PIN_THRESHOLD_PX);
 
   await scrollTo('top');
   await expect(page.getByText('Mission request 1', { exact: true })).toBeInViewport();
   emit({ type: 'session.updated', session: { ...mission, streaming: true } });
   await expect(page.getByText('Orchestrator working', { exact: true })).toBeVisible();
-  await expect.soft.poll(position).toBe(0);
+  await expect.poll(position).toBe(0);
 
-  if ((await position()) !== 0) await scrollTo('top');
   const previousHeight = await scrollback.evaluate((el) => el.scrollHeight);
   emit({ type: 'event.appended', event: { ...output(41), kind: 'status' } });
   await expect
     .poll(() => scrollback.evaluate((el) => el.scrollHeight))
     .toBeGreaterThan(previousHeight);
-  await expect.soft.poll(position).toBe(0);
+  await expect.poll(position).toBe(0);
 
-  if ((await remaining()) >= 2) await scrollTo('bottom');
+  await scrollTo('bottom');
   emit({ type: 'event.appended', event: { ...output(42), kind: 'status' } });
   await expect(page.getByText('Mission output 42', { exact: true })).toBeInViewport();
   await expect.poll(remaining).toBeLessThan(2);

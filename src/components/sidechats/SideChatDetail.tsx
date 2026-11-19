@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { CornerDownLeft, GitFork } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { useForkChat, useForkPending } from '../../hooks/useForkChat';
 import { useSessionHistory } from '../../hooks/useSessionHistory';
+import { useFollowLatest } from '../../hooks/useFollowLatest';
 import type { SessionRestore } from '../../hooks/storeChildSession';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../../features/providers/providerIdentity';
 import { interruptSession, loadSessionHistory } from '../../lib/commands';
@@ -10,9 +11,7 @@ import { sessionIsLive } from '../../lib/sessions';
 import { MAX_RUNNING_SIDE_CHATS } from '../../lib/sideChats';
 import { classifyEvent } from '../../lib/transcript';
 import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
-import { isConversationAtLatest } from '../conversationListState';
 import AskUserInline from '../AskUserInline';
-import type { ConversationListHandle } from '../ConversationList';
 import { MessageFeed } from '../MessageFeed';
 import { ModelIcon } from '../ModelIcon';
 import PermissionInline from '../PermissionInline';
@@ -80,10 +79,7 @@ export function SideChatDetail({
     transcript.length > 0 && transcript[0].ts >= forkedAt ? state.olderCursor : undefined;
   const live = sessionIsLive(session);
 
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<ConversationListHandle>(null);
-  const pinned = useFollowLatest(scrollRef, contentRef, listRef);
+  const { scrollRef, followLatest, pinToLatest } = useFollowLatest();
 
   const continueAsChat = (forkPointId?: string) => {
     forkChat(appSessionId, session.title, forkPointId);
@@ -102,7 +98,7 @@ export function SideChatDetail({
 
   const send = (text: string) => {
     if (!sendToSideChat(dispatch, appSessionId, text)) return false;
-    pinned.current = true;
+    pinToLatest();
     return true;
   };
 
@@ -138,10 +134,7 @@ export function SideChatDetail({
       </SideChatHeader>
 
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <div
-          ref={contentRef}
-          className={`min-w-0 px-4 py-3 ${wide ? 'mx-auto max-w-4xl px-6 py-6' : ''}`}
-        >
+        <div className={`min-w-0 px-4 py-3 ${wide ? 'mx-auto max-w-4xl px-6 py-6' : ''}`}>
           {olderCursor && (
             <div className="pb-2 text-center">
               <Button variant="ghost" size="sm" disabled={state.loadingOlder} onClick={loadEarlier}>
@@ -154,7 +147,7 @@ export function SideChatDetail({
               events={events}
               pending={live}
               scrollElementRef={scrollRef}
-              listRef={listRef}
+              onListResize={followLatest}
               density={state.toolActivity.density}
               inlineDiffs={state.toolActivity.inlineDiffs}
               onFork={continueAsChat}
@@ -220,36 +213,4 @@ function latestReply(events: readonly TranscriptEvent[]): string {
     if (text) return text;
   }
   return '';
-}
-
-// Keeps a reader at the latest message pinned there while the answer grows,
-// and leaves one who scrolled up where they are.
-function useFollowLatest(
-  scrollRef: RefObject<HTMLDivElement | null>,
-  contentRef: RefObject<HTMLDivElement | null>,
-  listRef: RefObject<ConversationListHandle | null>,
-): RefObject<boolean> {
-  const pinned = useRef(true);
-  useEffect(() => {
-    const scroll = scrollRef.current;
-    const content = contentRef.current;
-    if (!scroll || !content) return;
-    const onScroll = () => {
-      pinned.current = isConversationAtLatest(
-        scroll.scrollHeight,
-        scroll.scrollTop,
-        scroll.clientHeight,
-      );
-    };
-    const observer = new ResizeObserver(() => {
-      if (pinned.current) listRef.current?.scrollToLatest();
-    });
-    scroll.addEventListener('scroll', onScroll, { passive: true });
-    observer.observe(content);
-    return () => {
-      scroll.removeEventListener('scroll', onScroll);
-      observer.disconnect();
-    };
-  }, [scrollRef, contentRef, listRef]);
-  return pinned;
 }
