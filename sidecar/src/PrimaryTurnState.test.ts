@@ -104,8 +104,8 @@ test('a stale delegated flush cannot release a newer delegated turn', () => {
 test('close preserves or discards both queues, cannot downgrade, and failure reopens', () => {
   const state = new PrimaryTurnState();
   const prompt = { text: 'waiting', order: 1, steerId: 'steer' };
-  state.updateQueue({ pendingSends: [...state.pendingSends, prompt] });
-  state.updateQueue({ steers: [...state.steers, prompt] });
+  state.queueSend(prompt);
+  state.holdSteer(prompt);
   state.beginClose('preserve-pending');
   assert.deepEqual(state.pendingSends, [prompt]);
   assert.deepEqual(state.steers, [prompt]);
@@ -129,7 +129,8 @@ test('close preserves or discards both queues, cannot downgrade, and failure reo
 test('failed-open cleanup retains both queues when process cleanup fails and reopens', () => {
   const state = new PrimaryTurnState();
   const prompt = { text: 'waiting', order: 1, steerId: 'steer' };
-  state.updateQueue({ pendingSends: [prompt], steers: [prompt] });
+  state.queueSend(prompt);
+  state.holdSteer(prompt);
   state.beginFailedOpenCleanup();
   assert.equal(state.closeMode, 'discard-pending');
   assert.throws(() => state.beginTypedTurn());
@@ -139,7 +140,7 @@ test('failed-open cleanup retains both queues when process cleanup fails and reo
     queuedSends: 1,
     pendingSteers: [{ id: 'steer', text: 'waiting', canWithdraw: false }],
   });
-  assert.equal(state.takePending(1)[0], prompt);
+  assert.equal(state.takeNext(), prompt);
   state.beginTypedTurn();
   assert.equal(state.streaming, true);
 });
@@ -170,9 +171,9 @@ test('queue projections deduplicate steers, preserve order and reflect harness w
   const state = new PrimaryTurnState();
   const first = { text: 'first', order: 1, steerId: 'one' };
   const second = { text: 'second', order: 2, steerId: 'two' };
-  state.updateQueue({ pendingSends: [...state.pendingSends, second] });
-  state.updateQueue({ pendingSends: [first, ...state.pendingSends] });
-  state.updateQueue({ steers: [...state.steers, first] });
+  state.queueSend(second);
+  state.requeueFirst([first]);
+  state.holdSteer(first);
   assert.deepEqual(state.summaryFields(false), {
     streaming: false,
     queuedSends: 2,
@@ -182,18 +183,41 @@ test('queue projections deduplicate steers, preserve order and reflect harness w
     ],
   });
   assert.equal(state.summaryFields(true).pendingSteers?.[0].canWithdraw, true);
-  assert.equal(state.removePrompt(first, 'steer'), true);
-  assert.equal(state.removePrompt(first, 'steer'), false);
-  assert.equal(state.takePending(1)[0], first);
-  assert.deepEqual(state.takePending(), [second]);
-  assert.equal(state.takePending(1)[0], undefined);
-  state.updateQueue({ pendingSends: [first, second] });
-  assert.equal(state.removePrompt(first, 'pending'), true);
-  assert.equal(state.removePrompt(first, 'pending'), false);
-  state.updateQueue({ pendingSends: [] });
+  assert.equal(state.removeSteer(first), true);
+  assert.equal(state.removeSteer(first), false);
+  assert.equal(state.takeNext(), first);
+  assert.deepEqual(state.takeAllPending(), [second]);
+  assert.equal(state.takeNext(), undefined);
+  state.requeueFirst([first, second]);
+  assert.equal(state.removePending(first), true);
+  assert.equal(state.removePending(first), false);
+  state.holdSteer(second);
+  state.clearPending();
   assert.equal(state.summaryFields(false).queuedSends, 0);
-  state.updateQueue({ pendingSends: [...state.pendingSends, first] });
-  state.updateQueue({ steers: [...state.steers, second] });
+  assert.deepEqual(state.steers, [second]);
+  state.queueSend(first);
   state.clearQueue();
   assert.deepEqual(state.summaryFields(false).pendingSteers, []);
+});
+
+test('Send now moves a steer first, keeps harness ownership and orders the remaining sends', () => {
+  const state = new PrimaryTurnState();
+  assert.equal(state.moveToFront('missing'), undefined);
+  const first = { text: 'first', order: 1, steerId: 'one' };
+  const second = { text: 'second', order: 2, steerId: 'two' };
+  const third = { text: 'third', order: 3, steerId: 'three' };
+  state.queueSend(third);
+  state.queueSend(second);
+  state.holdSteer(first);
+  state.holdSteer(second);
+  assert.equal(state.moveToFront('missing'), undefined);
+  assert.deepEqual(state.pendingSends, [third, second]);
+  assert.equal(state.moveToFront('two'), second);
+  assert.deepEqual(state.steers, [first, second]);
+  assert.equal(state.takeNext(), second);
+  assert.deepEqual(state.takeAllPending(), [first, third]);
+  assert.equal(state.takeNext(), undefined);
+  assert.deepEqual(state.takeAllPending(), []);
+  assert.equal(state.removeSteer(second), true);
+  assert.deepEqual(state.steers, [first]);
 });

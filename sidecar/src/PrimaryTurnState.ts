@@ -182,22 +182,47 @@ export class PrimaryTurnState {
     this.runtime = { kind: 'closing', mode: 'discard-pending', activity: this.runtime.activity };
   }
 
-  updateQueue(queue: {
-    pendingSends?: readonly SessionPrompt[];
-    steers?: readonly SessionPrompt[];
-  }): void {
-    if (queue.pendingSends) this.sends = [...queue.pendingSends];
-    if (queue.steers) this.heldSteers = [...queue.steers];
+  queueSend(prompt: SessionPrompt): void {
+    this.sends.push(prompt);
   }
-  takePending(count = this.sends.length): SessionPrompt[] {
-    return this.sends.splice(0, count);
+  holdSteer(prompt: SessionPrompt): void {
+    this.heldSteers.push(prompt);
+  }
+  takeNext(): SessionPrompt | undefined {
+    return this.sends.shift();
+  }
+  requeueFirst(prompts: readonly SessionPrompt[]): void {
+    this.sends.unshift(...prompts);
+  }
+  moveToFront(steerId: string): SessionPrompt | undefined {
+    const prompts = [...this.heldSteers, ...this.sends];
+    const prompt = prompts.find((pending) => pending.steerId === steerId);
+    if (!prompt) return undefined;
+    const rest = [...new Set(prompts)]
+      .filter((pending) => pending !== prompt)
+      .sort((a, b) => a.order - b.order);
+    // Harness ownership lasts until delivery or cancellation settles.
+    this.sends = [prompt, ...rest];
+    return prompt;
+  }
+  takeAllPending(): SessionPrompt[] {
+    return this.sends.splice(0);
+  }
+  clearPending(): void {
+    this.sends = [];
   }
   clearQueue(): void {
     this.sends = [];
     this.heldSteers = [];
   }
-  removePrompt(prompt: SessionPrompt, queue: 'pending' | 'steer'): boolean {
-    const prompts = queue === 'pending' ? this.sends : this.heldSteers;
+  removePending(prompt: SessionPrompt): boolean {
+    return this.remove(this.sends, prompt);
+  }
+  removeSteer(prompt: SessionPrompt): boolean {
+    return this.remove(this.heldSteers, prompt);
+  }
+
+  private remove(prompts: SessionPrompt[], prompt: SessionPrompt): boolean {
     const index = prompts.indexOf(prompt);
     if (index < 0) return false;
     prompts.splice(index, 1);

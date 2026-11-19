@@ -273,7 +273,8 @@ test('failed registration retains queued sends and steers when process cleanup f
   let failedOpen: LiveSession | undefined;
   t.mock.method(harness.registry, 'register', async (live: LiveSession) => {
     failedOpen = live;
-    live.turn.updateQueue({ pendingSends: [prompt], steers: [prompt] });
+    live.turn.queueSend(prompt);
+    live.turn.holdSteer(prompt);
     throw new Error('registration failed');
   });
   harness.setProcessKiller(async () => {
@@ -961,7 +962,8 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   live.turn.settle();
   live.turn.clearStop();
   live.compacting = true;
-  live.turn.updateQueue({ pendingSends: [{ text: 'drop', order: 0 }] });
+  live.turn.clearPending();
+  live.turn.queueSend({ text: 'drop', order: 0 });
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
   assert.deepEqual(live.turn.pendingSends, []);
@@ -1433,7 +1435,8 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.turn.updateQueue({ pendingSends: [{ text: 'preserve unless user closes', order: 0 }] });
+  live.turn.clearPending();
+  live.turn.queueSend({ text: 'preserve unless user closes', order: 0 });
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1610,15 +1613,13 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.turn.updateQueue({
-    pendingSends: [...live.turn.pendingSends, { text: 'user prompt', order: 0 }],
-  });
+  live.turn.queueSend({ text: 'user prompt', order: 0 });
   await busy();
   assert.deepEqual(
     live.turn.pendingSends.map((pending) => pending.text),
     ['user prompt'],
   );
-  live.turn.updateQueue({ pendingSends: [] });
+  live.turn.clearPending();
   harness.setSettingsWait(() => {
     simulatedTurn = live.turn.beginTypedTurn();
     return Promise.resolve();

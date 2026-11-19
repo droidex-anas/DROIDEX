@@ -831,9 +831,7 @@ export class SessionLifecycle {
     if (now && !delivery) {
       // A runtime replaced during admission would carry the prompt off with it.
       if (this.dependencies.registry.getLive(appSessionId) !== admitted.liveSession) return false;
-      admitted.liveSession.turn.updateQueue({
-        pendingSends: [...admitted.liveSession.turn.pendingSends, prompt],
-      });
+      admitted.liveSession.turn.queueSend(prompt);
       this.updateQueuedSends(admitted.liveSession);
       // Not awaited: a turn that ended meanwhile runs this one at once, and the
       // caller may be the chat that turn needs an answer from.
@@ -895,7 +893,7 @@ export class SessionLifecycle {
     // A steer the turn could not take goes on as an ordinary message: behind
     // the turn, or as the next turn if this one settled meanwhile.
     if (liveSession.turn.streaming || liveSession.compacting || liveSession.autoCompacting) {
-      liveSession.turn.updateQueue({ pendingSends: [...liveSession.turn.pendingSends, prompt] });
+      liveSession.turn.queueSend(prompt);
       this.updateQueuedSends(liveSession);
       return;
     }
@@ -932,7 +930,7 @@ export class SessionLifecycle {
       return false;
     }
     if (!prompt.delivery) {
-      liveSession.turn.updateQueue({ steers: [...liveSession.turn.steers, prompt] });
+      liveSession.turn.holdSteer(prompt);
       this.updateQueuedSends(liveSession);
     }
     let outcome: SteerOutcome;
@@ -948,7 +946,7 @@ export class SessionLifecycle {
     }
     // Compaction can replace the provider while this live session still owns the steer.
     if (this.dependencies.registry.getLive(appSessionId) !== liveSession) return true;
-    const held = liveSession.turn.removePrompt(prompt, 'steer');
+    const held = liveSession.turn.removeSteer(prompt);
     if (outcome === false) {
       if (liveSession.turn.pendingSends.includes(prompt)) {
         this.updateQueuedSends(liveSession);
@@ -962,7 +960,7 @@ export class SessionLifecycle {
     // leaves the queue at once, so a turn settling while the row is written
     // cannot send it a second time; the list is published after the row, since
     // the chat drops its pending bubble once the steer leaves it.
-    liveSession.turn.removePrompt(prompt, 'pending');
+    liveSession.turn.removePending(prompt);
     this.rememberSteerOutcome(
       liveSession,
       prompt,
@@ -1005,7 +1003,7 @@ export class SessionLifecycle {
       return outcome === 'delivered' ? undefined : outcome;
     }
     if (!liveSession.turn.steers.includes(prompt)) {
-      liveSession.turn.removePrompt(prompt, 'pending');
+      liveSession.turn.removePending(prompt);
       this.rememberSteerOutcome(liveSession, prompt, 'withdrawn');
       this.updateQueuedSends(liveSession);
       return prompt;
@@ -1051,16 +1049,8 @@ export class SessionLifecycle {
   async sendNow(appSessionId: string, steerId: string): Promise<void> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || !steerId) return;
-    const prompt = [...liveSession.turn.steers, ...liveSession.turn.pendingSends].find(
-      (pending) => pending.steerId === steerId,
-    );
+    const prompt = liveSession.turn.moveToFront(steerId);
     if (!prompt) return;
-    // Keep harness ownership until its delivery/cancellation settles, even
-    // while Send now also puts the prompt on the app's queue.
-    const rest = [...new Set([...liveSession.turn.steers, ...liveSession.turn.pendingSends])]
-      .filter((pending) => pending !== prompt)
-      .sort((a, b) => a.order - b.order);
-    liveSession.turn.updateQueue({ pendingSends: [prompt, ...rest] });
     this.updateQueuedSends(liveSession);
     // Compaction is never cut short, and an interrupt already in flight sends
     // the front of the queue when the turn it stops settles.
@@ -1073,7 +1063,7 @@ export class SessionLifecycle {
       return;
     // Nothing to stop: it runs now, as a send to an idle chat does.
     if (!liveSession.turn.streaming) {
-      liveSession.turn.takePending(1);
+      liveSession.turn.takeNext();
       this.updateQueuedSends(liveSession);
       await this.drive(appSessionId, prompt);
       return;
@@ -1216,7 +1206,7 @@ export class SessionLifecycle {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession) {
       if (previousLiveSession && previousLiveSession.turn.closeMode !== 'discard-pending') {
-        const queued = previousLiveSession.turn.takePending();
+        const queued = previousLiveSession.turn.takeAllPending();
         await this.redeliverQueuedSends(appSessionId, queued);
       }
       return;
@@ -1224,7 +1214,7 @@ export class SessionLifecycle {
     if (liveSession.turn.closeMode) return;
     this.dependencies.childSessions.retryAgentWave(appSessionId);
     if (liveSession.turn.streaming || liveSession.compacting || liveSession.autoCompacting) return;
-    const next = liveSession.turn.takePending(1).at(0);
+    const next = liveSession.turn.takeNext();
     if (next === undefined) {
       this.dependencies.onSessionAvailable?.(appSessionId);
       return;
@@ -1687,7 +1677,7 @@ export class SessionLifecycle {
     // path, which reopens and redelivers. Taking a prompt off it here would
     // spend it on a client that cannot run it.
     if (liveSession.session.isClosed) return;
-    const next = liveSession.turn.takePending(1).at(0);
+    const next = liveSession.turn.takeNext();
     if (next !== undefined) void this.driveInBackground(appSessionId, next);
   }
 
@@ -1880,14 +1870,14 @@ export class SessionLifecycle {
         delivery.declined('stale');
         return;
       }
-      liveSession.turn.updateQueue({ pendingSends: [...liveSession.turn.pendingSends, prompt] });
+      liveSession.turn.queueSend(prompt);
       this.updateQueuedSends(liveSession);
       return;
     }
     // Its sender withdrew it while it waited, so what was queued behind it runs instead.
     if (isWithdrawn(prompt)) {
       delivery?.declined('stale');
-      const next = liveSession.turn.takePending(1).at(0);
+      const next = liveSession.turn.takeNext();
       if (next === undefined) return;
       this.updateQueuedSends(liveSession);
       await this.drive(appSessionId, next);
@@ -1977,16 +1967,16 @@ export class SessionLifecycle {
       await liveSession.providerClosePromise.catch(() => undefined);
     }
     if (d.isShutdownStarted() || liveSession.turn.closeMode === 'discard-pending') {
-      liveSession.turn.updateQueue({ pendingSends: [] });
+      liveSession.turn.clearPending();
     } else if (d.registry.getLive(stableAppSessionId) !== liveSession) {
-      const queued = liveSession.turn.takePending();
+      const queued = liveSession.turn.takeAllPending();
       if (queued.length > 0) void this.redeliverQueuedSends(stableAppSessionId, queued);
     } else if (liveSession.autoCompacting) {
       const compactionTarget = this.primaryAutomaticCompactionTarget(liveSession);
       if (compactionTarget) d.compaction.afterTurn(compactionTarget);
       this.publishTurnSettled(liveSession);
     } else {
-      const next = liveSession.turn.takePending(1).at(0);
+      const next = liveSession.turn.takeNext();
       this.publishTurnSettled(liveSession);
       if (next !== undefined) void this.driveInBackground(stableAppSessionId, next);
     }
@@ -2047,7 +2037,8 @@ export class SessionLifecycle {
     const d = this.dependencies;
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
-    const waiting = [prompt, ...stale.turn.takePending()];
+    stale.turn.requeueFirst([prompt]);
+    const waiting = stale.turn.takeAllPending();
     const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
     this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.
@@ -2088,12 +2079,7 @@ export class SessionLifecycle {
     const wanted = waiting.filter((queued) => !isWithdrawn(queued));
     if (wanted.length === 0) return;
     const [first, ...rest] = wanted;
-    liveSession.turn.updateQueue({
-      pendingSends: [
-        ...(liveSession.turn.streaming ? wanted : rest),
-        ...liveSession.turn.pendingSends,
-      ],
-    });
+    liveSession.turn.requeueFirst(liveSession.turn.streaming ? wanted : rest);
     if (liveSession.turn.streaming) this.updateQueuedSends(liveSession);
     else if (liveSession.restartBeforeNextTurn) await this.relaunch(liveSession, first);
     else await this.runTurn(liveSession, first);
