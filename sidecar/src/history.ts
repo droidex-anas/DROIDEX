@@ -1512,8 +1512,8 @@ function scanSessionFileTree(): SessionFileScan {
   return { files, unreadableProviderSessionIds, isComplete };
 }
 
-// Stats one session file and its settings sidecar, or returns null when the
-// file is gone (deleted between a watcher event and the reconcile).
+// Stats one session file and its settings sidecar. Null means the file is gone;
+// other inspection failures throw so reconciliation can retry later.
 function statSessionFile(path: string): SessionFileStat | null {
   try {
     const stat = statSync(path);
@@ -1530,8 +1530,9 @@ function statSessionFile(path: string): SessionFileStat | null {
       sizeBytes: stat.size,
       settingsMtimeMs,
     };
-  } catch {
-    return null;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
   }
 }
 

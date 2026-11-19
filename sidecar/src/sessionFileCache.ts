@@ -147,8 +147,8 @@ export class SessionFileCache {
       providerSessionId: string,
       file: SessionFileStat,
     ) => SessionFileSummary,
-    // Stats one session file and its settings sidecar; null when the file is
-    // gone. Used by the targeted reconcile so watcher events do not trigger
+    // Stats one session file and its settings sidecar; null means gone, while
+    // inspection failures throw. Targeted reconciles avoid triggering
     // a full sessions-tree walk.
     private readonly statFile: (path: string) => SessionFileStat | null,
     private readonly retainOwnedSummary: (summary: SessionSummary) => boolean = () => false,
@@ -282,10 +282,10 @@ export class SessionFileCache {
   private collectCandidates(onDisk: Map<string, SessionFileStat>): SessionFileCacheEntry[] {
     const candidates: SessionFileCacheEntry[] = [];
     for (const [id, scanned] of onDisk) {
-      const file = this.fileToSummarize(id, scanned);
-      const cached = this.files.get(id);
-      if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
       try {
+        const file = this.fileToSummarize(id, scanned);
+        const cached = this.files.get(id);
+        if (cached && !this.unavailableFiles.has(id) && matchesFreshnessKey(cached, file)) continue;
         const entry = this.summarizeEntry(id, file);
         if (!entry) continue;
         candidates.push(entry);
@@ -351,24 +351,24 @@ export class SessionFileCache {
     const upserts: SessionFileCacheEntry[] = [];
     const removedProviderSessionIds: string[] = [];
     for (const { providerSessionId, path } of changes) {
-      const reported = this.statFile(path);
-      const cached = this.files.get(providerSessionId);
-      if (!reported) {
-        // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
-        if (cached?.path !== path) continue;
-        this.unavailableFiles.add(providerSessionId);
-        if (!this.retainsSummary(providerSessionId))
-          removedProviderSessionIds.push(providerSessionId);
-        continue;
-      }
-      const file = this.fileToSummarize(providerSessionId, reported);
-      if (
-        cached &&
-        !this.unavailableFiles.has(providerSessionId) &&
-        matchesFreshnessKey(cached, file)
-      )
-        continue;
       try {
+        const reported = this.statFile(path);
+        const cached = this.files.get(providerSessionId);
+        if (!reported) {
+          // Deleting another copy of a chat, such as an Alt copy, keeps the chat.
+          if (cached?.path !== path) continue;
+          this.unavailableFiles.add(providerSessionId);
+          if (!this.retainsSummary(providerSessionId))
+            removedProviderSessionIds.push(providerSessionId);
+          continue;
+        }
+        const file = this.fileToSummarize(providerSessionId, reported);
+        if (
+          cached &&
+          !this.unavailableFiles.has(providerSessionId) &&
+          matchesFreshnessKey(cached, file)
+        )
+          continue;
         const entry = this.summarizeEntry(providerSessionId, file);
         if (!entry) continue;
         upserts.push(entry);

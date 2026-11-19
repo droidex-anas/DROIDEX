@@ -133,6 +133,36 @@ test('a full scan keeps an unreadable file but removes a different deleted file'
   assert.deepEqual(result.removedProviderSessionIds, ['scan-deleted']);
 });
 
+test('a watcher keeps an unreadable file and removes it after real deletion', (t) => {
+  const providerSessionId = 'watcher-unreadable';
+  writeSession(providerSessionId, 'cached summary');
+  const path = join(home, '.factory', 'sessions', `${providerSessionId}.jsonl`);
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  const restore = denySessionStat(t, path);
+
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [],
+  );
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === providerSessionId)?.title,
+    'cached summary',
+  );
+  assert.equal(cache.unavailableProviderSessionIds.includes(providerSessionId), false);
+
+  restore();
+  unlinkSync(path);
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [providerSessionId],
+  );
+  assert.equal(
+    cache.summaries().some((row) => row.appSessionId === providerSessionId),
+    false,
+  );
+});
+
 // The one cross-provider contract in this path: what ProviderTranscriptFile
 // writes for a non-Droid session is what the scan admits and the parser
 // replays. Nothing types can check — a drifted head key or content block reads
