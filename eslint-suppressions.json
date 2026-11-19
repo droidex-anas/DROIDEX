@@ -91,26 +91,6 @@
       "count": 5
     }
   },
-  "src/components/ColorPicker.tsx": {
-    "@typescript-eslint/no-misused-promises": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-argument": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-assignment": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unsafe-call": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unsafe-member-access": {
-      "count": 4
-    },
-    "@typescript-eslint/restrict-template-expressions": {
-      "count": 4
-    }
-  },
   "src/components/EditorOpenMenu.tsx": {
     "@typescript-eslint/no-confusing-void-expression": {
       "count": 1

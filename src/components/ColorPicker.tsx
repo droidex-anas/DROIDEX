@@ -10,6 +10,12 @@ interface HSV {
   v: number;
 }
 
+type EyeDropperWindow = typeof window & {
+  EyeDropper: new () => {
+    open(): Promise<{ sRGBHex: string }>;
+  };
+};
+
 function clamp(n: number, lo: number, hi: number) {
   return Math.max(lo, Math.min(hi, n));
 }
@@ -108,9 +114,8 @@ export function ColorPicker({
 
   const pickFromScreen = async () => {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await new (window as any).EyeDropper().open();
-      if (result?.sRGBHex) onChange(result.sRGBHex);
+      const result = await new (window as EyeDropperWindow).EyeDropper().open();
+      if (result.sRGBHex) onChange(result.sRGBHex);
     } catch {
       /* user cancelled */
     }
@@ -152,7 +157,7 @@ export function ColorPicker({
           updateSat(x, y);
         })}
         className="relative h-40 rounded-md cursor-crosshair overflow-hidden"
-        style={{ background: `hsl(${h}, 100%, 50%)` }}
+        style={{ background: `hsl(${String(h)}, 100%, 50%)` }}
       >
         <div
           className="absolute inset-0"
@@ -166,8 +171,8 @@ export function ColorPicker({
           // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any picked colour
           className="absolute size-icon-sm -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
           style={{
-            left: `${s * 100}%`,
-            top: `${(1 - v) * 100}%`,
+            left: `${String(s * 100)}%`,
+            top: `${String((1 - v) * 100)}%`,
             boxShadow: '0 0 0 1px rgba(0,0,0,0.5)',
           }}
         />
@@ -183,7 +188,7 @@ export function ColorPicker({
         <span
           // eslint-disable-next-line design-policy/design-tokens -- colour-position handle: a white ring reads on any hue
           className="absolute top-1/2 size-icon-md -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white pointer-events-none"
-          style={{ left: `${(h / 360) * 100}%`, boxShadow: '0 0 0 1px rgba(0,0,0,0.5)' }}
+          style={{ left: `${String((h / 360) * 100)}%`, boxShadow: '0 0 0 1px rgba(0,0,0,0.5)' }}
         />
       </div>
 
@@ -203,7 +208,9 @@ export function ColorPicker({
         />
         {hasEyeDropper && (
           <button
-            onClick={pickFromScreen}
+            onClick={() => {
+              void pickFromScreen();
+            }}
             title="Pick color from screen"
             className="flex size-control-sm shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
           >
