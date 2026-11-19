@@ -17,7 +17,6 @@ import type {
   SidebarResult,
 } from '@droidex/protocol';
 
-// A command's fields minus its `type`, for helpers that pass their input straight through.
 type CommandInput<T extends ClientCommand['type']> = Omit<
   Extract<ClientCommand, { type: T }>,
   'type'
@@ -417,7 +416,7 @@ export const loadChildHistory = (
 
 export const watchChildHistory = (
   requestId: string,
-  target: Extract<ClientCommand, { type: 'child.watchHistory' }>['target'],
+  target: CommandInput<'child.watchHistory'>['target'],
 ) => bridge.sendIfConnected({ type: 'child.watchHistory', requestId, target });
 
 // Transcript content search; the matching sessions.searchResults event
