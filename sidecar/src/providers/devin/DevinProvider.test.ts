@@ -5,9 +5,11 @@ import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createSdkMcpServer } from '@factory/droid-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { PermissionOutcome } from '../../protocol.js';
+import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
+import { SessionInteractions, type InteractionLiveSession } from '../../SessionInteractions.js';
 import type { ProviderApprovalRequest, ProviderInteractions } from '../interactions.js';
 import { deferred } from '../../testing/projectServiceHarness.js';
+import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 import { DevinProvider } from './DevinProvider.js';
 import type { DevinSession } from './devinSession.js';
 
@@ -36,13 +38,15 @@ const childText = (agentId, text) => childUpdate(agentId, { sessionUpdate: 'agen
 const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
   options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
 if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
-let pending, pendingConfig, permission, pendingClose, servers = [];
+let pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const message = JSON.parse(line);
   appendFileSync(join(root, 'requests.jsonl'), JSON.stringify(message) + '\n');
   if (message.id === 'permission') {
     appendFileSync(join(root, 'permission.json'), JSON.stringify(message.result) + '\n');
-    result(permission, { stopReason: 'end_turn' }); permission = undefined;
+    if (permissionEndsTurn) result(permission, { stopReason: 'end_turn' });
+    else childCompleted('approval-child');
+    permission = undefined;
     if (pendingClose !== undefined) { result(pendingClose, {}); pendingClose = undefined; }
     return;
   }
@@ -104,18 +108,21 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       childText('root', 'Parent answer');
       result(id, { stopReason: 'end_turn' }); return;
     }
-    if (['approve', 'approve-child', 'approve-completed', 'approve-orphan'].includes(text)) {
+    if (['approve', 'approve-child', 'approve-background', 'approve-completed', 'approve-orphan'].includes(text)) {
       const childId = text === 'approve-orphan' ? 'unknown' : 'approval-child';
-      if (text === 'approve-child') childStarted(childId);
+      if (text === 'approve-child' || text === 'approve-background') childStarted(childId);
       if (text === 'approve-completed') childCompleted(childId);
       permission = id;
+      permissionEndsTurn = text !== 'approve-background';
       send({ id: 'permission', method: 'session/request_permission', params: {
         sessionId: 'devin-one', toolCall: { toolCallId: 'edit', title: 'Edit file', kind: 'edit', rawInput: { path: '/file' },
           ...(text !== 'approve' ? { _meta: { 'cognition.ai/subagent_context': { parentAgentId: childId } } } : {}) },
         options: [ { optionId: 'plan_bypass', name: 'Bypass', kind: 'allow_once' },
           { optionId: 'once', name: 'Once', kind: 'allow_once' },
           { optionId: 'always', name: 'Always', kind: 'allow_always' },
-          { optionId: 'no', name: 'No', kind: 'reject_once' } ] } }); return;
+          { optionId: 'no', name: 'No', kind: 'reject_once' } ] } });
+      if (!permissionEndsTurn) result(id, { stopReason: 'end_turn' });
+      return;
     }
     if (text === 'mcp') {
       const server = servers.find((server) => server.name === 'app');
@@ -436,6 +443,42 @@ test('closing Devin cancels a pending child approval before a late allow answer 
   assert.equal(background.length, count);
   assert.deepEqual(JSON.parse((await readFile(join(h.cwd, 'permission.json'), 'utf8')).trim()), {
     outcome: { outcome: 'cancelled' },
+  });
+});
+
+test('a native child approval stays answerable after the Devin parent turn settles', async (t) => {
+  const h = await fixture(t);
+  const events: ServerEvent[] = [];
+  const session = await h.create();
+  const live: InteractionLiveSession = {
+    summary: sessionSummary({ appSessionId: 'app-one', provider: 'devin' }),
+    session,
+  };
+  const interactions = new SessionInteractions({
+    getLiveSession: () => live,
+    updateSummary: () => undefined,
+    setProviderSpecMode: async () => undefined,
+    emit: (event) => {
+      events.push(event);
+    },
+    emitError: (error) => assert.fail(error.message),
+  });
+  h.input.interactions = interactions.interactionsFor({ id: 'app-one' });
+  const finished = deferred();
+  session.onBackgroundEvent((event) => {
+    if (event.childSession?.done) finished.resolve();
+  });
+  await collect(session.stream('approve-background'));
+  const requested = events.find((event) => event.type === 'approval.requested');
+  assert.ok(requested?.type === 'approval.requested');
+  assert.equal(
+    events.some((event) => event.type === 'interaction.cancelled'),
+    false,
+  );
+  await interactions.respondToApproval('app-one', requested.request.requestId, 'proceed_once');
+  await finished.promise;
+  assert.deepEqual(JSON.parse((await readFile(join(h.cwd, 'permission.json'), 'utf8')).trim()), {
+    outcome: { outcome: 'selected', optionId: 'once' },
   });
 });
 

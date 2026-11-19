@@ -221,7 +221,6 @@ export class DevinSession implements ProviderSession {
         await running;
       }
       this.permissionAbort.abort();
-      this.input.interactions.cancelPending();
       if (this.queue === queue) this.queue = undefined;
     }
   }
