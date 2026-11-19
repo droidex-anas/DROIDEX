@@ -27,6 +27,7 @@ interface Terminal {
   released: boolean;
   exitStatus?: WaitForTerminalExitResponse;
   exited: Promise<WaitForTerminalExitResponse>;
+  closed: Promise<void>;
   killing?: Promise<void>;
 }
 
@@ -86,6 +87,7 @@ export class DevinTerminals {
       detached: process.platform !== 'win32',
     });
     let settle!: (status: WaitForTerminalExitResponse) => void;
+    let settleClose!: () => void;
     const terminal: Terminal = {
       id,
       child,
@@ -96,10 +98,18 @@ export class DevinTerminals {
       exited: new Promise((resolve) => {
         settle = resolve;
       }),
+      closed: new Promise((resolve) => {
+        settleClose = resolve;
+      }),
     };
     this.terminals.set(id, terminal);
     if (child.pid !== undefined)
-      this.processes.track(id, child.pid, () => terminal.exitStatus === undefined, 'provisional');
+      this.processes.track(
+        id,
+        child.pid,
+        () => child.exitCode === null && child.signalCode === null,
+        'provisional',
+      );
     child.stdin.end();
     const append = (chunk: string) => {
       if (this.closed) return;
@@ -110,10 +120,20 @@ export class DevinTerminals {
     };
     child.stdout.setEncoding('utf8').on('data', append);
     child.stderr.setEncoding('utf8').on('data', append);
+    let drain: ReturnType<typeof setTimeout> | undefined;
+    child.on('exit', (exitCode, signal) => {
+      const status = { exitCode, signal };
+      terminal.exitStatus = status;
+      drain = setTimeout(() => {
+        settle(status);
+      }, 1000);
+    });
     child.on('close', (exitCode, signal) => {
+      clearTimeout(drain);
       terminal.exitStatus = { exitCode, signal };
       if (child.pid !== undefined) this.processes.untrack(child.pid, id);
       settle(terminal.exitStatus);
+      settleClose();
     });
     try {
       await new Promise<void>((resolve, reject) => {
@@ -290,7 +310,10 @@ export class DevinTerminals {
     if (terminal.killing) return terminal.killing;
     terminal.killing = this.processes.killSession(terminal.id).then(async () => {
       // A shell can exit before its background jobs close the inherited pipes.
-      if (!terminal.exitStatus && terminal.child.pid !== undefined) {
+      if (
+        (!terminal.child.stdout.closed || !terminal.child.stderr.closed) &&
+        terminal.child.pid !== undefined
+      ) {
         if (process.platform === 'win32') terminal.child.kill('SIGKILL');
         else {
           try {
@@ -300,7 +323,7 @@ export class DevinTerminals {
           }
         }
       }
-      await terminal.exited;
+      await terminal.closed;
     });
     return terminal.killing;
   }

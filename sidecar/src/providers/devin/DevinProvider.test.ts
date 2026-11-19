@@ -154,7 +154,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         : 'process.stdout.write("READY:" + process.pid); setInterval(() => {}, 1000);';
       const command = text === 'terminal-truncate' ? "printf '123ééZ'"
         : text === 'terminal-empty' ? 'true'
-        : JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(script) + (text === 'terminal-background' ? ' &' : '');
+        : JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(script) + (text.startsWith('terminal-background') ? ' &' : '');
       try {
         const { terminalId } = await terminalCall('create', { command,
           cwd: text === 'terminal-error' ? join(root, 'missing') : root,
@@ -297,7 +297,7 @@ test('Devin client terminals stream shell output with cwd and env, then retain t
 });
 
 test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit kill and idempotent release', async (t) => {
-  for (const mode of ['truncate', 'empty', 'error', 'kill', 'release']) {
+  for (const mode of ['truncate', 'empty', 'error', 'kill', 'release', 'background-exit']) {
     await t.test(mode, async (t) => {
       const h = await fixture(t);
       const session = await h.create();
@@ -317,6 +317,9 @@ test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit ki
       } else if (mode === 'kill') {
         assert.equal(response.exit.signal, 'SIGTERM');
         assert.deepEqual(response.output.exitStatus, response.exit);
+      } else if (mode === 'background-exit') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.match(response.output.output, /READY:/);
       } else {
         assert.match(response.exit.error, /Unknown Devin terminal/);
         assert.match(response.output.error, /Unknown Devin terminal/);
