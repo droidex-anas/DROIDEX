@@ -1,13 +1,25 @@
 import type { RequestPermissionRequest, RequestPermissionResponse } from '@agentclientprotocol/sdk';
-import type { PermissionKind } from '../../protocol.js';
+import type { Autonomy, PermissionKind, PermissionOutcome } from '../../protocol.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { devinToolName, isDevinChild } from './devinEvents.js';
+
+const IMPLEMENTATION_AUTONOMY: Partial<Record<PermissionOutcome, Autonomy>> = {
+  proceed_auto_run: 'high',
+  proceed_auto_run_low: 'low',
+  proceed_auto_run_medium: 'medium',
+  proceed_auto_run_high: 'high',
+  proceed_new_session: 'high',
+  proceed_new_session_low: 'low',
+  proceed_new_session_medium: 'medium',
+  proceed_new_session_high: 'high',
+};
 
 export async function devinPermission(
   appSessionId: string,
   request: RequestPermissionRequest,
   interactions: ProviderInteractions,
   signal: AbortSignal,
+  approvePlan: (autonomy: Autonomy | undefined) => Promise<void>,
 ): Promise<RequestPermissionResponse> {
   const cancelled: RequestPermissionResponse = { outcome: { outcome: 'cancelled' } };
   const isCancelled = () => signal.aborted || !interactions.isActive();
@@ -47,5 +59,10 @@ export async function devinPermission(
     (preferred === 'allow_always'
       ? options.find((value) => value.kind === 'allow_once')
       : undefined);
-  return option ? { outcome: { outcome: 'selected', optionId: option.optionId } } : cancelled;
+  if (!option) return cancelled;
+  if (kind === 'spec' && option.kind.startsWith('allow')) {
+    await approvePlan(IMPLEMENTATION_AUTONOMY[outcome]);
+    if (isCancelled()) return cancelled;
+  }
+  return { outcome: { outcome: 'selected', optionId: option.optionId } };
 }

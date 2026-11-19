@@ -65,6 +65,12 @@ export class DevinSession implements ProviderSession {
           request,
           input.interactions,
           this.permissionAbort.signal,
+          (autonomy = this.selectedAutonomy) =>
+            this.change(async () => {
+              await this.configure('mode', MODES[autonomy]);
+              this.selectedAutonomy = autonomy;
+              this.interactionMode = 'auto';
+            }),
         );
       },
     });

@@ -58,10 +58,10 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (text === 'refuse') { result(id, { stopReason: 'refusal' }); return; }
     if (text === 'empty') { result(id, { stopReason: 'end_turn' }); return; }
     if (text === 'wait') { pending = id; update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'waiting' } }); return; }
-    if (text === 'approve') {
+    if (text === 'approve' || text === 'approve-plan') {
       permission = id;
       send({ id: 'permission', method: 'session/request_permission', params: {
-        sessionId: 'devin-one', toolCall: { toolCallId: 'edit', title: 'Edit file', kind: 'edit', rawInput: { path: '/file' } },
+        sessionId: 'devin-one', toolCall: { toolCallId: 'edit', title: 'Edit file', kind: text === 'approve-plan' ? 'switch_mode' : 'edit', rawInput: { path: '/file' } },
         options: [ { optionId: 'plan_bypass', name: 'Bypass', kind: 'allow_once' },
           { optionId: 'once', name: 'Once', kind: 'allow_once' },
           { optionId: 'always', name: 'Always', kind: 'allow_always' },
@@ -231,6 +231,24 @@ test('Devin approval choices honor user outcomes and never select plan_bypass', 
   }
   assert.equal(h.approvals[0]?.request.kind, 'edit');
   assert.equal(h.approvals[0]?.request.canAlwaysAllow, true);
+});
+
+test('Devin applies the implementation autonomy before accepting a reviewed plan', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  for (const [outcome, autonomy, mode] of [
+    ['proceed_auto_run_low', 'low', 'accept-edits'],
+    ['proceed_auto_run_medium', 'medium', 'smart'],
+    ['proceed_auto_run_high', 'high', 'bypass'],
+  ] as const) {
+    await session.setInteractionMode('spec');
+    h.answer(outcome);
+    await collect(session.stream('approve-plan'));
+    assert.equal(session.autonomy, autonomy);
+    const requests = await h.requests();
+    const reply = requests.findLastIndex((request) => !request.method);
+    assert.equal(requests[reply - 1]?.params?.value, mode);
+  }
 });
 
 test('Devin cancellation settles a turn and the session remains usable', async (t) => {
