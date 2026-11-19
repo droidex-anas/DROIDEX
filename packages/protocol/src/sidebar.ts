@@ -1,5 +1,15 @@
 import type { SessionQuestion } from './transcript.js';
 
+export const SIDEBAR_ROW_LIMITS = {
+  rows: 5_000,
+  title: 200,
+  permissionDetail: 2_000,
+  questions: 16,
+  questionText: 2_000,
+  options: 16,
+  optionText: 500,
+} as const;
+
 export type SidebarMark = 'settled' | 'reopened' | 'archived';
 
 // What the sidecar asks the window about the chats in its sidebar: only the

@@ -1,4 +1,5 @@
 import type { AppState } from '../hooks/useStore';
+import { SIDEBAR_ROW_LIMITS } from '@droidex/protocol';
 import type {
   SessionSummary,
   SidebarMark,
@@ -32,16 +33,6 @@ import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferenc
 // the answer to reach it, so the window never applies a change the sidecar
 // has already reported as failed.
 const EXPIRY_MARGIN_MS = 1_000;
-
-const LIMITS = {
-  rows: 5_000,
-  title: 200,
-  permissionDetail: 2_000,
-  questions: 16,
-  questionText: 2_000,
-  options: 16,
-  optionText: 500,
-} as const;
 
 type SidebarState = Pick<
   AppState,
@@ -78,7 +69,7 @@ function sidebarRows(state: SidebarState, appSessionIds?: string[]): SidebarRow[
   const preferences = sidebarPreferences();
   const rows: SidebarRow[] = [];
   for (const id of appSessionIds ? new Set(appSessionIds) : state.sessionOrder) {
-    if (rows.length === LIMITS.rows) break;
+    if (rows.length === SIDEBAR_ROW_LIMITS.rows) break;
     const session = sidebarChat(state, id);
     if (session) rows.push(sidebarRow(state, session, preferences));
   }
@@ -96,7 +87,7 @@ function sidebarRow(
   const status = sessionActivityStatus(session, signals);
   const row: SidebarRow = {
     appSessionId: id,
-    title: chatDisplayTitle(session, metadata[id]).slice(0, LIMITS.title),
+    title: chatDisplayTitle(session, metadata[id]).slice(0, SIDEBAR_ROW_LIMITS.title),
     status,
     label: ACTIVITY_LABELS[status],
     unread: signals.unread,
@@ -111,8 +102,8 @@ function sidebarRow(
     : undefined;
   if (permission)
     row.permission = {
-      title: permission.title.slice(0, LIMITS.title),
-      detail: permission.detail.slice(0, LIMITS.permissionDetail),
+      title: permission.title.slice(0, SIDEBAR_ROW_LIMITS.title),
+      detail: permission.detail.slice(0, SIDEBAR_ROW_LIMITS.permissionDetail),
     };
   const question = Object.hasOwn(state.pendingQuestions, id)
     ? state.pendingQuestions[id]?.[0]
@@ -120,12 +111,12 @@ function sidebarRow(
   if (question)
     row.question = {
       requestId: question.requestId,
-      questions: question.questions.slice(0, LIMITS.questions).map((item) => ({
+      questions: question.questions.slice(0, SIDEBAR_ROW_LIMITS.questions).map((item) => ({
         index: item.index,
-        question: item.question.slice(0, LIMITS.questionText),
+        question: item.question.slice(0, SIDEBAR_ROW_LIMITS.questionText),
         options: item.options
-          .slice(0, LIMITS.options)
-          .map((option) => ({ label: option.label.slice(0, LIMITS.optionText) })),
+          .slice(0, SIDEBAR_ROW_LIMITS.options)
+          .map((option) => ({ label: option.label.slice(0, SIDEBAR_ROW_LIMITS.optionText) })),
       })),
     };
   return row;

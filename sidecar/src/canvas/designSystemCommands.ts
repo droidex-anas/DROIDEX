@@ -1,3 +1,7 @@
+// The design system document's commands (design system documents spec §14).
+// Kits are global, so these need no canvas, attachment or scope; they read and
+// save through the same owner as the agent's canvas_theme tool.
+
 import type {
   DesignSystemDocumentView,
   DesignSystemVersionRef,
@@ -5,11 +9,6 @@ import type {
   CanvasReply,
   SavedBy,
 } from '@droidex/protocol';
-
-// The design system document's commands (design system documents spec §14).
-// Kits are global, so these need no canvas, attachment or scope; they read and
-// save through the same owner as the agent's canvas_theme tool.
-
 import { canvasError } from './canvasError.js';
 import { kitModes } from './designSystemDocument.js';
 import { importDesignSystem, pastedSource, unmappedKitTokens } from './designSystemImport.js';

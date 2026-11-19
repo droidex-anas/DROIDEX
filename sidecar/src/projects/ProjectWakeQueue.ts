@@ -1,7 +1,7 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import type { ProjectPort } from './sessions.js';
 import type { ThreadWait } from '@droidex/protocol';
-import type { Project, ProjectThread, ThreadMessage } from './types.js';
+import type { Project, ProjectThreadRecord, ThreadMessage } from './types.js';
 import { wakePrompt, isAsked, isOwnerUpdate, batch } from './projectMessages.js';
 
 const MAX_ACTIVE = 2;
@@ -52,7 +52,7 @@ export class ProjectWakeQueue {
       project: Project,
       target: string,
     ) => (messages: ThreadMessage[]) => boolean,
-    private readonly launch?: (project: Project, thread: ProjectThread) => Promise<boolean>,
+    private readonly launch?: (project: Project, thread: ProjectThreadRecord) => Promise<boolean>,
   ) {}
 
   waitReason(appSessionId: string): ThreadWait | undefined {
@@ -70,7 +70,7 @@ export class ProjectWakeQueue {
     return this.waitingStarts().length > 0 || this.hasWaitingResume();
   }
 
-  private waitingStarts(): { project: Project; thread: ProjectThread }[] {
+  private waitingStarts(): { project: Project; thread: ProjectThreadRecord }[] {
     return [...this.projects]
       .flatMap((project) =>
         project.threads

@@ -1,11 +1,3 @@
-import type {
-  KitPreview,
-  CanvasDiagnostic,
-  DesignSystemProposalRef,
-  DesignSystemRef,
-  PropPick,
-} from '@droidex/protocol';
-
 // A kit's previews (design system documents spec §7): one example of one kit
 // version or of the proposal waiting for review, compiled in one mode through
 // the same compiler as frames, with no revision to select in and no adherence.
@@ -13,6 +5,13 @@ import type {
 // in memory and compiled once while it is kept. An agent's unsaved kit is
 // checked through the same compiler and never kept.
 
+import type {
+  KitPreview,
+  CanvasDiagnostic,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+  PropPick,
+} from '@droidex/protocol';
 import { realDeadline, type BuildDeadline } from './CanvasBuilds.js';
 import { buildFailure } from './canvasBuildFailures.js';
 import { canvasError } from './canvasError.js';

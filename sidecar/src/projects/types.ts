@@ -51,7 +51,7 @@ export type ThreadSpawnInput = Omit<ThreadInput, 'cwd' | 'provider' | 'autonomy'
     profile?: 'main' | DroidProfile;
   };
 
-export interface ProjectThread {
+export interface ProjectThreadRecord {
   appSessionId: string;
   /** Set while its own question is waiting on the conversation that owns it. */
   ask?: ThreadAsk;
@@ -135,7 +135,7 @@ export interface Project {
   lastStepId?: number;
   plan: ProjectStep[];
   todos: ProjectTodo[];
-  threads: ProjectThread[];
+  threads: ProjectThreadRecord[];
   pending: ThreadMessage[];
   delivery?: { state: 'sending' | 'uncertain'; messages: ThreadMessage[] };
   error?: string;

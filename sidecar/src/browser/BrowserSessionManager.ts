@@ -25,7 +25,7 @@ import type {
   BrowserState,
   BrowserTarget,
   BrowserWaitCondition,
-  DesignReference,
+  StoredDesignReference,
   ScrollDirection,
 } from './types.js';
 
@@ -91,7 +91,7 @@ interface ManagedBrowserSession {
   appSessionId: string;
   runtime: BrowserRuntime;
   state: BrowserState;
-  references: Map<string, DesignReference>;
+  references: Map<string, StoredDesignReference>;
   /** Marks taken away, so a pick still being saved when it went is not brought back. */
   removed: Set<string>;
   /** The size change in progress; the next one starts after it. */
@@ -125,7 +125,7 @@ export class BrowserSessionManager {
   private readonly closed = new Set<string>();
   // The references each chat's prompts went with, newest last, so the agent can
   // still read one the prompt names once its mark is gone or its browser closed.
-  private readonly sent = new Map<string, Map<string, DesignReference>>();
+  private readonly sent = new Map<string, Map<string, StoredDesignReference>>();
   // Set when the final cleanup begins, so a prompt still being written keeps nothing.
   private shutDown = false;
 
@@ -373,7 +373,7 @@ export class BrowserSessionManager {
     appSessionId: string,
     input: ReferenceInput,
     screenshot?: DesignSelectionScreenshot,
-  ): Promise<DesignReference> {
+  ): Promise<StoredDesignReference> {
     const session = this.requireSession(appSessionId);
     const reference = await this.snapshot(appSessionId, session, input, screenshot);
     // A pick saved as its browser closed or was replaced is not that browser's.
@@ -392,7 +392,7 @@ export class BrowserSessionManager {
   }
 
   /** A live mark, or one a prompt of the chat went with. */
-  referenceDetail(appSessionId: string, id: string): DesignReference | undefined {
+  referenceDetail(appSessionId: string, id: string): StoredDesignReference | undefined {
     return (
       this.resolveSession(appSessionId)?.references.get(id) ?? this.sent.get(appSessionId)?.get(id)
     );
@@ -418,7 +418,7 @@ export class BrowserSessionManager {
     // unless the prompt has the crop it is still saving. One that has not
     // arrived yet, was taken away since, or was lost with a restart comes with
     // the prompt, which keeps its own copy.
-    const references: DesignReference[] = [];
+    const references: StoredDesignReference[] = [];
     for (const reference of input.references) {
       const live = session?.references.get(reference.id);
       references.push(
@@ -446,7 +446,10 @@ export class BrowserSessionManager {
     return this.resolveSession(appSessionId)?.state;
   }
 
-  designContext(appSessionId: string): { state: BrowserState; references: DesignReference[] } {
+  designContext(appSessionId: string): {
+    state: BrowserState;
+    references: StoredDesignReference[];
+  } {
     const session = this.requireSession(appSessionId);
     return {
       state: session.state,
@@ -574,7 +577,7 @@ export class BrowserSessionManager {
     session: ManagedBrowserSession | undefined,
     input: ReferenceInput,
     screenshot?: DesignSelectionScreenshot,
-  ): Promise<DesignReference> {
+  ): Promise<StoredDesignReference> {
     const id = input.id ?? input.anchor.id ?? `ref-${randomUUID()}`;
     const anchor: DesignAnchor = { ...input.anchor, id };
     if (screenshot && !anchor.screenshotPath) {
@@ -597,9 +600,9 @@ export class BrowserSessionManager {
     };
   }
 
-  private keepSent(appSessionId: string, references: DesignReference[]): void {
+  private keepSent(appSessionId: string, references: StoredDesignReference[]): void {
     if (this.shutDown) return;
-    const kept = this.sent.get(appSessionId) ?? new Map<string, DesignReference>();
+    const kept = this.sent.get(appSessionId) ?? new Map<string, StoredDesignReference>();
     for (const reference of references) {
       kept.delete(reference.id);
       kept.set(reference.id, reference);

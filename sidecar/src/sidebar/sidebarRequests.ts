@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import { SIDEBAR_ROW_LIMITS } from '@droidex/protocol';
 import type {
+  SessionActivityStatus,
   ServerEvent,
   SidebarMark,
   SidebarMarkOutcome,
@@ -24,17 +26,7 @@ const SESSION_ACTIVITY_STATUSES = [
   'ship',
   'ready',
   'settled',
-] as const;
-
-const LIMITS = {
-  rows: 5_000,
-  title: 200,
-  permissionDetail: 2_000,
-  questions: 16,
-  questionText: 2_000,
-  options: 16,
-  optionText: 500,
-} as const;
+] as const satisfies readonly SessionActivityStatus[];
 
 const UNREADABLE = 'The DROIDEX window sent an answer this build cannot read.';
 
@@ -43,9 +35,9 @@ const epochMs = z.number().finite().nonnegative();
 
 const rowSchema = z.object({
   appSessionId,
-  title: z.string().max(LIMITS.title),
+  title: z.string().max(SIDEBAR_ROW_LIMITS.title),
   status: z.enum(SESSION_ACTIVITY_STATUSES),
-  label: z.string().min(1).max(LIMITS.title),
+  label: z.string().min(1).max(SIDEBAR_ROW_LIMITS.title),
   unread: z.boolean(),
   onScreen: z.literal(true).optional(),
   pinned: z.literal(true).optional(),
@@ -53,8 +45,8 @@ const rowSchema = z.object({
   prDone: z.literal(true).optional(),
   permission: z
     .object({
-      title: z.string().max(LIMITS.title),
-      detail: z.string().max(LIMITS.permissionDetail),
+      title: z.string().max(SIDEBAR_ROW_LIMITS.title),
+      detail: z.string().max(SIDEBAR_ROW_LIMITS.permissionDetail),
     })
     .optional(),
   question: z
@@ -64,13 +56,13 @@ const rowSchema = z.object({
         .array(
           z.object({
             index: z.number().int().nonnegative(),
-            question: z.string().max(LIMITS.questionText),
+            question: z.string().max(SIDEBAR_ROW_LIMITS.questionText),
             options: z
-              .array(z.object({ label: z.string().max(LIMITS.optionText) }))
-              .max(LIMITS.options),
+              .array(z.object({ label: z.string().max(SIDEBAR_ROW_LIMITS.optionText) }))
+              .max(SIDEBAR_ROW_LIMITS.options),
           }),
         )
-        .max(LIMITS.questions),
+        .max(SIDEBAR_ROW_LIMITS.questions),
     })
     .optional(),
 }) satisfies z.ZodType<SidebarRow>;
@@ -79,14 +71,14 @@ const resultSchema = z.discriminatedUnion('kind', [
   z.object({
     requestId: z.string(),
     kind: z.literal('rows'),
-    rows: z.array(rowSchema).max(LIMITS.rows),
+    rows: z.array(rowSchema).max(SIDEBAR_ROW_LIMITS.rows),
   }),
   z.object({
     requestId: z.string(),
     kind: z.literal('mark'),
     outcomes: z
       .array(z.object({ appSessionId, done: z.boolean(), reason: z.string().max(200).optional() }))
-      .max(LIMITS.rows),
+      .max(SIDEBAR_ROW_LIMITS.rows),
   }),
 ]) satisfies z.ZodType<SidebarResult>;
 

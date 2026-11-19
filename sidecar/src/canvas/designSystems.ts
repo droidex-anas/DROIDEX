@@ -1,15 +1,15 @@
-import type {
-  DesignSystemSummary,
-  DesignSystemVersionEntry,
-  DesignSystemRef,
-  DesignSystemVersionRef,
-} from '@droidex/protocol';
 // Versioned executable design kits (spec §10). A kit version is a document
 // (design system documents spec §2) with React primitives and the examples its
 // previews render; a revision pins one `id` and `version`, and that version
 // never changes afterwards, so a saved design keeps compiling the way it was
 // designed.
 
+import type {
+  DesignSystemSummary,
+  DesignSystemVersionEntry,
+  DesignSystemRef,
+  DesignSystemVersionRef,
+} from '@droidex/protocol';
 import { readdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';

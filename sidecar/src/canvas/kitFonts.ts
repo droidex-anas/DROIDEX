@@ -1,8 +1,8 @@
-import type { KitFontFace } from '@droidex/protocol';
 // The fonts a kit version embeds, which its document loads to set the kit's own
 // words in its type. Only WOFF2 data a kit stylesheet holds reaches the
 // renderer, so the document never fetches a font a kit names by URL.
 
+import type { KitFontFace } from '@droidex/protocol';
 import postcss, { CssSyntaxError, type AtRule } from 'postcss';
 import { embeddedWoff2 } from './canvasFontAssets.js';
 import { fontFamilies } from './designSystemAdherenceKit.js';

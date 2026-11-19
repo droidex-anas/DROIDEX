@@ -2,7 +2,7 @@ import { createSdkMcpServer, tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import type { BrowserSessionManager } from './BrowserSessionManager.js';
 import type { BrowserViewportMode } from '@droidex/protocol';
-import type { BrowserState, DesignReference } from './types.js';
+import type { BrowserState, StoredDesignReference } from './types.js';
 import { redactBrowserUrl } from './browserUrl.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import {
@@ -414,7 +414,7 @@ export function createBrowserMcpServer(
 
 function stateForTool(
   state: BrowserState,
-  designReferences: DesignReference[] = [],
+  designReferences: StoredDesignReference[] = [],
 ): Record<string, unknown> {
   return {
     ok: true,
@@ -429,7 +429,7 @@ function stateForTool(
   };
 }
 
-function designReferenceSummary(ref: DesignReference): Record<string, unknown> {
+function designReferenceSummary(ref: StoredDesignReference): Record<string, unknown> {
   const anchor = ref.anchor;
   const out: Record<string, unknown> = {
     id: ref.id,
@@ -454,7 +454,7 @@ function designReferenceSummary(ref: DesignReference): Record<string, unknown> {
   return out;
 }
 
-function designReferenceDetail(ref: DesignReference): Record<string, unknown> {
+function designReferenceDetail(ref: StoredDesignReference): Record<string, unknown> {
   return {
     ...designReferenceSummary(ref),
     title: ref.title,
