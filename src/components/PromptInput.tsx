@@ -45,8 +45,7 @@ import { useFileAttachments } from '../hooks/useFileAttachments';
 import { useVoiceControls } from '../features/voice/VoiceProvider';
 import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
-import { ImageChip } from './composer/ImageChip';
-import { FileChip } from './composer/FileChip';
+import { ComposerAttachments } from './composer/ComposerAttachments';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
 import ComposerDock from './composer/ComposerDock';
@@ -61,7 +60,6 @@ import {
 } from '../lib/chatWorkspace';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { removeDesignMark, setDesignMarks, useDesignMarks } from './browser/designMarks';
-import { DesignMarkChip } from './composer/DesignMarkChip';
 import {
   composePrompt,
   promptTextWithVisualize,
@@ -92,7 +90,6 @@ import { useComposerReferences } from './composer/useComposerReferences';
 import { useComponentMentions } from './composer/useComponentMentions';
 import { useFrameMentions } from './composer/useFrameMentions';
 import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
-import { CanvasImageChip } from './composer/CanvasImageChip';
 import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../features/canvas/designSystemChoices';
 import { oweCreatedCanvasSeed } from '../features/canvas/librarySeed';
 import { createComposerTranscriptSelector } from './composer/composerTranscript';
@@ -281,11 +278,6 @@ export function shouldStopTurnStarting({
   );
 }
 
-function basename(p: string): string {
-  const i = p.lastIndexOf('/');
-  return i >= 0 ? p.slice(i + 1) : p;
-}
-
 // A dialog the user asks for, so its code loads when they do. Declared here
 // rather than with the app's other lazy surfaces, which import the composer.
 const LazyFeedbackModal = lazy(async () => {
@@ -451,6 +443,11 @@ export default function PromptInput({
   const removeImage = (image: AttachedImage) => {
     imageAttachments.remove(image.id);
     canvasImages.remove([image.sequence]);
+  };
+  // No discard: these files belong to an already-composed prompt.
+  const removeAttachedPath = (path: string) => {
+    attachedFileSeqRef.current.delete(path);
+    setAttachedFiles((prev) => prev.filter((x) => x !== path));
   };
   const fileDrop = useComposerFileDrop(addComposerFiles);
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
@@ -2243,88 +2240,27 @@ export default function PromptInput({
             raised rung is the elevated one. */}
         <div className="relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5">
           {(hasAttachmentChips || designMarks.length > 0) && (
-            <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
-              {designMarks.map((mark) => (
-                <DesignMarkChip
-                  key={mark.id}
-                  mark={mark}
-                  onInsert={() => {
-                    insertMarkReference(mark.anchor.mark);
-                  }}
-                  onRemove={() => {
-                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
-                  }}
-                />
-              ))}
-              {imageAttachments.images.map((img) => {
-                const reference = canvasImages.referenceOf(img.sequence);
-                const open = () => {
-                  setViewerImageId(img.id);
-                };
-                const remove = () => {
-                  removeImage(img);
-                };
-                return reference ? (
-                  <CanvasImageChip
-                    key={img.id}
-                    src={img.preview}
-                    reference={reference}
-                    onOpen={open}
-                    onRemove={remove}
-                  />
-                ) : (
-                  <ImageChip
-                    key={img.id}
-                    src={img.preview}
-                    label={basename(img.path)}
-                    onOpen={open}
-                    onRemove={remove}
-                  />
-                );
-              })}
-              {fileAttachments.files.map((file) => (
-                <FileChip
-                  key={file.id}
-                  path={file.path}
-                  name={file.name}
-                  onRemove={() => {
-                    fileAttachments.remove(file.id);
-                  }}
-                />
-              ))}
-              {attachedImagePaths.map((path) => {
-                const src = imageSrc(path);
-                // No discard on removal: the file was written for an
-                // already-composed prompt, and the attachments store sweeps it.
-                const remove = () => {
-                  attachedFileSeqRef.current.delete(path);
-                  setAttachedFiles((prev) => prev.filter((x) => x !== path));
-                };
-                return src === null ? (
-                  <FileChip key={path} path={path} onRemove={remove} />
-                ) : (
-                  <ImageChip
-                    key={path}
-                    src={src}
-                    label={basename(path)}
-                    onOpen={() => {
-                      setViewerPath(path);
-                    }}
-                    onRemove={remove}
-                  />
-                );
-              })}
-              {attachedDocumentPaths.map((f) => (
-                <FileChip
-                  key={f}
-                  path={f}
-                  onRemove={() => {
-                    attachedFileSeqRef.current.delete(f);
-                    setAttachedFiles((prev) => prev.filter((x) => x !== f));
-                  }}
-                />
-              ))}
-            </div>
+            <ComposerAttachments
+              designMarks={designMarks}
+              images={imageAttachments.images}
+              files={fileAttachments.files}
+              attachedImagePaths={attachedImagePaths}
+              attachedDocumentPaths={attachedDocumentPaths}
+              canvasReferenceOf={canvasImages.referenceOf}
+              onInsertMark={(mark) => {
+                insertMarkReference(mark.anchor.mark);
+              }}
+              onRemoveMark={(mark) => {
+                if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
+              }}
+              onOpenImage={(image) => {
+                setViewerImageId(image.id);
+              }}
+              onRemoveImage={removeImage}
+              onRemoveFile={fileAttachments.remove}
+              onOpenPath={setViewerPath}
+              onRemovePath={removeAttachedPath}
+            />
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
