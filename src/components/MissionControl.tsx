@@ -1,4 +1,4 @@
-import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { useRef, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ChildAccess, ChildRuntimeState } from '../hooks/storeChildSession';
 import { useRepoStatus } from '../hooks/useRepoStatus';
@@ -51,6 +51,7 @@ import {
 } from '../lib/childSessions';
 import { sessionIsLive } from '../lib/sessions';
 import { MessageFeed } from './MessageFeed';
+import { isConversationAtLatest } from './conversationListState';
 import EditorOpenMenu, { openCodebase, openCurrentDiff } from './EditorOpenMenu';
 import PromptInput from './PromptInput';
 import AutonomySelector from './AutonomySelector';
@@ -107,20 +108,47 @@ function ChatArea({
 }) {
   const toolActivity = useStoreSelector((state) => state.toolActivity);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pinned = useRef(true);
+  const followedScrollTop = useRef<number | null>(null);
   const renderEvents = events.length > 900 ? events.slice(-900) : events;
   const hidden = events.length - renderEvents.length;
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [events.length, pending]);
+  const followOutput = useCallback(() => {
+    const scroller = scrollRef.current;
+    if (!scroller || !pinned.current) return;
+    scroller.scrollTop = scroller.scrollHeight;
+    followedScrollTop.current = scroller.scrollTop;
+  }, []);
+  useLayoutEffect(followOutput, [events.length, pending, followOutput]);
+
+  useLayoutEffect(() => {
+    const scroller = scrollRef.current;
+    const content = scroller?.firstElementChild;
+    if (!scroller || !content) return;
+
+    const observer = new ResizeObserver(followOutput);
+    observer.observe(content);
+    observer.observe(scroller);
+    return () => { observer.disconnect(); };
+  }, [followOutput]);
 
   return (
     <div
       ref={scrollRef}
+      onScroll={({ currentTarget }) => {
+        const followedTop = followedScrollTop.current;
+        followedScrollTop.current = null;
+        if (currentTarget.scrollTop === followedTop) return;
+        pinned.current = isConversationAtLatest(
+          currentTarget.scrollHeight,
+          currentTarget.scrollTop,
+          currentTarget.clientHeight,
+        );
+      }}
       className="flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-hidden px-8 py-7"
     >
       <div className={`mx-auto min-w-0 ${big ? 'max-w-3xl' : 'max-w-2xl'}`}>
         {hidden > 0 && (
-          <div className="mb-4 text-center text-[12px] text-muted">
+          <div className="mb-4 text-center text-label text-muted">
             Showing latest {renderEvents.length.toLocaleString()} of{' '}
             {events.length.toLocaleString()} events.
           </div>
@@ -139,7 +167,7 @@ function ChatArea({
         />
 
         {events.length === 0 && !pending && (
-          <div className="py-24 text-center text-[13px] text-muted">
+          <div className="py-24 text-center text-body text-muted">
             {live ? 'Waiting for the agent…' : 'Direct the orchestrator to begin.'}
           </div>
         )}
@@ -1108,7 +1136,7 @@ export default function MissionControl() {
                   </button>
                 </>
               ) : (
-                <span className="text-[11px] text-muted capitalize">{phaseLabel}</span>
+                <span className="text-caption text-muted capitalize">{phaseLabel}</span>
               )}
             </div>
           </div>
@@ -1124,6 +1152,7 @@ export default function MissionControl() {
             />
           ) : (
             <ChatArea
+              key={`${mission.appSessionId}:${visibleChildSessionId ?? 'primary'}`}
               events={events}
               live={visibleIsLive}
               pending={visibleSessionIsPending(visibleTarget, isLive, isLive ? 'primary' : null)}
