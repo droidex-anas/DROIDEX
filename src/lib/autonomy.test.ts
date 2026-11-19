@@ -66,6 +66,4 @@ test('a mode names its consequence only where the harness qualifies it', () => {
     AUTONOMY_LEVELS.filter((level) => autonomyConsequence('droid', level)),
     ['high'],
   );
-  for (const level of ['off', 'low'] as const)
-    assert.match(autonomyConsequence('devin', level) ?? '', /no mode that asks before edits/);
 });

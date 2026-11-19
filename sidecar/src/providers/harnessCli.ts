@@ -21,10 +21,9 @@ import type {
 } from '../protocol.js';
 import { resolveClaudePath } from './claude/claudeExecutable.js';
 import { resolveCodexPath } from './codex/codexExecutable.js';
-import { resolveDevinPath } from './devin/devinExecutable.js';
 import { childEnv } from '../childEnv.js';
 
-const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex', 'devin'];
+const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex'];
 const VERSION_TIMEOUT_MS = 10_000;
 
 const execFileAsync = promisify(execFile);
@@ -48,16 +47,6 @@ const INSTALLERS: Record<HarnessCliProvider, Partial<Record<InstallChannel, Shel
   codex: {
     brew: { command: 'brew', args: ['install', '--cask', 'codex'] },
     npm: { command: 'npm', args: ['install', '-g', '@openai/codex'] },
-  },
-  devin: {
-    script: {
-      command: 'sh',
-      args: [
-        '-c',
-        'f="$(mktemp)" && curl -fsSL https://cli.devin.ai/install.sh -o "$f" && bash "$f"; r=$?; rm -f "$f"; exit $r',
-      ],
-    },
-    brew: { command: 'brew', args: ['install', '--cask', 'devin-cli'] },
   },
 };
 
@@ -115,19 +104,12 @@ export function locateInstall(path: string, resolvedPath: string): InstalledCli 
       },
     };
   }
-  // Native installs update themselves in place.
+  // Both CLIs' own installers update themselves in place.
   return { path, source: 'native', update: { command: path, args: ['update'] } };
 }
 
 function resolveHarnessPath(provider: HarnessCliProvider): string | undefined {
-  switch (provider) {
-    case 'claude':
-      return resolveClaudePath();
-    case 'codex':
-      return resolveCodexPath();
-    case 'devin':
-      return resolveDevinPath();
-  }
+  return provider === 'claude' ? resolveClaudePath() : resolveCodexPath();
 }
 
 function findInstall(provider: HarnessCliProvider): InstalledCli | undefined {
@@ -192,7 +174,7 @@ async function runUpdater(cmd: ShellCommand): Promise<{ exitCode: number; lastLi
   }
 }
 
-// Detects, installs and updates harness CLIs, updating
+// Detects, installs and updates the Claude Code and Codex CLIs, updating
 // through whichever installer owns each binary. One install or update per
 // harness runs at a time.
 export class HarnessCliInstaller {

@@ -20,9 +20,9 @@ DROIDEX is one desktop app for all your coding agents. The interface is a quiet,
 
 ## Content fundamentals
 
-- **Plain, direct, second person.** The product talks to *you* about *your* project: "Run Factory Droid, Claude Code, Codex, and Devin side by side." Say what happens, not what the feature is called.
+- **Plain, direct, second person.** The product talks to *you* about *your* project: "Run Factory Droid, Claude Code, and Codex side by side." Say what happens, not what the feature is called.
 - **Sentence case everywhere** — buttons, menu items, section headers ("Environment", "Review changes", "Start a new session"). The only all-caps text is the **DROIDEX** name and `overline` badges (SPEC, AGI).
-- **The name is always DROIDEX**, in capitals. Agent and product names keep their own spelling: Factory Droid, Claude Code, Codex, Devin.
+- **The name is always DROIDEX**, in capitals. Agent and product names keep their own spelling: Factory Droid, Claude Code, Codex.
 - **Status reads as a state, not a log.** "Waiting for input", "Still working", "Ready to review", "Done". Tool activity reads like a summary ("Edited 3 files"), never a wall of output.
 - **No emoji** in UI copy. Meaning comes from icons in the DROIDEX icon set and from the status hues.
 - **Numbers use tabular figures** (counts, diff stats, ahead/behind), set in the sans face — not in mono — unless the number is code.

@@ -7,9 +7,9 @@ import type { ModelInfo, ProviderKind } from '../types/bridge';
 export const FAST_MODE_LABEL = 'Fast mode';
 export const FAST_MODE_HINT = '1.5x speed · Uses your limits faster';
 
-/** Droid and Devin have no separate fast-mode toggle. */
+/** Droid's runtime has no fast mode, so its chats are never offered one. */
 export function offersFastMode(provider: ProviderKind | undefined): boolean {
-  return provider !== 'droid' && provider !== 'devin';
+  return provider !== 'droid';
 }
 
 /**

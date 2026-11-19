@@ -15,7 +15,7 @@ export type { McpServerInfo, McpServerInput, McpStatusSummary, McpToolInfo } fro
 
 // Which agent runtime a session runs on. Bound once when the session is
 // created and never changed afterwards.
-export const PROVIDER_KINDS = ['droid', 'claude', 'codex', 'devin'] as const;
+export const PROVIDER_KINDS = ['droid', 'claude', 'codex'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
 // An extra Factory login a Droid chat runs on. Main, the default, has no profile.

@@ -131,15 +131,7 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'cli update',
     'silent update',
   ]),
-  e('Setup & updates', 'Sign-in', [
-    'login',
-    'auth',
-    'account',
-    'factory',
-    'signed in',
-    'connect devin',
-    'devin auth login',
-  ]),
+  e('Setup & updates', 'Sign-in', ['login', 'auth', 'account', 'factory', 'signed in']),
   e('Setup & updates', 'Current version', ['app version', 'installed version']),
   e('Setup & updates', 'Check for updates', ['check for updates', 'update check']),
   e('Setup & updates', 'Check for DROIDEX updates', [
@@ -165,7 +157,6 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'droid',
     'claude code',
     'codex',
-    'devin',
     'new chat model',
   ]),
   e('Configuration', 'Tool activity', [
