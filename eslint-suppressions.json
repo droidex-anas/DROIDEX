@@ -1,9 +1,4 @@
 {
-  "electron/nativeBrowserPreload.cjs": {
-    "no-undef": {
-      "count": 42
-    }
-  },
   "sidecar/src/ChildSessions.test.ts": {
     "max-lines": {
       "count": 1

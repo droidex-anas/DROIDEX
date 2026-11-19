@@ -196,6 +196,11 @@ export default tseslint.config(
   },
 
   {
+    files: ['electron/nativeBrowserPreload.cjs'],
+    languageOptions: { globals: globals.browser },
+  },
+
+  {
     // Test budget; see "Verification and tests" in AGENTS.md.
     files: TEST_FILES,
     plugins: { 'test-policy': { rules: { 'no-sleep': noSleepInTests } } },
