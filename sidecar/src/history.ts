@@ -1452,6 +1452,11 @@ function shouldIncludeCwd(
 
 // Enumeration, replay and search share these roots, including the optional
 // Alt logins and transcripts DROIDEX writes for other providers.
+function isMissingSessionPath(error: unknown): boolean {
+  const { code } = error as NodeJS.ErrnoException;
+  return code === 'ENOENT' || code === 'ENOTDIR';
+}
+
 function scanSessionFileTree(): SessionFileScan {
   const files = new Map<string, SessionFileStat>();
   const unreadableProviderSessionIds = new Set<string>();
@@ -1479,7 +1484,7 @@ function scanSessionFileTree(): SessionFileScan {
       try {
         stat = statSync(path);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        if (!isMissingSessionPath(error)) {
           if (name.endsWith('.jsonl'))
             unreadableProviderSessionIds.add(name.slice(0, -'.jsonl'.length));
           else if (!name.endsWith('.settings.json')) isComplete = false;
@@ -1531,7 +1536,7 @@ function statSessionFile(path: string): SessionFileStat | null {
       settingsMtimeMs,
     };
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if (isMissingSessionPath(error)) return null;
     throw error;
   }
 }
