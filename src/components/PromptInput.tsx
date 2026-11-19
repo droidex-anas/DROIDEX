@@ -85,7 +85,8 @@ import {
   type ComposerMenu as ComposerMenuModel,
   type MenuItem,
 } from './composer/menuItems';
-import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
+import { catalogRowKey, mentionsForRows } from './composer/composerCatalog';
+import { useComposerCatalog } from './composer/useComposerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import { useComposerReferences } from './composer/useComposerReferences';
 import { useComponentMentions } from './composer/useComponentMentions';
@@ -886,34 +887,13 @@ export default function PromptInput({
     [],
   );
 
-  // Everything the bound harness offers, as far as it has landed. Both menus
-  // read it, and neither asks for it: see composerCatalog.
-  const catalog = useMemo(
-    () =>
-      composerCatalog({
-        provider: composerProvider,
-        providerSessionId: skillsProviderSessionId,
-        skills: state.skills,
-        skillsProviderSessionId: state.skillsProviderSessionId,
-        providerStatuses: state.providerStatuses,
-      }),
-    [
-      composerProvider,
-      skillsProviderSessionId,
-      state.providerStatuses,
-      state.skills,
-      state.skillsProviderSessionId,
-    ],
-  );
-  // A `/name` typed out in full invokes the skill it names, so that lookup sees
-  // the same skills the menu offers.
-  const invocableSkills = useMemo(
-    () =>
-      catalog.filter(
-        (row) => row.kind === 'skill' && row.userInvocable !== false && row.enabled !== false,
-      ),
-    [catalog],
-  );
+  const { catalog, invocableSkills } = useComposerCatalog({
+    provider: composerProvider,
+    providerSessionId: skillsProviderSessionId,
+    skills: state.skills,
+    skillsProviderSessionId: state.skillsProviderSessionId,
+    providerStatuses: state.providerStatuses,
+  });
 
   // Droid publishes its skills only when asked. The CLI harnesses publish
   // theirs with their probe status and with their session, so opening a menu on
