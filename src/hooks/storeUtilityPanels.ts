@@ -327,9 +327,8 @@ export function reduceUtilityPanels(state: AppState, action: UtilityPanelsAction
     case 'BROWSER_NAVIGATED': {
       const browsers: Partial<AppState['browsers']> = state.browsers;
       const browser = browsers[action.appSessionId];
-      // Keep the existence guard because the update below dereferences browser.
-      // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
-      if (!browser || browser.browserSessionId !== action.browserSessionId) return state;
+      if (!browser) return state;
+      if (browser.browserSessionId !== action.browserSessionId) return state;
       return {
         ...state,
         browsers: {
