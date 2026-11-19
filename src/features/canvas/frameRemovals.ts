@@ -63,57 +63,83 @@ export class FrameRemovals {
     this.endOffer(canvasId);
   }
 
-  /** One deletion as a step. Each Redo removes the frames again and keeps that removal's undoId. */
+  /** Adding `frame` as a step: Undo deletes it, without offering its own Undo, and Redo brings it back. */
+  creation(appSessionId: string, canvasId: string, frame: CanvasFrame): HistoryEntry {
+    const { remove, restore } = this.removalSteps(appSessionId, canvasId, [frame], null);
+    return { label: `adding ${frame.name}`, designs: [frame], undo: remove, redo: restore };
+  }
+
+  /** One deletion as a step. */
   private deletion(
     appSessionId: string,
     canvasId: string,
     frames: CanvasFrame[],
     removedAs: string,
   ): HistoryEntry {
-    let undoId = removedAs;
-    const designIds = frames.map((frame) => frame.designId);
+    const { remove, restore } = this.removalSteps(appSessionId, canvasId, frames, removedAs);
     return {
       label: `deleting ${designsLabel(frames)}`,
       designs: frames,
       covered: () => {
         this.endOffer(canvasId);
       },
-      undo: async () => {
+      undo: () => {
         this.endOffer(canvasId);
-        try {
-          await this.client.undoRemoval(appSessionId, canvasId, {
-            mutationId: crypto.randomUUID(),
-            undoId,
-          });
-          return true;
-        } catch (error) {
-          if (!(error instanceof CanvasRequestError)) throw error;
-          // Frames are never moved aside to make room; the user decides what goes
-          // there, and the step stays so the next Undo can try again.
-          if (error.code === 'layout_conflict')
-            throw new Error(`Something now sits where ${formerPlace(frames)}.`);
-          // The frames are back already, or the canvas no longer keeps this removal.
-          if (
-            error.code === 'revision_conflict' ||
-            error.code === 'invalid_input' ||
-            error.code === 'not_found'
-          )
-            return false;
-          throw error;
-        }
+        return restore();
       },
-      redo: () => {
-        const removal = this.client.removeFrames(appSessionId, canvasId, {
-          mutationId: crypto.randomUUID(),
-          designIds,
-        });
-        return landed(
-          removal.then((removedAs) => {
-            undoId = removedAs;
-          }),
-        );
-      },
+      redo: remove,
     };
+  }
+
+  /**
+   * Removing `frames` and bringing them back, as the two halves of a step.
+   * Each removal keeps its undoId for the next restore; `removedAs` is null
+   * while the frames are on the board.
+   */
+  private removalSteps(
+    appSessionId: string,
+    canvasId: string,
+    frames: CanvasFrame[],
+    removedAs: string | null,
+  ) {
+    let undoId = removedAs;
+    const designIds = frames.map((frame) => frame.designId);
+    const remove = () => {
+      const removal = this.client.removeFrames(appSessionId, canvasId, {
+        mutationId: crypto.randomUUID(),
+        designIds,
+      });
+      return landed(
+        removal.then((removedAs) => {
+          undoId = removedAs;
+        }),
+      );
+    };
+    const restore = async () => {
+      if (undoId === null) return false;
+      try {
+        await this.client.undoRemoval(appSessionId, canvasId, {
+          mutationId: crypto.randomUUID(),
+          undoId,
+        });
+        return true;
+      } catch (error) {
+        if (!(error instanceof CanvasRequestError)) throw error;
+        // Frames are never moved aside to make room; the user decides what goes
+        // there, and the step stays so the next Undo can try again.
+        if (error.code === 'layout_conflict')
+          throw new Error(`Something now sits where ${formerPlace(frames)}.`);
+        // The frames are back already, or the canvas no longer keeps this removal.
+        if (
+          error.code === 'revision_conflict' ||
+          error.code === 'invalid_input' ||
+          error.code === 'not_found'
+        )
+          return false;
+        throw error;
+      }
+    };
+    return { remove, restore };
   }
 
   private offerUndo(canvasId: string, frames: CanvasFrame[]): void {

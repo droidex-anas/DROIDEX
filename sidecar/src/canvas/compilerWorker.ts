@@ -9,6 +9,7 @@ import postcss from 'postcss';
 import { CanvasCommandError } from './canvasError.js';
 import { boundDiagnostics } from './canvasDiagnostics.js';
 import { catalogBuildFailures, catalogDesign, standaloneFailures } from './catalogCheck.js';
+import { entryModule } from './catalogEntryModule.js';
 import {
   DamagedRuntimeError,
   ownedCanvasRuntimeDir,
@@ -25,6 +26,7 @@ import {
   type CompilerResponse,
   type CompilerUnavailableReason,
   type EditedSource,
+  type KitEntryCompileInput,
   type KitPreviewCompileInput,
 } from './compiler.js';
 import { EARLY_FAILURE_SCRIPT, ROOT_ELEMENT_ID, bundleDesign } from './designBundle.js';
@@ -34,19 +36,14 @@ import { checkDesignSystemAdherence } from './designSystemAdherence.js';
 import { buildDesignStylesheet } from './designStylesheet.js';
 import { kitModes } from './designSystemDocument.js';
 import { readDesignSystem, type DesignSystem } from './designSystems.js';
+import { withPicks } from './entryPicks.js';
 import { resolveKitAssetReferences } from './kitAssets.js';
-import {
-  KIT_CATALOG_FILE,
-  readKitCatalog,
-  type CatalogEntry,
-  type KitFailure,
-} from './kitCatalog.js';
+import { KIT_CATALOG_FILE, readKitCatalog, type KitFailure } from './kitCatalog.js';
 import { kitTailwindTheme } from './kitTailwindTheme.js';
 import { moduleDeclarations } from './moduleDeclarations.js';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';
-import { insertLayer } from './sourceInsert.js';
 import { editLayer } from './sourceStructureEdits.js';
 import { resolveStyleChange } from './styleEdits.js';
 import { unboundNameDiagnostics } from './unboundNames.js';
@@ -54,6 +51,14 @@ import type { CanvasDiagnostic, DesignSystemRef, ElementEdit } from './protocol.
 import type { SourceFiles } from './schema.js';
 
 const COMPILER_RECOVERY = 'The design compiler could not finish. Retry the build.';
+const ENTRY_STAGE = JSON.stringify({
+  display: 'flex',
+  minHeight: '100vh',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 32,
+  boxSizing: 'border-box',
+});
 
 /**
  * Compiles one revision into a document the preview host can load in an
@@ -68,6 +73,8 @@ export async function compileDesign(
 ): Promise<CompiledDesign> {
   if (input.kind === 'kitPreview')
     return compileUnderKit({ [DESIGN_ENTRY]: input.example }, input.kit, input.mode, signal);
+  if (input.kind === 'kitEntry')
+    return compileUnderKit({ [DESIGN_ENTRY]: stagedEntry(input) }, input.kit, input.mode, signal);
   const entryDiagnostic = designEntryDiagnostic(Object.keys(input.files));
   if (entryDiagnostic) throw new CompileFailedError([entryDiagnostic]);
   const system = await readDesignSystem(input.designSystem);
@@ -158,6 +165,19 @@ async function compileUnderKit(
     elements: [],
     outline: { nodes: [], truncated: false },
   };
+}
+
+/** The entry's module, centred on an otherwise empty page, with the picks written on it. */
+function stagedEntry({ entry, picks }: Pick<KitEntryCompileInput, 'entry' | 'picks'>): string {
+  let jsx: string;
+  try {
+    jsx = withPicks(entry, picks);
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    throw new CompileFailedError([{ code: 'invalid_input', message: error.message }]);
+  }
+  // Inline styles, because a kit's Tailwind theme may not define the usual utilities.
+  return entryModule(entry, `<main style={${ENTRY_STAGE}}>\n${jsx}\n</main>`);
 }
 
 /** Why the kit's catalog is unusable, else each entry on its own, then all of them built under the kit. */
@@ -261,6 +281,10 @@ process.on('message', (request: CompilerRequest) => {
     send({ requestId: request.requestId, status: 'modules', modules } satisfies CompilerResponse);
     return;
   }
+  if (request.type === 'writePicks') {
+    send(pickedEntry(request));
+    return;
+  }
   if (runtimeFault !== null) {
     send({
       requestId: request.requestId,
@@ -285,6 +309,19 @@ process.on('message', (request: CompilerRequest) => {
   }
 });
 
+function pickedEntry({
+  requestId,
+  entry,
+  picks,
+}: Extract<CompilerRequest, { type: 'writePicks' }>): CompilerResponse {
+  try {
+    return { requestId, status: 'picked', jsx: withPicks(entry, picks) };
+  } catch (error) {
+    if (!(error instanceof SourceElementError)) throw error;
+    return { requestId, status: 'edit_failed', code: 'invalid_edit', message: error.message };
+  }
+}
+
 async function runEdit(
   request: Extract<CompilerRequest, { type: 'edit' }>,
   signal: AbortSignal,
@@ -294,12 +331,7 @@ async function runEdit(
     stopIfCancelled(signal);
     let edited: EditedSource;
     if ('layer' in edit) {
-      const { change } = edit;
-      if (change.kind === 'insert') {
-        const entry = await catalogEntry(change.entry, designSystem);
-        stopIfCancelled(signal);
-        edited = insertLayer(files, edit.layer.nodeId, entry, change.props);
-      } else edited = editLayer(files, edit.layer.nodeId, change);
+      edited = editLayer(files, edit.layer.nodeId, edit.change);
     } else {
       const change = await sourceChange(edit.change, designSystem);
       stopIfCancelled(signal);
@@ -338,18 +370,6 @@ async function runEdit(
       } satisfies CompilerResponse);
     }
   }
-}
-
-/** The entry an insert names, from the pinned kit version's catalog, which was checked when it was saved. */
-async function catalogEntry(name: string, designSystem: DesignSystemRef): Promise<CatalogEntry> {
-  const read = readKitCatalog((await readDesignSystem(designSystem)).files);
-  const entry = 'catalog' in read ? read.catalog.find((each) => each.name === name) : undefined;
-  if (!entry)
-    throw new SourceElementError(
-      'invalid_edit',
-      `This kit has no component called ${name} any more.`,
-    );
-  return entry;
 }
 
 /** Resolves each style of a style edit against the pinned kit. */

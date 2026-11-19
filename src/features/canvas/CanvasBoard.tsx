@@ -16,13 +16,14 @@ import type { AnnotateCanvasInput } from './annotationProtocol';
 import { DrawSurface } from './AnnotationLayer';
 import { AnnotationTools } from './AnnotationTools';
 import { boardCommands } from './boardCommands';
-import { BoardControls, type LayersToggle } from './BoardControls';
+import { BoardControls, type SidePanelToggle } from './BoardControls';
 import { BoardOverlays } from './BoardOverlays';
 import { BoardWorld } from './BoardWorld';
 import { useBoardAnnouncer } from './boardAnnouncer';
 import type { HistoryStep } from './boardHistory';
 import { onBoardKeyDown } from './boardKeyDown';
 import {
+  frameNearestView,
   framesInBand,
   visibleDesignIds,
   type PlacedFrame,
@@ -58,8 +59,12 @@ import type { ArrangeFramesInput, CanvasFrame, CanvasSnapshot } from './protocol
 export interface CanvasBoardHandle {
   /** Centers the acknowledged frame and gives keyboard focus to the board. */
   focusFrame: (frameId: string) => void;
+  /** Selects the acknowledged frame and pans it into view; the keyboard stays where it is. */
+  showFrame: (frameId: string) => void;
   /** Hands keyboard focus back to a frame's label, as a closing source panel does. */
   focusLabel: (frameId: string) => void;
+  /** The frame nearest the view's centre, on screen or not, or undefined on an empty board. */
+  frameNearView: () => string | undefined;
 }
 
 export interface CanvasBoardProps {
@@ -119,8 +124,8 @@ export interface CanvasBoardProps {
    * laid out beside the board needs none, since the board measures without it.
    */
   rightInset?: number;
-  /** The Layers tool on the rail; absent where the board has no layers panel beside it. */
-  layers?: LayersToggle;
+  /** The rail's Layers and Components tools; absent where the board has no panel beside it. */
+  side?: SidePanelToggle;
 }
 
 export function CanvasBoard({
@@ -146,7 +151,7 @@ export function CanvasBoard({
   restoredViewport,
   onLeave,
   rightInset = 0,
-  layers,
+  side,
 }: CanvasBoardProps) {
   const motion = useCanvasMotion();
   const board = useRef<HTMLDivElement>(null);
@@ -222,16 +227,17 @@ export function CanvasBoard({
   }));
   latest.current = drawn;
 
-  const { focusedId, order, tabStopId, focusFrame, focusLabel, onFocusLabel } = useFrameFocus({
-    board,
-    frames,
-    drawn,
-    selectedFrameIds: interaction.selectedFrameIds,
-    dispatch,
-    fitTo,
-    reveal: view.reveal,
-    rectFor: gestures.rectFor,
-  });
+  const { focusedId, order, tabStopId, focusFrame, showFrame, focusLabel, onFocusLabel } =
+    useFrameFocus({
+      board,
+      frames,
+      drawn,
+      selectedFrameIds: interaction.selectedFrameIds,
+      dispatch,
+      fitTo,
+      reveal: view.reveal,
+      rectFor: gestures.rectFor,
+    });
 
   const removeSelection = useFrameRemoval({
     board,
@@ -251,7 +257,17 @@ export function CanvasBoard({
     [onLeave, stage],
   );
 
-  useImperativeHandle(ref, () => ({ focusFrame, focusLabel }), [focusFrame, focusLabel]);
+  const viewSize = view.size;
+  useImperativeHandle(
+    ref,
+    () => ({
+      focusFrame,
+      showFrame,
+      focusLabel,
+      frameNearView: () => frameNearestView(latest.current, stage.viewport, viewSize),
+    }),
+    [focusFrame, showFrame, focusLabel, stage, viewSize],
+  );
 
   const selected = pickedOnBoard(drawn, editor.selection);
   const measured = useHoverMeasurements(board, drawn, interaction, selected, editor.hover);
@@ -423,7 +439,7 @@ export function CanvasBoard({
           onAlign={commands.align}
           onDistribute={commands.distribute}
           annotationTools={<AnnotationTools {...annotation.rail} />}
-          layers={layers}
+          side={side}
         />
 
         <p role="status" className="sr-only">

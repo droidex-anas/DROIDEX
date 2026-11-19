@@ -1,10 +1,12 @@
 import { useState, type KeyboardEvent } from 'react';
-import { isTagKey } from '../boardKeys';
+import { isAddKey, isTagKey } from '../boardKeys';
+
+type PaletteKey = 'next' | 'previous' | 'add' | 'open' | 'tag' | 'escape';
 
 /**
  * The match the keyboard is on, for a search field that keeps the keyboard:
- * the arrows walk the matches, Enter adds the one it is on, ⌥↓ opens its
- * variant menu, ⌘L tags it in the chat where the rows can be tagged, and
+ * the arrows walk the matches, Enter opens the one it is on, ⌘Enter adds it
+ * to the board, ⌘L tags it in the chat where the rows can be tagged, and
  * Escape clears the search, then hands the keyboard back to the board.
  */
 export function usePaletteKeys({
@@ -12,8 +14,8 @@ export function usePaletteKeys({
   onQuery,
   count,
   optionId,
+  onOpen,
   onAdd,
-  onMenu,
   onTag,
   onLeave,
 }: {
@@ -22,8 +24,8 @@ export function usePaletteKeys({
   /** How many matches the query finds. */
   count: number;
   optionId: (index: number) => string;
+  onOpen: (index: number) => void;
   onAdd: (index: number) => void;
-  onMenu: (index: number) => void;
   /** Null where the rows cannot be tagged, so ⌘L stays the app's. */
   onTag: ((index: number) => void) | null;
   onLeave: () => void;
@@ -40,34 +42,34 @@ export function usePaletteKeys({
     document.getElementById(optionId(index))?.scrollIntoView({ block: 'nearest' });
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.nativeEvent.isComposing) return;
-    const step = { ArrowDown: 1, ArrowUp: -1 }[event.key];
-    if (isVariantsKey(event)) {
-      event.preventDefault();
-      if (activeIndex >= 0) onMenu(activeIndex);
-    } else if (step !== undefined && count > 0) {
-      event.preventDefault();
-      moveTo((activeIndex + step + count) % count);
-    } else if (event.key === 'Enter' && activeIndex >= 0) {
-      event.preventDefault();
-      if (!event.repeat) onAdd(activeIndex);
-    } else if (isTagKey(event) && onTag !== null) {
-      // The search owns the key here, so the board does not tag its frames as well.
-      event.preventDefault();
-      event.stopPropagation();
-      if (activeIndex >= 0 && !event.repeat) onTag(activeIndex);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      event.stopPropagation();
+    const key = paletteKey(event);
+    if (key === null || event.nativeEvent.isComposing || (key === 'tag' && onTag === null)) return;
+    event.preventDefault();
+    // The search owns these keys, so the board does not tag its frames or take Escape as well.
+    if (key === 'tag' || key === 'escape') event.stopPropagation();
+    if (key === 'escape') {
       if (query === '') onLeave();
       else search('');
+      return;
     }
+    if (activeIndex < 0) return;
+    if (key === 'next' || key === 'previous') {
+      moveTo((activeIndex + (key === 'next' ? 1 : -1) + count) % count);
+      return;
+    }
+    // A held key auto-repeats and would add, open or toggle again.
+    if (!event.repeat) actions[key]?.(activeIndex);
   };
+  const actions = { add: onAdd, open: onOpen, tag: onTag };
   return { activeIndex, setActive, search, onKeyDown };
 }
 
-function isVariantsKey(event: KeyboardEvent): boolean {
-  return (
-    event.key === 'ArrowDown' && event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
-  );
+function paletteKey(event: KeyboardEvent): PaletteKey | null {
+  if (event.key === 'ArrowDown') return 'next';
+  if (event.key === 'ArrowUp') return 'previous';
+  if (isAddKey(event)) return 'add';
+  if (event.key === 'Enter') return 'open';
+  if (isTagKey(event)) return 'tag';
+  if (event.key === 'Escape') return 'escape';
+  return null;
 }

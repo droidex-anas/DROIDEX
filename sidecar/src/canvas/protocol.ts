@@ -36,6 +36,7 @@ import type { DesignSystemDocumentView } from './designSystemCommands.js';
 import type { EditToken } from './styleEdits.js';
 import type { KitFontFace } from './kitFonts.js';
 import type { KitPreview } from './kitPreviews.js';
+import type { PropPick } from './kitCatalog.js';
 import type {
   DesignSystemCover,
   DesignSystemSource,
@@ -392,12 +393,15 @@ export interface DesignSystemProposalRef {
 
 /**
  * What a kit preview shows: a preview by its id or `cover`, from a saved
- * version or a waiting proposal, or a catalog entry by its name, which a saved
- * version alone answers for.
+ * version or a waiting proposal, or a catalog entry by its name with the
+ * options picked for its props, which a saved version alone answers for.
  */
 type KitPreviewTarget =
   | { kind: 'preview'; ref: DesignSystemRef | DesignSystemProposalRef; item: string }
-  | { kind: 'catalog'; ref: DesignSystemRef; entry: string };
+  | { kind: 'catalog'; ref: DesignSystemRef; entry: string; props: PropPick[] };
+
+/** What a kit capture shows: a preview by its id or `cover`, or a catalog entry at its defaults. */
+export type KitCaptureItem = string | { entry: string };
 
 // ── Bridge commands and events ───────────────────────────────────────
 // The pane's half of the Canvas contract. `appSessionId` is the only session
@@ -608,17 +612,22 @@ export type CanvasCommand =
       source: DesignSystemSource;
     }
   // One preview of a kit in one mode, as its target names it. A capture is a
-  // base64 PNG the document took from a saved version's live preview; a later
-  // one replaces it, and its `item` names a preview as a preview target does.
+  // base64 PNG taken from a saved version's live preview or catalog entry; a
+  // later one replaces it.
   | { type: 'canvas.readKitPreview'; requestId: string; target: KitPreviewTarget }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;
       ref: DesignSystemRef;
-      item: string;
+      item: KitCaptureItem;
       png: string;
     }
-  | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
+  | {
+      type: 'canvas.readKitCapture';
+      requestId: string;
+      ref: DesignSystemRef;
+      item: KitCaptureItem;
+    }
   // The fonts a kit version's stylesheets embed, which its document sets the kit's words in.
   | { type: 'canvas.readKitFonts'; requestId: string; ref: DesignSystemVersionRef }
   // The local library (spec §7). A new item is named by its mutationId, so a

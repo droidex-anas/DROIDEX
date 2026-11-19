@@ -42,19 +42,19 @@ export interface LayerMove {
 type JsxParent = ts.JsxElement | ts.JsxFragment;
 
 /** A layer as written: an outline row and the node it is written at. */
-export interface Layer {
+interface Layer {
   row: OutlineNode;
   at: ts.Node;
 }
 
 /** The JSX child that carries a layer in its parent, and so is what moves. */
-export interface Anchor {
+interface Anchor {
   node: ts.JsxChild;
   parent: JsxParent;
 }
 
 /** Where the moved text goes: `start`..`end` is replaced with `before`, the text and `after`. */
-export interface Paste {
+interface Paste {
   start: number;
   end: number;
   before: string;
@@ -91,7 +91,6 @@ const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = 
     root: "A frame's top layer can't be duplicated. Duplicate the frame instead.",
     action: 'duplicate',
   },
-  insert: { root: "This frame's top layer can't hold other layers.", action: 'add to' },
   hide: { root: "A frame's top layer can't be hidden. Hide the frame instead.", action: 'hide' },
 };
 
@@ -100,11 +99,7 @@ const REFUSALS: Record<LayerChange['kind'], { root: string; action: string }> = 
  * edited source, the moved, copied or hidden layer, or the row beside a removed
  * layer that takes the keyboard in its place.
  */
-export function editLayer(
-  files: SourceFiles,
-  nodeId: string,
-  change: Exclude<LayerChange, { kind: 'insert' }>,
-): EditedLayers {
+export function editLayer(files: SourceFiles, nodeId: string, change: LayerChange): EditedLayers {
   if (change.kind === 'move')
     return moveLayer(files, { nodeId, parentId: change.parentId, beforeId: change.beforeId });
   if (change.kind === 'hide') return hideLayer(files, nodeId, change.hidden);
@@ -221,7 +216,7 @@ function hideLayer(files: SourceFiles, nodeId: string, hidden: boolean): EditedL
 }
 
 /** The outline's rows by id, refusing an id the source no longer writes. */
-export function layersIn(files: SourceFiles) {
+function layersIn(files: SourceFiles) {
   const { uses, outline, written, checker } = sourceLayers(files);
   const rows = new Map(outline.nodes.map((row) => [row.nodeId, row]));
   const layer = (nodeId: string): Layer => {
@@ -234,11 +229,7 @@ export function layersIn(files: SourceFiles) {
 }
 
 /** The subject's anchor, refused when it is not written as one JSX child that renders once. */
-export function writtenOnceAnchor(
-  subject: Layer,
-  uses: ComponentUses,
-  edit: LayerChange['kind'],
-): Anchor {
+function writtenOnceAnchor(subject: Layer, uses: ComponentUses, edit: LayerChange['kind']): Anchor {
   const anchor = anchorOf(subject.at);
   const { root, action } = REFUSALS[edit];
   if (!anchor && subject.row.parentId === null) throw invalid(root);
@@ -268,7 +259,7 @@ function holder(target: Layer, uses: ComponentUses): ElementNode {
 }
 
 /** The layer as an element other layers can go into, or why they can't. */
-export function holdingElement(
+function holdingElement(
   target: Layer,
   uses: ComponentUses,
 ): { element: ElementNode } | { refusal: string } {
@@ -312,7 +303,7 @@ function siblingAnchor(sibling: Layer, parent: ElementNode, moving: Anchor): Anc
  * The direct JSX child that is or holds a written node: the node itself, or
  * the `{…}` it stands in, as `{open && <aside />}` or `{items.map(…)}`.
  */
-export function anchorOf(at: ts.Node): Anchor | null {
+function anchorOf(at: ts.Node): Anchor | null {
   if (isJsxParent(at.parent)) return { node: at as ts.JsxChild, parent: at.parent };
   let holding = at.parent;
   while (ts.isParenthesizedExpression(holding)) holding = holding.parent;
@@ -325,7 +316,7 @@ function isJsxParent(node: ts.Node): node is JsxParent {
   return ts.isJsxElement(node) || ts.isJsxFragment(node);
 }
 
-export function tagOf(node: ElementNode): string {
+function tagOf(node: ElementNode): string {
   return (ts.isJsxElement(node) ? node.openingElement.tagName : node.tagName).getText();
 }
 
@@ -341,7 +332,7 @@ function enclosingBlock(node: ts.Node): ts.Node | undefined {
   );
 }
 
-export function hasText(parent: JsxParent | ElementNode): boolean {
+function hasText(parent: JsxParent | ElementNode): boolean {
   return heldText(parent).length > 0;
 }
 
@@ -368,7 +359,7 @@ function pasteBefore(text: string, sibling: ts.Node, eol: string): Paste {
  * when the closing tag has a line of its own, else one indent deeper than the
  * parent, with the closing tag moved to its own line. A self-closing parent opens.
  */
-export function pasteAtEnd(source: ts.SourceFile, parent: ElementNode, eol: string): Paste {
+function pasteAtEnd(source: ts.SourceFile, parent: ElementNode, eol: string): Paste {
   const text = source.text;
   const outer = lineIndent(text, parent.getStart());
   const inner = outer + indentUnit(source, outer);
@@ -468,7 +459,7 @@ function writesSiblingKey(node: ts.Node): boolean {
 }
 
 /** The row of the edited source written at `position`, or whose anchor starts there. */
-export function rowStartingAt(files: SourceFiles, file: string, position: number): string | null {
+function rowStartingAt(files: SourceFiles, file: string, position: number): string | null {
   const { outline, written } = sourceLayers(files);
   for (const { nodeId } of outline.nodes) {
     const at = written.get(nodeId);
@@ -485,7 +476,7 @@ function staleReference(): SourceElementError {
   );
 }
 
-export function invalid(message: string): SourceElementError {
+function invalid(message: string): SourceElementError {
   return new SourceElementError('invalid_edit', message);
 }
 

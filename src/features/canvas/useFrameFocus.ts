@@ -1,6 +1,7 @@
 // Keyboard focus over the frames: their one tab stop, handing focus to a
 // frame's label, and the board's public focusFrame, which centres a frame and
-// gives the board focus once that frame is on it.
+// gives the board focus once that frame is on it, and showFrame, which selects
+// and reveals it while the keyboard stays where it is.
 
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { readingOrder } from './boardKeys';
@@ -52,18 +53,26 @@ export function useFrameFocus({
 
   // A focus asked for before its frame arrived waits for it rather than being
   // dropped: Open on an artifact card reaches the pane before the snapshot does.
-  const [focusRequest, setFocusRequest] = useState<string | null>(null);
+  const [request, setRequest] = useState<{ designId: string; kind: 'focus' | 'show' } | null>(null);
   useEffect(() => {
-    if (focusRequest === null) return;
-    const target = frames.find((frame) => frame.designId === focusRequest);
+    if (request === null) return;
+    const target = frames.find((frame) => frame.designId === request.designId);
     if (!target) return;
-    setFocusRequest(null);
-    board.current?.focus({ preventScroll: true });
-    // The acknowledged rect, not an optimistic hold: focus shows where the
+    setRequest(null);
+    // The acknowledged rect, not an optimistic hold: it shows where the
     // canvas says the frame is.
-    fitTo([target.rect]);
-    dispatch({ type: 'pick', designId: focusRequest, additive: false });
-  }, [board, dispatch, fitTo, focusRequest, frames]);
+    if (request.kind === 'focus') {
+      board.current?.focus({ preventScroll: true });
+      fitTo([target.rect]);
+    } else reveal(target.rect);
+    dispatch({ type: 'pick', designId: request.designId, additive: false });
+  }, [board, dispatch, fitTo, frames, request, reveal]);
+  const focusFrame = useCallback((designId: string) => {
+    setRequest({ designId, kind: 'focus' });
+  }, []);
+  const showFrame = useCallback((designId: string) => {
+    setRequest({ designId, kind: 'show' });
+  }, []);
 
-  return { focusedId, order, tabStopId, focusFrame: setFocusRequest, focusLabel, onFocusLabel };
+  return { focusedId, order, tabStopId, focusFrame, showFrame, focusLabel, onFocusLabel };
 }

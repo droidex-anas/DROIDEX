@@ -1,11 +1,13 @@
 // The panel at the board's left: Layers or Components under their tabs, one
-// at a time. ⌥1 and ⌥2 go to their tab from anywhere in the panel, and close
-// it from the tab they name.
+// at a time. The tabs are segments, so the open one reads as chosen in either
+// theme. ⌥1 and ⌥2 go to their tab from anywhere in the panel, and close it
+// from the tab they name, as the rail's tools of the same names do.
 
 import { useId, type KeyboardEvent, type ReactNode } from 'react';
 import { X } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Tooltip } from '../../../components/ui/Tooltip';
+import { segmentClass } from '../segmentClass';
 import {
   COMPONENTS_KEY_LABEL,
   LAYERS_KEY_LABEL,
@@ -72,7 +74,7 @@ export function SidePanel({
         <div
           role="tablist"
           aria-label="Side panel"
-          className="flex items-center gap-0.5"
+          className="flex h-control-md min-w-0 flex-1 items-stretch gap-0.5 rounded-md bg-field p-0.5"
           onKeyDown={onTabsKeyDown}
         >
           {TAB_ORDER.map((each) => (
@@ -80,32 +82,34 @@ export function SidePanel({
               key={each}
               label={`${TABS[each].label}  ${TABS[each].keyLabel}`}
               placement="bottom"
+              className="flex min-w-0 flex-1"
             >
-              <Button
+              <button
+                type="button"
                 id={tabId(each)}
-                variant="ghost"
-                size="sm"
                 role="tab"
                 aria-selected={tab === each}
                 aria-controls={`${id}-panel`}
                 tabIndex={tab === each ? 0 : -1}
+                className={segmentClass(tab === each, 'px-2.5')}
                 onClick={() => {
                   onTab(each);
                 }}
               >
-                {TABS[each].label}
-              </Button>
+                <span className="truncate text-label">{TABS[each].label}</span>
+              </button>
             </Tooltip>
           ))}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={X}
-          aria-label={`Close ${shown.label.toLowerCase()}`}
-          title={`Close (${shown.keyLabel})`}
-          onClick={onClose}
-        />
+        <Tooltip label={`Close  ${shown.keyLabel}`} placement="bottom" className="flex shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={X}
+            aria-label={`Close ${shown.label.toLowerCase()}`}
+            onClick={onClose}
+          />
+        </Tooltip>
       </div>
       <div
         id={`${id}-panel`}

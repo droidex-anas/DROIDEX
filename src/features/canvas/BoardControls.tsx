@@ -1,20 +1,22 @@
 // The board's own tools, floating on it the way a design tool's do: Select,
-// Interact, Edit element, Design, the annotation tools, Fit and Layers in a raised rail at the top left, the
+// Interact, Edit element, Design, the annotation tools, Fit, and Layers and
+// Components for the panel beside the board, in a raised rail at the top left, the
 // zoom bar at the bottom left, and align and distribute centred at the bottom
 // while a multiple selection gives them work (spec §4). Every control works on
 // the board behind it, and each names its keyboard shortcut.
 
 import type { ReactNode } from 'react';
 import {
+  Component,
+  Hierarchy,
   Maximize,
   MousePointer,
   MousePointerSquareDashed,
-  PanelLeft,
   Play,
   SlidersHorizontal,
 } from '@droidex/icons';
 import { ALT_MODIFIER_LABEL } from '../../lib/shortcuts';
-import { LAYERS_KEY_LABEL } from './boardKeys';
+import { COMPONENTS_KEY_LABEL, LAYERS_KEY_LABEL, type SidePanelTab } from './boardKeys';
 import type { BoardStage } from './boardStage';
 import { Tool } from './BoardTool';
 import type { AlignEdge, DistributeAxis } from './canvasGeometry';
@@ -92,10 +94,10 @@ const DISTRIBUTE_ACTIONS: { axis: DistributeAxis; label: string; glyph: ReactNod
   },
 ];
 
-/** The layers panel beside the board: whether it is open, and the rail's way to flip it. */
-export interface LayersToggle {
-  open: boolean;
-  onToggle: () => void;
+/** The panel beside the board: the tab it shows, null while closed, and the rail's way to show a tab or close it. */
+export interface SidePanelToggle {
+  shown: SidePanelTab | null;
+  onToggle: (tab: SidePanelTab) => void;
 }
 
 export interface BoardControlsProps {
@@ -121,8 +123,8 @@ export interface BoardControlsProps {
   onDistribute: (axis: DistributeAxis) => void;
   /** The rail's annotation group, which the board owns. */
   annotationTools: ReactNode;
-  /** Absent where the board has no layers panel beside it. */
-  layers?: LayersToggle;
+  /** Absent where the board has no panel beside it. */
+  side?: SidePanelToggle;
 }
 
 export function BoardControls({
@@ -140,7 +142,7 @@ export function BoardControls({
   onAlign,
   onDistribute,
   annotationTools,
-  layers,
+  side,
 }: BoardControlsProps) {
   return (
     <div
@@ -210,16 +212,28 @@ export function BoardControls({
         >
           <Maximize className="h-4 w-4" aria-hidden />
         </Tool>
-        {layers && (
+        {side && (
           <>
             <span aria-hidden className="canvas-rail-divider" />
             <Tool
               label="Layers"
               tip={`Layers  ${LAYERS_KEY_LABEL}`}
-              expanded={layers.open}
-              onClick={layers.onToggle}
+              expanded={side.shown === 'layers'}
+              onClick={() => {
+                side.onToggle('layers');
+              }}
             >
-              <PanelLeft className="h-4 w-4" aria-hidden />
+              <Hierarchy className="h-4 w-4" aria-hidden />
+            </Tool>
+            <Tool
+              label="Components"
+              tip={`Components  ${COMPONENTS_KEY_LABEL}`}
+              expanded={side.shown === 'components'}
+              onClick={() => {
+                side.onToggle('components');
+              }}
+            >
+              <Component className="h-4 w-4" aria-hidden />
             </Tool>
           </>
         )}

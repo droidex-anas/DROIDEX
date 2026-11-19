@@ -31,12 +31,15 @@ export interface DesignSystemProposalRef {
 
 /**
  * What a kit preview shows: a preview by its id or `cover`, from a saved
- * version or a waiting proposal, or a catalog entry by its name, which a saved
- * version alone answers for.
+ * version or a waiting proposal, or a catalog entry by its name with the
+ * options picked for its props, which a saved version alone answers for.
  */
 export type KitPreviewTarget =
   | { kind: 'preview'; ref: DesignSystemRef | DesignSystemProposalRef; item: string }
-  | { kind: 'catalog'; ref: DesignSystemRef; entry: string };
+  | { kind: 'catalog'; ref: DesignSystemRef; entry: string; props: PropPick[] };
+
+/** What a kit capture shows: a preview by its id or `cover`, or a catalog entry at its defaults. */
+export type KitCaptureItem = string | { entry: string };
 
 /** A row of the design-system list: Auto, the presets, then each user kit's latest version. */
 export interface DesignSystemSummary {
@@ -144,13 +147,13 @@ export interface LibraryItem {
 /** One kit token a direct style edit may name, with its value in each mode. */
 export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
 
-/** One insertable entry of a kit's catalog, as the kit document lists it. */
+/** One entry of a kit's catalog, as the kit document lists it. */
 export interface CatalogListing {
   name: string;
   /** The kit file it shows, for grouping and search. */
   module: string | null;
   note: string | null;
-  /** The props a palette lets the user pick before it inserts the entry. */
+  /** The props the Components tab lets the user pick before it adds the entry. */
   props: CatalogProp[];
 }
 
@@ -159,6 +162,12 @@ export interface CatalogProp {
   name: string;
   options: string[];
   default: string;
+}
+
+/** One of a catalog entry's props, and the option picked for it. */
+export interface PropPick {
+  name: string;
+  value: string;
 }
 
 /** A kit version as its document shows it: everything but its source. */
@@ -241,7 +250,9 @@ export interface RevisionRef {
 export type CanvasSeed =
   | { kind: 'revision'; canvasId: string; revision: RevisionRef }
   | { kind: 'library'; itemId: string }
-  | { kind: 'svg'; assetId: string };
+  | { kind: 'svg'; assetId: string }
+  /** The frame's kit catalog entry alone on its page, with the picked props written on it. */
+  | { kind: 'component'; entry: string; props: PropPick[] };
 
 // A selected element inside one rendered revision. `instancePath` distinguishes
 // repeated DOM nodes; it is a selection hint, not a second source model.
@@ -815,17 +826,22 @@ export type CanvasCommand =
       source: DesignSystemSource;
     }
   // One preview of a kit in one mode, as its target names it. A capture is a
-  // base64 PNG the document took from a saved version's live preview; a later
-  // one replaces it, and its `item` names a preview as a preview target does.
+  // base64 PNG taken from a saved version's live preview or catalog entry; a
+  // later one replaces it.
   | { type: 'canvas.readKitPreview'; requestId: string; target: KitPreviewTarget }
   | {
       type: 'canvas.saveKitCapture';
       requestId: string;
       ref: DesignSystemRef;
-      item: string;
+      item: KitCaptureItem;
       png: string;
     }
-  | { type: 'canvas.readKitCapture'; requestId: string; ref: DesignSystemRef; item: string }
+  | {
+      type: 'canvas.readKitCapture';
+      requestId: string;
+      ref: DesignSystemRef;
+      item: KitCaptureItem;
+    }
   // The fonts a kit version's stylesheets embed, which its document sets the kit's words in.
   | { type: 'canvas.readKitFonts'; requestId: string; ref: DesignSystemVersionRef }
   // The local library (spec §7). A new item is named by its mutationId, so a

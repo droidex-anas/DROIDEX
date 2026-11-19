@@ -3,7 +3,6 @@
 // catalog entry can also be added to. canvasElementEdit applies it.
 
 import { z } from 'zod';
-import { catalogNameSchema, propPicksSchema } from './kitCatalog.js';
 import { isPathData } from './pathData.js';
 import {
   CANVAS_LIMITS,
@@ -72,15 +71,6 @@ export const editElementInputSchema = z
               .strict(),
             z.object({ kind: z.literal('remove') }).strict(),
             z.object({ kind: z.literal('duplicate') }).strict(),
-            // Names an entry of the frame's pinned kit catalog, never JSX, so
-            // only what passed the kit check is written, with an option it lists for each picked prop.
-            z
-              .object({
-                kind: z.literal('insert'),
-                entry: catalogNameSchema,
-                props: propPicksSchema,
-              })
-              .strict(),
             z.object({ kind: z.literal('hide'), hidden: z.boolean() }).strict(),
           ]),
         })

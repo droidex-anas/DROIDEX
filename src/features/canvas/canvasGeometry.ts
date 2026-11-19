@@ -404,10 +404,25 @@ export function visibleDesignIds(
   viewportSize: Point,
 ): string[] {
   const box = worldBounds(viewport, { x: 0, y: 0 }, viewportSize);
+  return nearestFirst(
+    frames.filter(({ rect }) => overlaps(rect, box)),
+    box,
+  );
+}
+
+/** The frame nearest the board's centre, whether or not any of it is in view; undefined on an empty board. */
+export function frameNearestView(
+  frames: readonly PlacedFrame[],
+  viewport: Viewport,
+  viewportSize: Point,
+): string | undefined {
+  return nearestFirst(frames, worldBounds(viewport, { x: 0, y: 0 }, viewportSize)).at(0);
+}
+
+function nearestFirst(frames: readonly PlacedFrame[], box: FrameRect): string[] {
   const centreX = box.x + box.width / 2;
   const centreY = box.y + box.height / 2;
   return frames
-    .filter(({ rect }) => overlaps(rect, box))
     .map(({ designId, rect }) => ({
       designId,
       distance:

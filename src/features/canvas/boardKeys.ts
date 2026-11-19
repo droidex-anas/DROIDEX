@@ -93,6 +93,14 @@ export function isTagKey(event: KeyboardEvent): boolean {
   return matchesChord(event, TAG_CHORD);
 }
 
+/** ⌘Enter adds the Components entry the keyboard is on to the board without opening it; Ctrl+Enter off the Mac. */
+const ADD_CHORD = 'Meta+Enter';
+export const ADD_KEY_LABEL = formatChord(ADD_CHORD);
+
+export function isAddKey(event: KeyboardEvent): boolean {
+  return matchesChord(event, ADD_CHORD);
+}
+
 /** The tabs of the panel beside the board. */
 export type SidePanelTab = 'layers' | 'components';
 

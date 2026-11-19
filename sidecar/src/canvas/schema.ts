@@ -164,6 +164,19 @@ export const canvasSeedSchema = z.discriminatedUnion('kind', [
   revisionSeedSchema,
   z.object({ kind: z.literal('library'), itemId: canvasIdentifierSchema }).strict(),
   z.object({ kind: z.literal('svg'), assetId: z.string().regex(/^[0-9a-f]{64}$/) }).strict(),
+  // The frame's kit catalog checks the entry and each pick when the seed is staged.
+  z
+    .object({
+      kind: z.literal('component'),
+      entry: z.string().trim().min(1).max(80),
+      props: z
+        .array(z.object({ name: z.string().max(80), value: z.string().max(40) }).strict())
+        .max(8)
+        .refine((picks) => !hasDuplicate(picks.map((pick) => pick.name)), {
+          message: 'A component seed picks each prop once',
+        }),
+    })
+    .strict(),
 ]);
 
 const coordinateSchema = z

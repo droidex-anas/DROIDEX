@@ -44,7 +44,7 @@ import { layerElements } from '../../../src/features/canvas/layers/layerElements
 import { LayersPanel } from '../../../src/features/canvas/layers/LayersPanel';
 import { SidePanel } from '../../../src/features/canvas/layers/SidePanel';
 import { ComponentsPanel } from '../../../src/features/canvas/palette/ComponentsPanel';
-import { useComponentInsert } from '../../../src/features/canvas/palette/useComponentInsert';
+import type { BoardAdd } from '../../../src/features/canvas/palette/useAddToBoard';
 import { PreviewRuns } from '../../../src/features/canvas/previewRuns';
 import { useElementEditor } from '../../../src/features/canvas/useElementEditor';
 import type { FrameActions } from '../../../src/features/canvas/FrameToolbar';
@@ -611,6 +611,8 @@ const readSource = (_designId: string, revisionId: string) => {
   return new Promise<typeof files>((resolve) => sourceReads.waiting.push(() => resolve(files)));
 };
 const takenOff = new Map<string, CanvasFrame>();
+// The harness reads no kit, so the Components tab lists nothing and adds nothing.
+const NO_ADD: BoardAdd = { refusal: null, adding: null, failure: null };
 
 function Harness() {
   const [snapshot, setSnapshot] = useState(initial);
@@ -658,14 +660,6 @@ function Harness() {
       toast.error(canvasMessage(refusal));
       return null;
     });
-  // The harness reads no kit, so the tab lists nothing; its target and adds are the board's own.
-  const palette = useComponentInsert({
-    frames: shownFrames,
-    selectedFrameIds: interaction.selectedFrameIds,
-    elements,
-    presence,
-    onEditLayer: editLayer,
-  });
   if (params.has('project')) projectExport.open = setExporting;
   const tagged = useFramePins('chat_1');
   const picks = useElementPins('chat_1');
@@ -978,8 +972,9 @@ function Harness() {
             {sideTab === 'components' ? (
               <ComponentsPanel
                 kit={undefined}
-                place={palette.place}
-                onAdd={palette.add}
+                chatId={null}
+                add={NO_ADD}
+                onAdd={() => undefined}
                 onLeave={() => {
                   focusBoard(
                     interaction.selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId,
@@ -1023,13 +1018,13 @@ function Harness() {
         )}
         <CanvasBoard
           ref={board}
-          layers={
+          side={
             params.has('layers')
               ? {
-                  open: layersOpen && sideTab === 'layers',
-                  onToggle: () => {
-                    setLayersOpen(!layersOpen || sideTab !== 'layers');
-                    setSideTab('layers');
+                  shown: layersOpen ? sideTab : null,
+                  onToggle: (tab) => {
+                    setLayersOpen(!layersOpen || sideTab !== tab);
+                    setSideTab(tab);
                   },
                 }
               : undefined

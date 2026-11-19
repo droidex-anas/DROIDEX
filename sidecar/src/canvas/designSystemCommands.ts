@@ -177,7 +177,7 @@ export async function answerDesignSystemCommand(
       const preview =
         target.kind === 'preview'
           ? await previews.read(target.ref, target.item)
-          : await previews.readCatalogEntry(target.ref, target.entry);
+          : await previews.readCatalogEntry(target.ref, target.entry, target.props);
       return { kind: 'kitPreview', preview };
     }
     case 'canvas.saveKitCapture':

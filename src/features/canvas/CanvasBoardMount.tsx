@@ -42,7 +42,7 @@ import { layerElements } from './layers/layerElements';
 import { LayersPanel } from './layers/LayersPanel';
 import { SidePanel } from './layers/SidePanel';
 import { ComponentsPanel } from './palette/ComponentsPanel';
-import { useComponentInsert } from './palette/useComponentInsert';
+import { useAddToBoard } from './palette/useAddToBoard';
 import { PreviewRuns } from './previewRuns';
 import type {
   ArrangeFramesInput,
@@ -66,7 +66,6 @@ const LAYER_EDIT_VERBS: Record<Exclude<LayerChange['kind'], 'hide'>, string> = {
   move: 'move',
   remove: 'delete',
   duplicate: 'duplicate',
-  insert: 'add to',
 };
 
 function layerEditVerb(change: LayerChange): string {
@@ -256,12 +255,15 @@ export function CanvasBoardMount({
   const { selectedFrameIds } = interaction;
   const layerEdits = frameActions.actions.canEdit ? editLayer : undefined;
   const elements = layerElements(runs, editor, interaction, onInteractionChange);
-  const palette = useComponentInsert({
-    frames: shownFrames,
-    selectedFrameIds,
-    elements,
-    presence,
-    onEditLayer: layerEdits,
+  const paletteKit = paletteKitOf(shownFrames, selectedFrameIds);
+  const palette = useAddToBoard({
+    appSessionId,
+    canvasId,
+    kit: paletteKit,
+    canEdit: frameActions.actions.canEdit,
+    runs,
+    besideOf: () => selectedFrameIds.at(0) ?? boardRef.current?.frameNearView(),
+    onAdded: (designId) => boardRef.current?.showFrame(designId),
   });
   const [sideTab, setSideTab] = useState<SidePanelTab>('layers');
   /** Opens the side panel on `tab`, or closes it when it already shows that tab. */
@@ -390,10 +392,12 @@ export function CanvasBoardMount({
             />
           ) : (
             <ComponentsPanel
-              kit={palette.kit}
+              kit={paletteKit}
               chatId={pinnable ? appSessionId : null}
-              place={palette.place}
-              onAdd={palette.add}
+              add={palette.state}
+              onAdd={(entry, picks) => {
+                void palette.add(entry, picks);
+              }}
               onLeave={() => {
                 focusBoard(selectedFrameIds.at(0) ?? editor.selection?.draft.element.designId);
               }}
@@ -411,12 +415,7 @@ export function CanvasBoardMount({
         ) : (
           <CanvasBoard
             ref={boardRef}
-            layers={{
-              open: layersOpen && sideTab === 'layers',
-              onToggle: () => {
-                showSide('layers');
-              },
-            }}
+            side={{ shown: layersOpen ? sideTab : null, onToggle: showSide }}
             snapshot={snapshot}
             restoredViewport={restoredViewport}
             onLeave={onLeaveBoard}
@@ -452,6 +451,12 @@ export function CanvasBoardMount({
       {frameActions.dialog}
     </div>
   );
+}
+
+/** The kit the Components tab lists and adds from: the selected frame's, else the board's first frame's. */
+function paletteKitOf(frames: readonly CanvasFrame[], selectedFrameIds: readonly string[]) {
+  const selected = frames.find((frame) => frame.designId === selectedFrameIds.at(0));
+  return (selected ?? frames.at(0))?.designSystem;
 }
 
 /** A design system document in the pane; `canvasId` is null in a chat without a canvas. */

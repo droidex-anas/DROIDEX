@@ -5,6 +5,7 @@
 
 import { buildDocument } from '../canvas/buildDocument.js';
 import type { DesignSystem } from '../canvas/designSystems.js';
+import { catalogFile, KIT_CATALOG_FILE, type CatalogEntry } from '../canvas/kitCatalog.js';
 import droidex from '../canvas/presets/droidex/system.json' with { type: 'json' };
 import inter from '../canvas/presets/fonts/inter.json' with { type: 'json' };
 import { PRIMITIVES_TSX } from '../canvas/presets/primitives.js';
@@ -126,4 +127,22 @@ export const SAMPLE_KIT: DesignSystem = {
     'fonts/Silkscreen-OFL.txt': droidex.files['fonts/Silkscreen-OFL.txt'],
   },
   examples: { ...PRIMITIVE_EXAMPLES, 'cover.tsx': COVER_TSX, 'PricingCard.tsx': PRICING_TSX },
+};
+
+/** A catalog entry with a prop to pick, whose second option no shipped kit writes. */
+const SAMPLE_BUTTON_ENTRY: CatalogEntry = {
+  name: 'Button',
+  module: 'index.tsx',
+  uses: ['Button'],
+  icons: [],
+  jsx: '<Button variant="primary">Save</Button>',
+  note: null,
+  props: [{ name: 'variant', options: ['primary', 'zesty'], default: 'primary' }],
+};
+
+/** The sample kit with a catalog of that one entry. */
+export const SAMPLE_CATALOG_KIT: DesignSystem = {
+  ...SAMPLE_KIT,
+  id: 'sample-catalog',
+  files: { ...SAMPLE_KIT.files, [KIT_CATALOG_FILE]: catalogFile([SAMPLE_BUTTON_ENTRY]) },
 };

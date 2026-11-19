@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
+import { SAMPLE_CATALOG_KIT } from '../testing/sampleKit.js';
 import {
   CompileFailedError,
   CompilerUnavailableError,
+  CompilerWorker,
   type CompileInput,
   type CompiledDesign,
 } from './compiler.js';
@@ -73,7 +75,7 @@ test("a kit's cover, previews and catalog entries compile into preview documents
     assert.equal(preview.status, 'ready', item);
     assert.ok(preview.status === 'ready' && preview.artifact.html.includes('<html'), item);
   }
-  const entry = await previews.readCatalogEntry(DARK, 'Icon button');
+  const entry = await previews.readCatalogEntry(DARK, 'Icon button', []);
   assert.ok(entry.status === 'ready' && entry.artifact.html.includes('<html'));
 });
 
@@ -192,28 +194,54 @@ test("a waiting proposal's previews build from its own examples, and a settled o
 });
 
 test('a catalog entry compiles alone under its kit, apart from a preview of the same name', async () => {
-  const { previews, compiled } = countingPreviews((input) =>
-    design(input.kind === 'kitPreview' ? input.example : ''),
-  );
-  const entry = await previews.readCatalogEntry(LIGHT, 'Icon button');
+  const { previews, compiled } = countingPreviews(() => design('<html></html>'));
+  const entry = await previews.readCatalogEntry(LIGHT, 'Icon button', []);
   assert.ok(entry.status === 'ready');
-  const module = entry.artifact.html;
-  assert.match(module, /^import \{ Button \} from '@droidex\/design-system';\n/);
-  assert.match(module, /export default function \(\) \{/);
-  assert.match(
-    module,
-    /<main style=\{\{"display":"flex".*\n<Button variant="ghost" icon="settings"/,
-  );
+  const [input] = compiled;
+  assert.ok(input?.kind === 'kitEntry');
+  assert.equal(input.entry.name, 'Icon button');
+  assert.deepEqual(input.picks, []);
 
-  await previews.readCatalogEntry(LIGHT, 'Icon button');
-  await previews.readCatalogEntry(DARK, 'Icon button');
+  await previews.readCatalogEntry(LIGHT, 'Icon button', []);
+  await previews.readCatalogEntry(DARK, 'Icon button', []);
   await previews.read(LIGHT, 'sidebar');
-  await previews.readCatalogEntry(LIGHT, 'sidebar').catch(() => undefined);
+  await previews.readCatalogEntry(LIGHT, 'sidebar', []).catch(() => undefined);
   assert.equal(compiled.length, 3);
-  await assert.rejects(previews.readCatalogEntry(LIGHT, 'No such entry'), {
+  await assert.rejects(previews.readCatalogEntry(LIGHT, 'No such entry', []), {
     code: 'invalid_input',
   });
   await previews.close();
+});
+
+test('a catalog entry shows the options picked for its props, one compile per set of picks', async (t) => {
+  const compiler = new CompilerWorker();
+  t.after(() => compiler.terminate());
+  const { previews, compiled } = countingPreviews((input) =>
+    compiler.compile(input, new AbortController().signal),
+  );
+  t.after(() => previews.close());
+  const ref: DesignSystemRef = {
+    ...(await saveDesignSystem(SAMPLE_CATALOG_KIT, {
+      mutationId: 'picks',
+      baseVersion: null,
+      savedBy: { actor: 'user' },
+    })),
+    mode: 'light',
+  };
+  const zesty = [{ name: 'variant', value: 'zesty' }];
+
+  const picked = await previews.readCatalogEntry(ref, 'Button', zesty);
+  assert.ok(picked.status === 'ready' && picked.artifact.html.includes('zesty'));
+  const plain = await previews.readCatalogEntry(ref, 'Button', []);
+  assert.ok(plain.status === 'ready' && !plain.artifact.html.includes('zesty'));
+  await previews.readCatalogEntry(ref, 'Button', zesty);
+  assert.equal(compiled.length, 2);
+
+  const unlisted = await previews.readCatalogEntry(ref, 'Button', [
+    { name: 'variant', value: 'loud' },
+  ]);
+  assert.ok(unlisted.status === 'failed');
+  assert.match(unlisted.diagnostics[0]?.message ?? '', /no option loud for variant/);
 });
 
 test('a kit check compiles its entry, each example, then checks its whole catalog once', async () => {

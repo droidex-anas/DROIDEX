@@ -9,7 +9,7 @@ import { MAX_CAPTURE_BASE64_LENGTH, MAX_CAPTURE_SVG_BYTES } from './canvasCaptur
 import { MAX_COVER_BASE64_LENGTH } from './canvasCovers.js';
 import { MAX_THUMBNAIL_BASE64_LENGTH } from './canvasLibrary.js';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './kitCaptures.js';
-import { catalogNameSchema } from './kitCatalog.js';
+import { catalogNameSchema, propPicksSchema } from './kitCatalog.js';
 import {
   arrangeFramesInputSchema,
   removeFramesInputSchema,
@@ -51,6 +51,10 @@ const kitName = {
 };
 const kitVersionSchema = z.number().int().positive().safe();
 const kitDocument = designSystemObjectSchema.shape;
+const kitCaptureItemSchema = z.union([
+  documentIdSchema,
+  z.object({ entry: catalogNameSchema }).strict(),
+]);
 const designSystemProposalRefSchema = z
   .object({
     id: canvasIdentifierSchema,
@@ -349,6 +353,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
             kind: z.literal('catalog'),
             ref: designSystemRefSchema,
             entry: catalogNameSchema,
+            props: propPicksSchema,
           })
           .strict(),
       ]),
@@ -359,7 +364,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.saveKitCapture'),
       ...request,
       ref: designSystemRefSchema,
-      item: documentIdSchema,
+      item: kitCaptureItemSchema,
       png: base64Schema(MAX_KIT_CAPTURE_BASE64_LENGTH),
     })
     .strict(),
@@ -368,7 +373,7 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
       type: z.literal('canvas.readKitCapture'),
       ...request,
       ref: designSystemRefSchema,
-      item: documentIdSchema,
+      item: kitCaptureItemSchema,
     })
     .strict(),
   z

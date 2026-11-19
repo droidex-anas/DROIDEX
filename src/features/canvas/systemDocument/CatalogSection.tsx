@@ -10,8 +10,9 @@ import { Row, RowCaret, SectionHeader } from '../../../components/ui/Row';
 import type { CatalogListing, KitPreviewTarget } from '../protocol';
 import { TaggingChat } from '../componentTagging';
 import { useKitCatalog } from '../palette/useKitCatalog';
+import { KitGuest } from '../KitGuest';
 import { TagComponentButton } from '../TagComponentButton';
-import { KitGuest, type KitPreviewing } from './KitPreviewTile';
+import type { KitPreviewing } from './KitPreviewTile';
 import { useFitScale } from './useFitScale';
 
 // The guest's page size: the column's measure, scaled down when the column is narrower.
@@ -122,6 +123,7 @@ function EntryStage({
       kind: 'catalog',
       ref: { id: kit.id, version: kit.version, mode: kit.mode },
       entry: name,
+      props: [],
     }),
     [kit.id, kit.version, kit.mode, name],
   );
@@ -155,7 +157,7 @@ function EntryStage({
               height={STAGE_HEIGHT}
               scale={scale}
               draftTokens={draftTokens}
-              wantsCapture={false}
+              capture={null}
             />
           )}
         </div>
