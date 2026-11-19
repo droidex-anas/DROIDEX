@@ -1,3 +1,4 @@
+import { PrimaryTurnState } from './PrimaryTurnState.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -107,10 +108,8 @@ function liveSession(appSessionId: string, updatedAt: number): LiveSession {
     summary,
     session: fakeProviderSession(appSessionId, droid),
     droid,
-    streaming: false,
+    turn: new PrimaryTurnState(),
     autoCompacting: false,
-    pendingSends: [],
-    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };
@@ -167,7 +166,7 @@ test('only three settled off-screen runtimes stay warm, longest idle released fi
     h.add('second', 2_000);
     h.add('third', 3_000);
     h.add('visible', 0);
-    h.add('working', 0, { streaming: true });
+    h.add('working', 0).turn.beginTypedTurn();
     h.show('visible');
 
     assert.equal(h.owner.armedFor(), h.clock.now, 'exceeding the cap arms an immediate sweep');
@@ -365,7 +364,7 @@ test('a prompt that arrives during an earlier release saves the session behind i
   h.clock.now = IDLE_MS * 10;
 
   const sweeping = h.owner.sweep();
-  second.streaming = true;
+  second.turn.beginTypedTurn();
   releaseSecond();
   await sweeping;
 
@@ -438,14 +437,16 @@ test('the timer is armed only while a session is actually retirable', () => {
   Reflect.set(globalThis, 'clearTimeout', () => undefined);
   try {
     const h = ownerHarness();
-    const streaming = h.add('streaming', 0, { streaming: true });
+    const streaming = h.add('streaming', 0);
+    const turn = streaming.turn.beginTypedTurn();
     h.show();
 
     h.owner.arm();
     assert.equal(h.owner.armedFor(), undefined, 'a streaming session must not arm a wakeup');
     assert.deepEqual(scheduled, []);
 
-    streaming.streaming = false;
+    streaming.turn.endTypedTurn(turn);
+    streaming.turn.settle();
     h.owner.arm();
     assert.equal(h.owner.armedFor(), IDLE_MS);
     assert.deepEqual(scheduled, [IDLE_MS - h.clock.now]);

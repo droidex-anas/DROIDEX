@@ -1,3 +1,4 @@
+import { PrimaryTurnState } from './PrimaryTurnState.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
@@ -67,10 +68,8 @@ async function registerLive(
     summary: summary(appSessionId, providerSessionId),
     session: fakeProviderSession(appSessionId, session),
     droid: session,
-    streaming: false,
+    turn: new PrimaryTurnState(),
     autoCompacting: false,
-    pendingSends: [],
-    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };
@@ -105,7 +104,7 @@ function addChild(
     session,
     role: 'worker',
     isCurrent: () =>
-      !parent.closeMode &&
+      !parent.turn.closeMode &&
       h.registry.getLive(parent.summary.appSessionId) === parent &&
       childRuntimes.get(parent)?.get(childSessionId) === child &&
       child.session === session,
@@ -123,7 +122,7 @@ function primaryTarget(h: Harness, live: LiveSession): LiveOperationTarget {
     sourceSessionId: live.summary.appSessionId,
     session: requireDroidSession(providerSession),
     isCurrent: () =>
-      !live.closeMode &&
+      !live.turn.closeMode &&
       h.registry.getLive(live.summary.appSessionId) === live &&
       live.session === providerSession,
   };
@@ -694,7 +693,7 @@ test('late refreshes after close or clearAll are inert', async () => {
   const first = await registerLive(h, 'first');
   const firstGate = first.session.deferNextContextStats();
   const afterClose = h.context.refresh(primaryTarget(h, first.live));
-  first.live.closeMode = 'discard-pending';
+  first.live.turn.beginClose('discard-pending');
   firstGate.resolve();
   await afterClose;
   assert.equal(contextEvents(h).length, 0);

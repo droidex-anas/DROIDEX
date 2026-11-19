@@ -252,6 +252,7 @@ function createHarness(
 
 function parentLease(appSessionId: string, calls: RecordedCall[]): ChildParentLease {
   return {
+    turn: { closeMode: undefined },
     summary: summary(appSessionId),
     droid: new FakeFactorySession(`${appSessionId}-provider`, {}, calls),
     mcpConfigs: [],

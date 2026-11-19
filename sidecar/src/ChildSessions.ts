@@ -686,7 +686,7 @@ export class ChildSessions {
   ): Promise<void> {
     const identity = childIdentity(parentAppSessionId, childSessionId);
     const liveParent = this.d.registry.getLive(parentAppSessionId);
-    if (liveParent?.closeMode) return;
+    if (liveParent?.turn.closeMode) return;
     const record = this.d.history.childSession(parentAppSessionId, childSessionId);
     if (!record) {
       this.emitError(
@@ -1251,7 +1251,7 @@ export class ChildSessions {
       !this.shuttingDown &&
       !this.d.isShutdownStarted() &&
       !parent.closing &&
-      !parent.lease.closeMode &&
+      !parent.lease.turn.closeMode &&
       this.parents.get(parent.parentAppSessionId) === parent &&
       this.d.registry.getLive(parent.parentAppSessionId) === parent.lease
     );

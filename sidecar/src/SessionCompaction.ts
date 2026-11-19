@@ -378,7 +378,7 @@ export class SessionCompaction {
     if (active || !wasActive) return;
 
     if (target.kind === 'primary') {
-      if (target.liveSession.streaming || target.liveSession.compacting) return;
+      if (target.liveSession.turn.streaming || target.liveSession.compacting) return;
       this.dependencies.settleAutomatic({
         kind: 'primary',
         appSessionId: target.appSessionId,
@@ -429,7 +429,7 @@ export class SessionCompaction {
       isCurrent: () =>
         !this.dependencies.isShutdownStarted() &&
         this.dependencies.registry.getLive(appSessionId) === liveSession &&
-        !liveSession.closeMode &&
+        !liveSession.turn.closeMode &&
         liveSession.session === session,
     };
   }

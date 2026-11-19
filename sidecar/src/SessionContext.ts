@@ -104,7 +104,7 @@ export class SessionContext {
 
   recordUsage(appSessionId: string, sourceSessionId: string, usage: NormalizedTokenUsage): void {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode) return;
+    if (!liveSession || liveSession.turn.closeMode) return;
 
     const stableAppSessionId = liveSession.summary.appSessionId;
     const offset = this.usageOffsets.get(stableAppSessionId);
