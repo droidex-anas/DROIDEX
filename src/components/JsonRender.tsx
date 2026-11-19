@@ -131,12 +131,20 @@ function statusColor(key: string, fallback = 'var(--text-muted)'): string {
 
 /* ── individual components ── */
 
-function BoxEl({ props, children }: { props: Record<string, unknown>; children: ReactNode }) {
-  const row = props.flexDirection === 'row';
-  const padding = asNumber(props.padding);
-  const gap = asNumber(props.gap);
+function BoxEl({
+  row,
+  padding,
+  gap,
+  framed,
+  children,
+}: {
+  row: boolean;
+  padding?: number;
+  gap?: number;
+  framed: boolean;
+  children: ReactNode;
+}) {
   // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
-  const framed = !!props.borderStyle;
   return (
     <div
       className={framed ? 'rounded-lg bg-elevated/50' : undefined}
@@ -154,20 +162,15 @@ function BoxEl({ props, children }: { props: Record<string, unknown>; children: 
   );
 }
 
-function TextEl({ props }: { props: Record<string, unknown> }) {
+function TextEl({ text, color, bold }: { text: string; color?: string; bold: boolean }) {
   return (
-    <span
-      className="text-body break-words"
-      style={{ color: resolveColor(props.color), fontWeight: props.bold ? 600 : undefined }}
-    >
-      {asString(props.text)}
+    <span className="text-body break-words" style={{ color, fontWeight: bold ? 600 : undefined }}>
+      {text}
     </span>
   );
 }
 
-function HeadingEl({ props }: { props: Record<string, unknown> }) {
-  const level = asString(props.level, 'h2').toLowerCase();
-  const text = asString(props.text);
+function HeadingEl({ level, text }: { level: string; text: string }) {
   const cls =
     level === 'h1'
       ? 'text-heading'
@@ -177,8 +180,7 @@ function HeadingEl({ props }: { props: Record<string, unknown> }) {
   return <div className={`${cls} text-primary break-words`}>{text}</div>;
 }
 
-function DividerEl({ props }: { props: Record<string, unknown> }) {
-  const title = asString(props.title);
+function DividerEl({ title }: { title: string }) {
   if (!title) return <div className="h-px bg-divider/70 my-1" />;
   return (
     <div className="flex items-center gap-2.5 my-1 text-muted">
@@ -189,9 +191,13 @@ function DividerEl({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-function BarChartEl({ props }: { props: Record<string, unknown> }) {
-  const data = asRecordArray(props.data);
-  const showPct = !!props.showPercentage;
+function BarChartEl({
+  data,
+  showPercentage,
+}: {
+  data: { value?: unknown; color?: unknown; label?: unknown }[];
+  showPercentage: boolean;
+}) {
   const max = Math.max(1, ...data.map((d) => asNumber(d.value) ?? 0));
   const total = data.reduce((s, d) => s + (asNumber(d.value) ?? 0), 0) || 1;
   return (
@@ -199,7 +205,9 @@ function BarChartEl({ props }: { props: Record<string, unknown> }) {
       {data.map((d, i) => {
         const value = asNumber(d.value) ?? 0;
         const color = resolveColor(d.color) ?? 'var(--accent)';
-        const label = showPct ? `${Math.round((value / total) * 100)}%` : String(value);
+        const label = showPercentage
+          ? `${String(Math.round((value / total) * 100))}%`
+          : String(value);
         return (
           <div key={i} className="flex items-center gap-2 text-caption">
             <span className="w-24 shrink-0 truncate text-secondary text-right">
@@ -208,7 +216,7 @@ function BarChartEl({ props }: { props: Record<string, unknown> }) {
             <div className="flex-1 h-3.5 rounded-xs bg-elevated/60 overflow-hidden">
               <div
                 className="h-full rounded-xs"
-                style={{ width: `${(value / max) * 100}%`, backgroundColor: color }}
+                style={{ width: `${String((value / max) * 100)}%`, backgroundColor: color }}
               />
             </div>
             <span className="w-12 shrink-0 tabular-nums text-muted">{label}</span>
@@ -219,9 +227,7 @@ function BarChartEl({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-function SparklineEl({ props }: { props: Record<string, unknown> }) {
-  const data = asArray(props.data).map((v) => asNumber(v) ?? 0);
-  const color = resolveColor(props.color) ?? 'var(--accent)';
+function SparklineEl({ data, color = 'var(--accent)' }: { data: number[]; color?: string }) {
   const min = Math.min(...data, 0);
   const max = Math.max(...data, 1);
   const span = max - min || 1;
@@ -231,19 +237,27 @@ function SparklineEl({ props }: { props: Record<string, unknown> }) {
         <div
           key={i}
           className="w-1 rounded-xs"
-          style={{ height: `${Math.max(8, ((v - min) / span) * 100)}%`, backgroundColor: color }}
+          style={{
+            height: `${String(Math.max(8, ((v - min) / span) * 100))}%`,
+            backgroundColor: color,
+          }}
         />
       ))}
     </div>
   );
 }
 
-function TableEl({ props }: { props: Record<string, unknown> }) {
-  const columns = asRecordArray(props.columns).slice(0, MAX_TABLE_COLUMNS);
-  const rows = asRecordArray(props.rows);
-  const headerColor = resolveColor(props.headerColor);
+function TableEl({
+  columns,
+  rows,
+  headerColor = 'var(--text)',
+}: {
+  columns: { key?: unknown; header?: unknown; width?: unknown }[];
+  rows: Record<string, unknown>[];
+  headerColor?: string;
+}) {
   // Fall back to row keys when columns are omitted.
-  const cols: Record<string, unknown>[] = columns.length
+  const cols: typeof columns = columns.length
     ? columns
     : Array.from(new Set(rows.flatMap((r) => Object.keys(r))))
         .slice(0, MAX_TABLE_COLUMNS)
@@ -258,7 +272,7 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
               <th
                 key={i}
                 className="text-left align-top text-body-strong whitespace-nowrap px-2.5 py-1.5"
-                style={{ color: headerColor ?? 'var(--text)', width: asNumber(c.width) }}
+                style={{ color: headerColor, width: asNumber(c.width) }}
               >
                 {asString(c.header ?? c.key)}
               </th>
@@ -284,10 +298,9 @@ function TableEl({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-function ListEl({ props }: { props: Record<string, unknown> }) {
-  const items = asArray(props.items).map((v) => asString(v));
+function ListEl({ items, ordered }: { items: string[]; ordered: boolean }) {
   const cls = 'marker:text-muted pl-5 space-y-1 text-body text-primary';
-  return props.ordered ? (
+  return ordered ? (
     <ol className={`list-decimal ${cls}`}>
       {items.map((it, i) => (
         <li key={i}>{it}</li>
@@ -302,41 +315,45 @@ function ListEl({ props }: { props: Record<string, unknown> }) {
   );
 }
 
-function CardEl({ props, children }: { props: Record<string, unknown>; children: ReactNode }) {
-  const title = asString(props.title);
-  const padding = asNumber(props.padding);
+function CardEl({
+  title,
+  padding = 1.5,
+  children,
+}: {
+  title: string;
+  padding?: number;
+  children: ReactNode;
+}) {
   return (
     <div className="rounded-lg bg-surface overflow-hidden w-full">
       {title && <div className="px-3 pt-3 text-label text-primary">{title}</div>}
-      <div style={{ padding: (padding != null ? padding : 1.5) * CELL }}>{children}</div>
+      <div style={{ padding: padding * CELL }}>{children}</div>
     </div>
   );
 }
 
-function StatusLineEl({ props }: { props: Record<string, unknown> }) {
-  const status = asString(props.status, 'info').toLowerCase();
+function StatusLineEl({ status, text }: { status: string; text: string }) {
   return (
     <span className="inline-flex items-center gap-2 text-body text-primary">
       <span
         className="h-1.5 w-1.5 shrink-0 rounded-full"
         style={{ background: statusColor(status) }}
       />
-      {asString(props.text)}
+      {text}
     </span>
   );
 }
 
-function KeyValueEl({ props }: { props: Record<string, unknown> }) {
+function KeyValueEl({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline gap-2 text-body">
-      <span className="shrink-0 text-muted">{asString(props.label)}</span>
-      <span className="min-w-0 text-primary font-medium break-words">{asString(props.value)}</span>
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className="min-w-0 text-primary font-medium break-words">{value}</span>
     </div>
   );
 }
 
-function BadgeEl({ props }: { props: Record<string, unknown> }) {
-  const color = resolveColor(props.variant) ?? 'var(--text-secondary)';
+function BadgeEl({ color = 'var(--text-secondary)', label }: { color?: string; label: string }) {
   return (
     <span
       className="inline-flex h-5 items-center px-2 rounded-full text-caption font-medium"
@@ -345,15 +362,13 @@ function BadgeEl({ props }: { props: Record<string, unknown> }) {
         background: `color-mix(in srgb, ${color} 12%, transparent)`,
       }}
     >
-      {asString(props.label)}
+      {label}
     </span>
   );
 }
 
-function ProgressBarEl({ props }: { props: Record<string, unknown> }) {
-  const raw = asNumber(props.progress) ?? 0;
-  const pct = Math.max(0, Math.min(1, raw)) * 100;
-  const label = asString(props.label);
+function ProgressBarEl({ progress = 0, label }: { progress?: number; label: string }) {
+  const pct = Math.max(0, Math.min(1, progress)) * 100;
   return (
     <div className="flex flex-col gap-1 w-full">
       {label && (
@@ -365,34 +380,40 @@ function ProgressBarEl({ props }: { props: Record<string, unknown> }) {
       <div className="h-2 rounded-full bg-elevated/60 overflow-hidden">
         <div
           className="h-full rounded-full"
-          style={{ width: `${pct}%`, background: 'var(--accent)' }}
+          style={{ width: `${String(pct)}%`, background: 'var(--accent)' }}
         />
       </div>
     </div>
   );
 }
 
-function MetricEl({ props }: { props: Record<string, unknown> }) {
-  const trend = asString(props.trend).toLowerCase();
+function MetricEl({ trend, label, value }: { trend: string; label: string; value: string }) {
   const trendColor =
     trend === 'up' ? 'var(--success)' : trend === 'down' ? 'var(--danger)' : undefined;
   const TrendIcon = trend === 'up' ? ArrowUp : trend === 'down' ? ArrowDown : null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-caption text-muted">{asString(props.label)}</span>
+      <span className="text-caption text-muted">{label}</span>
       <span className="inline-flex items-center gap-1 text-heading tabular-nums text-primary">
-        {asString(props.value)}
+        {value}
         {TrendIcon && <TrendIcon className="w-4 h-4" style={{ color: trendColor }} />}
       </span>
     </div>
   );
 }
 
-function CalloutEl({ props, children }: { props: Record<string, unknown>; children: ReactNode }) {
-  const type = asString(props.type, 'info').toLowerCase();
-  const color = statusColor(type);
-  const title = asString(props.title);
-  const content = asString(props.content);
+function CalloutEl({
+  status,
+  title,
+  content,
+  children,
+}: {
+  status: string;
+  title: string;
+  content: string;
+  children: ReactNode;
+}) {
+  const color = statusColor(status);
   // A single colored dot carries the severity; the card itself is a plain
   // elevated surface so P-level/danger notes read as clean cards, not stickers.
   return (
@@ -421,8 +442,11 @@ function CalloutEl({ props, children }: { props: Record<string, unknown>; childr
   );
 }
 
-function TimelineEl({ props }: { props: Record<string, unknown> }) {
-  const items = asRecordArray(props.items);
+function TimelineEl({
+  items,
+}: {
+  items: { status?: unknown; title?: unknown; description?: unknown }[];
+}) {
   return (
     <div className="flex flex-col">
       {items.map((it, i) => {
@@ -457,41 +481,92 @@ function renderElement(
 ): ReactNode {
   switch (type) {
     case 'Box':
-      return <BoxEl props={props}>{children}</BoxEl>;
+      return (
+        <BoxEl
+          row={props.flexDirection === 'row'}
+          padding={asNumber(props.padding)}
+          gap={asNumber(props.gap)}
+          framed={!!props.borderStyle}
+        >
+          {children}
+        </BoxEl>
+      );
     case 'Text':
-      return <TextEl props={props} />;
+      return (
+        <TextEl text={asString(props.text)} color={resolveColor(props.color)} bold={!!props.bold} />
+      );
     case 'Heading':
-      return <HeadingEl props={props} />;
+      return (
+        <HeadingEl level={asString(props.level, 'h2').toLowerCase()} text={asString(props.text)} />
+      );
     case 'Divider':
-      return <DividerEl props={props} />;
+      return <DividerEl title={asString(props.title)} />;
     case 'Newline':
       return <br />;
     case 'Spacer':
       return <div style={{ flex: 1 }} />;
     case 'BarChart':
-      return <BarChartEl props={props} />;
+      return (
+        <BarChartEl data={asRecordArray(props.data)} showPercentage={!!props.showPercentage} />
+      );
     case 'Sparkline':
-      return <SparklineEl props={props} />;
+      return (
+        <SparklineEl
+          data={asArray(props.data).map((v) => asNumber(v) ?? 0)}
+          color={resolveColor(props.color)}
+        />
+      );
     case 'Table':
-      return <TableEl props={props} />;
+      return (
+        <TableEl
+          columns={asRecordArray(props.columns).slice(0, MAX_TABLE_COLUMNS)}
+          rows={asRecordArray(props.rows)}
+          headerColor={resolveColor(props.headerColor)}
+        />
+      );
     case 'List':
-      return <ListEl props={props} />;
+      return (
+        <ListEl items={asArray(props.items).map((v) => asString(v))} ordered={!!props.ordered} />
+      );
     case 'Card':
-      return <CardEl props={props}>{children}</CardEl>;
+      return (
+        <CardEl title={asString(props.title)} padding={asNumber(props.padding)}>
+          {children}
+        </CardEl>
+      );
     case 'StatusLine':
-      return <StatusLineEl props={props} />;
+      return (
+        <StatusLineEl
+          status={asString(props.status, 'info').toLowerCase()}
+          text={asString(props.text)}
+        />
+      );
     case 'KeyValue':
-      return <KeyValueEl props={props} />;
+      return <KeyValueEl label={asString(props.label)} value={asString(props.value)} />;
     case 'Badge':
-      return <BadgeEl props={props} />;
+      return <BadgeEl color={resolveColor(props.variant)} label={asString(props.label)} />;
     case 'ProgressBar':
-      return <ProgressBarEl props={props} />;
+      return <ProgressBarEl progress={asNumber(props.progress)} label={asString(props.label)} />;
     case 'Metric':
-      return <MetricEl props={props} />;
+      return (
+        <MetricEl
+          trend={asString(props.trend).toLowerCase()}
+          label={asString(props.label)}
+          value={asString(props.value)}
+        />
+      );
     case 'Callout':
-      return <CalloutEl props={props}>{children}</CalloutEl>;
+      return (
+        <CalloutEl
+          status={asString(props.type, 'info').toLowerCase()}
+          title={asString(props.title)}
+          content={asString(props.content)}
+        >
+          {children}
+        </CalloutEl>
+      );
     case 'Timeline':
-      return <TimelineEl props={props} />;
+      return <TimelineEl items={asRecordArray(props.items)} />;
     default:
       return children ?? null;
   }
@@ -515,7 +590,7 @@ function renderNode(
   const nextSeen = new Set(seen).add(id);
   const children = childIds.length
     ? childIds.map((cid, i) => (
-        <Fragment key={`${cid}-${i}`}>
+        <Fragment key={`${cid}-${String(i)}`}>
           {renderNode(cid, spec, nextSeen, depth + 1, budget)}
         </Fragment>
       ))
@@ -537,8 +612,8 @@ function ErrorFallback({ raw }: { raw: string }) {
 export const JsonRender = memo(function JsonRender({ source }: { source: string }) {
   const parsed = useMemo<Spec | null>(() => {
     try {
-      const obj = JSON.parse(source.trim());
-      return obj && typeof obj === 'object' ? (obj as Spec) : null;
+      const obj: unknown = JSON.parse(source.trim());
+      return obj && typeof obj === 'object' ? obj : null;
     } catch {
       return null;
     }
@@ -601,7 +676,7 @@ export const __statusColorForTest = statusColor;
 // the global budget can be asserted without a DOM. Returns at most MAX_NODES.
 export function __renderBudgetForTest(spec: Spec): number {
   const budget = { count: 0 };
-  renderNode(spec.root ?? '', spec, new Set(), 0, budget);
+  void renderNode(spec.root ?? '', spec, new Set(), 0, budget);
   return budget.count;
 }
 export const __MAX_NODES_FOR_TEST = MAX_NODES;
