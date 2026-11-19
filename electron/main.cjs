@@ -281,7 +281,7 @@ const remoteAccess = createRemoteAccess({
   bridgeInfo: () => sidecarSupervisor.getBridgeInfo(),
   desktop: remoteDesktop,
   changed: (state) => {
-    if (state.pending.length && !isWindowUsable(getMainWindow())) createMainWindow();
+    if (state.pending.length && !isWindowUsable(getMainWindow())) void openMainWindow();
     if (isWindowUsable(getMainWindow()))
       getMainWindow().webContents.send('remote-state-changed', state);
   },

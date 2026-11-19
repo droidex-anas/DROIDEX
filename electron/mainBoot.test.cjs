@@ -67,3 +67,9 @@ test('no window exists before the Canvas preview session is configured', () => {
   assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
   assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
 });
+
+test('remote pairing during activation waits for the Canvas preview session', () => {
+  const result = runEval('mainIpcEval.cjs', ['remote-pairing-startup']);
+  assert.equal(result.status, 0, `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`);
+  assert.match(result.stdout, new RegExp(`^${IPC_SENTINEL}$`, 'm'));
+});

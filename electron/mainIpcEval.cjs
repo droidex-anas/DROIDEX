@@ -190,6 +190,27 @@ async function bootMain(options = {}) {
   // A quit while the stub sidecar starts asks whether to stop its agents.
   electron.dialog = { showMessageBox: async () => ({ response: 1 }) };
   const observed = observeMain(electron);
+  if (options.remotePairing) {
+    const hostModule = path.join(root, 'remoteHost.mjs');
+    fs.writeFileSync(path.join(userData, 'remote-access.bin'), 'saved remote configuration');
+    fs.writeFileSync(
+      hostModule,
+      `export function createRemoteHost(options) {
+        return { resume() { options.changed({ enabled: true, pending: [{ id: 'pairing' }] }); } };
+      }`,
+    );
+    const remoteAccess = require('./remoteAccess.cjs');
+    const createRemoteAccess = remoteAccess.createRemoteAccess;
+    remoteAccess.createRemoteAccess = (settings) =>
+      createRemoteAccess({
+        ...settings,
+        hostModule,
+        changed(state) {
+          settings.changed(state);
+          options.remotePairing.delivered = true;
+        },
+      });
+  }
   // Owned here rather than in `observeMain`: a startup check holds its `setProxy`.
   const guest = options.guestSession ?? createGuestSessionStub();
   if (!options.guestSession) guest.release();
@@ -231,6 +252,26 @@ async function checkStartupOrder() {
   booted.electron.app.emit('activate');
   await settle(() => true, 'activate after startup');
   assert.equal(booted.windows.length, 1, 'activate opened a second window');
+}
+
+async function checkRemotePairingStartupOrder() {
+  const guest = createGuestSessionStub();
+  const remotePairing = { delivered: false };
+  const booted = await bootMain({ guestSession: guest, deferWindow: true, remotePairing });
+  await settle(() => guest.calls.proxy === 1, 'preview proxy setup to start');
+  assert.equal(booted.windows.length, 0);
+
+  booted.electron.app.emit('activate');
+  await settle(() => remotePairing.delivered, 'pairing from the resumed remote host');
+  assert.equal(
+    booted.windows.length,
+    0,
+    'remote pairing opened a window before the preview session was configured',
+  );
+
+  guest.release();
+  await settle(() => booted.windows.length > 0, 'the app window');
+  assert.equal(booted.windows.length, 1);
 }
 
 async function checkSenders({ channels, mainWindow }) {
@@ -334,11 +375,18 @@ async function checkMainWindow({ electron, channels, mainWindow, root, calls, bo
 module.exports = { SENTINEL };
 
 if (require.main === module) {
-  const checks = { window: checkMainWindow, startup: checkStartupOrder };
+  const checks = {
+    window: checkMainWindow,
+    startup: checkStartupOrder,
+    'remote-pairing-startup': checkRemotePairingStartupOrder,
+  };
   const check = checks[process.argv[2]] ?? checkSenders;
   // Exit once the checks settle: the sidecar stub holds the event loop open, and
   // a handler that got past its sender guard must not reach its I/O.
-  (process.argv[2] === 'startup' ? check() : bootMain().then(check)).then(
+  (['startup', 'remote-pairing-startup'].includes(process.argv[2])
+    ? check()
+    : bootMain().then(check)
+  ).then(
     () => {
       process.stdout.write(`${SENTINEL}\n`);
       process.exit(0);
