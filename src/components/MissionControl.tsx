@@ -35,6 +35,8 @@ import { MessageFeed } from './MessageFeed';
 import ContextColumn from './MissionControlContextPanel';
 import PromptInput from './PromptInput';
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
+import { Dialog, DialogTitle } from './ui/Dialog';
+import { Button } from './ui/Button';
 
 const ACCENT = 'var(--accent)';
 const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
@@ -215,55 +217,6 @@ function FeaturesColumn({
         <div className="px-3 py-8 text-[12px] text-muted">Planning features…</div>
       )}
     </div>
-  );
-}
-
-/* ════════════════════════ expand modal ════════════════════════ */
-
-function ExpandModal({
-  title,
-  onClose,
-  children,
-  headerExtra,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  headerExtra?: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.97, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.97, opacity: 0, y: 8 }}
-        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-      >
-        <div className="flex items-center justify-between px-5 h-12 border-b border-divider shrink-0">
-          <span className="text-[13px] font-medium text-primary">{title}</span>
-          <div className="flex items-center gap-1">
-            {headerExtra}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 min-h-0 flex flex-col">{children}</div>
-      </motion.div>
-    </motion.div>
   );
 }
 
@@ -784,12 +737,24 @@ export default function MissionControl() {
       {/* ─── Expand overlays ─── */}
       <AnimatePresence>
         {expanded === 'features' && (
-          <ExpandModal
-            title="Features"
+          <Dialog
+            key="features"
+            size="expanded"
             onClose={() => {
               setExpanded(null);
             }}
           >
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+              <DialogTitle>Features</DialogTitle>
+              <Button
+                variant="ghost"
+                icon={X}
+                aria-label="Close Features"
+                onClick={() => {
+                  setExpanded(null);
+                }}
+              />
+            </div>
             <FeaturesColumn
               features={features}
               selectedId={selectedFeatureId}
@@ -800,15 +765,27 @@ export default function MissionControl() {
               big
               paused={mission.phase === 'paused'}
             />
-          </ExpandModal>
+          </Dialog>
         )}
         {expanded === 'context' && (
-          <ExpandModal
-            title="Context"
+          <Dialog
+            key="context"
+            size="expanded"
             onClose={() => {
               setExpanded(null);
             }}
           >
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+              <DialogTitle>Context</DialogTitle>
+              <Button
+                variant="ghost"
+                icon={X}
+                aria-label="Close Context"
+                onClick={() => {
+                  setExpanded(null);
+                }}
+              />
+            </div>
             <ContextColumn
               mission={mission}
               childSessions={childSessions}
@@ -824,17 +801,33 @@ export default function MissionControl() {
               }}
               big
             />
-          </ExpandModal>
+          </Dialog>
         )}
         {openDiff && (
-          <ExpandModal
-            title={displayPath(openDiff.path, mission.cwd)}
+          <Dialog
+            key="diff"
+            size="expanded"
             onClose={() => {
               setOpenDiff(null);
             }}
           >
-            <DiffFull change={openDiff} cwd={mission.cwd} />
-          </ExpandModal>
+            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+              <DialogTitle className="min-w-0 truncate">
+                {displayPath(openDiff.path, mission.cwd)}
+              </DialogTitle>
+              <Button
+                variant="ghost"
+                icon={X}
+                aria-label="Close diff"
+                onClick={() => {
+                  setOpenDiff(null);
+                }}
+              />
+            </div>
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <DiffFull change={openDiff} cwd={mission.cwd} />
+            </div>
+          </Dialog>
         )}
       </AnimatePresence>
     </div>
