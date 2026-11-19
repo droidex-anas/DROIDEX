@@ -12,7 +12,8 @@ const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
 process.env.HOME = home;
 
-const { HistoryIndex, hydrateHistoricalSession } = await import('./history.js');
+const { HistoryIndex, hydrateHistoricalSession, loadMissionControlSessions } =
+  await import('./history.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
@@ -84,6 +85,41 @@ test('Mission hydration restores logical child progress beneath the exact parent
   );
   assert.equal(JSON.stringify(hydrated.progress).includes('provider-old'), false);
   assert.equal(JSON.stringify(hydrated.progress).includes('spawn-1'), false);
+});
+
+test('Mission enumeration keeps healthy missions beside an unreadable sibling', (t) => {
+  const warnings = t.mock.method(console, 'warn', () => undefined);
+  const brokenDir = join(home, '.factory', 'missions', 'a-broken');
+  mkdirSync(brokenDir, { recursive: true });
+  writeFileSync(join(brokenDir, 'state.json'), '{"missionId": "secret-partial-wri');
+  const healthyDir = join(home, '.factory', 'missions', 'mission-healthy');
+  mkdirSync(healthyDir, { recursive: true });
+  writeFileSync(
+    join(healthyDir, 'state.json'),
+    JSON.stringify({
+      missionId: 'mission-healthy',
+      baseSessionId: 'healthy-app',
+      state: 'completed',
+      workingDirectory: '/work/project',
+    }),
+  );
+
+  const listedIds = loadMissionControlSessions().map(({ summary }) => summary.missionId);
+  assert.ok(listedIds.includes('mission-healthy'));
+  assert.equal(listedIds.includes('a-broken'), false);
+  assert.deepEqual(
+    loadMissionControlSessions({ workspaceCwds: ['/work/project'] }).map(
+      ({ summary }) => summary.missionId,
+    ),
+    ['mission-healthy'],
+  );
+  assert.doesNotThrow(() => hydrateHistoricalSession('healthy-app'));
+  assert.throws(() => hydrateHistoricalSession('a-broken'), SyntaxError);
+
+  assert.equal(warnings.mock.callCount(), 1);
+  const warning = String(warnings.mock.calls[0]?.arguments[0]);
+  assert.ok(warning.includes(brokenDir));
+  assert.equal(warning.includes('secret-partial'), false);
 });
 
 function missionSummary(): SessionSummary {
