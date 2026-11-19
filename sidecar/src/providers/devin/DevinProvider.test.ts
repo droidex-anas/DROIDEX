@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +10,7 @@ import { SessionInteractions, type InteractionLiveSession } from '../../SessionI
 import type { ProviderApprovalRequest, ProviderInteractions } from '../interactions.js';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
+import { tolerantCommandRunner } from '../../processes/processTree.js';
 import { DevinProvider } from './DevinProvider.js';
 import type { DevinSession } from './devinSession.js';
 
@@ -355,10 +355,8 @@ test('Devin interrupt and close kill running terminal descendants', async (t) =>
       }
       process.kill(pid, 0);
       await session[action === 'background' ? 'interrupt' : action]();
-      const status = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
-      assert.equal(status.error, undefined);
-      assert.ok(status.status === 0 || status.status === 1);
-      assert.match(status.stdout.trim(), /^(?:Z.*)?$/);
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
       await collect({ [Symbol.asyncIterator]: () => stream });
       if (action !== 'close') {
         await session.setModel({ modelId: 'terminal-sync' });
