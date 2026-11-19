@@ -159,10 +159,17 @@ export class DevinSession implements ProviderSession {
     const queue = new MessageQueue<NormalizedEvent>();
     this.queue = queue;
     this.permissionAbort = new AbortController();
+    const signal = this.permissionAbort.signal;
     const run = async () => {
       try {
         await this.changes;
         this.requireOpen();
+        if (signal.aborted) {
+          for (const event of this.mapper?.interrupt() ?? []) queue.push(event);
+          queue.push({ done: true });
+          queue.close();
+          return;
+        }
         const content: ContentBlock[] = [
           { type: 'text', text: prompt },
           ...(mentions ?? []).map((mention) =>

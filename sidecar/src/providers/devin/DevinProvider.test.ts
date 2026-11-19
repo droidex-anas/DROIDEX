@@ -25,7 +25,7 @@ const update = (update) => send({ method: 'session/update', params: { sessionId:
 const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
   options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
 if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
-let pending, permission, servers = [];
+let pending, pendingConfig, permission, servers = [];
 createInterface({ input: process.stdin }).on('line', async (line) => {
   const message = JSON.parse(line);
   appendFileSync(join(root, 'requests.jsonl'), JSON.stringify(message) + '\n');
@@ -43,9 +43,15 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     update({ sessionUpdate: 'config_option_update', configOptions });
     if (method === 'session/load') update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
     result(id, { sessionId: 'devin-one' });
-  } else if (method === 'session/set_config_option') result(id, { configOptions });
+  } else if (method === 'session/set_config_option') {
+    if (params.value === 'blocked') pendingConfig = id;
+    else result(id, { configOptions });
+  }
   else if (method === 'session/close' || method === 'session/delete') result(id, {});
-  else if (method === 'session/cancel') { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
+  else if (method === 'session/cancel') {
+    if (pendingConfig !== undefined) { result(pendingConfig, { configOptions }); pendingConfig = undefined; }
+    if (pending !== undefined) { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
+  }
   else if (method === 'session/prompt') {
     const text = params.prompt[0].text;
     if (text === 'exit') { process.stderr.write('backend failed\n'); process.exit(7); }
@@ -242,6 +248,22 @@ test('Devin cancellation settles a turn and the session remains usable', async (
   assert.equal(session.isClosed, true);
   assert.equal(session.process?.isAlive(), false);
   assert.equal(await session.closed, undefined);
+});
+
+test('Devin Stop during a pending config change does not send the queued prompt', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const change = session.setModel({ modelId: 'blocked' });
+  const result = collect(session.stream('must not run'));
+  await Promise.resolve();
+  await session.interrupt();
+  await change;
+  assert.deepEqual((await result).at(-1), { done: true });
+  assert.equal(
+    (await h.requests()).some((request) => request.method === 'session/prompt'),
+    false,
+  );
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
 });
 
 test('Devin refuses a turn explicitly and surfaces stderr on process exit', async (t) => {
