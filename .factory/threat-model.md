@@ -16,7 +16,7 @@ DROIDEX is an Electron desktop application that allows users to run Factory Droi
 
 1. **React Renderer** (`src/`) - The user-facing UI rendered in the Electron BrowserWindow. Contains the conversation view, mission management, onboarding, and the mission-scoped utility pane (Review/Browser/Files/Terminal tabs). Communicates with the main process exclusively through the preload bridge and with the sidecar over a loopback WebSocket.
 
-2. **Electron Main Process** (`electron/main.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation of the `<webview>` pages the renderer mounts (each bound to a chat by a one-time token main issues), credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
+2. **Electron Main Process** (`electron/main.cjs`, `electron/*Ipc.cjs`, `electron/mainWindow.cjs`) - Owns window lifecycle, the bridge (sidecar) child process, native browser automation of the `<webview>` pages the renderer mounts (each bound to a chat by a one-time token main issues), credential encryption via `safeStorage`, file access registries, terminal PTY management, git/GitHub CLI orchestration, and the app update flow. Exposes ~60 IPC handlers to the renderer.
 
 3. **Electron Preload Scripts** (`electron/preload.cjs`, `electron/nativeBrowserPreload.cjs`) - Narrow `contextBridge` boundaries. The main preload exposes `window.droidex` with ~50 IPC-backed methods. The native browser preload runs inside arbitrary untrusted web pages loaded in the browser pane and exposes three functions for agent actions, credential fill, and design-state application.
 
@@ -29,7 +29,7 @@ DROIDEX is an Electron desktop application that allows users to run Factory Droi
 | Component | Purpose | Security Criticality | Attack Surface |
 | --- | --- | --- | --- |
 | React Renderer | UI, state, utility pane tabs | HIGH | Markdown/SVG rendering, URL bar input, mission IDs, free-text prompts |
-| Electron Main (`main.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `<webview>` guest binding and navigation, `executeJavaScript`, child process spawn |
+| Electron Main (`main.cjs`, `*Ipc.cjs`, `mainWindow.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `<webview>` guest binding and navigation, `executeJavaScript`, child process spawn |
 | Main Preload (`preload.cjs`) | contextBridge API for renderer | MEDIUM | ~50 exposed methods, IPC message construction |
 | Native Browser Preload (`nativeBrowserPreload.cjs`) | Agent bridge inside untrusted pages | HIGH | Runs in arbitrary web page context with full Node access (sandbox:false) |
 | Files Module (`electron/files.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
@@ -227,7 +227,7 @@ An attacker pretends to be someone or something they're not to gain unauthorized
 **Vulnerable Components:**
 
 - `sidecar/src/index.ts` (connection handler, lines 46-54)
-- `electron/main.cjs` (token generation, line 32; dev bypass, line 443)
+- `electron/sidecar.cjs` (bridge token generation and child environment)
 
 **Attack Vector:**
 
@@ -296,7 +296,7 @@ function validateBridgeAuth(req: IncomingMessage, token: string): boolean {
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` lines 118-188 (~33 handlers: `bridge-info`, `get-api-key`, `set-api-key`, `list-files`, `read-file`, `git-*`, `github-*`, `onboarding-*`, `app-*`, `open-external`)
+- `electron/appIpc.cjs`, `electron/filesIpc.cjs`, `electron/sourceControlIpc.cjs` (~33 handlers: `bridge-info`, `get-api-key`, `set-api-key`, `list-files`, `read-file`, `git-*`, `github-*`, `onboarding-*`, `app-*`, `open-external`)
 
 **Attack Vector:**
 
@@ -310,7 +310,7 @@ function validateBridgeAuth(req: IncomingMessage, token: string): boolean {
 
 ```javascript
 // VULNERABLE: No sender validation on privileged handler
-// electron/main.cjs:134-135
+// electron/filesIpc.cjs
 ipcMain.handle('list-files', (_event, dir) => listFiles(dir));
 ipcMain.handle('read-file', (_event, filePath) => readFile(filePath)); // arbitrary path
 
@@ -566,7 +566,7 @@ Users can deny performing actions because there's insufficient audit logging.
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` (IPC handlers for `set-api-key`, `read-file`, `terminal-create/write`, `native-browser-open`)
+- `electron/*Ipc.cjs` (IPC handlers for `set-api-key`, `read-file`, `terminal-create/write`, `native-browser-open`)
 - `sidecar/src/MissionManager.ts` (all command dispatch)
 - `sidecar/src/index.ts` (WebSocket connection/message logging)
 
@@ -686,7 +686,7 @@ const safeSvg = useMemo(() => {
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` (lines 134-135: `ipcMain.handle('list-files', ...)` / `ipcMain.handle('read-file', ...)`)
+- `electron/filesIpc.cjs` (`ipcMain.handle('list-files', ...)` / `ipcMain.handle('read-file', ...)`)
 
 **Attack Vector:**
 
@@ -699,7 +699,7 @@ const safeSvg = useMemo(() => {
 
 ```javascript
 // VULNERABLE: Arbitrary path, no confinement, no validation
-// electron/main.cjs:134-135
+// electron/filesIpc.cjs
 ipcMain.handle('list-files', (_event, dir) => listFiles(dir));
 ipcMain.handle('read-file', (_event, filePath) => readFile(filePath));
 ```
@@ -785,7 +785,7 @@ function buildPtyEnv(env) {
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` (`validateUrl` allowing `file:` scheme, line 1651)
+- `electron/nativeBrowserUrls.cjs` (`validateUrl`)
 - `sidecar/src/browser/browserUrl.ts` (`normalizeBrowserUrl` allowing `file:` prefix, line 8)
 - `src/lib/browserViewport.ts` (`normalizeUrl` allowing `file:` prefix, line 51)
 
@@ -800,7 +800,7 @@ function buildPtyEnv(env) {
 
 ```javascript
 // VULNERABLE: file: scheme allowed in browser pane
-// electron/main.cjs:1651-1656
+// electron/nativeBrowserUrls.cjs
 function validateUrl(value) {
   const parsed = new URL(value);
   if (!['http:', 'https:', 'file:', 'about:'].includes(parsed.protocol)) {
@@ -838,7 +838,7 @@ function validateUrl(value) {
 
 **Vulnerable Components:**
 
-- `electron/main.cjs` (line 48: `const BROWSER_PARTITION = 'persist:droidex-browser'`; line 673: used by WebContentsView)
+- `electron/nativeBrowser.cjs` (`BROWSER_PARTITION`); `electron/browserGuests.cjs` (guest preferences)
 
 **Attack Vector:**
 
@@ -850,7 +850,7 @@ function validateUrl(value) {
 
 ```javascript
 // VULNERABLE: Single shared persistent partition for all missions
-// electron/main.cjs:48
+// electron/nativeBrowser.cjs
 const BROWSER_PARTITION = 'persist:droidex-browser';
 ```
 
@@ -974,7 +974,7 @@ Gaining higher privileges than intended. In this system, the critical escalation
 **Vulnerable Components:**
 
 - `electron/nativeBrowserPreload.cjs` (about 47 KB, runs in untrusted page context, `sandbox: false`)
-- `electron/main.cjs` (line 671: `sandbox: false` on WebContentsView)
+- `electron/browserGuests.cjs` (`sandbox: false` on browser guests)
 
 **Attack Vector:**
 
@@ -988,7 +988,7 @@ Gaining higher privileges than intended. In this system, the critical escalation
 
 ```javascript
 // VULNERABLE: Preload with Node access in untrusted page context
-// electron/main.cjs:667-674
+// electron/browserGuests.cjs
 const view = new WebContentsView({
   webPreferences: {
     preload: nativeBrowserPreloadPath,
@@ -1194,12 +1194,12 @@ if (process.env.DROID_PATH && isExecutable(process.env.DROID_PATH)) return proce
 
 ```javascript
 // PATTERN 1: Legacy read-file/list-files with no root confinement (HIGH)
-// Found in: electron/main.cjs:134-135
+// Found in: electron/filesIpc.cjs
 ipcMain.handle('read-file', (_event, filePath) => readFile(filePath)); // arbitrary path
 ipcMain.handle('list-files', (_event, dir) => listFiles(dir)); // arbitrary directory
 
 // PATTERN 2: file: URL in browser pane allows local file read (MEDIUM)
-// Found in: electron/main.cjs:1651, sidecar/src/browser/browserUrl.ts:8
+// Found in: electron/nativeBrowserUrls.cjs, sidecar/src/browser/browserUrl.ts:8
 validateUrl('file:///etc/passwd'); // passes -- file: is allowed
 
 // SAFE ALTERNATIVE (mission-scoped files-* handlers use this): Multi-layer confinement
@@ -1227,7 +1227,7 @@ if (TOKEN && !ALLOW_LOCAL_NO_TOKEN) { // empty string is falsy -- check skipped
 wss.on('connection', (ws, req) => { // no req.headers.origin check
 
 // PATTERN 4: Dev-mode auth bypass (LOW)
-// Found in: electron/main.cjs:443
+// Found in: electron/sidecar.cjs
 BRIDGE_ALLOW_LOCAL_NO_TOKEN: app.isPackaged ? '0' : '1', // dev accepts no-token
 
 // SAFE ALTERNATIVE: Constant-time comparison + Origin validation
@@ -1265,12 +1265,12 @@ if (pending.connectionId !== currentConnectionId) {
 
 ```javascript
 // PATTERN 1: Missing assertMainRenderer on privileged handlers (HIGH)
-// Found in: electron/main.cjs:118-188 (~33 handlers)
+// Found in: electron/appIpc.cjs, electron/filesIpc.cjs, electron/sourceControlIpc.cjs
 ipcMain.handle('get-api-key', (_event) => getApiKey()); // returns decrypted key, no sender check
 ipcMain.handle('set-api-key', (_event, key) => setApiKey(key)); // overwrites key, no sender check
 
 // PATTERN 2: Correct sender validation (used on ~27 channels)
-// Found in: electron/main.cjs:341-345
+// Found in: electron/mainWindow.cjs
 function assertMainRenderer(event) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
     throw new Error('Desktop request rejected for unknown renderer.');
@@ -1289,11 +1289,11 @@ ipcMain.handle('get-api-key', (event) => {
 
 ```typescript
 // PATTERN 1: Token in URL query string (MEDIUM)
-// Found in: sidecar/src/index.ts:25-28, electron/main.cjs bridgeInfo
+// Found in: sidecar/src/index.ts:25-28, electron/sidecar.cjs bridgeInfo
 url.searchParams.set('token', TOKEN); // leaks in logs, ps, browser history
 
 // PATTERN 2: Token returned to renderer via IPC (MEDIUM)
-// Found in: electron/main.cjs:118, src/lib/desktop.ts:225-228
+// Found in: electron/appIpc.cjs, src/lib/desktop.ts:225-228
 const { port, token } = await getBridgeInfo(); // token in renderer memory
 
 // SAFE ALTERNATIVE: Use Authorization header or Sec-WebSocket-Protocol
@@ -1347,7 +1347,7 @@ const wss = new WebSocketServer({ server, maxPayload: 1024 * 1024 });
 
 ```typescript
 // PATTERN 1: file: scheme allowed in browser (MEDIUM)
-// Found in: electron/main.cjs:1651, sidecar/src/browser/browserUrl.ts:8, src/lib/browserViewport.ts:51
+// Found in: electron/nativeBrowserUrls.cjs, sidecar/src/browser/browserUrl.ts:8, src/lib/browserViewport.ts:51
 const ALLOWED = ['http:', 'https:', 'file:', 'about:']; // file: is risky
 
 // PATTERN 2: Loopback auto-promotion to HTTP (MEDIUM -- SSRF)
@@ -1402,7 +1402,7 @@ if (!safeRegex(PACK_PATH_RE)) throw new Error('unsafe regex detected');
 Human review is required for:
 
 - CRITICAL/HIGH findings from `commit-security-scan`
-- Changes to `electron/main.cjs` IPC handlers (especially new handlers without `assertMainRenderer`)
+- Changes to `electron/*Ipc.cjs` IPC handlers (especially new handlers without `assertMainRenderer`)
 - Changes to `electron/nativeBrowserPreload.cjs` (high-risk preload in untrusted context)
 - Changes to `electron/files.cjs` path confinement logic
 - Changes to `sidecar/src/index.ts` WebSocket auth
