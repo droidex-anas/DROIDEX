@@ -135,6 +135,34 @@ test('a full scan keeps an unreadable file but removes a different deleted file'
   assert.deepEqual(result.removedProviderSessionIds, ['scan-deleted']);
 });
 
+test('a deleted Alt copy is removed even when its Main copy cannot be inspected', (t) => {
+  const id = 'deleted-alt-unreadable-main';
+  const previousAltHome = process.env.DROIDEX_ALT_HOME;
+  const altHome = join(home, 'deleted-alt-home');
+  const altSessions = join(altHome, '.factory', 'sessions');
+  mkdirSync(altSessions, { recursive: true });
+  const altPath = join(altSessions, `${id}.jsonl`);
+  writeFileSync(
+    altPath,
+    providerSessionJsonl({ type: 'session_start', cwd: '', sessionTitle: 'Alt copy' }),
+  );
+  process.env.DROIDEX_ALT_HOME = altHome;
+  t.after(() => {
+    if (previousAltHome === undefined) delete process.env.DROIDEX_ALT_HOME;
+    else process.env.DROIDEX_ALT_HOME = previousAltHome;
+  });
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.droidProfile, 'alt');
+  writeSession(id, 'Main copy');
+  const { restore } = denySessionStat(t, join(home, '.factory', 'sessions', `${id}.jsonl`));
+  unlinkSync(altPath);
+  assert.deepEqual(cache.reconcileChanges().removedProviderSessionIds, [id]);
+  restore();
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.title, 'Main copy');
+});
+
 test('a watcher keeps an unreadable file and removes it after real deletion', (t) => {
   const providerSessionId = 'watcher-unreadable';
   writeSession(providerSessionId, 'cached summary');

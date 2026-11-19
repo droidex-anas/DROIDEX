@@ -195,7 +195,7 @@ test('a session file never moves a cached chat to another Droid login', (t) => {
   let altLoggedIn = true;
   const cache = new SessionFileCache(
     db,
-    () => ({ files: scan, unreadableProviderSessionIds: new Set(), isComplete }),
+    () => ({ files: scan, unreadablePaths: new Set(), isComplete }),
     (id, file) => ({
       summary: sessionSummary({
         appSessionId: id,
@@ -238,7 +238,7 @@ test('Alt files never clear a cached chat, and search follows whether its file e
   ]);
   const cache = new SessionFileCache(
     db,
-    () => ({ files: scan, unreadableProviderSessionIds: new Set(), isComplete: true }),
+    () => ({ files: scan, unreadablePaths: new Set(), isComplete: true }),
     (id, file) => {
       if (file.path === mainPath) return { summary: sessionSummary({ appSessionId: id }) };
       return {

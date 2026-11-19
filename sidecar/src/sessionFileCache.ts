@@ -38,8 +38,8 @@ export interface SessionFileChange {
 
 export interface SessionFileScan {
   files: Map<string, SessionFileStat>;
-  // Failed transcript stats cannot prove those sessions were deleted.
-  unreadableProviderSessionIds: Set<string>;
+  // Failed transcript stats cannot prove those paths were deleted.
+  unreadablePaths: Set<string>;
   // False when a possible subtree could not be inspected. Upserts are still
   // authoritative, but no absence can prove deletion.
   isComplete: boolean;
@@ -221,13 +221,13 @@ export class SessionFileCache {
   // entries written or removed.
   reconcileChanges(): SessionFileReconciliation {
     const previousRevision = this.revisionValue;
-    const { files: onDisk, unreadableProviderSessionIds, isComplete } = this.scanFiles();
+    const { files: onDisk, unreadablePaths, isComplete } = this.scanFiles();
     if (isComplete) {
-      for (const id of this.files.keys()) {
-        if (!onDisk.has(id) && !unreadableProviderSessionIds.has(id)) this.unavailableFiles.add(id);
+      for (const [id, cached] of this.files) {
+        if (!onDisk.has(id) && !unreadablePaths.has(cached.path)) this.unavailableFiles.add(id);
       }
     }
-    const removals = this.collectRemovals(onDisk, unreadableProviderSessionIds, isComplete);
+    const removals = this.collectRemovals(onDisk, unreadablePaths, isComplete);
     const candidates = this.collectCandidates(onDisk);
     // Provider files that cannot be read are omitted from candidates and
     // retried on the next watcher event or full reconcile. Once candidates
@@ -260,16 +260,19 @@ export class SessionFileCache {
 
   private collectRemovals(
     onDisk: Map<string, SessionFileStat>,
-    unreadableProviderSessionIds: Set<string>,
+    unreadablePaths: Set<string>,
     isComplete: boolean,
   ): string[] {
     // A partial scan cannot distinguish a deleted file from a temporarily
     // unreadable subtree. Preserve unmatched rows until a complete scan can
     // authoritatively remove them.
     if (!isComplete) return [];
-    return [...this.files.keys()].filter(
-      (id) => !onDisk.has(id) && !unreadableProviderSessionIds.has(id) && !this.retainsSummary(id),
-    );
+    return [...this.files]
+      .filter(
+        ([id, cached]) =>
+          !onDisk.has(id) && !unreadablePaths.has(cached.path) && !this.retainsSummary(id),
+      )
+      .map(([id]) => id);
   }
 
   retainsSummary(providerSessionId: string): boolean {
