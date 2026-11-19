@@ -15,7 +15,7 @@ import { DevinProvider } from './DevinProvider.js';
 import type { DevinSession } from './devinSession.js';
 
 const CLI = String.raw`#!/usr/bin/env node
-const { appendFileSync, existsSync } = require('node:fs');
+const { appendFileSync, existsSync, readFileSync, watch } = require('node:fs');
 const { createInterface } = require('node:readline');
 const { join } = require('node:path');
 const root = __dirname;
@@ -145,6 +145,30 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
           { optionId: 'always', name: 'Always', kind: 'allow_always' },
           { optionId: 'no', name: 'No', kind: 'reject_once' } ] } });
       if (!permissionEndsTurn) result(id, { stopReason: 'end_turn' });
+      return;
+    }
+    if (text.startsWith('terminal-redirected-')) {
+      const pidFile = join(root, 'redirected-pid');
+      const ready = new Promise((resolve) => {
+        const watcher = watch(root, () => {
+          if (!existsSync(pidFile)) return;
+          watcher.close(); resolve(Number(readFileSync(pidFile, 'utf8')));
+        });
+      });
+      const script = 'const fs = require("fs"); const root = ' + JSON.stringify(root) + '; const watcher = fs.watch(root, () => { if (!fs.existsSync(root)) watcher.close(); }); fs.writeFileSync(' + JSON.stringify(pidFile + '.tmp') + ', String(process.pid)); fs.renameSync(' + JSON.stringify(pidFile + '.tmp') + ', ' + JSON.stringify(pidFile) + ');';
+      const { terminalId } = await terminalCall('create', {
+        command: JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(script) + ' >/dev/null 2>&1 &',
+      });
+      await terminalCall('wait_for_exit', { terminalId });
+      const pid = await ready;
+      if (text === 'terminal-redirected-release') {
+        await terminalCall('release', { terminalId });
+        await terminalCall('release', { terminalId });
+        result(id, { stopReason: 'end_turn' });
+      } else {
+        pending = id;
+        update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REDIRECTED:' + pid } });
+      }
       return;
     }
     if (text.startsWith('terminal-')) {
@@ -364,6 +388,25 @@ test('Devin interrupt and close kill running terminal descendants', async (t) =>
         if (action === 'background') assert.equal(response.exit.exitCode, 0);
         else assert.equal(response.exit.signal, 'SIGTERM');
       }
+    });
+  }
+});
+
+test('Devin cleans redirected background jobs after their shell and output pipes close', async (t) => {
+  for (const action of ['release', 'interrupt', 'close'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session.stream('terminal-redirected-' + action)[Symbol.asyncIterator]();
+      if (action !== 'release') {
+        const next = await stream.next();
+        assert.match(next.value?.transcript?.text ?? '', /^REDIRECTED:\d+$/);
+        await session[action]();
+      }
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      const pid = Number(await readFile(join(h.cwd, 'redirected-pid'), 'utf8'));
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
     });
   }
 });

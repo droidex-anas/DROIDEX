@@ -309,11 +309,8 @@ export class DevinTerminals {
   private killTerminal(terminal: Terminal): Promise<void> {
     if (terminal.killing) return terminal.killing;
     terminal.killing = this.processes.killSession(terminal.id).then(async () => {
-      // A shell can exit before its background jobs close the inherited pipes.
-      if (
-        (!terminal.child.stdout.closed || !terminal.child.stderr.closed) &&
-        terminal.child.pid !== undefined
-      ) {
+      // Background jobs can outlive both their shell and its output pipes.
+      if (terminal.child.pid !== undefined) {
         if (process.platform === 'win32') terminal.child.kill('SIGKILL');
         else {
           try {
