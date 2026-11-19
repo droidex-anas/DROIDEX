@@ -194,7 +194,7 @@ export class PrimaryTurnState {
   requeueFirst(prompts: readonly SessionPrompt[]): void {
     this.sends.unshift(...prompts);
   }
-  moveToFront(steerId: string): SessionPrompt | undefined {
+  prioritizeForSendNow(steerId: string): SessionPrompt | undefined {
     const prompts = [...this.heldSteers, ...this.sends];
     const prompt = prompts.find((pending) => pending.steerId === steerId);
     if (!prompt) return undefined;

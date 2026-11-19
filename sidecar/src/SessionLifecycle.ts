@@ -1049,7 +1049,7 @@ export class SessionLifecycle {
   async sendNow(appSessionId: string, steerId: string): Promise<void> {
     const liveSession = this.dependencies.registry.getLive(appSessionId);
     if (!liveSession || !steerId) return;
-    const prompt = liveSession.turn.moveToFront(steerId);
+    const prompt = liveSession.turn.prioritizeForSendNow(steerId);
     if (!prompt) return;
     this.updateQueuedSends(liveSession);
     // Compaction is never cut short, and an interrupt already in flight sends
@@ -2037,8 +2037,7 @@ export class SessionLifecycle {
     const d = this.dependencies;
     const appSessionId = stale.summary.appSessionId;
     const usage = { tokensIn: stale.summary.tokensIn, tokensOut: stale.summary.tokensOut };
-    stale.turn.requeueFirst([prompt]);
-    const waiting = stale.turn.takeAllPending();
+    const waiting = [prompt, ...stale.turn.takeAllPending()];
     const relaunch = { waiting, usageLimit: stale.summary.usageLimit };
     this.relaunches.set(appSessionId, relaunch);
     // A discarding close removes the queue; a Stop only empties it.

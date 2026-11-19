@@ -202,7 +202,7 @@ test('queue projections deduplicate steers, preserve order and reflect harness w
 
 test('Send now moves a steer first, keeps harness ownership and orders the remaining sends', () => {
   const state = new PrimaryTurnState();
-  assert.equal(state.moveToFront('missing'), undefined);
+  assert.equal(state.prioritizeForSendNow('missing'), undefined);
   const first = { text: 'first', order: 1, steerId: 'one' };
   const second = { text: 'second', order: 2, steerId: 'two' };
   const third = { text: 'third', order: 3, steerId: 'three' };
@@ -210,9 +210,9 @@ test('Send now moves a steer first, keeps harness ownership and orders the remai
   state.queueSend(second);
   state.holdSteer(first);
   state.holdSteer(second);
-  assert.equal(state.moveToFront('missing'), undefined);
+  assert.equal(state.prioritizeForSendNow('missing'), undefined);
   assert.deepEqual(state.pendingSends, [third, second]);
-  assert.equal(state.moveToFront('two'), second);
+  assert.equal(state.prioritizeForSendNow('two'), second);
   assert.deepEqual(state.steers, [first, second]);
   assert.equal(state.takeNext(), second);
   assert.deepEqual(state.takeAllPending(), [first, third]);
