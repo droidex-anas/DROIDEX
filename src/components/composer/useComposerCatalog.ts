@@ -8,8 +8,7 @@ export function useComposerCatalog({
   skillsProviderSessionId,
   providerStatuses,
 }: Parameters<typeof composerCatalog>[0]) {
-  // Everything the bound harness offers, as far as it has landed. Both menus
-  // read it, and neither asks for it: see composerCatalog.
+  // Everything the bound harness offers, as far as it has landed; see composerCatalog.
   const catalog = useMemo(
     () =>
       composerCatalog({
