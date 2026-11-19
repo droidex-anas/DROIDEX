@@ -72,9 +72,7 @@ const {
 const { getAppIconMode, applyAppIcon } = require('./appIcon.cjs');
 const { createNotificationActivation } = require('./notificationActivation.cjs');
 const { registerNotificationIpc } = require('./notificationIpc.cjs');
-const { registerPerformanceIpc } = require('./performanceIpc.cjs');
 const { registerRendererStorageIpc } = require('./rendererStorageIpc.cjs');
-const { registerAppUpdaterIpc } = require('./appUpdaterIpc.cjs');
 const { registerDiagnosticsIpc } = require('./diagnosticsIpc.cjs');
 const { registerAppPreferencesIpc } = require('./appPreferencesIpc.cjs');
 const { registerFilesIpc } = require('./filesIpc.cjs');
@@ -347,9 +345,17 @@ app.whenReady().then(async () => {
   profileUsage.registerIpc(desktopIpc);
   sidecarSupervisor.registerIpc(desktopIpc);
   registerNotificationIpc({ desktopIpc, remoteAccess, notificationActivation });
-  registerPerformanceIpc({ desktopIpc, performanceMetrics, powerTier });
+  desktopIpc.handle('get-performance-metrics', () => {
+    return performanceMetrics.collect();
+  });
+  desktopIpc.handle('system-idle-time', () => {
+    return powerMonitor.getSystemIdleTime();
+  });
+  desktopIpc.handle('power-tier', () => {
+    return powerTier.snapshot();
+  });
   registerRendererStorageIpc({ desktopIpc, remoteDesktop });
-  registerAppUpdaterIpc({ desktopIpc, appUpdater });
+  appUpdater.registerIpc(desktopIpc);
   registerDiagnosticsIpc({ desktopIpc, diagnostics });
   usageAnalytics.registerIpc(desktopIpc);
   registerAppPreferencesIpc({ desktopIpc, hardwareAccelerationPreferencePath, relaunchApp });

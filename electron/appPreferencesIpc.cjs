@@ -1,3 +1,4 @@
+const { app } = require('electron');
 const { setAppIcon } = require('./appIcon.cjs');
 const { getApiKey, setApiKey } = require('./apiKeyStore.cjs');
 const { getOnboarding, setOnboarding } = require('./onboardingStore.cjs');
@@ -13,6 +14,9 @@ function registerAppPreferencesIpc({
   hardwareAccelerationPreferencePath,
   relaunchApp,
 }) {
+  desktopIpc.handle('app-version', () => {
+    return app.getVersion();
+  });
   desktopIpc.handle('get-api-key', () => {
     return getApiKey();
   });
