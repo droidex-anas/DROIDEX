@@ -97,6 +97,8 @@ export default function SelectionMenu({
 }) {
   // A point at the pointer for the menu to open against; it grows upward
   // (the draft sits at the bottom of the window) and flips below near the top.
+  // Portaled to the body: the composer frame animates with transforms, which would
+  // make it the containing block and offset these viewport coordinates.
   const pointRef = useRef<HTMLSpanElement>(null);
   const link = menu?.link;
 
