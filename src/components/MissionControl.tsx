@@ -128,7 +128,9 @@ function ChatArea({
     const observer = new ResizeObserver(followOutput);
     observer.observe(content);
     observer.observe(scroller);
-    return () => { observer.disconnect(); };
+    return () => {
+      observer.disconnect();
+    };
   }, [followOutput]);
 
   return (
