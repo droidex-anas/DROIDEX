@@ -164,6 +164,7 @@ import {
   type SessionInteractionsAction,
 } from './storeSessionInteractions';
 import { reduceSideChats, type SideChatAction } from './storeSideChats';
+import { reduceQueue, type QueueAction } from './storeQueue';
 import { reduceUtilityPanels, type UtilityPanelsAction } from './storeUtilityPanels';
 import { persistStoreChanges } from './storePersistence';
 import {
@@ -546,9 +547,7 @@ export type Action =
   | { type: 'TRANSCRIPT_VIEWPORT'; appSessionId: string; pinned: boolean }
   | { type: 'TRANSCRIPT_RELEASE_VIEWPORT'; appSessionId: string }
   | { type: 'MEMORY_PRESSURE' }
-  | { type: 'QUEUE_PROMPT'; appSessionId: string; prompt: QueuedPrompt }
-  | { type: 'REMOVE_QUEUED_PROMPT'; appSessionId: string; id: string }
-  | { type: 'REORDER_QUEUE'; appSessionId: string; from: number; to: number }
+  | QueueAction
   | SessionInteractionsAction
   | {
       type: 'SESSION_ERROR';
@@ -1481,41 +1480,10 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'MEMORY_PRESSURE':
       return applyMemoryPressureRelease(state);
 
-    case 'QUEUE_PROMPT': {
-      const prev = state.promptQueue[action.appSessionId] ?? [];
-      return {
-        ...state,
-        promptQueue: { ...state.promptQueue, [action.appSessionId]: [...prev, action.prompt] },
-      };
-    }
-
-    case 'REMOVE_QUEUED_PROMPT': {
-      const prev = state.promptQueue[action.appSessionId] ?? [];
-      return {
-        ...state,
-        promptQueue: {
-          ...state.promptQueue,
-          [action.appSessionId]: prev.filter((p) => p.id !== action.id),
-        },
-      };
-    }
-
-    case 'REORDER_QUEUE': {
-      const prev = state.promptQueue[action.appSessionId] ?? [];
-      if (
-        action.from === action.to ||
-        action.from < 0 ||
-        action.to < 0 ||
-        action.from >= prev.length ||
-        action.to >= prev.length
-      ) {
-        return state;
-      }
-      const next = [...prev];
-      const [moved] = next.splice(action.from, 1);
-      next.splice(action.to, 0, moved);
-      return { ...state, promptQueue: { ...state.promptQueue, [action.appSessionId]: next } };
-    }
+    case 'QUEUE_PROMPT':
+    case 'REMOVE_QUEUED_PROMPT':
+    case 'REORDER_QUEUE':
+      return reduceQueue(state, action);
 
     case 'SPEC_SET':
     case 'SPEC_OPEN_WIKI':
