@@ -307,8 +307,10 @@ test('a queued follow-up sends when its attachment finishes after the current tu
 
   await composer.fill('Read my notes');
   await composer.press('ControlOrMeta+Enter');
+  const working = page.getByTestId('chat-view').getByText('Working', { exact: true });
+  await expect(working).toBeVisible();
   finishFirstTurn();
-  await expect(page.getByRole('button', { name: 'Stop turn' })).toHaveCount(0);
+  await expect(working).toHaveCount(0);
   expect(submissions).toHaveLength(1);
 
   savedAttachment.resolve('/tmp/notes.txt');
