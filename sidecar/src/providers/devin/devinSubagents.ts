@@ -19,8 +19,20 @@ interface DevinChild {
   permissions: AbortController;
 }
 
+function lifecycleMeta({ update }: SessionNotification): Record<string, unknown> | undefined {
+  if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return;
+  const meta = update._meta;
+  if (
+    meta &&
+    ('cognition.ai/subagent_started' in meta || 'cognition.ai/subagent_completed' in meta)
+  )
+    return meta;
+  return undefined;
+}
+
 export class DevinSubagents {
   private readonly children = new Map<string, DevinChild>();
+  private readonly replayedChildren = new Set<string>();
 
   constructor(
     private readonly appSessionId: string,
@@ -30,16 +42,37 @@ export class DevinSubagents {
   restore(children: readonly ProviderChildSession[]): void {
     for (const child of children) {
       if (child.providerSessionId === this.parentSessionId) continue;
+      const observed = this.children.get(child.providerSessionId)?.signal;
       this.child(child.providerSessionId, {
         providerSessionId: child.providerSessionId,
         role: child.role,
         status: child.status,
-        modelId: child.modelId,
         reasoningEffort: child.reasoningEffort,
         transcriptAvailable: child.transcriptAvailable,
         streamFidelity: 'token',
+        ...observed,
+        modelId: observed?.modelId ?? child.modelId,
       });
     }
+  }
+
+  replay(notification: SessionNotification): void {
+    const meta = lifecycleMeta(notification);
+    if (!meta) return;
+    for (const event of this.lifecycle(meta)) {
+      const id = event.childSession?.providerSessionId;
+      if (id) this.replayedChildren.add(id);
+    }
+  }
+
+  takeReplayedChildren(): NormalizedEvent[] {
+    const events: NormalizedEvent[] = [];
+    for (const id of this.replayedChildren) {
+      const child = this.children.get(id);
+      if (child && !settled(child.signal)) events.push({ childSession: child.signal });
+    }
+    this.replayedChildren.clear();
+    return events;
   }
 
   permissionSignal(id: string): AbortSignal | undefined {
@@ -59,20 +92,15 @@ export class DevinSubagents {
   close(): void {
     for (const child of this.children.values()) child.permissions.abort();
     this.children.clear();
+    this.replayedChildren.clear();
   }
 
   // Undefined leaves a primary update to the parent's mapper; an empty array
   // consumes child traffic that cannot safely be attributed.
   map(notification: SessionNotification): NormalizedEvent[] | undefined {
     const { update } = notification;
-    if (update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update') {
-      const meta = update._meta;
-      if (
-        meta &&
-        ('cognition.ai/subagent_started' in meta || 'cognition.ai/subagent_completed' in meta)
-      )
-        return this.lifecycle(meta);
-    }
+    const meta = lifecycleMeta(notification);
+    if (meta) return this.lifecycle(meta);
     const id = devinChildId(update);
     if (!id) return undefined;
     const child = this.children.get(id);

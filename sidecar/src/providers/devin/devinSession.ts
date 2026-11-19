@@ -127,6 +127,7 @@ export class DevinSession implements ProviderSession {
         if (!this.capabilities?.loadSession)
           throw new Error('Devin cannot load saved conversations.');
         this.sessionId = resumeId;
+        this.subagents = new DevinSubagents(this.input.appSessionId ?? resumeId, resumeId);
         const loaded = await this.client.connection.agent.request('session/load', {
           sessionId: resumeId,
           cwd,
@@ -147,7 +148,7 @@ export class DevinSession implements ProviderSession {
         this.input.appSessionId ?? this.providerSessionId,
         this.providerSessionId,
       );
-      this.subagents = new DevinSubagents(
+      this.subagents ??= new DevinSubagents(
         this.input.appSessionId ?? this.providerSessionId,
         this.providerSessionId,
       );
@@ -230,7 +231,10 @@ export class DevinSession implements ProviderSession {
   }
 
   onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
-    if (!this.isClosed) this.backgroundListeners.add(listener);
+    if (!this.isClosed) {
+      this.backgroundListeners.add(listener);
+      for (const event of this.subagents?.takeReplayedChildren() ?? []) this.emitBackground(event);
+    }
     return () => {
       this.backgroundListeners.delete(listener);
     };
@@ -333,16 +337,22 @@ export class DevinSession implements ProviderSession {
     if (this.isClosed || (this.sessionId && notification.sessionId !== this.sessionId)) return;
     if (notification.update.sessionUpdate === 'config_option_update')
       this.configOptions = notification.update.configOptions;
-    const childEvents = this.subagents?.map(notification);
-    if (childEvents) {
-      for (const event of childEvents) {
-        if (!this.input.interactions.isActive()) return;
-        for (const listener of this.backgroundListeners) listener(event);
-      }
+    if (!this.mapper) {
+      this.subagents?.replay(notification);
       return;
     }
-    if (!this.queue || !this.mapper) return;
+    const childEvents = this.subagents?.map(notification);
+    if (childEvents) {
+      for (const event of childEvents) this.emitBackground(event);
+      return;
+    }
+    if (!this.queue) return;
     for (const event of this.mapper.map(notification)) this.queue.push(event);
+  }
+
+  private emitBackground(event: NormalizedEvent): void {
+    if (this.isClosed || !this.input.interactions.isActive()) return;
+    for (const listener of this.backgroundListeners) listener(event);
   }
 
   private requireOpen(): void {

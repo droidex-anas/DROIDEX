@@ -58,7 +58,14 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   } else if (method === 'session/new' || method === 'session/load') {
     servers = params.mcpServers;
     update({ sessionUpdate: 'config_option_update', configOptions });
-    if (method === 'session/load') update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
+    if (method === 'session/load') {
+      update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
+      if (existsSync(join(root, 'replay-children'))) {
+        childStarted('background'); childText('background', 'Replayed child answer');
+        childStarted('finished'); childCompleted('finished');
+        childStarted('untracked');
+      }
+    }
     result(id, { sessionId: 'devin-one' });
   } else if (method === 'session/set_config_option') {
     if (params.value === 'finish-background') {
@@ -360,6 +367,7 @@ test('Devin native children keep sibling and parent transcripts isolated through
 test('Devin observes fresh and restored children between turns and rejects child output after close', async (t) => {
   const h = await fixture(t);
   for (const resume of [false, true]) {
+    if (resume) await writeFile(join(h.cwd, 'replay-children'), '');
     const session = resume ? await h.provider.resume('devin-one', h.input) : await h.create();
     if (resume) {
       h.sessions.push(session);
@@ -367,8 +375,8 @@ test('Devin observes fresh and restored children between turns and rejects child
         {
           providerSessionId: 'background',
           role: 'worker',
-          status: 'running',
-          modelId: 'swe-child',
+          status: 'paused',
+          modelId: 'old-model',
           transcriptAvailable: true,
         },
       ]);
@@ -378,6 +386,23 @@ test('Devin observes fresh and restored children between turns and rejects child
       background.push(event);
     });
     if (!resume) assert.deepEqual(await collect(session.stream('background')), [{ done: true }]);
+    assert.deepEqual(
+      background.flatMap((event) =>
+        event.childSession
+          ? [
+              [
+                event.childSession.providerSessionId,
+                event.childSession.status,
+                event.childSession.modelId,
+              ],
+            ]
+          : [],
+      ),
+      [
+        ['background', 'running', 'swe-child'],
+        ...(resume ? [['untracked', 'running', 'swe-child']] : []),
+      ],
+    );
     await session.setModel({ modelId: 'finish-background' });
     assert.deepEqual(
       background.flatMap((event) => event.transcript?.text ?? []),
