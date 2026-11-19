@@ -286,6 +286,7 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   assert.equal(ready.readiness, 'ready');
   assert.equal(ready.version, '3000.14.30821');
   assert.equal(ready.defaultModelId, 'swe-fast');
+  assert.ok(ready.models.every((model) => model.supportsFastMode === false));
   assert.deepEqual(
     ready.models.map((model) => [model.id, model.isDefault]),
     [

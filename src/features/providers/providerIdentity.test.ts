@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ProviderStatus } from '../../types/bridge';
+import { offersFastMode } from '../../lib/fastMode';
 import {
   PROVIDER_LABELS,
   PROVIDER_MARKS,
@@ -18,6 +19,7 @@ test('Devin identity uses its CLI login, native session handle and planning mode
   assert.equal(sessionResumeId({ provider: 'devin', providerSessionId: 'acp-id' }), 'acp-id');
   assert.equal(sessionResumeCommand('devin', "'acp-id'"), "devin --resume 'acp-id'");
   assert.equal(supportsSpecMode('devin'), true);
+  assert.equal(offersFastMode('devin'), false);
 });
 
 test('Devin is selectable only when its provider probe is ready', () => {

@@ -127,6 +127,7 @@ function configModels(model: SessionConfigOption | undefined): ModelInfo[] {
       id: option.value,
       displayName: option.name,
       isCustom: false,
+      supportsFastMode: false,
       isDefault: option.value === model.currentValue,
     }));
 }
