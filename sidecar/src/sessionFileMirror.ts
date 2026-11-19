@@ -9,7 +9,7 @@ import {
   mapSessionFileEntries,
   sameSessionFileEntries,
 } from './sessionFileEntries.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 export class SessionFileMirror {
   private readonly files = new Map<string, SessionFileCacheEntry>();

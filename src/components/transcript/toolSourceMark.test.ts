@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { McpServerInfo } from '../../types/bridge';
+import type { McpServerInfo } from '@droidex/protocol';
 import { recordMcpCatalog, toolSourceMark } from './toolSourceMark';
 
 const server = (name: string, host?: string): McpServerInfo => ({

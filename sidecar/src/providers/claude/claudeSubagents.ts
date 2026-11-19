@@ -1,6 +1,6 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { ChildActivity, ChildStatus } from '../../protocol.js';
+import type { ChildActivity, ChildStatus } from '@droidex/protocol';
 import { taskPollTargetId, type ChildSessionSignal } from '../../subagentSignals.js';
 import { trimmedString as str } from '../../values.js';
 import type { ProviderChildSession } from '../session.js';

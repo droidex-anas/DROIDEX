@@ -13,7 +13,13 @@ import type {
   NativeBrowserWorking,
 } from './nativeBrowser';
 import type { NativeBrowserChord } from './shortcuts';
-import type { BrowserViewportMode } from '../types/bridge';
+import type {
+  BrowserViewportMode,
+  CanvasErrorCode,
+  DesignSystemVersionRef,
+  OwnedAsset,
+  RevisionRef,
+} from '@droidex/protocol';
 import type { EditorId, EditorTarget } from './editorOpen';
 import type { RepoStatus } from './repoEnvironment';
 import type {
@@ -24,12 +30,7 @@ import type {
 } from './onboarding';
 import type { AppIconMode } from './appIcon';
 import type { UsageAnalyticsBootstrap } from './usageAnalytics';
-import type {
-  CanvasErrorCode,
-  DesignSystemVersionRef,
-  OwnedAsset,
-  RevisionRef,
-} from '../features/canvas/protocol';
+
 import type {
   CommitOptions,
   CreateBranchOptions,

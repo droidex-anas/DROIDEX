@@ -14,7 +14,7 @@ import {
   Vector,
   type IconComponent,
 } from '@droidex/icons';
-import type { OutlineNode } from '../protocol';
+import type { OutlineNode } from '@droidex/protocol';
 
 type LayerKind =
   | 'container'

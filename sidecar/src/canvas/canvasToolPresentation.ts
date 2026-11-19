@@ -1,35 +1,11 @@
+import type { CanvasActivity, KitReference, TranscriptEvent } from '@droidex/protocol';
 import {
   CANVAS_MCP_SERVER_NAME,
   CANVAS_TOOL_NAMES,
   type CanvasToolName,
 } from './canvasMcpNames.js';
-import type { TranscriptEvent } from '../protocol.js';
+
 import { objectValue } from '../values.js';
-
-export interface CanvasActivity {
-  toolUseId: string;
-  action: 'create' | 'write' | 'inspect' | 'arrange' | 'annotate' | 'theme' | 'image';
-  designIds: string[];
-  state: 'running' | 'completed' | 'failed';
-  message: string;
-  /** The canvas a create or write changed, as its reply named it. */
-  canvasId?: string;
-  /** The name of the first frame a create reserved. */
-  title?: string;
-  /** The revision a write committed. */
-  revisionId?: string;
-  /** This create gave an unattached chat its canvas, so it is the chat's first artifact. */
-  firstArtifact?: true;
-  /** The kit a theme call saved, proposed or applied; its reference only, never its content. */
-  designSystem?: KitReference;
-}
-
-/** A proposal's version is the one it was made on. */
-export interface KitReference {
-  id: string;
-  version: number;
-  status: 'saved' | 'proposed' | 'applied';
-}
 
 const THEME_OPERATIONS = ['list', 'read', 'save', 'apply'] as const;
 type ThemeOperation = (typeof THEME_OPERATIONS)[number];

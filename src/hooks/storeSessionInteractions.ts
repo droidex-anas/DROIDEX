@@ -1,4 +1,4 @@
-import type { PermissionRequest, SessionQuestion, SessionSummary } from '../types/bridge';
+import type { PermissionRequest, SessionQuestion, SessionSummary } from '@droidex/protocol';
 import type { AppState } from './useStore';
 
 export type SessionInteractionsAction =

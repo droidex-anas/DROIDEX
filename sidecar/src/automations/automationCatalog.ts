@@ -13,8 +13,8 @@ import type {
   AutomationInput,
   AutomationPatch,
   AutomationReasoningEffort,
-  AutomationStore,
-} from './types.js';
+} from '@droidex/protocol';
+import type { AutomationStore } from './types.js';
 
 /**
  * What changing or removing a definition does to the runs that reference it.

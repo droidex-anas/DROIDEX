@@ -3,7 +3,7 @@
 import type { ModelInfo as ClaudeModelInfo, SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 
 import { reasoningValue } from '../../modelCatalog.js';
-import type { ContextWindowTokens, ModelInfo, ReasoningEffort } from '../../protocol.js';
+import type { ContextWindowTokens, ModelInfo, ReasoningEffort } from '@droidex/protocol';
 import {
   claudeContextModel,
   claudeExtendedContextId,

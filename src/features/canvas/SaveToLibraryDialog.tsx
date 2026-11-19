@@ -13,7 +13,7 @@ import {
 } from './CanvasDialog';
 import { canvasMessage, CanvasRequestError } from './client';
 import { frameTile, LIBRARY_THUMBNAIL_WIDTH_PX } from './frameTile';
-import type { RevisionRef } from './protocol';
+import type { RevisionRef } from '@droidex/protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 export function SaveToLibraryDialog({

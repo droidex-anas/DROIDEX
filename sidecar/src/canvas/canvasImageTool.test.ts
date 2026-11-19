@@ -22,7 +22,7 @@ import type { CanvasCapture } from './canvasCaptures.js';
 import { canvasError } from './canvasError.js';
 import { SANITISED_SVG_PREFIX } from './canvasSvg.js';
 import type { ImportProjectImage, ProjectImageFile } from './desktopImageChannel.js';
-import type { CaptureImage } from './protocol.js';
+import type { CaptureImage } from '@droidex/protocol';
 
 pinScratchProfile();
 

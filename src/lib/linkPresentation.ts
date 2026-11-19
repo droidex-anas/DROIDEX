@@ -1,4 +1,4 @@
-import type { SkillInfo } from '../types/bridge';
+import type { SkillInfo } from '@droidex/protocol';
 import { imageSrc, localImageFilePath } from './localImage';
 
 // How a link in a message is presented: the site it points at, and a compact

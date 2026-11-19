@@ -9,7 +9,7 @@
 import { useEffect } from 'react';
 import { useStoreDispatch } from '../../hooks/useStore';
 import { bridge } from '../../lib/bridge';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { useOpenCanvasPane, type CanvasPaneTarget } from './openCanvasPane';
 
 export function useFirstArtifactPane(enabled: boolean): void {

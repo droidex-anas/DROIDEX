@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ProviderTranscriptFile } from './ProviderTranscriptFile.js';
 import { parseFullSessionTranscript } from '../sessionTranscript.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 function reply(messageId: string, text: string): TranscriptEvent {
   return {

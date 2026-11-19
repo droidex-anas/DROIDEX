@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { SequencedServerEvent, ServerEvent, ServerEventBatch } from './protocol.js';
+import type { SequencedServerEvent, ServerEvent, ServerEventBatch } from '@droidex/protocol';
 
 const DEFAULT_BATCH_WINDOW_MS = 16;
 const DEFAULT_PRESSURED_BATCH_WINDOW_MS = 32;

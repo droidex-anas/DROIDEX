@@ -3,7 +3,7 @@ import { tool } from '@factory/droid-sdk';
 import { z } from 'zod';
 import { autonomySchema, jsonResult, reasoningSchema, safeTool } from '../mcpToolUtils.js';
 import { getAutomationManager } from './AutomationManager.js';
-import type { AutomationInput, AutomationPatch } from './types.js';
+import type { AutomationInput, AutomationPatch } from '@droidex/protocol';
 import { deriveAutomationTitle } from './title.js';
 
 const scheduleSchema = z.discriminatedUnion('kind', [

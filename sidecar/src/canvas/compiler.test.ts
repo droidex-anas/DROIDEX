@@ -19,9 +19,9 @@ import { readDesignSystem } from './designSystems.js';
 import { CHART_DESIGN } from './fixtures/chart.js';
 import { LIBRARY_DESIGN } from './fixtures/library.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 import { applyElementEdit, type SourceChange } from './sourceElementEdits.js';
-import type { SourceFiles } from './schema.js';
+
 import { compileInput, mockCompilerProcesses } from '../testing/canvasCompilerSupport.js';
 
 // One real worker for every case that only reads its answer; the cases that

@@ -9,7 +9,7 @@ import type {
   ChildSpawnObservation,
 } from './ChildSessionState.js';
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 

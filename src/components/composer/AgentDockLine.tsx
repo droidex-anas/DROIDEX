@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import type { ChildSessionSummary, ModelInfo, ProviderKind } from '../../types/bridge';
+import type { ChildSessionSummary, ModelInfo, ProviderKind } from '@droidex/protocol';
 import { agentDisclosureMotion, AgentRowList, foldedAgentRows } from '../agents/AgentRowList';
 import { inlineCardMotion } from '../inlineCardMotion';
 import { AgentSummaryLine } from '../agents/AgentSummaryLine';

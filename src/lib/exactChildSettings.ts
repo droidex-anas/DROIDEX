@@ -1,4 +1,4 @@
-import type { ChildSessionSummary, ModelInfo, ReasoningEffort } from '../types/bridge';
+import type { ChildSessionSummary, ModelInfo, ReasoningEffort } from '@droidex/protocol';
 import type { VisibleSessionTarget } from './childSessions';
 import { compatibleReasoningForModel } from './reasoningEffort';
 

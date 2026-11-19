@@ -10,7 +10,12 @@ import { frameSizeLabel } from './canvasGeometry';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
 import type { ComponentPin } from './componentPins';
 import type { ElementPin } from './elementPins';
-import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
+import type {
+  CanvasFrame,
+  CanvasSnapshot,
+  CanvasTurnContext,
+  DesignSystemRef,
+} from '@droidex/protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
 const MAX_PINNED = 32;

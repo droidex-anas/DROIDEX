@@ -3,7 +3,7 @@ import test from 'node:test';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { transcriptForVisibleSession } from '../lib/childSessions';
 import { getRendererPerfSnapshot, resetRendererPerfForTest } from '../lib/rendererPerf';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { isCopyableFinalResponse, projectFinalResponseKeys } from './messageFeedState';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';

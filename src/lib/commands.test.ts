@@ -9,7 +9,7 @@ import {
   withdrawSteer,
 } from './commands';
 import { resetRuntimeHealthForTests, setTransportHealth } from './runtimeHealth';
-import type { ClientCommand, ServerEvent } from '../types/bridge';
+import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 
 // Drives request/reply commands through the bridge singleton with an in-memory
 // double; a send uses the ordered lane.

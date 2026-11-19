@@ -7,7 +7,7 @@ import { createContext, useRef, useState, useSyncExternalStore } from 'react';
 import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage, CanvasRequestError } from '../client';
-import type { DesignSystemDocumentView } from '../protocol';
+import type { DesignSystemDocumentView } from '@droidex/protocol';
 import { useIsMounted } from './useIsMounted';
 
 /**

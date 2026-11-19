@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import { FileChip } from '../../components/composer/FileChip';
 import { Button } from '../../components/ui/Button';
 import type { WorkspaceScope } from '../../lib/workspaces';
-import type { ModelInfo } from '../../types/bridge';
+import type { ModelInfo, AutomationSchedule } from '@droidex/protocol';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import { SelectMenu } from './SelectMenu';
 import {
@@ -16,7 +16,7 @@ import {
   workspaceLabel,
 } from './schedule';
 import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
-import type { AutomationDraft, AutomationEditorState, AutomationSchedule } from './types';
+import type { AutomationDraft, AutomationEditorState } from './types';
 
 interface AutomationEditorProps {
   editor: AutomationEditorState;

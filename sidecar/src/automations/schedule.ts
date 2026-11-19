@@ -1,4 +1,4 @@
-import type { Automation, AutomationSchedule } from './types.js';
+import type { Automation, AutomationSchedule } from '@droidex/protocol';
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;

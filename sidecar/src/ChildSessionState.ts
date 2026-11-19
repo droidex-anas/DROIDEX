@@ -9,7 +9,7 @@ import type {
   ReasoningEffort,
   SessionSummary,
   StreamFidelity,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { reasoningValue } from './modelCatalog.js';
 import { normalizeAutonomy } from './values.js';
 import type { PrimaryTurnState } from './PrimaryTurnState.js';

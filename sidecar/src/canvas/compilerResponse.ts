@@ -10,7 +10,7 @@ import type {
 } from './compiler.js';
 import { moduleDeclarationsSchema } from './compilerModules.js';
 import { kitFailureSchema } from './kitCatalog.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   outlineNodeIdSchema,

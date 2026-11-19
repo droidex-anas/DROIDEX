@@ -3,13 +3,13 @@ import { useReducedMotion } from 'framer-motion';
 import { toast } from '../../lib/toast';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import type { UtilityTab } from '../../lib/utilityPanel';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent, ProjectStep } from '@droidex/protocol';
 import { resumeProject } from './client';
 import { PaneTransition } from './PaneTransition';
 import { ThreadDetail } from './ThreadDetail';
 import { ThreadList, type ThreadListView } from './ThreadList';
 import type { ThreadRow } from './threadBoard';
-import type { ProjectStep } from './types';
+
 import { entryForSession, useProjectBoard } from './useProjectBoard';
 import { useRelativeTimeNow } from '../../hooks/useRelativeTimeNow';
 

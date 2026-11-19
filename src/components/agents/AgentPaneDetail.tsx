@@ -1,6 +1,6 @@
 import { useMemo, useRef } from 'react';
 import { ArrowLeft } from '@droidex/icons';
-import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
+import type { ModelInfo, ProviderKind, TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionTarget } from '../../lib/childSessions';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
 import type { ChildHistoryState } from '../../hooks/storeChildSession';

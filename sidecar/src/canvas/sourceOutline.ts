@@ -8,7 +8,7 @@
 import { createHash } from 'node:crypto';
 import ts from 'typescript';
 import { functionName, type ComponentUses } from './componentUses.js';
-import type { OutlineNode, SourceOutline } from './protocol.js';
+import type { OutlineNode, SourceOutline } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 import type { Site } from './sourceElements.js';
 import { visibility } from './sourceHiddenClass.js';

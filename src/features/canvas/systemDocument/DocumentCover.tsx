@@ -10,7 +10,7 @@ import { useEffect, type CSSProperties } from 'react';
 import { RefreshCw, Upload } from '@droidex/icons';
 import { useStoreDispatch } from '../../../hooks/useStore';
 import { keepImageCoverCapture, useKitCapture } from '../kitCaptures';
-import type { DesignSystemCover, DesignSystemRef, OwnedAsset } from '../protocol';
+import type { DesignSystemCover, DesignSystemRef, OwnedAsset } from '@droidex/protocol';
 import { ActionMenu } from './ActionMenu';
 import { AssetPicture } from './AssetsSection';
 import { sameCover, type DraftChange } from './documentDraft';

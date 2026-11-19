@@ -17,7 +17,7 @@ import {
   CAT_LABEL,
   type TodoItem,
 } from './tools';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function todoCall(id: string, toolArgs: unknown): TranscriptEvent {
   return {

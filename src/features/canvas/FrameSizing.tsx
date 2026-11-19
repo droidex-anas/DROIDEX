@@ -6,7 +6,7 @@ import { ChevronDown } from '@droidex/icons';
 import { frameSizeLabel, type FrameHandle, type ResizeHandle } from './canvasGeometry';
 import type { BoardMode } from './canvasState';
 import { FrameSizeMenu, type FrameSize } from './FrameSizeMenu';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect } from '@droidex/protocol';
 
 /** Edges first, so the corner squares sit above the strips they overlap. */
 const HANDLES: readonly ResizeHandle[] = [

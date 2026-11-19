@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import { FAMILIAR_PREEXISTING_SESSIONS_PER_WORKSPACE } from './sessionListFilter.js';
 import { providerSessionJsonl } from './testing/providerSessionFixtures.js';
 import { persistTestSummaries } from './testing/historyPersistenceFixture.js';

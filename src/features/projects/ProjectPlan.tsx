@@ -1,7 +1,6 @@
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
-import type { SessionActivityStatus } from '../../lib/sidebarActivity';
+import type { SessionActivityStatus, ProjectStep } from '@droidex/protocol';
 import { finishedSteps, type ThreadRow } from './threadBoard';
-import type { ProjectStep } from './types';
 
 /* The lead owns step progress; a linked thread supplies its activity and opens
    the conversation without changing the step's state. The Plan tab names the

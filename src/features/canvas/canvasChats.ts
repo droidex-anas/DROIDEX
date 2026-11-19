@@ -2,7 +2,7 @@
 // ID and target across retries. New chats commit through session.create instead.
 
 import { canvasMessage, type CanvasClient } from './client';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 
 /** Shown while a create's reply is missing: the canvas may well exist. */
 const UNCONFIRMED_CREATE = 'Canvas creation may still be in progress.';

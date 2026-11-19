@@ -9,7 +9,7 @@ import { canvasError } from './canvasError.js';
 import { UNREADABLE_CANVAS, type CanvasHeads } from './canvasHeads.js';
 import type { CanvasManifest } from './canvasManifest.js';
 import { canvasChange } from './canvasProjection.js';
-import type { DesignSystemAdherence } from './protocol.js';
+import type { DesignSystemAdherence } from '@droidex/protocol';
 
 export class CanvasSettings {
   constructor(

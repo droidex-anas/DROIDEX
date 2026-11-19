@@ -26,7 +26,7 @@ import {
   type FrameHandle,
   type Viewport,
 } from './canvasGeometry';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 function rect(x: number, y: number, width = 400, height = 300): FrameRect {
   return { x, y, width, height };

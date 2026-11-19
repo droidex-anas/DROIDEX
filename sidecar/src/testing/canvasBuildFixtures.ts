@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import type { TestContext } from 'node:test';
 import { CanvasFiles } from '../canvas/canvasFiles.js';
 import type { CanvasManifest } from '../canvas/canvasManifest.js';
-import type { CanvasBuildState, CanvasDiagnostic } from '../canvas/protocol.js';
+import type { CanvasBuildState, CanvasDiagnostic } from '@droidex/protocol';
 import { instrumentSource } from '../canvas/sourceElements.js';
 import { board, type Board, type BoardOptions } from './canvasBuildSupport.js';
 

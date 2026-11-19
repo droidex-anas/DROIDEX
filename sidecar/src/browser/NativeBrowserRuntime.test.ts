@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { NativeBrowserRuntime } from './NativeBrowserRuntime.js';
-import type { BrowserNativeRequest } from '../protocol.js';
+import type { BrowserNativeRequest } from '@droidex/protocol';
 
 test('NativeBrowserRuntime sends live requests with application and browser session context', async () => {
   const requests: BrowserNativeRequest[] = [];

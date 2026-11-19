@@ -1,4 +1,4 @@
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 /** A paused primary chat; tests override only the fields their assertions read. */
 export function sessionSummary(

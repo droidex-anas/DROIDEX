@@ -13,7 +13,12 @@ import { useComponentPins, type ComponentPin } from '../componentPins';
 import { componentTag, TAG_TOOLTIPS, toggleComponentPin } from '../componentTagging';
 import { KitGuest } from '../KitGuest';
 import { useKitCapture } from '../kitCaptures';
-import type { CatalogListing, DesignSystemRef, KitPreviewTarget, PropPick } from '../protocol';
+import type {
+  CatalogListing,
+  DesignSystemRef,
+  KitPreviewTarget,
+  PropPick,
+} from '@droidex/protocol';
 import { MoreSegments, SegmentedControl, type Segment } from '../SegmentedControl';
 import { useFitScale } from '../systemDocument/useFitScale';
 import type { RowTagging } from './ComponentsPanel';

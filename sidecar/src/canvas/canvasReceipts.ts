@@ -6,12 +6,8 @@
 
 import { findMutation, type CanvasManifest } from './canvasManifest.js';
 import { canvasChange, frameChange, toFrame, type BuildStates } from './canvasProjection.js';
-import type {
-  AnnotatedChange,
-  CanvasChange,
-  CreateFramesResult,
-  WriteReceipt,
-} from './protocol.js';
+import type { CanvasChange, CreateFramesResult, WriteReceipt } from '@droidex/protocol';
+import type { AnnotatedChange } from './CanvasAnnotations.js';
 
 export function recordedCreate(
   manifest: CanvasManifest,

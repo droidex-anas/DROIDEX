@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Annotation } from './annotationProtocol';
+import type { Annotation } from '@droidex/protocol';
 import {
   boxBetween,
   draftOf,

@@ -48,7 +48,7 @@ import {
 import { CompareCaption, ConflictBar, ConflictCompare } from './CanvasSourceConflict';
 import { ReadFailure, SourceEmptyState } from './CanvasSourceStates';
 import { revisionNumber, useFrameHistory, type HistoryClient } from './frameHistory';
-import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from './protocol';
+import type { CanvasFrame, SourceFiles, WriteFilesInput, WriteReceipt } from '@droidex/protocol';
 
 // Prism and the editor's chrome load with the first file the user opens, not
 // with the board.

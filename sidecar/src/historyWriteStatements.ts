@@ -2,7 +2,7 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 
 import type { PersistedChildSession } from './history.js';
 import type { PersistedEventMetadata } from './historyPersistenceProtocol.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
 
 export class HistoryWriteStatements {

@@ -12,7 +12,7 @@ import {
   contextStatsSnapshot,
   rebasedContextSnapshot,
 } from './contextSnapshots.js';
-import type { ContextStatsSnapshot, ServerEvent, SessionSummary } from './protocol.js';
+import type { ContextStatsSnapshot, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { NormalizedTokenUsage } from './SessionEventFlow.js';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { LiveSession } from './SessionLifecycle.js';

@@ -23,7 +23,7 @@ import {
   readPreviewShape,
 } from '../../src/features/canvas/previewDocumentShape';
 import { pickedElement } from '../../src/features/canvas/pickedElement';
-import type { CanvasFrame } from '../../src/features/canvas/protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import {
   askGuest,
   compileDesign,

@@ -2,7 +2,7 @@
 // the standard pool and Droid Core. A Droid session never reports them. The
 // usage panel reads Main's with the API key DROIDEX was given; a project lead
 // with Alt profiles reads every account's, each with its own credential.
-import type { UsageLimit, UsageWindow } from '../../protocol.js';
+import type { UsageLimit, UsageWindow } from '@droidex/protocol';
 import { numberValue, objectValue } from '../../values.js';
 import { UsageReadError } from '../accountUsage.js';
 import { windowUsage } from '../usageLimit.js';

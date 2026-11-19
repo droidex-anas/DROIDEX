@@ -1,4 +1,4 @@
-import type { DroidProfile } from '../../types/bridge';
+import type { DroidProfile } from '@droidex/protocol';
 import { cn } from '../../components/ui/cn';
 import { DROID_PROFILE_LOGINS } from './providerIdentity';
 

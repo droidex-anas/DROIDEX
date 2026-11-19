@@ -1,4 +1,4 @@
-import type { UsageMeter } from '../../types/bridge';
+import type { UsageMeter } from '@droidex/protocol';
 
 // Early in a window the average rate is mostly its first burst, so no pace is
 // read until this share of the window has passed.

@@ -6,7 +6,7 @@
 // of the second.
 
 import type { SnapGap } from './frameSnap';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 type Axis = SnapGap['axis'];
 

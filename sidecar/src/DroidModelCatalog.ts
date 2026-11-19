@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { readDroidCliModelCatalog } from './DroidCliCatalog.js';
 import { mergeModelCatalog } from './modelCatalog.js';
-import type { ModelInfo } from './protocol.js';
+import type { ModelInfo } from '@droidex/protocol';
 
 /**
  * Where the catalog came from. A Droid session's init lists the account's live

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { PersistenceRecovery } from './protocol.js';
+import type { PersistenceRecovery } from '@droidex/protocol';
 import { isRecordedProcessAlive } from './processes/isProcessAlive.js';
 
 const MARKER_NAME = 'history-unflushed.marker';

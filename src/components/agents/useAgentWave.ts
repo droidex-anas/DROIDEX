@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ChildSessionSummary, ModelInfo } from '../../types/bridge';
+import type { ChildSessionSummary, ModelInfo } from '@droidex/protocol';
 import type { ChildSessionActivity, ChildSessionTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import {

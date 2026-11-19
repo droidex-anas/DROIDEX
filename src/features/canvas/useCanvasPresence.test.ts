@@ -4,9 +4,9 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticStoreProvider, initialState, reducer, type AppState } from '../../hooks/useStore';
 import { sessionSummary } from '../../test/sessionSummary';
-import type { ChildSessionSummary, TranscriptEvent } from '../../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent, CanvasFrame } from '@droidex/protocol';
 import type { CanvasPresence } from './canvasPresence';
-import type { CanvasFrame } from './protocol';
+
 import { useCanvasPresence } from './useCanvasPresence';
 
 const PRICING: CanvasFrame = {

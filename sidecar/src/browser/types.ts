@@ -2,21 +2,8 @@ import type {
   BrowserBox,
   BrowserViewport,
   BrowserViewportMode,
-  DesignAnchor,
-  DesignAnchorDetail,
-  DesignSelectionScreenshot,
-} from '../protocol.js';
-
-export type {
-  BrowserConsoleEvent,
-  BrowserElementInspection,
-  BrowserNetworkEvent,
-  BrowserViewport,
-  BrowserViewportMode,
-  DesignAnchor,
-  DesignAnchorDetail,
-  DesignSelectionScreenshot,
-} from '../protocol.js';
+  DesignReference,
+} from '@droidex/protocol';
 
 export interface BrowserScreenshotOptions {
   /** Crop to this element from browser_read_page. */
@@ -86,15 +73,9 @@ export interface BrowserState extends BrowserSnapshot {
   error?: string;
 }
 
-export interface DesignReference {
-  id: string;
-  anchor: DesignAnchor;
-  detail?: DesignAnchorDetail;
-  url: string;
-  title?: string;
+export interface StoredDesignReference extends DesignReference {
   viewport: BrowserViewport;
   scroll: { x: number; y: number };
-  screenshot?: DesignSelectionScreenshot;
   createdAt: string;
 }
 
@@ -103,5 +84,5 @@ export interface DesignPromptPack {
   browserSessionId?: string;
   createdAt: string;
   instruction: string;
-  references: DesignReference[];
+  references: StoredDesignReference[];
 }

@@ -33,6 +33,7 @@ flowchart LR
 | Electron preload | `electron/preload.cjs` | Narrow API boundary between renderer and Electron main process |
 | Native browser preload | `electron/nativeBrowserPreload.cjs` | Browser automation bridge for embedded native browser flows |
 | Sidecar | `sidecar/src/` | Local WebSocket bridge, Droid SDK session lifecycle, Mission Control integration, CLI discovery |
+| Wire contracts | `packages/protocol/src/` | Shared bridge, MCP, and Canvas declarations, imported through `@droidex/protocol`; Zod validation stays in the sidecar |
 | History worker threads | `sidecar/src/historyPersistenceWorker.ts` | Independently supervised writer and index workers for batched durability, file reconciliation, transcript extraction, and SQLite FTS away from the sidecar event loop |
 
 ## Data and control boundaries

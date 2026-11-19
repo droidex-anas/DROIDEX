@@ -3,7 +3,7 @@
 // rebuild, which is well-formed and escaped, so a small tokenizer reads it.
 
 import postcss from 'postcss';
-import type { OwnedAsset, SvgImageReason } from './protocol.js';
+import type { OwnedAsset, SvgImageReason } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 export interface SvgFrameSource {

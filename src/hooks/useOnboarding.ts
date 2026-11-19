@@ -3,7 +3,7 @@ import { bridge } from '../lib/bridge';
 import { connect, detectEnv, installCli, updateCli } from '../lib/commands';
 import { setApiKey as persistApiKey } from '../lib/desktop';
 import { getOnboarding, setOnboarding, type OnboardingState } from '../lib/onboarding';
-import type { EnvironmentReport, InstallChannel } from '../types/bridge';
+import type { EnvironmentReport, InstallChannel } from '@droidex/protocol';
 
 interface RuntimeStatus {
   mode: 'cli_auth';

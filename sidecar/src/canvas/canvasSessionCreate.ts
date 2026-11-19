@@ -1,4 +1,4 @@
-import type { ClientCommand, ServerEvent, SessionSummary } from '../protocol.js';
+import type { ClientCommand, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProjectSessions } from '../projects/sessions.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import type { SessionCreateAdmission } from '../SessionCreateAdmission.js';

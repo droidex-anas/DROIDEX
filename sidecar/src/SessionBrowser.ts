@@ -4,13 +4,14 @@ import type {
   ProviderMention,
   ResponseFormat,
   ServerEvent,
-} from './protocol.js';
-import type { CanvasTurnContext } from './canvas/protocol.js';
+  CanvasTurnContext,
+  BrowserViewport,
+} from '@droidex/protocol';
+
 import { errMsg } from './errors.js';
 import { NativeBrowserRuntime } from './browser/NativeBrowserRuntime.js';
 import type { RequestBrowser } from './browser/desktopBrowserChannel.js';
 import type { BrowserSessionManager } from './browser/BrowserSessionManager.js';
-import type { BrowserViewport } from './browser/types.js';
 
 type Emit = (event: ServerEvent) => void;
 

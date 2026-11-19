@@ -22,7 +22,7 @@ import {
 } from '../testing/canvasStorageSupport.js';
 import { CanvasFiles } from './canvasFiles.js';
 import { CanvasWorkspace } from './CanvasWorkspace.js';
-import type { CreateFramesInput } from './protocol.js';
+import type { CreateFramesInput } from '@droidex/protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const HEY = 'export default function Hey(){return <h1>Hey</h1>}';

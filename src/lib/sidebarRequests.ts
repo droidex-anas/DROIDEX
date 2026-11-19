@@ -1,14 +1,17 @@
 import type { AppState } from '../hooks/useStore';
-import type { SessionSummary } from '../types/bridge';
+import { SIDEBAR_ROW_LIMITS } from '@droidex/protocol';
+import type {
+  SessionSummary,
+  SidebarMark,
+  SidebarMarkOutcome,
+  SidebarRequest,
+  SidebarResult,
+  SidebarRow,
+  SessionActivityStatus,
+} from '@droidex/protocol';
+
 import { isChatInView } from '../features/tabs/tabStrip';
-import {
-  SIDEBAR_ROW_LIMITS as LIMITS,
-  type SidebarMark,
-  type SidebarMarkOutcome,
-  type SidebarRequest,
-  type SidebarResult,
-  type SidebarRow,
-} from '../types/sidebar';
+
 import { chatDisplayTitle, isChatHidden, isChatPinned, type ChatMetadataMap } from './chatMetadata';
 import { projectThreadIds } from './projectThreads';
 import { isSideChat } from './sideChats';
@@ -17,7 +20,6 @@ import {
   canSettleSession,
   chatActivitySignals,
   sessionActivityStatus,
-  type SessionActivityStatus,
   type SidebarActivityPreferences,
 } from './sidebarActivity';
 import { sidebarPreferences, updateSidebarPreferences } from './sidebarPreferences';
@@ -67,7 +69,7 @@ function sidebarRows(state: SidebarState, appSessionIds?: string[]): SidebarRow[
   const preferences = sidebarPreferences();
   const rows: SidebarRow[] = [];
   for (const id of appSessionIds ? new Set(appSessionIds) : state.sessionOrder) {
-    if (rows.length === LIMITS.rows) break;
+    if (rows.length === SIDEBAR_ROW_LIMITS.rows) break;
     const session = sidebarChat(state, id);
     if (session) rows.push(sidebarRow(state, session, preferences));
   }
@@ -85,7 +87,7 @@ function sidebarRow(
   const status = sessionActivityStatus(session, signals);
   const row: SidebarRow = {
     appSessionId: id,
-    title: chatDisplayTitle(session, metadata[id]).slice(0, LIMITS.title),
+    title: chatDisplayTitle(session, metadata[id]).slice(0, SIDEBAR_ROW_LIMITS.title),
     status,
     label: ACTIVITY_LABELS[status],
     unread: signals.unread,
@@ -100,8 +102,8 @@ function sidebarRow(
     : undefined;
   if (permission)
     row.permission = {
-      title: permission.title.slice(0, LIMITS.title),
-      detail: permission.detail.slice(0, LIMITS.permissionDetail),
+      title: permission.title.slice(0, SIDEBAR_ROW_LIMITS.title),
+      detail: permission.detail.slice(0, SIDEBAR_ROW_LIMITS.permissionDetail),
     };
   const question = Object.hasOwn(state.pendingQuestions, id)
     ? state.pendingQuestions[id]?.[0]
@@ -109,12 +111,12 @@ function sidebarRow(
   if (question)
     row.question = {
       requestId: question.requestId,
-      questions: question.questions.slice(0, LIMITS.questions).map((item) => ({
+      questions: question.questions.slice(0, SIDEBAR_ROW_LIMITS.questions).map((item) => ({
         index: item.index,
-        question: item.question.slice(0, LIMITS.questionText),
+        question: item.question.slice(0, SIDEBAR_ROW_LIMITS.questionText),
         options: item.options
-          .slice(0, LIMITS.options)
-          .map((option) => ({ label: option.label.slice(0, LIMITS.optionText) })),
+          .slice(0, SIDEBAR_ROW_LIMITS.options)
+          .map((option) => ({ label: option.label.slice(0, SIDEBAR_ROW_LIMITS.optionText) })),
       })),
     };
   return row;

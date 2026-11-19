@@ -1,4 +1,4 @@
-import type { ChildStatus } from './protocol.js';
+import type { ChildStatus } from '@droidex/protocol';
 
 /* Waking a chat whose agents have finished. A harness reports a background
    agent's ending to the host, but sends an idle parent nothing: the parent

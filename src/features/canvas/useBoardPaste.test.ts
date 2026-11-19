@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { afterEach, test } from 'node:test';
 import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
-import type { CanvasFrame, CreateFramesInput, CreateFramesResult, OwnedAsset } from './protocol';
+import type {
+  CanvasFrame,
+  CreateFramesInput,
+  CreateFramesResult,
+  OwnedAsset,
+} from '@droidex/protocol';
 import { pastedSvg, placePastedSvg, type PasteBoard } from './useBoardPaste';
 
 let shown: ToastItem[] = [];

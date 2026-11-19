@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { DocumentSection } from '../designSystemDocumentProtocol';
+import type { DocumentSection } from '@droidex/protocol';
 import { specimenProperties } from './specimenStyle';
 
 // Node has no CSS.supports; this answers as a browser does for the corner values below.

@@ -9,7 +9,7 @@ import { AgentMonitorCard } from './AgentMonitorCard';
 import { AGENT_VISIBLE_ROW_LIMIT, foldedAgentRows } from './AgentRowList';
 import { isPendingChildPlaceholder, resolveWaveSessions } from '../../lib/childSessions';
 import { childSessionInfo } from '../../lib/tools';
-import type { ChildSessionSummary, ChildStatus, TranscriptEvent } from '../../types/bridge';
+import type { ChildSessionSummary, ChildStatus, TranscriptEvent } from '@droidex/protocol';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {

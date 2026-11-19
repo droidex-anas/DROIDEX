@@ -15,7 +15,7 @@
 // The wire's `SourceFiles` record becomes a map on the way in: a path is user
 // and agent data, and a map keeps a lookup honest about missing keys.
 
-import type { CanvasDiagnostic, SourceFiles, WriteFilesInput } from './protocol';
+import type { CanvasDiagnostic, SourceFiles, WriteFilesInput } from '@droidex/protocol';
 
 /** One file the user has edited, and the revision the edit began from. */
 export interface SourceBuffer {

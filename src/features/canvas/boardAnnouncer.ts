@@ -6,7 +6,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { ShownRevisions } from './previewLabels';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 /** How long the zoom must stay put before its level is spoken. */
 const ZOOM_SETTLE_MS = 500;

@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createSdkMcpServer } from '@factory/droid-sdk';
-import type { ModelSwitch } from '../protocol.js';
+import type { ModelSwitch } from '@droidex/protocol';
 import { drain, harness, projectWithThread, summary } from '../testing/projectServiceHarness.js';
 import { registerProjectService } from './service.js';
 import { threadTools } from './threadMcpTools.js';

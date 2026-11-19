@@ -30,7 +30,7 @@ import { commitPrimaryPromptAfterBaseline } from '../../lib/promptSend';
 import { canRunAgents } from '../../lib/runtimeHealth';
 import { sideChatPromptFromCommand } from '../../lib/sideChats';
 import { toast } from '../../lib/toast';
-import type { ProviderKind, SkillInfo } from '../../types/bridge';
+import type { ProviderKind, SkillInfo } from '@droidex/protocol';
 import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
 import {
   designMarks as stagedDesignMarks,

@@ -8,7 +8,7 @@ import {
   sessionSearchFingerprint,
   type SessionSearchSlice,
 } from './sessionSearch.js';
-import type { SessionSearchResult } from './protocol.js';
+import type { SessionSearchResult } from '@droidex/protocol';
 import { numberValue, stringValue } from './values.js';
 
 interface SearchIndexState {

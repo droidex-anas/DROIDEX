@@ -1,7 +1,5 @@
 import type { SteeredReportDelivery } from './SessionLifecycle.js';
-import type { AutomationBridgeCommand, AutomationDeliveryReceipt } from './automations/types.js';
-import type { CanvasCommand } from './canvas/protocol.js';
-import type { ProjectCommand } from './projects/types.js';
+import type { AutomationDeliveryReceipt } from './automations/types.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { ProjectExports, type ProjectExportAdmission } from './canvas/projectExports.js';
@@ -15,6 +13,9 @@ import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import type {
+  AutomationBridgeCommand,
+  CanvasCommand,
+  ProjectCommand,
   Autonomy,
   BridgeRuntimeSnapshot,
   ClientCommand,
@@ -32,7 +33,8 @@ import type {
   SessionInteractionMode,
   SessionPurpose,
   TranscriptEvent,
-} from './protocol.js';
+  ProviderKind,
+} from '@droidex/protocol';
 import { errMsg } from './errors.js';
 import { reasoningValue } from './modelCatalog.js';
 import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
@@ -129,11 +131,7 @@ import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import { agentWakePrompt, AGENT_WAKE_NOTICE } from './childWaveWake.js';
-import {
-  assertProviderUnchanged,
-  DEFAULT_PROVIDER,
-  type ProviderKind,
-} from './providers/providerKind.js';
+import { assertProviderUnchanged, DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { HarnessCliInstaller } from './providers/harnessCli.js';
 import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';

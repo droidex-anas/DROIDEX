@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { DroidProxyMark, isDroidProxyModel, providerOf, shortModelName } from './ModelIcon';
-import type { ModelInfo } from '../types/bridge';
+import type { ModelInfo } from '@droidex/protocol';
 
 function custom(id: string, displayName: string, provider = 'openai'): ModelInfo {
   return { id, displayName, provider, isCustom: true };

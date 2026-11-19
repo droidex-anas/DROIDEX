@@ -10,7 +10,7 @@ import {
   utilityPanelForSession,
   type UtilityTool,
 } from '../lib/utilityPanel';
-import type { BrowserState } from '../types/bridge';
+import type { BrowserState } from '@droidex/protocol';
 import type { DiffScope } from '../types/vcs';
 import { clearDesignMode, setDesignMode, toggleDesignMode } from './designModeState';
 import type { DiffViewMode } from './persistedUiPreferences';

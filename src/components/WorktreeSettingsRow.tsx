@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronRight, Spinner } from '@droidex/icons';
 import { worktreeName } from '../lib/git';
 import { worktreeChatStatus } from '../lib/worktreeSettings';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import type { GitWorktree, PullRequest } from '../types/vcs';
 import { PrStateIcon } from './environment/GithubIcons';
 import { Badge } from './ui/Badge';

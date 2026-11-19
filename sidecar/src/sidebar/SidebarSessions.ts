@@ -1,9 +1,15 @@
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
 import { transcriptEnding } from '../projects/activity.js';
 import { AUTONOMY_ORDER } from '../projects/threadStart.js';
-import type { ProjectView } from '../projects/types.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
-import type { SessionActivityStatus, SidebarMark, SidebarRow } from './protocol.js';
+import type {
+  ProjectView,
+  SessionSummary,
+  TranscriptEvent,
+  SessionActivityStatus,
+  SidebarMark,
+  SidebarRow,
+} from '@droidex/protocol';
+
 import type { SidebarRequests } from './sidebarRequests.js';
 
 /** What the session tools need from the rest of the sidecar. */

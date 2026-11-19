@@ -11,7 +11,7 @@ import type {
   ChildStatus,
   ReasoningEffort,
   StreamFidelity,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { trimmedString as str } from './values.js';
 
 // What a single event tells us about one child session. Fields are all optional

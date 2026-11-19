@@ -1,7 +1,11 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import type { ClientCommand, DroidProxyInstallPhase, DroidProxyProviderKey } from '../protocol.js';
+import type {
+  ClientCommand,
+  DroidProxyInstallPhase,
+  DroidProxyProviderKey,
+} from '@droidex/protocol';
 import {
   droidProxyAppPath,
   loginFlagFor,

@@ -8,7 +8,7 @@ import { CanvasFiles } from './canvasFiles.js';
 import { emptyCanvasManifest } from './canvasManifest.js';
 import { REVISION_METADATA_VERSION } from './canvasRevisionMetadata.js';
 import { placeFrames, stageFrames, stageRevision } from './canvasFrames.js';
-import type { CreateFramesInput, SourceFiles } from './protocol.js';
+import type { CreateFramesInput, SourceFiles } from '@droidex/protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const frame = { name: 'Copy', width: 720, height: 720, designSystem };

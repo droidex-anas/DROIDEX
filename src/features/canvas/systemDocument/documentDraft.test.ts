@@ -6,7 +6,8 @@ import type {
   DocumentSection,
   DocumentToken,
   TokenGroup,
-} from '../designSystemDocumentProtocol';
+  DesignSystemDocumentView,
+} from '@droidex/protocol';
 import {
   changeCount,
   currentDraft,
@@ -28,7 +29,6 @@ import {
   withRemoved,
 } from './documentSections';
 import { isDocumentSections } from '../designSystemDocumentValidation';
-import type { DesignSystemDocumentView } from '../protocol';
 
 const base: DocumentSection[] = [
   {

@@ -4,7 +4,7 @@ import type {
   InterruptedSessionRecord,
   PersistenceRecovery,
   SessionSummary,
-} from './protocol.js';
+} from '@droidex/protocol';
 
 const EMPTY_RUNTIME = {
   mode: 'cli_auth' as const,

@@ -1,8 +1,14 @@
-import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
+import type {
+  ModelInfo,
+  ReasoningEffort,
+  Automation,
+  AutomationRun,
+  AutomationSchedule,
+} from '@droidex/protocol';
 import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../../lib/autonomy';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import { reasoningForModel, validateAutomationModelSelection } from './modelSelection';
-import type { Automation, AutomationDraft, AutomationRun, AutomationSchedule } from './types';
+import type { AutomationDraft } from './types';
 
 export const WEEKDAYS: readonly string[] = [
   'Sunday',

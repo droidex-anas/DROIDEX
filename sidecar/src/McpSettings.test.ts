@@ -4,7 +4,7 @@ import test from 'node:test';
 import { McpServerStatus, McpServerType, SettingsLevel } from '@factory/droid-sdk';
 
 import { McpSettings } from './McpSettings.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 
 test('MCP catalog publishes tools after a connecting server settles', async () => {

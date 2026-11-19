@@ -5,7 +5,7 @@ import { Caret, Expand } from '../../components/transcript/primitives';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { projectForSession } from '../../lib/projectThreads';
 import { toolArgString } from '../../lib/tools';
-import { DROID_PROFILES, type TranscriptEvent } from '../../types/bridge';
+import { DROID_PROFILES, type TranscriptEvent } from '@droidex/protocol';
 import { AccountMark } from '../providers/AccountMark';
 import { threadRows, type ThreadRow } from './threadBoard';
 import { spawnedThread, type SpawnedChat } from './threadToolNames';

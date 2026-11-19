@@ -1,5 +1,5 @@
 import { canvasError } from './canvasError.js';
-import type { FrameRect } from './schema.js';
+import type { FrameRect } from '@droidex/protocol';
 
 /** The same gap used for ordinary Canvas frame creation. */
 export const FRAME_GAP_PX = 80;

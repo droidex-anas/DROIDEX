@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { SourceMap } from 'node:module';
 import { test } from 'node:test';
-import type { SourceElement, SourceFiles } from './protocol.js';
+import type { SourceElement, SourceFiles } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 import { applyElementEdit, type SourceChange, type SourceEdit } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';

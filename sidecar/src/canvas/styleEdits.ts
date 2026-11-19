@@ -1,9 +1,10 @@
+import type { EditToken, ElementEdit } from '@droidex/protocol';
+
 // The style properties a direct edit may set, the kit tokens each resolves to,
 // and the raw values it accepts when the pinned kit has no matching token. The
 // renderer's style preview reads the same properties from
 // src/features/canvas/styleProperties.ts; styleEdits.test.ts fails when they drift.
 
-import type { ElementEdit } from './protocol.js';
 import { SourceElementError } from './sourceElementError.js';
 import { BLUR } from './tailwindStock.js';
 
@@ -216,9 +217,6 @@ export function unsupportedStyle(property: string): SourceElementError {
     `Canvas can’t change the ${styleName(property)} directly. Ask the agent to change it.`,
   );
 }
-
-/** One kit token a property's edit may name, with its value in each mode. */
-export type EditToken = { name: string } & ({ value: string } | { light: string; dark: string });
 
 /**
  * The pinned kit's tokens by the property that accepts them, for the

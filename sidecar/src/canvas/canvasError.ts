@@ -1,5 +1,4 @@
-import type { CanvasError, CanvasErrorCode } from './protocol.js';
-import type { FrameRect } from './schema.js';
+import type { CanvasError, CanvasErrorCode, FrameRect } from '@droidex/protocol';
 
 /** What every expired turn lease answers, wherever it is checked (spec §8). */
 export const EXPIRED_TURN = 'That request belongs to a turn that already ended.';

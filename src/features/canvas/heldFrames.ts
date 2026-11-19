@@ -10,7 +10,7 @@
 
 import { frameSizeLabel, sameRect } from './canvasGeometry';
 import type { SnapMarks } from './frameSnap';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 export interface HeldFrame {
   designId: string;

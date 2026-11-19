@@ -36,7 +36,6 @@ import { recordedRevision } from './canvasReceipts.js';
 import type {
   ArrangeFramesInput,
   CanvasChange,
-  CanvasScope,
   CanvasSnapshot,
   CanvasSummary,
   CreateFramesInput,
@@ -49,7 +48,8 @@ import type {
   SourceFiles,
   WriteFilesInput,
   WriteReceipt,
-} from './protocol.js';
+} from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 
 export interface CanvasWorkspaceDeps extends CanvasLeaseRegistry {
   isChatKnown: (appSessionId: string) => boolean;

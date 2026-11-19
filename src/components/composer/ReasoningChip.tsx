@@ -2,7 +2,7 @@ import { Suspense, lazy, startTransition, useRef, useState } from 'react';
 import type { Placement } from '@floating-ui/react';
 import { Brain } from '@droidex/icons';
 import { offersReasoningEffort, reasoningEffortLabel } from '../../lib/reasoningEffort';
-import type { ModelInfo, ProviderKind, ReasoningEffort } from '../../types/bridge';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '@droidex/protocol';
 import { Popover } from '../ui/Popover';
 
 const loadReasoningPanel = () => import('./ReasoningPanel');

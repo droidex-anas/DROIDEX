@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { HistoricalSession } from './history.js';
-import type { BridgeFeature, SessionSummary } from './protocol.js';
+import type { BridgeFeature, SessionSummary } from '@droidex/protocol';
 import {
   SessionRegistry,
   type RegisteredSession,

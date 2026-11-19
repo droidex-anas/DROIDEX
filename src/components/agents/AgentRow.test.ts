@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ChildSessionSummary, TranscriptEvent } from '../../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { buildAgentRows } from './agentMonitorModel';
 import { areAgentRowPropsEqual, AgentRow, agentRowTitle, type AgentRowProps } from './AgentRow';
 import { AgentPaneDetail } from './AgentPaneDetail';

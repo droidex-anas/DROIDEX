@@ -15,7 +15,7 @@ import { Plus, Trash } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { Popover } from '../../../components/ui/Popover';
-import type { TokenKind } from '../designSystemDocumentProtocol';
+import type { TokenKind } from '@droidex/protocol';
 import { formatShadow, parseShadow, shadowSummary, type ShadowLayer } from './shadowLayers';
 import { isPaintable, tokenValueProblem } from './specimenStyle';
 import { ShadowTile } from './TokenSpecimens';

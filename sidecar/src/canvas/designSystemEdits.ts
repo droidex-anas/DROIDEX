@@ -10,6 +10,7 @@
 import { z } from 'zod';
 import { SECTION_TITLES, uniqueId } from './buildDocument.js';
 import { canvasError, type CanvasCommandError } from './canvasError.js';
+import type { DocumentSection } from '@droidex/protocol';
 import {
   CANONICAL_SECTION_ORDER,
   DOCUMENT_LIMITS,
@@ -17,7 +18,6 @@ import {
   TOKEN_KINDS,
   tokenNameSchema,
   tokenValueSchema,
-  type DocumentSection,
 } from './designSystemDocument.js';
 import { sourcePathSchema } from './schema.js';
 
