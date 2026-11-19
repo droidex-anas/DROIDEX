@@ -1015,6 +1015,7 @@ function withoutLeftDrafts(state: AppState): AppState {
 }
 
 function reduceAction(state: AppState, action: Action): AppState {
+  const sessionsById: Partial<AppState['sessions']> = state.sessions;
   switch (action.type) {
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
@@ -1083,7 +1084,8 @@ function reduceAction(state: AppState, action: Action): AppState {
       // Seed the first user message: the goal is the user's opening prompt and the
       // backend never echoes it back, so without this the first message never shows.
       let seed: TranscriptEvent | undefined;
-      const hasTranscript = (state.transcripts[action.session.appSessionId]?.length ?? 0) > 0;
+      const transcripts: Partial<AppState['transcripts']> = state.transcripts;
+      const hasTranscript = (transcripts[action.session.appSessionId]?.length ?? 0) > 0;
       if (action.session.goal && !hasTranscript) {
         seed = {
           id: `seed-${action.session.appSessionId}`,
@@ -1351,7 +1353,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
 
     case 'SESSION_UPDATED': {
-      const previous = state.sessions[action.session.appSessionId];
+      const previous = sessionsById[action.session.appSessionId];
       const incoming = action.session;
       // Compaction generations are monotonic. A delayed resume summary must not
       // put a restored session back on generation zero after history already
@@ -1529,7 +1531,7 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_FEATURES': {
       const mid = action.appSessionId;
-      const existing = state.sessions[mid];
+      const existing = sessionsById[mid];
       if (!existing) return state;
       return {
         ...state,
@@ -1565,7 +1567,7 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_TOKENS': {
       const mid = action.appSessionId;
-      const existing = state.sessions[mid];
+      const existing = sessionsById[mid];
       if (!existing) return state;
       return {
         ...state,
@@ -1583,7 +1585,7 @@ function reduceAction(state: AppState, action: Action): AppState {
     }
 
     case 'CONTEXT_UPDATED': {
-      const existing = state.sessions[action.appSessionId];
+      const existing = sessionsById[action.appSessionId];
       if (action.parentAppSessionId && action.childSessionId) {
         const parent = state.contextStats.child[action.parentAppSessionId] ?? {};
         return {
@@ -1636,15 +1638,13 @@ function reduceAction(state: AppState, action: Action): AppState {
             },
           };
 
-    /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
     case 'TRANSCRIPT_RELEASE_VIEWPORT': {
       if (!isChatInView(state, action.appSessionId)) return state;
       if (state.transcriptViewportPinned[action.appSessionId] === false) return state;
-      const session = state.sessions[action.appSessionId];
+      const session = sessionsById[action.appSessionId];
       if (!session || sessionIsLive(session)) return state;
       return releaseSessionTranscriptWindow(state, action.appSessionId, VIEWPORT_TRANSCRIPT_POLICY);
     }
-    /* eslint-enable @typescript-eslint/no-unnecessary-condition */
 
     case 'MEMORY_PRESSURE':
       return applyMemoryPressureRelease(state);
@@ -1721,18 +1721,16 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
 
     case 'SESSION_ERROR': {
-      let next = state;
-      if (action.appSessionId && state.sessions[action.appSessionId]) {
-        const m = state.sessions[action.appSessionId];
-        next = {
-          ...state,
-          sessions: {
-            ...state.sessions,
-            [action.appSessionId]: { ...m, phase: 'failed' as const },
-          },
-        };
-      }
-      return next;
+      if (!action.appSessionId) return state;
+      const session = sessionsById[action.appSessionId];
+      if (!session) return state;
+      return {
+        ...state,
+        sessions: {
+          ...state.sessions,
+          [action.appSessionId]: { ...session, phase: 'failed' },
+        },
+      };
     }
 
     case 'SESSION_LIST': {
@@ -1750,6 +1748,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       for (const m of action.sessions) {
         map[m.appSessionId] = m;
       }
+      const mapById: Partial<AppState['sessions']> = map;
       const order = [
         ...new Set([
           ...action.sessions.map((m) => m.appSessionId),
@@ -1757,7 +1756,7 @@ function reduceAction(state: AppState, action: Action): AppState {
           ...Object.keys(state.sessions),
         ]),
       ]
-        .filter((id) => map[id])
+        .filter((id) => mapById[id])
         .sort((a, b) => map[b].updatedAt - map[a].updatedAt);
       const retainedSessionIds = new Set(Object.keys(map));
       const retainedState = pruneRemovedSessionState(state, retainedSessionIds);
@@ -1765,15 +1764,15 @@ function reduceAction(state: AppState, action: Action): AppState {
       // history is not retroactively marked unread; only activity that arrives
       // after this point (a newer updatedAt) flips a row to unread.
       const seededLastSeen = { ...retainedState.sessionLastSeen };
+      const lastSeenById: Partial<AppState['sessionLastSeen']> = seededLastSeen;
       for (const m of action.sessions) {
-        if (seededLastSeen[m.appSessionId] === undefined) {
+        if (lastSeenById[m.appSessionId] === undefined) {
           seededLastSeen[m.appSessionId] = m.updatedAt;
         }
       }
       // If the active session was pruned above (a hydrated snapshot row the
       // sidecar no longer reports), clear the dangling id so the UI does not
       // point at a session that no longer exists.
-      const mapById: Partial<Record<string, SessionSummary>> = map;
       const activeAppSessionId =
         state.activeAppSessionId !== null && mapById[state.activeAppSessionId] !== undefined
           ? state.activeAppSessionId
@@ -1836,16 +1835,14 @@ function reduceAction(state: AppState, action: Action): AppState {
       // unread state immediately).
       const now = Date.now();
       const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && state.sessions[state.activeAppSessionId]) {
+      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
         sessionLastSeen[state.activeAppSessionId] = now;
       }
       if (action.id) sessionLastSeen[action.id] = now;
       const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state, null);
       let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
       const outgoingAppSessionId = state.activeAppSessionId;
-      const outgoingSession = outgoingAppSessionId
-        ? state.sessions[outgoingAppSessionId]
-        : undefined;
+      const outgoingSession = outgoingAppSessionId ? sessionsById[outgoingAppSessionId] : undefined;
       if (
         outgoingAppSessionId &&
         outgoingSession &&
@@ -1890,10 +1887,9 @@ function reduceAction(state: AppState, action: Action): AppState {
       const sessionLastSeen = { ...state.sessionLastSeen };
       let changed = false;
       for (const appSessionId of state.sessionOrder) {
-        const session = state.sessions[appSessionId];
+        const session = sessionsById[appSessionId];
         // Persisted renderer state can briefly contain an order entry whose
         // session was already removed.
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!session) continue;
         const seenAt = Math.max(action.seenAt, session.updatedAt);
         if (sessionLastSeen[appSessionId] === seenAt) continue;
@@ -2100,7 +2096,7 @@ function reduceAction(state: AppState, action: Action): AppState {
       // Stamp the session being left so model output produced while it was
       // open doesn't surface as an unread badge after starting a new chat.
       const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && state.sessions[state.activeAppSessionId]) {
+      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
         sessionLastSeen[state.activeAppSessionId] = Date.now();
       }
       const next = invalidateSelectedChildOpening(state);
