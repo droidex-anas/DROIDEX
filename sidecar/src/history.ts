@@ -1454,6 +1454,7 @@ function shouldIncludeCwd(
 // Alt logins and transcripts DROIDEX writes for other providers.
 function scanSessionFileTree(): SessionFileScan {
   const files = new Map<string, SessionFileStat>();
+  const unreadableProviderSessionIds = new Set<string>();
   const settingsMtimes = new Map<string, number>();
   let isComplete = true;
   // Alt profiles are private extra logins, so they never replace or break a Main
@@ -1478,7 +1479,11 @@ function scanSessionFileTree(): SessionFileScan {
       try {
         stat = statSync(path);
       } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') isComplete = false;
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          if (name.endsWith('.jsonl'))
+            unreadableProviderSessionIds.add(name.slice(0, -'.jsonl'.length));
+          else if (!name.endsWith('.settings.json')) isComplete = false;
+        }
         continue;
       }
       if (stat.isDirectory()) walk(path, depth + 1, isAlt);
@@ -1504,7 +1509,7 @@ function scanSessionFileTree(): SessionFileScan {
     file.settingsMtimeMs =
       settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
   }
-  return { files, isComplete };
+  return { files, unreadableProviderSessionIds, isComplete };
 }
 
 // Stats one session file and its settings sidecar, or returns null when the

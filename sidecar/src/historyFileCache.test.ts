@@ -228,7 +228,7 @@ test('reconciliation deltas update a second in-memory cache without scanning fil
   ]);
   const writer = new SessionFileCache(
     writerDb,
-    () => ({ files: onDisk, isComplete: true }),
+    () => ({ files: onDisk, unreadableProviderSessionIds: new Set(), isComplete: true }),
     (providerSessionId, file) => summaryFor(providerSessionId, file.path),
     () => null,
   );
@@ -649,7 +649,7 @@ test('a file that breaks mid-reconcile is skipped without aborting the diff', (t
   ]);
   const cache = new SessionFileCache(
     db,
-    () => ({ files: onDisk, isComplete: true }),
+    () => ({ files: onDisk, unreadableProviderSessionIds: new Set(), isComplete: true }),
     (providerSessionId, file) => {
       // The bad file vanished between the scan and the read.
       if (providerSessionId === 'bad-session') throw new Error('ENOENT');
@@ -678,7 +678,7 @@ test('an incomplete tree scan does not delete rows from unreadable subtrees', (t
   let isComplete = true;
   const cache = new SessionFileCache(
     db,
-    () => ({ files: onDisk, isComplete }),
+    () => ({ files: onDisk, unreadableProviderSessionIds: new Set(), isComplete }),
     (providerSessionId, file) => summaryFor(providerSessionId, file.path),
     () => null,
   );
@@ -716,7 +716,7 @@ test('a SQLite write or delete failure leaves the in-memory cache unchanged', (t
   const onDisk = new Map<string, SessionFileStat>([['cache-failure', fileStat(path)]]);
   const cache = new SessionFileCache(
     db,
-    () => ({ files: onDisk, isComplete: true }),
+    () => ({ files: onDisk, unreadableProviderSessionIds: new Set(), isComplete: true }),
     (providerSessionId) => summaryFor(providerSessionId, path),
     (candidate) => (candidate === path ? (onDisk.get('cache-failure') ?? null) : null),
   );
