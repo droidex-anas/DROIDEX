@@ -8,9 +8,9 @@ import {
   applyCachedSummary,
   type FactoryDefaults,
   type HistoricalSession,
-  type HistoricalSummaryFilter,
   type PersistedChildSession,
 } from './history.js';
+import type { HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { HistoryDurabilityPolicy } from './HistoryDurabilityPolicy.js';
 import { HistoryPersistenceQueue } from './HistoryPersistenceQueue.js';
 import {

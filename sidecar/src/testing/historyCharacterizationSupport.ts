@@ -12,9 +12,9 @@ import {
   HistoryIndex,
   SESSION_INDEX_FILENAME,
   type HistoricalSession,
-  type HistoricalSummaryFilter,
   type PersistedChildSession,
 } from '../history.js';
+import type { HistoricalSummaryFilter } from '../historySummaryFilter.js';
 import type { RecordedCall } from './fakeFactoryRuntime.js';
 import { providerSessionJsonl } from './providerSessionFixtures.js';
 

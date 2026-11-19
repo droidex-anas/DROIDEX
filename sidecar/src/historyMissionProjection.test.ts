@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { projectMissionProgress, type PersistedChildSession } from './history.js';
+import type { PersistedChildSession } from './history.js';
+import { projectMissionProgress } from './historyMissions.js';
 
 const workerA: PersistedChildSession = {
   parentAppSessionId: 'parent-a',

@@ -1,25 +1,24 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
-import { basename, join, sep } from 'node:path';
-import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
+import { join, sep } from 'node:path';
+import { normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
-import { errMsg } from './errors.js';
 import {
   type SessionRole,
-  type BridgeFeature,
   type ContextWindowTokens,
   type FactoryDefaultSettings,
   type SessionHistoryEntry,
-  type SessionPhase,
   type SessionSummary,
   type ProgressEntry,
   type ReasoningEffort,
   type TranscriptEvent,
   DROID_PROFILES,
 } from '@droidex/protocol';
-import { bridgeFeature } from './missionFeatures.js';
-import { normalizeCompactionTokenLimit } from './compaction.js';
+import {
+  normalizeCompactionTokenLimit,
+  normalizeCompactionTokenLimitPerModel,
+} from './compaction.js';
 import {
   SessionFileCache,
   type SessionFileLaunchSettings,
@@ -40,6 +39,13 @@ import {
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
+  loadMissionControlSession,
+  projectMissionProgress,
+  resolveMissionDir,
+} from './historyMissions.js';
+import { shouldIncludeCwd, type HistoricalSummaryFilter } from './historySummaryFilter.js';
+import { parseJsonLines, readJson } from './jsonFiles.js';
+import {
   assertCanonicalHistorySchema,
   ensureCanonicalHistorySchema,
   historySchemaRecovery,
@@ -58,48 +64,9 @@ const SUMMARY_ROWS_SQL = `
   LEFT JOIN settings ON settings.scope = ? || app_sessions.app_session_id
 `;
 
-interface StoredMissionState {
-  missionId?: string;
-  baseSessionId?: string;
-  state?: string;
-  workingDirectory?: string;
-  cwd?: string;
-  workerSessionIds?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-interface StoredFeatureFile {
-  features?: unknown[];
-}
-
-interface StoredModelSettings {
-  model?: string;
-  modelId?: string;
-  reasoningEffort?: string;
-  compactionModel?: string;
-  compactionTokenLimit?: number;
-  compactionTokenLimitPerModel?: Record<string, number>;
-  autonomyLevel?: string;
-  workerModel?: string;
-  workerReasoningEffort?: string;
-  validationWorkerModel?: string;
-  validationWorkerReasoningEffort?: string;
-}
-
 export interface HistoricalSession {
   summary: SessionSummary;
   progress: ProgressEntry[];
-}
-
-interface StoredProgressEntry extends ProgressEntry {
-  workerProviderSessionId?: string;
-  spawnId?: string;
-}
-
-export interface HistoricalSummaryFilter {
-  workspaceCwds?: string[];
-  includePlainChats?: boolean;
 }
 
 interface SummaryPatchesAndHidden {
@@ -150,16 +117,6 @@ export interface PersistedChildSession {
   updatedAt: number;
 }
 
-const STATE_TO_PHASE: Record<string, SessionPhase> = {
-  initializing: 'initializing',
-  running: 'running',
-  paused: 'paused',
-  orchestrator_turn: 'orchestrator_turn',
-  completed: 'completed',
-  failed: 'failed',
-  awaiting_input: 'running',
-};
-
 // Safety cap for worker transcript events on the initial page (the orchestrator
 // scrollback is paged via the cursor, so only workers need bounding here).
 // How many orchestrator scrollback events to load per page (initial open and
@@ -174,38 +131,9 @@ const SEQ_SEGMENT_STRIDE = 1 << 27;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 
-function missionWorkingDirectory(state: StoredMissionState): string {
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty directories fall back to the next source.
-  return state.workingDirectory || state.cwd || '';
-}
-
 function sessionTitle(start: StoredSessionStart, providerSessionId: string): string {
   // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
   return start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
-}
-
-export function loadMissionControlSessions(
-  options: HistoricalSummaryFilter = {},
-): HistoricalSession[] {
-  const workspaceCwds = options.workspaceCwds
-    ? new Set(options.workspaceCwds.filter(Boolean))
-    : null;
-  if (workspaceCwds?.size === 0 && !options.includePlainChats) return [];
-  const isFiltered = workspaceCwds !== null || options.includePlainChats === true;
-  const sessions: HistoricalSession[] = [];
-  for (const dir of missionDirs()) {
-    try {
-      if (isFiltered) {
-        const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-        const cwd = missionWorkingDirectory(state);
-        if (!shouldIncludeCwd(cwd, workspaceCwds, options.includePlainChats)) continue;
-      }
-      sessions.push(loadMissionControlSession(dir));
-    } catch (error) {
-      reportUnreadableMission(dir, error);
-    }
-  }
-  return sessions.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
 export function loadSessionHistory(): SessionHistoryEntry[] {
@@ -882,7 +810,7 @@ export function loadOpenTranscriptTail(
 export function readFactoryDefaults(home = homedir()): FactoryDefaults {
   const path = join(home, '.factory', 'settings.json');
   if (!existsSync(path)) return {};
-  const settings = readJson<Record<string, unknown>>(path);
+  const settings = readJson(path) as Record<string, unknown>;
   const session = objectValue(settings.sessionDefaultSettings) ?? {};
   const missionControlSettings = objectValue(settings.missionModelSettings) ?? {};
   return {
@@ -891,8 +819,10 @@ export function readFactoryDefaults(home = homedir()): FactoryDefaults {
     reasoningEffort: reasoningValue(session.reasoningEffort),
     // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     compactionModel: stringValue(settings.compactionModel) || stringValue(session.compactionModel),
-    compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
-    compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
+    compactionTokenLimit: normalizeCompactionTokenLimit(settings.compactionTokenLimit),
+    compactionTokenLimitPerModel: normalizeCompactionTokenLimitPerModel(
+      settings.compactionTokenLimitPerModel,
+    ),
     autonomy: normalizeAutonomy(session.autonomyLevel),
     interactionMode: mapInteractionMode(stringValue(session.interactionMode)),
     specModelId: stringValue(session.specModeModel),
@@ -911,249 +841,6 @@ export function readFactoryDefaults(home = homedir()): FactoryDefaults {
 function mapInteractionMode(value?: string): FactoryDefaults['interactionMode'] {
   if (value === 'auto' || value === 'spec' || value === 'agi') return value;
   return undefined;
-}
-
-function tokenLimitValue(value: unknown): number | undefined {
-  return normalizeCompactionTokenLimit(value);
-}
-
-function tokenLimitRecordValue(value: unknown): Record<string, number> | undefined {
-  const record = objectValue(value);
-  if (!record) return undefined;
-  const entries = Object.entries(record)
-    .map(([modelId, limit]) => [modelId, tokenLimitValue(limit)] as const)
-    .filter((entry): entry is [string, number] => entry[1] !== undefined);
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
-function loadMissionControlSession(dir: string): HistoricalSession & {
-  state: StoredMissionState;
-  features: BridgeFeature[];
-  storedProgress: StoredProgressEntry[];
-} {
-  const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-  const storedProgress = readProgress(join(dir, 'progress_log.jsonl'));
-  const progress = storedProgress.map(publicProgressEntry);
-  const features = readFeatures(join(dir, 'features.json'));
-  const dirId = basename(dir);
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
-  const providerSessionId = state.baseSessionId || dirId;
-  const firstProgressTitle = progress.find((p) => p.title)?.title;
-  const cwd = missionWorkingDirectory(state);
-  /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty titles and mission IDs fall back to the next source. */
-  const title =
-    firstProgressTitle ||
-    state.missionId ||
-    lastPathSegment(cwd) ||
-    `Mission ${providerSessionId.slice(0, 8)}`;
-  /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
-  const createdAt =
-    dateMs(state.createdAt) || dateMs(progress[0]?.timestamp) || statSync(dir).birthtimeMs;
-  const updatedAt =
-    dateMs(state.updatedAt) ||
-    dateMs(progress[progress.length - 1]?.timestamp) ||
-    statSync(dir).mtimeMs;
-  const modelSettings = readMissionModelSettings(dir);
-
-  return {
-    summary: {
-      appSessionId: providerSessionId,
-      providerSessionId,
-      missionId: state.missionId ?? dirId,
-      provider: DEFAULT_PROVIDER,
-      sessionPurpose: 'mission-control',
-      interactionMode: 'agi',
-      role: 'primary',
-      title,
-      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty progress messages use the title.
-      goal: progress[0]?.message || title,
-      cwd,
-      workspaceKind: cwd ? 'folder' : 'none',
-      ...modelSettings,
-      autonomy: modelSettings.autonomy ?? 'medium',
-      phase: STATE_TO_PHASE[String(state.state ?? '')] ?? 'paused',
-      features,
-      tokensIn: 0,
-      tokensOut: 0,
-      contextTokens: 0,
-      createdAt,
-      updatedAt,
-    },
-    progress,
-    storedProgress,
-    state,
-    features,
-  };
-}
-
-function readMissionModelSettings(dir: string): FactoryDefaults {
-  const path = join(dir, 'model-settings.json');
-  if (!existsSync(path)) return {};
-  const settings = readJson<StoredModelSettings>(path);
-  return {
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
-    modelId: settings.model || settings.modelId,
-    reasoningEffort: reasoningValue(settings.reasoningEffort),
-    compactionModel: settings.compactionModel,
-    compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
-    compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
-    workerModelId: settings.workerModel,
-    workerReasoningEffort: reasoningValue(settings.workerReasoningEffort),
-    validatorModelId: settings.validationWorkerModel,
-    validatorReasoningEffort: reasoningValue(settings.validationWorkerReasoningEffort),
-    autonomy: normalizeAutonomy(settings.autonomyLevel),
-  };
-}
-
-function readProgress(path: string): StoredProgressEntry[] {
-  if (!existsSync(path)) return [];
-  return readJsonLines<Record<string, unknown>>(path).map((entry) => {
-    const handoff = objectValue(entry.handoff);
-    const validation = objectValue(entry.validation);
-    return {
-      /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty progress fields fall back to the next source. */
-      type: stringValue(entry.type) || 'entry',
-      timestamp: stringValue(entry.timestamp) || new Date().toISOString(),
-      title: stringValue(entry.title) || titleFromProgressType(stringValue(entry.type)),
-      message:
-        stringValue(entry.message) ||
-        stringValue(handoff?.salientSummary) ||
-        stringValue(validation?.summary) ||
-        stringValue(entry.reason),
-      /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
-      featureId: stringValue(entry.featureId),
-      ...whenString(entry.workerSessionId, (workerProviderSessionId) => ({
-        workerProviderSessionId,
-      })),
-      ...whenString(entry.spawnId, (spawnId) => ({ spawnId })),
-    };
-  });
-}
-
-export function projectMissionProgress(
-  entries: StoredProgressEntry[],
-  children: PersistedChildSession[],
-): ProgressEntry[] {
-  const childrenBySpawn = new Map(
-    children.flatMap((child) =>
-      child.spawnLink?.kind === 'spawn'
-        ? [[child.spawnLink.id, child.childSessionId] as const]
-        : [],
-    ),
-  );
-  const childrenByProvider = new Map<string, string>();
-  const correlatedSpawns = new Map<string, string>();
-  const providerBySpawn = new Map<string, string>();
-  const spawnByProvider = new Map<string, string>();
-  const retiredProviders = new Set<string>();
-  return entries.map((entry) => {
-    if (
-      entry.type === 'worker_started' &&
-      entry.workerProviderSessionId &&
-      entry.spawnId &&
-      !retiredProviders.has(entry.workerProviderSessionId) &&
-      (!spawnByProvider.has(entry.workerProviderSessionId) ||
-        spawnByProvider.get(entry.workerProviderSessionId) === entry.spawnId)
-    ) {
-      const childSessionId = childrenBySpawn.get(entry.spawnId);
-      if (childSessionId) {
-        const previousProviderSessionId = providerBySpawn.get(entry.spawnId);
-        if (
-          previousProviderSessionId &&
-          previousProviderSessionId !== entry.workerProviderSessionId
-        ) {
-          childrenByProvider.delete(previousProviderSessionId);
-          retiredProviders.add(previousProviderSessionId);
-        }
-        childrenByProvider.set(entry.workerProviderSessionId, childSessionId);
-        correlatedSpawns.set(entry.spawnId, childSessionId);
-        providerBySpawn.set(entry.spawnId, entry.workerProviderSessionId);
-        spawnByProvider.set(entry.workerProviderSessionId, entry.spawnId);
-      }
-    }
-    const byProvider =
-      entry.workerProviderSessionId && !retiredProviders.has(entry.workerProviderSessionId)
-        ? childrenByProvider.get(entry.workerProviderSessionId)
-        : undefined;
-    const bySpawn = entry.spawnId ? correlatedSpawns.get(entry.spawnId) : undefined;
-    const childSessionId =
-      entry.workerProviderSessionId && entry.spawnId
-        ? providerBySpawn.get(entry.spawnId) === entry.workerProviderSessionId &&
-          byProvider === bySpawn
-          ? byProvider
-          : undefined
-        : (byProvider ?? bySpawn);
-    const publicEntry = publicProgressEntry(entry);
-    return childSessionId ? { ...publicEntry, workerChildSessionId: childSessionId } : publicEntry;
-  });
-}
-
-function publicProgressEntry(entry: StoredProgressEntry): ProgressEntry {
-  const publicEntry = { ...entry };
-  delete publicEntry.workerProviderSessionId;
-  delete publicEntry.spawnId;
-  return publicEntry;
-}
-
-function readFeatures(path: string): BridgeFeature[] {
-  if (!existsSync(path)) return [];
-  const file = readJson<StoredFeatureFile>(path);
-  return (file.features ?? []).map((feature) => bridgeFeature(feature));
-}
-
-function missionDirs(): string[] {
-  const root = join(homedir(), '.factory', 'missions');
-  if (!existsSync(root)) return [];
-  return readdirSync(root)
-    .map((name) => join(root, name))
-    .filter((path) => {
-      try {
-        return statSync(path).isDirectory() && existsSync(join(path, 'state.json'));
-      } catch {
-        return false;
-      }
-    });
-}
-
-function resolveMissionDir(missionId: string): string {
-  const unreadableDirs: string[] = [];
-  for (const dir of missionDirs()) {
-    if (basename(dir) === missionId) return dir;
-    try {
-      const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-      if (state.baseSessionId === missionId || state.missionId === missionId) return dir;
-    } catch (error) {
-      reportUnreadableMission(dir, error);
-      unreadableDirs.push(dir);
-    }
-  }
-  // An unreadable state.json hides which mission it belongs to, so name those directories.
-  const skipped =
-    unreadableDirs.length > 0
-      ? `; unreadable mission directories: ${unreadableDirs.join(', ')}`
-      : '';
-  throw new Error(`Mission history not found for ${missionId}${skipped}`);
-}
-
-// Every registry rebuild re-enumerates missions, so each unreadable directory is logged once.
-const reportedUnreadableMissionDirs = new Set<string>();
-
-function reportUnreadableMission(dir: string, error: unknown): void {
-  if (reportedUnreadableMissionDirs.has(dir)) return;
-  reportedUnreadableMissionDirs.add(dir);
-  // JSON.parse messages quote the file's contents, so name the failure instead.
-  const reason = error instanceof SyntaxError ? 'a mission file is not valid JSON' : errMsg(error);
-  console.warn(`Mission history ${dir} was skipped: ${reason}. Repair or remove the directory.`);
-}
-
-function shouldIncludeCwd(
-  cwd: string,
-  workspaceCwds: Set<string> | null,
-  includePlainChats?: boolean,
-): boolean {
-  if (!cwd) return Boolean(includePlainChats);
-  if (!workspaceCwds) return false;
-  return workspaceCwds.has(cwd);
 }
 
 function isMissingSessionPath(error: unknown): boolean {
@@ -1347,14 +1034,6 @@ function launchSettings(settings: FactoryDefaults): SessionFileLaunchSettings | 
   };
 }
 
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, 'utf8')) as T;
-}
-
-function readJsonLines<T>(path: string): T[] {
-  return parseJsonLines(readFileSync(path, 'utf8'));
-}
-
 function classifyStoredSession(
   start: StoredSessionStart,
 ): Pick<SessionSummary, 'sessionPurpose' | 'interactionMode' | 'role' | 'missionId'> | null {
@@ -1434,13 +1113,13 @@ function readSessionModelSettings(
       stringValue(raw.compactionModel),
     /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
     compactionTokenLimit:
-      tokenLimitValue(sidecarSettings.compactionTokenLimit) ??
-      tokenLimitValue(settings.compactionTokenLimit) ??
-      tokenLimitValue(raw.compactionTokenLimit),
+      normalizeCompactionTokenLimit(sidecarSettings.compactionTokenLimit) ??
+      normalizeCompactionTokenLimit(settings.compactionTokenLimit) ??
+      normalizeCompactionTokenLimit(raw.compactionTokenLimit),
     compactionTokenLimitPerModel:
-      tokenLimitRecordValue(sidecarSettings.compactionTokenLimitPerModel) ??
-      tokenLimitRecordValue(settings.compactionTokenLimitPerModel) ??
-      tokenLimitRecordValue(raw.compactionTokenLimitPerModel),
+      normalizeCompactionTokenLimitPerModel(sidecarSettings.compactionTokenLimitPerModel) ??
+      normalizeCompactionTokenLimitPerModel(settings.compactionTokenLimitPerModel) ??
+      normalizeCompactionTokenLimitPerModel(raw.compactionTokenLimitPerModel),
     autonomy: migrateTranscriptPermissions(
       sessionPath,
       providerKind(start?.provider) ?? DEFAULT_PROVIDER,
@@ -1458,7 +1137,7 @@ function readAdjacentSessionSettings(sessionPath: string): Record<string, unknow
   const settingsPath = sessionPath.replace(/\.jsonl$/, '.settings.json');
   if (!existsSync(settingsPath)) return {};
   try {
-    return objectValue(readJson<unknown>(settingsPath)) ?? {};
+    return objectValue(readJson(settingsPath)) ?? {};
   } catch {
     return {};
   }
@@ -1468,25 +1147,6 @@ function countSessionMessages(path: string): number {
   const window = readSessionRawWindow(path, statSync(path).size);
   return parseJsonLines<StoredMessageLine>(window.text).filter((line) => line.type === 'message')
     .length;
-}
-
-function parseJsonLines<T>(raw: string): T[] {
-  const rows: T[] = [];
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    try {
-      rows.push(JSON.parse(trimmed) as T);
-    } catch {
-      /* skip partial/corrupt JSONL rows */
-    }
-  });
-  return rows;
-}
-
-function titleFromProgressType(type?: string): string | undefined {
-  if (!type) return undefined;
-  return type.replace(/_/g, ' ');
 }
 
 function contextAccuracy(value: unknown): SessionSummary['contextAccuracy'] | undefined {
@@ -1520,10 +1180,6 @@ function roleFromSessionStart(start: StoredSessionStart): SessionRole {
   // folded into 'primary' (which would leave the opened child blank).
   if (start.callingSessionId || start.callingToolUseId) return 'worker';
   return 'primary';
-}
-
-function lastPathSegment(path: string): string {
-  return path.split('/').filter(Boolean).pop() ?? '';
 }
 
 function contextWindowTokensValue(value: unknown): ContextWindowTokens | undefined {

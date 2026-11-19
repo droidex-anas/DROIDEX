@@ -7,7 +7,7 @@ import { ContextStatsAccuracy } from '@factory/droid-sdk';
 
 import type * as Protocol from '@droidex/protocol';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
-import type { HistoricalSummaryFilter } from './history.js';
+import type { HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { canvasRoot, deferred, quietBuilds } from './testing/canvasStorageSupport.js';

@@ -12,8 +12,8 @@ const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
 process.env.HOME = home;
 
-const { HistoryIndex, hydrateHistoricalSession, loadMissionControlSessions } =
-  await import('./history.js');
+const { HistoryIndex, hydrateHistoricalSession } = await import('./history.js');
+const { loadMissionControlSessions } = await import('./historyMissions.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
