@@ -34,7 +34,7 @@ DROIDEX is an Electron desktop application that allows users to run Factory Droi
 | Native Browser Preload (`nativeBrowserPreload.cjs`) | Agent bridge inside untrusted pages | HIGH | Runs in arbitrary web page context with full Node access (sandbox:false) |
 | Files Module (`electron/files.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
 | Terminal Module (`electron/terminal.cjs`) | PTY spawn and management | HIGH | Shell selection, args override, cwd, env leak, raw keystroke forwarding |
-| Git Module (`electron/git.cjs`) | Git CLI orchestration | MEDIUM | Branch/ref names, option injection, arbitrary repo paths |
+| Git Modules (`electron/git*.cjs`) | Git CLI orchestration | MEDIUM | Branch/ref names, option injection, arbitrary repo paths |
 | GitHub Module (`electron/github.cjs`) | `gh` CLI orchestration | MEDIUM | PR numbers, free-text bodies, repo paths |
 | Sidecar WebSocket Server (`sidecar/src/index.ts`) | Local bridge auth and dispatch | HIGH | Token validation, message schema, Origin/CSRF, maxPayload |
 | MissionManager (`sidecar/src/MissionManager.ts`) | Session/command dispatch | HIGH | Unvalidated ClientCommand payloads, requestId spoofing |
@@ -133,7 +133,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 - **`list-files` / `read-file`** (legacy) - Arbitrary path filesystem access
   - **Risk:** No root confinement, no token gate; arbitrary file read from any path
 - **`git-*` (13 channels)** - Git operations on arbitrary repo paths
-  - **Risk:** No sender validation; ref/branch names sanitized in `git.cjs` but repo path is attacker-controlled
+  - **Risk:** No sender validation; ref/branch validation lives in the Git branch and worktree modules but repo path is attacker-controlled
 - **`github-*` (6 channels)** - `gh` CLI invocations
   - **Risk:** No sender validation; PR body is free text
 - **`open-external`** - Opens URL in OS default browser
@@ -1186,7 +1186,7 @@ const cmd = 'curl -fsSL https://app.factory.ai/cli -o "$f" && sh "$f"';
 if (process.env.DROID_PATH && isExecutable(process.env.DROID_PATH)) return process.env.DROID_PATH;
 
 // NOTE: execFile and spawn use array-form args everywhere -- NO shell injection.
-// This is the correct pattern, maintained consistently across git.cjs, github.cjs, terminal.cjs, DroidRuntime.ts.
+// This is the correct pattern, maintained consistently across gitCommand.cjs, github.cjs, terminal.cjs, DroidRuntime.ts.
 // SAFE: execFile('git', ['-C', cwd, ...args], { shell: false })
 ```
 

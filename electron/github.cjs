@@ -2,7 +2,7 @@
 // CLI so it reuses the user's existing authentication and works on every OS.
 // Every method degrades gracefully when `gh` is missing or unauthenticated.
 const { resolveExecutable, runFile } = require('./executable.cjs');
-const { expandHome } = require('./git.cjs');
+const { expandHome } = require('./gitRepository.cjs');
 const githubSetup = require('./githubSetup.cjs');
 
 const DEFAULT_TIMEOUT = 15000;
