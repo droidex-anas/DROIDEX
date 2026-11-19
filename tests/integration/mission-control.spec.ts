@@ -161,40 +161,37 @@ test('Features and Context rows are reachable without extra scroll stops', async
   await mockMissionBridge(page, mission, []);
   await page.goto(process.env.DROIDEX_TEST_URL || '/');
   await page.getByTestId('session-row').filter({ hasText: mission.title }).click();
-  for (const [index, title] of ['Features', 'Context'].entries()) {
+  const cases = [
+    {
+      title: 'Features',
+      controlBefore: 'Collapse',
+      rows: [{ name: /Keyboard feature 0/ }, { name: /Keyboard feature 1/ }],
+    },
+    {
+      title: 'Context',
+      controlBefore: 'Expand',
+      rows: [
+        { name: 'VS Code', exact: true },
+        { name: 'No repo', exact: true },
+      ],
+    },
+  ];
+  for (const { title, controlBefore, rows } of cases) {
     const sidebar = page.locator('aside').filter({ hasText: title });
     const expand = sidebar.getByRole('button', { name: 'Expand', exact: true });
-    await (
-      title === 'Features' ? sidebar.getByRole('button', { name: 'Collapse', exact: true }) : expand
-    ).focus();
-    await page.keyboard.press('Tab');
-    const first =
-      title === 'Features'
-        ? sidebar.getByRole('button', { name: /Keyboard feature 0/ })
-        : sidebar.getByRole('button', { name: 'VS Code', exact: true });
-    await expect(first).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(
-      title === 'Features'
-        ? sidebar.getByRole('button', { name: /Keyboard feature 1/ })
-        : sidebar.getByRole('button', { name: 'No repo', exact: true }),
-    ).toBeFocused();
-    await page.getByRole('button', { name: 'Expand', exact: true }).nth(index).click();
+    await sidebar.getByRole('button', { name: controlBefore, exact: true }).focus();
+    for (const row of rows) {
+      await page.keyboard.press('Tab');
+      await expect(sidebar.getByRole('button', row)).toBeFocused();
+    }
+    await expand.click();
     const dialog = page.getByRole('dialog', { name: title, exact: true });
     const close = dialog.getByRole('button', { name: `Close ${title}`, exact: true });
     await expect(close).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(
-      title === 'Features'
-        ? dialog.getByRole('button', { name: /Keyboard feature 0/ })
-        : dialog.getByRole('button', { name: 'VS Code', exact: true }),
-    ).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(
-      title === 'Features'
-        ? dialog.getByRole('button', { name: /Keyboard feature 1/ })
-        : dialog.getByRole('button', { name: 'No repo', exact: true }),
-    ).toBeFocused();
+    for (const row of rows) {
+      await page.keyboard.press('Tab');
+      await expect(dialog.getByRole('button', row)).toBeFocused();
+    }
     await page.keyboard.press('Escape');
     await expect(dialog).toHaveCount(0);
     await expect(expand).toBeFocused();
