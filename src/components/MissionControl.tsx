@@ -222,6 +222,17 @@ function FeaturesColumn({
 
 /* ════════════════════════ panel header ════════════════════════ */
 
+function ExpansionHeader({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+      <DialogTitle className="min-w-0">
+        <span className="block truncate">{title}</span>
+      </DialogTitle>
+      <Button variant="ghost" size="sm" icon={X} aria-label="Close dialog" onClick={onClose} />
+    </div>
+  );
+}
+
 function PanelHeader({
   title,
   count,
@@ -744,17 +755,12 @@ export default function MissionControl() {
               setExpanded(null);
             }}
           >
-            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-              <DialogTitle>Features</DialogTitle>
-              <Button
-                variant="ghost"
-                icon={X}
-                aria-label="Close Features"
-                onClick={() => {
-                  setExpanded(null);
-                }}
-              />
-            </div>
+            <ExpansionHeader
+              title="Features"
+              onClose={() => {
+                setExpanded(null);
+              }}
+            />
             <FeaturesColumn
               features={features}
               selectedId={selectedFeatureId}
@@ -775,17 +781,12 @@ export default function MissionControl() {
               setExpanded(null);
             }}
           >
-            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-              <DialogTitle>Context</DialogTitle>
-              <Button
-                variant="ghost"
-                icon={X}
-                aria-label="Close Context"
-                onClick={() => {
-                  setExpanded(null);
-                }}
-              />
-            </div>
+            <ExpansionHeader
+              title="Context"
+              onClose={() => {
+                setExpanded(null);
+              }}
+            />
             <ContextColumn
               mission={mission}
               childSessions={childSessions}
@@ -811,19 +812,12 @@ export default function MissionControl() {
               setOpenDiff(null);
             }}
           >
-            <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
-              <DialogTitle className="min-w-0 truncate">
-                {displayPath(openDiff.path, mission.cwd)}
-              </DialogTitle>
-              <Button
-                variant="ghost"
-                icon={X}
-                aria-label="Close diff"
-                onClick={() => {
-                  setOpenDiff(null);
-                }}
-              />
-            </div>
+            <ExpansionHeader
+              title={displayPath(openDiff.path, mission.cwd)}
+              onClose={() => {
+                setOpenDiff(null);
+              }}
+            />
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
               <DiffFull change={openDiff} cwd={mission.cwd} />
             </div>
