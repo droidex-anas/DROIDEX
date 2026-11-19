@@ -1,0 +1,320 @@
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test, { type TestContext } from 'node:test';
+import { createSdkMcpServer } from '@factory/droid-sdk';
+import type { NormalizedEvent } from '../../normalize.js';
+import type { PermissionOutcome } from '../../protocol.js';
+import type { ProviderApprovalRequest, ProviderInteractions } from '../interactions.js';
+import { DevinProvider } from './DevinProvider.js';
+import type { DevinSession } from './devinSession.js';
+
+const CLI = String.raw`#!/usr/bin/env node
+const { appendFileSync, existsSync } = require('node:fs');
+const { createInterface } = require('node:readline');
+const { join } = require('node:path');
+const root = __dirname;
+if (process.argv[2] === '--version') { console.log('devin 3000.14.30821 (fake)'); process.exit(0); }
+if (process.argv[2] === 'auth') {
+  console.log(existsSync(join(root, 'signed-out')) ? 'Not logged in.' : 'Logged in.'); process.exit(0);
+}
+const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+const result = (id, result) => send({ id, result });
+const update = (update) => send({ method: 'session/update', params: { sessionId: 'devin-one', update } });
+const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
+  options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
+if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
+let pending, permission, servers = [];
+createInterface({ input: process.stdin }).on('line', async (line) => {
+  const message = JSON.parse(line);
+  appendFileSync(join(root, 'requests.jsonl'), JSON.stringify(message) + '\n');
+  if (message.id === 'permission') {
+    appendFileSync(join(root, 'permission.json'), JSON.stringify(message.result) + '\n');
+    result(permission, { stopReason: 'end_turn' }); return;
+  }
+  const { id, method, params } = message;
+  if (method === 'initialize') {
+    if (existsSync(join(root, 'hang'))) return;
+    result(id, { protocolVersion: 1, agentCapabilities: { loadSession: true,
+      sessionCapabilities: { close: {}, delete: {} } } });
+  } else if (method === 'session/new' || method === 'session/load') {
+    servers = params.mcpServers;
+    update({ sessionUpdate: 'config_option_update', configOptions });
+    if (method === 'session/load') update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
+    result(id, { sessionId: 'devin-one' });
+  } else if (method === 'session/set_config_option') result(id, { configOptions });
+  else if (method === 'session/close' || method === 'session/delete') result(id, {});
+  else if (method === 'session/cancel') { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
+  else if (method === 'session/prompt') {
+    const text = params.prompt[0].text;
+    if (text === 'exit') { process.stderr.write('backend failed\n'); process.exit(7); }
+    if (text === 'refuse') { result(id, { stopReason: 'refusal' }); return; }
+    if (text === 'empty') { result(id, { stopReason: 'end_turn' }); return; }
+    if (text === 'wait') { pending = id; update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'waiting' } }); return; }
+    if (text === 'approve') {
+      permission = id;
+      send({ id: 'permission', method: 'session/request_permission', params: {
+        sessionId: 'devin-one', toolCall: { toolCallId: 'edit', title: 'Edit file', kind: 'edit', rawInput: { path: '/file' } },
+        options: [ { optionId: 'plan_bypass', name: 'Bypass', kind: 'allow_once' },
+          { optionId: 'once', name: 'Once', kind: 'allow_once' },
+          { optionId: 'always', name: 'Always', kind: 'allow_always' },
+          { optionId: 'no', name: 'No', kind: 'reject_once' } ] } }); return;
+    }
+    if (text === 'mcp') {
+      const server = servers.find((server) => server.name === 'app');
+      const response = await fetch(server.url, { method: 'POST', headers: {
+        'Content-Type': 'application/json', Accept: 'application/json, text/event-stream',
+      }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'echo', arguments: {} } }) });
+      appendFileSync(join(root, 'mcp-result'), await response.text());
+    }
+    update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'child' },
+      _meta: { 'cognition.ai/subagent_context': { parentAgentId: 'child-one' } } });
+    for (const text of ['Hello ', 'world']) update({ sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text }, _meta: { 'cognition.ai/streamingMessageId': 'answer' } });
+    update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Think' },
+      _meta: { 'cognition.ai/streamingMessageId': 'thought' } });
+    update({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Tool', kind: 'execute',
+      status: 'in_progress', rawInput: { command: 'pwd' }, _meta: { 'cognition.ai/inferenceToolName': 'shell' } });
+    update({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed', rawOutput: '/workspace' });
+    update({ sessionUpdate: 'tool_call', toolCallId: 'failed', title: 'Fail', status: 'failed', rawOutput: 'broken' });
+    update({ sessionUpdate: 'usage_update', used: 20, size: 100 });
+    result(id, { stopReason: 'end_turn' });
+  }
+});
+`;
+
+async function fixture(t: TestContext) {
+  const cwd = await mkdtemp(join(tmpdir(), 'devin-provider-'));
+  const executable = join(cwd, 'devin.cjs');
+  await writeFile(executable, CLI, { mode: 0o755 });
+  const previous = process.env.DEVIN_PATH;
+  const sessions: DevinSession[] = [];
+  process.env.DEVIN_PATH = executable;
+  t.after(async () => {
+    await Promise.all(sessions.map((session) => session.close()));
+    if (previous === undefined) delete process.env.DEVIN_PATH;
+    else process.env.DEVIN_PATH = previous;
+    await rm(cwd, { recursive: true, force: true });
+  });
+  const approvals: ProviderApprovalRequest[] = [];
+  let outcome: PermissionOutcome = 'proceed_once';
+  const interactions: ProviderInteractions = {
+    requestApproval: async (request) => {
+      approvals.push(request);
+      return outcome;
+    },
+    requestQuestion: async () => ({ cancelled: true, answers: [] }),
+    isActive: () => true,
+    cancelPending: () => undefined,
+  };
+  const input = {
+    cwd,
+    appSessionId: 'app-one',
+    autonomy: 'low' as const,
+    interactionMode: 'auto' as const,
+    mcpServers: [],
+    interactions,
+  };
+  const provider = new DevinProvider();
+  const create = async () => {
+    const session = await provider.create(input);
+    sessions.push(session);
+    return session;
+  };
+  const requests = async (): Promise<{ method?: string; params?: Record<string, unknown> }[]> =>
+    (await readFile(join(cwd, 'requests.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+  return {
+    cwd,
+    input,
+    provider,
+    create,
+    requests,
+    approvals,
+    sessions,
+    answer: (value: PermissionOutcome) => {
+      outcome = value;
+    },
+  };
+}
+
+async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<NormalizedEvent[]> {
+  const events: NormalizedEvent[] = [];
+  for await (const event of stream) events.push(event);
+  return events;
+}
+
+test('Devin maps streamed text, reasoning, tools and context without leaking child updates', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  assert.equal(session.providerSessionId, 'devin-one');
+  const events = await collect(
+    session.stream('hello', [{ kind: 'skill', name: 'guide', path: '/guide.md' }]),
+  );
+  const rows = events.flatMap((event) => (event.transcript ? [event.transcript] : []));
+  assert.deepEqual(
+    rows.filter((row) => row.kind === 'text').map((row) => row.text),
+    ['Hello ', 'world'],
+  );
+  assert.equal(rows[0]?.textUpdate?.messageId, 'answer');
+  assert.ok(
+    rows.every((row) => row.appSessionId === 'app-one' && row.sourceSessionId === 'devin-one'),
+  );
+  assert.equal(rows.find((row) => row.kind === 'thinking')?.text, 'Think');
+  assert.equal(rows.find((row) => row.toolUseId === 'tool')?.toolName, 'shell');
+  assert.equal(
+    rows.find((row) => row.kind === 'tool_result' && row.toolUseId === 'tool')?.text,
+    '/workspace',
+  );
+  assert.equal(
+    rows.find((row) => row.kind === 'tool_result' && row.toolUseId === 'failed')?.isError,
+    true,
+  );
+  assert.equal(events.find((event) => event.tokens)?.tokens?.contextTokens, 20);
+  assert.deepEqual(events.at(-1), { done: true });
+  const sent = await h.requests();
+  assert.deepEqual(
+    sent.find((request) => request.method === 'initialize')?.params?.clientCapabilities,
+    { _meta: { 'cognition.ai/messageGrouping': true } },
+  );
+  assert.deepEqual(sent.find((request) => request.method === 'session/prompt')?.params?.prompt, [
+    { type: 'text', text: 'hello' },
+    { type: 'resource_link', name: 'guide', uri: 'file:///guide.md' },
+  ]);
+});
+
+test('Devin resumes without replaying load history and applies live mode and model selections', async (t) => {
+  const h = await fixture(t);
+  const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe' });
+  h.sessions.push(session);
+  await session.setAutonomy('high');
+  await session.setInteractionMode('spec');
+  await session.setAutonomy('medium');
+  await session.setInteractionMode('auto');
+  await session.setModel({ modelId: null });
+  assert.equal(session.autonomy, 'medium');
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
+  assert.equal(await session.steer(), false);
+  const settings = (await h.requests()).filter(
+    (request) => request.method === 'session/set_config_option',
+  );
+  assert.deepEqual(
+    settings.map((request) => request.params?.value),
+    ['accept-edits', 'swe', 'bypass', 'plan', 'plan', 'smart'],
+  );
+});
+
+test('Devin approval choices honor user outcomes and never select plan_bypass', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  for (const [answer, expected] of [
+    ['proceed_once', 'once'],
+    ['proceed_always', 'always'],
+    ['cancel', undefined],
+    ['refuse', 'no'],
+  ] as const) {
+    h.answer(answer);
+    await collect(session.stream('approve'));
+    const responses = await readFile(join(h.cwd, 'permission.json'), 'utf8');
+    const last = responses.trim().split('\n').at(-1) ?? '';
+    if (expected) assert.match(last, new RegExp(`"optionId":"${expected}"`));
+    else assert.match(last, /"outcome":"cancelled"/);
+  }
+  assert.equal(h.approvals[0]?.request.kind, 'edit');
+  assert.equal(h.approvals[0]?.request.canAlwaysAllow, true);
+});
+
+test('Devin cancellation settles a turn and the session remains usable', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const stream = session.stream('wait');
+  assert.equal((await stream.next()).value?.transcript?.text, 'waiting');
+  await session.interrupt();
+  const cancelled = await collect(stream);
+  assert.equal(cancelled[0]?.transcript?.kind, 'status');
+  assert.match(cancelled[0]?.transcript?.text ?? '', /interrupted/i);
+  assert.deepEqual(cancelled.at(-1), { done: true });
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
+  await Promise.all([session.close(), session.close()]);
+  assert.equal(session.isClosed, true);
+  assert.equal(session.process?.isAlive(), false);
+  assert.equal(await session.closed, undefined);
+});
+
+test('Devin refuses a turn explicitly and surfaces stderr on process exit', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await assert.rejects(collect(session.stream('refuse')), /Devin refused/);
+  await assert.rejects(collect(session.stream('exit')), /backend failed/);
+  assert.ok(await session.closed);
+  await assert.rejects(collect(session.stream('empty')), /closed/);
+});
+
+test('Devin probe reports auth, models and defaults and deletes its provisional session', async (t) => {
+  const h = await fixture(t);
+  await writeFile(join(h.cwd, 'signed-out'), '');
+  const signedOut = await h.provider.probe(new AbortController().signal);
+  assert.equal(signedOut.readiness, 'unauthenticated');
+  assert.match(signedOut.message ?? '', /devin auth login/);
+  await rm(join(h.cwd, 'signed-out'));
+  const ready = await h.provider.probe(new AbortController().signal);
+  assert.equal(ready.readiness, 'ready');
+  assert.equal(ready.version, '3000.14.30821');
+  assert.equal(ready.defaultModelId, 'swe-fast');
+  assert.deepEqual(
+    ready.models.map((model) => [model.id, model.isDefault]),
+    [
+      ['swe-fast', true],
+      ['swe', false],
+    ],
+  );
+  assert.ok((await h.requests()).some((request) => request.method === 'session/delete'));
+  await writeFile(join(h.cwd, 'empty-models'), '');
+  const empty = await h.provider.probe(new AbortController().signal);
+  assert.equal(empty.readiness, 'ready');
+  assert.deepEqual(empty.models, []);
+  assert.equal(empty.defaultModelId, 'swe-fast');
+  const aborted = AbortSignal.abort();
+  assert.equal((await h.provider.probe(aborted)).readiness, 'error');
+  assert.equal((await h.provider.readUsage()).unavailable, 'no_plan_limits');
+  await assert.rejects(h.provider.fork(), /cannot be copied/);
+});
+
+test('Devin forwards configured MCP transports and serves in-app tools for its lifetime', async (t) => {
+  const h = await fixture(t);
+  const app = createSdkMcpServer({
+    name: 'app',
+    tools: [{ name: 'echo', handler: () => 'APP_TOOL_RESULT' }],
+  });
+  const session = await h.provider.create({
+    ...h.input,
+    inAppMcpServers: [app],
+    mcpServers: [
+      {
+        name: 'stdio',
+        command: 'example',
+        args: ['serve'],
+        env: { EXAMPLE: 'yes' },
+      },
+    ],
+  });
+  h.sessions.push(session);
+  await collect(session.stream('mcp'));
+  assert.match(await readFile(join(h.cwd, 'mcp-result'), 'utf8'), /APP_TOOL_RESULT/);
+  const configured = (await h.requests()).find((request) => request.method === 'session/new')
+    ?.params?.mcpServers;
+  assert.ok(Array.isArray(configured));
+  assert.deepEqual(configured[0], {
+    name: 'stdio',
+    command: 'example',
+    args: ['serve'],
+    env: [{ name: 'EXAMPLE', value: 'yes' }],
+  });
+  const url = app.config && 'url' in app.config ? app.config.url : undefined;
+  assert.ok(url);
+  await session.close();
+  await assert.rejects(fetch(url), /fetch failed/);
+});

@@ -9,6 +9,7 @@ const DROIDPROXY_NAME_PREFIX = 'DroidProxy: ';
 export type Provider =
   | 'anthropic'
   | 'claude'
+  | 'devin'
   | 'openai'
   | 'google'
   | 'factory'
@@ -146,6 +147,17 @@ export function ModelIcon({ provider, size = 18 }: { provider: Provider; size?: 
           fill="#D97757"
           fillRule="nonzero"
         ></path>
+      </svg>
+    );
+
+  if (provider === 'devin')
+    return (
+      <svg {...s} viewBox="0 0 24 24" className="shrink-0 text-primary" aria-hidden>
+        <path
+          fill="currentColor"
+          fillRule="evenodd"
+          d="M5 3h6a9 9 0 0 1 0 18H5V3Zm4 4v10h2a5 5 0 0 0 0-10H9Z"
+        />
       </svg>
     );
 

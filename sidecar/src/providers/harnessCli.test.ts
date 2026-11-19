@@ -21,6 +21,17 @@ test('each harness installs through its documented installers', () => {
     '@openai/codex',
   ]);
   assert.throws(() => buildHarnessInstallCommand('codex', 'script'), /no script installer/);
+  const devin = buildHarnessInstallCommand('devin', 'script');
+  assert.equal(devin.command, 'sh');
+  assert.match(
+    devin.args[1] ?? '',
+    /curl -fsSL https:\/\/cli\.devin\.ai\/install\.sh -o "\$f" && bash "\$f"/,
+  );
+  assert.deepEqual(buildHarnessInstallCommand('devin', 'brew'), {
+    command: 'brew',
+    args: ['install', '--cask', 'devin-cli'],
+  });
+  assert.throws(() => buildHarnessInstallCommand('devin', 'npm'), /no npm installer/);
 });
 
 test('locateInstall picks the updater that owns the resolved binary', () => {

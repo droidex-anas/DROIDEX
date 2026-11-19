@@ -118,8 +118,8 @@ function HarnessCliRow({ cli, status }: { cli: HarnessCliState; status?: Provide
   );
 }
 
-// Sign-in is informational: a CLI without one can still run through a gateway
-// or key its own config names, so chats on it stay available either way.
+// Claude and Codex can use a gateway without a CLI login. Devin's ready probe
+// already confirms its CLI login, even when it supplies no account label.
 function SignInBadge({
   provider,
   status,
@@ -127,9 +127,9 @@ function SignInBadge({
   provider: HarnessCliProvider;
   status: ProviderStatus;
 }) {
-  if (status.accountLabel) {
+  if (status.accountLabel || (provider === 'devin' && status.readiness === 'ready')) {
     return (
-      <Badge tone="success" title={status.accountLabel}>
+      <Badge tone="success" title={status.accountLabel ?? 'Devin CLI login'}>
         Signed in
       </Badge>
     );
