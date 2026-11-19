@@ -22,8 +22,12 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const gitVcs = require('./git.cjs');
-const { expandHome } = gitVcs;
+const { expandHome, repoStatus } = require('./gitRepository.cjs');
+const gitEnvironment = require('./gitEnvironment.cjs');
+const gitBranches = require('./gitBranches.cjs');
+const gitWorktrees = require('./gitWorktrees.cjs');
+const gitDiff = require('./gitDiff.cjs');
+const gitSync = require('./gitSync.cjs');
 const githubVcs = require('./github.cjs');
 const githubPrConversation = require('./githubPrConversation.cjs');
 const { createTerminalManager } = require('./terminal.cjs');
@@ -972,7 +976,7 @@ function registerIpc() {
     remoteDesktop.broadcast('shared-storage-changed', change, sender);
   });
   desktopIpc.handle('repo-status', ({ dir }) => {
-    return gitVcs.repoStatus(dir);
+    return repoStatus(dir);
   });
   desktopIpc.handle('list-editors', () => {
     return editorApps.listEditors();
@@ -985,49 +989,49 @@ function registerIpc() {
   });
 
   desktopIpc.handle('git-environment', ({ dir }) => {
-    return gitVcs.environment(dir);
+    return gitEnvironment.environment(dir);
   });
   desktopIpc.handle('git-branches', ({ dir }) => {
-    return gitVcs.branches(dir);
+    return gitBranches.branches(dir);
   });
   desktopIpc.handle('git-worktrees', ({ dir }) => {
-    return gitVcs.worktrees(dir);
+    return gitWorktrees.worktrees(dir);
   });
   desktopIpc.handle('git-diff-stat', ({ dir, options }) => {
-    return gitVcs.diffStat(dir, options);
+    return gitDiff.diffStat(dir, options);
   });
   desktopIpc.handle('git-diff-files', ({ dir, options }) => {
-    return gitVcs.diffFiles(dir, options);
+    return gitDiff.diffFiles(dir, options);
   });
   desktopIpc.handle('git-file-diff', ({ dir, options }) => {
-    return gitVcs.fileDiff(dir, options);
+    return gitDiff.fileDiff(dir, options);
   });
   desktopIpc.handle('git-mark-turn-start', ({ dir, ownerId }) => {
-    return gitVcs.markTurnStart(dir, ownerId);
+    return gitDiff.markTurnStart(dir, ownerId);
   });
   desktopIpc.handle('git-adopt-turn-baseline', ({ dir, clientRef, appSessionId }) => {
-    return gitVcs.adoptTurnBaseline(dir, clientRef, appSessionId);
+    return gitDiff.adoptTurnBaseline(dir, clientRef, appSessionId);
   });
   desktopIpc.handle('git-create-branch', ({ dir, options }) => {
-    return gitVcs.createBranch(dir, options);
+    return gitBranches.createBranch(dir, options);
   });
   desktopIpc.handle('git-checkout', ({ dir, options }) => {
-    return gitVcs.checkout(dir, options);
+    return gitBranches.checkout(dir, options);
   });
   desktopIpc.handle('git-create-worktree', ({ dir, options }) => {
-    return gitVcs.createWorktree(dir, options);
+    return gitWorktrees.createWorktree(dir, options);
   });
   desktopIpc.handle('git-remove-worktree', ({ dir, options }) => {
-    return gitVcs.removeWorktree(dir, options);
+    return gitWorktrees.removeWorktree(dir, options);
   });
   desktopIpc.handle('git-commit', ({ dir, options }) => {
-    return gitVcs.commit(dir, options);
+    return gitSync.commit(dir, options);
   });
   desktopIpc.handle('git-push', ({ dir, options }) => {
-    return gitVcs.push(dir, options);
+    return gitSync.push(dir, options);
   });
   desktopIpc.handle('git-fetch', ({ dir }) => {
-    return gitVcs.fetchRemotes(dir);
+    return gitSync.fetchRemotes(dir);
   });
 
   desktopIpc.handle('github-available', () => {

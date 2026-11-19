@@ -5,24 +5,19 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
+const { branches, validBranchName } = require('./gitBranches.cjs');
+const { adoptTurnBaseline, diffFiles, fileDiff, markTurnStart } = require('./gitDiff.cjs');
+const { matchRemote } = require('./gitEnvironment.cjs');
+const { isWithin, repoStatus } = require('./gitRepository.cjs');
 const {
-  adoptTurnBaseline,
-  branches,
-  repoStatus,
-  createWorktree,
-  diffFiles,
-  fileDiff,
-  markTurnStart,
-  removeWorktree,
   allowedWorktreeTarget,
-  isWithin,
-  matchRemote,
+  createWorktree,
+  removeWorktree,
   sanitizeSegment,
-  validBranchName,
-} = require('./git.cjs');
+} = require('./gitWorktrees.cjs');
 
-// Integration tests for the last_turn review scope, driven through the module's
-// public API against real scratch repositories. Each scenario gets its own
+// Integration tests for the last_turn review scope, driven through the Git
+// modules against real scratch repositories. Each scenario gets its own
 // repo: the untracked-file scan is TTL-cached per repo root, so reusing one
 // repo across scenarios could serve a stale scan.
 
