@@ -291,7 +291,7 @@ export class SessionFileCache {
         candidates.push(entry);
         this.unavailableFiles.delete(id);
       } catch {
-        // The file was deleted or rotated between the scan and the read;
+        // The file could not be inspected or read during reconciliation;
         // the next watcher event or boot reconcile retries it.
       }
     }
@@ -374,7 +374,7 @@ export class SessionFileCache {
         upserts.push(entry);
         this.unavailableFiles.delete(providerSessionId);
       } catch {
-        // The file was deleted or rotated between the stat and the read;
+        // The file could not be inspected or read during reconciliation;
         // the next watcher event or boot reconcile retries it.
       }
     }

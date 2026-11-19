@@ -97,7 +97,7 @@ function sessionScanCache(t: TestContext) {
   return createHistorySessionFileCache(db, canonical);
 }
 
-function denySessionStat(t: TestContext, path: string): () => void {
+function denySessionStat(t: TestContext, path: string) {
   const stat = fs.statSync;
   const mocked = t.mock.method(fs, 'statSync', (...args: Parameters<typeof fs.statSync>) => {
     if (args[0] === path) throw Object.assign(new Error('stat failed'), { code: 'EACCES' });
@@ -109,7 +109,7 @@ function denySessionStat(t: TestContext, path: string): () => void {
     syncBuiltinESMExports();
   };
   t.after(restore);
-  return restore;
+  return { mocked, restore };
 }
 
 test('a full scan keeps an unreadable file but removes a different deleted file', (t) => {
@@ -121,10 +121,12 @@ test('a full scan keeps an unreadable file but removes a different deleted file'
     cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
     'cached summary',
   );
-  denySessionStat(t, join(home, '.factory', 'sessions', 'scan-unreadable.jsonl'));
+  const path = join(home, '.factory', 'sessions', 'scan-unreadable.jsonl');
+  const { mocked } = denySessionStat(t, path);
   unlinkSync(join(home, '.factory', 'sessions', 'scan-deleted.jsonl'));
 
   const result = cache.reconcileChanges();
+  assert.ok(mocked.mock.calls.some((call) => call.arguments[0] === path));
   assert.equal(
     cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
     'cached summary',
@@ -139,7 +141,7 @@ test('a watcher keeps an unreadable file and removes it after real deletion', (t
   const path = join(home, '.factory', 'sessions', `${providerSessionId}.jsonl`);
   const cache = sessionScanCache(t);
   cache.reconcileChanges();
-  const restore = denySessionStat(t, path);
+  const { restore } = denySessionStat(t, path);
 
   assert.deepEqual(
     cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
@@ -161,6 +163,34 @@ test('a watcher keeps an unreadable file and removes it after real deletion', (t
     cache.summaries().some((row) => row.appSessionId === providerSessionId),
     false,
   );
+});
+
+test('an unreadable Main transcript prevents admission of its Alt copy', (t) => {
+  const id = 'unreadable-main-copy';
+  writeSession(id, 'Main copy');
+  const previousAltHome = process.env.DROIDEX_ALT_HOME;
+  const altHome = join(home, 'unreadable-main-alt');
+  const altSessions = join(altHome, '.factory', 'sessions');
+  mkdirSync(altSessions, { recursive: true });
+  writeFileSync(
+    join(altSessions, `${id}.jsonl`),
+    providerSessionJsonl({ type: 'session_start', cwd: '', sessionTitle: 'Alt copy' }),
+  );
+  process.env.DROIDEX_ALT_HOME = altHome;
+  t.after(() => {
+    if (previousAltHome === undefined) delete process.env.DROIDEX_ALT_HOME;
+    else process.env.DROIDEX_ALT_HOME = previousAltHome;
+  });
+  const { restore } = denySessionStat(t, join(home, '.factory', 'sessions', `${id}.jsonl`));
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(
+    cache.summaries().some((row) => row.appSessionId === id),
+    false,
+  );
+  restore();
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.title, 'Main copy');
 });
 
 // The one cross-provider contract in this path: what ProviderTranscriptFile
