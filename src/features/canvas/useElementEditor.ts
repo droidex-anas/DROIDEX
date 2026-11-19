@@ -220,7 +220,9 @@ export function useElementEditor({
   /** Changes what the selected element previews, from what it draws now. */
   const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: change(current.draft, current.shown) });
+    if (!current) return;
+    const draft = change(current.draft, current.shown);
+    if (draft !== current.draft) choose({ ...current, draft });
   };
 
   /**

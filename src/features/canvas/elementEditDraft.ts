@@ -55,6 +55,7 @@ export function hasPreviews(draft: ElementEditDraft): boolean {
 /**
  * Previews `value` for `property`, which the element draws as `drawn` now. A
  * property outside the edit whitelist cannot be previewed, so it is ignored.
+ * Previewing the value already shown returns the same draft.
  */
 export function previewStyle(
   draft: ElementEditDraft,
@@ -62,7 +63,7 @@ export function previewStyle(
   value: string,
   drawn: string,
 ): ElementEditDraft {
-  if (!STYLE_PROPERTIES.includes(property)) return draft;
+  if (!STYLE_PROPERTIES.includes(property) || draft.values[property] === value) return draft;
   return {
     ...draft,
     values: { ...draft.values, [property]: value },
