@@ -91,14 +91,14 @@ test('statusColor resolves real statuses and falls back for prototype keys', () 
   }
 });
 
-test('a numeric root indexes an element array without changing cycle detection', () => {
+test('a non-string root renders the unparseable spec fallback', () => {
   const source = JSON.stringify({
     root: 1,
     elements: [null, { type: 'Card', title: 'Numeric root', children: ['1'] }],
   });
   const markup = renderToStaticMarkup(createElement(JsonRender, { source }));
 
-  assert.equal(markup.match(/Numeric root/g)?.length, 2);
+  assert.match(markup, /Render spec \(unparseable\)/);
 });
 
 test('huge Sparkline and BarChart data arrays render without blowing the call stack', () => {

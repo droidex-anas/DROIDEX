@@ -29,16 +29,21 @@ const MAX_ITEMS = 2000;
 const MAX_TABLE_COLUMNS = 40;
 
 interface Spec {
-  root: unknown;
+  root: string;
   elements: Record<string, unknown>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 function isSpec(value: unknown): value is Spec {
-  return isRecord(value) && !!value.root && isRecord(value.elements);
+  return (
+    isObject(value) &&
+    typeof value.root === 'string' &&
+    value.root !== '' &&
+    isObject(value.elements)
+  );
 }
 
 function parseSpec(source: string): Spec | null {
@@ -106,7 +111,7 @@ function asArray(v: unknown): unknown[] {
 function asRecordArray(v: unknown): Record<string, unknown>[] {
   return Array.isArray(v)
     ? v
-        .filter((e): e is Record<string, unknown> => isRecord(e) && !Array.isArray(e))
+        .filter((e): e is Record<string, unknown> => isObject(e) && !Array.isArray(e))
         .slice(0, MAX_ITEMS)
     : [];
 }
@@ -116,7 +121,7 @@ function mergedProps(el: Record<string, unknown>): Record<string, unknown> {
   const { type: _t, props, children: _c, ...rest } = el;
   void _t;
   void _c;
-  return { ...rest, ...(isRecord(props) ? props : {}) };
+  return { ...rest, ...(isObject(props) ? props : {}) };
 }
 
 // Semantic status → themed color. success/warning/error use the fixed semantic
@@ -395,13 +400,13 @@ const METRIC_TRENDS = new Map([
 ]);
 
 function MetricEl({ trend, label, value }: { trend: string; label: string; value: string }) {
-  const { icon: TrendIcon, color } = METRIC_TRENDS.get(trend) ?? {};
+  const trendStyle = METRIC_TRENDS.get(trend);
   return (
     <div className="flex flex-col gap-0.5">
       <span className="text-caption text-muted">{label}</span>
       <span className="inline-flex items-center gap-1 text-heading tabular-nums text-primary">
         {value}
-        {TrendIcon && <TrendIcon className="w-4 h-4" style={{ color }} />}
+        {trendStyle && <trendStyle.icon className="w-4 h-4" style={{ color: trendStyle.color }} />}
       </span>
     </div>
   );
@@ -477,20 +482,18 @@ function renderElement(
   children: ReactNode,
 ): ReactNode {
   switch (type) {
-    case 'Box': {
-      // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
-      const framed = !!props.borderStyle;
+    case 'Box':
       return (
         <BoxEl
           row={props.flexDirection === 'row'}
           padding={asNumber(props.padding)}
           gap={asNumber(props.gap)}
-          framed={framed}
+          // A spec's borderStyle asks for a framed box; frames separate by tone, not outline.
+          framed={!!props.borderStyle}
         >
           {children}
         </BoxEl>
       );
-    }
     case 'Text':
       return (
         <TextEl text={asString(props.text)} color={resolveColor(props.color)} bold={!!props.bold} />
@@ -594,16 +597,16 @@ function renderElement(
 }
 
 function renderNode(
-  id: unknown,
+  id: string,
   spec: Spec,
-  seen: Set<unknown>,
+  seen: Set<string>,
   depth: number,
   budget: { count: number },
 ): ReactNode {
   if (depth > MAX_DEPTH || seen.has(id) || budget.count >= MAX_NODES) return null;
   budget.count++;
-  const el = spec.elements[String(id)];
-  if (!isRecord(el)) return null;
+  const el = spec.elements[id];
+  if (!isObject(el)) return null;
   const props = mergedProps(el);
   const childIds = asArray(el.children ?? props.children).filter(
     (c): c is string => typeof c === 'string',
