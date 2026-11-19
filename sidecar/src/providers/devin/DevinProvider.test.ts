@@ -150,7 +150,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (text.startsWith('terminal-')) {
       terminalDone = new Promise((resolve) => { terminalFinished = resolve; });
       const script = text === 'terminal-live'
-        ? 'const fs = require("fs"); process.stdout.write("READY|" + process.env.ACP_TEST + "|" + process.cwd()); const watch = fs.watch(' + JSON.stringify(root) + ', () => { if (fs.existsSync(' + JSON.stringify(join(root, 'terminal-go')) + ')) { watch.close(); process.stdout.write("|DONE"); } });'
+        ? 'const fs = require("fs"); const watch = fs.watch(' + JSON.stringify(root) + ', () => { if (fs.existsSync(' + JSON.stringify(join(root, 'terminal-go')) + ')) { watch.close(); process.stdout.write("|DONE"); } }); process.stdout.write("READY|" + process.env.ACP_TEST + "|" + process.cwd());'
         : 'process.stdout.write("READY:" + process.pid); setInterval(() => {}, 1000);';
       const command = text === 'terminal-truncate' ? "printf '123ééZ'"
         : text === 'terminal-empty' ? 'true'
