@@ -1,4 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
+import { sessionSummary } from '../../src/test/sessionSummary';
+import type { ClientCommand, ServerEvent } from '../../src/types/bridge';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 
@@ -196,4 +198,77 @@ test('the draft renders markdown as it is typed and sends the raw text', async (
   await expect(page.locator('.cm-md-h2')).toHaveCount(1);
   await expect(page.locator('.cm-md-strong')).toHaveText('now');
   await expect(composer).toHaveText('Planship now');
+});
+
+test('the first prompt opens a chat and a queued follow-up waits for its turn', async ({
+  page,
+}) => {
+  const submissions: ClientCommand[] = [];
+  let finishFirstTurn: (() => void) | undefined;
+  await page.routeWebSocket(
+    (url) => url.searchParams.has('bridgeProtocol'),
+    (socket) => {
+      socket.onMessage((message) => {
+        if (typeof message !== 'string') return;
+        const command = JSON.parse(message) as ClientCommand;
+        if (command.type === 'session.send') submissions.push(command);
+        if (command.type !== 'session.create') return;
+        submissions.push(command);
+        const event: ServerEvent = {
+          type: 'session.created',
+          clientRef: command.clientRef,
+          session: sessionSummary('composer-test-chat', {
+            goal: command.goal,
+            title: command.title,
+            phase: 'running',
+            streaming: true,
+          }),
+        };
+        let seq = 0;
+        const emit = (event: ServerEvent) => {
+          seq += 1;
+          socket.send(
+            JSON.stringify({
+              type: 'events.batch',
+              generation: 'composer-test',
+              firstSeq: seq,
+              lastSeq: seq,
+              events: [{ seq, event }],
+            }),
+          );
+        };
+        finishFirstTurn = () => {
+          emit({ type: 'session.updated', session: { ...event.session, streaming: false } });
+        };
+        emit(event);
+      });
+    },
+  );
+  await page.goto(appUrl);
+  const composer = composerOf(page);
+
+  await composer.fill('ship **now**');
+  await composer.press('Enter');
+  await expect
+    .poll(() => submissions)
+    .toMatchObject([{ type: 'session.create', goal: 'ship **now**' }]);
+  await expect(composer).not.toContainText('ship now');
+  await expect(page.getByRole('button', { name: 'Stop turn' })).toBeVisible();
+
+  await composer.fill('Keep going');
+  await composer.press('ControlOrMeta+Enter');
+  const queue = page.getByText('Queued · sends after the current turn');
+  await expect(queue).toBeVisible();
+  await expect(composer).not.toContainText('Keep going');
+  expect(submissions).toHaveLength(1);
+
+  finishFirstTurn?.();
+  await expect
+    .poll(() => submissions.at(1))
+    .toEqual({
+      type: 'session.send',
+      appSessionId: 'composer-test-chat',
+      text: 'Keep going',
+    });
+  await expect(queue).not.toBeVisible();
 });
