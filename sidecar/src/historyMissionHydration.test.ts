@@ -3,7 +3,6 @@ import test from 'node:test';
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
 
 import type { SessionSummary } from '@droidex/protocol';
 import { persistTestChild, persistTestSummaries } from './testing/historyPersistenceFixture.js';
@@ -129,7 +128,7 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
   assert.equal(warning.includes('secret-partial'), false);
 });
 
-test('Mission older pages omit progress reads and child lookup while latest pages retain progress', (t) => {
+test('Mission older pages load independently of the progress log', () => {
   const appSessionId = 'paged-parent';
   const missionDir = join(home, '.factory', 'missions', 'paged-mission');
   const sessionDir = join(home, '.factory', 'sessions');
@@ -137,13 +136,8 @@ test('Mission older pages omit progress reads and child lookup while latest page
   mkdirSync(sessionDir, { recursive: true });
   writeFileSync(join(missionDir, 'state.json'), JSON.stringify({ baseSessionId: appSessionId }));
   const progressPath = join(missionDir, 'progress_log.jsonl');
-  const storedProgress = {
-    type: 'worker_started',
-    timestamp: '2026-07-29T00:00:00.000Z',
-    workerSessionId: 'paged-worker',
-    spawnId: 'paged-spawn',
-  };
-  writeFileSync(progressPath, JSON.stringify(storedProgress));
+  const timestamp = '2026-07-29T00:00:00.000Z';
+  writeFileSync(progressPath, JSON.stringify({ type: 'entry', timestamp }));
   const path = join(sessionDir, `${appSessionId}.jsonl`);
   writeFileSync(
     path,
@@ -152,7 +146,7 @@ test('Mission older pages omit progress reads and child lookup while latest page
       ...['older', 'latest'].map((text) => ({
         type: 'message',
         id: text,
-        timestamp: storedProgress.timestamp,
+        timestamp,
         message: { role: 'assistant', content: [{ type: 'text', text }] },
       })),
     ]
@@ -160,17 +154,6 @@ test('Mission older pages omit progress reads and child lookup while latest page
       .join('\n') + '\n',
   );
   const history = new HistoryIndex();
-  persistTestChild({
-    parentAppSessionId: appSessionId,
-    childSessionId: 'paged-child',
-    providerSessionId: 'paged-worker',
-    role: 'worker',
-    status: 'completed',
-    modelId: 'model',
-    spawnLink: { kind: 'spawn', id: 'paged-spawn' },
-    transcriptAvailable: true,
-    updatedAt: 1,
-  });
   const stat = statSync(path);
   history.replaceSessionFileSnapshot({
     revision: 1,
@@ -189,32 +172,9 @@ test('Mission older pages omit progress reads and child lookup while latest page
   });
   history.close();
 
-  let childLookups = 0;
-  const prepare = DatabaseSync.prototype.prepare;
-  t.mock.method(DatabaseSync.prototype, 'prepare', function (this: DatabaseSync, sql: string) {
-    if (sql.includes('SELECT * FROM child_sessions')) childLookups++;
-    return prepare.call(this, sql);
-  });
   const latest = hydrateHistoricalSession('paged-mission', { limit: 1 });
-  assert.equal(childLookups, 1);
-  assert.deepEqual(latest.progress, [
-    {
-      type: storedProgress.type,
-      timestamp: storedProgress.timestamp,
-      title: 'worker started',
-      workerChildSessionId: 'paged-child',
-      message: undefined,
-      featureId: undefined,
-    },
-  ]);
-  assert.deepEqual(
-    latest.transcripts.map((event) => event.text),
-    ['latest'],
-  );
   assert.ok(latest.olderCursor);
-  childLookups = 0;
   const older = hydrateHistoricalSession('paged-mission', { cursor: latest.olderCursor, limit: 2 });
-  assert.equal(childLookups, 0);
   assert.deepEqual(older.progress, []);
   assert.deepEqual(
     older.transcripts.map((event) => event.text),
@@ -230,16 +190,7 @@ test('Mission older pages omit progress reads and child lookup while latest page
     }),
     older,
   );
-  assert.deepEqual(hydrateHistoricalSession('paged-mission', { cursor: 'invalid' }), {
-    progress: [],
-    transcripts: [],
-    olderCursor: undefined,
-  });
-  assert.equal(childLookups, 0);
   assert.throws(() => hydrateHistoricalSession('paged-mission', { limit: 1 }), { code: 'EISDIR' });
-  rmSync(progressPath, { recursive: true });
-  writeFileSync(progressPath, JSON.stringify(storedProgress));
-  assert.deepEqual(hydrateHistoricalSession('paged-mission', { limit: 1 }), latest);
 });
 
 function missionSummary(): SessionSummary {

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
-import { join, sep } from 'node:path';
+import { basename, join, sep } from 'node:path';
 import { normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
 import {
@@ -582,9 +582,15 @@ export function hydrateHistoricalSession(
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
 
-  const { summary, storedProgress } = loadMissionControlSession(dir, {
-    includeProgress: !opts.cursor,
-  });
+  if (opts.cursor) {
+    const state = readJson(join(dir, 'state.json')) as { baseSessionId?: string };
+    const appSessionId = state.baseSessionId?.length ? state.baseSessionId : basename(dir);
+    const chain = resolveSessionChain(appSessionId, appSessionId);
+    const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
+    return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
+  }
+
+  const { summary, storedProgress } = loadMissionControlSession(dir);
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that
@@ -592,12 +598,6 @@ export function hydrateHistoricalSession(
   // the latest segment is what made compacted chats lose their scrollback.
   const chain = orchestratorChain(summary);
   const window = loadSessionTranscriptWindow(summary.appSessionId, chain, opts);
-
-  // Older pages only extend the orchestrator scrollback upward; workers and
-  // progress were already delivered with the initial (newest) page.
-  if (opts.cursor) {
-    return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
-  }
 
   const progress = projectMissionProgress(
     storedProgress,
