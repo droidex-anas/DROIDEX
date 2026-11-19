@@ -42,6 +42,50 @@ export interface ChildHistoryState extends SessionRestore {
   isViewportPinned: boolean;
 }
 
+export type ChildSessionAction =
+  | {
+      type: 'CHILD_UPDATED';
+      parentAppSessionId: string;
+      childSessionId: string;
+      requestId: string;
+      access: 'ready';
+      runtimeGeneration: number;
+    }
+  | {
+      type: 'CHILD_UPDATED';
+      parentAppSessionId: string;
+      childSessionId: string;
+      requestId: string;
+      access: 'history';
+    }
+  | {
+      type: 'CHILD_ERROR';
+      parentAppSessionId: string;
+      childSessionId: string;
+      requestId: string | null;
+      operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
+      message: string;
+    }
+  | { type: 'CHILD_HISTORY_LOADING'; parentAppSessionId: string; childSessionId: string }
+  | { type: 'CHILD_HISTORY_LOADING_OLDER'; parentAppSessionId: string; childSessionId: string }
+  | {
+      type: 'CHILD_TRANSCRIPT_VIEWPORT';
+      parentAppSessionId: string;
+      childSessionId: string;
+      pinned: boolean;
+    }
+  | {
+      type: 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT';
+      parentAppSessionId: string;
+      childSessionId: string;
+    }
+  | { type: 'SELECT_CHILD'; selection: ChildSelection | null; requestId?: string };
+
+type ChildSessionActionOf<T extends ChildSessionAction['type']> = Extract<
+  ChildSessionAction,
+  { type: T }
+>;
+
 export interface ChildSessionStore {
   childAccess: Record<string, Record<string, ChildAccess>>;
   childRuntime: Record<string, Record<string, ChildRuntimeState>>;
@@ -182,22 +226,31 @@ export function invalidateSelectedChildOpening<S extends ChildSessionStore>(stat
     : state;
 }
 
-export function reduceChildUpdated<S extends ChildSessionStore>(
+export function reduceChildSession<S extends ChildSessionStore>(
   state: S,
-  action:
-    | {
-        parentAppSessionId: string;
-        childSessionId: string;
-        requestId: string;
-        access: 'ready';
-        runtimeGeneration: number;
-      }
-    | {
-        parentAppSessionId: string;
-        childSessionId: string;
-        requestId: string;
-        access: 'history';
-      },
+  action: ChildSessionAction,
+): S {
+  switch (action.type) {
+    case 'CHILD_UPDATED':
+      return reduceChildUpdated(state, action);
+    case 'CHILD_ERROR':
+      return reduceChildError(state, action);
+    case 'CHILD_HISTORY_LOADING':
+      return reduceChildHistoryLoading(state, action);
+    case 'CHILD_HISTORY_LOADING_OLDER':
+      return reduceChildHistoryLoadingOlder(state, action);
+    case 'CHILD_TRANSCRIPT_VIEWPORT':
+      return reduceChildTranscriptViewport(state, action);
+    case 'CHILD_TRANSCRIPT_RELEASE_VIEWPORT':
+      return reduceChildTranscriptReleaseViewport(state, action);
+    case 'SELECT_CHILD':
+      return reduceSelectChild(state, action);
+  }
+}
+
+function reduceChildUpdated<S extends ChildSessionStore>(
+  state: S,
+  action: ChildSessionActionOf<'CHILD_UPDATED'>,
 ): S {
   if (
     state.selectedChild?.parentAppSessionId !== action.parentAppSessionId ||
@@ -234,15 +287,9 @@ export function reduceChildUpdated<S extends ChildSessionStore>(
     : settled;
 }
 
-export function reduceChildError<S extends ChildSessionStore>(
+function reduceChildError<S extends ChildSessionStore>(
   state: S,
-  action: {
-    parentAppSessionId: string;
-    childSessionId: string;
-    requestId: string | null;
-    operation: 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
-    message: string;
-  },
+  action: ChildSessionActionOf<'CHILD_ERROR'>,
 ): S {
   if (action.operation === 'loadHistory') {
     const previous = lookupChild(
@@ -276,9 +323,9 @@ export function reduceChildError<S extends ChildSessionStore>(
   });
 }
 
-export function reduceChildHistoryLoading<S extends ChildSessionStore>(
+function reduceChildHistoryLoading<S extends ChildSessionStore>(
   state: S,
-  action: { parentAppSessionId: string; childSessionId: string },
+  action: ChildSessionActionOf<'CHILD_HISTORY_LOADING'>,
 ): S {
   const previous = lookupChild(
     state.childHistory,
@@ -296,9 +343,9 @@ export function reduceChildHistoryLoading<S extends ChildSessionStore>(
   });
 }
 
-export function reduceChildHistoryLoadingOlder<S extends ChildSessionStore>(
+function reduceChildHistoryLoadingOlder<S extends ChildSessionStore>(
   state: S,
-  action: { parentAppSessionId: string; childSessionId: string },
+  action: ChildSessionActionOf<'CHILD_HISTORY_LOADING_OLDER'>,
 ): S {
   const previous = lookupChild(
     state.childHistory,
@@ -312,9 +359,9 @@ export function reduceChildHistoryLoadingOlder<S extends ChildSessionStore>(
   });
 }
 
-export function reduceChildTranscriptViewport<S extends ChildSessionStore>(
+function reduceChildTranscriptViewport<S extends ChildSessionStore>(
   state: S,
-  action: { parentAppSessionId: string; childSessionId: string; pinned: boolean },
+  action: ChildSessionActionOf<'CHILD_TRANSCRIPT_VIEWPORT'>,
 ): S {
   const previous = lookupChild(
     state.childHistory,
@@ -337,9 +384,9 @@ export function reduceChildTranscriptViewport<S extends ChildSessionStore>(
   };
 }
 
-export function reduceChildTranscriptReleaseViewport<S extends ChildSessionStore>(
+function reduceChildTranscriptReleaseViewport<S extends ChildSessionStore>(
   state: S,
-  action: { parentAppSessionId: string; childSessionId: string },
+  action: ChildSessionActionOf<'CHILD_TRANSCRIPT_RELEASE_VIEWPORT'>,
 ): S {
   if (
     state.activeAppSessionId !== action.parentAppSessionId ||
@@ -361,9 +408,9 @@ export function reduceChildTranscriptReleaseViewport<S extends ChildSessionStore
   );
 }
 
-export function reduceSelectChild<S extends ChildSessionStore>(
+function reduceSelectChild<S extends ChildSessionStore>(
   state: S,
-  action: { selection: ChildSelection | null; requestId?: string },
+  action: ChildSessionActionOf<'SELECT_CHILD'>,
 ): S {
   const previous = state.selectedChild;
   let next =
