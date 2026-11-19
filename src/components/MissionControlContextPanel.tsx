@@ -91,9 +91,6 @@ export default function ContextColumn({
 
   return (
     <div
-      role="region"
-      aria-label="Context"
-      tabIndex={0}
       className={`flex-1 min-h-0 overflow-y-auto space-y-5 ${big ? '-mx-6 -mb-6 px-4 pb-4' : 'px-3 py-3'}`}
     >
       {/* Environment */}
