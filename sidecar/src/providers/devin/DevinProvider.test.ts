@@ -152,11 +152,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       const script = text === 'terminal-live'
         ? 'const fs = require("fs"); const watch = fs.watch(' + JSON.stringify(root) + ', () => { if (fs.existsSync(' + JSON.stringify(join(root, 'terminal-go')) + ')) { watch.close(); process.stdout.write("|DONE"); } }); process.stdout.write("READY|" + process.env.ACP_TEST + "|" + process.cwd());'
         : 'process.stdout.write("READY:" + process.pid); setInterval(() => {}, 1000);';
-      const command = text === 'terminal-truncate' ? "printf '123ééZ'"
+      const command = text === 'terminal-args' ? process.execPath
+        : text === 'terminal-truncate' ? "printf '123ééZ'"
         : text === 'terminal-empty' ? 'true'
         : JSON.stringify(process.execPath) + ' -e ' + JSON.stringify(script) + (text.startsWith('terminal-background') ? ' &' : '');
       try {
         const { terminalId } = await terminalCall('create', { command,
+          ...(text === 'terminal-args' ? { args: ['-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', 'space value', 'paren(value);$(literal)'] } : {}),
           cwd: text === 'terminal-error' ? join(root, 'missing') : root,
           env: [{ name: 'ACP_TEST', value: 'terminal-env' }],
           ...(text === 'terminal-truncate' ? { outputByteLimit: 4 } : {}) });
@@ -299,7 +301,7 @@ test('Devin client terminals stream shell output with cwd and env, then retain t
 });
 
 test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit kill and idempotent release', async (t) => {
-  for (const mode of ['truncate', 'empty', 'error', 'kill', 'release', 'background-exit']) {
+  for (const mode of ['args', 'truncate', 'empty', 'error', 'kill', 'release', 'background-exit']) {
     await t.test(mode, async (t) => {
       const h = await fixture(t);
       const session = await h.create();
@@ -310,7 +312,13 @@ test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit ki
         return;
       }
       assert.match(response.released.error, /Unknown Devin terminal/);
-      if (mode === 'truncate') {
+      if (mode === 'args') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.deepEqual(JSON.parse(response.output.output), [
+          'space value',
+          'paren(value);$(literal)',
+        ]);
+      } else if (mode === 'truncate') {
         assert.equal(response.output.output, 'éZ');
         assert.equal(response.output.truncated, true);
       } else if (mode === 'empty') {

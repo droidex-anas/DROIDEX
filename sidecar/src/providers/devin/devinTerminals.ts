@@ -79,7 +79,7 @@ export class DevinTerminals {
       ...Object.fromEntries((request.env ?? []).map(({ name, value }) => [name, value])),
     };
     const child = spawn(request.command, request.args ?? [], {
-      shell: true,
+      shell: (request.args?.length ?? 0) === 0,
       cwd: request.cwd ?? this.cwd,
       env,
       stdio: 'pipe',
