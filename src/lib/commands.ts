@@ -3,13 +3,8 @@ import { getRuntimeHealth, subscribeRuntimeHealth } from './runtimeHealth';
 import { isAppUpdateInstalling } from './appUpdate';
 import type {
   CanvasTurnContext,
-  Autonomy,
   BrowserState,
-  BrowserViewport,
-  BrowserViewportMode,
   ClientCommand,
-  ConfigurableSessionRole,
-  ContextWindowTokens,
   DesignReference,
   DroidProxyProviderKey,
   HarnessCliProvider,
@@ -17,16 +12,15 @@ import type {
   McpServerInput,
   PermissionOutcome,
   QuestionAnswer,
-  ProviderKind,
   ProviderMention,
-  ReasoningEffort,
   ResponseFormat,
-  SessionInteractionMode,
-  SessionLineage,
-  SessionPurpose,
-  VoiceNarration,
   SidebarResult,
 } from '@droidex/protocol';
+
+type CommandInput<T extends ClientCommand['type']> = Omit<
+  Extract<ClientCommand, { type: T }>,
+  'type'
+>;
 
 let refCounter = 0;
 
@@ -42,60 +36,17 @@ export const connect = (apiKey: string) => {
   bridge.send({ type: 'connect', apiKey });
 };
 
-export const createSession = (input: {
-  clientRef: string;
-  canvas?: { canvasId: string | null; name?: string; mutationId: string };
-  cwd?: string;
-  title: string;
-  goal: string;
-  mentions?: ProviderMention[];
-  canvasContext?: CanvasTurnContext;
-  sessionPurpose: SessionPurpose;
-  provider?: ProviderKind;
-  interactionMode?: SessionInteractionMode;
-  modelId?: string;
-  reasoningEffort?: ReasoningEffort;
-  fastMode?: boolean;
-  contextWindowTokens?: ContextWindowTokens;
-  compactionModel?: string;
-  compactionTokenLimit?: number | null;
-  compactionTokenLimitPerModel?: Record<string, number>;
-  autonomy: Autonomy;
-  workerModel?: string;
-  workerReasoning?: ReasoningEffort;
-  validatorModel?: string;
-  validatorReasoning?: ReasoningEffort;
-  responseFormat?: ResponseFormat;
-}) => {
+export const createSession = (input: CommandInput<'session.create'>) => {
   requireAgentWorkAvailable();
   bridge.send({ type: 'session.create', ...input });
 };
 
-export const forkSession = (input: {
-  clientRef: string;
-  appSessionId: string;
-  lineage: SessionLineage['kind'];
-  title: string;
-  forkPointId?: string;
-  prompt?: string;
-  provider?: ProviderKind;
-  modelId?: string;
-  reasoningEffort?: ReasoningEffort;
-}) => {
+export const forkSession = (input: CommandInput<'session.fork'>) => {
   requireAgentWorkAvailable();
   bridge.send({ type: 'session.fork', ...input });
 };
 
-export const updateSessionSettings = (input: {
-  appSessionId: string;
-  modelId?: string | null;
-  reasoningEffort?: ReasoningEffort | null;
-  fastMode?: boolean;
-  contextWindowTokens?: ContextWindowTokens;
-  requestId?: string;
-  autonomy?: Autonomy;
-  interactionMode?: SessionInteractionMode;
-}) => {
+export const updateSessionSettings = (input: CommandInput<'session.updateSettings'>) => {
   bridge.send({ type: 'session.updateSettings', ...input });
 };
 
@@ -314,24 +265,18 @@ export const compactSession = (appSessionId: string, customInstructions?: string
 // Voice runs on the chat's own thread and model: this relays the WebRTC
 // handshake the renderer negotiated, never the audio. The answer arrives as a
 // `voice.answer` event for the same chat.
-export const startVoice = (input: {
-  appSessionId: string;
-  sdp: string;
-  attempt: string;
-  voice?: string;
-  narration?: VoiceNarration;
-}) => {
+export const startVoice = (input: CommandInput<'voice.start'>) => {
   requireAgentWorkAvailable();
   bridge.send({ type: 'voice.start', ...input });
 };
 
-export const stopVoice = (input: { appSessionId: string }) => {
+export const stopVoice = (input: CommandInput<'voice.stop'>) => {
   bridge.send({ type: 'voice.stop', ...input });
 };
 
 // The spoken voices the chat's provider offers; answered by a `voice.voices`
 // event for the same chat.
-export const requestVoices = (input: { appSessionId: string }) => {
+export const requestVoices = (input: CommandInput<'voice.voices'>) => {
   bridge.send({ type: 'voice.voices', ...input });
 };
 
@@ -446,11 +391,7 @@ export const reanchorSessionsForWorktreeRemoval = (
   });
 };
 
-export const listSessions = (options?: {
-  workspaceCwds?: string[];
-  includePlainChats?: boolean;
-  revealEarlierCwds?: string[];
-}) => {
+export const listSessions = (options?: CommandInput<'sessions.list'>) => {
   bridge.send({ type: 'sessions.list', ...options });
 };
 
@@ -475,7 +416,7 @@ export const loadChildHistory = (
 
 export const watchChildHistory = (
   requestId: string,
-  target: Extract<ClientCommand, { type: 'child.watchHistory' }>['target'],
+  target: CommandInput<'child.watchHistory'>['target'],
 ) => bridge.sendIfConnected({ type: 'child.watchHistory', requestId, target });
 
 // Transcript content search; the matching sessions.searchResults event
@@ -501,37 +442,19 @@ export const setBackgroundWork = (
   });
 };
 
-export const updateAgentSettings = (input: {
-  appSessionId?: string;
-  agent: ConfigurableSessionRole;
-  modelId?: string | null;
-  reasoningEffort?: ReasoningEffort | null;
-}) => {
+export const updateAgentSettings = (input: CommandInput<'settings.agent.update'>) => {
   bridge.send({ type: 'settings.agent.update', ...input });
 };
 
-export const updateChildSettings = (input: {
-  parentAppSessionId: string;
-  childSessionId: string;
-  modelId: string | null;
-  reasoningEffort?: ReasoningEffort;
-}) => {
+export const updateChildSettings = (input: CommandInput<'child.updateSettings'>) => {
   bridge.send({ type: 'child.updateSettings', ...input });
 };
 
-export const updateCompactionSettings = (input: {
-  compactionTokenLimit?: number | null;
-  compactionTokenLimitPerModel?: Record<string, number>;
-}) => {
+export const updateCompactionSettings = (input: CommandInput<'settings.compaction.update'>) => {
   bridge.send({ type: 'settings.compaction.update', ...input });
 };
 
-export const openBrowser = (input: {
-  appSessionId: string;
-  url: string;
-  viewport?: BrowserViewport;
-  viewportMode?: BrowserViewportMode;
-}) => {
+export const openBrowser = (input: CommandInput<'browser.open'>) => {
   bridge.send({ type: 'browser.open', ...input });
 };
 
@@ -553,13 +476,7 @@ export const reloadBrowser = (appSessionId: string) => {
   bridge.send({ type: 'browser.reload', appSessionId });
 };
 
-export const resizeBrowserViewport = (input: {
-  appSessionId: string;
-  viewport: BrowserViewport;
-  viewportMode: BrowserViewportMode;
-  /** The pane's size for Fit, taken only while the page is on Fit. */
-  follow?: boolean;
-}) => {
+export const resizeBrowserViewport = (input: CommandInput<'browser.resizeViewport'>) => {
   bridge.send({ type: 'browser.resizeViewport', ...input });
 };
 
