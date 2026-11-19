@@ -47,12 +47,8 @@ import {
 } from './DroidRuntime.js';
 import { detectEnvironment } from './Environment.js';
 import { buildInstallCommand, buildUpdateCommand, runStreaming } from './CliInstaller.js';
-import {
-  type HistoryIndex,
-  type PersistedChildSession,
-  loadMissionControlSessions,
-  readFactoryDefaults,
-} from './history.js';
+import { type HistoryIndex, type PersistedChildSession, readFactoryDefaults } from './history.js';
+import { loadMissionControlSessions } from './historyMissions.js';
 import { HistoryPersistence } from './HistoryPersistence.js';
 import { serverEventForHistoryStatus } from './historyStatusEvents.js';
 import { LiveRuntimeJournal, liveRuntimeJournalPath } from './liveRuntimeJournal.js';

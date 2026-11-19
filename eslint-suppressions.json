@@ -65,12 +65,6 @@
     },
     "@typescript-eslint/no-unnecessary-condition": {
       "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-conversion": {
-      "count": 1
-    },
-    "@typescript-eslint/no-unnecessary-type-parameters": {
-      "count": 1
     }
   },
   "sidecar/src/skillSignals.ts": {

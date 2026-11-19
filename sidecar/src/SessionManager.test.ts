@@ -13,7 +13,7 @@ import {
 } from '@factory/droid-sdk';
 
 import type * as Protocol from '@droidex/protocol';
-import type { HistoricalSummaryFilter } from './history.js';
+import type { HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
 import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
