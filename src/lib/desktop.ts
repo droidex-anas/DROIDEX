@@ -495,7 +495,7 @@ export interface DesktopPowerTierSnapshot {
   onBattery: boolean;
 }
 
-function desktopApi(): DroidexApi | undefined {
+export function desktopApi(): DroidexApi | undefined {
   return typeof window !== 'undefined' ? window.droidex : undefined;
 }
 
