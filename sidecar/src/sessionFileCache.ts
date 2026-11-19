@@ -38,7 +38,7 @@ export interface SessionFileChange {
 
 export interface SessionFileScan {
   files: Map<string, SessionFileStat>;
-  // False when any subtree vanished or became unreadable during the walk.
+  // False when any subtree or file could not be inspected during the walk.
   // Upserts are still authoritative, but absences cannot prove deletion.
   isComplete: boolean;
 }

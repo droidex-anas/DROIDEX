@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { mkdirSync, mkdtempSync, rmSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -74,6 +76,54 @@ test('files created, rewritten, given settings, or deleted between scans show in
   unlinkSync(join(home, '.factory', 'sessions', `${id}.jsonl`));
   assert.equal(scanned(), undefined);
 });
+
+for (const code of ['EACCES', 'EIO', 'ENOENT']) {
+  test(`a ${code} stat failure only removes a cached summary for ENOENT`, (t) => {
+    const id = `scan-stat-${code}`;
+    writeSession(id, 'cached summary');
+    const path = join(home, '.factory', 'sessions', `${id}.jsonl`);
+    const index = new HistoryIndex();
+    const db = new DatabaseSync(':memory:');
+    const canonical = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
+      readOnly: true,
+    });
+    t.after(() => {
+      canonical.close();
+      db.close();
+      index.close();
+    });
+    const cache = createHistorySessionFileCache(db, canonical);
+    cache.reconcileChanges();
+    const cached = () => cache.summaries().find((summary) => summary.appSessionId === id);
+    assert.equal(cached()?.title, 'cached summary');
+
+    const stat = fs.statSync;
+    const mocked = t.mock.method(fs, 'statSync', (...args: Parameters<typeof fs.statSync>) => {
+      if (args[0] === path) throw Object.assign(new Error('stat failed'), { code });
+      return stat(...args);
+    });
+    syncBuiltinESMExports();
+    t.after(() => {
+      mocked.mock.restore();
+      syncBuiltinESMExports();
+    });
+    const result = cache.reconcileChanges();
+    assert.equal(
+      mocked.mock.calls.some((call) => call.arguments[0] === path),
+      true,
+    );
+    assert.equal(cached()?.title, code === 'ENOENT' ? undefined : 'cached summary');
+    assert.equal(result.removedProviderSessionIds.includes(id), code === 'ENOENT');
+
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+    cache.reconcileChanges();
+    assert.equal(cached()?.title, 'cached summary');
+    unlinkSync(path);
+    assert.equal(cache.reconcileChanges().removedProviderSessionIds.includes(id), true);
+    assert.equal(cached(), undefined);
+  });
+}
 
 // The one cross-provider contract in this path: what ProviderTranscriptFile
 // writes for a non-Droid session is what the scan admits and the parser

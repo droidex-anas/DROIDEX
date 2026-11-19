@@ -1477,7 +1477,8 @@ function scanSessionFileTree(): SessionFileScan {
       let stat;
       try {
         stat = statSync(path);
-      } catch {
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') isComplete = false;
         continue;
       }
       if (stat.isDirectory()) walk(path, depth + 1, isAlt);
