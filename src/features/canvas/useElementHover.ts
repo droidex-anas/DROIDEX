@@ -14,7 +14,7 @@ import { useLayoutEffect, useState } from 'react';
 import type { Point } from './canvasGeometry';
 import { OverlayStore } from './overlayStore';
 import type { PreviewHover, PreviewNode } from './previewDocument';
-import type { ElementRef } from './protocol';
+import type { ElementRef } from '@droidex/protocol';
 
 export interface HoveredElement {
   designId: string;

@@ -10,13 +10,15 @@ import { ProjectWakeQueue } from '../projects/ProjectWakeQueue.js';
 import { ProjectService } from '../projects/ProjectService.js';
 import type { ProjectPort } from '../projects/sessions.js';
 import type { ProjectPersistence } from '../projects/store.js';
-import type { Project, ThreadInput, ThreadMessage } from '../projects/types.js';
 import type {
+  ThreadInput,
   PermissionRequest,
   ServerEvent,
   SessionSummary,
   TranscriptEvent,
-} from '../protocol.js';
+} from '@droidex/protocol';
+import type { Project, ThreadMessage } from '../projects/types.js';
+
 import { sessionSummary } from './sessionSummaryFixture.js';
 
 export const input: ThreadInput = {

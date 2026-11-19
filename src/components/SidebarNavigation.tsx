@@ -13,7 +13,7 @@ import { ActivityStatusGlyph } from './ActivityStatusGlyph';
 import { projectsNavSignal } from '../lib/projectThreads';
 import { ProjectsIntro } from '../features/projects/ProjectsIntro';
 import { sessionAttention } from '../lib/sessionAttention';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 export function SidebarNavigation({ announcementShown = false }: { announcementShown?: boolean }) {
   const dispatch = useStoreDispatch();

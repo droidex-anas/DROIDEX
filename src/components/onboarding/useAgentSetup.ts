@@ -9,7 +9,7 @@ import {
   installHarnessCli,
   refreshProviders,
 } from '../../lib/commands';
-import type { HarnessCliProvider, InstallChannel, ProviderKind } from '../../types/bridge';
+import type { HarnessCliProvider, InstallChannel, ProviderKind } from '@droidex/protocol';
 import { droidStatus, harnessStatus, type AgentStatuses } from './agents';
 
 /** One install setup started, with its output so far. */

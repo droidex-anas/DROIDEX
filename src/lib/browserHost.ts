@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
-import type { BrowserViewportMode } from '../types/bridge';
+import type { BrowserViewportMode } from '@droidex/protocol';
 import { releaseNativeBrowser, reserveNativeBrowser, setNativeBrowserShown } from './nativeBrowser';
 
 // Each chat's browser page is a <webview> the Browser host mounts once at the

@@ -8,7 +8,7 @@ import {
   createDesktopBrowserChannel,
   type BrowserChannelProcess,
 } from './browser/desktopBrowserChannel.js';
-import type * as Protocol from './protocol.js';
+import type * as Protocol from '@droidex/protocol';
 import type { SessionFileWatcherOptions } from './sessionFileWatcher.js';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';

@@ -10,7 +10,7 @@ import { Badge } from '../../../components/ui/Badge';
 import { cn } from '../../../components/ui/cn';
 import { KitGuest } from '../KitGuest';
 import { useKitCapture } from '../kitCaptures';
-import type { DesignSystemRef, KitPreviewTarget } from '../protocol';
+import type { DesignSystemRef, KitPreviewTarget } from '@droidex/protocol';
 import { useFitScale } from './useFitScale';
 
 /** What every tile of one document shares. */

@@ -1,7 +1,7 @@
 // The Components tab's rows: which kit catalog entries a search finds, best
 // first, and the props an added entry's picks write.
 
-import type { CatalogListing, PropPick } from '../protocol';
+import type { CatalogListing, PropPick } from '@droidex/protocol';
 
 /**
  * The entries a search finds, best first: a name starting with it, then a

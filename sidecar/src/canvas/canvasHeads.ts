@@ -5,7 +5,7 @@
 
 import type { CanvasFiles } from './canvasFiles.js';
 import { outdatedManifest, type CanvasManifest } from './canvasManifest.js';
-import type { OutdatedCanvas } from './protocol.js';
+import type { OutdatedCanvas } from '@droidex/protocol';
 
 /** What every caller says about a head it holds but will not serve. */
 export const UNREADABLE_CANVAS = 'That canvas could not be read. Reopen DROIDEX to recover it.';

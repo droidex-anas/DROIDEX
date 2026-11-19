@@ -1,6 +1,6 @@
 import { formatRelativeTime } from '../../lib/time';
 import { WINDOW_NAMES } from '../../lib/usageLimit';
-import type { UsageExtra, UsageMeter } from '../../types/bridge';
+import type { UsageExtra, UsageMeter } from '@droidex/protocol';
 import type { UsagePace } from './usagePace';
 
 const MINUTE_MS = 60_000;

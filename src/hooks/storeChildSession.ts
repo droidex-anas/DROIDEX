@@ -1,4 +1,4 @@
-import type { ChildSessionSummary, ContextStatsSnapshot, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, ContextStatsSnapshot, TranscriptEvent } from '@droidex/protocol';
 import { releaseSessionChildTranscriptWindow } from '../lib/transcriptStoreMemory';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { INACTIVE_TRANSCRIPT_POLICY, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';

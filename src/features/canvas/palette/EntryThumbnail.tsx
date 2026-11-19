@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type RefObject } from 'react';
 import { KitGuest } from '../KitGuest';
 import { ENTRY_THUMBNAIL, useKitCapture } from '../kitCaptures';
-import type { DesignSystemRef, KitPreviewTarget } from '../protocol';
+import type { DesignSystemRef, KitPreviewTarget } from '@droidex/protocol';
 
 // The entry's page, in the thumbnail's 8:5; its capture is cropped to the entry.
 const STAGE = { width: 480, height: 300 };

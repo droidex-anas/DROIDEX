@@ -1,6 +1,10 @@
 import type { ContextBreakdownResult, GetContextStatsResult } from '@factory/droid-sdk';
 
-import type { ContextBreakdownSnapshot, ContextStatsSnapshot, SessionSummary } from './protocol.js';
+import type {
+  ContextBreakdownSnapshot,
+  ContextStatsSnapshot,
+  SessionSummary,
+} from '@droidex/protocol';
 import { numberValue, stringValue } from './values.js';
 
 export function applyExactUsage(

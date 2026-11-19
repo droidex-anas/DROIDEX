@@ -5,7 +5,7 @@ import { FolderOpen, Plus } from '@droidex/icons';
 import { Row } from './ui/Row';
 import { Tooltip } from './ui/Tooltip';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT, type WorkspaceSection } from '../lib/workspaces';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarWorkspaceRow } from './SidebarWorkspaceRow';
 import { SidebarMovingRow, SidebarSessionList, sidebarOrder } from './SidebarSessionList';

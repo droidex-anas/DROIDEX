@@ -1,4 +1,4 @@
-import type { ChildSessionSummary } from '../types/bridge';
+import type { ChildSessionSummary } from '@droidex/protocol';
 
 /** A paused worker child; tests override only the fields their assertions read. */
 export function childSummary(

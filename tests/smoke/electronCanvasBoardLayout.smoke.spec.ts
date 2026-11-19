@@ -4,7 +4,7 @@
 // holding their corners, and undoing a placement.
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { FrameRect } from '../../src/features/canvas/protocol';
+import type { FrameRect } from '@droidex/protocol';
 import { box, boardUrl, frame, openBoard, serveBoard, zoomField } from './board/boardPage';
 
 serveBoard();

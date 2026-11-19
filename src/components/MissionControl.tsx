@@ -29,7 +29,7 @@ import type {
   SessionSummary,
   ProgressEntry,
   ModelInfo,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { extractFileChange, type FileChange } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
 import { environmentLabels } from '../lib/repoEnvironment';

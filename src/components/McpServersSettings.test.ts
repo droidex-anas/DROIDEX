@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import type { McpServerInfo, McpStatusSummary, McpToolInfo } from '../types/bridge.js';
+import type { McpServerInfo, McpStatusSummary, McpToolInfo } from '@droidex/protocol';
 import { McpServersSection } from './McpServersSettings.js';
 
 const summary: McpStatusSummary = {

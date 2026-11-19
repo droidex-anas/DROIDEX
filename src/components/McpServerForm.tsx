@@ -2,7 +2,7 @@ import { useId, useRef, useState } from 'react';
 import { X } from '@droidex/icons';
 
 import { parseMcpVariables } from '../lib/mcpConfig';
-import type { McpServerInput } from '../types/bridge';
+import type { McpServerInput } from '@droidex/protocol';
 import { Dropdown } from './settingsKit';
 import { Button } from './ui/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle } from './ui/Dialog';

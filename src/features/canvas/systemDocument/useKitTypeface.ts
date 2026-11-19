@@ -5,8 +5,8 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { canvasClient } from '../canvasClient';
-import type { DocumentSection } from '../designSystemDocumentProtocol';
-import type { KitFontFace } from '../protocol';
+import type { DocumentSection, KitFontFace } from '@droidex/protocol';
+
 import type { PreviewMode } from '../PreviewModeToggle';
 import { tokensByName } from './documentSections';
 import { isPaintable, loadedFamilyProperty, modeValue, typeProperty } from './specimenStyle';

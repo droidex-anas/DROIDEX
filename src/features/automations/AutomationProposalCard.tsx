@@ -4,7 +4,7 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import { toast } from '../../lib/toast';
 import { Button } from '../../components/ui/Button';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent, AutomationSchedule } from '@droidex/protocol';
 import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import {
@@ -30,7 +30,7 @@ import {
   validateAutomationDraft,
   workspaceLabel,
 } from './schedule';
-import type { AutomationDraft, AutomationSchedule } from './types';
+import type { AutomationDraft } from './types';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 

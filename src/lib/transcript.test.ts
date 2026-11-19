@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { classifyEvent, scopeTranscriptToAgent } from './transcript';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
   return {

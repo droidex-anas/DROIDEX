@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { ServerEvent } from '../protocol.js';
+import type {
+  ServerEvent,
+  Automation,
+  AutomationReasoningEffort,
+  AutomationRun,
+  AutomationRunStatus,
+} from '@droidex/protocol';
 import { assertModelSelection, clip, PAUSED_AFTER_FAILURES } from './automationInput.js';
 import {
   auditRunSelection,
@@ -19,13 +25,7 @@ import {
   trimAutomationStore,
 } from './automationStore.js';
 import { AUTOMATION_RUN_CLIENT_REF_PREFIX } from './permissionPolicy.js';
-import type {
-  Automation,
-  AutomationReasoningEffort,
-  AutomationRun,
-  AutomationRunStatus,
-  AutomationStore,
-} from './types.js';
+import type { AutomationStore } from './types.js';
 import type {
   AutomationWorkspaceCreator,
   AutomationWorkspacePreparer,

@@ -28,7 +28,7 @@ import type {
   DesignSystemAdherence,
   LibraryItem,
   RevisionRef,
-} from './protocol';
+} from '@droidex/protocol';
 import { SaveToLibraryDialog } from './SaveToLibraryDialog';
 import { useCanvases } from './useCanvases';
 import { searchCanvases } from './canvasChats';

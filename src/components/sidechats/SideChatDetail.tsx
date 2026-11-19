@@ -10,7 +10,7 @@ import { interruptSession, loadSessionHistory } from '../../lib/commands';
 import { sessionIsLive } from '../../lib/sessions';
 import { MAX_RUNNING_SIDE_CHATS } from '../../lib/sideChats';
 import { classifyEvent } from '../../lib/transcript';
-import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import AskUserInline from '../AskUserInline';
 import { MessageFeed } from '../MessageFeed';
 import { ModelIcon } from '../ModelIcon';

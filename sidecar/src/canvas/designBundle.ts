@@ -13,8 +13,8 @@ import { canvasRuntime, DamagedRuntimeError } from './canvasRuntime.js';
 import { DESIGN_ENTRY } from './designEntry.js';
 import { DESIGN_PACKAGE_ENTRIES, DESIGN_PACKAGE_LIST } from './designPackages.js';
 import { KIT_ENTRY } from './designSystems.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
+
 import { resolveRelative } from './relativeImport.js';
 
 /** The one package specifier that resolves to the pinned kit's own files. */

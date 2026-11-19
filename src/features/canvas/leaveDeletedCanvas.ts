@@ -4,7 +4,7 @@
 import { useCallback } from 'react';
 import { useStoreApi, useStoreDispatch } from '../../hooks/useStore';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
-import type { CanvasRemovalPreview } from './protocol';
+import type { CanvasRemovalPreview } from '@droidex/protocol';
 
 /** Closes the chat's canvas tab; a pane holds at most one. */
 export function useCloseCanvasTab(): (appSessionId: string) => void {

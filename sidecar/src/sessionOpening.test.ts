@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { SessionInitResult } from './DroidRuntime.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { buildResumedSession } from './sessionOpening.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 

@@ -1,4 +1,4 @@
-import type { ProjectView } from '../features/projects/types';
+import type { ProjectView } from '@droidex/protocol';
 import type { AppState } from '../hooks/useStore';
 
 /* What the app's chrome needs to know about projects, without loading the

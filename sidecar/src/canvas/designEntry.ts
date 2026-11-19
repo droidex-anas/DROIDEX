@@ -3,7 +3,7 @@
 // agent's tool call is still open, so it fixes the tree in the same turn; the
 // compiler checks again, and the bundler reports a missing default export.
 
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 
 /** The file a design's component is compiled from. */
 export const DESIGN_ENTRY = 'main.tsx';

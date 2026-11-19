@@ -1,6 +1,6 @@
 import { browserToolOf } from '../../lib/browserTools';
 import { transcriptEventIsVisible } from '../../lib/childSessions';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { startsTurn } from '../chatFeed';
 
 export type ComputerUseActivity = { kind: 'browser' } | { kind: 'computer'; image?: string };

@@ -6,7 +6,7 @@
 import { lazy, Suspense, useMemo } from 'react';
 import { canvasClient as canvas } from './canvasClient';
 import type { HistoryClient } from './frameHistory';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 const LazySourcePanel = lazy(async () => ({

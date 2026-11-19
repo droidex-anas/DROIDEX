@@ -12,7 +12,7 @@ import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
-import type { BrowserViewportMode } from '../../types/bridge';
+import type { BrowserViewportMode } from '@droidex/protocol';
 import {
   normalizeUrl,
   pageLayout,

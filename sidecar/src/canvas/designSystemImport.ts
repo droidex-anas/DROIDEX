@@ -8,13 +8,13 @@
 import valueParser from 'postcss-value-parser';
 import { buildDocument, CONTRACT_TOKEN_NAMES, type DocumentPart } from './buildDocument.js';
 import { kitPrimitives } from './designSystemBrief.js';
-import {
-  DESIGN_SYSTEM_LIMITS,
-  designSystemSchema,
-  type DesignSystem,
-  type DesignSystemSource,
-} from './designSystems.js';
-import type { DesignSystemProvenance } from './designSystemProvenance.js';
+import type {
+  DesignSystemSource,
+  DesignSystemProvenance,
+  CanvasDiagnostic,
+} from '@droidex/protocol';
+import { DESIGN_SYSTEM_LIMITS, designSystemSchema, type DesignSystem } from './designSystems.js';
+
 import { DOCUMENT_LIMITS, kitModes, tokenValueSchema } from './designSystemDocument.js';
 import {
   LICENSED_FONTS,
@@ -37,7 +37,7 @@ import {
   type Mode,
   type TextOrigin,
 } from './designSystemSources.js';
-import type { CanvasDiagnostic } from './protocol.js';
+
 import { readTokenModule } from './tokenModules.js';
 
 export type ImportDesignSystemResult =

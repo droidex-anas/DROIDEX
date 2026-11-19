@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { GitWorktree } from '../types/vcs';
 import { extractFileChange } from './diff';
 import { comparablePath, normalizePath } from './pathComparison';

@@ -2,38 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { z } from 'zod';
 
-import type * as RendererAnnotations from '../../../src/features/canvas/annotationProtocol.js';
-import type * as RendererEdits from '../../../src/features/canvas/elementEditProtocol.js';
-import type * as Renderer from '../../../src/features/canvas/protocol.js';
+import type * as Contract from '@droidex/protocol';
+import type * as Schema from './schema.js';
+import type * as FrameEdits from './frameEditSchema.js';
+import type * as Annotations from './canvasAnnotationSchema.js';
+import type * as Catalog from './kitCatalog.js';
+import type * as Provenance from './designSystemProvenance.js';
+import type * as DesignSystems from './designSystems.js';
 import { isCanvasEvent } from '../../../src/features/canvas/wireValidation.js';
-import type {
-  ArrangeFramesInput,
-  RemoveFramesInput,
-  RenameFrameInput,
-  UndoRemovalInput,
-  CanvasChange,
-  CanvasCommand,
-  CanvasError,
-  CanvasEvent,
-  CanvasReply,
-  CanvasSnapshot,
-  CanvasSummary,
-  CanvasTurnContext,
-  CreateCanvasResult,
-  CreateFramesInput,
-  CreateFramesResult,
-  DesignRef,
-  DesignSystemRef,
-  EditElementInput,
-  ElementRef,
-  RevisionDiff,
-  RevisionPage,
-  RevisionSummary,
-  SwitchRevisionInput,
-  SourceElement,
-  WriteFilesInput,
-  WriteReceipt,
-} from './protocol.js';
 import {
   annotateCanvasInputSchema,
   type AnnotateCanvasInput,
@@ -46,84 +22,85 @@ import {
   reorderFramesInputSchema,
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
-import { editElementInputSchema } from './elementEditSchema.js';
+import { editElementInputSchema, type EditElementInput } from './elementEditSchema.js';
 import { createFramesInputSchema, writeFilesInputSchema } from './schema.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-// Every DTO the renderer mirrors. Assignability is too weak to catch a mirror
-// that gained an optional field, so ExactMirror below compares each pair for
-// type identity instead.
-type SidecarWire = {
-  create: CreateFramesInput;
-  createCanvasResult: CreateCanvasResult;
-  createResult: CreateFramesResult;
-  write: WriteFilesInput;
-  arrange: ArrangeFramesInput;
-  remove: RemoveFramesInput;
-  undo: UndoRemovalInput;
-  rename: RenameFrameInput;
+// JSON fixtures for the wire contract and the boundary parsers.
+type WireFixtures = {
+  create: Contract.CreateFramesInput;
+  createCanvasResult: Contract.CreateCanvasResult;
+  createResult: Contract.CreateFramesResult;
+  write: Contract.WriteFilesInput;
+  arrange: Contract.ArrangeFramesInput;
+  remove: Contract.RemoveFramesInput;
+  undo: Contract.UndoRemovalInput;
+  rename: Contract.RenameFrameInput;
   annotate: AnnotateCanvasInput;
   annotation: Annotation;
-  snapshot: CanvasSnapshot;
-  change: CanvasChange;
-  summary: CanvasSummary;
-  receipt: WriteReceipt;
-  turnContext: CanvasTurnContext;
-  designRef: DesignRef;
-  elementRef: ElementRef;
-  element: SourceElement;
+  snapshot: Contract.CanvasSnapshot;
+  change: Contract.CanvasChange;
+  summary: Contract.CanvasSummary;
+  receipt: Contract.WriteReceipt;
+  turnContext: Contract.CanvasTurnContext;
+  designRef: Contract.DesignRef;
+  elementRef: Contract.ElementRef;
+  element: Contract.SourceElement;
   edit: EditElementInput;
-  revision: RevisionSummary;
-  diff: RevisionDiff;
-  page: RevisionPage;
-  switch: SwitchRevisionInput;
-  error: CanvasError;
-  command: CanvasCommand;
-  reply: CanvasReply;
-  event: CanvasEvent;
-};
-
-type RendererWire = {
-  create: Renderer.CreateFramesInput;
-  createCanvasResult: Renderer.CreateCanvasResult;
-  createResult: Renderer.CreateFramesResult;
-  write: Renderer.WriteFilesInput;
-  arrange: Renderer.ArrangeFramesInput;
-  remove: Renderer.RemoveFramesInput;
-  undo: Renderer.UndoRemovalInput;
-  rename: Renderer.RenameFrameInput;
-  annotate: RendererAnnotations.AnnotateCanvasInput;
-  annotation: RendererAnnotations.Annotation;
-  snapshot: Renderer.CanvasSnapshot;
-  change: Renderer.CanvasChange;
-  summary: Renderer.CanvasSummary;
-  receipt: Renderer.WriteReceipt;
-  turnContext: Renderer.CanvasTurnContext;
-  designRef: Renderer.DesignRef;
-  elementRef: Renderer.ElementRef;
-  element: Renderer.SourceElement;
-  edit: RendererEdits.EditElementInput;
-  revision: Renderer.RevisionSummary;
-  diff: Renderer.RevisionDiff;
-  page: Renderer.RevisionPage;
-  switch: Renderer.SwitchRevisionInput;
-  error: Renderer.CanvasError;
-  command: Renderer.CanvasCommand;
-  reply: Renderer.CanvasReply;
-  event: Renderer.CanvasEvent;
+  revision: Contract.RevisionSummary;
+  diff: Contract.RevisionDiff;
+  page: Contract.RevisionPage;
+  switch: Contract.SwitchRevisionInput;
+  error: Contract.CanvasError;
+  command: Contract.CanvasCommand;
+  reply: Contract.CanvasReply;
+  event: Contract.CanvasEvent;
 };
 
 type Equals<A, B> =
   (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
 
-// One entry per mirrored DTO. A drifted mirror types its entry as `false`, and
-// the compile error names the property that drifted.
-type ExactMirror = { [Key in keyof SidecarWire]: Equals<SidecarWire[Key], RendererWire[Key]> };
+type ExactMirror = {
+  create: Equals<Schema.CreateFramesInput, Contract.CreateFramesInput>;
+  write: Equals<Schema.WriteFilesInput, Contract.WriteFilesInput>;
+  arrange: Equals<FrameEdits.ArrangeFramesInput, Contract.ArrangeFramesInput>;
+  remove: Equals<FrameEdits.RemoveFramesInput, Contract.RemoveFramesInput>;
+  undo: Equals<FrameEdits.UndoRemovalInput, Contract.UndoRemovalInput>;
+  rename: Equals<FrameEdits.RenameFrameInput, Contract.RenameFrameInput>;
+  hidden: Equals<FrameEdits.SetFrameHiddenInput, Contract.SetFrameHiddenInput>;
+  reorder: Equals<FrameEdits.ReorderFramesInput, Contract.ReorderFramesInput>;
+  annotate: Equals<Annotations.AnnotateCanvasInput, Contract.AnnotateCanvasInput>;
+  annotation: Equals<Annotations.Annotation, Contract.Annotation>;
+  annotationDraft: Equals<Annotations.AnnotationDraft, Contract.AnnotationDraft>;
+  annotationPoint: Equals<Annotations.AnnotationPoint, Contract.AnnotationPoint>;
+  annotationAuthor: Equals<Annotations.AnnotationAuthor, Contract.AnnotationAuthor>;
+  turnContext: Equals<Schema.CanvasTurnContext, Contract.CanvasTurnContext>;
+  designRef: Equals<Schema.DesignRef, Contract.DesignRef>;
+  elementRef: Equals<Schema.ElementRef, Contract.ElementRef>;
+  element: Equals<z.infer<typeof Schema.sourceElementSchema>, Contract.SourceElement>;
+  outline: Equals<z.infer<typeof Schema.sourceOutlineSchema>, Contract.SourceOutline>;
+  edit: Equals<EditElementInput, Contract.EditElementInput>;
+  page: Equals<Schema.RevisionPage, Contract.RevisionPage>;
+  switch: Equals<Schema.SwitchRevisionInput, Contract.SwitchRevisionInput>;
+  seed: Equals<z.infer<typeof Schema.canvasSeedSchema>, Contract.CanvasSeed>;
+  designSystem: Equals<Schema.DesignSystemRef, Contract.DesignSystemRef>;
+  designSystemVersion: Equals<Schema.DesignSystemVersionRef, Contract.DesignSystemVersionRef>;
+  adherence: Equals<Schema.DesignSystemAdherence, Contract.DesignSystemAdherence>;
+  revisionRef: Equals<Schema.RevisionRef, Contract.RevisionRef>;
+  rect: Equals<Schema.FrameRect, Contract.FrameRect>;
+  files: Equals<Schema.SourceFiles, Contract.SourceFiles>;
+  catalogProp: Equals<Catalog.CatalogProp, Contract.CatalogProp>;
+  propPick: Equals<Catalog.PropPick, Contract.PropPick>;
+  librarySkip: Equals<Provenance.LibrarySkip, Contract.LibrarySkip>;
+  provenance: Equals<Provenance.DesignSystemProvenance, Contract.DesignSystemProvenance>;
+  savedBy: Equals<DesignSystems.SavedBy, Contract.SavedBy>;
+  cover: Equals<DesignSystems.DesignSystemCover, Contract.DesignSystemCover>;
+};
 
-const designSystem: DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
+const designSystem: Contract.DesignSystemRef = { id: 'droidex', version: 3, mode: 'dark' };
 
 const sketch: Annotation = {
   id: 'ann_sketch',
@@ -148,7 +125,7 @@ const hey = {
   hidden: false,
 };
 
-const wire: SidecarWire = {
+const wire: WireFixtures = {
   createCanvasResult: { canvasId: 'cv_01', attachedCanvasId: 'cv_02' },
   create: {
     mutationId: 'create-hey',
@@ -383,35 +360,42 @@ const wire: SidecarWire = {
   },
 };
 
-test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JSON', () => {
+test('boundary schemas match the shared contract exactly, and the fixtures are plain JSON', () => {
   const exact: ExactMirror = {
     create: true,
-    createCanvasResult: true,
-    createResult: true,
     write: true,
     arrange: true,
     remove: true,
     undo: true,
     rename: true,
+    hidden: true,
+    reorder: true,
     annotate: true,
     annotation: true,
-    snapshot: true,
-    change: true,
-    summary: true,
-    receipt: true,
+    annotationDraft: true,
+    annotationPoint: true,
+    annotationAuthor: true,
     turnContext: true,
     designRef: true,
     elementRef: true,
     element: true,
+    outline: true,
     edit: true,
-    revision: true,
-    diff: true,
     page: true,
     switch: true,
-    error: true,
-    command: true,
-    reply: true,
-    event: true,
+    seed: true,
+    designSystem: true,
+    designSystemVersion: true,
+    adherence: true,
+    revisionRef: true,
+    rect: true,
+    files: true,
+    catalogProp: true,
+    propPick: true,
+    librarySkip: true,
+    provenance: true,
+    savedBy: true,
+    cover: true,
   };
   assert.ok(Object.values(exact).every((isExact) => isExact));
   assert.deepEqual(JSON.parse(JSON.stringify(wire)), wire);
@@ -419,7 +403,7 @@ test('the renderer mirrors every wire DTO exactly, and the fixtures are plain JS
 
 test('every serialized event the sidecar emits passes the renderer validator', () => {
   const summaries = [wire.summary];
-  const events: CanvasEvent[] = [
+  const events: Contract.CanvasEvent[] = [
     { type: 'canvas.result', requestId: 'req_01', ok: true, reply: { kind: 'ok' } },
     {
       type: 'canvas.result',
@@ -664,17 +648,15 @@ test('the renderer refuses history replies without a version counted from 1', ()
   }
 });
 
-test('the mutation fixtures parse, and the parsed values fit the mirror', () => {
-  const create: Renderer.CreateFramesInput = createFramesInputSchema.parse(wire.create);
-  const write: Renderer.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
-  const arrange: Renderer.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
-  const edit: RendererEdits.EditElementInput = editElementInputSchema.parse(wire.edit);
-  const remove: Renderer.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
-  const undo: Renderer.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
-  const rename: Renderer.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);
-  const annotate: RendererAnnotations.AnnotateCanvasInput = annotateCanvasInputSchema.parse(
-    wire.annotate,
-  );
+test('the mutation fixtures parse, and the parsed values fit the shared contract', () => {
+  const create: Contract.CreateFramesInput = createFramesInputSchema.parse(wire.create);
+  const write: Contract.WriteFilesInput = writeFilesInputSchema.parse(wire.write);
+  const arrange: Contract.ArrangeFramesInput = arrangeFramesInputSchema.parse(wire.arrange);
+  const edit: Contract.EditElementInput = editElementInputSchema.parse(wire.edit);
+  const remove: Contract.RemoveFramesInput = removeFramesInputSchema.parse(wire.remove);
+  const undo: Contract.UndoRemovalInput = undoRemovalInputSchema.parse(wire.undo);
+  const rename: Contract.RenameFrameInput = renameFrameInputSchema.parse(wire.rename);
+  const annotate: Contract.AnnotateCanvasInput = annotateCanvasInputSchema.parse(wire.annotate);
   assert.deepEqual(create, wire.create);
   assert.deepEqual(write, wire.write);
   assert.deepEqual(arrange, wire.arrange);
@@ -826,7 +808,7 @@ test('write rejects paths the filesystem would merge by Unicode form or surrogat
   );
 });
 
-function writeWith(patch: Partial<WriteFilesInput>): unknown {
+function writeWith(patch: Partial<Contract.WriteFilesInput>): unknown {
   return { ...wire.write, deletedPaths: [], ...patch };
 }
 

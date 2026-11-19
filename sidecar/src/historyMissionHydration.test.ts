@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { persistTestChild, persistTestSummaries } from './testing/historyPersistenceFixture.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 

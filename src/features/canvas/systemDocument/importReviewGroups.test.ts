@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { LibraryProvenance, LibrarySkip } from '../protocol';
+import type { LibraryProvenance, LibrarySkip } from '@droidex/protocol';
 import { importReview } from './importReviewGroups';
 
 function library(

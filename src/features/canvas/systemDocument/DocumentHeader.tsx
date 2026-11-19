@@ -10,7 +10,7 @@ import { Tooltip } from '../../../components/ui/Tooltip';
 import { pushToast } from '../../../lib/toast';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage, CanvasRequestError } from '../client';
-import type { DesignSystemDocumentView } from '../protocol';
+import type { DesignSystemDocumentView } from '@droidex/protocol';
 import { InlineField } from './InlineField';
 import { UnsavedMark } from './UnsavedMark';
 import { useIsMounted } from './useIsMounted';

@@ -4,7 +4,7 @@
 // attachment read never places a second copy. Leaving the home drops it.
 
 import { useSyncExternalStore } from 'react';
-import type { LibraryItem } from './protocol';
+import type { LibraryItem } from '@droidex/protocol';
 
 export interface CreatedCanvasSeed {
   item: LibraryItem;

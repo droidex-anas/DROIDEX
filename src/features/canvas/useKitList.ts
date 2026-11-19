@@ -9,7 +9,7 @@ import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import { followLatest } from './designSystemChoices';
 import type { KitList } from './designSystemsState';
-import type { DesignSystemSummary } from './protocol';
+import type { DesignSystemSummary } from '@droidex/protocol';
 
 let lastListed: DesignSystemSummary[] | null = null;
 

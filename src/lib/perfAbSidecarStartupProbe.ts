@@ -174,8 +174,11 @@ async function waitForSessionsList(
 
 async function bridgeProtocolForTree(treeRoot: string): Promise<number | undefined> {
   if (!existsSync(join(treeRoot, 'sidecar/src/bridgeServer.ts'))) return undefined;
+  // A/B base refs may predate the shared package.
+  const shared = join(treeRoot, 'packages/protocol/src/index.ts');
+  const entry = existsSync(shared) ? shared : join(treeRoot, 'sidecar/src/protocol.ts');
   const protocol: unknown = Reflect.get(
-    await import(pathToFileURL(join(treeRoot, 'sidecar/src/protocol.ts')).href),
+    await import(pathToFileURL(entry).href),
     'BRIDGE_PROTOCOL_VERSION',
   );
   if (typeof protocol !== 'number') throw new Error('Tree does not export its bridge protocol.');

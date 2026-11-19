@@ -2,7 +2,7 @@
 // any other. Library items are global, so only a save names a canvas.
 
 import { reply, requestId, type ReplyEvent } from './canvasReply';
-import type { CanvasCommand, CreateFramesInput, LibraryItem, RevisionRef } from './protocol';
+import type { CanvasCommand, CreateFramesInput, LibraryItem, RevisionRef } from '@droidex/protocol';
 
 /** The new frame an item makes: an independent copy at the size it was saved with. */
 export function libraryFrame(item: LibraryItem): CreateFramesInput['frames'][number] {

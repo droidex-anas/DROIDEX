@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from 'react';
 import { bridge } from '../../lib/bridge';
-import type { ServerEvent } from '../../types/bridge';
-import type { AutomationBridgeCommand } from './protocol';
-import type { AutomationDraft, AutomationSnapshot } from './types';
+import type { ServerEvent, AutomationBridgeCommand, AutomationSnapshot } from '@droidex/protocol';
+
+import type { AutomationDraft } from './types';
 
 const EMPTY: AutomationSnapshot = {
   automations: [],

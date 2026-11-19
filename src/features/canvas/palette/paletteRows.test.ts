@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { CatalogListing } from '../protocol';
+import type { CatalogListing } from '@droidex/protocol';
 import { paletteRows, propPicks } from './paletteRows';
 
 const entry = (name: string, module: string | null = null, note: string | null = null) => ({

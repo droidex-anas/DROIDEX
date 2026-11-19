@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react';
 import { useStoreSelector } from '../../hooks/useStore';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 
 export type Canvases =
   | { status: 'loading' }

@@ -32,7 +32,7 @@ import { systemsRoot } from './designSystemStorage.js';
 import { SAMPLE_KIT } from '../testing/sampleKit.js';
 import { LIBRARY, project } from '../testing/shadcnLibraryFixture.js';
 import { createHarness } from '../testing/sessionLifecycleHarness.js';
-import type { DesignSystemRef } from './protocol.js';
+import type { DesignSystemRef } from '@droidex/protocol';
 
 const canvasId = 'export-canvas';
 const ref = { designId: 'hey', revisionId: 'revision-1' };

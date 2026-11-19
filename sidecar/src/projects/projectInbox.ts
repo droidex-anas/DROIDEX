@@ -4,14 +4,14 @@ import type { ProjectPort } from './sessions.js';
 import { requireThread } from './projectTurns.js';
 import { inboxFull, questionText } from './projectMessages.js';
 import { LEDGER_LIMITS } from './store.js';
-import type { Project, ProjectThread, ThreadMessage } from './types.js';
+import type { Project, ProjectThreadRecord, ThreadMessage } from './types.js';
 
 /** Owns retained messages and the durable intent that fills the inbox after a hold. */
 export class ProjectInbox {
   // Identities live in project.interrupted; this set only chooses restart wording.
   private readonly restartRecovery = new Set<string>();
   private readonly approvalNotified = new Map<string, string>();
-  private readonly withdrawals = new WeakMap<ProjectThread, object>();
+  private readonly withdrawals = new WeakMap<ProjectThreadRecord, object>();
   constructor(
     private readonly sessions: ProjectPort,
     private readonly persist: () => Promise<void>,
@@ -82,7 +82,7 @@ export class ProjectInbox {
      a delivery makes room. A newer report from the same thread replaces it. */
   report(
     project: Project,
-    thread: ProjectThread,
+    thread: ProjectThreadRecord,
     text: string,
     replyId?: string,
     leadAlert = false,
@@ -112,7 +112,7 @@ export class ProjectInbox {
     delete thread.owedLeadAlert;
   }
 
-  withdraw(project: Project, target: ProjectThread): void {
+  withdraw(project: Project, target: ProjectThreadRecord): void {
     this.withdrawals.set(target, {});
     project.pending = project.pending.filter((message) => message.to !== target.appSessionId);
     for (const thread of project.threads) {

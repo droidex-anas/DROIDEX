@@ -10,7 +10,7 @@ import { canvasClient } from './canvasClient';
 import { base64 } from './captureCanvasImage';
 import { KitCaptureCache } from './kitCaptureCache';
 import { KitCaptureReads } from './kitCaptureReads';
-import type { DesignSystemRef, KitCaptureItem } from './protocol';
+import type { DesignSystemRef, KitCaptureItem } from '@droidex/protocol';
 import type { PreviewMode } from './PreviewModeToggle';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './wireValidation';
 

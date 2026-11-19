@@ -5,7 +5,7 @@ import type {
   BrowserViewport,
   DesignReference,
   DesignSelectionScreenshot,
-} from '../../types/bridge';
+} from '@droidex/protocol';
 
 // The marks a chat has picked in its browser page and not sent yet: each one a
 // design reference whose anchor carries its number. They show as chips in the

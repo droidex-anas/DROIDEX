@@ -6,7 +6,33 @@
 
 import { canvasError, EXPIRED_TURN } from './canvasError.js';
 import type { CanvasLeaseRegistry } from './canvasLeases.js';
-import type { CanvasScope } from './protocol.js';
+import type { CanvasTurnContext } from '@droidex/protocol';
+
+/**
+ * What one mutation is authorized to change. A turn lease pins the references
+ * its request was composed with and expires with the turn (spec §6). A pane
+ * mutation is authorized by the chat's attachment instead: it has no turn
+ * generation and pins nothing, because the request names its own targets.
+ */
+export type CanvasScope =
+  | {
+      origin: 'turn';
+      scopeId: string;
+      appSessionId: string;
+      generation: number;
+      // null for an unattached chat's lease (spec §6); the first canvas_create
+      // under that lease fills the binding exactly once.
+      canvasId: string | null;
+      context: CanvasTurnContext;
+      allowedDesignIds: string[] | 'canvas';
+    }
+  | {
+      origin: 'user';
+      scopeId: string;
+      appSessionId: string;
+      canvasId: string;
+      allowedDesignIds: 'canvas';
+    };
 
 export class CanvasScopes implements CanvasLeaseRegistry {
   private readonly active = new Map<string, CanvasScope>();

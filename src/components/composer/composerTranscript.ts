@@ -1,5 +1,5 @@
 import type { AppState } from '../../hooks/useStore';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { isAppContextEvent } from '../../lib/composePrompt';
 import { createIncrementalTranscriptFilter } from '../../lib/incrementalTranscriptFilter';
 

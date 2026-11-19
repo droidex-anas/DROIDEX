@@ -40,7 +40,7 @@ import {
 } from './previewDocument';
 import { previewShapeScript, readPreviewShape, type PreviewShape } from './previewDocumentShape';
 import { previewTreeScript, readPreviewTree, type PreviewTree } from './previewDocumentTree';
-import type { CanvasDiagnostic, FrameRect } from './protocol';
+import type { CanvasDiagnostic, FrameRect } from '@droidex/protocol';
 
 /** How long the board waits between two polls of one guest. */
 export const PREVIEW_POLL_INTERVAL_MS = 100;

@@ -5,7 +5,7 @@ import { useBrowserHost } from '../../lib/browserHost';
 import { visibleSessionTarget } from '../../lib/childSessions';
 import { sessionIsLive } from '../../lib/sessions';
 import { utilityPanelForSession } from '../../lib/utilityPanel';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import {
   ComputerUsePreviewWindow,
   type PreviewPlacement,

@@ -1,7 +1,7 @@
 // Desktop turn-finished notifications: when a session stops generating, show a
 // short OS banner (snippet + optional sound). Settings persist in localStorage.
 
-import type { SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { classifyEvent } from './transcript';
 import { sessionIsLive } from './sessions';
 import { resetLabel } from './usageLimit';

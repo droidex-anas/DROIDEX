@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 
 import { DESIGN_SESSION_GUIDANCE } from '../../canvas/designSessionGuidance.js';
-import type { DroidProfile } from '../../droidProfiles.js';
-import type { Autonomy } from '../../protocol.js';
+import type { DroidProfile, Autonomy } from '@droidex/protocol';
+
 import { normalizeAutonomy } from '../../values.js';
 import type { FactoryRuntime, FactorySession } from '../../DroidRuntime.js';
 import { sessionFilePath } from '../../history.js';

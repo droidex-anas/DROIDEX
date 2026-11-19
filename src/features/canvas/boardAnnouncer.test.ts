@@ -8,7 +8,7 @@ import {
   zoomAnnouncement,
 } from './boardAnnouncer';
 import { NO_SHOWN_REVISIONS } from './previewLabels';
-import type { CanvasBuildState, CanvasFrame } from './protocol';
+import type { CanvasBuildState, CanvasFrame } from '@droidex/protocol';
 
 const READY: CanvasBuildState = {
   status: 'ready',

@@ -4,7 +4,7 @@ import {
   PROVIDER_LABELS,
   PROVIDER_SIGN_IN_COMMANDS,
 } from '../../features/providers/providerIdentity';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { Expand } from '../transcript/primitives';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Field';

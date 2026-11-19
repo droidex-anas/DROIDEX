@@ -3,7 +3,7 @@
 // what a frame's build says under them. The sidecar applies the rule; a frame
 // only ever shows what its own build carried.
 
-import type { CanvasBuildState, CanvasDiagnostic, DesignSystemAdherence } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic, DesignSystemAdherence } from '@droidex/protocol';
 
 export const DESIGN_SYSTEM_RULES: readonly {
   rule: DesignSystemAdherence;

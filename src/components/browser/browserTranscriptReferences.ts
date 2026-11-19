@@ -1,4 +1,4 @@
-import type { BrowserTranscriptReference, DesignReference } from '../../types/bridge';
+import type { BrowserTranscriptReference, DesignReference } from '@droidex/protocol';
 
 export function browserTranscriptReferenceFromDesignReference(
   reference: DesignReference,

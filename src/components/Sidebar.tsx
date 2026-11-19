@@ -39,7 +39,7 @@ import { sessionIsLive, sessionIsUnread } from '../lib/sessions';
 import { isSideChat } from '../lib/sideChats';
 import { prKind } from '../lib/github';
 import { sessionAttention } from '../lib/sessionAttention';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { sessionResumeId } from '../features/providers/providerIdentity';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { SidebarFooter } from './SidebarFooter';
