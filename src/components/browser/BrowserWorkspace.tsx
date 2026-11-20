@@ -88,8 +88,9 @@ export default function BrowserWorkspace({
   const frameReady = frameSize.width > 8 && frameSize.height > 8;
   const fitViewport = useMemo(() => viewportFromFrame(frameSize), [frameSize]);
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
-  const [urlInput, setUrlInput] = useState(browserAddressValue(initialUrl));
+  const [urlDraft, setUrlDraft] = useState<string | null>(null);
   const [activeUrl, setActiveUrl] = useState(initialUrl);
+  const urlInput = urlDraft ?? browserAddressValue(activeUrl);
   // The size the page has; a pick shows once the sidecar has taken it, so the
   // menu never disagrees with the page.
   const viewportMode: BrowserViewportMode = browser?.viewportMode ?? 'fit';
@@ -175,9 +176,6 @@ export default function BrowserWorkspace({
   useEffect(() => {
     if (!browser?.url) return;
     const nextUrl = safeBrowserUrl(browser.url, appOrigin);
-    if (document.activeElement !== urlInputRef.current) {
-      setUrlInput(browserAddressValue(nextUrl));
-    }
     if (nextUrl !== activeUrl) {
       setActiveUrl(nextUrl);
     }
@@ -208,9 +206,7 @@ export default function BrowserWorkspace({
     setCanGoForward(browser?.canGoForward ?? false);
     const nextUrl = safeBrowserUrl(browser?.url, appOrigin);
     setActiveUrl(nextUrl);
-    if (document.activeElement !== urlInputRef.current) {
-      setUrlInput(browserAddressValue(nextUrl));
-    }
+    setUrlDraft(null);
   }, [
     appOrigin,
     browser?.canGoBack,
@@ -278,7 +274,7 @@ export default function BrowserWorkspace({
   const openCurrentUrl = () => {
     const normalizedUrl = normalizeUrl(urlInput);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
-      setUrlInput(normalizedUrl);
+      setUrlDraft(normalizedUrl);
       dispatch({
         type: 'BROWSER_ERROR',
         appSessionId: browserKey,
@@ -290,7 +286,7 @@ export default function BrowserWorkspace({
     const url = safeBrowserUrl(normalizedUrl, appOrigin);
     setLoadFailure(null);
     startLoading();
-    setUrlInput(browserAddressValue(url));
+    setUrlDraft(null);
     setActiveUrl(url);
     if (browserKey) {
       openBrowser({
@@ -382,7 +378,10 @@ export default function BrowserWorkspace({
         designModeDisabled={!browserKey}
         pencilMode={pencilMode}
         expanded={expanded}
-        onUrlInputChange={setUrlInput}
+        onUrlInputChange={setUrlDraft}
+        onUrlInputReset={() => {
+          setUrlDraft(null);
+        }}
         onOpen={openCurrentUrl}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
@@ -466,8 +465,6 @@ export default function BrowserWorkspace({
               setCanGoForward(event.canGoForward ?? canGoForward);
               const nextUrl = safeBrowserUrl(event.url, appOrigin);
               setActiveUrl(nextUrl);
-              if (document.activeElement !== urlInputRef.current)
-                setUrlInput(browserAddressValue(nextUrl));
               // In the desktop app the Browser host records navigations.
               if (!nativeBrowser && browserKey && event.browserSessionId) {
                 dispatch({
