@@ -349,9 +349,14 @@ test('Devin resumes without replaying load history and applies live mode and mod
   const h = await fixture(t);
   const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe' });
   h.sessions.push(session);
-  await session.setAutonomy('high');
+  const raised = session.setAutonomy('high');
+  assert.equal(session.autonomy, 'low');
+  await raised;
+  assert.equal(session.autonomy, 'high');
   await session.setInteractionMode('spec');
-  await session.setAutonomy('medium');
+  const lowered = session.setAutonomy('medium');
+  assert.equal(session.autonomy, 'medium');
+  await lowered;
   await session.setInteractionMode('auto');
   await session.setModel({ modelId: null });
   assert.equal(session.autonomy, 'medium');

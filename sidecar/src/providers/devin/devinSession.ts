@@ -32,6 +32,7 @@ const MODES: Record<Autonomy, string> = {
   medium: 'smart',
   high: 'bypass',
 };
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
 type SessionInput = ProviderOpenInput | ProviderResumeInput;
 
 export class DevinSession implements ProviderSession {
@@ -52,6 +53,7 @@ export class DevinSession implements ProviderSession {
   private mcpStart?: ReturnType<typeof startDevinMcp>;
   readonly closed: Promise<Error | undefined>;
   private selectedAutonomy: Autonomy;
+  private latestAutonomy: Autonomy;
   private interactionMode: SessionInteractionMode;
   private changes: Promise<void> = Promise.resolve();
   configOptions: SessionConfigOption[] = [];
@@ -61,6 +63,7 @@ export class DevinSession implements ProviderSession {
     private readonly input: SessionInput,
   ) {
     this.selectedAutonomy = input.autonomy ?? 'low';
+    this.latestAutonomy = this.selectedAutonomy;
     this.interactionMode = input.interactionMode ?? 'auto';
     this.terminals = new DevinTerminals(
       input.cwd ?? homedir(),
@@ -116,7 +119,10 @@ export class DevinSession implements ProviderSession {
     return this.sessionId;
   }
   get autonomy(): Autonomy {
-    return this.selectedAutonomy;
+    return AUTONOMY_LEVELS.indexOf(this.latestAutonomy) <
+      AUTONOMY_LEVELS.indexOf(this.selectedAutonomy)
+      ? this.latestAutonomy
+      : this.selectedAutonomy;
   }
   get process() {
     return this.client.process;
@@ -281,6 +287,7 @@ export class DevinSession implements ProviderSession {
   }
 
   setAutonomy(autonomy: Autonomy): Promise<void> {
+    this.latestAutonomy = autonomy;
     return this.change(async () => {
       await this.configure('mode', this.interactionMode === 'spec' ? 'plan' : MODES[autonomy]);
       this.selectedAutonomy = autonomy;
@@ -289,7 +296,7 @@ export class DevinSession implements ProviderSession {
 
   setInteractionMode(mode: SessionInteractionMode): Promise<void> {
     return this.change(async () => {
-      await this.configure('mode', mode === 'spec' ? 'plan' : MODES[this.selectedAutonomy]);
+      await this.configure('mode', mode === 'spec' ? 'plan' : MODES[this.autonomy]);
       this.interactionMode = mode;
     });
   }
