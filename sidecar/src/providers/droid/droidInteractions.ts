@@ -8,7 +8,7 @@ import {
 } from '@factory/droid-sdk';
 
 import { mcpPermissionTargets } from '../../automations/permissionPolicy.js';
-import { classifyPermission, confirmationType, permissionSignature } from '../../normalize.js';
+import { classifyPermission, confirmationType, permissionSignature } from './droidPermissions.js';
 import type { Autonomy, PermissionOutcome, SessionQuestion } from '@droidex/protocol';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 
