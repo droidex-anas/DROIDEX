@@ -200,8 +200,9 @@ test('the draft renders markdown as it is typed and sends the raw text', async (
   await expect(composer).toHaveText('Planship now');
 });
 
-async function startComposerTurn(page: Page) {
+async function startComposerTurn(page: Page, provider: 'droid' | 'claude' = 'droid') {
   const submissions: ClientCommand[] = [];
+  const commands: ClientCommand[] = [];
   let finishFirstTurn: (() => void) | undefined;
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
@@ -209,6 +210,7 @@ async function startComposerTurn(page: Page) {
       socket.onMessage((message) => {
         if (typeof message !== 'string') return;
         const command = JSON.parse(message) as ClientCommand;
+        commands.push(command);
         if (command.type === 'session.send') submissions.push(command);
         if (command.type !== 'session.create') return;
         submissions.push(command);
@@ -216,6 +218,7 @@ async function startComposerTurn(page: Page) {
           type: 'session.created',
           clientRef: command.clientRef,
           session: sessionSummary('composer-test-chat', {
+            provider,
             goal: command.goal,
             title: command.title,
             phase: 'running',
@@ -253,8 +256,77 @@ async function startComposerTurn(page: Page) {
   await expect(composer).not.toContainText('ship now');
   await expect(page.getByRole('button', { name: 'Stop turn' })).toBeVisible();
   if (!finishFirstTurn) throw new Error('The test chat did not start a turn');
-  return { composer, submissions, finishFirstTurn };
+  return { composer, submissions, commands, finishFirstTurn };
 }
+
+test('/spec, /fast and /side stay app-owned and target the current chat', async ({ page }) => {
+  const { composer, commands, finishFirstTurn } = await startComposerTurn(page, 'claude');
+  finishFirstTurn();
+  await expect(page.getByRole('button', { name: 'Stop turn' })).not.toBeVisible();
+
+  await composer.fill('/');
+  await expect(page.getByText('spec', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button').filter({ hasText: 'compact' })).toHaveCount(0);
+
+  await composer.fill('/spec');
+  await page.getByText('spec', { exact: true }).click();
+  await expect(page.getByText('SPEC MODE', { exact: true })).toBeVisible();
+  await expect
+    .poll(() => commands)
+    .toContainEqual({
+      type: 'session.updateSettings',
+      appSessionId: 'composer-test-chat',
+      interactionMode: 'spec',
+    });
+  await composer.fill('/spec');
+  await page.getByText('spec', { exact: true }).click();
+  await expect(page.getByText('SPEC MODE', { exact: true })).not.toBeVisible();
+  await expect
+    .poll(() => commands)
+    .toContainEqual({
+      type: 'session.updateSettings',
+      appSessionId: 'composer-test-chat',
+      interactionMode: 'auto',
+    });
+
+  for (const [command, fastMode] of [
+    ['/fast', true],
+    ['/fast off', false],
+    ['/fast on', true],
+  ] as const) {
+    await composer.fill(command);
+    if (command === '/fast') {
+      await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+    } else {
+      await composer.press('Enter');
+    }
+    await expect(composer).not.toContainText(command);
+    await expect
+      .poll(() => commands.filter((entry) => entry.type === 'session.updateSettings').at(-1))
+      .toMatchObject({ appSessionId: 'composer-test-chat', fastMode });
+  }
+
+  await composer.fill('/side Why this approach?');
+  await composer.press('Enter');
+  await expect(composer).not.toContainText('/side');
+  await expect
+    .poll(() => commands.filter((entry) => entry.type === 'session.fork'))
+    .toMatchObject([
+      {
+        appSessionId: 'composer-test-chat',
+        lineage: 'side',
+        prompt: 'Why this approach?',
+      },
+    ]);
+  await composer.fill('/side Another question');
+  await composer.press('Enter');
+  await expect(
+    page.getByText('The side chat is still starting. Ask again when it opens.'),
+  ).toBeVisible();
+  await expect(composer).toHaveText('/side Another question');
+  expect(commands.filter((entry) => entry.type === 'session.fork')).toHaveLength(1);
+  expect(commands.filter((entry) => entry.type === 'session.send')).toHaveLength(0);
+});
 
 test('the first prompt opens a chat and a queued follow-up waits for its turn', async ({
   page,
