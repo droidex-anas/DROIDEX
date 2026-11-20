@@ -8,6 +8,7 @@ import { SessionInteractions, type InteractionLiveSession } from '../SessionInte
 import { sessionSummary } from './sessionSummaryFixture.js';
 
 interface HarnessOptions {
+  autonomyUpdate?: Promise<boolean>;
   rejectProviderUpdate?: boolean;
   throwSummaryUpdate?: boolean;
 }
@@ -51,7 +52,7 @@ export function createInteractionsHarness(options: HarnessOptions = {}) {
       const live = liveSessions.get(id);
       if (!live) return Promise.resolve(false);
       live.summary.autonomy = autonomy;
-      return Promise.resolve(true);
+      return options.autonomyUpdate ?? Promise.resolve(true);
     },
     updateSummary: (id, patch) => {
       const liveSession = liveSessions.get(id);

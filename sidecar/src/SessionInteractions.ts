@@ -201,11 +201,26 @@ export class SessionInteractions {
     // request twice, nor resolve it into a session that has since been replaced.
     if (!scope || !pending || pending.responding) return;
     pending.responding = true;
+    const providerSession = liveSession.session;
+    const isPending = () =>
+      this.scopes.get(liveSession.summary.appSessionId) === scope &&
+      scope.pendingPermissions.get(requestId) === pending;
+    const isApprovalCurrent = () =>
+      isPending() &&
+      this.dependencies.getLiveSession(appSessionId) === liveSession &&
+      liveSession.session === providerSession &&
+      !liveSession.closePromise &&
+      !pending.approval.signal?.aborted;
     const settle = (result: PermissionOutcome): void => {
+      if (!isPending()) return;
       scope.pendingPermissions.delete(requestId);
       // A session replaced while the spec exit was in flight gets a new live
       // object, so identity alone tells us this answer no longer applies.
-      if (this.dependencies.getLiveSession(appSessionId) !== liveSession) return;
+      if (
+        this.dependencies.getLiveSession(appSessionId) !== liveSession ||
+        liveSession.session !== providerSession
+      )
+        return;
       pending.resolve(result);
       this.dependencies.emit({ type: 'interaction.cancelled', appSessionId, requestId });
       if (!this.hasPending(liveSession.summary.appSessionId))
@@ -233,7 +248,13 @@ export class SessionInteractions {
     // first. If it refuses, the plan is declined instead of approved into a
     // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      if (!(await this.prepareSpecExitForRun(liveSession, planApprovalAutonomy(normalized)))) {
+      if (
+        !(await this.prepareSpecExitForRun(
+          liveSession,
+          planApprovalAutonomy(normalized),
+          isApprovalCurrent,
+        ))
+      ) {
         settle('cancel');
         return;
       }
@@ -341,16 +362,14 @@ export class SessionInteractions {
   private async prepareSpecExitForRun(
     liveSession: InteractionLiveSession,
     autonomy: Autonomy | undefined,
+    isApprovalCurrent: () => boolean,
   ): Promise<boolean> {
     const appSessionId = liveSession.summary.appSessionId;
+    if (!isApprovalCurrent()) return false;
     try {
       if (autonomy !== undefined) {
         if (!(await this.dependencies.setAutonomy(appSessionId, autonomy))) return false;
-        if (
-          this.dependencies.getLiveSession(appSessionId) !== liveSession ||
-          liveSession.closePromise
-        )
-          return false;
+        if (!isApprovalCurrent()) return false;
       }
       await this.dependencies.setProviderSpecMode(appSessionId, false);
     } catch (error) {

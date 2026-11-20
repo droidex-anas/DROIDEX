@@ -173,6 +173,42 @@ test('Spec approval switches the provider, publishes, then settles the callback'
   assert.deepEqual(rejected.trace, ['provider:auto', 'error:spec.exit_failed', 'callback']);
 });
 
+test('Stop during a plan autonomy write keeps Spec and the saved choice without settling a newer approval', async () => {
+  const write = deferred<boolean>();
+  const h = createInteractionsHarness({ autonomyUpdate: write.promise });
+  const live = h.addLiveSession('app-spec');
+  live.summary.interactionMode = 'spec';
+  const handler = h.permissionHandler({ id: 'app-spec' });
+  const pending = Promise.resolve(handler(specApprovalInput('stopped-plan')));
+  const request = latestApprovalRequest(h.emitted);
+  const responding = h.interactions.respondToApproval(
+    'app-spec',
+    request.requestId,
+    'proceed_auto_run_high',
+  );
+  assert.equal(live.summary.autonomy, 'high');
+  h.interactions.cancelPending('app-spec');
+  assert.equal(await pending, ToolConfirmationOutcome.Cancel);
+  const next = Promise.resolve(handler(specApprovalInput('next-plan')));
+  const nextRequest = latestApprovalRequest(h.emitted);
+
+  write.resolve(true);
+  await responding;
+
+  assert.equal(live.summary.autonomy, 'high');
+  assert.equal(live.summary.interactionMode, 'spec');
+  assert.equal(h.trace.includes('provider:auto'), false);
+  assert.equal(h.interactions.pendingApproval('app-spec')?.requestId, nextRequest.requestId);
+  assert.equal(
+    h.emitted.filter(
+      (event) => event.type === 'interaction.cancelled' && event.requestId === request.requestId,
+    ).length,
+    1,
+  );
+  await h.interactions.respondToApproval('app-spec', nextRequest.requestId, 'cancel');
+  assert.equal(await next, ToolConfirmationOutcome.Cancel);
+});
+
 test('Spec approval declines on a summary failure and settles the callback once', async () => {
   const harness = createInteractionsHarness({ throwSummaryUpdate: true });
   harness.addLiveSession('app-spec');
