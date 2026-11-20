@@ -94,6 +94,7 @@ export default function SchedulePromptPopover({
                 variant="secondary"
                 size="sm"
                 onClick={() => {
+                  setInvalidInput(null);
                   setSchedule({ kind: 'once', runAt: preset.runAt() });
                   setError(null);
                 }}

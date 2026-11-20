@@ -228,6 +228,7 @@ export function AutomationProposalCard({
                 value={workingDraft.schedule.kind}
                 ariaLabel="Automation frequency"
                 onChange={(value) => {
+                  setInvalidInput(null);
                   updateSchedule(scheduleForKind(value, workingDraft.schedule));
                 }}
                 options={[

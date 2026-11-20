@@ -264,6 +264,7 @@ export function AutomationEditor({
                   value={draft.schedule.kind}
                   ariaLabel="Automation frequency"
                   onChange={(value) => {
+                    setInvalidInput(null);
                     updateSchedule(scheduleForKind(value, draft.schedule));
                   }}
                   options={[

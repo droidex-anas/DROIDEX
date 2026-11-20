@@ -298,6 +298,10 @@ test.describe('one-time DST-gap schedules', () => {
     await expect(submit).toBeEnabled();
     await setScheduleTime(dialog, '02');
     await expect(dialog.getByRole('alert')).toBeVisible();
+    await dialog.getByRole('button', { name: 'Tomorrow, 9 AM', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    await expect(dialog.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('09');
+    await expect(submit).toBeEnabled();
     await setScheduleTime(dialog, '04', '15');
     await expect(dialog.getByRole('alert')).toHaveCount(0);
     await expect(submit).toBeEnabled();
