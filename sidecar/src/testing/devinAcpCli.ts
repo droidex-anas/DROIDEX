@@ -9,7 +9,8 @@ if (process.argv[2] === 'auth') {
 }
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 const result = (id, result) => send({ id, result });
-const update = (update) => send({ method: 'session/update', params: { sessionId: 'devin-one', update } });
+let sessionId = 'devin-one';
+const update = (update) => send({ method: 'session/update', params: { sessionId, update } });
 const childUpdate = (id, event) => update({ ...event, _meta: { ...event._meta,
   'cognition.ai/subagent_context': { parentAgentId: id } } });
 const childStarted = (agentId) => update({ sessionUpdate: 'tool_call', toolCallId: 'spawn-' + agentId,
@@ -54,8 +55,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   if (method === 'initialize') {
     if (existsSync(join(root, 'hang'))) return;
     result(id, { protocolVersion: 1, agentCapabilities: { loadSession: true,
-      sessionCapabilities: { close: {}, delete: {} } } });
+      _meta: { 'cognition.ai/persistOnCreate': true },
+      sessionCapabilities: { close: {}, delete: {}, ...(existsSync(join(root, 'native-fork')) ? { fork: {} } : {}) } } });
+  } else if (method === 'session/fork') {
+    sessionId = 'devin-native-copy';
+    result(id, { sessionId });
   } else if (method === 'session/new' || method === 'session/load') {
+    if (method === 'session/load') sessionId = params.sessionId;
     servers = params.mcpServers;
     update({ sessionUpdate: 'config_option_update', configOptions });
     if (method === 'session/load') {
@@ -66,7 +72,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
         childStarted('untracked');
       }
     }
-    result(id, { sessionId: 'devin-one' });
+    result(id, { sessionId });
   } else if (method === 'session/set_config_option') {
     if (params.value === 'finish-background') {
       childText('background', 'Background answer');

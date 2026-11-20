@@ -99,47 +99,45 @@ export function parseFullSessionTranscript(
   role: SessionRole,
 ): TranscriptEvent[] {
   const stat = statSync(path);
-  const events: TranscriptEvent[] = [];
-  if (stat.size > MAX_SESSION_BYTES) {
-    events.push(oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs));
-    events.push(
-      ...new SessionTranscriptReader(appSessionId, providerSessionId, path, role).readTail(),
-    );
-  } else {
-    const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
-    for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      try {
-        const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
-        events.push(
-          ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
+  const messages =
+    stat.size > MAX_SESSION_BYTES
+      ? coalesceMessages([
+          oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs),
+          ...new SessionTranscriptReader(appSessionId, providerSessionId, path, role).readTail(),
+        ])
+      : parseTranscriptLines(
+          appSessionId,
+          providerSessionId,
+          readFileSync(path, 'utf8').split(/\r?\n/),
+          role,
         );
-      } catch {
-        /* skip partial/corrupt JSONL rows */
-      }
-    }
-  }
   const notices = readSessionNotices(appSessionId, providerSessionId, role);
-  // Corrections append to JSONL; replay exposes only the latest text per row
-  // id. Most chats have never been spoken to, and they pay one scan for that
-  // rather than two rebuilds of the whole transcript.
-  const latestSpoken = new Set<string>();
-  const uniqueEvents = events.some((event) => event.spoken)
-    ? events
-        .toReversed()
-        .filter((event) => {
-          if (!event.spoken) return true;
-          if (latestSpoken.has(event.id)) return false;
-          latestSpoken.add(event.id);
-          return true;
-        })
-        .reverse()
-    : events;
-  const messages = coalesceMessages(uniqueEvents);
   return notices.length
     ? [...messages, ...notices].sort((left, right) => left.ts - right.ts)
     : messages;
+}
+
+export function parseTranscriptLines(
+  appSessionId: string,
+  providerSessionId: string,
+  lines: readonly string[],
+  role: SessionRole,
+): TranscriptEvent[] {
+  const events: TranscriptEvent[] = [];
+  const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    try {
+      const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+      events.push(
+        ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
+      );
+    } catch {
+      /* skip partial/corrupt JSONL rows */
+    }
+  }
+  return coalesceMessages(events);
 }
 
 function appendMessageChunk(older: TranscriptEvent, newer: TranscriptEvent): TranscriptEvent {
@@ -161,9 +159,22 @@ function messageSnapshot(event: TranscriptEvent): TranscriptEvent {
 }
 
 function coalesceMessages(events: TranscriptEvent[]): TranscriptEvent[] {
+  // Corrections append to JSONL; replay exposes only the latest text per row id.
+  const latestSpoken = new Set<string>();
+  const uniqueEvents = events.some((event) => event.spoken)
+    ? events
+        .toReversed()
+        .filter((event) => {
+          if (!event.spoken) return true;
+          if (latestSpoken.has(event.id)) return false;
+          latestSpoken.add(event.id);
+          return true;
+        })
+        .reverse()
+    : events;
   const messages: TranscriptEvent[] = [];
   const indexes = new Map<string, number>();
-  for (const event of events) {
+  for (const event of uniqueEvents) {
     const index = event.textUpdate ? indexes.get(event.id) : undefined;
     if (index !== undefined) messages[index] = appendMessageChunk(messages[index], event);
     else {

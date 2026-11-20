@@ -8,7 +8,7 @@ import {
   type RequestPermissionRequest,
   type RequestPermissionResponse,
   type SessionNotification,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import { childEnv } from '../../childEnv.js';
 import type { DevinTerminals } from './devinTerminals.js';
 
@@ -83,15 +83,19 @@ export class DevinClient {
     return pid === undefined ? undefined : { pid, isAlive: () => !this.isClosed };
   }
 
-  initialize(): Promise<InitializeResponse> {
-    return this.connection.agent.request('initialize', {
-      protocolVersion: 1,
-      clientInfo: { name: 'droidex', version: '1.0.0' },
-      clientCapabilities: {
-        terminal: true,
-        _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+  initialize(signal?: AbortSignal): Promise<InitializeResponse> {
+    return this.connection.agent.request(
+      'initialize',
+      {
+        protocolVersion: 1,
+        clientInfo: { name: 'droidex', version: '1.0.0' },
+        clientCapabilities: {
+          terminal: true,
+          _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+        },
       },
-    });
+      signal ? { cancellationSignal: signal, stopWaitingOnCancel: true } : undefined,
+    );
   }
 
   async diagnostic(error: unknown): Promise<Error> {

@@ -20,12 +20,16 @@ async function fixture(t: TestContext) {
   const executable = join(cwd, 'devin.cjs');
   await writeFile(executable, devinAcpCli, { mode: 0o755 });
   const previous = process.env.DEVIN_PATH;
+  const previousUserData = process.env.DROIDEX_USER_DATA_DIR;
   const sessions: DevinSession[] = [];
   process.env.DEVIN_PATH = executable;
+  process.env.DROIDEX_USER_DATA_DIR = cwd;
   t.after(async () => {
     await Promise.all(sessions.map((session) => session.close()));
     if (previous === undefined) delete process.env.DEVIN_PATH;
     else process.env.DEVIN_PATH = previous;
+    if (previousUserData === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
+    else process.env.DROIDEX_USER_DATA_DIR = previousUserData;
     await rm(cwd, { recursive: true, force: true });
   });
   const approvals: ProviderApprovalRequest[] = [];
@@ -567,7 +571,113 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   const aborted = AbortSignal.abort();
   assert.equal((await h.provider.probe(aborted)).readiness, 'error');
   assert.equal((await h.provider.readUsage()).unavailable, 'no_plan_limits');
-  await assert.rejects(h.provider.fork(), /cannot be copied/);
+});
+
+test('Devin forks stay idle and persist their seed until the first prompt, never reseeding later resumes', async (t) => {
+  const h = await fixture(t);
+  const source = { providerSessionId: 'source', cwd: h.cwd, title: 'Copy' };
+  await assert.rejects(h.provider.fork(source), /transcript is unavailable or empty/);
+  const handle = await h.provider.fork({ ...source, transcriptSeed: 'Earlier conversation' });
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/prompt'),
+    false,
+  );
+  const opened = await h.provider.resume(handle.providerSessionId, h.input);
+  h.sessions.push(opened);
+  await opened.close();
+  const resumed = await new DevinProvider().resume(handle.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  const first = await collect(resumed.stream('First request'));
+  const point = first.find((event) => event.transcript?.kind === 'text')?.transcript?.forkPointId;
+  assert.match(point ?? '', /^devin-turn-/);
+  assert.ok(
+    first
+      .filter((event) => event.transcript)
+      .every((event) => event.transcript?.forkPointId === point),
+  );
+  await collect(resumed.stream('Second request'));
+  await resumed.close();
+  const later = await new DevinProvider().resume(handle.providerSessionId, h.input);
+  h.sessions.push(later);
+  await collect(later.stream('Third request'));
+  const requests = await h.requests();
+  assert.deepEqual(
+    requests
+      .filter(({ method }) => method === 'session/prompt')
+      .map(({ params }) => params?.prompt),
+    [
+      [
+        {
+          type: 'text',
+          text: 'Conversation so far:\nEarlier conversation\n\nCurrent request:\nFirst request',
+        },
+      ],
+      [{ type: 'text', text: 'Second request' }],
+      [{ type: 'text', text: 'Third request' }],
+    ],
+  );
+  assert.deepEqual(requests.find(({ method }) => method === 'session/new')?.params?._meta, {
+    'cognition.ai/persistOnCreate': true,
+  });
+  assert.equal(
+    requests.some(({ method }) => method === 'session/fork'),
+    false,
+  );
+});
+
+test('Devin prefers an advertised native whole-session fork without seeding it', async (t) => {
+  const h = await fixture(t);
+  await writeFile(join(h.cwd, 'native-fork'), '');
+  const copy = await h.provider.fork({
+    providerSessionId: 'source',
+    cwd: h.cwd,
+    title: 'Native copy',
+    transcriptSeed: 'Must not be sent',
+  });
+  assert.equal(copy.providerSessionId, 'devin-native-copy');
+  const session = await h.provider.resume(copy.providerSessionId, h.input);
+  h.sessions.push(session);
+  await collect(session.stream('First native request'));
+  const requests = await h.requests();
+  assert.equal(
+    requests.some(({ method }) => method === 'session/new'),
+    false,
+  );
+  assert.deepEqual(requests.find(({ method }) => method === 'session/fork')?.params, {
+    sessionId: 'source',
+    cwd: h.cwd,
+    mcpServers: [],
+  });
+  assert.deepEqual(requests.find(({ method }) => method === 'session/prompt')?.params?.prompt, [
+    { type: 'text', text: 'First native request' },
+  ]);
+});
+
+test('Stop before a seeded Devin prompt is dispatched preserves the pending seed', async (t) => {
+  const h = await fixture(t);
+  const copy = await h.provider.fork({
+    providerSessionId: 'source',
+    cwd: h.cwd,
+    title: 'Copy',
+    transcriptSeed: 'Saved context',
+  });
+  const session = await h.provider.resume(copy.providerSessionId, h.input);
+  h.sessions.push(session);
+  const change = session.setModel({ modelId: 'blocked' });
+  const cancelled = collect(session.stream('Do not send'));
+  await Promise.resolve();
+  await session.interrupt();
+  await change;
+  await cancelled;
+  await session.close();
+  const resumed = await new DevinProvider().resume(copy.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  await collect(resumed.stream('Send now'));
+  const prompts = (await h.requests()).filter(({ method }) => method === 'session/prompt');
+  assert.equal(prompts.length, 1);
+  assert.deepEqual(prompts[0].params?.prompt, [
+    { type: 'text', text: 'Conversation so far:\nSaved context\n\nCurrent request:\nSend now' },
+  ]);
 });
 
 test('Devin forwards configured MCP transports and serves in-app tools for its lifetime', async (t) => {

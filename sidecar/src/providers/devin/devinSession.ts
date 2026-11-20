@@ -5,7 +5,7 @@ import type {
   InitializeResponse,
   SessionConfigOption,
   SessionNotification,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
 import type { ProviderMention } from '../catalog.js';
@@ -24,6 +24,7 @@ import { startDevinMcp } from './devinMcp.js';
 import { devinPermission } from './devinPermissions.js';
 import { devinChildId, DevinSubagents } from './devinSubagents.js';
 import { DevinTerminals } from './devinTerminals.js';
+import { consumeDevinForkSeed, readDevinForkSeed } from './devinForkSeed.js';
 
 const MODES: Record<Autonomy, string> = {
   off: 'accept-edits',
@@ -38,6 +39,7 @@ export class DevinSession implements ProviderSession {
   private readonly client: DevinClient;
   private readonly terminals: DevinTerminals;
   private sessionId?: string;
+  private pendingSeed?: string;
   private mapper?: DevinEvents;
   private subagents?: DevinSubagents;
   private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
@@ -167,6 +169,9 @@ export class DevinSession implements ProviderSession {
         this.input.appSessionId ?? this.providerSessionId,
         this.providerSessionId,
       );
+      const pendingSeed = await readDevinForkSeed(this.providerSessionId);
+      this.requireOpen();
+      this.pendingSeed = pendingSeed;
       this.subagents ??= new DevinSubagents(
         this.input.appSessionId ?? this.providerSessionId,
         this.providerSessionId,
@@ -206,7 +211,13 @@ export class DevinSession implements ProviderSession {
           return;
         }
         const content: ContentBlock[] = [
-          { type: 'text', text: prompt },
+          {
+            type: 'text',
+            text:
+              this.pendingSeed === undefined
+                ? prompt
+                : `Conversation so far:\n${this.pendingSeed}\n\nCurrent request:\n${prompt}`,
+          },
           ...(mentions ?? []).map((mention) =>
             mention.path
               ? {
@@ -217,6 +228,11 @@ export class DevinSession implements ProviderSession {
               : { type: 'text' as const, text: `@${mention.name}` },
           ),
         ];
+        if (this.pendingSeed !== undefined) {
+          consumeDevinForkSeed(this.providerSessionId);
+          this.pendingSeed = undefined;
+        }
+        this.mapper?.startTurn();
         const response = await this.client.connection.agent.request('session/prompt', {
           sessionId: this.providerSessionId,
           prompt: content,

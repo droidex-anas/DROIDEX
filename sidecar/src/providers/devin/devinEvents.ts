@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { SessionNotification, ToolCallUpdate } from '@agentclientprotocol/sdk';
+import type { SessionNotification, ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { SessionRole, TranscriptEvent } from '../../protocol.js';
 
@@ -12,6 +12,11 @@ export function devinToolName(tool: ToolCallUpdate): string {
 export class DevinEvents {
   private readonly tools = new Map<string, ToolCallUpdate>();
   private readonly completed = new Set<string>();
+  private forkPointId?: string;
+
+  startTurn(): void {
+    this.forkPointId = `devin-turn-${randomUUID()}`;
+  }
 
   constructor(
     private readonly appSessionId: string,
@@ -115,6 +120,7 @@ export class DevinEvents {
         sourceSessionId: this.sessionId,
         role: this.role,
         ts: Date.now(),
+        ...(this.forkPointId ? { forkPointId: this.forkPointId } : {}),
         ...event,
       },
     };
