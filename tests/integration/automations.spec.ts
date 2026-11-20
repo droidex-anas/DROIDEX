@@ -36,24 +36,26 @@ const session: SessionSummary = {
   updatedAt: Date.now(),
 };
 
-function scheduledPrompt(index = 0): Automation {
+const DST_NOW = Date.parse('2027-03-13T17:00:00Z');
+
+function scheduledPrompt(index = 0, now = Date.now()): Automation {
   return {
     ...defaultAutomationDraft(null, null, null),
     id: `scheduled-${String(index)}`,
     title: `Continue review ${String(index)}`,
     prompt: 'Continue once the limit resets',
     target: { kind: 'existing-session', appSessionId: session.appSessionId },
-    schedule: { kind: 'once', runAt: Date.now() + 3_600_000 },
+    schedule: { kind: 'once', runAt: now + 3_600_000 },
     timezone: 'UTC',
-    nextRunAt: Date.now() + 3_600_000,
+    nextRunAt: now + 3_600_000,
     lastRunAt: null,
     lastRunStatus: null,
     lastRunError: null,
     lastRunDurationMs: null,
     lastAppSessionId: null,
     completedAt: null,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: now,
+    updatedAt: now,
   };
 }
 
@@ -61,8 +63,9 @@ async function automationBridge(
   page: Page,
   automations: Automation[] = [],
   sessions: SessionSummary[] = [session],
-  options: { proposals?: AutomationProposal[]; history?: TranscriptEvent[] } = {},
+  options: { proposals?: AutomationProposal[]; history?: TranscriptEvent[]; now?: number } = {},
 ) {
+  const now = () => options.now ?? Date.now();
   const snapshot: AutomationSnapshot = {
     automations,
     runs: [],
@@ -74,6 +77,9 @@ async function automationBridge(
   };
   const requests: unknown[] = [];
   let settle: ((ok: boolean) => void) | undefined;
+  let emitSnapshot = () => {
+    throw new Error('Bridge is not connected.');
+  };
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
     (socket) => {
@@ -90,6 +96,7 @@ async function automationBridge(
           }),
         );
       };
+      emitSnapshot = () => emit({ type: 'automations.snapshot', snapshot });
       socket.onMessage((message) => {
         if (typeof message !== 'string') return;
         const command: unknown = JSON.parse(message);
@@ -149,14 +156,14 @@ async function automationBridge(
           if (!proposal) throw new Error('The proposal being confirmed does not exist.');
           const automation = createAutomationRecord(
             normalizeAutomationInput(mutation.input ?? proposal.draft),
-            Date.now(),
+            now(),
           );
           snapshot.automations.push(automation);
           Object.assign(proposal, {
             status: 'confirmed',
             draft: mutation.input ?? proposal.draft,
             automationId: automation.id,
-            confirmedAt: Date.now(),
+            confirmedAt: now(),
           });
           emit({ type: 'automations.snapshot', snapshot });
           emit({ type: 'automations.result', requestId: mutation.requestId, ok: true });
@@ -191,7 +198,7 @@ async function automationBridge(
           settle = (ok) => {
             if (ok) {
               snapshot.automations.push(
-                createAutomationRecord(normalizeAutomationInput(mutation.input), Date.now()),
+                createAutomationRecord(normalizeAutomationInput(mutation.input), now()),
               );
               emit({ type: 'automations.snapshot', snapshot });
             }
@@ -212,6 +219,9 @@ async function automationBridge(
   );
   return {
     requests,
+    refresh() {
+      emitSnapshot();
+    },
     settle(ok: boolean) {
       if (!settle) throw new Error('No automation save is pending.');
       settle(ok);
@@ -265,8 +275,8 @@ test.describe('one-time DST-gap schedules', () => {
   test('Send later blocks nonexistent local time and submits the corrected instant', async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date('2027-03-13T17:00:00Z'));
-    const backend = await automationBridge(page);
+    await page.clock.setFixedTime(DST_NOW);
+    const backend = await automationBridge(page, [], [session], { now: DST_NOW });
     await openConversation(page);
     await page.getByRole('textbox', { name: 'Prompt', exact: true }).fill('Continue after DST');
     await openSchedule(page);
@@ -307,11 +317,12 @@ test.describe('one-time DST-gap schedules', () => {
   test('editor blocks a gap and resolves a date edit using the displayed time', async ({
     page,
   }) => {
-    await page.clock.setFixedTime(new Date('2027-03-13T17:00:00Z'));
-    const automation = scheduledPrompt();
+    await page.clock.setFixedTime(DST_NOW);
+    const automation = scheduledPrompt(0, DST_NOW);
     automation.timezone = 'America/New_York';
     automation.schedule = { kind: 'once', runAt: Date.parse('2027-03-14T07:00:00Z') };
-    const backend = await automationBridge(page, [automation]);
+    const other = { ...automation, id: 'other-automation', title: 'Another automation' };
+    const backend = await automationBridge(page, [automation, other], [session], { now: DST_NOW });
     await page.goto('/');
     await page.getByTestId('automations-nav').click();
     await page.getByText(automation.title, { exact: true }).click();
@@ -323,6 +334,12 @@ test.describe('one-time DST-gap schedules', () => {
     const save = editor.getByRole('button', { name: 'Save changes', exact: true });
     await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
+    await page.getByText(other.title, { exact: true }).click();
+    await expect(editor.getByRole('alert')).toHaveCount(0);
+    await page.getByText(automation.title, { exact: true }).click();
+    await expect(editor.getByRole('alert')).toHaveCount(0);
+    await expect(save).toBeEnabled();
+    await setScheduleTime(editor, '02', '15');
     const date = editor.getByRole('textbox', { name: 'Date, year month day' });
     await date.fill('2027-03-15');
     await date.press('Tab');
@@ -339,7 +356,7 @@ test.describe('one-time DST-gap schedules', () => {
   });
 
   test('proposal confirmation blocks a gap and submits the corrected instant', async ({ page }) => {
-    await page.clock.setFixedTime(new Date('2027-03-13T17:00:00Z'));
+    await page.clock.setFixedTime(DST_NOW);
     const draft = normalizeAutomationInput({
       ...defaultAutomationDraft(null, 'default-model', 'high'),
       title: 'Review after DST',
@@ -354,8 +371,8 @@ test.describe('one-time DST-gap schedules', () => {
       status: 'draft',
       missingFields: [],
       automationId: null,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: DST_NOW,
+      updatedAt: DST_NOW,
       confirmedAt: null,
     };
     const call: TranscriptEvent = {
@@ -370,6 +387,7 @@ test.describe('one-time DST-gap schedules', () => {
       toolArgs: draft,
     };
     const backend = await automationBridge(page, [], [session], {
+      now: DST_NOW,
       proposals: [proposal],
       history: [
         call,
@@ -386,6 +404,9 @@ test.describe('one-time DST-gap schedules', () => {
     await setScheduleTime(card, '02');
     await expect(card.getByRole('alert')).toContainText('does not exist');
     const confirm = card.getByRole('button', { name: 'Confirm automation', exact: true });
+    await expect(confirm).toBeDisabled();
+    backend.refresh();
+    await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
     await setScheduleTime(card, '04', '15');

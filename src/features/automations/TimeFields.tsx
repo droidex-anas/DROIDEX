@@ -6,9 +6,11 @@ const NUMBER_FIELD =
 export function AutomationTimeInput({
   value,
   onChange,
+  errorId,
 }: {
   value: string;
   onChange: (value: string) => void;
+  errorId?: string | undefined;
 }) {
   const [valueHour, valueMinute] = parseTime(value);
   const [hour, setHour] = useState(String(valueHour).padStart(2, '0'));
@@ -37,6 +39,8 @@ export function AutomationTimeInput({
         value={hour}
         inputMode="numeric"
         aria-label="Hour"
+        aria-invalid={Boolean(errorId)}
+        aria-describedby={errorId}
         maxLength={2}
         onFocus={(event) => {
           event.currentTarget.select();
@@ -69,6 +73,8 @@ export function AutomationTimeInput({
         value={minute}
         inputMode="numeric"
         aria-label="Minute"
+        aria-invalid={Boolean(errorId)}
+        aria-describedby={errorId}
         maxLength={2}
         onFocus={(event) => {
           event.currentTarget.select();
@@ -150,9 +156,11 @@ export function AutomationDateInput({
   value,
   minimum,
   onChange,
+  errorId,
 }: {
   value: { year: number; month: number; day: number };
   minimum?: { year: number; month: number; day: number };
+  errorId?: string | undefined;
   onChange: (value: { year: number; month: number; day: number }) => void;
 }) {
   const formatted = formatDate(value);
@@ -178,6 +186,8 @@ export function AutomationDateInput({
       value={text}
       inputMode="numeric"
       aria-label="Date, year month day"
+      aria-invalid={Boolean(errorId)}
+      aria-describedby={errorId}
       placeholder="YYYY-MM-DD"
       maxLength={10}
       onFocus={(event) => {

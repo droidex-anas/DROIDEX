@@ -51,7 +51,11 @@ export function AutomationEditor({
   onClose,
 }: AutomationEditorProps) {
   const { draft } = editor;
-  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(draft.schedule, draft.timezone);
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(
+    draft.schedule,
+    draft.timezone,
+    editor.mode === 'edit' ? editor.automation.id : 'create',
+  );
   const isDelivery = draft.target.kind === 'existing-session';
   const validation = useMemo(
     () =>

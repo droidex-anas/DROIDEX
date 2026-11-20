@@ -12,16 +12,22 @@ import type { AutomationSchedule } from '@droidex/protocol';
 export function useInvalidScheduleInput(
   schedule: AutomationSchedule | undefined,
   timezone: string | undefined,
+  owner?: string,
 ) {
-  const [draft, setDraft] = useState<{
-    schedule: AutomationSchedule | undefined;
-    timezone: string | undefined;
+  const key = JSON.stringify([
+    owner,
+    schedule?.kind,
+    schedule?.kind === 'once' ? schedule.runAt : null,
+    timezone,
+  ]);
+  const [invalidEdit, setInvalidEdit] = useState<{
+    key: string;
     parts: ZonedInput;
   } | null>(null);
-  const invalidInput =
-    draft && draft.schedule === schedule && draft.timezone === timezone ? draft.parts : null;
+  if (invalidEdit && invalidEdit.key !== key) setInvalidEdit(null);
+  const invalidInput = invalidEdit?.key === key ? invalidEdit.parts : null;
   const setInvalidInput = (parts: ZonedInput | null) => {
-    setDraft(parts ? { schedule, timezone, parts } : null);
+    setInvalidEdit(parts ? { key, parts } : null);
   };
   return [invalidInput, setInvalidInput] as const;
 }
@@ -39,6 +45,7 @@ export function ScheduleControls({
   invalidInput: ZonedInput | null;
   onInvalidInputChange: (input: ZonedInput | null) => void;
 }) {
+  const errorId = useId();
   switch (schedule.kind) {
     case 'once': {
       const parts = invalidInput ?? zonedInputParts(schedule.runAt, timezone);
@@ -52,6 +59,7 @@ export function ScheduleControls({
         <>
           <EditorRow label="Date">
             <AutomationDateInput
+              errorId={invalidInput ? errorId : undefined}
               value={parts}
               minimum={minimumDate}
               onChange={(date) => {
@@ -61,6 +69,7 @@ export function ScheduleControls({
           </EditorRow>
           <EditorRow label="Time">
             <AutomationTimeInput
+              errorId={invalidInput ? errorId : undefined}
               value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
               onChange={(time) => {
                 const [hourText = '', minuteText = ''] = time.split(':');
@@ -73,7 +82,7 @@ export function ScheduleControls({
             />
           </EditorRow>
           {invalidInput && (
-            <p role="alert" className="px-3.5 py-2 text-caption text-warning">
+            <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
               This local time does not exist in {timezone.replaceAll('_', ' ')}. Choose a time
               outside the daylight-saving gap.
             </p>
