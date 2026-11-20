@@ -4,6 +4,7 @@ import type { RequestPermissionRequest } from '@agentclientprotocol/sdk/unstable
 import {
   createInteractionsHarness,
   latestApprovalRequest,
+  approvalRequests,
 } from '../../testing/sessionInteractionsSupport.js';
 import { devinPermission } from './devinPermissions.js';
 
@@ -79,9 +80,54 @@ test('Devin switch-mode approvals carry inline plan text without requiring a spe
     );
     const approval = latestApprovalRequest(h.emitted);
     assert.equal(approval.kind, 'spec');
+    assert.equal(approval.canAlwaysAllow, false);
     assert.equal(approval.plan, expected);
     if (expected) assert.equal(approval.detail, expected);
     await h.interactions.respondToApproval('thread', approval.requestId, 'cancel');
     assert.deepEqual(await pending, { outcome: { outcome: 'cancelled' } });
   }
+});
+
+test('Devin always-allow grants match the same action, not a new command or path', async () => {
+  const h = createInteractionsHarness();
+  h.addLiveSession('thread');
+  const interactions = h.interactions.interactionsFor({ id: 'thread' });
+  let sequence = 0;
+  const ask = (kind: 'edit' | 'execute', rawInput: unknown, title = 'Action') =>
+    devinPermission(
+      'thread',
+      request({ toolCallId: `tool-${++sequence}`, title, kind, rawInput }),
+      interactions,
+      new AbortController().signal,
+    );
+  for (const [kind, original, changed] of [
+    ['edit', { path: '/allowed' }, { path: '/different' }],
+    ['execute', { command: 'npm test' }, { command: 'npm publish' }],
+  ] as const) {
+    const first = ask(kind, original);
+    const approval = latestApprovalRequest(h.emitted);
+    assert.equal(approval.canAlwaysAllow, true);
+    await h.interactions.respondToApproval('thread', approval.requestId, 'proceed_always');
+    assert.deepEqual(await first, { outcome: { outcome: 'selected', optionId: 'always' } });
+    const count = approvalRequests(h.emitted).length;
+    assert.deepEqual(await ask(kind, original), {
+      outcome: { outcome: 'selected', optionId: 'always' },
+    });
+    assert.equal(approvalRequests(h.emitted).length, count);
+    for (const [input, title] of [
+      [changed, 'Action'],
+      [original, 'Different tool'],
+    ] as const) {
+      const pending = ask(kind, input, title);
+      const next = latestApprovalRequest(h.emitted);
+      assert.notEqual(next.requestId, approval.requestId);
+      await h.interactions.respondToApproval('thread', next.requestId, 'proceed_once');
+      assert.deepEqual(await pending, { outcome: { outcome: 'selected', optionId: 'once' } });
+    }
+  }
+  const empty = ask('edit', undefined);
+  const approval = latestApprovalRequest(h.emitted);
+  assert.equal(approval.canAlwaysAllow, false);
+  await h.interactions.respondToApproval('thread', approval.requestId, 'cancel');
+  assert.deepEqual(await empty, { outcome: { outcome: 'cancelled' } });
 });

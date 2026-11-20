@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
@@ -6,6 +7,17 @@ import type { PermissionKind } from '../../protocol.js';
 import { objectValue, trimmedString } from '../../values.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { devinToolName } from './devinEvents.js';
+
+function permissionSignature(toolCall: RequestPermissionRequest['toolCall']): string | undefined {
+  if (toolCall.kind === 'switch_mode' || toolCall.rawInput == null) return undefined;
+  const action = JSON.stringify({
+    kind: toolCall.kind,
+    input: toolCall.rawInput,
+    locations: toolCall.locations,
+    content: toolCall.content,
+  });
+  return `devin::${devinToolName(toolCall)}::${createHash('sha256').update(action).digest('hex')}`;
+}
 
 export async function devinPermission(
   appSessionId: string,
@@ -17,6 +29,7 @@ export async function devinPermission(
   const isCancelled = () => signal.aborted || !interactions.isActive();
   if (isCancelled()) return cancelled;
   const options = request.options.filter((option) => option.optionId.trim() !== 'plan_bypass');
+  const signature = permissionSignature(request.toolCall);
   let kind: PermissionKind = 'other';
   switch (request.toolCall.kind) {
     case 'edit':
@@ -48,10 +61,12 @@ export async function devinPermission(
       title: devinToolName(request.toolCall),
       detail: plan ?? JSON.stringify(request.toolCall.rawInput ?? request.toolCall.title ?? ''),
       ...(plan ? { plan } : {}),
-      canAlwaysAllow: options.some((option) => option.kind === 'allow_always'),
+      canAlwaysAllow:
+        Boolean(signature) && options.some((option) => option.kind === 'allow_always'),
       raw: request.toolCall,
     },
     confirmationType: kind === 'spec' ? 'exit_spec_mode' : kind,
+    ...(signature ? { signature } : {}),
     signal,
     canApproveFor: (actor) =>
       actor.provider === 'devin' &&
