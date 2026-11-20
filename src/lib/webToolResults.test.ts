@@ -6,14 +6,14 @@ const SAMPLE = `Web Search Results for: "electron auto update best practices 202
 
 **Electron | Sentry for Electron**
    URL: https://docs.sentry.io/platforms/javascript/guides/electron/
-
+\x20\x20\x20
    Learn how to manually set up Sentry in your Electron app and capture your first errors.
 
 ---
 
 **GitHub - getsentry/sentry-electron: The official Sentry SDK for ...**
    URL: https://github.com/getsentry/sentry-electron
-
+\x20\x20\x20
    The official Sentry SDK for Electron. Contribute to getsentry/sentry-electron development by creating an account on GitHub.
 Found 2 results`;
 
