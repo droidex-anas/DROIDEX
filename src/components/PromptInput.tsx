@@ -111,7 +111,7 @@ import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
 import ComposerMenu from './ComposerMenu';
-import { useComposerSlashCommands } from './useComposerSlashCommands';
+import { useComposerSlashCommands } from './composer/useComposerSlashCommands';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';

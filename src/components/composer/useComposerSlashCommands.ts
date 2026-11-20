@@ -10,19 +10,21 @@ import {
   Settings,
   Zap,
 } from '@droidex/icons';
-import { useStoreDispatch } from '../hooks/useStore';
-import useFastMode from '../hooks/useFastMode';
-import { compactSession, updateSessionSettings } from '../lib/commands';
-import { VISUALIZE_COMMAND } from '../lib/composePrompt';
-import type { FeedbackReportRequest } from '../lib/desktop';
-import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
-import { toast } from '../lib/toast';
-import { supportsSpecMode } from '../features/providers/providerIdentity';
-import type { SlashCommand } from './ComposerMenu';
-import { USAGE_COMMAND } from './composer/submitComposerPrompt';
-import { VisualizeIcon } from './icons/VisualizeIcon';
-import { useAskSideChat } from './sidechats/useAskSideChat';
+import { useStoreDispatch } from '../../hooks/useStore';
+import useFastMode from '../../hooks/useFastMode';
+import { compactSession, updateSessionSettings } from '../../lib/commands';
+import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
+import type { FeedbackReportRequest } from '../../lib/desktop';
+import { FAST_MODE_HINT, offersFastMode } from '../../lib/fastMode';
+import { toast } from '../../lib/toast';
+import { supportsSpecMode } from '../../features/providers/providerIdentity';
+import type { SlashCommand } from '../ComposerMenu';
+import { USAGE_COMMAND } from './submitComposerPrompt';
+import { VisualizeIcon } from '../icons/VisualizeIcon';
+import { useAskSideChat } from '../sidechats/useAskSideChat';
 
+// Slash entries that drive Droid's own subsystems, so they leave the menu with
+// the controls they belong to when the chat runs on another provider.
 const DROID_ONLY_COMMANDS = new Set(['/compact']);
 
 export function useComposerSlashCommands({
