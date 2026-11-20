@@ -6,8 +6,10 @@ import {
   isAlwaysOutcome,
   isApprovalOutcome,
   normalizePermissionOutcome,
+  planApprovalAutonomy,
 } from './permissionOutcomes.js';
 import type {
+  Autonomy,
   PermissionKind,
   PermissionOutcome,
   PermissionRequest,
@@ -54,6 +56,7 @@ export interface SessionInteractionsDependencies {
   // Moves the provider in and out of planning. The summary that goes with it is
   // this layer's own, which is why the provider call is all this does.
   setProviderSpecMode: (appSessionId: string, spec: boolean) => Promise<void>;
+  setAutonomy: (appSessionId: string, autonomy: Autonomy) => Promise<boolean>;
   emit: (event: ServerEvent) => void;
   emitError: (error: InteractionError) => void;
 }
@@ -230,7 +233,7 @@ export class SessionInteractions {
     // first. If it refuses, the plan is declined instead of approved into a
     // session that is still planning.
     if (pending.kind === 'spec' && isApprovalOutcome(normalized)) {
-      if (!(await this.prepareSpecExitForRun(liveSession))) {
+      if (!(await this.prepareSpecExitForRun(liveSession, planApprovalAutonomy(normalized)))) {
         settle('cancel');
         return;
       }
@@ -335,9 +338,20 @@ export class SessionInteractions {
   // reads as Auto while its session is still planning is the state this whole
   // path exists to avoid. Whichever half fails, the session and the chat are put
   // back into Spec together and the plan is declined for another round.
-  private async prepareSpecExitForRun(liveSession: InteractionLiveSession): Promise<boolean> {
+  private async prepareSpecExitForRun(
+    liveSession: InteractionLiveSession,
+    autonomy: Autonomy | undefined,
+  ): Promise<boolean> {
     const appSessionId = liveSession.summary.appSessionId;
     try {
+      if (autonomy !== undefined) {
+        if (!(await this.dependencies.setAutonomy(appSessionId, autonomy))) return false;
+        if (
+          this.dependencies.getLiveSession(appSessionId) !== liveSession ||
+          liveSession.closePromise
+        )
+          return false;
+      }
       await this.dependencies.setProviderSpecMode(appSessionId, false);
     } catch (error) {
       this.reportSpecExitFailure(appSessionId, error);

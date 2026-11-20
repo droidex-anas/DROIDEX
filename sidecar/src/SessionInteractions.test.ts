@@ -497,6 +497,79 @@ test('an approved Spec plan leaves Spec on the provider before the callback sett
   }
 });
 
+test('plan approval persists its selected autonomy before settlement and restores it on resume, but refuses a failed change', async () => {
+  const outcomes = {
+    low: ToolConfirmationOutcome.ProceedAutoRunLow,
+    medium: ToolConfirmationOutcome.ProceedAutoRunMedium,
+    high: ToolConfirmationOutcome.ProceedAutoRunHigh,
+  };
+  for (const [autonomy, rejected] of [
+    ['low', false],
+    ['medium', false],
+    ['high', false],
+    ['high', true],
+  ] as const) {
+    const h = createSessionManagerTestContext();
+    try {
+      await h.create({
+        sessionPurpose: 'chat',
+        clientRef: 'plan-autonomy',
+        title: 'Plan',
+        goal: 'go',
+        interactionMode: 'spec',
+        autonomy: 'off',
+      });
+      await h.waitForIdle();
+      const provider = h.provider.session('provider-1');
+      if (rejected) {
+        const write = provider.updateSettings.bind(provider);
+        provider.updateSettings = async (settings) => {
+          if (settings.autonomyLevel !== undefined) throw new Error('autonomy refused');
+          return write(settings);
+        };
+      }
+      const handler = provider.handlers.permissionHandler;
+      assert.ok(handler);
+      const pending = Promise.resolve(handler(specApprovalInput('plan-autonomy'))).then(
+        (outcome) => ({
+          outcome,
+          saved: h.history.summaryPatchesAndHidden().patches.get('provider-1'),
+        }),
+      );
+      const request = latestApprovalRequest(h.events);
+      await h.handle({
+        type: 'approval.respond',
+        appSessionId: request.appSessionId,
+        requestId: request.requestId,
+        outcome: `proceed_auto_run_${autonomy}`,
+      });
+      const result = await pending;
+      assert.equal(result.outcome, rejected ? ToolConfirmationOutcome.Cancel : outcomes[autonomy]);
+      assert.equal(result.saved?.autonomy, rejected ? 'off' : autonomy);
+      assert.equal(result.saved?.interactionMode, rejected ? 'spec' : 'auto');
+      if (rejected) {
+        assert.ok(
+          h.events.some(
+            (event) => event.type === 'error' && event.code === 'session.autonomy_update_failed',
+          ),
+        );
+        continue;
+      }
+      const published = h.events.filter((event) => event.type === 'session.updated').at(-1);
+      assert.equal(published?.session.autonomy, autonomy);
+      writeProviderConversation(h.home, 'provider-1', 'Plan');
+      await h.handle({ type: 'session.close', appSessionId: 'provider-1' });
+      await h.handle({ type: 'session.resume', appSessionId: 'provider-1' });
+      assert.equal(h.runtime.loadCalls.at(-1)?.sessionId, 'provider-1');
+      const restored = h.events.filter((event) => event.type === 'session.created').at(-1);
+      assert.equal(restored?.session.autonomy, autonomy);
+      assert.equal(restored?.session.interactionMode, 'auto');
+    } finally {
+      await h.dispose();
+    }
+  }
+});
+
 test('close preserves current interaction lifetime and forgets unresolved state at unregister', async () => {
   const h = createSessionManagerTestContext();
   let releaseClose = (): void => undefined;

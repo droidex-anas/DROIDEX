@@ -47,6 +47,12 @@ export function createInteractionsHarness(options: HarnessOptions = {}) {
         ? Promise.reject(new Error('provider rejected'))
         : Promise.resolve();
     },
+    setAutonomy: (id, autonomy) => {
+      const live = liveSessions.get(id);
+      if (!live) return Promise.resolve(false);
+      live.summary.autonomy = autonomy;
+      return Promise.resolve(true);
+    },
     updateSummary: (id, patch) => {
       const liveSession = liveSessions.get(id);
       if (!liveSession) return;
