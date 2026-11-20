@@ -196,7 +196,7 @@ export default tseslint.config(
   },
 
   {
-    files: ['electron/nativeBrowserPreload.cjs'],
+    files: ['electron/nativeBrowserPreload.cjs', 'electron/browserElementInspection.cjs'],
     languageOptions: { globals: globals.browser },
   },
 
