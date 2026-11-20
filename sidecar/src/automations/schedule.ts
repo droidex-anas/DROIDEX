@@ -1,4 +1,9 @@
-import type { Automation, AutomationSchedule } from '@droidex/protocol';
+import {
+  parseCronExpression,
+  type Automation,
+  type AutomationSchedule,
+  type CronField,
+} from '@droidex/protocol';
 
 const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
@@ -27,7 +32,7 @@ interface ZonedParts {
   weekday: number;
 }
 
-interface CronField {
+interface ExpandedCronField {
   values: Set<number>;
   wildcard: boolean;
 }
@@ -35,9 +40,9 @@ interface CronField {
 interface ParsedCron {
   minutes: number[];
   hours: number[];
-  dayOfMonth: CronField;
-  month: CronField;
-  dayOfWeek: CronField;
+  dayOfMonth: ExpandedCronField;
+  month: ExpandedCronField;
+  dayOfWeek: ExpandedCronField;
 }
 
 export function nextAutomationRun(
@@ -345,54 +350,29 @@ function parseTime(value: string): { hour: number; minute: number } {
 }
 
 function parseCron(expression: string): ParsedCron {
-  const fields = expression.trim().split(/\s+/);
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = fields;
-  if (fields.length !== 5) {
-    throw new Error('Cron expressions must contain five fields.');
+  const result = parseCronExpression(expression);
+  if (!result.ok) {
+    const { issue } = result;
+    if (issue.kind === 'field-count') throw new Error('Cron expressions must contain five fields.');
+    if (issue.kind === 'invalid-step') throw new Error(`Invalid cron step: ${issue.segment}`);
+    throw new Error(`Invalid cron field: ${issue.segment}`);
   }
+  const { minute, hour, dayOfMonth, month, dayOfWeek } = result.value;
   return {
-    minutes: ascendingValues(parseCronField(minute, 0, 59)),
-    hours: ascendingValues(parseCronField(hour, 0, 23)),
-    dayOfMonth: parseCronField(dayOfMonth, 1, 31),
-    month: parseCronField(month, 1, 12),
-    dayOfWeek: parseCronField(dayOfWeek, 0, 7, true),
+    minutes: ascendingValues(expandCronField(minute)),
+    hours: ascendingValues(expandCronField(hour)),
+    dayOfMonth: expandCronField(dayOfMonth),
+    month: expandCronField(month),
+    dayOfWeek: expandCronField(dayOfWeek, true),
   };
 }
 
-function parseCronField(
-  source: string,
-  minimum: number,
-  maximum: number,
+function expandCronField(
+  { ranges, wildcard }: CronField,
   normalizeSunday = false,
-): CronField {
-  const wildcard = source === '*';
+): ExpandedCronField {
   const values = new Set<number>();
-  for (const segment of source.split(',')) {
-    const slash = segment.indexOf('/');
-    const rangeSource = slash >= 0 ? segment.slice(0, slash) : segment;
-    const stepSource = slash >= 0 ? segment.slice(slash + 1) : undefined;
-    const step = stepSource === undefined ? 1 : cronNumber(stepSource, segment);
-    if (step <= 0) throw new Error(`Invalid cron step: ${segment}`);
-
-    let start: number;
-    let end: number;
-    if (rangeSource === '*') {
-      start = minimum;
-      end = maximum;
-    } else {
-      const dash = rangeSource.indexOf('-');
-      if (dash >= 0) {
-        start = cronNumber(rangeSource.slice(0, dash), segment);
-        end = cronNumber(rangeSource.slice(dash + 1), segment);
-      } else {
-        start = cronNumber(rangeSource, segment);
-        end = start;
-      }
-    }
-
-    if (start < minimum || end > maximum || start > end) {
-      throw new Error(`Invalid cron field: ${segment}`);
-    }
+  for (const { start, end, step } of ranges) {
     for (let value = start; value <= end; value += step) {
       values.add(normalizeSunday && value === 7 ? 0 : value);
     }
@@ -400,14 +380,7 @@ function parseCronField(
   return { values, wildcard };
 }
 
-function cronNumber(source: string, segment: string): number {
-  if (!/^\d+$/.test(source)) throw new Error(`Invalid cron field: ${segment}`);
-  const value = Number(source);
-  if (!Number.isSafeInteger(value)) throw new Error(`Invalid cron field: ${segment}`);
-  return value;
-}
-
-function ascendingValues(field: CronField): number[] {
+function ascendingValues(field: ExpandedCronField): number[] {
   return [...field.values].sort((left, right) => left - right);
 }
 

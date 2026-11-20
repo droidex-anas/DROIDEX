@@ -5,6 +5,7 @@ import type {
   AutomationRun,
   AutomationSchedule,
 } from '@droidex/protocol';
+import { parseCronExpression } from '@droidex/protocol';
 import { AUTONOMY_DESCRIPTIONS, AUTONOMY_LABELS, AUTONOMY_LEVELS } from '../../lib/autonomy';
 import type { WorkspaceScope } from '../../lib/workspaces';
 import { reasoningForModel, validateAutomationModelSelection } from './modelSelection';
@@ -146,52 +147,20 @@ export function automationWorkspaceIssue(
   return `${workspaceLabel(cwd)} is no longer available. Choose a workspace or select No workspace.`;
 }
 
-const CRON_FIELDS = [
-  { name: 'minute', minimum: 0, maximum: 59 },
-  { name: 'hour', minimum: 0, maximum: 23 },
-  { name: 'day of month', minimum: 1, maximum: 31 },
-  { name: 'month', minimum: 1, maximum: 12 },
-  { name: 'weekday', minimum: 0, maximum: 7 },
-];
+const CRON_FIELD_LABELS = {
+  minute: 'minute',
+  hour: 'hour',
+  dayOfMonth: 'day of month',
+  month: 'month',
+  dayOfWeek: 'weekday',
+};
 
-/**
- * Mirrors the scheduler's cron grammar (sidecar/src/automations/schedule.ts):
- * lists, ranges, and steps over five bounded fields. Without the same rules the
- * editor would accept an expression the sidecar then refuses to schedule.
- */
 export function cronExpressionIssue(expression: string): string | null {
-  const fields = expression.trim().split(/\s+/);
-  if (fields.length !== CRON_FIELDS.length || fields.some((field) => !field)) {
-    return 'Use a five-field cron expression.';
-  }
-  for (const [index, field] of CRON_FIELDS.entries()) {
-    const source = fields[index] ?? '';
-    if (!isValidCronField(source, field.minimum, field.maximum)) {
-      return `“${source}” is not a valid cron ${field.name} field.`;
-    }
-  }
-  return null;
-}
-
-function isValidCronField(source: string, minimum: number, maximum: number): boolean {
-  return source.split(',').every((segment) => {
-    const slash = segment.indexOf('/');
-    const rangeSource = slash >= 0 ? segment.slice(0, slash) : segment;
-    const step = slash >= 0 ? cronNumber(segment.slice(slash + 1)) : 1;
-    if (step === null || step <= 0) return false;
-    if (rangeSource === '*') return true;
-    const dash = rangeSource.indexOf('-');
-    const start = cronNumber(dash >= 0 ? rangeSource.slice(0, dash) : rangeSource);
-    const end = dash >= 0 ? cronNumber(rangeSource.slice(dash + 1)) : start;
-    if (start === null || end === null) return false;
-    return start >= minimum && end <= maximum && start <= end;
-  });
-}
-
-function cronNumber(source: string): number | null {
-  if (!/^\d+$/.test(source)) return null;
-  const value = Number(source);
-  return Number.isSafeInteger(value) ? value : null;
+  const result = parseCronExpression(expression);
+  if (result.ok) return null;
+  const { issue } = result;
+  if (issue.kind === 'field-count') return 'Use a five-field cron expression.';
+  return `“${issue.source}” is not a valid cron ${CRON_FIELD_LABELS[issue.field]} field.`;
 }
 
 export function formatSchedule(schedule: AutomationSchedule, timezone?: string): string {

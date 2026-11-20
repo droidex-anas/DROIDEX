@@ -9,6 +9,7 @@ export * from './mcp.js';
 export * from './catalog.js';
 export * from './sidebar.js';
 export * from './automations.js';
+export { parseCronExpression, type CronField } from './cron.js';
 export * from './projects.js';
 export * from './canvas.js';
 export * from './canvas-state.js';
