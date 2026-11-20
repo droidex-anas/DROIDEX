@@ -38,7 +38,7 @@ import {
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
-import { persistedChildSessionFromRow } from './persistedChildSessionCodec.js';
+import { persistedChildSessionFromRow } from './persistedChildSessionRowDecoder.js';
 import {
   loadMissionControlSession,
   missionSessionId,
