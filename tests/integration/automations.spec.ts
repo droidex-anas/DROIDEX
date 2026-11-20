@@ -322,8 +322,6 @@ test.describe('one-time DST-gap schedules', () => {
     await expect(editor.getByRole('alert')).toContainText('does not exist');
     const save = editor.getByRole('button', { name: 'Save changes', exact: true });
     await expect(save).toBeDisabled();
-    await editor.getByRole('textbox', { name: 'Minute', exact: true }).press('Enter');
-    await save.evaluate((button: HTMLButtonElement) => button.click());
     expect(backend.requests).toEqual([]);
     const date = editor.getByRole('textbox', { name: 'Date, year month day' });
     await date.fill('2027-03-15');
@@ -389,7 +387,6 @@ test.describe('one-time DST-gap schedules', () => {
     await expect(card.getByRole('alert')).toContainText('does not exist');
     const confirm = card.getByRole('button', { name: 'Confirm automation', exact: true });
     await expect(confirm).toBeDisabled();
-    await confirm.evaluate((button: HTMLButtonElement) => button.click());
     expect(backend.requests).toEqual([]);
     await setScheduleTime(card, '04', '15');
     await expect(card.getByRole('alert')).toHaveCount(0);
