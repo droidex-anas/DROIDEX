@@ -2534,12 +2534,9 @@ function resolveAutomationReasoningEffort(
   defaultReasoning: ReasoningEffort | undefined,
   models: ModelInfo[],
 ): ReasoningEffort | null {
-  if (summary.reasoningEffort) return summary.reasoningEffort;
-  const model = modelId ? models.find((candidate) => candidate.id === modelId) : undefined;
   return (
+    summary.reasoningEffort ??
     validReasoning(modelId ?? undefined, defaultReasoning, models) ??
-    model?.defaultReasoningEffort ??
-    model?.supportedReasoningEfforts?.at(0) ??
     null
   );
 }
