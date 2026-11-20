@@ -33,27 +33,27 @@ function parseSignature(signature: string): Map<string, string> {
 // tab. A cwd change clears the cache outright; a scope/whitespace change
 // invalidates every file but keeps the last diffs on screen while ensure()
 // refetches, so toggling scope doesn't blank the expanded sections; a soft
-// change (the file-list signature after an edit) invalidates only the files
-// whose own signature line changed, so one edited file does not refetch every
-// expanded section. Stale in-flight responses are dropped by comparing
+// change invalidates only files whose signature changed. Each list revision
+// also lets ensure() revalidate revealed patches without fetching closed files.
+// Stale in-flight responses are dropped by comparing
 // generations (global for resets, per-file for soft ones).
 export function useReviewFileDiffs(
   cwd: string,
   scope: DiffScope,
   ignoreWhitespace: boolean,
   signature: string,
-  appSessionId?: string,
+  { appSessionId, revision }: { appSessionId?: string; revision: number },
 ): ReviewFileDiffs {
   const [entries, setEntries] = useState<ReviewFileDiffs['entries']>({});
   // A Map avoids the Object.prototype lookup collision that lets a file path
   // like `__proto__` or `constructor` bypass the cache check
   // (`status.current['__proto__']` returns the prototype, which is truthy),
   // causing expanded sections to refetch their diff on every render.
-  const status = useRef<Map<string, 'loading' | 'loaded'>>(new Map());
+  const status = useRef<Map<string, { loading: boolean; revision: number }>>(new Map());
   const gen = useRef(0);
   const fileGen = useRef<Map<string, number>>(new Map());
 
-  const hardKey = `${cwd}\u0000${scope}\u0000${ignoreWhitespace}`;
+  const hardKey = `${cwd}\u0000${scope}\u0000${ignoreWhitespace}\u0000${appSessionId ?? ''}`;
   const hardRef = useRef(hardKey);
   const cwdRef = useRef(cwd);
   const sigRef = useRef(signature);
@@ -90,14 +90,16 @@ export function useReviewFileDiffs(
 
   const ensure = useCallback(
     (path: string) => {
-      if (status.current.get(path)) return;
-      status.current.set(path, 'loading');
+      const cached = status.current.get(path);
+      if (cached?.loading || cached?.revision === revision) return;
+      status.current.set(path, { loading: true, revision });
       const requestGen = gen.current;
       const requestFileGen = fileGen.current.get(path) ?? 0;
       const stale = () =>
         gen.current !== requestGen || (fileGen.current.get(path) ?? 0) !== requestFileGen;
       setEntries((cur) => {
         const prev = cur[path];
+        if (prev?.loaded) return cur;
         return {
           ...cur,
           [path]: {
@@ -111,24 +113,35 @@ export function useReviewFileDiffs(
       getGitFileDiff(cwd, scope, path, ignoreWhitespace, appSessionId)
         .then((res) => {
           if (stale()) return;
-          status.current.set(path, 'loaded');
-          setEntries((cur) => ({
-            ...cur,
-            [path]: { diff: res.diff, binary: res.binary, loading: false, loaded: true },
-          }));
+          status.current.set(path, { loading: false, revision });
+          setEntries((cur) => {
+            const prev = cur[path];
+            if (
+              prev?.loaded &&
+              !prev.loading &&
+              prev.diff === res.diff &&
+              prev.binary === res.binary
+            ) {
+              return cur;
+            }
+            return {
+              ...cur,
+              [path]: { diff: res.diff, binary: res.binary, loading: false, loaded: true },
+            };
+          });
         })
         .catch(() => {
           // getGitFileDiff catches internally and never rejects, but guard
           // against a future contract change so an open section doesn't hang.
           if (stale()) return;
-          status.current.set(path, 'loaded');
+          status.current.set(path, { loading: false, revision });
           setEntries((cur) => ({
             ...cur,
             [path]: { diff: '', binary: false, loading: false, loaded: true },
           }));
         });
     },
-    [cwd, scope, ignoreWhitespace, appSessionId],
+    [cwd, scope, ignoreWhitespace, appSessionId, revision],
   );
 
   return { entries, ensure };

@@ -9,13 +9,14 @@ export interface ReviewDiffState {
   base: string | null;
   loadingList: boolean;
   signature: string;
+  revision: number;
   refresh: () => void;
 }
 
 // Drives the Review tab's file list, kept fresh with light polling so the view
 // tracks the agent's edits. Per-file diffs are loaded lazily by
 // useReviewFileDiffs when a section is expanded, so this hook only owns the
-// list and a content signature consumers use to invalidate cached diffs.
+// list structure and a revision for lazy patch revalidation.
 export function useReviewDiff(
   cwd: string,
   scope: DiffScope,
@@ -25,6 +26,7 @@ export function useReviewDiff(
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [base, setBase] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
+  const [revision, setRevision] = useState(0);
   const listReq = useRef(0);
   // In-flight flag: poll ticks consult this so a tick that fires while the
   // previous load is still pending is skipped (no stacked git subprocesses).
@@ -64,6 +66,7 @@ export function useReviewDiff(
         // stay stable across idle polls.
         setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(res.files) ? prev : res.files));
         setBase(res.base);
+        setRevision((prev) => prev + 1);
         loadedKey.current = key;
         inFlight.current = false;
         if (isFirstLoad) setLoadingList(false);
@@ -97,8 +100,7 @@ export function useReviewDiff(
     };
   }, [loadList, enabled]);
 
-  // Changes only when a file's identity or line counts change, so an idle poll
-  // that returns the same list never invalidates the open sections' diffs.
+  // Structural identity stays independent of patch freshness.
   const signature = useMemo(
     () =>
       files
@@ -115,5 +117,12 @@ export function useReviewDiff(
   const listKey = `${cwd}|${scope}|${appSessionId ?? ''}`;
   const listSettled = !enabled || !cwd || loadedKey.current === listKey;
 
-  return { files, base, loadingList: loadingList || !listSettled, signature, refresh: loadList };
+  return {
+    files,
+    base,
+    loadingList: loadingList || !listSettled,
+    signature,
+    revision,
+    refresh: loadList,
+  };
 }
