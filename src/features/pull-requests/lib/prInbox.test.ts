@@ -10,7 +10,6 @@ import {
   prInboxEmptyCopy,
   searchPullRequests,
   selectedInboxPullRequest,
-  shouldShowPrInboxEmpty,
   type InboxPullRequest,
 } from './prInbox';
 import { prBacklogId } from './prBacklog';
@@ -195,12 +194,6 @@ test('inboxGroupIsExpanded keeps the current repo open and others closed', () =>
   // Selecting a pull request in another workspace, or searching, opens it.
   assert.equal(expanded('/site', '/site'), true);
   assert.equal(expanded('/site', '/app', true), true);
-});
-
-test('an initial list failure does not also claim the repository is empty', () => {
-  assert.equal(shouldShowPrInboxEmpty('Could not load pull requests', 0), false);
-  assert.equal(shouldShowPrInboxEmpty(null, 0), true);
-  assert.equal(shouldShowPrInboxEmpty(null, 2), false);
 });
 
 test('a query with no matches uses search-specific empty copy', () => {

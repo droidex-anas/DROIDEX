@@ -156,7 +156,3 @@ export function prInboxEmptyCopy(tab: PrInboxTab, query: string, multiRepo = fal
   if (tab === 'all' && multiRepo) return 'No open pull requests in these workspaces.';
   return EMPTY_COPY[tab];
 }
-
-export function shouldShowPrInboxEmpty(error: string | null, count: number): boolean {
-  return !error && count === 0;
-}
