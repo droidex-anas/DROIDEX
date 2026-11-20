@@ -32,7 +32,7 @@ DROIDEX is an Electron desktop application that allows users to run Factory Droi
 | Electron Main (`main.cjs`, `*Ipc.cjs`, `mainWindow.cjs`) | IPC handlers, window/browser/terminal lifecycle, credentials | HIGH | ~60 IPC channels, `<webview>` guest binding and navigation, `executeJavaScript`, child process spawn |
 | Main Preload (`preload.cjs`) | contextBridge API for renderer | MEDIUM | ~50 exposed methods, IPC message construction |
 | Native Browser Preload (`nativeBrowserPreload.cjs`) | Agent bridge inside untrusted pages | HIGH | Runs in arbitrary web page context with full Node access (sandbox:false) |
-| Files Module (`electron/files.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
+| Files Module (`electron/files.cjs`, `electron/filesPathSecurity.cjs`) | Root-confined file preview/open/reveal | HIGH | Path traversal, symlink escape, TOCTOU, binary parsing |
 | Terminal Module (`electron/terminal.cjs`) | PTY spawn and management | HIGH | Shell selection, args override, cwd, env leak, raw keystroke forwarding |
 | Git Modules (`electron/git*.cjs`) | Git CLI orchestration | MEDIUM | Branch/ref names, option injection, arbitrary repo paths |
 | GitHub Module (`electron/github.cjs`) | `gh` CLI orchestration | MEDIUM | PR numbers, free-text bodies, repo paths |
@@ -44,7 +44,7 @@ DROIDEX is an Electron desktop application that allows users to run Factory Droi
 
 ### Data Flow
 
-When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `files.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld`, and the agent gets back only the page's usual outcome, never the credential.
+When a user creates a mission, the renderer sends a `mission.create` command (with `goal`, `title`, `cwd`) over the loopback WebSocket to the sidecar. The sidecar's `MissionManager` spawns a Droid CLI child process via `createDroidTransport` and registers an MCP tool catalog. User messages flow renderer -> preload -> WebSocket -> sidecar -> Droid SDK. Agent responses stream back the same path. When the agent invokes a browser tool, the sidecar's `BrowserSessionManager` issues a `BrowserNativeRequest` over the private IPC channel the main process spawned it with, and the Electron main process drives that chat's `<webview>` guest: agent input goes through CDP (the guest's debugger), and the native browser preload's helpers run through `executeJavaScriptInIsolatedWorld` (`electron/browserPageScript.cjs`), out of reach of the page's own scripts. File operations are initiated by the user through the Files tab, which first calls `filesAuthorizeRoot(root)` to obtain a token, then issues relative-path-only operations that are validated by a multi-layer confinement system in `filesPathSecurity.cjs`. Terminal keystrokes flow from the xterm.js renderer -> preload -> `terminalWrite` IPC -> node-pty spawn. Credentials (FACTORY_API_KEY, browser logins) are encrypted via `safeStorage` (OS keychain) in the main process and are never returned to the renderer in plaintext; the agent-blinded autofill model passes values to the preload's fill helper through `executeJavaScriptInIsolatedWorld`, and the agent gets back only the page's usual outcome, never the credential.
 
 ---
 
@@ -105,7 +105,7 @@ The app has no traditional user authentication; it is a single-user desktop appl
 
 - `contextIsolation: true` + `nodeIntegration: false` on all windows/views
 - `safeStorage` encryption for FACTORY_API_KEY and browser credentials (OS keychain)
-- Multi-layer path confinement in `files.cjs` (lexical + realpath + symlink-walk + TOCTOU + token gate)
+- Multi-layer path confinement in `filesPathSecurity.cjs` (lexical + realpath + symlink-walk + TOCTOU + token gate)
 - Array-form `execFile`/`spawn` everywhere (no shell-form `exec`)
 - Agent-blind credential model (values injected in the preload's isolated world; the agent gets only the page's usual outcome)
 - `setDevicePermissionHandler(() => false)` blocks WebHID/WebUSB
@@ -1186,7 +1186,7 @@ desktopIpc.handle('list-files', ({ dir }) => listFiles(dir)); // arbitrary direc
 validateUrl('file:///etc/passwd'); // passes -- file: is allowed
 
 // SAFE ALTERNATIVE (mission-scoped files-* handlers use this): Multi-layer confinement
-// Found in: electron/files.cjs
+// Found in: electron/filesPathSecurity.cjs
 // Layer 1: validateRelative (lexical check, rejects absolute + ../)
 // Layer 2: resolveWithin (realpath comparison)
 // Layer 3: assertNoSymlinkEscape (symlink walk)
@@ -1366,7 +1366,7 @@ const ALLOWED = ['http:', 'https:', 'about:'];
 // Audit the actual regex for catastrophic backtracking potential
 
 // PATTERN 2: Safe regex patterns (already used in the codebase)
-// electron/files.cjs escape detection uses simple char-code checks (no regex)
+// electron/filesPathSecurity.cjs escape detection uses simple char-code checks (no regex)
 // src/lib/browserViewport.ts normalizeUrl uses simple prefix tests (no backtracking)
 
 // SAFE ALTERNATIVE: Use safe-regex or validate regex complexity
@@ -1397,7 +1397,7 @@ Human review is required for:
 - CRITICAL/HIGH findings from `commit-security-scan`
 - All main-process IPC handler changes, regardless of filename: entrypoint wiring, focused registrars, and service owners such as `appUpdater.cjs`, `sidecar.cjs`, and `usageAnalytics.cjs`. Review sender authorization (`desktopIpc.handle` or explicit raw-handler checks) separately from payload validation and file-root confinement.
 - Changes to `electron/nativeBrowserPreload.cjs` (high-risk preload in untrusted context)
-- Changes to `electron/files.cjs` path confinement logic
+- Changes to `electron/filesPathSecurity.cjs` path confinement logic
 - Changes to `sidecar/src/index.ts` WebSocket auth
 - Changes to credential handling (`safeStorage`, API key, browser credentials)
 - Changes to `dangerouslySetInnerHTML` usage or markdown rendering pipeline
