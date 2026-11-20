@@ -593,6 +593,7 @@ export function hydrateHistoricalSession(
   const chain = resolveSessionChain(appSessionId, appSessionId);
   const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
 
+  // Older pages only extend the orchestrator scrollback; progress was already delivered with the newest page.
   if (opts.cursor) {
     return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
   }
