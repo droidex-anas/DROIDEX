@@ -264,6 +264,10 @@ test('/spec, /fast and /side stay app-owned and target the current chat', async 
   finishFirstTurn();
   await expect(page.getByRole('button', { name: 'Stop turn' })).not.toBeVisible();
 
+  await composer.fill('/');
+  await expect(page.getByText('spec', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button').filter({ hasText: 'compact' })).toHaveCount(0);
+
   await composer.fill('/spec');
   await page.getByText('spec', { exact: true }).click();
   await expect(page.getByText('SPEC MODE', { exact: true })).toBeVisible();
@@ -291,7 +295,11 @@ test('/spec, /fast and /side stay app-owned and target the current chat', async 
     ['/fast on', true],
   ] as const) {
     await composer.fill(command);
-    await composer.press('Enter');
+    if (command === '/fast') {
+      await page.getByRole('button', { name: 'Send prompt', exact: true }).click();
+    } else {
+      await composer.press('Enter');
+    }
     await expect(composer).not.toContainText(command);
     await expect
       .poll(() => commands.filter((entry) => entry.type === 'session.updateSettings').at(-1))

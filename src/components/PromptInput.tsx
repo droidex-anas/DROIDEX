@@ -643,17 +643,26 @@ export default function PromptInput({
     requestedAt: number;
   } | null>(null);
 
-  const { slashCommands, openSideChat, appFastCommand, fastMode } = useComposerSlashCommands({
+  const { slashCommands, openSideChat, findFastCommand, fastMode } = useComposerSlashCommands({
     appSessionId,
-    activeSession,
+    activeSessionId: activeSession?.appSessionId ?? null,
+    canToggleSessionSpec: activeSession?.sessionPurpose !== 'mission-control',
     composerProvider,
     isSpecMode,
     draftingProject,
     primaryActionsEnabled,
-    setVisualizeSelected,
-    setFeedbackReport,
-    showModels,
-    setUsageOpen,
+    selectVisualize: () => {
+      setVisualizeSelected(true);
+    },
+    openFeedbackReport: (category) => {
+      setFeedbackReport({ category, description: '' });
+    },
+    openModels: () => {
+      showModels(true);
+    },
+    openUsage: () => {
+      setUsageOpen(true);
+    },
   });
 
   // Typing, and every edit that behaves like typing, leaves history recall.
@@ -1188,7 +1197,7 @@ export default function PromptInput({
             setUsageOpen(true);
           },
           runFastCommand: (text) => {
-            const command = appFastCommand(text);
+            const command = findFastCommand(text);
             if (!command) return false;
             command.run();
             return true;
@@ -1261,7 +1270,7 @@ export default function PromptInput({
       }
       if (
         input.trim() === USAGE_COMMAND ||
-        appFastCommand(input.trim()) !== undefined ||
+        findFastCommand(input.trim()) !== undefined ||
         runsAsCompactCommand(text, {
           visualizeSelected,
           skillCount: skills.length,

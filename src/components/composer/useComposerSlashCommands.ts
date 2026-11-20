@@ -1,4 +1,4 @@
-import type { ProviderKind, SessionSummary } from '@droidex/protocol';
+import type { ProviderKind } from '@droidex/protocol';
 import {
   Bug,
   FoldVertical,
@@ -14,7 +14,7 @@ import { useStoreDispatch } from '../../hooks/useStore';
 import useFastMode from '../../hooks/useFastMode';
 import { compactSession, updateSessionSettings } from '../../lib/commands';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
-import type { FeedbackReportRequest } from '../../lib/desktop';
+import type { FeedbackCategory } from '../../lib/desktop';
 import { FAST_MODE_HINT, offersFastMode } from '../../lib/fastMode';
 import { toast } from '../../lib/toast';
 import { supportsSpecMode } from '../../features/providers/providerIdentity';
@@ -29,26 +29,28 @@ const DROID_ONLY_COMMANDS = new Set(['/compact']);
 
 export function useComposerSlashCommands({
   appSessionId,
-  activeSession,
+  activeSessionId,
+  canToggleSessionSpec,
   composerProvider,
   isSpecMode,
   draftingProject,
   primaryActionsEnabled,
-  setVisualizeSelected,
-  setFeedbackReport,
-  showModels,
-  setUsageOpen,
+  selectVisualize,
+  openFeedbackReport,
+  openModels,
+  openUsage,
 }: {
   appSessionId: string | null;
-  activeSession: SessionSummary | null | undefined;
+  activeSessionId: string | null;
+  canToggleSessionSpec: boolean;
   composerProvider: ProviderKind;
   isSpecMode: boolean;
   draftingProject: boolean;
   primaryActionsEnabled: boolean;
-  setVisualizeSelected: (selected: boolean) => void;
-  setFeedbackReport: (report: Pick<FeedbackReportRequest, 'category' | 'description'>) => void;
-  showModels: (open: boolean) => void;
-  setUsageOpen: (open: boolean) => void;
+  selectVisualize: () => void;
+  openFeedbackReport: (category: FeedbackCategory) => void;
+  openModels: () => void;
+  openUsage: () => void;
 }) {
   const dispatch = useStoreDispatch();
   const askSideChat = useAskSideChat();
@@ -59,17 +61,17 @@ export function useComposerSlashCommands({
   // Toggle spec mode. When a live chat session exists, switch its interaction
   // mode for real (not just the compose flag used for brand-new chats).
   const toggleSpec = () => {
-    if (activeSession && activeSession.sessionPurpose !== 'mission-control') {
+    if (activeSessionId !== null && canToggleSessionSpec) {
       // Existing live chat: flip the session's real interaction mode and
       // optimistically update its interaction mode so the toggle reflects immediately.
       const turningOn = !isSpecMode;
       dispatch({
         type: 'SESSION_SET_INTERACTION_MODE',
-        appSessionId: activeSession.appSessionId,
+        appSessionId: activeSessionId,
         interactionMode: turningOn ? 'spec' : 'auto',
       });
       updateSessionSettings({
-        appSessionId: activeSession.appSessionId,
+        appSessionId: activeSessionId,
         interactionMode: turningOn ? 'spec' : 'auto',
       });
     } else {
@@ -81,14 +83,14 @@ export function useComposerSlashCommands({
   // `/side` with nothing after it opens the session's side chat; with a
   // question it starts a new one in its place.
   const openSideChat = (prompt: string): boolean => {
-    if (!activeSession) {
+    if (activeSessionId === null) {
       toast.info('Open a chat to ask a side question about it.');
       return false;
     }
-    if (prompt) return askSideChat(activeSession.appSessionId, prompt);
+    if (prompt) return askSideChat(activeSessionId, prompt);
     dispatch({
       type: 'SHOW_SIDE_CHAT',
-      sourceAppSessionId: activeSession.appSessionId,
+      sourceAppSessionId: activeSessionId,
       view: { kind: 'current' },
     });
     return true;
@@ -98,16 +100,14 @@ export function useComposerSlashCommands({
     {
       ...VISUALIZE_COMMAND,
       icon: VisualizeIcon,
-      run: () => {
-        setVisualizeSelected(true);
-      },
+      run: selectVisualize,
     },
     {
       cmd: '/bug',
       desc: 'Send a private bug report',
       icon: Bug,
       run: () => {
-        setFeedbackReport({ category: 'bug', description: '' });
+        openFeedbackReport('bug');
       },
     },
     {
@@ -115,7 +115,7 @@ export function useComposerSlashCommands({
       desc: 'Share private product feedback',
       icon: MessageSquareText,
       run: () => {
-        setFeedbackReport({ category: 'other', description: '' });
+        openFeedbackReport('other');
       },
     },
     ...['/side', '/btw'].map((cmd) => ({
@@ -130,25 +130,21 @@ export function useComposerSlashCommands({
       cmd: '/model',
       desc: 'Open model selector',
       icon: Models,
-      run: () => {
-        showModels(true);
-      },
+      run: openModels,
     },
     {
       cmd: '/compact',
       desc: 'Compact current session',
       icon: FoldVertical,
       run: () => {
-        if (primaryActionsEnabled && activeSession) compactSession(activeSession.appSessionId);
+        if (primaryActionsEnabled && activeSessionId !== null) compactSession(activeSessionId);
       },
     },
     {
       cmd: '/spec',
       desc: 'Toggle spec mode',
       icon: ListTodo,
-      run: () => {
-        toggleSpec();
-      },
+      run: toggleSpec,
     },
     {
       cmd: '/settings',
@@ -163,9 +159,7 @@ export function useComposerSlashCommands({
       desc: 'Show usage limits',
       icon: Gauge,
       supersedesHarnessCommand: true,
-      run: () => {
-        setUsageOpen(true);
-      },
+      run: openUsage,
     },
     {
       cmd: '/fast',
@@ -201,8 +195,8 @@ export function useComposerSlashCommands({
   });
 
   // /fast, /fast on or /fast off, when this harness offers fast mode.
-  const appFastCommand = (text: string) =>
+  const findFastCommand = (text: string) =>
     slashCommands.find((command) => command.cmd.startsWith('/fast') && command.cmd === text);
 
-  return { slashCommands, openSideChat, appFastCommand, fastMode };
+  return { slashCommands, openSideChat, findFastCommand, fastMode };
 }
