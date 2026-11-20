@@ -41,13 +41,14 @@ export interface DiffFile {
 export interface DiffFileList {
   mode: DiffScope;
   base: string | null;
-  files: DiffFile[];
+  files: (DiffFile & { fingerprint: string })[];
 }
 
 export interface FileDiffResult {
   path: string | null;
   diff: string;
   binary: boolean;
+  failed?: true;
 }
 
 export interface GitEnvironment {

@@ -1,6 +1,6 @@
-import { memo, useCallback } from 'react';
+import { memo, useCallback, type ReactElement } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { AlertTriangle, Spinner } from '@droidex/icons';
 import { AnimatePresence, motion } from 'framer-motion';
 import { DiffBody } from './DiffBody';
 import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
@@ -8,6 +8,41 @@ import type { FileDiffEntry } from '../../hooks/useReviewFileDiffs';
 import type { DiffFile } from '../../types/vcs';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { displayPath } from '../../lib/pathDisplay';
+import { Row } from '../ui/Row';
+
+function DiffFileContent({
+  entry,
+  binary,
+  view,
+  wrap,
+}: {
+  entry: FileDiffEntry | undefined;
+  binary: boolean;
+  view: DiffViewMode;
+  wrap: boolean;
+}): ReactElement {
+  switch (entry?.status) {
+    case undefined:
+    case 'loading':
+      return (
+        <div className="flex items-center gap-2 px-4 py-3 text-caption text-muted">
+          <Spinner className="size-icon-sm motion-safe:animate-spin-slow" /> Loading diff…
+        </div>
+      );
+    case 'failed':
+      return (
+        <div className="px-2 py-1">
+          <Row
+            role="status"
+            icon={<AlertTriangle className="size-icon-sm text-warning" />}
+            label="Couldn't load diff"
+          />
+        </div>
+      );
+    case 'loaded':
+      return <DiffBody diff={entry.diff} view={view} binary={binary || entry.binary} wrap={wrap} />;
+  }
+}
 
 // One collapsible file in the Review tab: a sticky header (type, path, line
 // counts) that toggles the file's diff. The diff is fetched lazily the first
@@ -94,18 +129,7 @@ export const DiffFileSection = memo(function DiffFileSection({
             exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            {entry?.loaded ? (
-              <DiffBody
-                diff={entry.diff}
-                view={view}
-                binary={file.binary || entry.binary}
-                wrap={wrap}
-              />
-            ) : (
-              <div className="flex items-center gap-2 px-4 py-3 text-caption text-muted">
-                <Spinner className="size-icon-sm motion-safe:animate-spin-slow" /> Loading diff…
-              </div>
-            )}
+            <DiffFileContent entry={entry} binary={file.binary} view={view} wrap={wrap} />
           </motion.div>
         )}
       </AnimatePresence>

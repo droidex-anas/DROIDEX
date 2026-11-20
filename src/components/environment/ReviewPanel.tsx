@@ -272,7 +272,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     cwd,
     reviewState.reviewScope,
     hideWhitespace,
-    review.signature,
+    review.fileSignatures,
     appSessionId,
   );
   const git = useGitEnvironment(cwd, 'worktree');
@@ -359,11 +359,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     if (idx >= 0) setRenderLimit((cur) => (idx < cur ? cur : idx + FILE_RENDER_JUMP_BUFFER));
   }, [activePath, review.signature]);
 
-  // Fetch the diff for every open section that is actually rendered; ensure()
-  // is a no-op for diffs already loaded this generation, so this only does
-  // work for freshly opened files or after the signature invalidates the
-  // cache. Sections past the render cap fetch lazily when revealed, but the
-  // active file is always fetched so Copy patch reflects the current generation.
+  // Revalidate visible sections and the active file used by Copy patch.
   useEffect(() => {
     const visible = new Set(review.files.slice(0, renderLimit).map((f) => f.path));
     expanded.forEach((p) => {

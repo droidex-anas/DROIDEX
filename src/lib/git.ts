@@ -93,7 +93,7 @@ export async function getGitFileDiff(
       appSessionId,
     });
   } catch {
-    return { path, diff: '', binary: false };
+    return { path, diff: '', binary: false, failed: true };
   }
 }
 

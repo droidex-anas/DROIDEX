@@ -346,6 +346,78 @@ test('uncommitted file entries all render a current diff', async () => {
   }
 });
 
+for (const mode of [
+  'unstaged',
+  'staged',
+  'uncommitted',
+  'worktree',
+  'branch',
+  'commit',
+  'last_turn',
+]) {
+  test(`${mode} fingerprints track same-count scoped changes and stay stable on idle reads`, async () => {
+    const dir = await makeRepo();
+    await write(dir, 'example.txt', 'original\n');
+    await commitAll(dir, 'base');
+    await git(dir, ['remote', 'add', 'origin', 'https://example.com/repo.git']);
+    await git(dir, ['update-ref', 'refs/remotes/origin/main', 'HEAD']);
+    await git(dir, ['checkout', '-qb', 'feature']);
+    if (mode === 'last_turn') await markTurnStart(dir, 'session');
+    await write(dir, 'example.txt', 'change-A\n');
+    if (mode === 'staged') await git(dir, ['add', 'example.txt']);
+    if (mode === 'branch' || mode === 'commit') await commitAll(dir, 'change A');
+    const options = { mode, appSessionId: 'session' };
+    const first = (await diffFiles(dir, options)).files.find((file) => file.path === 'example.txt');
+    assert.ok(first?.fingerprint);
+    assert.deepEqual(
+      (await diffFiles(dir, options)).files.find((file) => file.path === 'example.txt'),
+      first,
+    );
+    await write(dir, 'example.txt', 'change-B\n');
+    if (mode === 'staged' || mode === 'branch' || mode === 'commit') {
+      const unstaged = (await diffFiles(dir, options)).files.find(
+        (file) => file.path === 'example.txt',
+      );
+      assert.equal(
+        unstaged.fingerprint,
+        first.fingerprint,
+        'unstaged edits must not invalidate immutable scopes',
+      );
+      if (mode === 'staged') await git(dir, ['add', 'example.txt']);
+      else await commitAll(dir, 'change B');
+    }
+    const next = (await diffFiles(dir, options)).files.find((file) => file.path === 'example.txt');
+    assert.equal(next.additions, first.additions);
+    assert.equal(next.deletions, first.deletions);
+    assert.notEqual(next.fingerprint, first.fingerprint);
+    assert.match((await fileDiff(dir, { ...options, path: 'example.txt' })).diff, /\+change-B/);
+  });
+}
+
+test('deleted-file fingerprints follow HEAD even when the worktree file stays absent', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'example.txt', 'change-A\n');
+  await commitAll(dir, 'first');
+  await fsp.rm(path.join(dir, 'example.txt'));
+  const first = (await diffFiles(dir, { mode: 'uncommitted' })).files[0];
+  await write(dir, 'example.txt', 'change-B\n');
+  await commitAll(dir, 'second');
+  await fsp.rm(path.join(dir, 'example.txt'));
+  const next = (await diffFiles(dir, { mode: 'uncommitted' })).files[0];
+  assert.equal(next.deletions, first.deletions);
+  assert.notEqual(next.fingerprint, first.fingerprint);
+});
+
+test('fileDiff rejects a Git failure instead of reporting a successful empty patch', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'example.txt', 'original\n');
+  await write(dir, '.gitattributes', 'example.txt diff=broken\n');
+  await commitAll(dir, 'base');
+  await git(dir, ['config', 'diff.broken.command', `"${process.execPath}" -e "process.exit(2)"`]);
+  await write(dir, 'example.txt', 'changed\n');
+  await assert.rejects(fileDiff(dir, { mode: 'unstaged', path: 'example.txt' }), /Command failed/);
+});
+
 test('repoStatus counts what the repository line shows, and is null outside one', async () => {
   const dir = await makeRepo();
   await write(dir, 'tracked.txt', 'one\n');

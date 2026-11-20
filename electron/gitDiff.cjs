@@ -1,6 +1,7 @@
 const path = require('node:path');
 const os = require('node:os');
 const fsp = require('node:fs/promises');
+const { createHash } = require('node:crypto');
 const { run, runSoft, tryRun } = require('./gitCommand.cjs');
 const { isWithin, repoRootOf, cachedRead, setRepoCache } = require('./gitRepository.cjs');
 const { effectiveBaseRef } = require('./gitEnvironment.cjs');
@@ -186,14 +187,14 @@ function parseNameStatusZ(out) {
   return rows;
 }
 
-function parseDiffFileList(numstatOut, nameStatusOut) {
+function parseDiffFileList(numstatOut, rows) {
   // Both inputs are NUL-delimited (`-z`), so paths are emitted verbatim with no
   // shell-style quoting — this is what lets Review open files whose names would
-  // otherwise be git-quoted (spaces, unicode, control chars). name-status is
-  // authoritative for statuses and post-rename paths.
+  // otherwise be git-quoted (spaces, unicode, control chars). Raw metadata owns
+  // statuses and post-rename paths.
   const files = [];
   const byPath = new Map();
-  for (const { status, path: target } of parseNameStatusZ(nameStatusOut)) {
+  for (const { status, path: target } of rows) {
     if (!target) continue;
     const file = {
       path: target,
@@ -224,6 +225,19 @@ function parseDiffFileList(numstatOut, nameStatusOut) {
     }
   }
   return files;
+}
+
+function parseRawZ(out) {
+  const tokens = splitNul(out);
+  const rows = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const header = tokens[i];
+    const status = header.slice(header.lastIndexOf(' ') + 1);
+    const from = tokens[++i];
+    const target = /^[RC]/.test(status) ? tokens[++i] : from;
+    rows.push({ status, path: target, identity: `${header}\0${from}` });
+  }
+  return rows;
 }
 
 async function untrackedFileList(root) {
@@ -294,11 +308,13 @@ async function diffFiles(dir, options = {}) {
     priorUntrackedNames,
   } = await scopeRange(root, scope, options.appSessionId);
   if (!args) return { mode: scope, base: null, files: [] };
-  const [numstat, nameStatus] = await Promise.all([
+  const [numstat, raw] = await Promise.all([
     runSoft(root, ['diff', ...args, '--numstat', '-z']).catch(() => ''),
-    runSoft(root, ['diff', ...args, '--name-status', '-z']).catch(() => ''),
+    runSoft(root, ['diff', ...args, '--raw', '--no-abbrev', '-z']).catch(() => ''),
   ]);
-  const files = parseDiffFileList(numstat, nameStatus);
+  const rows = parseRawZ(raw);
+  const identities = new Map(rows.map((row) => [row.path, row.identity]));
+  const files = parseDiffFileList(numstat, rows);
   if (includeUntracked) {
     for (const u of await untrackedFileList(root)) {
       if (priorUntracked) {
@@ -329,6 +345,21 @@ async function diffFiles(dir, options = {}) {
       }
     }
   }
+  const readsWorktree = !['staged', 'branch', 'commit'].includes(scope);
+  await Promise.all(
+    files.map(async (file) => {
+      // Raw metadata supplies both scoped blob IDs, modes and rename source.
+      // Only working-tree scopes also depend on the live file's metadata.
+      const hash = createHash('sha256').update(identities.get(file.path) ?? 'untracked');
+      if (readsWorktree) {
+        const stat = await fsp
+          .lstat(path.join(root, file.path), { bigint: true })
+          .catch(() => null);
+        hash.update(stat ? `${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}:${stat.mode}` : 'missing');
+      }
+      file.fingerprint = hash.digest('hex');
+    }),
+  );
   files.sort((a, b) => a.path.localeCompare(b.path));
   return { mode: scope, base: base || null, files };
 }
@@ -360,7 +391,7 @@ async function fileDiff(dir, options = {}) {
   // with rename detection on so the rename/edit hunk shows instead.
   const renameOld = await renameSource(root, args, file);
   const pathSpec = renameOld ? ['-M', '--', renameOld, file] : ['--', file];
-  let out = await runSoft(root, ['diff', ...ws, ...args, ...pathSpec]).catch(() => '');
+  let out = await runSoft(root, ['diff', ...ws, ...args, ...pathSpec]);
   // Untracked files (incl. preexisting ones the agent edited) have no tree-side
   // to diff against, so render their full current content via --no-index. Gate
   // this on the file actually being untracked: with -w a tracked file can yield
@@ -370,9 +401,7 @@ async function fileDiff(dir, options = {}) {
       .then(() => true)
       .catch(() => false);
     if (!tracked) {
-      out = await runSoft(root, ['diff', ...ws, '--no-index', '--', os.devNull, file]).catch(
-        () => '',
-      );
+      out = await runSoft(root, ['diff', ...ws, '--no-index', '--', os.devNull, file]);
     }
   }
   return { path: file, diff: out, binary: /^Binary files /m.test(out) };
