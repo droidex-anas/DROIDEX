@@ -24,7 +24,7 @@ import {
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
 import { getApiKey, isRemoteClient, terminalHasChildren } from './lib/desktop';
-import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
+import { hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
@@ -38,6 +38,7 @@ import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
+import { useAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
 import { useThemeSync } from './hooks/useThemeSync';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
@@ -47,16 +48,7 @@ import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome'
 import { HeaderTabs } from './features/tabs/HeaderTabs';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import { DesignDropTarget } from './features/tabs/DesignDropTarget';
-import {
-  activeGrid,
-  activeProduct,
-  adjacentTabId,
-  mainRowLeadPx,
-  numberedTabId,
-  showsTabStrip,
-  type TabAction,
-} from './features/tabs/tabStrip';
-import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGrid';
+import { activeGrid, activeProduct, mainRowLeadPx, showsTabStrip } from './features/tabs/tabStrip';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
@@ -70,19 +62,7 @@ import {
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
-import {
-  isTerminalInputTarget,
-  isTerminalTabShortcut,
-  utilityToolShortcut,
-} from './lib/keyboardShortcuts';
-import {
-  SHORTCUT_DEFINITIONS,
-  formatChord,
-  matchesChord,
-  nativeBrowserChords,
-  tabNumberFromEvent,
-  type ShortcutAction,
-} from './lib/shortcuts';
+import { formatChord } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
@@ -685,118 +665,12 @@ export default function App() {
     openChild(selection.parentAppSessionId, selection.childSessionId, requestId);
   }, [activeSession, embedded, state.selectedChild, state.childAccess, dispatch]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    // An embedded copy of the app shows no tabs, so it leaves their chords to
-    // whatever hosts it instead of swallowing them.
-    const tabAction = (action: () => TabAction | null) =>
-      embedded
-        ? null
-        : () => {
-            const next = action();
-            if (next) dispatch(next);
-          };
-    const tabStrip = () => store.getState().tabStrip;
-    const splitNewChat = (preferred: TileEdge) =>
-      tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        const split = grid ? nextSplit(grid, preferred) : null;
-        return {
-          type: 'SPLIT_TILE',
-          targetTileId: split?.targetTileId ?? null,
-          edge: split?.edge ?? preferred,
-          appSessionId: null,
-        };
-      });
-    const focusAdjacentTile = (offset: 1 | -1) =>
-      tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        return grid ? { type: 'FOCUS_TILE', tileId: adjacentTileId(grid, offset) } : null;
-      });
-    const run: Record<ShortcutAction, (() => void) | null> = {
-      toggleSidebar: () => {
-        dispatch({ type: 'TOGGLE_SIDEBAR' });
-      },
-      toggleUtilityPane,
-      toggleProduct: isRemoteClient()
-        ? null
-        : () => {
-            const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
-            dispatch({ type: 'SET_PRODUCT_MODE', mode });
-          },
-      openCommandPalette: () => {
-        dispatch({ type: 'TOGGLE_COMMAND_PALETTE' });
-      },
-      openSettings: () => {
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-      },
-      newTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) })),
-      newDesignTab: isRemoteClient()
-        ? null
-        : tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
-      closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
-      reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
-      nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
-      previousTab: tabAction(() => ({
-        type: 'ACTIVATE_TAB',
-        tabId: adjacentTabId(tabStrip(), -1),
-      })),
-      splitRight: splitNewChat('right'),
-      splitDown: splitNewChat('bottom'),
-      nextTile: focusAdjacentTile(1),
-      previousTile: focusAdjacentTile(-1),
-      closeTile: tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        return grid ? { type: 'CLOSE_TILE', tileId: grid.focusedTileId } : null;
-      }),
-    };
-    const handler = (e: KeyboardEvent) => {
-      // A saved binding wins over the fixed chords below, so rebinding an
-      // action onto one of them takes effect instead of being swallowed.
-      for (const { action } of SHORTCUT_DEFINITIONS) {
-        const perform = run[action];
-        if (!perform || !matchesChord(e, state.shortcutBindings[action])) continue;
-        // A shell owns its Ctrl chords (Ctrl+\ is SIGQUIT); Cmd chords never
-        // reach it, so on macOS they still toggle from inside the terminal.
-        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
-        e.preventDefault();
-        // A held key auto-repeats and would toggle straight back.
-        if (e.repeat) return;
-        perform();
-        return;
-      }
-      const tabNumber = embedded ? null : tabNumberFromEvent(e);
-      if (tabNumber !== null) {
-        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
-        e.preventDefault();
-        const tabId = numberedTabId(tabStrip(), tabNumber);
-        if (tabId) dispatch({ type: 'ACTIVATE_TAB', tabId });
-        return;
-      }
-      if (isTerminalTabShortcut(e)) {
-        if (isTerminalInputTarget(e.target)) return;
-        e.preventDefault();
-        if (e.repeat) return;
-        openUtilityTool('terminal');
-        return;
-      }
-      const tool = utilityToolShortcut(e);
-      if (tool) {
-        e.preventDefault();
-        openUtilityTool(tool);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    const stopForwarding = embedded
-      ? null
-      : forwardNativeBrowserShortcuts(nativeBrowserChords(state.shortcutBindings), (press) => {
-          handler(new KeyboardEvent('keydown', press));
-        });
-    return () => {
-      window.removeEventListener('keydown', handler);
-      stopForwarding?.();
-    };
-  }, [dispatch, embedded, openUtilityTool, state.shortcutBindings, store, toggleUtilityPane]);
+  useAppKeyboardShortcuts({
+    embedded,
+    shortcutBindings: state.shortcutBindings,
+    openUtilityTool,
+    toggleUtilityPane,
+  });
 
   const setupBlocker =
     !showWizard &&

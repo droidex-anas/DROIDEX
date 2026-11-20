@@ -3,6 +3,8 @@ import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 
+test.use({ video: 'on' });
+
 const session: SessionSummary = {
   appSessionId: 'menu-target',
   provider: 'droid',
@@ -64,6 +66,43 @@ test('loads the DROIDEX shell', async ({ page }) => {
 
   await expect(page).toHaveTitle(/DROIDEX/);
   await expect(page.locator('#root')).toBeVisible();
+});
+
+test.describe('app keyboard shortcuts', () => {
+  test('opens, selects, closes and restores tabs over the mocked bridge', async ({
+    page,
+  }, testInfo) => {
+    await sessionBridge(page, []);
+    await page.goto(appUrl);
+    const primary = await page.evaluate(() =>
+      navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+    );
+    const tabs = page.getByRole('tablist', { name: 'Tabs', exact: true }).getByRole('tab');
+    await expect(page.getByRole('textbox', { name: 'Prompt' })).toBeVisible();
+    await expect(tabs).toHaveCount(0);
+
+    await page.keyboard.press(`${primary}+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+1`);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+Shift+]`);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await expect(tabs.nth(1)).toContainText('Projects');
+    await page.keyboard.press(`${primary}+w`);
+    await expect(tabs).toHaveCount(0);
+    await page.keyboard.press(`${primary}+Shift+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(1)).toContainText('Projects');
+
+    await page.keyboard.press(`${primary}+k`);
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath('shortcuts.png') });
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0);
+  });
 });
 
 // The palette is a centred dialog on the z-dialog layer: its backdrop darkens
