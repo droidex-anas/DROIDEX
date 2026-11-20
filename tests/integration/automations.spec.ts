@@ -219,7 +219,8 @@ async function automationBridge(
   );
   return {
     requests,
-    refresh() {
+    refresh(proposals?: AutomationProposal[]) {
+      if (proposals) snapshot.proposals = proposals;
       emitSnapshot();
     },
     settle(ok: boolean) {
@@ -392,7 +393,7 @@ test.describe('one-time DST-gap schedules', () => {
     };
     const backend = await automationBridge(page, [], [session], {
       now: DST_NOW,
-      proposals: [proposal],
+      proposals: [],
       history: [
         call,
         {
@@ -408,6 +409,12 @@ test.describe('one-time DST-gap schedules', () => {
     await setScheduleTime(card, '02');
     await expect(card.getByRole('alert')).toContainText('does not exist');
     const confirm = card.getByRole('button', { name: 'Confirm automation', exact: true });
+    await expect(confirm).toBeDisabled();
+    backend.refresh([{ ...proposal, draft: { ...draft, title: 'Arrived proposal' } }]);
+    await expect(card.getByRole('textbox', { name: 'Automation title' })).toHaveValue(
+      'Arrived proposal',
+    );
+    await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
     backend.refresh();
     await expect(card.getByRole('alert')).toBeVisible();

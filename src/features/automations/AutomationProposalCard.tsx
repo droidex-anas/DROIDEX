@@ -68,7 +68,7 @@ export function AutomationProposalCard({
   const [invalidInput, setInvalidInput] = useInvalidScheduleInput(
     workingDraft?.schedule,
     workingDraft?.timezone,
-    proposal?.id ?? call.id,
+    call.id,
   );
   const selectedModel = workingDraft?.modelId
     ? models.find((candidate) => candidate.id === workingDraft.modelId)
