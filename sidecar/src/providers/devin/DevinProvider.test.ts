@@ -572,6 +572,7 @@ test('a native child approval stays answerable after the Devin parent turn settl
     getLiveSession: () => live,
     updateSummary: () => undefined,
     setProviderSpecMode: async () => undefined,
+    setAutonomy: async () => true,
     emit: (event) => {
       events.push(event);
     },
