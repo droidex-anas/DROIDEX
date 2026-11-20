@@ -16,7 +16,7 @@ import type * as Protocol from '@droidex/protocol';
 import type { HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
-import { startupFactoryDefaults, validateFactoryDefaults } from './SessionManager.js';
+import { startupFactoryDefaults, validateFactoryDefaults } from './factoryDefaults.js';
 import { assistantTextDelta, FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import {
