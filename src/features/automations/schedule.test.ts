@@ -2,7 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ModelInfo } from '@droidex/protocol';
 import {
+  acceptedCronExpressions,
+  rejectedCronExpressions,
+} from '../../../tests/fixtures/cronCases';
+import {
   automationWorkspaceIssue,
+  cronExpressionIssue,
   defaultAutomationDraft,
   epochFromZonedInput,
   validateAutomationDraft,
@@ -18,6 +23,15 @@ const MODELS: ModelInfo[] = [
     defaultReasoningEffort: 'high',
   },
 ];
+
+test('cron validation accepts the shared grammar and preserves editor error copy', () => {
+  for (const expression of acceptedCronExpressions) {
+    assert.equal(cronExpressionIssue(expression), null, JSON.stringify(expression));
+  }
+  for (const [expression, editorIssue] of rejectedCronExpressions) {
+    assert.equal(cronExpressionIssue(expression), editorIssue, JSON.stringify(expression));
+  }
+});
 
 test('draft validation rejects a past one-time schedule and keeps a catalog-missing custom model', () => {
   const draft = defaultAutomationDraft(null, 'model-a', 'medium');
