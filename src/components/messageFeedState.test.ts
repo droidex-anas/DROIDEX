@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { FeedItem } from './chatFeed';
 import {
-  appendedFeedItemKeys,
   appendedFeedItemKeysFromProjection,
   isCopyableFinalResponse,
   projectFinalResponseKeys,
@@ -25,81 +24,44 @@ function message(id: string, author: 'user' | 'assistant'): FeedItem {
   return { type: 'message', key: id, event: event(id, { author, text: id }) };
 }
 
-// appendedFeedItemKeys decides which rows get the rise-in entrance animation.
-// It must track item identity (not list index) so paging older history — which
-// prepends already-past messages ahead of the visible ones — does not re-animate
-// existing rows or treat the prepend like a fresh append.
-test('appendedFeedItemKeys animates only genuinely appended tail items', () => {
-  const identity = 'm:primary';
-  const keys = (letters: string[]) => letters.map((key) => ({ key }));
-
-  // Genuinely appended items (new keys at the tail) animate.
-  const previous = { identity, keys: new Set(['a', 'b', 'c']) };
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['a', 'b', 'c', 'd', 'e']), previous, identity)],
-    ['e', 'd'],
-  );
-
-  // Paging older history prepends new keys ahead of the existing ones; nothing
-  // re-animates (neither the prepended items nor the already-visible rows).
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['x', 'y', 'a', 'b', 'c']), previous, identity)],
-    [],
-  );
-
-  // Re-rendering with the same keys (e.g. a token streaming into an existing
-  // message) animates nothing.
-  assert.deepEqual([...appendedFeedItemKeys(keys(['a', 'b', 'c']), previous, identity)], []);
-
-  // No previous render (first time a feed is shown) animates nothing.
-  assert.deepEqual([...appendedFeedItemKeys(keys(['a', 'b']), null, identity)], []);
-
-  // A different feed identity (switched sessions/child) animates nothing.
-  assert.deepEqual(
-    [
-      ...appendedFeedItemKeys(
-        keys(['a', 'b', 'd']),
-        { identity: 'other', keys: new Set(['a']) },
-        identity,
-      ),
-    ],
-    [],
-  );
-
-  // A newly appended item preceded by a fresh prepend animates only the tail.
-  assert.deepEqual(
-    [...appendedFeedItemKeys(keys(['x', 'a', 'b', 'c', 'd']), previous, identity)],
-    ['d'],
-  );
-});
-
-test('projected entrance keys inspect only the rebuilt feed suffix', () => {
+// Entrance keys decide which rows get the rise-in animation. They track item
+// identity (not list index) so paging older history, a re-render of the same
+// rows, or a switched feed never re-animates existing rows.
+test('projected entrance keys animate only genuinely appended tail items', () => {
   const identity = 'm:primary';
   const items = (keys: string[]) => keys.map((key) => ({ key }));
   const previous = { identity, items: items(['old-1', 'old-2', 'turn', 'tail']) };
+  const entranceKeys = (
+    keys: string[],
+    updateKind: 'full' | 'append' | 'prepend',
+    rebuiltFromItemIndex: number,
+    from: typeof previous | null = previous,
+  ) => [
+    ...appendedFeedItemKeysFromProjection(
+      items(keys),
+      from,
+      identity,
+      updateKind,
+      rebuiltFromItemIndex,
+    ),
+  ];
 
+  // Appended keys after the rebuilt suffix animate, newest first.
   assert.deepEqual(
-    [
-      ...appendedFeedItemKeysFromProjection(
-        items(['old-1', 'old-2', 'turn', 'tail', 'new-1', 'new-2']),
-        previous,
-        identity,
-        'append',
-        2,
-      ),
-    ],
+    entranceKeys(['old-1', 'old-2', 'turn', 'tail', 'new-1', 'new-2'], 'append', 2),
     ['new-2', 'new-1'],
   );
+  // A rebuilt turn that replaces its own tail row animates only the new row.
+  assert.deepEqual(entranceKeys(['old-1', 'old-2', 'turn', 'reply'], 'append', 2), ['reply']);
+  // Re-rendering the same keys (a token streaming into an existing row) animates nothing.
+  assert.deepEqual(entranceKeys(['old-1', 'old-2', 'turn', 'tail'], 'append', 2), []);
+  // Loading older history leaves the prepended and the already visible rows still.
+  assert.deepEqual(entranceKeys(['older', 'old-1', 'old-2', 'turn', 'tail'], 'prepend', 0), []);
+  // A full rebuild, a first render and a switched feed animate nothing.
+  assert.deepEqual(entranceKeys(['old-1', 'old-2', 'turn', 'tail', 'new-1'], 'full', 0), []);
+  assert.deepEqual(entranceKeys(['old-1', 'new-1'], 'append', 0, null), []);
   assert.deepEqual(
-    [
-      ...appendedFeedItemKeysFromProjection(
-        items(['older', 'old-1', 'old-2', 'turn', 'tail']),
-        previous,
-        identity,
-        'prepend',
-        0,
-      ),
-    ],
+    entranceKeys(['old-1', 'new-1'], 'append', 1, { identity: 'other', items: items(['old-1']) }),
     [],
   );
 });

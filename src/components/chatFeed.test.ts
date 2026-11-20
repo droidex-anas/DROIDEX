@@ -10,7 +10,7 @@ import {
   sameFeedEvents,
   type FeedItem,
 } from './chatFeed';
-import { conversationAnchors, groupTurns } from './chatFeedTurns';
+import { buildGroupedFeed, groupTurns, promptAnchorsFromItems } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
   browserPageOf,
@@ -124,6 +124,10 @@ test('a spoken line stays its own marked row beside the turn it was said in', ()
 });
 
 test('conversation timeline anchors one dot per user prompt', () => {
+  const promptLabels = (events: TranscriptEvent[]) =>
+    promptAnchorsFromItems(buildGroupedFeed(events, false, { childSessionCards: true })).map(
+      (anchor) => anchor.label,
+    );
   const events = [
     userMsg('first question'),
     grep(),
@@ -132,17 +136,10 @@ test('conversation timeline anchors one dot per user prompt', () => {
     todo('1. [in_progress] x'),
     asst('second answer'),
   ];
-  const anchors = conversationAnchors(events, false, { childSessionCards: true });
-  assert.deepEqual(
-    anchors.map((a) => a.label),
-    ['first question', 'second question'],
-  );
+  assert.deepEqual(promptLabels(events), ['first question', 'second question']);
   // A leading model message before any prompt does not add a stray dot.
   const restored = [asst('restored summary'), userMsg('one'), asst('a'), userMsg('two'), asst('b')];
-  assert.deepEqual(
-    conversationAnchors(restored, false, { childSessionCards: true }).map((a) => a.label),
-    ['one', 'two'],
-  );
+  assert.deepEqual(promptLabels(restored), ['one', 'two']);
 });
 
 test('#20 repeated TodoWrite calls are deduped to the latest snapshot', () => {
