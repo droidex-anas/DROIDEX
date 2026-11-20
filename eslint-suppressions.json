@@ -158,9 +158,6 @@
     }
   },
   "src/hooks/useReviewFileDiffs.ts": {
-    "@typescript-eslint/no-unnecessary-condition": {
-      "count": 6
-    },
     "@typescript-eslint/restrict-template-expressions": {
       "count": 1
     }

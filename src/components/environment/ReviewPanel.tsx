@@ -25,7 +25,7 @@ import { DetachedFocusPane, type DetachedFocus } from './DetachedFocusPane';
 import { CommitSheet } from './CommitSheet';
 import { CreatePrSheet } from './CreatePrSheet';
 import { useReviewDiff } from '../../hooks/useReviewDiff';
-import { useReviewFileDiffs, type FileDiffEntry } from '../../hooks/useReviewFileDiffs';
+import { useReviewFileDiffs } from '../../hooks/useReviewFileDiffs';
 import { useGitEnvironment } from '../../hooks/useGitEnvironment';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { toast } from '../../lib/toast';
@@ -467,7 +467,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     // at()/the explicit undefined branch keep the empty-list and
     // not-yet-loaded cases typed honestly (index lookups claim always-present).
     const path = activePath ?? review.files.at(0)?.path ?? null;
-    const entry: FileDiffEntry | undefined = path ? diffEntries[path] : undefined;
+    const entry = path ? diffEntries[path] : undefined;
     const diff = entry?.diff ?? '';
     if (!diff) {
       toast.info('Open a file to copy its diff');

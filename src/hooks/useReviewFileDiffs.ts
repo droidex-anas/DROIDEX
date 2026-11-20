@@ -10,7 +10,7 @@ export interface FileDiffEntry {
 }
 
 export interface ReviewFileDiffs {
-  entries: Record<string, FileDiffEntry>;
+  entries: Partial<Record<string, FileDiffEntry>>;
   ensure: (path: string) => void;
 }
 
@@ -44,7 +44,7 @@ export function useReviewFileDiffs(
   signature: string,
   appSessionId?: string,
 ): ReviewFileDiffs {
-  const [entries, setEntries] = useState<Record<string, FileDiffEntry>>({});
+  const [entries, setEntries] = useState<ReviewFileDiffs['entries']>({});
   // A Map avoids the Object.prototype lookup collision that lets a file path
   // like `__proto__` or `constructor` bypass the cache check
   // (`status.current['__proto__']` returns the prototype, which is truthy),
