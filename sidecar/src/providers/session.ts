@@ -82,6 +82,8 @@ export interface ProviderForkSource {
   // The answer the copy ends with, as the provider stamped it on its text
   // events. Absent copies the whole conversation.
   forkPointId?: string;
+  // App-owned context for providers that seed a new session instead of copying native history.
+  transcriptSeed?: string;
 }
 
 // How to resume a copied conversation: the same pair a stored session carries.

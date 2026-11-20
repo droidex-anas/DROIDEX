@@ -5,6 +5,8 @@ import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { childEnv } from '../../childEnv.js';
 import type { ModelInfo, ProviderStatus } from '../../protocol.js';
 import type {
+  ProviderForkSource,
+  ProviderForkHandle,
   ProbedProvider,
   ProviderOpenInput,
   ProviderResumeInput,
@@ -12,6 +14,9 @@ import type {
 } from '../session.js';
 import { resolveDevinPath } from './devinExecutable.js';
 import { DevinSession } from './devinSession.js';
+import { DevinClient } from './devinClient.js';
+import { DevinTerminals } from './devinTerminals.js';
+import { saveDevinForkSeed } from './devinForkSeed.js';
 
 const exec = promisify(execFile);
 const INSTALL_HINT = 'Install Devin CLI from https://cli.devin.ai, then run devin auth login.';
@@ -31,8 +36,61 @@ export class DevinProvider implements ProbedProvider {
     return session;
   }
 
-  fork(): Promise<never> {
-    return Promise.reject(new Error('Devin conversations cannot be copied.'));
+  async fork(source: ProviderForkSource): Promise<ProviderForkHandle> {
+    const cwd = source.cwd ?? homedir();
+    const terminals = new DevinTerminals(
+      cwd,
+      () => false,
+      () => undefined,
+    );
+    const client = new DevinClient(this.executable(), cwd, {
+      terminals,
+      update: () => undefined,
+      permission: () => Promise.resolve({ outcome: { outcome: 'cancelled' } }),
+    });
+    try {
+      const signal = AbortSignal.timeout(30_000);
+      const initialized = await client.initialize(signal);
+      // Transcript turn points are not ACP cursors; never send them as native cursor IDs.
+      const native =
+        initialized.agentCapabilities?.sessionCapabilities?.fork != null && !source.forkPointId;
+      if (!native && !source.transcriptSeed?.trim())
+        throw new Error('Cannot fork Devin: the app-owned transcript is unavailable or empty.');
+      if (
+        !native &&
+        initialized.agentCapabilities?._meta?.['cognition.ai/persistOnCreate'] !== true
+      )
+        throw new Error('This Devin CLI cannot persist an idle copy. Update Devin and try again.');
+      const options = { cancellationSignal: signal, stopWaitingOnCancel: true };
+      const copy = native
+        ? await client.connection.agent.request(
+            'session/fork',
+            {
+              sessionId: source.providerSessionId,
+              cwd,
+              mcpServers: [],
+            },
+            options,
+          )
+        : await client.connection.agent.request(
+            'session/new',
+            {
+              cwd,
+              mcpServers: [],
+              _meta: { 'cognition.ai/persistOnCreate': true },
+            },
+            options,
+          );
+      if (!native && source.transcriptSeed !== undefined)
+        await saveDevinForkSeed(copy.sessionId, source.transcriptSeed);
+      return { providerSessionId: copy.sessionId };
+    } finally {
+      try {
+        await client.stop();
+      } finally {
+        await terminals.close();
+      }
+    }
   }
 
   readUsage(): Promise<UsageReading> {

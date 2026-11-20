@@ -7,7 +7,7 @@ import {
   type TerminalOutputRequest,
   type TerminalOutputResponse,
   type WaitForTerminalExitResponse,
-} from '@agentclientprotocol/sdk';
+} from '@agentclientprotocol/sdk/unstable';
 import { childEnv } from '../../childEnv.js';
 import type { ProviderProcess } from '../session.js';
 import { DevinTerminalProcess } from './devinTerminalProcess.js';

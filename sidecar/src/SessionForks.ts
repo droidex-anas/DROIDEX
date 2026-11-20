@@ -1,4 +1,4 @@
-import { formatBranchPrompt } from './branchPrompt.js';
+import { branchConversation, BRANCH_CONTEXT_EVENTS, formatBranchPrompt } from './branchPrompt.js';
 import { loadSessionTranscriptWindow, resolveSessionChain } from './history.js';
 import type {
   ClientCommand,
@@ -12,17 +12,17 @@ import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './errors.js';
 import type { SessionLineageStore } from './sessionLineage.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
-import { conversationMarkdown } from './sessionMarkdown.js';
+import { parseTranscriptLines } from './sessionTranscript.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
-import { forkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
+import {
+  forkedTranscript,
+  writeForkedTranscript,
+  type ForkedTranscript,
+} from './providers/ProviderTranscriptFile.js';
 import type { ProviderKind } from './providers/providerKind.js';
 import type { Provider, ProviderForkHandle, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;
-
-// Enough of a long chat to carry it into another harness; the branch prompt
-// caps the Markdown again by characters.
-const BRANCH_CONTEXT_EVENTS = 2_000;
 
 export interface SessionForksDependencies {
   provider: (kind: ProviderKind) => Provider;
@@ -52,8 +52,8 @@ export interface SessionForksDependencies {
   }) => void;
 }
 
-// Native copies preserve the provider's full context and resume on their first
-// send. Cross-provider branches and streaming sources carry a transcript instead.
+// Native copies preserve the provider's full context. Devin can seed an idle
+// copy instead; cross-provider branches and streaming sources start with context.
 export class SessionForks {
   constructor(private readonly d: SessionForksDependencies) {}
 
@@ -68,7 +68,7 @@ export class SessionForks {
       };
       const provider = command.provider ?? source.provider;
       if (provider === source.provider && !this.isStreaming(source)) {
-        copy = await this.copyNatively(command, source, lineage);
+        copy = await this.copyConversation(command, source, lineage);
       } else {
         await this.branchFromTranscript(command, source, provider, lineage);
       }
@@ -139,12 +139,18 @@ export class SessionForks {
     return this.d.registry.getLive(source.appSessionId)?.summary.streaming === true;
   }
 
-  private async copyNatively(
+  private async copyConversation(
     command: SessionForkCommand,
     source: SessionSummary,
     lineage: SessionLineage,
   ): Promise<ProviderForkHandle> {
     const live = this.d.registry.getLive(source.appSessionId);
+    const seeded =
+      source.provider === 'devin'
+        ? await this.devinTranscriptSeed(source, command.forkPointId)
+        : undefined;
+    this.requireUnchanged(source, live);
+    let transcript = seeded?.transcript ?? null;
     const handle = await this.d.provider(source.provider).fork({
       providerSessionId: source.providerSessionId ?? source.appSessionId,
       ...(source.droidProfile ? { droidProfile: source.droidProfile } : {}),
@@ -156,17 +162,19 @@ export class SessionForks {
       title: command.title,
       ...(live ? { live: live.session } : {}),
       ...(command.forkPointId ? { forkPointId: command.forkPointId } : {}),
+      ...(seeded ? { transcriptSeed: seeded.seed } : {}),
     });
     try {
       this.d.beginForkOpen(handle.providerSessionId);
       // Droid writes its copy where its own sessions live. Every other provider's
       // scrollback is DROIDEX's transcript file, which is copied beside it.
-      let transcript = null;
       if (source.provider !== 'droid') {
         this.requireUnchanged(source, live);
-        const stored = await this.d.readTranscript(source.appSessionId);
-        this.requireUnchanged(source, live);
-        transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
+        if (!transcript) {
+          const stored = await this.d.readTranscript(source.appSessionId);
+          this.requireUnchanged(source, live);
+          transcript = forkedTranscript(source.appSessionId, stored, command.forkPointId);
+        }
       }
       const appSessionId = handle.providerSessionId;
       const change = transcript && {
@@ -198,6 +206,31 @@ export class SessionForks {
       await handle.release?.();
       throw error;
     }
+  }
+
+  private async devinTranscriptSeed(
+    source: SessionSummary,
+    forkPointId?: string,
+  ): Promise<{ transcript: ForkedTranscript; seed: string }> {
+    let stored: string;
+    try {
+      stored = await this.d.readTranscript(source.appSessionId);
+    } catch (error) {
+      throw new Error('Cannot fork Devin: the app-owned transcript is unavailable.', {
+        cause: error,
+      });
+    }
+    if (!stored.trim()) throw new Error('Cannot fork Devin: the app-owned transcript is empty.');
+    const transcript = forkedTranscript(source.appSessionId, stored, forkPointId);
+    const events = parseTranscriptLines(
+      source.appSessionId,
+      source.providerSessionId ?? source.appSessionId,
+      transcript.lines,
+      'primary',
+    );
+    const seed = branchConversation(events);
+    if (!seed.trim()) throw new Error('Cannot fork Devin: the app-owned transcript is empty.');
+    return { transcript, seed };
   }
 
   private async branchFromTranscript(
@@ -268,7 +301,7 @@ export class SessionForks {
       events = storedEvents(source);
     }
     if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
-    return conversationMarkdown(events);
+    return branchConversation(events);
   }
 }
 

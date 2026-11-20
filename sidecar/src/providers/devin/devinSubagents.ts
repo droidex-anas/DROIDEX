@@ -1,4 +1,4 @@
-import type { SessionNotification } from '@agentclientprotocol/sdk';
+import type { SessionNotification } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { objectValue, trimmedString } from '../../values.js';
