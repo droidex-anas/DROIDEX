@@ -273,7 +273,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     reviewState.reviewScope,
     hideWhitespace,
     review.signature,
-    { appSessionId, revision: review.revision },
+    appSessionId,
   );
   const git = useGitEnvironment(cwd, 'worktree');
   const isGitHub = !!git.env?.isGitHub;

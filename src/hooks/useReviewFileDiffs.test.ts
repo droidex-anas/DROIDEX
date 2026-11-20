@@ -4,19 +4,20 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useReviewDiff } from './useReviewDiff';
 import { useReviewFileDiffs } from './useReviewFileDiffs';
-import type { DiffFile, DiffScope, FileDiffResult } from '../types/vcs';
+import type { DiffFileList, DiffScope, FileDiffResult } from '../types/vcs';
 
 async function setup(t: test.TestContext, fileCount = 1) {
   let root: Root | undefined;
   t.after(async () => {
     await act(async () => root?.unmount());
   });
-  const files: DiffFile[] = Array.from({ length: fileCount }, (_, i) => ({
+  const files: DiffFileList['files'] = Array.from({ length: fileCount }, (_, i) => ({
     path: `file-${i}`,
     status: 'modified',
     additions: 1,
     deletions: 1,
     binary: false,
+    fingerprint: 'initial',
   }));
   let tick = () => {};
   let patch = '-original\n+change-A';
@@ -73,14 +74,12 @@ async function setup(t: test.TestContext, fileCount = 1) {
   let appSessionId = 'session-1';
   let open: string[] = [];
   let active: string | undefined;
+  let ignoreWhitespace = false;
   let review!: ReturnType<typeof useReviewDiff>;
   let diffs!: ReturnType<typeof useReviewFileDiffs>;
   function Harness() {
     review = useReviewDiff(cwd, scope, true);
-    diffs = useReviewFileDiffs(cwd, scope, false, review.signature, {
-      appSessionId,
-      revision: review.revision,
-    });
+    diffs = useReviewFileDiffs(cwd, scope, ignoreWhitespace, review.signature, appSessionId);
     useEffect(() => {
       open.forEach(diffs.ensure);
       if (active) diffs.ensure(active);
@@ -96,27 +95,35 @@ async function setup(t: test.TestContext, fileCount = 1) {
     diffs: () => diffs,
     requests: () => requestCount,
     lists: () => listCount,
-    setPatch(value: string) {
+    setPatch(value: string, path = 'file-0') {
       patch = value;
+      const file = files.find((file) => file.path === path);
+      assert.ok(file);
+      file.fingerprint += '.';
     },
     setFailure(value: boolean) {
       failPatch = value;
+      files[0].fingerprint += '.';
     },
     setPending(value: Promise<FileDiffResult> | undefined) {
       pending = value;
     },
     async render(
       paths: string[],
-      nextCwd = cwd,
-      nextScope = scope,
-      nextSession = appSessionId,
-      activePath?: string,
+      changes: {
+        cwd?: string;
+        scope?: DiffScope;
+        session?: string;
+        active?: string;
+        whitespace?: boolean;
+      } = {},
     ) {
       open = paths;
-      active = activePath;
-      appSessionId = nextSession;
-      cwd = nextCwd;
-      scope = nextScope;
+      active = changes.active;
+      appSessionId = changes.session ?? appSessionId;
+      cwd = changes.cwd ?? cwd;
+      scope = changes.scope ?? scope;
+      ignoreWhitespace = changes.whitespace ?? ignoreWhitespace;
       await act(async () => root?.render(createElement(Harness)));
     },
     async poll() {
@@ -139,11 +146,11 @@ test('an open patch refreshes after a same-numstat edit without reopening', asyn
   assert.equal(h.review().files, files);
 });
 
-test('idle polls revalidate only open and active files out of fifty without cache churn', async (t) => {
+test('idle polls fetch no patches and a same-count edit fetches only its open file', async (t) => {
   const h = await setup(t, 50);
   await h.poll();
   assert.equal(h.requests(), 0);
-  await h.render(['file-0', 'file-1'], '/repo', 'unstaged', 'session-1', 'file-2');
+  await h.render(['file-0', 'file-1'], { active: 'file-2' });
   assert.equal(h.requests(), 3);
   const entries = h.diffs().entries;
   const counts: number[] = [];
@@ -156,7 +163,13 @@ test('idle polls revalidate only open and active files out of fifty without cach
   t.diagnostic(
     `50 files, 2 open + 1 collapsed active: patch requests per idle poll = ${counts.join(', ')}`,
   );
-  assert.ok(counts.every((count) => count <= 3));
+  assert.deepEqual(counts, [0, 0, 0]);
+  h.setPatch('-original\n+change-B');
+  const beforeEdit = h.requests();
+  await h.poll();
+  assert.equal(h.requests() - beforeEdit, 1);
+  t.diagnostic('same-count edit of one open file: patch requests = 1');
+  assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-B');
   await h.render([]);
   const before = h.requests();
   await h.poll();
@@ -167,7 +180,12 @@ test('idle polls revalidate only open and active files out of fifty without cach
   assert.equal(h.lists(), lists);
 });
 
-for (const change of ['scope', 'worktree', 'session'] as const) {
+for (const [change, props] of Object.entries({
+  scope: { scope: 'staged' as const },
+  worktree: { cwd: '/other' },
+  session: { session: 'session-2' },
+  whitespace: { whitespace: true },
+})) {
   test(`a late patch response is dropped across a ${change} change`, async (t) => {
     const h = await setup(t);
     await h.render(['file-0']);
@@ -177,37 +195,71 @@ for (const change of ['scope', 'worktree', 'session'] as const) {
         resolve = done;
       }),
     );
+    h.setPatch('pending patch');
     await h.poll();
     assert.equal(h.requests(), 2);
-    h.setPending(undefined);
-    h.setPatch('current patch');
-    await h.render(
-      ['file-0'],
-      change === 'worktree' ? '/other' : '/repo',
-      change === 'scope' ? 'staged' : 'unstaged',
-      change === 'session' ? 'session-2' : 'session-1',
+    let finish!: (result: FileDiffResult) => void;
+    h.setPending(
+      new Promise((done) => {
+        finish = done;
+      }),
     );
+    await h.render(['file-0'], props);
+    assert.deepEqual(h.diffs().entries['file-0'], {
+      diff: '',
+      binary: false,
+      loading: true,
+      loaded: false,
+    });
+    await act(async () => finish({ path: 'file-0', diff: 'current patch', binary: false }));
     await act(async () => resolve({ path: 'file-0', diff: 'late patch', binary: false }));
     assert.equal(h.diffs().entries['file-0']?.diff, 'current patch');
   });
 }
 
-test('empty and failed patches settle and recover on the next poll', async (t) => {
+test('a failed revalidation preserves the loaded patch and a later edit retries', async (t) => {
   const h = await setup(t);
   await h.render(['file-0']);
-  h.setPatch('');
-  await h.poll();
-  assert.deepEqual(h.diffs().entries['file-0'], {
-    diff: '',
-    binary: false,
-    loading: false,
-    loaded: true,
-  });
+  const entry = h.diffs().entries['file-0'];
   h.setFailure(true);
   await h.poll();
-  assert.equal(h.diffs().entries['file-0']?.loading, false);
+  assert.equal(h.diffs().entries['file-0'], entry);
+  assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
   h.setFailure(false);
   h.setPatch('recovered patch');
   await h.poll();
   assert.equal(h.diffs().entries['file-0']?.diff, 'recovered patch');
+});
+
+test('an unchanged patch retains identity after revalidation and an empty success clears it', async (t) => {
+  const h = await setup(t);
+  await h.render(['file-0']);
+  const entries = h.diffs().entries;
+  h.setPatch('-original\n+change-A');
+  await h.poll();
+  assert.equal(h.diffs().entries, entries);
+  h.setPatch('');
+  await h.poll();
+  assert.equal(h.diffs().entries['file-0']?.diff, '');
+  assert.equal(h.diffs().entries['file-0']?.loaded, true);
+});
+
+test('a newer fingerprint refetches without waiting for an older in-flight patch', async (t) => {
+  const h = await setup(t);
+  await h.render(['file-0']);
+  let resolve!: (result: FileDiffResult) => void;
+  h.setPending(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  h.setPatch('pending patch');
+  await h.poll();
+  h.setPending(undefined);
+  h.setPatch('newest patch');
+  await h.poll();
+  assert.equal(h.requests(), 3);
+  assert.equal(h.diffs().entries['file-0']?.diff, 'newest patch');
+  await act(async () => resolve({ path: 'file-0', diff: 'late patch', binary: false }));
+  assert.equal(h.diffs().entries['file-0']?.diff, 'newest patch');
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getGitDiffFiles } from '../lib/git';
 import type { DiffFile, DiffScope } from '../types/vcs';
 
@@ -9,14 +9,13 @@ export interface ReviewDiffState {
   base: string | null;
   loadingList: boolean;
   signature: string;
-  revision: number;
   refresh: () => void;
 }
 
 // Drives the Review tab's file list, kept fresh with light polling so the view
 // tracks the agent's edits. Per-file diffs are loaded lazily by
 // useReviewFileDiffs when a section is expanded, so this hook only owns the
-// list structure and a revision for lazy patch revalidation.
+// list structure and per-file content signatures for lazy patch loading.
 export function useReviewDiff(
   cwd: string,
   scope: DiffScope,
@@ -26,7 +25,7 @@ export function useReviewDiff(
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [base, setBase] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [revision, setRevision] = useState(0);
+  const [signature, setSignature] = useState('');
   const listReq = useRef(0);
   // In-flight flag: poll ticks consult this so a tick that fires while the
   // previous load is still pending is skipped (no stacked git subprocesses).
@@ -50,6 +49,7 @@ export function useReviewDiff(
       loadedKey.current = null;
       setFiles([]);
       setBase(null);
+      setSignature('');
       setLoadingList(false);
       return;
     }
@@ -64,9 +64,27 @@ export function useReviewDiff(
         // Poll results are freshly deserialized; keep the previous array when
         // nothing changed so downstream memos and effects keyed on `files`
         // stay stable across idle polls.
-        setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(res.files) ? prev : res.files));
+        const nextFiles = res.files.map(({ path, status, additions, deletions, binary }) => ({
+          path,
+          status,
+          additions,
+          deletions,
+          binary,
+        }));
+        setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(nextFiles) ? prev : nextFiles));
+        setSignature(
+          JSON.stringify(
+            res.files.map((file) => [
+              file.path,
+              file.status,
+              file.additions,
+              file.deletions,
+              file.binary,
+              file.fingerprint,
+            ]),
+          ),
+        );
         setBase(res.base);
-        setRevision((prev) => prev + 1);
         loadedKey.current = key;
         inFlight.current = false;
         if (isFirstLoad) setLoadingList(false);
@@ -100,15 +118,6 @@ export function useReviewDiff(
     };
   }, [loadList, enabled]);
 
-  // Structural identity stays independent of patch freshness.
-  const signature = useMemo(
-    () =>
-      files
-        .map((f) => `${f.path}:${f.status}:${String(f.additions)}:${String(f.deletions)}`)
-        .join('\n'),
-    [files],
-  );
-
   // Report loading until the current (cwd, scope, session) list has settled,
   // including the render gap between a scope change and the effect that starts
   // the new load (loadingList state lags one commit there). Without this a
@@ -122,7 +131,6 @@ export function useReviewDiff(
     base,
     loadingList: loadingList || !listSettled,
     signature,
-    revision,
     refresh: loadList,
   };
 }
