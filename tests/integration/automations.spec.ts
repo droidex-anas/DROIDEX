@@ -416,7 +416,10 @@ test.describe('one-time DST-gap schedules', () => {
     );
     await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
-    backend.refresh();
+    backend.refresh([{ ...proposal, draft: { ...draft, title: 'Refreshed proposal' } }]);
+    await expect(card.getByRole('textbox', { name: 'Automation title' })).toHaveValue(
+      'Refreshed proposal',
+    );
     await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
