@@ -66,6 +66,35 @@ test('loads the DROIDEX shell', async ({ page }) => {
   await expect(page.locator('#root')).toBeVisible();
 });
 
+test.describe('app keyboard shortcuts', () => {
+  test('opens, selects, closes and restores tabs over the mocked bridge', async ({ page }) => {
+    await sessionBridge(page, []);
+    await page.goto(appUrl);
+    const primary = await page.evaluate(() =>
+      navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+    );
+    const tabs = page.getByRole('tablist', { name: 'Tabs', exact: true }).getByRole('tab');
+    await expect(page.getByRole('textbox', { name: 'Prompt' })).toBeVisible();
+    await expect(tabs).toHaveCount(0);
+
+    await page.keyboard.press(`${primary}+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+1`);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+Shift+]`);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await expect(tabs.nth(1)).toContainText('Projects');
+    await page.keyboard.press(`${primary}+w`);
+    await expect(tabs).toHaveCount(0);
+    await page.keyboard.press(`${primary}+Shift+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(1)).toContainText('Projects');
+  });
+});
+
 // The palette is a centred dialog on the z-dialog layer: its backdrop darkens
 // the window without a blur, focus starts in the search field and stays inside,
 // and Escape closes it through the shared layer stack.
