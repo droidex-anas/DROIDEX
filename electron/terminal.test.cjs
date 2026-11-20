@@ -294,6 +294,37 @@ test('replaySince owns window arithmetic at every offset boundary', async () => 
   assert.equal(subscribed[0].sequence, fromOrigin.sequence);
 });
 
+test('replay matches live bytes through wraps, explicit UTF-8 trimming, and exit', async () => {
+  const { manager, instances } = fixture();
+  const terminal = await manager.create({ appSessionId: 'session-1', cwd: '/repo' });
+  const live = [];
+  manager.subscribe(terminal.id, (event) => {
+    if (event.kind === 'data') live.push(Buffer.from(event.data));
+  });
+  instances[0].emitData('x'.repeat(MAX_REPLAY_BYTES - 1));
+  for (let i = 0; i < 80; i += 1) instances[0].emitData(`🙂é${'z'.repeat(65531)}`);
+  const emitted = Buffer.concat(live);
+  const replay = manager.replaySince(terminal.id, 0);
+  const start = emitted.length - Buffer.byteLength(replay.data);
+  for (const offset of [0, start - 1, start, start + 1, start + 97, emitted.length]) {
+    assert.equal(
+      manager.replaySince(terminal.id, offset).data,
+      emitted.subarray(Math.max(start, offset)).toString('utf8'),
+    );
+  }
+  instances[0].emitData('🙂é');
+  assert.equal(manager.trimReplay(5), 1);
+  assert.equal(manager.replaySince(terminal.id, 0).data, 'é');
+  instances[0].emitData(`🙂${'q'.repeat(MAX_REPLAY_BYTES + 1)}é`);
+  instances[0].emitExit();
+  const late = [];
+  manager.subscribe(terminal.id, (event) => late.push(event));
+  assert.equal(late[0].data, `${'q'.repeat(MAX_REPLAY_BYTES - 2)}é`);
+  assert.equal(late[0].byteOffset, emitted.length + 6 + MAX_REPLAY_BYTES + 7);
+  assert.equal(late[1].kind, 'exit');
+  manager.kill(terminal.id);
+});
+
 test('terminal manager releases capacity when node-pty fails to load', async () => {
   const manager = createTerminalManager({
     platform: 'darwin',

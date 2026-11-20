@@ -21,6 +21,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { childEnv } = require('./childEnv.cjs');
+const { ReplayBuffer } = require('./replayBuffer.cjs');
 
 const MAX_TERMINALS_PER_SESSION = 4;
 const MAX_GLOBAL_TERMINALS = 8;
@@ -165,7 +166,7 @@ function createTerminalManager(opts) {
       cols: dims.cols,
       rows: dims.rows,
       pty: null,
-      buffer: Buffer.alloc(0), // rolling replay buffer (capped at MAX_REPLAY_BYTES)
+      buffer: new ReplayBuffer(MAX_REPLAY_BYTES),
       totalEmittedBytes: 0, // monotonic byte counter (never reset)
       droppedBytes: 0, // bytes trimmed from the front of the buffer
       sequence: 0, // monotonic event counter
@@ -239,16 +240,17 @@ function createTerminalManager(opts) {
     ptyInstance.onData((data) => {
       const buf = Buffer.from(data, 'utf8');
       entry.lastActivityAt = Date.now();
-      entry.buffer = Buffer.concat([entry.buffer, buf]);
+      entry.droppedBytes += entry.buffer.append(buf);
       entry.totalEmittedBytes += buf.length;
-      if (entry.buffer.length > MAX_REPLAY_BYTES) {
-        let droppedBytes = entry.buffer.length - MAX_REPLAY_BYTES;
-        while (droppedBytes < entry.buffer.length && (entry.buffer[droppedBytes] & 0xc0) === 0x80) {
-          droppedBytes += 1;
-        }
-        entry.buffer = entry.buffer.subarray(droppedBytes);
-        entry.droppedBytes += droppedBytes;
+      let continuationBytes = 0;
+      while (
+        continuationBytes < entry.buffer.length &&
+        (entry.buffer.byteAt(continuationBytes) & 0xc0) === 0x80
+      ) {
+        continuationBytes += 1;
       }
+      entry.buffer.trimFront(continuationBytes);
+      entry.droppedBytes += continuationBytes;
       entry.sequence += 1;
       const payload = {
         kind: 'data',
@@ -362,7 +364,7 @@ function createTerminalManager(opts) {
       start = Math.min(e.buffer.length, from - bufferStart);
     }
     return {
-      data: e.buffer.subarray(start).toString('utf8'),
+      data: e.buffer.slice(start).toString('utf8'),
       sequence: e.sequence,
       byteOffset: emitted,
       droppedBytes,
@@ -541,10 +543,11 @@ function createTerminalManager(opts) {
     for (const e of terminals.values()) {
       if (e.buffer.length <= cap) continue;
       let droppedBytes = e.buffer.length - cap;
-      while (droppedBytes < e.buffer.length && (e.buffer[droppedBytes] & 0xc0) === 0x80) {
+      while (droppedBytes < e.buffer.length && (e.buffer.byteAt(droppedBytes) & 0xc0) === 0x80) {
         droppedBytes += 1;
       }
-      e.buffer = e.buffer.subarray(droppedBytes);
+      e.buffer.trimFront(droppedBytes);
+      e.buffer.compact();
       e.droppedBytes += droppedBytes;
       trimmed += 1;
     }
