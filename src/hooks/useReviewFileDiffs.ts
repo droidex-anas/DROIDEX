@@ -6,6 +6,7 @@ export interface FileDiffEntry {
   diff: string;
   binary: boolean;
   status: 'loading' | 'loaded' | 'failed';
+  loading: boolean;
 }
 
 export interface ReviewFileDiffs {
@@ -75,26 +76,28 @@ export function useReviewFileDiffs(
             ? cur
             : {
                 ...cur,
-                [path]: { diff: '', binary: false, status: 'failed' },
+                [path]: { diff: '', binary: false, status: 'failed', loading: false },
               },
         );
       };
       setEntries((cur) => {
         const prev = cur[path];
         if (prev?.status === 'loaded') return cur;
+        if (prev?.status === 'failed') return { ...cur, [path]: { ...prev, loading: true } };
         return {
           ...cur,
           [path]: {
             diff: '',
             binary: false,
             status: 'loading',
+            loading: true,
           },
         };
       });
       getGitFileDiff(cwd, scope, path, ignoreWhitespace, appSessionId)
         .then((res) => {
           if (stale()) return;
-          if (res.error) {
+          if (res.failed) {
             fail();
             return;
           }
@@ -106,7 +109,7 @@ export function useReviewFileDiffs(
             }
             return {
               ...cur,
-              [path]: { diff: res.diff, binary: res.binary, status: 'loaded' },
+              [path]: { diff: res.diff, binary: res.binary, status: 'loaded', loading: false },
             };
           });
         })

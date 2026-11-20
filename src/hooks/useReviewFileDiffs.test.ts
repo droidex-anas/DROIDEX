@@ -210,6 +210,7 @@ for (const [change, props] of Object.entries({
       diff: '',
       binary: false,
       status: 'loading',
+      loading: true,
     });
     await act(async () => finish({ path: 'file-0', diff: 'current patch', binary: false }));
     await act(async () => resolve({ path: 'file-0', diff: 'late patch', binary: false }));
@@ -249,10 +250,20 @@ test('an initial patch failure retries on an unchanged poll only while requested
   await h.render(['file-0']);
   assert.equal(h.requests(), 3);
   h.setFailure(false);
+  let finish!: (result: FileDiffResult) => void;
+  h.setPending(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
   await h.poll();
   assert.equal(h.requests(), 4);
+  assert.equal(h.diffs().entries['file-0']?.status, 'failed');
+  assert.equal(h.diffs().entries['file-0']?.loading, true);
+  await act(async () => finish({ path: 'file-0', diff: '-original\n+change-A', binary: false }));
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
   assert.equal(h.diffs().entries['file-0']?.status, 'loaded');
+  assert.equal(h.diffs().entries['file-0']?.loading, false);
 });
 
 test('an unchanged patch retains identity after revalidation and an empty success clears it', async (t) => {

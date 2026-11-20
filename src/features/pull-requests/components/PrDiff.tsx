@@ -123,6 +123,7 @@ export function PrDiff({ diff }: { diff: string }) {
             entry={{
               diff: item.diff,
               status: 'loaded',
+              loading: false,
               binary: item.file.binary,
             }}
             view={diffView}

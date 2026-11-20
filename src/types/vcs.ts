@@ -48,7 +48,7 @@ export interface FileDiffResult {
   path: string | null;
   diff: string;
   binary: boolean;
-  error?: string;
+  failed?: true;
 }
 
 export interface GitEnvironment {
