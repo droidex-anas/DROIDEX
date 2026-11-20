@@ -15,7 +15,10 @@ import test, { type TestContext } from 'node:test';
 import type { ServerEvent, SessionSummary } from './protocol.js';
 import type { Provider, ProviderForkSource, ProviderSession } from './providers/session.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
-import { readProviderTranscript } from './providers/ProviderTranscriptFile.js';
+import {
+  ProviderTranscriptFile,
+  readProviderTranscript,
+} from './providers/ProviderTranscriptFile.js';
 import type { SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import { SessionLineageStore, sessionLineagePath } from './sessionLineage.js';
 import type { SessionSummaryPatch } from './SessionRegistry.js';
@@ -108,7 +111,8 @@ function harness(
   t: TestContext,
   options: {
     streaming?: boolean;
-    provider?: 'droid' | 'claude' | 'codex';
+    provider?: 'droid' | 'claude' | 'codex' | 'devin';
+    readTranscript?: SessionForksDependencies['readTranscript'];
     providerInstance?: Provider;
     send?: (appSessionId: string, text: string) => Promise<void>;
     updateModel?: SessionForksDependencies['updateModel'];
@@ -193,7 +197,7 @@ function harness(
       );
       return Promise.resolve();
     },
-    readTranscript: readProviderTranscript,
+    readTranscript: options.readTranscript ?? readProviderTranscript,
     updateModel: (appSessionId, settings) => {
       order.push(
         `model ${appSessionId}: ${String(settings.modelId)} ${String(settings.reasoningEffort)}`,
@@ -243,6 +247,103 @@ function harness(
     stored,
   };
 }
+
+test('Devin full and cut-point copies are idle and seed through the selected answer’s entire turn', async (t) => {
+  const file = new ProviderTranscriptFile('source', () =>
+    summary({ appSessionId: 'source', provider: 'devin' }),
+  );
+  await file.appendPrompt('First question');
+  const base = {
+    appSessionId: 'source',
+    sourceSessionId: 'source',
+    role: 'primary' as const,
+    ts: 1,
+  };
+  file.append({ ...base, id: 'first', kind: 'text', text: 'First answer', forkPointId: 'turn-1' });
+  await file.append({
+    ...base,
+    id: 'result',
+    kind: 'tool_result',
+    toolUseId: 'tool',
+    text: 'Last result of first turn',
+    forkPointId: 'turn-1',
+  });
+  await file.appendPrompt('Later question');
+  file.append({ ...base, id: 'later', kind: 'text', text: 'Later answer', forkPointId: 'turn-2' });
+  await file.flush();
+  for (const forkPointId of [undefined, 'turn-1']) {
+    const h = harness(t, { provider: 'devin' });
+    await h.forks.fork({
+      type: 'session.fork',
+      clientRef: 'copy',
+      appSessionId: 'source',
+      lineage: 'fork',
+      title: 'Devin copy',
+      ...(forkPointId ? { forkPointId } : {}),
+    });
+    assert.deepEqual(h.errors, []);
+    assert.equal(h.created.length, 0);
+    assert.deepEqual(h.order, ['lineage', 'session.forked']);
+    const seed = h.forkSources[0].transcriptSeed ?? '';
+    assert.match(seed, /First question/);
+    assert.match(seed, /First answer/);
+    assert.match(seed, /Last result of first turn/);
+    const copied = await readProviderTranscript('copy');
+    if (forkPointId) {
+      assert.doesNotMatch(seed, /Later question|Later answer/);
+      assert.doesNotMatch(copied, /Later question|Later answer/);
+    } else {
+      assert.match(seed, /Later question/);
+      assert.match(seed, /Later answer/);
+      assert.match(copied, /Later answer/);
+    }
+  }
+});
+
+test('Devin rejects missing, empty and unknown-cut transcripts before creating a backend copy', async (t) => {
+  for (const transcript of [undefined, '', JSON.stringify({ type: 'session_start' })]) {
+    const h = harness(t, {
+      provider: 'devin',
+      readTranscript: async () => {
+        if (transcript === undefined) throw new Error('missing');
+        return transcript;
+      },
+    });
+    await h.forks.fork({
+      type: 'session.fork',
+      clientRef: 'copy',
+      appSessionId: 'source',
+      lineage: 'fork',
+      title: 'Devin copy',
+    });
+    assert.match(h.errors[0]?.message, /transcript is (unavailable|empty)/);
+    assert.deepEqual(h.forkSources, []);
+  }
+  const h = harness(t, {
+    provider: 'devin',
+    readTranscript: async () =>
+      [
+        { type: 'session_start', id: 'source', provider: 'devin' },
+        {
+          type: 'message',
+          forkPointId: 'known',
+          message: { role: 'assistant', content: [{ type: 'text', text: 'Answer' }] },
+        },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join('\n'),
+  });
+  await h.forks.fork({
+    type: 'session.fork',
+    clientRef: 'copy',
+    appSessionId: 'source',
+    lineage: 'fork',
+    title: 'Devin copy',
+    forkPointId: 'unknown',
+  });
+  assert.match(h.errors[0]?.message, /before forking from it was possible/);
+  assert.deepEqual(h.forkSources, []);
+});
 
 test('a same-harness fork copies the conversation and answers with the copied chat', async (t) => {
   const h = harness(t, { contextWindowTokens: 1000000 });

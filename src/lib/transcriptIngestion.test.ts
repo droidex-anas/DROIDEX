@@ -80,7 +80,12 @@ test('ingestion reports the first changed index and leaves duplicate-only runs u
 
 test('ingestion merges one streamed tool call and keeps distinct calls separate', () => {
   const retained = toolCall('tool-call', 'tool-use-1', { path: '/tmp/file' }, { toolName: 'Read' });
-  const partial = toolCall('tool-partial', 'tool-use-1', { line: 12 }, { ts: 2 });
+  const partial = toolCall(
+    'tool-partial',
+    'tool-use-1',
+    { line: 12 },
+    { ts: 2, text: 'Live output' },
+  );
   const distinct = toolCall(
     'tool-call-2',
     'tool-use-2',
@@ -97,6 +102,7 @@ test('ingestion merges one streamed tool call and keeps distinct calls separate'
     {
       ...retained,
       toolArgs: { path: '/tmp/file', line: 12 },
+      text: 'Live output',
       endTs: 2,
     },
     distinct,

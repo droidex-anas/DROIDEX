@@ -431,7 +431,7 @@ export function renderToolEvents(
             <CommandCard
               key={e.id}
               command={command}
-              output={result?.text}
+              output={result?.text ?? e.text}
               images={result?.images}
               error={isError}
               interrupted={interrupted}
@@ -441,7 +441,7 @@ export function renderToolEvents(
             <CommandLine
               key={e.id}
               command={command}
-              output={result?.text}
+              output={result?.text ?? e.text}
               images={result?.images}
               error={isError}
               interrupted={interrupted}

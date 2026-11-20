@@ -1,4 +1,4 @@
-import type { PermissionOutcome } from './protocol.js';
+import type { Autonomy, PermissionOutcome } from './protocol.js';
 
 const PERMISSION_OUTCOMES: Record<PermissionOutcome, true> = {
   proceed_once: true,
@@ -23,6 +23,22 @@ export function normalizePermissionOutcome(outcome: string): PermissionOutcome {
 
 export function isApprovalOutcome(outcome: string): boolean {
   return normalizePermissionOutcome(outcome).startsWith('proceed');
+}
+
+export function planApprovalAutonomy(outcome: PermissionOutcome): Autonomy | undefined {
+  switch (outcome) {
+    case 'proceed_auto_run_low':
+    case 'proceed_new_session_low':
+      return 'low';
+    case 'proceed_auto_run_medium':
+    case 'proceed_new_session_medium':
+      return 'medium';
+    case 'proceed_auto_run_high':
+    case 'proceed_new_session_high':
+      return 'high';
+    default:
+      return undefined;
+  }
 }
 
 // True only for a valid "always allow" outcome. Invalid/unknown outcomes return

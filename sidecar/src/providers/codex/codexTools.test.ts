@@ -402,6 +402,7 @@ test('below High, DROIDEX asks before a spawn and a denial never runs it', async
     getLiveSession: () => liveSession,
     updateSummary: () => {},
     setProviderSpecMode: async () => {},
+    setAutonomy: async () => true,
     emit: (event) => {
       events.push(event);
     },
