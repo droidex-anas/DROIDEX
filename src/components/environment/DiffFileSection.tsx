@@ -1,6 +1,6 @@
 import { memo, useCallback } from 'react';
 import { ChevronRight } from 'lucide-react';
-import { Spinner } from '@droidex/icons';
+import { AlertTriangle, Spinner } from '@droidex/icons';
 import { AnimatePresence, motion } from 'framer-motion';
 import { DiffBody } from './DiffBody';
 import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
@@ -8,6 +8,7 @@ import type { FileDiffEntry } from '../../hooks/useReviewFileDiffs';
 import type { DiffFile } from '../../types/vcs';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { displayPath } from '../../lib/pathDisplay';
+import { Row } from '../ui/Row';
 
 // One collapsible file in the Review tab: a sticky header (type, path, line
 // counts) that toggles the file's diff. The diff is fetched lazily the first
@@ -67,7 +68,7 @@ export const DiffFileSection = memo(function DiffFileSection({
           {dir && <span className="text-muted/70">{dir}</span>}
           <span className="text-secondary">{name}</span>
         </span>
-        {entry?.loading && (
+        {entry?.status === 'loading' && (
           <Spinner className="size-icon-sm shrink-0 motion-safe:animate-spin-slow text-muted" />
         )}
         <span className="shrink-0 text-caption tabular-nums">
@@ -94,14 +95,24 @@ export const DiffFileSection = memo(function DiffFileSection({
             exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            {entry?.loaded ? (
+            {entry?.status === 'loaded' && (
               <DiffBody
                 diff={entry.diff}
                 view={view}
                 binary={file.binary || entry.binary}
                 wrap={wrap}
               />
-            ) : (
+            )}
+            {entry?.status === 'failed' && (
+              <div className="px-2 py-1">
+                <Row
+                  role="status"
+                  icon={<AlertTriangle className="size-icon-sm text-warning" />}
+                  label="Couldn't load diff"
+                />
+              </div>
+            )}
+            {(!entry || entry.status === 'loading') && (
               <div className="flex items-center gap-2 px-4 py-3 text-caption text-muted">
                 <Spinner className="size-icon-sm motion-safe:animate-spin-slow" /> Loading diff…
               </div>

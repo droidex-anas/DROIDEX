@@ -139,10 +139,12 @@ test('an open patch refreshes after a same-numstat edit without reopening', asyn
   await h.render(['file-0']);
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
   const files = h.review().files;
+  const signature = h.review().signature;
   h.setPatch('-original\n+change-B');
   await h.poll();
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-B');
   assert.equal(h.review().files, files);
+  assert.equal(h.review().signature, signature);
 });
 
 test('idle polls fetch no patches and a same-count edit fetches only its open file', async (t) => {
@@ -207,8 +209,7 @@ for (const [change, props] of Object.entries({
     assert.deepEqual(h.diffs().entries['file-0'], {
       diff: '',
       binary: false,
-      loading: true,
-      loaded: false,
+      status: 'loading',
     });
     await act(async () => finish({ path: 'file-0', diff: 'current patch', binary: false }));
     await act(async () => resolve({ path: 'file-0', diff: 'late patch', binary: false }));
@@ -225,6 +226,7 @@ test('a failed revalidation preserves the loaded patch and an unchanged poll ret
   await h.poll();
   assert.equal(h.requests(), 2);
   assert.equal(h.diffs().entries['file-0'], entry);
+  assert.equal(h.diffs().entries['file-0']?.status, 'loaded');
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
   h.setFailure(false);
   await h.poll();
@@ -237,9 +239,10 @@ test('an initial patch failure retries on an unchanged poll only while requested
   h.setFailure(true);
   await h.render(['file-0']);
   assert.equal(h.requests(), 1);
-  assert.equal(h.diffs().entries['file-0']?.loaded, false);
+  assert.equal(h.diffs().entries['file-0']?.status, 'failed');
   await h.poll();
   assert.equal(h.requests(), 2);
+  assert.equal(h.diffs().entries['file-0']?.status, 'failed');
   await h.render([]);
   await h.poll();
   assert.equal(h.requests(), 2);
@@ -249,7 +252,7 @@ test('an initial patch failure retries on an unchanged poll only while requested
   await h.poll();
   assert.equal(h.requests(), 4);
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
-  assert.equal(h.diffs().entries['file-0']?.loaded, true);
+  assert.equal(h.diffs().entries['file-0']?.status, 'loaded');
 });
 
 test('an unchanged patch retains identity after revalidation and an empty success clears it', async (t) => {
@@ -262,7 +265,7 @@ test('an unchanged patch retains identity after revalidation and an empty succes
   h.setPatch('');
   await h.poll();
   assert.equal(h.diffs().entries['file-0']?.diff, '');
-  assert.equal(h.diffs().entries['file-0']?.loaded, true);
+  assert.equal(h.diffs().entries['file-0']?.status, 'loaded');
 });
 
 test('a newer fingerprint refetches without waiting for an older in-flight patch', async (t) => {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getGitDiffFiles } from '../lib/git';
 import type { DiffFile, DiffScope } from '../types/vcs';
 
@@ -122,6 +122,17 @@ export function useReviewDiff(
     };
   }, [loadList, enabled]);
 
+  const signature = useMemo(
+    () =>
+      files
+        .map(
+          (file) =>
+            `${file.path}:${file.status}:${String(file.additions)}:${String(file.deletions)}`,
+        )
+        .join('\n'),
+    [files],
+  );
+
   // Report loading until the current (cwd, scope, session) list has settled,
   // including the render gap between a scope change and the effect that starts
   // the new load (loadingList state lags one commit there). Without this a
@@ -134,7 +145,7 @@ export function useReviewDiff(
     files,
     base,
     loadingList: loadingList || !listSettled,
-    signature: JSON.stringify([...fileSignatures]),
+    signature,
     fileSignatures,
     refresh: loadList,
   };

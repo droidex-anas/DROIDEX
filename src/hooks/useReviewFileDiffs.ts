@@ -5,8 +5,7 @@ import type { DiffScope } from '../types/vcs';
 export interface FileDiffEntry {
   diff: string;
   binary: boolean;
-  loading: boolean;
-  loaded: boolean;
+  status: 'loading' | 'loaded' | 'failed';
 }
 
 export interface ReviewFileDiffs {
@@ -72,24 +71,23 @@ export function useReviewFileDiffs(
         if (stale()) return;
         status.current.delete(path);
         setEntries((cur) =>
-          cur[path]?.loaded
+          cur[path]?.status === 'loaded'
             ? cur
             : {
                 ...cur,
-                [path]: { diff: '', binary: false, loading: false, loaded: false },
+                [path]: { diff: '', binary: false, status: 'failed' },
               },
         );
       };
       setEntries((cur) => {
         const prev = cur[path];
-        if (prev?.loaded) return cur;
+        if (prev?.status === 'loaded') return cur;
         return {
           ...cur,
           [path]: {
-            diff: prev?.diff ?? '',
-            binary: prev?.binary ?? false,
-            loading: true,
-            loaded: prev?.loaded ?? false,
+            diff: '',
+            binary: false,
+            status: 'loading',
           },
         };
       });
@@ -103,17 +101,12 @@ export function useReviewFileDiffs(
           status.current.set(path, 'loaded');
           setEntries((cur) => {
             const prev = cur[path];
-            if (
-              prev?.loaded &&
-              !prev.loading &&
-              prev.diff === res.diff &&
-              prev.binary === res.binary
-            ) {
+            if (prev?.status === 'loaded' && prev.diff === res.diff && prev.binary === res.binary) {
               return cur;
             }
             return {
               ...cur,
-              [path]: { diff: res.diff, binary: res.binary, loading: false, loaded: true },
+              [path]: { diff: res.diff, binary: res.binary, status: 'loaded' },
             };
           });
         })
