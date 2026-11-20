@@ -2,6 +2,7 @@ const { app, dialog, session, shell } = require('electron');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const files = require('./files.cjs');
+const { canonicalDirectory } = require('./filesPathSecurity.cjs');
 const attachments = require('./attachments.cjs');
 const imageSave = require('./imageSave.cjs');
 const localImages = require('./localImages.cjs');
@@ -19,7 +20,7 @@ function registerFilesIpc({ desktopIpc, filesRootAccess }) {
   });
   // A Remote browser has no folder dialog for the laptop; it browses with this.
   desktopIpc.handle('list-directories', async ({ path: dir }) => {
-    const root = await files.canonicalDirectory(expandHome(dir || '~'));
+    const root = await canonicalDirectory(expandHome(dir || '~'));
     const entries = await fsp.readdir(root, { withFileTypes: true });
     const directories = entries
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
@@ -79,7 +80,7 @@ function registerFilesIpc({ desktopIpc, filesRootAccess }) {
     // A paired browser already has a shell on this account, and nobody may be at
     // the laptop to answer a dialog.
     if (isRemoteSender(sender)) return filesRootAccess.authorize(root);
-    const expectedRoot = await files.canonicalDirectory(root);
+    const expectedRoot = await canonicalDirectory(root);
     const result = await dialog.showOpenDialog(getMainWindow(), {
       title: 'Allow Files access to this workspace',
       buttonLabel: 'Allow Files Access',
@@ -89,7 +90,7 @@ function registerFilesIpc({ desktopIpc, filesRootAccess }) {
     if (result.canceled || !result.filePaths[0]) {
       throw new Error('Files access was not authorized.');
     }
-    const selectedRoot = await files.canonicalDirectory(result.filePaths[0]);
+    const selectedRoot = await canonicalDirectory(result.filePaths[0]);
     if (selectedRoot !== expectedRoot) {
       throw new Error('Select the current workspace folder to authorize Files access.');
     }

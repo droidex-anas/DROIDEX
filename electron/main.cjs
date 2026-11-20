@@ -26,7 +26,7 @@ const { createNativeBrowserManager } = require('./nativeBrowser.cjs');
 const { createNativeBrowserShortcuts } = require('./nativeBrowserShortcuts.cjs');
 const { createNativeBrowserRequests } = require('./nativeBrowserRequests.cjs');
 const { createPowerTier } = require('./powerTier.cjs');
-const files = require('./files.cjs');
+const { createRootAccessRegistry } = require('./filesPathSecurity.cjs');
 const localImages = require('./localImages.cjs');
 const favicons = require('./favicons.cjs');
 const canvasPreview = require('./canvasPreview.cjs');
@@ -118,7 +118,7 @@ const performanceMetrics = createPerformanceMetricsCollector({
   powerTier: () => powerTier.current(),
   onSample: (metrics) => powerTier.noteRss(metrics.memory.rssBytes),
 });
-const filesRootAccess = files.createRootAccessRegistry();
+const filesRootAccess = createRootAccessRegistry();
 const diagnostics = createDiagnostics({
   app,
   sentry: Sentry,
