@@ -3,16 +3,14 @@ import type { TranscriptEvent } from '@droidex/protocol';
 import { ProseFileLinks } from './ProseFileLink';
 import { Markdown } from '../Markdown';
 import { TranscriptImage } from '../media/TranscriptImage';
+import { stripAnsi, toolArgString, toolArgStringArray } from '../../lib/tools';
 import {
-  stripAnsi,
   parseWebSearch,
   parseWebFetch,
   looksLikeHtml,
   formatCharCount,
   webSourceName,
-  toolArgString,
-  toolArgStringArray,
-} from '../../lib/tools';
+} from '../../lib/webToolResults';
 import { Caret, ErrorTag, Expand, httpHref, InterruptedTag, linkify, openLink } from './primitives';
 import { LinkBadge } from './LinkBadge';
 import { Badge } from '../ui/Badge';
