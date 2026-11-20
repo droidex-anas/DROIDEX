@@ -137,9 +137,7 @@ function interruptedRecord(value: unknown): value is InterruptedSessionRecord {
   );
 }
 
-// The exhaustive discriminant stays centralized so every inbound event takes
-// the same validation path before renderer code can observe it.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity -- one exhaustive switch validates every inbound event
 export function isServerEvent(value: unknown): value is ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.

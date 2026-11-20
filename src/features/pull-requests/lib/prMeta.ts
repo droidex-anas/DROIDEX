@@ -77,6 +77,10 @@ export function mergeBlockReason(pr: PullRequest): string | null {
   return null;
 }
 
+export function mergePullRequestKey(pr: PullRequest, repositoryKey: string): string {
+  return pr.url || `${repositoryKey}#${String(pr.number)}`;
+}
+
 export function hasMergeConflicts(pr: PullRequest | null): boolean {
   if (!pr) return false;
   const state = (pr.state || '').toLowerCase();
