@@ -16,10 +16,17 @@ import {
   MetricEl,
   CalloutEl,
   TimelineEl,
+} from './JsonRenderElements';
+import {
   MAX_TABLE_COLUMNS,
   asString,
+  asNumber,
+  asArray,
+  asRecordArray,
+  isObject,
+  resolveColor,
   statusColor,
-} from './JsonRenderElements';
+} from './jsonRenderValues';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * Rich <json-render> renderer.
@@ -40,19 +47,10 @@ const MAX_DEPTH = 50;
 // exponentially before MAX_DEPTH alone stops it. A shared node budget caps the
 // total rendered elements so a small malicious/buggy spec can't freeze the UI.
 const MAX_NODES = 1000;
-// Collection props (chart data, table rows, list items) are capped before
-// rendering: a huge array would not only spawn thousands of DOM nodes but can
-// also blow the call stack via spread math like `Math.min(...data)` (a
-// model-supplied `data` of 100k+ numbers throws RangeError and freezes chat).
-const MAX_ITEMS = 2000;
 
 interface Spec {
   root: string;
   elements: Record<string, unknown>;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null;
 }
 
 function isSpec(value: unknown): value is Spec {
@@ -71,60 +69,6 @@ function parseSpec(source: string): Spec | null {
   } catch {
     return null;
   }
-}
-
-const COLOR_MAP: Record<string, string> = {
-  accent: 'var(--accent)',
-  green: 'var(--success)',
-  success: 'var(--success)',
-  orange: 'var(--warning)',
-  warning: 'var(--warning)',
-  red: 'var(--danger)',
-  error: 'var(--danger)',
-  danger: 'var(--danger)',
-  info: 'var(--accent)',
-  blue: 'var(--accent)',
-  muted: 'var(--text-muted)',
-  secondary: 'var(--text-secondary)',
-  text: 'var(--text)',
-  white: 'var(--text)',
-  gray: 'var(--text-muted)',
-  grey: 'var(--text-muted)',
-};
-
-// Only allow our themed names plus literal hex/rgb/hsl/plain-word colors. This
-// blocks CSS functions like url()/var()/image-set() from model-supplied specs
-// from smuggling network requests or escaping the intended style.
-const SAFE_COLOR_RE =
-  /^(#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([\d.,\s%/]+\)|hsla?\([\d.,\s%/]+\)|[a-z]+)$/i;
-
-function resolveColor(c: unknown): string | undefined {
-  if (typeof c !== 'string' || !c) return undefined;
-  const trimmed = c.trim();
-  const mapped = COLOR_MAP[trimmed.toLowerCase()];
-  if (mapped) return mapped;
-  return SAFE_COLOR_RE.test(trimmed) ? trimmed : undefined;
-}
-
-function asNumber(v: unknown): number | undefined {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return Number(v);
-  return undefined;
-}
-
-function asArray(v: unknown): unknown[] {
-  return Array.isArray(v) ? v.slice(0, MAX_ITEMS) : [];
-}
-
-// Like asArray but drops entries that are not plain objects, so components can
-// safely dereference fields (d.value, Object.keys(r), it.status) on specs that
-// include null/primitive entries such as data: [null].
-function asRecordArray(v: unknown): Record<string, unknown>[] {
-  return Array.isArray(v)
-    ? v
-        .filter((e): e is Record<string, unknown> => isObject(e) && !Array.isArray(e))
-        .slice(0, MAX_ITEMS)
-    : [];
 }
 
 /* Merge stray top-level keys into props so malformed specs still render. */

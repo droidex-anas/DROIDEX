@@ -1,32 +1,8 @@
 import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
+import { MAX_TABLE_COLUMNS, asString, statusColor } from './jsonRenderValues';
 
 const CELL = 8; // px per layout "cell" for padding/gap multipliers
-export const MAX_TABLE_COLUMNS = 40;
-
-export function asString(v: unknown, fallback = ''): string {
-  if (v == null) return fallback;
-  if (typeof v === 'string') return v;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  return fallback;
-}
-
-// Semantic status → themed color. success/warning/error use the fixed semantic
-// green/amber/red so they always read by hue, even in monochrome; only info
-// follows the neutral accent so it stays part of the monochrome UI chrome.
-const STATUS_COLOR: Record<string, string> = {
-  success: 'var(--success)',
-  error: 'var(--danger)',
-  warning: 'var(--warning)',
-  info: 'var(--accent)',
-};
-
-// Look up by own-property only: a model-supplied status like "constructor" or
-// "toString" would otherwise resolve through Object.prototype to a truthy value
-// and slip past the map, so guard against prototype keys explicitly.
-export function statusColor(key: string, fallback = 'var(--text-muted)'): string {
-  return Object.prototype.hasOwnProperty.call(STATUS_COLOR, key) ? STATUS_COLOR[key] : fallback;
-}
 
 export function BoxEl({
   row,
