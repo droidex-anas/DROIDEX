@@ -304,15 +304,21 @@ function scoreEntry(entry: SettingsSearchEntry, q: string): number {
 }
 
 /**
- * Ranked setting hits for the query. Empty query → no hits (caller shows normal
- * browsing). Scores prefer label prefix/containment over keyword-only matches.
+ * Ranked setting hits for the query, leaving out `hiddenTabs`. Empty query → no
+ * hits (caller shows normal browsing). Scores prefer label prefix/containment
+ * over keyword-only matches.
  */
-export function searchSettings(query: string, limit = 16): SettingsSearchHit[] {
+export function searchSettings(
+  query: string,
+  hiddenTabs: ReadonlySet<string> = new Set(),
+  limit = 16,
+): SettingsSearchHit[] {
   const q = normalizeQuery(query);
   if (!q) return [];
 
   const hits: SettingsSearchHit[] = [];
   for (const entry of SETTINGS_SEARCH_ENTRIES) {
+    if (hiddenTabs.has(entry.tab)) continue;
     const score = scoreEntry(entry, q);
     if (score > 0) hits.push({ tab: entry.tab, label: entry.label, score });
   }
@@ -330,8 +336,11 @@ export function searchSettings(query: string, limit = 16): SettingsSearchHit[] {
   return unique;
 }
 
-/** Best tab to open for a query, or null when nothing matches. */
-export function bestTabForQuery(query: string): string | null {
-  const hits = searchSettings(query, 1);
+/** Best tab to open for a query, or null when no visible tab matches. */
+export function bestTabForQuery(
+  query: string,
+  hiddenTabs: ReadonlySet<string> = new Set(),
+): string | null {
+  const hits = searchSettings(query, hiddenTabs, 1);
   return hits[0]?.tab ?? null;
 }
