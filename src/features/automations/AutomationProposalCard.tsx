@@ -5,7 +5,12 @@ import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import { toast } from '../../lib/toast';
 import { Button } from '../../components/ui/Button';
 import type { TranscriptEvent, AutomationSchedule } from '@droidex/protocol';
-import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
+import {
+  EditorRow,
+  ScheduleControls,
+  scheduleForKind,
+  useInvalidScheduleInput,
+} from './ScheduleControls';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import {
   confirmAutomationProposal,
@@ -60,6 +65,10 @@ export function AutomationProposalCard({
   );
   const draft = proposal?.draft ?? fallback;
   const workingDraft = overrides ?? draft;
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(
+    workingDraft?.schedule,
+    workingDraft?.timezone,
+  );
   const selectedModel = workingDraft?.modelId
     ? models.find((candidate) => candidate.id === workingDraft.modelId)
     : undefined;
@@ -128,7 +137,7 @@ export function AutomationProposalCard({
   };
 
   const confirm = async () => {
-    if (!proposal || confirming || strictModelIssue || validation) return;
+    if (!proposal || confirming || strictModelIssue || validation || invalidInput) return;
     setConfirming(true);
     try {
       await confirmAutomationProposal(proposal.id, overrides ?? undefined);
@@ -141,7 +150,12 @@ export function AutomationProposalCard({
     }
   };
 
-  const confirmDisabled = !proposal || confirming || state.kind === 'failed' || Boolean(validation);
+  const confirmDisabled =
+    !proposal ||
+    confirming ||
+    state.kind === 'failed' ||
+    Boolean(validation) ||
+    Boolean(invalidInput);
   const helper = validation ?? state.helper;
 
   return (
@@ -227,6 +241,8 @@ export function AutomationProposalCard({
             </EditorRow>
             <ScheduleControls
               schedule={workingDraft.schedule}
+              invalidInput={invalidInput}
+              onInvalidInputChange={setInvalidInput}
               timezone={workingDraft.timezone}
               onChange={updateSchedule}
             />

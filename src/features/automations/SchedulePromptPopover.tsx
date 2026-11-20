@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { useState, type RefObject } from 'react';
 import { Button } from '../../components/ui/Button';
 import { Popover } from '../../components/ui/Popover';
-import { ScheduleControls } from './ScheduleControls';
+import { ScheduleControls, useInvalidScheduleInput } from './ScheduleControls';
 import { AutomationRequestUnconfirmedError } from './client';
 import type { AutomationSchedule } from '@droidex/protocol';
 
@@ -23,6 +23,7 @@ export default function SchedulePromptPopover({
     runAt: nextHour(),
   }));
   const [timezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(schedule, timezone);
   const [saving, setSaving] = useState(false);
   const [unconfirmed, setUnconfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +31,7 @@ export default function SchedulePromptPopover({
     if (!saving) onClose();
   };
   const save = async () => {
-    if (saving || unconfirmed || schedule.kind !== 'once') return;
+    if (saving || unconfirmed || invalidInput || schedule.kind !== 'once') return;
     if (schedule.runAt <= Date.now()) {
       setError('Choose a time in the future.');
       return;
@@ -105,6 +106,8 @@ export default function SchedulePromptPopover({
             <ScheduleControls
               schedule={schedule}
               timezone={timezone}
+              invalidInput={invalidInput}
+              onInvalidInputChange={setInvalidInput}
               onChange={(value) => {
                 setSchedule(value);
                 setError(null);
@@ -129,7 +132,7 @@ export default function SchedulePromptPopover({
             variant="primary"
             size="md"
             loading={saving}
-            disabled={saving || unconfirmed}
+            disabled={saving || unconfirmed || Boolean(invalidInput)}
           >
             Schedule prompt
           </Button>

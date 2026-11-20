@@ -15,7 +15,12 @@ import {
   validateAutomationDraft,
   workspaceLabel,
 } from './schedule';
-import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
+import {
+  EditorRow,
+  ScheduleControls,
+  scheduleForKind,
+  useInvalidScheduleInput,
+} from './ScheduleControls';
 import type { AutomationDraft, AutomationEditorState } from './types';
 
 interface AutomationEditorProps {
@@ -46,6 +51,7 @@ export function AutomationEditor({
   onClose,
 }: AutomationEditorProps) {
   const { draft } = editor;
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(draft.schedule, draft.timezone);
   const isDelivery = draft.target.kind === 'existing-session';
   const validation = useMemo(
     () =>
@@ -269,6 +275,8 @@ export function AutomationEditor({
             )}
             <ScheduleControls
               schedule={draft.schedule}
+              invalidInput={invalidInput}
+              onInvalidInputChange={setInvalidInput}
               timezone={draft.timezone}
               onChange={updateSchedule}
             />
@@ -316,8 +324,10 @@ export function AutomationEditor({
             variant="primary"
             size="md"
             className="ml-auto"
-            onClick={onSave}
-            disabled={saving || Boolean(validation)}
+            onClick={() => {
+              if (!saving && !validation && !invalidInput) onSave();
+            }}
+            disabled={saving || Boolean(validation) || Boolean(invalidInput)}
           >
             {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
           </Button>
