@@ -131,3 +131,38 @@ test('Devin always-allow grants match the same action, not a new command or path
   await h.interactions.respondToApproval('thread', approval.requestId, 'cancel');
   assert.deepEqual(await empty, { outcome: { outcome: 'cancelled' } });
 });
+
+test('Devin grants isolate inference tool identities even when display titles match', async () => {
+  const h = createInteractionsHarness();
+  h.addLiveSession('thread');
+  const interactions = h.interactions.interactionsFor({ id: 'thread' });
+  let sequence = 0;
+  const ask = (name: string) =>
+    devinPermission(
+      'thread',
+      request({
+        toolCallId: `tool-${++sequence}`,
+        title: 'Edit file',
+        kind: 'edit',
+        rawInput: { path: '/file' },
+        _meta: { 'cognition.ai/inferenceToolName': name },
+      }),
+      interactions,
+      new AbortController().signal,
+    );
+  const first = ask('edit_file');
+  const approval = latestApprovalRequest(h.emitted);
+  await h.interactions.respondToApproval('thread', approval.requestId, 'proceed_always');
+  assert.deepEqual(await first, { outcome: { outcome: 'selected', optionId: 'always' } });
+  const count = approvalRequests(h.emitted).length;
+  assert.deepEqual(await ask('edit_file'), {
+    outcome: { outcome: 'selected', optionId: 'always' },
+  });
+  assert.equal(approvalRequests(h.emitted).length, count);
+  const different = ask('rewrite_file');
+  assert.equal(approvalRequests(h.emitted).length, count + 1);
+  const next = latestApprovalRequest(h.emitted);
+  assert.equal(next.title, 'rewrite_file');
+  await h.interactions.respondToApproval('thread', next.requestId, 'refuse');
+  assert.deepEqual(await different, { outcome: { outcome: 'selected', optionId: 'no' } });
+});

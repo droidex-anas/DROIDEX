@@ -4,9 +4,8 @@ import type { NormalizedEvent } from '../../normalize.js';
 import type { SessionRole, TranscriptEvent } from '../../protocol.js';
 
 export function devinToolName(tool: ToolCallUpdate): string {
-  const name = tool._meta?.['cognition.ai/inferenceToolName'];
-  if (typeof name === 'string' && (!tool.title || tool.title === 'Tool')) return name;
-  return tool.name ?? tool.title ?? 'Tool';
+  const name = tool.name ?? tool._meta?.['cognition.ai/inferenceToolName'];
+  return typeof name === 'string' ? name : (tool.title ?? 'Tool');
 }
 
 export class DevinEvents {

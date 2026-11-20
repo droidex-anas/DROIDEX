@@ -219,7 +219,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       content: { type: 'text', text }, _meta: { 'cognition.ai/streamingMessageId': 'answer' } });
     update({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Think' },
       _meta: { 'cognition.ai/streamingMessageId': 'thought' } });
-    update({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Tool', kind: 'execute',
+    update({ sessionUpdate: 'tool_call', toolCallId: 'tool', title: 'Run a command', kind: 'execute',
       status: 'in_progress', rawInput: { command: 'pwd' }, _meta: { 'cognition.ai/inferenceToolName': 'shell' } });
     update({ sessionUpdate: 'tool_call_update', toolCallId: 'tool', status: 'completed', rawOutput: '/workspace' });
     update({ sessionUpdate: 'tool_call', toolCallId: 'failed', title: 'Fail', status: 'failed', rawOutput: 'broken' });
