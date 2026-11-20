@@ -79,7 +79,7 @@ async function setup(t: test.TestContext, fileCount = 1) {
   let diffs!: ReturnType<typeof useReviewFileDiffs>;
   function Harness() {
     review = useReviewDiff(cwd, scope, true);
-    diffs = useReviewFileDiffs(cwd, scope, ignoreWhitespace, review.signature, appSessionId);
+    diffs = useReviewFileDiffs(cwd, scope, ignoreWhitespace, review.fileSignatures, appSessionId);
     useEffect(() => {
       open.forEach(diffs.ensure);
       if (active) diffs.ensure(active);
@@ -103,7 +103,6 @@ async function setup(t: test.TestContext, fileCount = 1) {
     },
     setFailure(value: boolean) {
       failPatch = value;
-      files[0].fingerprint += '.';
     },
     setPending(value: Promise<FileDiffResult> | undefined) {
       pending = value;
@@ -217,18 +216,40 @@ for (const [change, props] of Object.entries({
   });
 }
 
-test('a failed revalidation preserves the loaded patch and a later edit retries', async (t) => {
+test('a failed revalidation preserves the loaded patch and an unchanged poll retries', async (t) => {
   const h = await setup(t);
   await h.render(['file-0']);
   const entry = h.diffs().entries['file-0'];
   h.setFailure(true);
+  h.setPatch('recovered patch');
   await h.poll();
+  assert.equal(h.requests(), 2);
   assert.equal(h.diffs().entries['file-0'], entry);
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
   h.setFailure(false);
-  h.setPatch('recovered patch');
   await h.poll();
+  assert.equal(h.requests(), 3);
   assert.equal(h.diffs().entries['file-0']?.diff, 'recovered patch');
+});
+
+test('an initial patch failure retries on an unchanged poll only while requested', async (t) => {
+  const h = await setup(t);
+  h.setFailure(true);
+  await h.render(['file-0']);
+  assert.equal(h.requests(), 1);
+  assert.equal(h.diffs().entries['file-0']?.loaded, false);
+  await h.poll();
+  assert.equal(h.requests(), 2);
+  await h.render([]);
+  await h.poll();
+  assert.equal(h.requests(), 2);
+  await h.render(['file-0']);
+  assert.equal(h.requests(), 3);
+  h.setFailure(false);
+  await h.poll();
+  assert.equal(h.requests(), 4);
+  assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-A');
+  assert.equal(h.diffs().entries['file-0']?.loaded, true);
 });
 
 test('an unchanged patch retains identity after revalidation and an empty success clears it', async (t) => {

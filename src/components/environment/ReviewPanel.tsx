@@ -272,7 +272,7 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     cwd,
     reviewState.reviewScope,
     hideWhitespace,
-    review.signature,
+    review.fileSignatures,
     appSessionId,
   );
   const git = useGitEnvironment(cwd, 'worktree');

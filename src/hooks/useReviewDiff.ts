@@ -9,6 +9,7 @@ export interface ReviewDiffState {
   base: string | null;
   loadingList: boolean;
   signature: string;
+  fileSignatures: ReadonlyMap<string, string>;
   refresh: () => void;
 }
 
@@ -25,7 +26,7 @@ export function useReviewDiff(
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [base, setBase] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [signature, setSignature] = useState('');
+  const [fileSignatures, setFileSignatures] = useState<ReadonlyMap<string, string>>(new Map());
   const listReq = useRef(0);
   // In-flight flag: poll ticks consult this so a tick that fires while the
   // previous load is still pending is skipped (no stacked git subprocesses).
@@ -49,7 +50,7 @@ export function useReviewDiff(
       loadedKey.current = null;
       setFiles([]);
       setBase(null);
-      setSignature('');
+      setFileSignatures(new Map());
       setLoadingList(false);
       return;
     }
@@ -72,15 +73,18 @@ export function useReviewDiff(
           binary,
         }));
         setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(nextFiles) ? prev : nextFiles));
-        setSignature(
-          JSON.stringify(
+        // Fresh snapshots retry failed patches on idle polls without invalidating loaded ones.
+        setFileSignatures(
+          new Map(
             res.files.map((file) => [
               file.path,
-              file.status,
-              file.additions,
-              file.deletions,
-              file.binary,
-              file.fingerprint,
+              JSON.stringify([
+                file.status,
+                file.additions,
+                file.deletions,
+                file.binary,
+                file.fingerprint,
+              ]),
             ]),
           ),
         );
@@ -130,7 +134,8 @@ export function useReviewDiff(
     files,
     base,
     loadingList: loadingList || !listSettled,
-    signature,
+    signature: JSON.stringify([...fileSignatures]),
+    fileSignatures,
     refresh: loadList,
   };
 }
