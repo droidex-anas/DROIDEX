@@ -13,6 +13,8 @@ export class DevinEvents {
   private readonly tools = new Map<string, ToolCallUpdate>();
   private readonly completed = new Set<string>();
   private forkPointId?: string;
+  private tokensIn = 0;
+  private tokensOut = 0;
 
   startTurn(): void {
     this.forkPointId = `devin-turn-${randomUUID()}`;
@@ -95,11 +97,14 @@ export class DevinEvents {
         return events;
       }
       case 'usage_update':
+        // Devin's counters describe one inference; cache reads/writes are input subsets.
+        this.tokensIn += tokenCount(update._meta?.['cognition.ai/inputTokens']);
+        this.tokensOut += tokenCount(update._meta?.['cognition.ai/outputTokens']);
         return [
           {
             tokens: {
-              tokensIn: 0,
-              tokensOut: 0,
+              tokensIn: this.tokensIn,
+              tokensOut: this.tokensOut,
               contextTokens: update.used,
               maxContextTokens: update.size,
             },
@@ -125,4 +130,8 @@ export class DevinEvents {
       },
     };
   }
+}
+
+function tokenCount(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }

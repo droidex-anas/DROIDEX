@@ -283,6 +283,17 @@ deletes and closes that session. The ACP session id is `providerSessionId`;
 resume starts a fresh process and loads it without replaying history into
 DROIDEX's app-owned transcript. In-app MCP servers use the existing per-session
 loopback HTTP endpoints. Filesystem client capabilities are not advertised.
+Devin's `usage_update._meta` reports inference input/output counters under
+`cognition.ai/inputTokens` and `cognition.ai/outputTokens`. The adapter accumulates
+these into runtime totals, retaining them across context-only updates and turns;
+load-time replay is suppressed. Resume seeds the saved usage offset through the
+same lifecycle path as Claude, so a fresh accumulator cannot erase historical spend.
+Cache reads and writes are already included in
+input, not extra spend. The [public Devin ACP trace](https://github.com/zed-industries/zed/issues/61810)
+shows consecutive inference counters and their cache subsets. The live usage
+contract has no separate cache or cost fields. Optional ACP prompt-response
+usage has no verified Devin semantics and is not added to these notifications.
+No CLI or ACP account plan-limit reader is exposed; account meters remain unavailable.
 ACP client terminals run shell commands in session-owned sidecar processes,
 with bounded output, cwd/environment support, separate kill/wait/release, and
 cleanup on interrupt or close. A small live group owner retains each terminal

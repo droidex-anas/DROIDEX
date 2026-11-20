@@ -677,7 +677,7 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       await d.registry.register(liveSession, requireCurrentResume);
-      if (kind === 'claude')
+      if (kind === 'claude' || kind === 'devin')
         d.context.preserveUsage(appSessionId, {
           tokensIn: projectedSummary.tokensIn,
           tokensOut: projectedSummary.tokensOut,

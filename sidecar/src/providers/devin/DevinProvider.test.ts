@@ -82,6 +82,101 @@ async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<Normaliz
   return events;
 }
 
+test('Devin accumulates reported inference usage without adding cache subsets or replayed usage', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const usageFile = join(h.cwd, 'usage.json');
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 26056,
+        size: 1000000,
+        _meta: {
+          'cognition.ai/inputTokens': 25943,
+          'cognition.ai/outputTokens': 113,
+          'cognition.ai/cachedWriteTokens': 25940,
+        },
+      },
+      {
+        sessionUpdate: 'usage_update',
+        used: 26944,
+        size: 1000000,
+        _meta: {
+          'cognition.ai/inputTokens': 26712,
+          'cognition.ai/outputTokens': 232,
+          'cognition.ai/cachedReadTokens': 25940,
+          'cognition.ai/cachedWriteTokens': 769,
+        },
+      },
+    ]),
+  );
+  const first = await collect(session.stream('usage'));
+  assert.deepEqual(
+    first.flatMap((event) => event.tokens ?? []),
+    [
+      { tokensIn: 25943, tokensOut: 113, contextTokens: 26056, maxContextTokens: 1000000 },
+      { tokensIn: 52655, tokensOut: 345, contextTokens: 26944, maxContextTokens: 1000000 },
+    ],
+  );
+  assert.deepEqual(first.at(-1), { done: true });
+  await session.close();
+  const resumed = await h.provider.resume(session.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  const replayFree = await collect(resumed.stream('usage'));
+  assert.deepEqual(
+    replayFree.flatMap((event) => event.tokens ?? []),
+    first.flatMap((event) => event.tokens ?? []),
+  );
+});
+
+test('Devin context-only and malformed counters preserve known spend across turns', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const usageFile = join(h.cwd, 'usage.json');
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 13,
+        size: 100,
+        _meta: { 'cognition.ai/inputTokens': 10, 'cognition.ai/outputTokens': 3 },
+      },
+    ]),
+  );
+  await collect(session.stream('usage'));
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      ...[null, -1, 0.5, '100', 1e100].map((invalid) => ({
+        sessionUpdate: 'usage_update',
+        used: 5,
+        size: 200,
+        _meta: { 'cognition.ai/inputTokens': invalid, 'cognition.ai/outputTokens': invalid },
+      })),
+      { sessionUpdate: 'usage_update', used: 5, size: 200 },
+    ]),
+  );
+  const updates = (await collect(session.stream('usage'))).flatMap((event) => event.tokens ?? []);
+  assert.equal(updates.length, 6);
+  for (const usage of updates)
+    assert.deepEqual(usage, {
+      tokensIn: 10,
+      tokensOut: 3,
+      contextTokens: 5,
+      maxContextTokens: 200,
+    });
+  const contextOnly = await collect(session.stream('hello'));
+  assert.deepEqual(contextOnly.find((event) => event.tokens)?.tokens, {
+    tokensIn: 10,
+    tokensOut: 3,
+    contextTokens: 20,
+    maxContextTokens: 100,
+  });
+});
+
 test('Devin client terminals stream shell output with cwd and env, then retain the result after release', async (t) => {
   const h = await fixture(t);
   const session = await h.create();

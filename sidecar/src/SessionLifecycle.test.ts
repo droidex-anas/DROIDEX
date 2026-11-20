@@ -29,6 +29,9 @@ import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { DevinProvider } from './providers/devin/DevinProvider.js';
+import { devinAcpCli } from './testing/devinAcpCli.js';
+import { SessionContext } from './SessionContext.js';
 import { providerIdentityCli } from './testing/providerIdentityCli.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
@@ -2003,6 +2006,67 @@ test('a cold Claude resume seeds historical billing usage once before new turns'
     h.calls.filter((call) => call.method === 'context.preserveUsage').map((call) => call.args),
     [['claude-chat', { tokensIn: 100, tokensOut: 40 }]],
   );
+});
+
+test('Devin resume preserves saved spend through context-only and inference updates without reseeding live runtimes', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'devin-resume-usage-'));
+  const executable = join(cwd, 'devin.cjs');
+  await writeFile(executable, devinAcpCli, { mode: 0o755 });
+  const previous = process.env.DEVIN_PATH;
+  process.env.DEVIN_PATH = executable;
+  t.after(async () => {
+    await h.lifecycle.closeAll();
+    if (previous === undefined) delete process.env.DEVIN_PATH;
+    else process.env.DEVIN_PATH = previous;
+    await rm(cwd, { recursive: true, force: true });
+  });
+  const context: SessionContext = new SessionContext({
+    get registry() {
+      return h.registry;
+    },
+    get runtime() {
+      return h.runtime;
+    },
+    emit: () => undefined,
+    maxContextTokensForSummary: (item) => item.maxContextTokens,
+    noteContextWindow: () => undefined,
+  });
+  const historical = [
+    summary('devin-chat', 'devin-one', { provider: 'devin', cwd, tokensIn: 100, tokensOut: 40 }),
+  ];
+  const h: Harness = createHarness(historical, undefined, { context });
+  h.setProvider(new DevinProvider());
+  const resumed = await h.lifecycle.resume('devin-chat');
+  assert.ok(resumed);
+  const applyTurn = async (prompt: string) => {
+    const live = requireLive(h, 'devin-chat');
+    for await (const event of live.session.stream(prompt))
+      if (event.tokens) context.recordUsage('devin-chat', 'devin-chat', event.tokens);
+    return [live.summary.tokensIn, live.summary.tokensOut];
+  };
+  assert.deepEqual(await applyTurn('hello'), [100, 40]);
+  await writeFile(
+    join(cwd, 'usage.json'),
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 13,
+        size: 100,
+        _meta: {
+          'cognition.ai/inputTokens': 10,
+          'cognition.ai/outputTokens': 3,
+        },
+      },
+    ]),
+  );
+  assert.deepEqual(await applyTurn('usage'), [110, 43]);
+  assert.equal(await h.lifecycle.resume('devin-chat'), resumed);
+  assert.deepEqual(await applyTurn('hello'), [110, 43]);
+  historical[0] = { ...resumed.summary };
+  await h.lifecycle.close('devin-chat');
+  assert.ok(await h.lifecycle.resume('devin-chat'));
+  assert.deepEqual(await applyTurn('hello'), [110, 43]);
+  assert.deepEqual(await applyTurn('usage'), [120, 46]);
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {
