@@ -10,7 +10,7 @@ import { AnimatePresence } from 'framer-motion';
 import { Spinner } from '@droidex/icons';
 import type { RemoteArtScene } from '../../src/features/remote/RemoteArt';
 import { Button } from '../../src/components/ui/Button';
-import type { RemoteBrowserControls } from '../../src/lib/desktop';
+import type { RemoteBrowserControls } from '../../src/lib/desktopContract';
 import { GateLayout, GateScreen, type GateStep } from './GateLayout';
 import { LaunchScreen } from './LaunchScreen';
 import { loadLaptopRenderer } from './laptopRenderer';

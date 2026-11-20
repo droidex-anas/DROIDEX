@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, ExternalLink, FolderSearch } from '@droidex/icons';
 import { Highlight } from 'prism-react-renderer';
-import { readFilePreview, type FilePreviewPayload } from '../../lib/desktop';
+import { readFilePreview } from '../../lib/desktop';
+import type { FilePreviewPayload } from '../../lib/desktopContract';
 import { resolveFilePresentation } from '../../lib/filePresentation';
 import { parseDelimitedText } from '../../lib/filePreview';
 import { pathFileName } from '../../lib/pathDisplay';

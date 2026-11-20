@@ -28,13 +28,8 @@ import {
   newClientRef,
   listSkills,
 } from '../lib/commands';
-import {
-  pickFiles,
-  listFiles,
-  isDesktop,
-  pathForFile,
-  type FeedbackReportRequest,
-} from '../lib/desktop';
+import { pickFiles, listFiles, isDesktop, pathForFile } from '../lib/desktop';
+import type { FeedbackReportRequest } from '../lib/desktopContract';
 import {
   pathsInSequence,
   useImageAttachments,

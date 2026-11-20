@@ -3,7 +3,7 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { createServer, type ViteDevServer } from 'vite';
-import type { PreviewGuestBinding } from '../../../src/lib/desktop';
+import type { PreviewGuestBinding } from '../../../src/lib/desktopContract';
 import type {} from './CanvasBoardHarness';
 
 declare global {

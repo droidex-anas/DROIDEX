@@ -10,14 +10,8 @@ import {
   X,
   type IconComponent,
 } from '@droidex/icons';
-import {
-  authorizeFilesRoot,
-  listDirectory,
-  openFileDefault,
-  revealFile,
-  type FilesEntry,
-  type FilesListing,
-} from '../../lib/desktop';
+import { authorizeFilesRoot, listDirectory, openFileDefault, revealFile } from '../../lib/desktop';
+import type { FilesEntry, FilesListing } from '../../lib/desktopContract';
 import { pathFileName } from '../../lib/pathDisplay';
 import { toast } from '../../lib/toast';
 import { FileTypeIcon } from '../FileTypeIcon';

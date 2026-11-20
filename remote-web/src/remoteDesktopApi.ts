@@ -11,7 +11,7 @@ import type {
   RemoteBrowserControls,
   SharedStorageChange,
   SharedStorageKey,
-} from '../../src/lib/desktop';
+} from '../../src/lib/desktopContract';
 import { forgetDevice } from './deviceStore';
 import { pickRemoteDirectory } from './FolderPicker';
 import type { RemoteConnection } from './remoteConnection';

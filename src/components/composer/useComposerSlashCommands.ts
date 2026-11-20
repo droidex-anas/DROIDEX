@@ -14,7 +14,7 @@ import { useStoreDispatch } from '../../hooks/useStore';
 import useFastMode from '../../hooks/useFastMode';
 import { compactSession, updateSessionSettings } from '../../lib/commands';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
-import type { FeedbackCategory } from '../../lib/desktop';
+import type { FeedbackCategory } from '../../lib/desktopContract';
 import { FAST_MODE_HINT, offersFastMode } from '../../lib/fastMode';
 import { toast } from '../../lib/toast';
 import { supportsSpecMode } from '../../features/providers/providerIdentity';
