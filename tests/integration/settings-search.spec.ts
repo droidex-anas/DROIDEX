@@ -31,7 +31,7 @@ async function asRemoteBrowser(page: Page): Promise<void> {
   });
 }
 
-async function searchSettings(page: Page, query: string): Promise<void> {
+async function openSettingsAndSearch(page: Page, query: string): Promise<void> {
   await page.goto(appUrl);
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('textbox', { name: 'Search settings' }).fill(query);
@@ -45,15 +45,15 @@ test.describe('settings search in a Remote browser', () => {
   });
 
   test('opens the visible match instead of the laptop-only Profile tab', async ({ page }) => {
-    await searchSettings(page, 'tokens');
+    await openSettingsAndSearch(page, 'tokens');
 
     await expect(page.getByText('1 match')).toBeVisible();
     await expect(openTab(page)).toHaveText('General');
     await expect(page.getByText(/Open DROIDEX on your laptop/)).toHaveCount(0);
   });
 
-  test('stays on the current tab when only laptop-only settings match', async ({ page }) => {
-    await searchSettings(page, 'username');
+  test('does not open the laptop-only Profile tab when only it matches', async ({ page }) => {
+    await openSettingsAndSearch(page, 'username');
 
     await expect(page.getByText('No matching settings.')).toBeVisible();
     await expect(page.getByText(/Open DROIDEX on your laptop/)).toHaveCount(0);
@@ -61,7 +61,7 @@ test.describe('settings search in a Remote browser', () => {
 });
 
 test('settings search on the laptop still opens Profile for its own settings', async ({ page }) => {
-  await searchSettings(page, 'tokens');
+  await openSettingsAndSearch(page, 'tokens');
 
   await expect(page.getByText('2 matches')).toBeVisible();
   await expect(openTab(page)).toHaveText('Profile');

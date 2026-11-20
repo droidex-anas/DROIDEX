@@ -303,6 +303,8 @@ function scoreEntry(entry: SettingsSearchEntry, q: string): number {
   return 0;
 }
 
+export const NO_HIDDEN_TABS: ReadonlySet<string> = new Set();
+
 /**
  * Ranked setting hits for the query, leaving out `hiddenTabs`. Empty query → no
  * hits (caller shows normal browsing). Scores prefer label prefix/containment
@@ -310,7 +312,7 @@ function scoreEntry(entry: SettingsSearchEntry, q: string): number {
  */
 export function searchSettings(
   query: string,
-  hiddenTabs: ReadonlySet<string> = new Set(),
+  hiddenTabs: ReadonlySet<string> = NO_HIDDEN_TABS,
   limit = 16,
 ): SettingsSearchHit[] {
   const q = normalizeQuery(query);
@@ -339,7 +341,7 @@ export function searchSettings(
 /** Best tab to open for a query, or null when no visible tab matches. */
 export function bestTabForQuery(
   query: string,
-  hiddenTabs: ReadonlySet<string> = new Set(),
+  hiddenTabs: ReadonlySet<string> = NO_HIDDEN_TABS,
 ): string | null {
   const hits = searchSettings(query, hiddenTabs, 1);
   return hits[0]?.tab ?? null;

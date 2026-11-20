@@ -27,6 +27,7 @@ import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
 import {
   bestTabForQuery,
+  NO_HIDDEN_TABS,
   searchSettings,
   tabMatchesQuery,
   type SettingsSearchHit,
@@ -84,7 +85,6 @@ const NAV: { group: string; items: NavItem[] }[] = [
 // The public profile is published with the laptop's Remote identity, which a
 // paired browser cannot use.
 const LAPTOP_ONLY_TABS: ReadonlySet<string> = new Set(['Profile']);
-const NO_HIDDEN_TABS: ReadonlySet<string> = new Set();
 
 function SetupSection({ onClose }: { onClose: () => void }) {
   const onboard = useOnboarding();
