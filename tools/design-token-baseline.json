@@ -1,10 +1,15 @@
 {
   "src/components/MissionControl.tsx": {
-    "arbitrary-value": 30,
-    "border-width": 15,
-    "uppercase": 6
+    "arbitrary-value": 17,
+    "border-width": 13,
+    "uppercase": 4
   },
   "src/components/MissionControlContextPanel.tsx": {
     "arbitrary-value": 13
+  },
+  "src/components/MissionControlFeatureDetail.tsx": {
+    "arbitrary-value": 13,
+    "border-width": 2,
+    "uppercase": 2
   }
 }
