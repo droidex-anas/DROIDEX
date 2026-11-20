@@ -1,6 +1,10 @@
 import { isRecord } from '../../packages/remote/src/index';
 import type { RemoteRequest } from '../../packages/remote/src/application';
-import type { BridgeSocket, TerminalDataChannel, TerminalEvent } from '../../src/lib/desktop';
+import type {
+  BridgeSocket,
+  TerminalDataChannel,
+  TerminalEvent,
+} from '../../src/lib/desktopContract';
 
 type Send = (request: RemoteRequest) => void;
 

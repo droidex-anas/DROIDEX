@@ -1,9 +1,5 @@
-import {
-  getSidecarStatus,
-  onSidecarStatus,
-  type SidecarLifecycle,
-  type SidecarSupervisorSnapshot,
-} from './desktop';
+import { getSidecarStatus, onSidecarStatus } from './desktop';
+import type { SidecarLifecycle, SidecarSupervisorSnapshot } from './desktopContract';
 
 export type TransportHealth = 'connected' | 'disconnected';
 

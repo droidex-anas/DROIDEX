@@ -1,4 +1,5 @@
-import { getBridgeInfo, openBridgeSocket, type BridgeSocket } from './desktop';
+import { getBridgeInfo, openBridgeSocket } from './desktop';
+import type { BridgeSocket } from './desktopContract';
 import { noteBridgeEventReceived } from './rendererPerf';
 import { setTransportHealth } from './runtimeHealth';
 import type * as bridgeWireValidation from './bridgeWireValidation';

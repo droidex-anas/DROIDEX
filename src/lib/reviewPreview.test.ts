@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReviewPreviewRequest } from './reviewPreview';
-import type { FilePreviewPayload } from './desktop';
+import type { FilePreviewPayload } from './desktopContract';
 
 function deferred<T>() {
   let resolve: ((value: T) => void) | undefined;

@@ -1,10 +1,10 @@
 import {
-  type CanvasImageSaveResult,
   cancelCanvasPreviewCapture,
   captureCanvasPreview,
   saveCanvasImage,
   saveCanvasSvg,
 } from '../../lib/desktop';
+import type { CanvasImageSaveResult } from '../../lib/desktopContract';
 import type { PreviewVector } from './previewDocument';
 import type {
   CanvasCommand,

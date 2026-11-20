@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, type ReactNode } from 'react';
-import type { FeedbackReportRequest } from '../../lib/desktop';
+import type { FeedbackReportRequest } from '../../lib/desktopContract';
 import { openExternal } from '../../lib/onboarding';
 
 const LazyFeedbackModal = lazy(async () => {
