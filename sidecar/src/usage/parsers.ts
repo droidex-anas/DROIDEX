@@ -7,7 +7,7 @@ import {
   count,
   mergeKnownCounts,
   sameKnownCounts,
-} from './codexTokenCounts.js';
+} from './tokenCounts.js';
 import {
   CLAUDE_USAGE_PARSER_VERSION,
   CODEX_USAGE_PARSER_VERSION,
