@@ -54,3 +54,34 @@ test('Devin thread approvals respect the lead provider, action and autonomy', as
     }
   }
 });
+
+test('Devin switch-mode approvals carry inline plan text without requiring a spec file', async () => {
+  const h = createInteractionsHarness();
+  h.addLiveSession('thread');
+  const interactions = h.interactions.interactionsFor({ id: 'thread' });
+  for (const [rawInput, text, expected] of [
+    [{ plan: '# Reviewed plan' }, 'Other text', '# Reviewed plan'],
+    [{ mode: 'auto' }, '# Inline plan\n\nImplement it.', '# Inline plan\n\nImplement it.'],
+    [{ plan: 123 }, '  ', undefined],
+    [null, '', undefined],
+  ] as const) {
+    const pending = devinPermission(
+      'thread',
+      request({
+        toolCallId: 'plan',
+        title: 'Review plan',
+        kind: 'switch_mode',
+        rawInput,
+        content: [{ type: 'content', content: { type: 'text', text } }],
+      }),
+      interactions,
+      new AbortController().signal,
+    );
+    const approval = latestApprovalRequest(h.emitted);
+    assert.equal(approval.kind, 'spec');
+    assert.equal(approval.plan, expected);
+    if (expected) assert.equal(approval.detail, expected);
+    await h.interactions.respondToApproval('thread', approval.requestId, 'cancel');
+    assert.deepEqual(await pending, { outcome: { outcome: 'cancelled' } });
+  }
+});

@@ -3,6 +3,7 @@ import type {
   RequestPermissionResponse,
 } from '@agentclientprotocol/sdk/unstable';
 import type { PermissionKind } from '../../protocol.js';
+import { objectValue, trimmedString } from '../../values.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { devinToolName } from './devinEvents.js';
 
@@ -28,13 +29,25 @@ export async function devinPermission(
       kind = 'spec';
       break;
   }
+  const plan =
+    kind === 'spec'
+      ? (trimmedString(objectValue(request.toolCall.rawInput)?.plan) ??
+        trimmedString(
+          (request.toolCall.content ?? [])
+            .flatMap((item) =>
+              item.type === 'content' && item.content.type === 'text' ? [item.content.text] : [],
+            )
+            .join('\n'),
+        ))
+      : undefined;
   const outcome = await interactions.requestApproval({
     request: {
       appSessionId,
       requestId: nextInteractionRequestId(),
       kind,
       title: devinToolName(request.toolCall),
-      detail: JSON.stringify(request.toolCall.rawInput ?? request.toolCall.title ?? ''),
+      detail: plan ?? JSON.stringify(request.toolCall.rawInput ?? request.toolCall.title ?? ''),
+      ...(plan ? { plan } : {}),
       canAlwaysAllow: options.some((option) => option.kind === 'allow_always'),
       raw: request.toolCall,
     },
