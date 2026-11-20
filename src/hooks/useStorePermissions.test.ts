@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { adaptEvent, initialState, reducer } from './useStore';
+import { initialState, reducer } from './useStore';
+import { adaptEvent } from './storeEvents';
 import type { PermissionRequest, SessionQuestion } from '@droidex/protocol';
 
 function makePermission(appSessionId: string, kind: PermissionRequest['kind'] = 'exec') {
