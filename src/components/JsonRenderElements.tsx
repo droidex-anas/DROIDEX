@@ -1,4 +1,4 @@
-import { type ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 
 const CELL = 8; // px per layout "cell" for padding/gap multipliers
