@@ -66,6 +66,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     update({ sessionUpdate: 'config_option_update', configOptions });
     if (method === 'session/load') {
       update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
+      if (existsSync(join(root, 'usage.json')))
+        for (const event of JSON.parse(readFileSync(join(root, 'usage.json'), 'utf8'))) update(event);
       if (existsSync(join(root, 'replay-children'))) {
         childStarted('background'); childText('background', 'Replayed child answer');
         childStarted('finished'); childCompleted('finished');
@@ -93,6 +95,10 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
   else if (method === 'session/prompt') {
     const text = params.prompt[0].text;
+    if (text === 'usage') {
+      for (const event of JSON.parse(readFileSync(join(root, 'usage.json'), 'utf8'))) update(event);
+      result(id, { stopReason: 'end_turn' }); return;
+    }
     if (text === 'exit') { process.stderr.write('backend failed\n'); process.exit(7); }
     if (text === 'refuse') { result(id, { stopReason: 'refusal' }); return; }
     if (text === 'empty') { result(id, { stopReason: 'end_turn' }); return; }
@@ -103,7 +109,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       update({ sessionUpdate: 'tool_call', toolCallId: 'shared', title: 'Parent tool', status: 'in_progress' });
       for (const agentId of ['child-a', 'child-b']) {
         childText(agentId, 'Answer ' + agentId);
-        childUpdate(agentId, { sessionUpdate: 'usage_update', used: 999, size: 1000 });
+        childUpdate(agentId, { sessionUpdate: 'usage_update', used: 999, size: 1000,
+          _meta: { 'cognition.ai/inputTokens': 900, 'cognition.ai/outputTokens': 99 } });
         childUpdate(agentId, { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'Think ' + agentId } });
         childUpdate(agentId, { sessionUpdate: 'tool_call', toolCallId: 'shared', title: 'Tool', kind: 'execute',
           status: 'in_progress', rawInput: { command: agentId }, _meta: { 'cognition.ai/inferenceToolName': 'shell' } });

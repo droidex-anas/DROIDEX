@@ -105,7 +105,7 @@ export class DevinSubagents {
     if (!id) return undefined;
     const child = this.children.get(id);
     if (!child || settled(child.signal)) return [];
-    // ACP's usage_update describes context, not this child's token spend.
+    // Child context updates have no verified independent spend accounting.
     if (update.sessionUpdate === 'usage_update') return [];
     return this.owned(id, child.mapper.map(notification));
   }
