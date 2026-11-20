@@ -3,20 +3,13 @@ import { lstat, open, realpath } from 'node:fs/promises';
 import { isAbsolute, relative, sep } from 'node:path';
 
 import type { OpaqueUsageCursor, OpaqueUsageSourceStore } from './UsageSourceContract.js';
+import { COUNT_KEYS, completeSum, count } from './tokenCounts.js';
 import type { UsageEvent, UsageTokenCounts } from './types.js';
 
 const ADAPTER_NAME = 'droid-settings';
 const ADAPTER_VERSION = 2;
-const MAX_TOKEN_COUNT = 1_000_000_000_000_000;
 const MAX_DATE_MS = 8_640_000_000_000_000;
 const AUDIT_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-const COUNT_KEYS: (keyof UsageTokenCounts)[] = [
-  'inputTokens',
-  'outputTokens',
-  'cacheWriteTokens',
-  'cacheReadTokens',
-  'reasoningTokens',
-];
 
 class MalformedSettingsError extends Error {}
 
@@ -368,12 +361,6 @@ function restoreFileState(cursor: OpaqueUsageCursor | null, sourcePath: string):
   throw cursorError(sourcePath);
 }
 
-function completeSum(...values: (number | null)[]): number | null {
-  if (values.includes(null)) return null;
-  const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-  return Number.isSafeInteger(total) && total <= MAX_TOKEN_COUNT ? total : null;
-}
-
 function restoreCounts(value: Record<string, unknown>): UsageTokenCounts | null {
   if (COUNT_KEYS.some((key) => value[key] !== null && count(value[key]) === null)) return null;
   return {
@@ -383,12 +370,6 @@ function restoreCounts(value: Record<string, unknown>): UsageTokenCounts | null 
     cacheReadTokens: count(value.cacheReadTokens),
     reasoningTokens: count(value.reasoningTokens),
   };
-}
-
-function count(value: unknown): number | null {
-  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= MAX_TOKEN_COUNT
-    ? Number(value)
-    : null;
 }
 
 function hasUsage(value: UsageTokenCounts): boolean {
