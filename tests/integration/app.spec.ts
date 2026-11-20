@@ -3,8 +3,6 @@ import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 
-test.use({ video: 'on' });
-
 const session: SessionSummary = {
   appSessionId: 'menu-target',
   provider: 'droid',
