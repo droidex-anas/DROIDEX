@@ -18,8 +18,6 @@ export type ChildStreamPhase =
   | 'failed'
   | 'interrupted';
 
-export type ChildStreamPresentation = 'typewriter' | 'tool' | 'working' | 'idle';
-
 export const CHILD_STREAM_PHASE_LABEL: Record<ChildStreamPhase, string> = {
   queued: 'Queued',
   starting: 'Starting',
@@ -80,21 +78,6 @@ export function childStreamPhase(input: {
 export function childStreamPhaseLabel(phase: ChildStreamPhase, fidelity: StreamFidelity): string {
   if (phase === 'streaming' && fidelity !== 'token') return 'Working';
   return CHILD_STREAM_PHASE_LABEL[phase];
-}
-
-export function childStreamPresentation(
-  snapshot: Pick<ChildStreamSnapshot, 'live' | 'fidelity'>,
-): ChildStreamPresentation {
-  if (!snapshot.live) return 'idle';
-  if (snapshot.fidelity === 'token') return 'typewriter';
-  if (snapshot.fidelity === 'tool') return 'tool';
-  return 'working';
-}
-
-export function childStreamShowsCaret(
-  snapshot: Pick<ChildStreamSnapshot, 'live' | 'fidelity'>,
-): boolean {
-  return childStreamPresentation(snapshot) === 'typewriter';
 }
 
 export function sameChildStreamSnapshot(
