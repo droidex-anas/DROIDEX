@@ -348,9 +348,7 @@ export default function ChatView({
   // though live child events share the parent's in-memory event array.
   const historyAppSessionId = activeSession?.appSessionId;
   const historyChildSessionId = selectedChildSessionId;
-  // These keyed renderer maps are intentionally sparse at runtime despite
-  // their long-standing Record types.
-  /* eslint-disable @typescript-eslint/no-unnecessary-condition */
+  /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
   const childHistory =
     historyAppSessionId && historyChildSessionId
       ? state.childHistory[historyAppSessionId]?.[historyChildSessionId]

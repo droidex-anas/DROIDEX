@@ -17,8 +17,7 @@ import type {
 } from './effortSliderElement';
 
 declare module 'react' {
-  // Augmenting React's intrinsic elements requires the JSX namespace form.
-  // eslint-disable-next-line @typescript-eslint/no-namespace
+  // eslint-disable-next-line @typescript-eslint/no-namespace -- JSX intrinsic elements only merge as a namespace
   namespace JSX {
     interface IntrinsicElements {
       'effort-slider': DetailedHTMLProps<HTMLAttributes<HTMLElement>, HTMLElement>;

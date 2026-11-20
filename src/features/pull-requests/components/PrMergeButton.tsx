@@ -6,7 +6,7 @@ import { Button } from '../../../components/ui/Button';
 import { Menu } from '../../../components/ui/Menu';
 import { prKind } from '../../../lib/github';
 import type { PrMergeMethod, PullRequest } from '../../../types/vcs';
-import { mergeBlockReason } from '../lib/prMeta';
+import { mergeBlockReason, mergePullRequestKey } from '../lib/prMeta';
 
 const METHODS: { id: PrMergeMethod; label: string; hint: string }[] = [
   { id: 'merge', label: 'Create a merge commit', hint: 'Keeps every commit and adds a merge' },
@@ -23,11 +23,6 @@ function mergeButtonTitle(blocked: string | null, merging: boolean, merged: bool
   if (merged) return 'Pull request merged';
   if (merging) return 'Merging pull request';
   return blocked ?? 'Merge this pull request';
-}
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function mergePullRequestKey(pr: PullRequest, repositoryKey: string): string {
-  return pr.url || `${repositoryKey}#${String(pr.number)}`;
 }
 
 // Merging happens through `gh pr merge`, so the strategy is picked explicitly:

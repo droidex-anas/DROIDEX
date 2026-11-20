@@ -3,7 +3,7 @@ import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { PrInbox, prInboxEmptyCopy, shouldShowPrInboxEmpty } from './PrInbox';
+import { PrInbox } from './PrInbox';
 import type { InboxPullRequest } from '../lib/prInbox';
 
 function pr(
@@ -53,12 +53,6 @@ function renderInbox(overrides: Partial<Parameters<typeof PrInbox>[0]> = {}): st
   );
 }
 
-test('an initial list failure does not also claim the repository is empty', () => {
-  assert.equal(shouldShowPrInboxEmpty('Could not load pull requests', 0), false);
-  assert.equal(shouldShowPrInboxEmpty(null, 0), true);
-  assert.equal(shouldShowPrInboxEmpty(null, 2), false);
-});
-
 test('only the selected row is current, and it shows the title, additions, and both branches', () => {
   const html = renderInbox({ selectedNumber: 12 });
   assert.match(html, /App PR/);
@@ -81,13 +75,6 @@ test('the filters are a labelled tab list and the search field names itself', ()
   assert.match(html, /role="tab" aria-selected="false"[^>]*>Reviewing</);
   assert.match(html, /role="tab" aria-selected="false"[^>]*>Backlog</);
   assert.match(html, /aria-label="Search pull requests"/);
-});
-
-test('a query with no matches uses search-specific empty copy', () => {
-  assert.equal(prInboxEmptyCopy('all', 'missing'), 'No pull requests match your search.');
-  assert.equal(prInboxEmptyCopy('authored', '   '), 'You have not opened any.');
-  assert.equal(prInboxEmptyCopy('backlog', ''), 'Nothing in the backlog.');
-  assert.equal(prInboxEmptyCopy('all', '', true), 'No open pull requests in these workspaces.');
 });
 
 test('the current workspace lists its pull requests openly; others stay collapsed until selected', () => {

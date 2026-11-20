@@ -15,6 +15,7 @@ import {
   inboxGroupIsExpanded,
   isCurrentInboxGroup,
   orderInboxGroups,
+  prInboxEmptyCopy,
   searchPullRequests,
   type InboxPullRequest,
   type InboxRepoGroup,
@@ -32,24 +33,6 @@ const TABS: { id: PrInboxTab; label: string }[] = [
   { id: 'authored', label: 'Authored' },
   { id: 'backlog', label: 'Backlog' },
 ];
-
-const EMPTY_COPY: Record<PrInboxTab, string> = {
-  all: 'No open pull requests in this repo.',
-  reviewing: 'None assigned to you.',
-  authored: 'You have not opened any.',
-  backlog: 'Nothing in the backlog.',
-};
-
-// eslint-disable-next-line react-refresh/only-export-components
-export function prInboxEmptyCopy(tab: PrInboxTab, query: string, multiRepo = false): string {
-  if (query.trim()) return 'No pull requests match your search.';
-  if (tab === 'all' && multiRepo) return 'No open pull requests in these workspaces.';
-  return EMPTY_COPY[tab];
-}
-
-export function shouldShowPrInboxEmpty(error: string | null, count: number): boolean {
-  return !error && count === 0;
-}
 
 function rowIsSelected(
   pr: InboxPullRequest,

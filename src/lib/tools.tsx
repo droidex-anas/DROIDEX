@@ -270,14 +270,13 @@ function namedArgument(key: string, value: string): string {
   return `${humanizeToolName(key).toLowerCase()} ${shown}`;
 }
 
-// The droid name and short description carried by a Task spawn's arguments.
 // Remove terminal ANSI/VT escape sequences from captured command output.
 const ANSI_PATTERN =
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- ESC, CSI and BEL are the characters being matched
   /[\u001b\u009b][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~])/g;
 
 export function stripAnsi(s: string): string {
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- ESC is the character being matched
   return s.replace(ANSI_PATTERN, '').replace(/\u001b[=>]/g, '');
 }
 
