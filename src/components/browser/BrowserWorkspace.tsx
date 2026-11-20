@@ -177,6 +177,7 @@ export default function BrowserWorkspace({
     if (!browser?.url) return;
     const nextUrl = safeBrowserUrl(browser.url, appOrigin);
     if (nextUrl !== activeUrl) {
+      if (document.activeElement !== urlInputRef.current) setUrlDraft(null);
       setActiveUrl(nextUrl);
     }
   }, [activeUrl, appOrigin, browser?.url]);
@@ -300,6 +301,7 @@ export default function BrowserWorkspace({
 
   const navigateHistory = useCallback(
     async (direction: 'back' | 'forward') => {
+      setUrlDraft(null);
       if (!browser?.browserSessionId) return;
       setLoadFailure(null);
       startLoading();
@@ -386,6 +388,7 @@ export default function BrowserWorkspace({
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
+          setUrlDraft(null);
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
           else openCurrentUrl();
@@ -464,6 +467,7 @@ export default function BrowserWorkspace({
               setCanGoBack(event.canGoBack ?? canGoBack);
               setCanGoForward(event.canGoForward ?? canGoForward);
               const nextUrl = safeBrowserUrl(event.url, appOrigin);
+              if (document.activeElement !== urlInputRef.current) setUrlDraft(null);
               setActiveUrl(nextUrl);
               // In the desktop app the Browser host records navigations.
               if (!nativeBrowser && browserKey && event.browserSessionId) {

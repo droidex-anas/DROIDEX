@@ -16,6 +16,7 @@ async function openBrowser(page: Page) {
         url,
         viewport: { width: 1000, height: 700, deviceScaleFactor: 1 },
         viewportMode: 'fit',
+        canGoBack: !url.endsWith('/old'),
         scroll: { x: 0, y: 0 },
       },
     });
@@ -75,26 +76,28 @@ test('an unedited focused address follows same-tab navigation and blur', async (
   const { address, navigate } = await openBrowser(page);
   await address.focus();
   navigate('http://localhost:3232/new');
+  await expect(address).toHaveValue('http://localhost:3232/new');
+  await expect(address).toBeFocused();
   await address.press('Tab');
   await expect(page.getByRole('img', { name: 'Secure connection' })).toHaveCount(0);
-  if (process.env.ADDRESS_SCREENSHOT) {
-    await page.screenshot({ path: process.env.ADDRESS_SCREENSHOT, animations: 'disabled' });
-  }
   await expect(address).toHaveValue('http://localhost:3232/new');
 });
 
-test('a typed draft survives navigation and blur, Escape restores the committed URL', async ({
+test('a draft survives focused navigation and a navigation after blur replaces it', async ({
   page,
 }) => {
   const { address, navigate } = await openBrowser(page);
   await address.fill('https://draft.example/path');
   navigate('http://localhost:3232/new');
+  await expect(page.getByRole('button', { name: /^Back: return/ })).toBeEnabled();
+  await expect(address).toBeFocused();
+  await expect(address).toHaveValue('https://draft.example/path');
   await address.press('Tab');
   await expect(address).toHaveValue('https://draft.example/path');
-  await address.focus();
-  await address.press('Escape');
-  await expect(address).toHaveValue('http://localhost:3232/new');
   navigate('https://example.com/later');
+  await expect(address).toHaveValue('https://example.com/later');
+  await address.fill('another draft');
+  await address.press('Escape');
   await expect(address).toHaveValue('https://example.com/later');
 });
 
@@ -102,6 +105,7 @@ test('Enter submits the typed draft rather than the navigated page', async ({ pa
   const { address, navigate, commands } = await openBrowser(page);
   await address.fill('https://draft.example/path');
   navigate('http://localhost:3232/new');
+  await expect(page.getByRole('button', { name: /^Back: return/ })).toBeEnabled();
   await address.press('Enter');
   await expect
     .poll(() => commands.filter((command) => command.type === 'browser.open').at(-1))
@@ -117,16 +121,28 @@ test('switching chats never carries an address draft into the other browser', as
   await address.fill('https://draft.example/path');
   navigate('https://other.example/page', 'other-chat');
   await page.getByRole('button', { name: /^other-chat .*Droid chat$/ }).click();
-  await page.keyboard.press('ControlOrMeta+Shift+b');
+  await page.getByRole('button', { name: 'Toggle utility pane', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Browser', exact: true }).click();
   await expect(address).toHaveValue('https://other.example/page');
   await page.getByRole('button', { name: /^address-chat .*Droid chat$/ }).click();
   await expect(address).toHaveValue('https://example.com/old');
+});
+
+test('Reload drops a draft and shows the committed page address', async ({ page }) => {
+  const { address, commands } = await openBrowser(page);
+  await address.fill('https://draft.example/path');
+  await page.getByRole('button', { name: /^Reload:/ }).click();
+  await expect(address).toHaveValue('https://example.com/old');
+  await expect
+    .poll(() => commands)
+    .toContainEqual({ type: 'browser.reload', appSessionId: 'address-chat' });
 });
 
 test('an empty draft is preserved, and Escape clears it back to the page', async ({ page }) => {
   const { address, navigate } = await openBrowser(page);
   await address.fill('');
   navigate('http://localhost:3232/new');
+  await expect(page.getByRole('button', { name: /^Back: return/ })).toBeEnabled();
   await address.press('Tab');
   await expect(address).toHaveValue('');
   await address.focus();
