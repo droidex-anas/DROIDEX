@@ -40,9 +40,10 @@ import {
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
   loadMissionControlSession,
+  missionSessionId,
   projectMissionProgress,
-  readMissionSessionId,
   resolveMissionDir,
+  type StoredMissionState,
 } from './historyMissions.js';
 import { shouldIncludeCwd, type HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { parseJsonLines, readJson } from './jsonFiles.js';
@@ -582,7 +583,8 @@ export function hydrateHistoricalSession(
   opts: { cursor?: string; limit?: number } = {},
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
-  const appSessionId = readMissionSessionId(dir);
+  const state = readJson(join(dir, 'state.json')) as StoredMissionState;
+  const appSessionId = missionSessionId(state, dir);
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that

@@ -13,30 +13,12 @@ const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
 process.env.HOME = home;
 
 const { HistoryIndex, hydrateHistoricalSession } = await import('./history.js');
-const { loadMissionControlSession, loadMissionControlSessions, readMissionSessionId } =
-  await import('./historyMissions.js');
+const { loadMissionControlSessions } = await import('./historyMissions.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   rmSync(home, { recursive: true, force: true });
-});
-
-test('Mission identity matches its summary, including directory-name fallbacks', () => {
-  const dir = join(home, '.factory', 'missions', 'identity-mission');
-  mkdirSync(dir, { recursive: true });
-  for (const baseSessionId of ['identity-parent', '', undefined]) {
-    writeFileSync(join(dir, 'state.json'), JSON.stringify({ baseSessionId }));
-    const expected = baseSessionId || 'identity-mission';
-    assert.equal(readMissionSessionId(dir), expected);
-    const { summary } = loadMissionControlSession(dir);
-    assert.equal(summary.appSessionId, expected);
-    assert.equal(summary.providerSessionId, expected);
-    assert.equal(summary.compactedFromProviderSessionIds, undefined);
-  }
-  writeFileSync(join(dir, 'state.json'), '{invalid');
-  assert.throws(() => readMissionSessionId(dir), SyntaxError);
-  rmSync(dir, { recursive: true });
 });
 
 test('Mission hydration restores logical child progress beneath the exact parent', () => {
@@ -147,12 +129,12 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
 });
 
 test('Mission older pages load independently of the progress log', () => {
-  const appSessionId = 'paged-parent';
+  const appSessionId = 'paged-mission';
   const missionDir = join(home, '.factory', 'missions', 'paged-mission');
   const sessionDir = join(home, '.factory', 'sessions');
   mkdirSync(missionDir, { recursive: true });
   mkdirSync(sessionDir, { recursive: true });
-  writeFileSync(join(missionDir, 'state.json'), JSON.stringify({ baseSessionId: appSessionId }));
+  writeFileSync(join(missionDir, 'state.json'), JSON.stringify({ baseSessionId: '' }));
   const progressPath = join(missionDir, 'progress_log.jsonl');
   const timestamp = '2026-07-29T00:00:00.000Z';
   writeFileSync(progressPath, JSON.stringify({ type: 'entry', timestamp }));
