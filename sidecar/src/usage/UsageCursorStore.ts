@@ -10,7 +10,7 @@ import {
   type UsageCursorAdvance,
 } from './UsageValidation.js';
 
-/** Revisioned ingest cursors; writes are compare-and-set and run inside the caller's transaction. */
+/** Revisioned file and opaque usage cursors; writes are compare-and-set and run inside the caller's transaction. */
 export class UsageCursorStore {
   private readonly readCursorStatement: StatementSync;
   private readonly updateCursorStatement: StatementSync;
