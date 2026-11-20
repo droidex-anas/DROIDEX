@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -126,6 +126,71 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
   const warning = String(warnings.mock.calls[0]?.arguments[0]);
   assert.ok(warning.includes(brokenDir));
   assert.equal(warning.includes('secret-partial'), false);
+});
+
+test('Mission older pages load independently of the progress log', () => {
+  const appSessionId = 'paged-mission';
+  const missionDir = join(home, '.factory', 'missions', 'paged-mission');
+  const sessionDir = join(home, '.factory', 'sessions');
+  mkdirSync(missionDir, { recursive: true });
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(join(missionDir, 'state.json'), JSON.stringify({ baseSessionId: '' }));
+  const progressPath = join(missionDir, 'progress_log.jsonl');
+  const timestamp = '2026-07-29T00:00:00.000Z';
+  writeFileSync(progressPath, JSON.stringify({ type: 'entry', timestamp }));
+  const path = join(sessionDir, `${appSessionId}.jsonl`);
+  writeFileSync(
+    path,
+    [
+      { type: 'session_start', id: appSessionId },
+      ...['older', 'latest'].map((text) => ({
+        type: 'message',
+        id: text,
+        timestamp,
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+      })),
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n',
+  );
+  const history = new HistoryIndex();
+  const stat = statSync(path);
+  history.replaceSessionFileSnapshot({
+    revision: 1,
+    changed: 1,
+    entries: [
+      {
+        providerSessionId: appSessionId,
+        path,
+        birthtimeMs: stat.birthtimeMs,
+        mtimeMs: stat.mtimeMs,
+        sizeBytes: stat.size,
+        settingsMtimeMs: null,
+        summary: null,
+      },
+    ],
+  });
+  history.close();
+
+  const latest = hydrateHistoricalSession('paged-mission', { limit: 1 });
+  assert.ok(latest.olderCursor);
+  const older = hydrateHistoricalSession('paged-mission', { cursor: latest.olderCursor, limit: 2 });
+  assert.deepEqual(older.progress, []);
+  assert.deepEqual(
+    older.transcripts.map((event) => event.text),
+    ['older'],
+  );
+  assert.equal(older.olderCursor, undefined);
+  rmSync(progressPath);
+  mkdirSync(progressPath);
+  assert.deepEqual(
+    hydrateHistoricalSession('paged-mission', {
+      cursor: latest.olderCursor,
+      limit: 2,
+    }),
+    older,
+  );
+  assert.throws(() => hydrateHistoricalSession('paged-mission', { limit: 1 }), { code: 'EISDIR' });
 });
 
 function missionSummary(): SessionSummary {

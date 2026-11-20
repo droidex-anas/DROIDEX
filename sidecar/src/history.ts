@@ -40,8 +40,10 @@ import {
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
   loadMissionControlSession,
+  missionSessionId,
   projectMissionProgress,
   resolveMissionDir,
+  type StoredMissionState,
 } from './historyMissions.js';
 import { shouldIncludeCwd, type HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { parseJsonLines, readJson } from './jsonFiles.js';
@@ -581,54 +583,28 @@ export function hydrateHistoricalSession(
   opts: { cursor?: string; limit?: number } = {},
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
-
-  const { summary, storedProgress } = loadMissionControlSession(dir);
-  const progress = projectMissionProgress(
-    storedProgress,
-    readStoredChildSessions(summary.appSessionId),
-  );
+  const state = readJson(join(dir, 'state.json')) as StoredMissionState;
+  const appSessionId = missionSessionId(state, dir);
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that
   // chain (oldest -> newest) from the persisted app-session row; replaying only
   // the latest segment is what made compacted chats lose their scrollback.
-  const chain = orchestratorChain(summary);
-  const window = loadSessionTranscriptWindow(summary.appSessionId, chain, opts);
+  const chain = resolveSessionChain(appSessionId, appSessionId);
+  const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
 
-  // Older pages only extend the orchestrator scrollback upward; workers and
-  // progress were already delivered with the initial (newest) page.
+  // Older pages only extend the orchestrator scrollback; progress was already delivered with the newest page.
   if (opts.cursor) {
     return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
   }
 
+  const { storedProgress } = loadMissionControlSession(dir);
+  const progress = projectMissionProgress(storedProgress, readStoredChildSessions(appSessionId));
   return { progress, transcripts: window.events, olderCursor: window.olderCursor };
 }
 
-// Resolve the orchestrator's compaction chain (oldest -> newest backing session
-// ids) for a mission. The persisted app-session row keeps the authoritative
-// chain (previous backing ids + current); fall back to the summary when it is
-// already hydrated with one. Filtered to ids that still have a session file.
-function orchestratorChain(summary: SessionSummary): string[] {
-  const patches = readStoredSummaryPatches();
-  const patch =
-    patches.get(summary.appSessionId) ??
-    patches.get(summary.providerSessionId ?? summary.appSessionId);
-  const currentSession =
-    patch?.providerSessionId ?? summary.providerSessionId ?? summary.appSessionId;
-  const sessionFiles = sessionIndex();
-  const compactedFrom =
-    patch?.compactedFromProviderSessionIds ?? summary.compactedFromProviderSessionIds ?? [];
-  return dedupeStrings([summary.appSessionId, ...compactedFrom, currentSession]).filter((id) =>
-    sessionFiles.has(id),
-  );
-}
-
-// Resolve the compaction chain (oldest -> newest backing session ids) for a
-// plain chat / spec session that has no Mission Control directory. Such sessions never
-// reach hydrateHistoricalSession, so without this they would replay only the
-// newest backing file and lose all pre-compaction scrollback. Reads the chain
-// straight from the persisted app-session row (keyed by either id) and filters
-// to ids that still have a session file on disk.
+// Resolve the compaction chain (oldest -> newest backing session ids) from the
+// persisted app-session row, filtered to session files that still exist.
 export function resolveSessionChain(appSessionId: string, providerSessionId: string): string[] {
   const patches = readStoredSummaryPatches();
   const patch = patches.get(appSessionId) ?? patches.get(providerSessionId);

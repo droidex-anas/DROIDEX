@@ -15,7 +15,7 @@ import { reasoningValue } from './modelCatalog.js';
 import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { dateMs, normalizeAutonomy, objectValue, stringValue } from './values.js';
 
-interface StoredMissionState {
+export interface StoredMissionState {
   missionId?: string;
   baseSessionId?: string;
   state?: string;
@@ -88,6 +88,11 @@ export function loadMissionControlSessions(
   return sessions.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
+export function missionSessionId(state: StoredMissionState, dir: string): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
+  return state.baseSessionId || basename(dir);
+}
+
 export function loadMissionControlSession(dir: string): HistoricalSession & {
   state: StoredMissionState;
   features: BridgeFeature[];
@@ -98,8 +103,7 @@ export function loadMissionControlSession(dir: string): HistoricalSession & {
   const progress = storedProgress.map(publicProgressEntry);
   const features = readFeatures(join(dir, 'features.json'));
   const dirId = basename(dir);
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
-  const providerSessionId = state.baseSessionId || dirId;
+  const providerSessionId = missionSessionId(state, dir);
   const firstProgressTitle = progress.find((p) => p.title)?.title;
   const cwd = missionWorkingDirectory(state);
   /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty titles and mission IDs fall back to the next source. */
