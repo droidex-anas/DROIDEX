@@ -88,6 +88,12 @@ export function loadMissionControlSessions(
   return sessions.sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
 }
 
+export function readMissionSessionId(dir: string): string {
+  const state = readJson(join(dir, 'state.json')) as StoredMissionState;
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
+  return state.baseSessionId || basename(dir);
+}
+
 export function loadMissionControlSession(dir: string): HistoricalSession & {
   state: StoredMissionState;
   features: BridgeFeature[];
@@ -98,8 +104,7 @@ export function loadMissionControlSession(dir: string): HistoricalSession & {
   const progress = storedProgress.map(publicProgressEntry);
   const features = readFeatures(join(dir, 'features.json'));
   const dirId = basename(dir);
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty session IDs use the directory name.
-  const providerSessionId = state.baseSessionId || dirId;
+  const providerSessionId = readMissionSessionId(dir);
   const firstProgressTitle = progress.find((p) => p.title)?.title;
   const cwd = missionWorkingDirectory(state);
   /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty titles and mission IDs fall back to the next source. */

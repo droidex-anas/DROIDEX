@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
-import { basename, join, sep } from 'node:path';
+import { join, sep } from 'node:path';
 import { normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
 import {
@@ -41,6 +41,7 @@ import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import {
   loadMissionControlSession,
   projectMissionProgress,
+  readMissionSessionId,
   resolveMissionDir,
 } from './historyMissions.js';
 import { shouldIncludeCwd, type HistoricalSummaryFilter } from './historySummaryFilter.js';
@@ -581,56 +582,26 @@ export function hydrateHistoricalSession(
   opts: { cursor?: string; limit?: number } = {},
 ): HydratedSessionHistory {
   const dir = resolveMissionDir(missionId);
-
-  if (opts.cursor) {
-    const state = readJson(join(dir, 'state.json')) as { baseSessionId?: string };
-    const appSessionId = state.baseSessionId?.length ? state.baseSessionId : basename(dir);
-    const chain = resolveSessionChain(appSessionId, appSessionId);
-    const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
-    return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
-  }
-
-  const { summary, storedProgress } = loadMissionControlSession(dir);
+  const appSessionId = readMissionSessionId(dir);
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that
   // chain (oldest -> newest) from the persisted app-session row; replaying only
   // the latest segment is what made compacted chats lose their scrollback.
-  const chain = orchestratorChain(summary);
-  const window = loadSessionTranscriptWindow(summary.appSessionId, chain, opts);
+  const chain = resolveSessionChain(appSessionId, appSessionId);
+  const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
 
-  const progress = projectMissionProgress(
-    storedProgress,
-    readStoredChildSessions(summary.appSessionId),
-  );
+  if (opts.cursor) {
+    return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
+  }
+
+  const { storedProgress } = loadMissionControlSession(dir);
+  const progress = projectMissionProgress(storedProgress, readStoredChildSessions(appSessionId));
   return { progress, transcripts: window.events, olderCursor: window.olderCursor };
 }
 
-// Resolve the orchestrator's compaction chain (oldest -> newest backing session
-// ids) for a mission. The persisted app-session row keeps the authoritative
-// chain (previous backing ids + current); fall back to the summary when it is
-// already hydrated with one. Filtered to ids that still have a session file.
-function orchestratorChain(summary: SessionSummary): string[] {
-  const patches = readStoredSummaryPatches();
-  const patch =
-    patches.get(summary.appSessionId) ??
-    patches.get(summary.providerSessionId ?? summary.appSessionId);
-  const currentSession =
-    patch?.providerSessionId ?? summary.providerSessionId ?? summary.appSessionId;
-  const sessionFiles = sessionIndex();
-  const compactedFrom =
-    patch?.compactedFromProviderSessionIds ?? summary.compactedFromProviderSessionIds ?? [];
-  return dedupeStrings([summary.appSessionId, ...compactedFrom, currentSession]).filter((id) =>
-    sessionFiles.has(id),
-  );
-}
-
-// Resolve the compaction chain (oldest -> newest backing session ids) for a
-// plain chat / spec session that has no Mission Control directory. Such sessions never
-// reach hydrateHistoricalSession, so without this they would replay only the
-// newest backing file and lose all pre-compaction scrollback. Reads the chain
-// straight from the persisted app-session row (keyed by either id) and filters
-// to ids that still have a session file on disk.
+// Resolve the compaction chain (oldest -> newest backing session ids) from the
+// persisted app-session row, filtered to session files that still exist.
 export function resolveSessionChain(appSessionId: string, providerSessionId: string): string[] {
   const patches = readStoredSummaryPatches();
   const patch = patches.get(appSessionId) ?? patches.get(providerSessionId);

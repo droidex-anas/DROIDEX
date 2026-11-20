@@ -13,12 +13,30 @@ const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
 process.env.HOME = home;
 
 const { HistoryIndex, hydrateHistoricalSession } = await import('./history.js');
-const { loadMissionControlSessions } = await import('./historyMissions.js');
+const { loadMissionControlSession, loadMissionControlSessions, readMissionSessionId } =
+  await import('./historyMissions.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
   else process.env.HOME = originalHome;
   rmSync(home, { recursive: true, force: true });
+});
+
+test('Mission identity matches its summary, including directory-name fallbacks', () => {
+  const dir = join(home, '.factory', 'missions', 'identity-mission');
+  mkdirSync(dir, { recursive: true });
+  for (const baseSessionId of ['identity-parent', '', undefined]) {
+    writeFileSync(join(dir, 'state.json'), JSON.stringify({ baseSessionId }));
+    const expected = baseSessionId || 'identity-mission';
+    assert.equal(readMissionSessionId(dir), expected);
+    const { summary } = loadMissionControlSession(dir);
+    assert.equal(summary.appSessionId, expected);
+    assert.equal(summary.providerSessionId, expected);
+    assert.equal(summary.compactedFromProviderSessionIds, undefined);
+  }
+  writeFileSync(join(dir, 'state.json'), '{invalid');
+  assert.throws(() => readMissionSessionId(dir), SyntaxError);
+  rmSync(dir, { recursive: true });
 });
 
 test('Mission hydration restores logical child progress beneath the exact parent', () => {
