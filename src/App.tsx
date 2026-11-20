@@ -38,6 +38,7 @@ import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
+import { useUtilityPaneWidth } from './hooks/useUtilityPaneWidth';
 import { useAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
 import { useThemeSync } from './hooks/useThemeSync';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
@@ -146,7 +147,6 @@ function ContextListIcon({ className }: { className?: string }) {
   );
 }
 
-const UTILITY_PANE_MIN = 420;
 // Design's chat column is a side panel a tone off the board; scoping `--bg`
 // carries that tone to everything in it that paints the page background.
 const DESIGN_CHAT_TONE = {
@@ -160,10 +160,6 @@ function expandedPaneWidth(contentRowWidth: number, chatColumnWidth: number | nu
   if (chatColumnWidth === null) return contentRowWidth;
   return Math.max(contentRowWidth - chatColumnWidth, Math.round(contentRowWidth / 2));
 }
-const UTILITY_PANE_MAX = 980;
-const UTILITY_PANE_DEFAULT = 560;
-const UTILITY_PANE_CONTENT_RESERVE = 520;
-const UTILITY_PANE_WIDTH_STORAGE_KEY = 'droid-utility-pane-width';
 
 // selectedChild can outlive its childAccess entry after failed/closed cleanup
 // (withoutChildAccess deletes the parent key). Record indexing types that as
@@ -346,8 +342,6 @@ export default function App() {
     state.productMode === 'chat' &&
     state.rightPanelOpen &&
     hasSessionContent;
-  const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
-  const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
   // The side tab leaving the pane must not hand its expansion to the next tab.
   const sideChatClose = useCloseSideChat(() => {
@@ -358,7 +352,14 @@ export default function App() {
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
   const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
-  const [contentRowWidth, setContentRowWidth] = useState(0);
+  const {
+    width: utilityPaneWidth,
+    minWidth: utilityPaneMin,
+    maxWidth: utilityPaneMax,
+    contentRowWidth,
+    setWidth: setUtilityPaneWidth,
+    persistWidth: persistUtilityPaneWidth,
+  } = useUtilityPaneWidth(contentRowRef);
   const boardSideColumns = useSideColumns(activeSession?.appSessionId ?? null);
   const chatBesideBoard = useDesignChatColumn(contentRowWidth, boardSideColumns);
   // Design's board takes the row beside its chat column, and the column keeps
@@ -508,35 +509,6 @@ export default function App() {
     },
     [dispatch, activeSession?.appSessionId],
   );
-
-  useEffect(() => {
-    const onResize = () => {
-      const available = contentRowRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      setUtilityPaneMax(utilityPaneMaxWidth(available));
-      setUtilityPaneWidth((width) => clampUtilityPane(width, available));
-    };
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-    };
-  }, []);
-
-  useEffect(() => {
-    const node = contentRowRef.current;
-    if (!node) return;
-    const update = () => {
-      const available = Math.round(node.getBoundingClientRect().width);
-      setContentRowWidth(available);
-      setUtilityPaneMax(utilityPaneMaxWidth(available));
-      setUtilityPaneWidth((width) => clampUtilityPane(width, available));
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
 
   useThemeSync(embedded);
 
@@ -923,18 +895,10 @@ export default function App() {
                         }
                       : {})}
                     width={utilityPaneWidth}
-                    minWidth={UTILITY_PANE_MIN}
+                    minWidth={utilityPaneMin}
                     maxWidth={utilityPaneMax}
                     onResize={setUtilityPaneWidth}
-                    onResizeEnd={(width) => {
-                      const next = clampUtilityPane(width, contentRowWidth || undefined);
-                      setUtilityPaneWidth(next);
-                      try {
-                        localStorage.setItem(UTILITY_PANE_WIDTH_STORAGE_KEY, String(next));
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
+                    onResizeEnd={persistUtilityPaneWidth}
                     onOpenTool={openUtilityTool}
                     onActivateTab={(tabId) => {
                       const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
@@ -1235,35 +1199,5 @@ export default function App() {
           the pages anchored to it. */}
       {!embedded && hasNativeBrowser() && <BrowserHost />}
     </div>
-  );
-}
-
-function initialUtilityPaneWidth(): number {
-  if (typeof window === 'undefined') return UTILITY_PANE_DEFAULT;
-  try {
-    const stored = Number(
-      localStorage.getItem(UTILITY_PANE_WIDTH_STORAGE_KEY) ??
-        localStorage.getItem('droid-browser-pane-width'),
-    );
-    if (Number.isFinite(stored) && stored > 0) return clampUtilityPane(stored);
-  } catch {
-    /* ignore */
-  }
-  return clampUtilityPane(Math.min(UTILITY_PANE_DEFAULT, Math.round(window.innerWidth * 0.42)));
-}
-
-function utilityPaneMaxWidth(availableWidth?: number): number {
-  if (typeof window === 'undefined') return UTILITY_PANE_MAX;
-  const available = availableWidth ?? window.innerWidth;
-  return Math.max(
-    UTILITY_PANE_MIN,
-    Math.min(UTILITY_PANE_MAX, Math.round(available - UTILITY_PANE_CONTENT_RESERVE)),
-  );
-}
-
-function clampUtilityPane(width: number, availableWidth?: number): number {
-  return Math.min(
-    utilityPaneMaxWidth(availableWidth),
-    Math.max(UTILITY_PANE_MIN, Math.round(width)),
   );
 }
