@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { classifyPermission, confirmationType, permissionSignature } from './permissions.js';
+import { classifyPermission, confirmationType, permissionSignature } from './droidPermissions.js';
 
 test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', () => {
   const mcp = {
