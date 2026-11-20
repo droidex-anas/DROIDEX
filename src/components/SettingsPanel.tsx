@@ -27,6 +27,7 @@ import { HarnessModelSettings } from './HarnessModelSettings';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
 import {
   bestTabForQuery,
+  NO_HIDDEN_TABS,
   searchSettings,
   tabMatchesQuery,
   type SettingsSearchHit,
@@ -83,7 +84,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
 ];
 // The public profile is published with the laptop's Remote identity, which a
 // paired browser cannot use.
-const LAPTOP_ONLY_TABS = new Set(['Profile']);
+const LAPTOP_ONLY_TABS: ReadonlySet<string> = new Set(['Profile']);
 
 function SetupSection({ onClose }: { onClose: () => void }) {
   const onboard = useOnboarding();
@@ -391,20 +392,22 @@ export default function SettingsPanel() {
     };
   }, [dispatch]);
 
-  // Content-aware search: typing "play sound" jumps to Notifications so the
-  // matching controls are on screen (nav filter alone only matched tab titles).
-  useEffect(() => {
-    const next = bestTabForQuery(query);
-    if (next) setActive(next);
-  }, [query]);
-
   const close = () => {
     dispatch({ type: 'TOGGLE_SETTINGS' });
   };
   const q = query.trim();
   const remote = isRemoteClient();
-  const showsTab = (label: string) => !(remote && LAPTOP_ONLY_TABS.has(label));
-  const hits = q ? searchSettings(q).filter((hit) => showsTab(hit.tab)) : [];
+  const hiddenTabs = remote ? LAPTOP_ONLY_TABS : NO_HIDDEN_TABS;
+  const showsTab = (label: string) => !hiddenTabs.has(label);
+  const hits = searchSettings(q, hiddenTabs);
+
+  // Content-aware search: typing "play sound" jumps to Notifications so the
+  // matching controls are on screen (nav filter alone only matched tab titles).
+  const changeQuery = (next: string) => {
+    setQuery(next);
+    const bestTab = bestTabForQuery(next, hiddenTabs);
+    if (bestTab) setActive(bestTab);
+  };
   let content: React.ReactNode;
   switch (showsTab(active) ? active : 'Laptop only') {
     case 'Laptop only':
@@ -483,7 +486,7 @@ export default function SettingsPanel() {
               aria-label="Search settings"
               value={query}
               onChange={(e) => {
-                setQuery(e.target.value);
+                changeQuery(e.target.value);
               }}
               placeholder="Search settings…"
               className="pl-8 pr-9"
