@@ -125,7 +125,7 @@ export default {
         ],
         'code-sm': ['11px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
       },
-      height: sizes,
+      height: { ...sizes, 'dialog-expanded': '82vh' },
       // The fixed shell columns (rules.md "Sizes"): `w-sidebar`, the floating
       // context panel the chat insets its content for and the pull-request
       // inbox, plus the transcript's media and browser cards.
@@ -143,6 +143,7 @@ export default {
         'dialog-confirm': '440px',
         'dialog-form': '560px',
         'dialog-content': '720px',
+        'dialog-expanded': '768px',
         palette: '576px',
       },
       size: sizes,
