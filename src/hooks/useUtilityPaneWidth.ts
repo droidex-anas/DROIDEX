@@ -29,8 +29,8 @@ export function useUtilityPaneWidth(contentRowRef: RefObject<HTMLDivElement | nu
   }, [contentRowRef]);
 
   const persistWidth = useCallback(
-    (width: number) => {
-      const next = clampUtilityPane(width, contentRowWidth || undefined);
+    (nextWidth: number) => {
+      const next = clampUtilityPane(nextWidth, contentRowWidth || undefined);
       setWidth(next);
       try {
         localStorage.setItem(UTILITY_PANE_WIDTH_STORAGE_KEY, String(next));
