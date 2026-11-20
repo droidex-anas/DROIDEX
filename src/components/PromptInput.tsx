@@ -24,7 +24,6 @@ import { useSessionLive } from '../hooks/useSessionLive';
 import {
   createSession,
   interruptVisibleSession,
-  compactSession,
   updateSessionSettings,
   newClientRef,
   listSkills,
@@ -60,12 +59,7 @@ import {
 } from '../lib/chatWorkspace';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { removeDesignMark, setDesignMarks, useDesignMarks } from './browser/designMarks';
-import {
-  composePrompt,
-  promptTextWithVisualize,
-  runsAsCompactCommand,
-  VISUALIZE_COMMAND,
-} from '../lib/composePrompt';
+import { composePrompt, promptTextWithVisualize, runsAsCompactCommand } from '../lib/composePrompt';
 import { draftEffortFor, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
@@ -101,18 +95,7 @@ import {
   type VisibleSessionTarget,
 } from '../lib/childSessions';
 import { SlidersHorizontal } from 'lucide-react';
-import {
-  Bug,
-  FoldVertical,
-  Gauge,
-  ListTodo,
-  MessageBubble,
-  MessageSquareText,
-  Models,
-  Settings,
-  Zap,
-} from '@droidex/icons';
-import { VisualizeIcon } from './icons/VisualizeIcon';
+import { Zap } from '@droidex/icons';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
@@ -127,9 +110,9 @@ import type { DraftMode } from './composer/submitDraftPrompt';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
-import ComposerMenu, { type SlashCommand } from './ComposerMenu';
+import ComposerMenu from './ComposerMenu';
+import { useComposerSlashCommands } from './useComposerSlashCommands';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
-import { useAskSideChat } from './sidechats/useAskSideChat';
 import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
@@ -161,7 +144,6 @@ import { feedbackDraftFromCommand } from '../lib/feedbackReport';
 import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
-import useFastMode from '../hooks/useFastMode';
 import { toast } from '../lib/toast';
 import { createProject } from '../features/projects/client';
 
@@ -235,10 +217,6 @@ const FIELD_FALLBACK_STYLE: CSSProperties = {
   minHeight: 'var(--composer-min-height)',
   padding: '16px var(--composer-trail) calc(16px + var(--composer-foot)) var(--composer-lead)',
 };
-// Slash entries that drive Droid's own subsystems, so they leave the menu with
-// the controls they belong to when the chat runs on another provider.
-const DROID_ONLY_COMMANDS = new Set(['/compact']);
-
 /** Whether this is the live Design composer, never a background tile's (spec §4). */
 function isDesignComposer(state: AppState, appSessionId: string | null): boolean {
   return activeProduct(state) === 'design' && appSessionId === state.activeAppSessionId;
@@ -309,7 +287,6 @@ export default function PromptInput({
   centered?: boolean;
 }) {
   const dispatch = useStoreDispatch();
-  const askSideChat = useAskSideChat();
   const { downloading: appUpdateInstalling, installResult: appUpdateInstallResult } =
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
@@ -372,7 +349,6 @@ export default function PromptInput({
     shallowEqual,
   );
   const store = useStoreApi();
-  const { fastMode, setFastMode } = useFastMode(appSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -667,153 +643,18 @@ export default function PromptInput({
     requestedAt: number;
   } | null>(null);
 
-  // Toggle spec mode. When a live chat session exists, switch its interaction
-  // mode for real (not just the compose flag used for brand-new chats).
-  const toggleSpec = () => {
-    if (activeSession && activeSession.sessionPurpose !== 'mission-control') {
-      // Existing live chat: flip the session's real interaction mode and
-      // optimistically update its interaction mode so the toggle reflects immediately.
-      const turningOn = !isSpecMode;
-      dispatch({
-        type: 'SESSION_SET_INTERACTION_MODE',
-        appSessionId: activeSession.appSessionId,
-        interactionMode: turningOn ? 'spec' : 'auto',
-      });
-      updateSessionSettings({
-        appSessionId: activeSession.appSessionId,
-        interactionMode: turningOn ? 'spec' : 'auto',
-      });
-    } else {
-      // Brand-new draft chat with no session yet: just flip the compose flag.
-      dispatch({ type: 'TOGGLE_SPEC_MODE' });
-    }
-  };
-
-  // `/side` with nothing after it opens the session's side chat; with a
-  // question it starts a new one in its place.
-  const openSideChat = (prompt: string): boolean => {
-    if (!activeSession) {
-      toast.info('Open a chat to ask a side question about it.');
-      return false;
-    }
-    if (prompt) return askSideChat(activeSession.appSessionId, prompt);
-    dispatch({
-      type: 'SHOW_SIDE_CHAT',
-      sourceAppSessionId: activeSession.appSessionId,
-      view: { kind: 'current' },
-    });
-    return true;
-  };
-
-  const slashCommands: SlashCommand[] = [
-    {
-      ...VISUALIZE_COMMAND,
-      icon: VisualizeIcon,
-      run: () => {
-        setVisualizeSelected(true);
-      },
-    },
-    {
-      cmd: '/bug',
-      desc: 'Send a private bug report',
-      icon: Bug,
-      run: () => {
-        setFeedbackReport({ category: 'bug', description: '' });
-      },
-    },
-    {
-      cmd: '/feedback',
-      desc: 'Share private product feedback',
-      icon: MessageSquareText,
-      run: () => {
-        setFeedbackReport({ category: 'other', description: '' });
-      },
-    },
-    ...['/side', '/btw'].map((cmd) => ({
-      cmd,
-      desc: 'Ask a side question without adding to this chat',
-      icon: MessageBubble,
-      run: () => {
-        openSideChat('');
-      },
-    })),
-    {
-      cmd: '/model',
-      desc: 'Open model selector',
-      icon: Models,
-      run: () => {
-        showModels(true);
-      },
-    },
-    {
-      cmd: '/compact',
-      desc: 'Compact current session',
-      icon: FoldVertical,
-      run: () => {
-        if (primaryActionsEnabled && activeSession) compactSession(activeSession.appSessionId);
-      },
-    },
-    {
-      cmd: '/spec',
-      desc: 'Toggle spec mode',
-      icon: ListTodo,
-      run: () => {
-        toggleSpec();
-      },
-    },
-    {
-      cmd: '/settings',
-      desc: 'Open settings',
-      icon: Settings,
-      run: () => {
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-      },
-    },
-    {
-      cmd: USAGE_COMMAND,
-      desc: 'Show usage limits',
-      icon: Gauge,
-      supersedesHarnessCommand: true,
-      run: () => {
-        setUsageOpen(true);
-      },
-    },
-    {
-      cmd: '/fast',
-      desc: 'Toggle fast mode',
-      icon: Zap,
-      // The app owns this setting now, so the harness's own /fast stays out of
-      // the menu rather than offering a second, unsynced switch.
-      supersedesHarnessCommand: true,
-      run: () => {
-        setFastMode(!fastMode);
-      },
-    },
-    {
-      cmd: '/fast on',
-      desc: FAST_MODE_HINT,
-      icon: Zap,
-      run: () => {
-        setFastMode(true);
-      },
-    },
-    {
-      cmd: '/fast off',
-      desc: 'Normal speed and usage',
-      icon: Zap,
-      run: () => {
-        setFastMode(false);
-      },
-    },
-  ].filter((command) => {
-    if (command.cmd === '/spec') return specComposer && !draftingProject;
-    if (command.cmd.startsWith('/fast')) return offersFastMode(composerProvider);
-    return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
+  const { slashCommands, openSideChat, appFastCommand, fastMode } = useComposerSlashCommands({
+    appSessionId,
+    activeSession,
+    composerProvider,
+    isSpecMode,
+    draftingProject,
+    primaryActionsEnabled,
+    setVisualizeSelected,
+    setFeedbackReport,
+    showModels,
+    setUsageOpen,
   });
-
-  // /fast, /fast on or /fast off, when this harness offers fast mode.
-  const appFastCommand = (text: string) =>
-    slashCommands.find((command) => command.cmd.startsWith('/fast') && command.cmd === text);
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
