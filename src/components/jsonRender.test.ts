@@ -6,11 +6,10 @@ import {
   JsonRender,
   splitJsonRender,
   hasJsonRender,
-  __resolveColorForTest as resolveColor,
   __renderBudgetForTest as renderBudget,
   __MAX_NODES_FOR_TEST as MAX_NODES,
-  __statusColorForTest as statusColor,
 } from './JsonRender';
+import { resolveColor, statusColor } from './jsonRenderValues';
 
 test('closed json-render blocks interleave with prose; an unclosed one and a bare mention do not', () => {
   assert.equal(hasJsonRender('x <json-render>{}</json-render>'), true);
