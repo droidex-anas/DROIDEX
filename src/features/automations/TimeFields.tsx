@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 const NUMBER_FIELD =
-  'h-control-md rounded-md bg-field px-2 text-center text-body tabular-nums text-primary outline-none transition-colors';
+  'h-control-md rounded-md px-2 text-center text-body tabular-nums text-primary outline-none transition-colors';
 
 export function AutomationTimeInput({
   value,
@@ -65,7 +65,7 @@ export function AutomationTimeInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-11`}
+        className={`${NUMBER_FIELD} w-11 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
       />
       <span className="text-muted">:</span>
       <input
@@ -95,7 +95,7 @@ export function AutomationTimeInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-11`}
+        className={`${NUMBER_FIELD} w-11 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
       />
     </div>
   );
@@ -146,7 +146,7 @@ export function AutomationMinuteInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-12`}
+        className={`${NUMBER_FIELD} w-12 bg-field`}
       />
     </div>
   );
@@ -204,7 +204,7 @@ export function AutomationDateInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
       }}
-      className={`${NUMBER_FIELD} w-28`}
+      className={`${NUMBER_FIELD} w-28 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
     />
   );
 }
