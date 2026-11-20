@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { adaptEvent, initialState, reducer, toastMessageForEvent } from './useStore';
+import { initialState, reducer } from './useStore';
+import { adaptEvent, toastMessageForEvent } from './storeEvents';
 import type { ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 
