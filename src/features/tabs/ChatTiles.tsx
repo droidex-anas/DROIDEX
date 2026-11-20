@@ -28,6 +28,7 @@ import { isRemoteClient } from '../../lib/desktop';
 import { isEmbedded } from '../../lib/embed';
 import { LazyLibrarySeedChip } from '../../lib/lazySurfaces';
 import { DESIGN_PLACEHOLDER } from '../canvas/designStarters';
+import { NewChatBackdrop } from '../new-chat/NewChatBackdrop';
 import { activeGrid, activeProduct } from './tabStrip';
 import { CloseTileButton, type TileChrome } from './TileChrome';
 import { TileDivider } from './TileDivider';
@@ -189,6 +190,7 @@ const TilePane = memo(function TilePane({
   // its place, hidden, so the same composer and its draft stay mounted.
   return (
     <>
+      <NewChatBackdrop visible={home !== null && !underBrowser} />
       <div
         aria-hidden={underBrowser || undefined}
         className={underBrowser ? 'invisible flex min-h-0 flex-1 flex-col' : 'contents'}
@@ -349,7 +351,7 @@ export function ChatTiles({
           <div
             key={slot}
             data-tile-id={tile.id}
-            className={`absolute flex-col overflow-hidden ${
+            className={`absolute isolate flex-col overflow-hidden ${
               underBrowser && !focused ? 'hidden' : 'flex'
             }`}
             style={underBrowser ? FULL_AREA : boxStyle(box)}
