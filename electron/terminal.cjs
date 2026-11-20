@@ -34,6 +34,14 @@ const MAX_ROWS = 500;
 const TERM = 'xterm-256color';
 const COLORTERM = 'truecolor';
 
+function trimUtf8Front(buffer, bytes = 0) {
+  while (bytes < buffer.length && (buffer.byteAt(bytes) & 0xc0) === 0x80) {
+    bytes += 1;
+  }
+  buffer.trimFront(bytes);
+  return bytes;
+}
+
 // Resolve the default shell portably. $SHELL wins on POSIX (falling back to
 // zsh on macOS, bash on Linux, both as login shells); on Windows we honour a
 // SHELL hint that points at pwsh, otherwise use cmd.exe from COMSPEC.
@@ -240,17 +248,10 @@ function createTerminalManager(opts) {
     ptyInstance.onData((data) => {
       const buf = Buffer.from(data, 'utf8');
       entry.lastActivityAt = Date.now();
-      entry.droppedBytes += entry.buffer.append(buf);
+      const droppedBytes = entry.buffer.append(buf);
+      entry.droppedBytes += droppedBytes;
       entry.totalEmittedBytes += buf.length;
-      let continuationBytes = 0;
-      while (
-        continuationBytes < entry.buffer.length &&
-        (entry.buffer.byteAt(continuationBytes) & 0xc0) === 0x80
-      ) {
-        continuationBytes += 1;
-      }
-      entry.buffer.trimFront(continuationBytes);
-      entry.droppedBytes += continuationBytes;
+      if (droppedBytes > 0) entry.droppedBytes += trimUtf8Front(entry.buffer);
       entry.sequence += 1;
       const payload = {
         kind: 'data',
@@ -542,13 +543,8 @@ function createTerminalManager(opts) {
     let trimmed = 0;
     for (const e of terminals.values()) {
       if (e.buffer.length <= cap) continue;
-      let droppedBytes = e.buffer.length - cap;
-      while (droppedBytes < e.buffer.length && (e.buffer.byteAt(droppedBytes) & 0xc0) === 0x80) {
-        droppedBytes += 1;
-      }
-      e.buffer.trimFront(droppedBytes);
+      e.droppedBytes += trimUtf8Front(e.buffer, e.buffer.length - cap);
       e.buffer.compact();
-      e.droppedBytes += droppedBytes;
       trimmed += 1;
     }
     return trimmed;

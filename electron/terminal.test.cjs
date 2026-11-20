@@ -305,12 +305,16 @@ test('replay matches live bytes through wraps, explicit UTF-8 trimming, and exit
   for (let i = 0; i < 80; i += 1) instances[0].emitData(`🙂é${'z'.repeat(65531)}`);
   const emitted = Buffer.concat(live);
   const replay = manager.replaySince(terminal.id, 0);
-  const start = emitted.length - Buffer.byteLength(replay.data);
+  let start = emitted.length - MAX_REPLAY_BYTES;
+  while ((emitted[start] & 0xc0) === 0x80) start += 1;
+  assert.equal(replay.data, emitted.subarray(start).toString('utf8'));
+  assert.equal(replay.droppedBytes, start);
+  assert.equal(replay.truncated, true);
   for (const offset of [0, start - 1, start, start + 1, start + 97, emitted.length]) {
-    assert.equal(
-      manager.replaySince(terminal.id, offset).data,
-      emitted.subarray(Math.max(start, offset)).toString('utf8'),
-    );
+    const fromOffset = manager.replaySince(terminal.id, offset);
+    assert.equal(fromOffset.data, emitted.subarray(Math.max(start, offset)).toString('utf8'));
+    assert.equal(fromOffset.droppedBytes, Math.max(0, start - offset));
+    assert.equal(fromOffset.truncated, offset < start);
   }
   instances[0].emitData('🙂é');
   assert.equal(manager.trimReplay(5), 1);
