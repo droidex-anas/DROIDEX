@@ -1,6 +1,6 @@
-import { useId, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { SelectMenu } from './SelectMenu';
-import { epochFromZonedInput, WEEKDAYS, zonedInputParts } from './schedule';
+import { epochFromZonedInput, WEEKDAYS, zonedInputParts, type ZonedInput } from './schedule';
 import {
   AutomationDateInput,
   AutomationMinuteInput,
@@ -9,48 +9,84 @@ import {
 } from './TimeFields';
 import type { AutomationSchedule } from '@droidex/protocol';
 
+export function useInvalidScheduleInput(
+  schedule: AutomationSchedule | undefined,
+  timezone: string | undefined,
+  owner?: string,
+) {
+  const key = JSON.stringify([
+    owner,
+    schedule?.kind,
+    schedule?.kind === 'once' ? schedule.runAt : null,
+    timezone,
+  ]);
+  const [invalidEdit, setInvalidEdit] = useState<{
+    key: string;
+    parts: ZonedInput;
+  } | null>(null);
+  if (invalidEdit && invalidEdit.key !== key) setInvalidEdit(null);
+  const invalidInput = invalidEdit?.key === key ? invalidEdit.parts : null;
+  const setInvalidInput = (parts: ZonedInput | null) => {
+    setInvalidEdit(parts ? { key, parts } : null);
+  };
+  return [invalidInput, setInvalidInput] as const;
+}
+
 export function ScheduleControls({
   schedule,
   timezone,
   onChange,
+  invalidInput,
+  onInvalidInputChange,
 }: {
   schedule: AutomationSchedule;
   timezone: string;
   onChange: (schedule: AutomationSchedule) => void;
+  invalidInput: ZonedInput | null;
+  onInvalidInputChange: (input: ZonedInput | null) => void;
 }) {
+  const errorId = useId();
   switch (schedule.kind) {
     case 'once': {
-      const parts = zonedInputParts(schedule.runAt, timezone);
+      const parts = invalidInput ?? zonedInputParts(schedule.runAt, timezone);
       const minimumDate = zonedInputParts(Date.now(), timezone);
+      const updateInput = (input: ZonedInput) => {
+        const runAt = epochFromZonedInput(input, timezone);
+        onInvalidInputChange(runAt === null ? input : null);
+        if (runAt !== null) onChange({ kind: 'once', runAt });
+      };
       return (
         <>
           <EditorRow label="Date">
             <AutomationDateInput
+              errorId={invalidInput ? errorId : undefined}
               value={parts}
               minimum={minimumDate}
               onChange={(date) => {
-                const runAt = epochFromZonedInput({ ...parts, ...date }, timezone);
-                if (runAt !== null) onChange({ kind: 'once', runAt });
+                updateInput({ ...parts, ...date });
               }}
             />
           </EditorRow>
           <EditorRow label="Time">
             <AutomationTimeInput
+              errorId={invalidInput ? errorId : undefined}
               value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
               onChange={(time) => {
                 const [hourText = '', minuteText = ''] = time.split(':');
-                const runAt = epochFromZonedInput(
-                  {
-                    ...parts,
-                    hour: clampNumber(hourText, 0, 23, parts.hour),
-                    minute: clampNumber(minuteText, 0, 59, parts.minute),
-                  },
-                  timezone,
-                );
-                if (runAt !== null) onChange({ kind: 'once', runAt });
+                updateInput({
+                  ...parts,
+                  hour: clampNumber(hourText, 0, 23, parts.hour),
+                  minute: clampNumber(minuteText, 0, 59, parts.minute),
+                });
               }}
             />
           </EditorRow>
+          {invalidInput && (
+            <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
+              This local time does not exist in {timezone.replaceAll('_', ' ')}. Choose a time
+              outside the daylight-saving gap.
+            </p>
+          )}
         </>
       );
     }
