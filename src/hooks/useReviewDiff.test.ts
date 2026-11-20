@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { JSDOM } from 'jsdom';
 import { useReviewDiff } from './useReviewDiff';
 import { useReviewFileDiffs } from './useReviewFileDiffs';
 import type { DiffFile, DiffScope, FileDiffResult } from '../types/vcs';
@@ -12,8 +11,6 @@ async function setup(t: test.TestContext, fileCount = 1) {
   t.after(async () => {
     await act(async () => root?.unmount());
   });
-  const dom = new JSDOM('<div id="root"></div>');
-  t.after(() => dom.window.close());
   const files: DiffFile[] = Array.from({ length: fileCount }, (_, i) => ({
     path: `file-${i}`,
     status: 'modified',
@@ -27,16 +24,21 @@ async function setup(t: test.TestContext, fileCount = 1) {
   let listCount = 0;
   let failPatch = false;
   let pending: Promise<FileDiffResult> | undefined;
-  const { window } = dom;
-  const { document } = window;
-  Object.defineProperty(document, 'hidden', { configurable: true, writable: true, value: false });
-  window.setInterval = (callback: TimerHandler) => {
-    assert.equal(typeof callback, 'function');
-    tick = callback as () => void;
-    return 1;
+  const document = {
+    nodeType: 9,
+    hidden: false,
+    activeElement: null,
+    addEventListener() {},
+    removeEventListener() {},
   };
-  window.clearInterval = () => {};
-  Object.assign(window, {
+  const window = {
+    document,
+    HTMLIFrameElement: class {},
+    setInterval(callback: () => void) {
+      tick = callback;
+      return 1;
+    },
+    clearInterval() {},
     droidex: {
       async gitDiffFiles(_cwd: string, { mode }: { mode: DiffScope }) {
         listCount++;
@@ -48,7 +50,16 @@ async function setup(t: test.TestContext, fileCount = 1) {
         return pending ?? { path, diff: patch, binary: false };
       },
     },
-  });
+  };
+  const container = {
+    nodeType: 1,
+    tagName: 'DIV',
+    ownerDocument: document,
+    namespaceURI: 'http://www.w3.org/1999/xhtml',
+    addEventListener() {},
+    removeEventListener() {},
+    textContent: '',
+  };
   for (const [key, value] of Object.entries({ window, document, IS_REACT_ACT_ENVIRONMENT: true })) {
     const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
     Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
@@ -59,21 +70,25 @@ async function setup(t: test.TestContext, fileCount = 1) {
   }
   let cwd = '/repo';
   let scope: DiffScope = 'unstaged';
+  let appSessionId = 'session-1';
   let open: string[] = [];
+  let active: string | undefined;
   let review!: ReturnType<typeof useReviewDiff>;
   let diffs!: ReturnType<typeof useReviewFileDiffs>;
   function Harness() {
     review = useReviewDiff(cwd, scope, true);
-    diffs = useReviewFileDiffs(cwd, scope, false, review.signature, { revision: review.revision });
+    diffs = useReviewFileDiffs(cwd, scope, false, review.signature, {
+      appSessionId,
+      revision: review.revision,
+    });
     useEffect(() => {
       open.forEach(diffs.ensure);
-    }, [open, diffs.ensure, review.signature, review.files]);
+      if (active) diffs.ensure(active);
+    }, [open, active, diffs.ensure, review.signature, review.files]);
     return null;
   }
-  const container = document.getElementById('root');
-  assert.ok(container);
   await act(async () => {
-    root = createRoot(container);
+    root = createRoot(container as unknown as HTMLElement);
     root.render(createElement(Harness));
   });
   return {
@@ -90,8 +105,16 @@ async function setup(t: test.TestContext, fileCount = 1) {
     setPending(value: Promise<FileDiffResult> | undefined) {
       pending = value;
     },
-    async render(paths: string[], nextCwd = cwd, nextScope = scope) {
+    async render(
+      paths: string[],
+      nextCwd = cwd,
+      nextScope = scope,
+      nextSession = appSessionId,
+      activePath?: string,
+    ) {
       open = paths;
+      active = activePath;
+      appSessionId = nextSession;
       cwd = nextCwd;
       scope = nextScope;
       await act(async () => root?.render(createElement(Harness)));
@@ -116,12 +139,12 @@ test('an open patch refreshes after a same-numstat edit without reopening', asyn
   assert.equal(h.review().files, files);
 });
 
-test('idle polls preserve patch identity and fetch only open files out of fifty', async (t) => {
+test('idle polls revalidate only open and active files out of fifty without cache churn', async (t) => {
   const h = await setup(t, 50);
   await h.poll();
   assert.equal(h.requests(), 0);
-  await h.render(['file-0', 'file-1']);
-  assert.equal(h.requests(), 2);
+  await h.render(['file-0', 'file-1'], '/repo', 'unstaged', 'session-1', 'file-2');
+  assert.equal(h.requests(), 3);
   const entries = h.diffs().entries;
   const counts: number[] = [];
   for (let i = 0; i < 3; i++) {
@@ -130,8 +153,10 @@ test('idle polls preserve patch identity and fetch only open files out of fifty'
     counts.push(h.requests() - before);
     assert.equal(h.diffs().entries, entries);
   }
-  t.diagnostic(`50 files, 2 open: patch requests per idle poll = ${counts.join(', ')}`);
-  assert.ok(counts.every((count) => count <= 2));
+  t.diagnostic(
+    `50 files, 2 open + 1 collapsed active: patch requests per idle poll = ${counts.join(', ')}`,
+  );
+  assert.ok(counts.every((count) => count <= 3));
   await h.render([]);
   const before = h.requests();
   await h.poll();
@@ -142,7 +167,7 @@ test('idle polls preserve patch identity and fetch only open files out of fifty'
   assert.equal(h.lists(), lists);
 });
 
-for (const change of ['scope', 'worktree'] as const) {
+for (const change of ['scope', 'worktree', 'session'] as const) {
   test(`a late patch response is dropped across a ${change} change`, async (t) => {
     const h = await setup(t);
     await h.render(['file-0']);
@@ -160,6 +185,7 @@ for (const change of ['scope', 'worktree'] as const) {
       ['file-0'],
       change === 'worktree' ? '/other' : '/repo',
       change === 'scope' ? 'staged' : 'unstaged',
+      change === 'session' ? 'session-2' : 'session-1',
     );
     await act(async () => resolve({ path: 'file-0', diff: 'late patch', binary: false }));
     assert.equal(h.diffs().entries['file-0']?.diff, 'current patch');

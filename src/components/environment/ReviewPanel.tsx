@@ -359,13 +359,14 @@ export function ReviewPanel({ cwd, onClose }: { cwd: string; onClose?: () => voi
     if (idx >= 0) setRenderLimit((cur) => (idx < cur ? cur : idx + FILE_RENDER_JUMP_BUFFER));
   }, [activePath, review.signature]);
 
-  // Only revealed, expanded sections revalidate on each list revision.
+  // Revalidate visible sections and the active file used by Copy patch.
   useEffect(() => {
     const visible = new Set(review.files.slice(0, renderLimit).map((f) => f.path));
     expanded.forEach((p) => {
       if (visible.has(p)) ensure(p);
     });
-  }, [expanded, review.signature, ensure, review.files, renderLimit]);
+    if (activePath) ensure(activePath);
+  }, [expanded, activePath, review.signature, ensure, review.files, renderLimit]);
 
   const afterAction = () => {
     git.refresh();
