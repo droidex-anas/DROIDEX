@@ -22,7 +22,6 @@ export function validateFactoryDefaults(
   defaults: FactoryDefaultSettings,
   models: ModelInfo[],
 ): FactoryDefaultSettings {
-  if (models.length === 0) return runtimeFactoryDefaultsWithoutCatalog(defaults);
   const firstModel = models.at(0);
   if (!firstModel) return runtimeFactoryDefaultsWithoutCatalog(defaults);
   const cliDefault =
