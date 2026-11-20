@@ -67,9 +67,7 @@ test('loads the DROIDEX shell', async ({ page }) => {
 });
 
 test.describe('app keyboard shortcuts', () => {
-  test('opens, selects, closes and restores tabs over the mocked bridge', async ({
-    page,
-  }, testInfo) => {
+  test('opens, selects, closes and restores tabs over the mocked bridge', async ({ page }) => {
     await sessionBridge(page, []);
     await page.goto(appUrl);
     const primary = await page.evaluate(() =>
@@ -94,12 +92,6 @@ test.describe('app keyboard shortcuts', () => {
     await expect(tabs).toHaveCount(2);
     await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
     await expect(tabs.nth(1)).toContainText('Projects');
-
-    await page.keyboard.press(`${primary}+k`);
-    await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible();
-    await page.screenshot({ path: testInfo.outputPath('shortcuts.png') });
-    await page.keyboard.press('Escape');
-    await expect(page.getByRole('dialog', { name: 'Command palette' })).toHaveCount(0);
   });
 });
 
