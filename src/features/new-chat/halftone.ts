@@ -162,7 +162,8 @@ export function imageField(brightness: Float32Array, grid: ArtGrid, dark: boolea
     const u = ((index % grid.cols) + 0.5) / grid.cols;
     const v = (Math.floor(index / grid.cols) + 0.5) / grid.rows;
     const tone = flip ? 1 - field[index] : field[index];
-    field[index] = tone * calm(u, v, aspect, 0.4);
+    // Midtones sink so a photo reads as a few lit shapes, not a full-screen wash.
+    field[index] = Math.pow(tone, 1.6) * 0.85 * calm(u, v, aspect, 0.3);
   }
   return field;
 }

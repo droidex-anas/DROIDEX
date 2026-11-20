@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { DitherArt, type DitherSource } from './DitherArt';
-import { useNewChatLook, type NewChatLook } from './newChatLook';
+import { ART_PRESETS, useNewChatLook, type NewChatLook } from './newChatLook';
 import { useDraftHarness } from './useDraftHarness';
 
 const FADE = { duration: 0.8, ease: [0.22, 1, 0.36, 1] } as const;
@@ -12,16 +12,15 @@ const PHOTO_SCRIM =
 type Layer = { key: string; source: DitherSource } | { key: string; photo: string };
 
 function backdropLayer(look: NewChatLook, harness: string): Layer | null {
-  if (look.backdrop === 'none') return null;
-  if (look.backdrop !== 'custom') {
-    return {
-      key: `${look.backdrop}:${harness}`,
-      source: { kind: 'preset', preset: look.backdrop },
-    };
+  const { backdrop } = look;
+  if (backdrop === 'none') return null;
+  const saved = look.savedBackgrounds.find((background) => background.id === backdrop);
+  if (!saved) {
+    const preset = ART_PRESETS.find((name) => name === backdrop);
+    return preset ? { key: `${preset}:${harness}`, source: { kind: 'preset', preset } } : null;
   }
-  if (!look.backgroundImage) return null;
-  if (!look.ditherImage) return { key: 'photo', photo: look.backgroundImage };
-  return { key: `image:${harness}`, source: { kind: 'image', url: look.backgroundImage } };
+  if (!look.ditherImage) return { key: saved.id, photo: saved.image };
+  return { key: `${saved.id}:${harness}`, source: { kind: 'image', url: saved.image } };
 }
 
 // Artwork behind the home of a chat that has not started. Each harness gets

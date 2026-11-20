@@ -12,17 +12,14 @@ const HIDDEN = { opacity: 0, scale: 0.7, filter: 'blur(6px)' };
 // The mark above a new chat's greeting. Following the harness, it swaps with a
 // blurred cross-fade and a small turn whenever the draft changes harness.
 export function NewChatMark() {
-  const { logo, logoImage } = useNewChatLook();
+  const { logo } = useNewChatLook();
   const harness = useDraftHarness();
   const reduceMotion = useReducedMotion();
   if (logo === 'none') return null;
 
   let key: string;
   let mark: ReactNode;
-  if (logo === 'custom' && logoImage) {
-    key = 'custom';
-    mark = <img src={logoImage} alt="Logo" className="max-h-14 max-w-44 object-contain" />;
-  } else if (logo === 'wordmark') {
+  if (logo === 'wordmark') {
     key = 'wordmark';
     mark = <BrandMark size={34} className="text-accent" />;
   } else {

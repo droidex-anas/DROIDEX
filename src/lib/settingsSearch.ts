@@ -57,7 +57,7 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   // ── Appearance ───────────────────────────────────────────────────────────
   e('Appearance', 'Color scheme', ['light', 'dark', 'system', 'look', 'mode', 'appearance']),
   e('Appearance', 'App icon', ['icon', 'dock', 'light icon', 'dark icon']),
-  e('Appearance', 'Logo', ['new chat', 'harness logo', 'wordmark', 'upload logo']),
+  e('Appearance', 'Logo', ['new chat', 'harness logo', 'wordmark']),
   e('Appearance', 'Background', [
     'new chat',
     'wallpaper',
@@ -65,6 +65,8 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'halftone',
     'artwork',
     'upload image',
+    'custom image',
+    'saved backgrounds',
   ]),
   e('Appearance', 'Themes', [
     'preset theme',

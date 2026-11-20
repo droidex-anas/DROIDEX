@@ -6,33 +6,46 @@ import { useSyncExternalStore } from 'react';
 
 export const ART_PRESETS = ['glow', 'rotor', 'ridgeline', 'contour'] as const;
 export type ArtPreset = (typeof ART_PRESETS)[number];
-export type Backdrop = 'none' | ArtPreset | 'custom';
-export type LogoChoice = 'harness' | 'wordmark' | 'custom' | 'none';
+export type SavedBackgroundId = `image-${string}`;
+export type Backdrop = 'none' | ArtPreset | SavedBackgroundId;
+export type LogoChoice = 'harness' | 'wordmark' | 'none';
 
-export interface NewChatLook {
-  backdrop: Backdrop;
-  logo: LogoChoice;
-  // Redraw an uploaded background in the harness-lit dither instead of as is.
-  ditherImage: boolean;
-  // Uploads are data URLs; a 'custom' choice is only valid while its image exists.
-  backgroundImage: string | null;
-  logoImage: string | null;
+// An image the user added, kept as a data URL so it can be picked again later.
+export interface SavedBackground {
+  id: SavedBackgroundId;
+  image: string;
 }
 
+export interface NewChatLook {
+  // A saved id is only valid while that background is in `savedBackgrounds`.
+  backdrop: Backdrop;
+  logo: LogoChoice;
+  // Redraw saved images in the harness-lit dither instead of as they are.
+  ditherImage: boolean;
+  savedBackgrounds: readonly SavedBackground[];
+}
+
+// Each image fills a few hundred kilobytes of the renderer's localStorage.
+export const MAX_SAVED_BACKGROUNDS = 8;
+
 const PREFERENCES_KEY = 'droid-new-chat-look';
-const BACKGROUND_IMAGE_KEY = 'droid-new-chat-background-image';
-const LOGO_IMAGE_KEY = 'droid-new-chat-logo-image';
+const IMAGE_KEY_PREFIX = 'droid-new-chat-background:';
 
 const DEFAULT_LOOK: NewChatLook = {
   backdrop: 'glow',
   logo: 'harness',
   ditherImage: true,
-  backgroundImage: null,
-  logoImage: null,
+  savedBackgrounds: [],
 };
 
-const BACKDROPS: readonly Backdrop[] = ['none', ...ART_PRESETS, 'custom'];
-const LOGOS: readonly LogoChoice[] = ['harness', 'wordmark', 'custom', 'none'];
+const LOGOS: readonly LogoChoice[] = ['harness', 'wordmark', 'none'];
+
+interface StoredPreferences {
+  backdrop: Backdrop;
+  logo: LogoChoice;
+  ditherImage: boolean;
+  savedBackgroundIds: SavedBackgroundId[];
+}
 
 function getLocalStorage(): Storage | undefined {
   if (typeof window !== 'undefined') return window.localStorage;
@@ -40,9 +53,24 @@ function getLocalStorage(): Storage | undefined {
   return descriptor && 'value' in descriptor ? (descriptor.value as Storage) : undefined;
 }
 
-function readImage(storage: Storage, key: string): string | null {
-  const value = storage.getItem(key);
-  return value?.startsWith('data:image/') ? value : null;
+function isSavedBackgroundId(value: unknown): value is SavedBackgroundId {
+  return typeof value === 'string' && value.startsWith('image-');
+}
+
+function readSavedBackgrounds(storage: Storage, ids: unknown): SavedBackground[] {
+  if (!Array.isArray(ids)) return [];
+  return ids.filter(isSavedBackgroundId).flatMap((id) => {
+    const image = storage.getItem(IMAGE_KEY_PREFIX + id);
+    return image?.startsWith('data:image/') ? [{ id, image }] : [];
+  });
+}
+
+function validBackdrop(value: unknown, saved: readonly SavedBackground[]): Backdrop {
+  if (value === 'none') return value;
+  const preset = ART_PRESETS.find((name) => name === value);
+  if (preset) return preset;
+  const image = saved.find((background) => background.id === value);
+  return image ? image.id : DEFAULT_LOOK.backdrop;
 }
 
 export function loadNewChatLook(): NewChatLook {
@@ -50,27 +78,20 @@ export function loadNewChatLook(): NewChatLook {
   if (!storage) return DEFAULT_LOOK;
   try {
     const raw = storage.getItem(PREFERENCES_KEY);
-    const saved = (raw ? JSON.parse(raw) : {}) as Partial<Record<keyof NewChatLook, unknown>>;
-    const backgroundImage = readImage(storage, BACKGROUND_IMAGE_KEY);
-    const logoImage = readImage(storage, LOGO_IMAGE_KEY);
-    const backdrop = BACKDROPS.find((value) => value === saved.backdrop) ?? DEFAULT_LOOK.backdrop;
-    const logo = LOGOS.find((value) => value === saved.logo) ?? DEFAULT_LOOK.logo;
+    const stored = (raw ? JSON.parse(raw) : {}) as Partial<
+      Record<keyof StoredPreferences, unknown>
+    >;
+    const savedBackgrounds = readSavedBackgrounds(storage, stored.savedBackgroundIds);
     return {
-      backdrop: backdrop === 'custom' && !backgroundImage ? DEFAULT_LOOK.backdrop : backdrop,
-      logo: logo === 'custom' && !logoImage ? DEFAULT_LOOK.logo : logo,
+      backdrop: validBackdrop(stored.backdrop, savedBackgrounds),
+      logo: LOGOS.find((value) => value === stored.logo) ?? DEFAULT_LOOK.logo,
       ditherImage:
-        typeof saved.ditherImage === 'boolean' ? saved.ditherImage : DEFAULT_LOOK.ditherImage,
-      backgroundImage,
-      logoImage,
+        typeof stored.ditherImage === 'boolean' ? stored.ditherImage : DEFAULT_LOOK.ditherImage,
+      savedBackgrounds,
     };
   } catch {
     return DEFAULT_LOOK;
   }
-}
-
-function writeImage(storage: Storage, key: string, image: string | null): void {
-  if (image) storage.setItem(key, image);
-  else storage.removeItem(key);
 }
 
 let current: NewChatLook | null = null;
@@ -92,21 +113,63 @@ export function useNewChatLook(): NewChatLook {
   return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
-// Persists first and applies only after every write lands, so a full storage
-// quota (a large upload) leaves the live look untouched. Throws on failure.
-export function updateNewChatLook(patch: Partial<NewChatLook>): void {
-  const next = { ...snapshot(), ...patch };
-  if (next.backdrop === 'custom' && !next.backgroundImage) next.backdrop = DEFAULT_LOOK.backdrop;
-  if (next.logo === 'custom' && !next.logoImage) next.logo = DEFAULT_LOOK.logo;
-  const storage = getLocalStorage();
-  if (storage) {
-    if ('backgroundImage' in patch) writeImage(storage, BACKGROUND_IMAGE_KEY, next.backgroundImage);
-    if ('logoImage' in patch) writeImage(storage, LOGO_IMAGE_KEY, next.logoImage);
-    storage.setItem(
-      PREFERENCES_KEY,
-      JSON.stringify({ backdrop: next.backdrop, logo: next.logo, ditherImage: next.ditherImage }),
-    );
-  }
+function writePreferences(storage: Storage | undefined, look: NewChatLook): void {
+  const preferences: StoredPreferences = {
+    backdrop: look.backdrop,
+    logo: look.logo,
+    ditherImage: look.ditherImage,
+    savedBackgroundIds: look.savedBackgrounds.map((background) => background.id),
+  };
+  storage?.setItem(PREFERENCES_KEY, JSON.stringify(preferences));
+}
+
+function publish(next: NewChatLook): void {
   current = next;
   for (const listener of listeners) listener();
+}
+
+export function updateNewChatLook(
+  patch: Partial<Pick<NewChatLook, 'backdrop' | 'logo' | 'ditherImage'>>,
+): void {
+  const next = { ...snapshot(), ...patch };
+  writePreferences(getLocalStorage(), next);
+  publish(next);
+}
+
+// Stores the image and selects it. Persists before applying, so a full storage
+// quota leaves the live look untouched; throws on that failure.
+export function addSavedBackground(image: string): void {
+  const look = snapshot();
+  if (look.savedBackgrounds.length >= MAX_SAVED_BACKGROUNDS) {
+    throw new Error('Saved background limit reached');
+  }
+  const background: SavedBackground = { id: `image-${crypto.randomUUID()}`, image };
+  const next: NewChatLook = {
+    ...look,
+    backdrop: background.id,
+    savedBackgrounds: [...look.savedBackgrounds, background],
+  };
+  const storage = getLocalStorage();
+  const imageKey = IMAGE_KEY_PREFIX + background.id;
+  try {
+    storage?.setItem(imageKey, image);
+    writePreferences(storage, next);
+  } catch (error) {
+    storage?.removeItem(imageKey);
+    throw error;
+  }
+  publish(next);
+}
+
+export function removeSavedBackground(id: SavedBackgroundId): void {
+  const look = snapshot();
+  const next: NewChatLook = {
+    ...look,
+    backdrop: look.backdrop === id ? DEFAULT_LOOK.backdrop : look.backdrop,
+    savedBackgrounds: look.savedBackgrounds.filter((background) => background.id !== id),
+  };
+  const storage = getLocalStorage();
+  writePreferences(storage, next);
+  storage?.removeItem(IMAGE_KEY_PREFIX + id);
+  publish(next);
 }

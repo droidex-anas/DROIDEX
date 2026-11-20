@@ -6,14 +6,18 @@ import { Button } from '../../components/ui/Button';
 import { DitherArt } from './DitherArt';
 import { imageFileToDataUrl } from './imageUpload';
 import {
+  addSavedBackground,
   ART_PRESETS,
+  MAX_SAVED_BACKGROUNDS,
+  removeSavedBackground,
   updateNewChatLook,
   useNewChatLook,
   type ArtPreset,
   type LogoChoice,
-  type NewChatLook,
+  type SavedBackground,
 } from './newChatLook';
 import { useDraftHarness } from './useDraftHarness';
+import type { ProviderKind } from '../../types/bridge';
 
 const PRESET_LABELS: Record<ArtPreset, string> = {
   glow: 'Glow',
@@ -22,21 +26,30 @@ const PRESET_LABELS: Record<ArtPreset, string> = {
   contour: 'Contour',
 };
 
-const BACKGROUND_MAX_SIDE = 1920;
-const LOGO_MAX_SIDE = 256;
+const LOGO_OPTIONS: { value: LogoChoice; label: string }[] = [
+  { value: 'harness', label: 'Harness logo' },
+  { value: 'wordmark', label: 'DROIDEX wordmark' },
+  { value: 'none', label: 'None' },
+];
 
-function UploadButton({ label, onFile }: { label: string; onFile: (file: File) => void }) {
+const BACKGROUND_MAX_SIDE = 1600;
+
+function AddImageButton({ disabled, onFile }: { disabled: boolean; onFile: (file: File) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
     <>
       <Button
         size="sm"
         icon={Upload}
+        disabled={disabled}
+        title={
+          disabled ? `Up to ${String(MAX_SAVED_BACKGROUNDS)} images. Remove one first.` : undefined
+        }
         onClick={() => {
           inputRef.current?.click();
         }}
       >
-        {label}
+        Add image
       </Button>
       <input
         ref={inputRef}
@@ -56,44 +69,97 @@ function UploadButton({ label, onFile }: { label: string; onFile: (file: File) =
   );
 }
 
+function SavedBackgroundTile({
+  background,
+  index,
+  active,
+  dither,
+  harness,
+  onError,
+}: {
+  background: SavedBackground;
+  index: number;
+  active: boolean;
+  dither: boolean;
+  harness: ProviderKind;
+  onError: (message: string) => void;
+}) {
+  const label = `Image ${String(index + 1)}`;
+  return (
+    // The remove button sits beside the card, not in it: a button cannot hold another.
+    <div className="group relative grid">
+      <PreviewCard
+        label={label}
+        active={active}
+        onClick={() => {
+          try {
+            updateNewChatLook({ backdrop: background.id });
+          } catch {
+            onError('Could not save that choice.');
+          }
+        }}
+      >
+        <div className="relative size-full bg-bg">
+          {dither ? (
+            <DitherArt
+              source={{ kind: 'image', url: background.image }}
+              provider={harness}
+              cellPx={2}
+            />
+          ) : (
+            <img src={background.image} alt="" className="size-full object-cover" />
+          )}
+        </div>
+      </PreviewCard>
+      <span className="absolute right-3 top-3 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+        <Button
+          variant="secondary"
+          size="sm"
+          shape="round"
+          icon={Trash}
+          aria-label={`Remove ${label}`}
+          className="shadow-sm"
+          onClick={() => {
+            removeSavedBackground(background.id);
+          }}
+        />
+      </span>
+    </div>
+  );
+}
+
 // Appearance card for what a new chat shows: the mark above the greeting and
 // the artwork behind the composer, both lit by the selected harness.
 export function NewChatLookSettings() {
   const look = useNewChatLook();
   const harness = useDraftHarness();
   const [error, setError] = useState<string | null>(null);
+  const atLimit = look.savedBackgrounds.length >= MAX_SAVED_BACKGROUNDS;
 
-  const apply = (patch: Partial<NewChatLook>) => {
+  const choose = (patch: Parameters<typeof updateNewChatLook>[0]) => {
     try {
       updateNewChatLook(patch);
       setError(null);
     } catch {
-      setError('Could not save that image. Try a smaller one.');
+      setError('Could not save that choice.');
     }
   };
 
-  const upload = (
-    file: File,
-    maxSide: number,
-    type: 'image/jpeg' | 'image/png',
-    toPatch: (image: string) => Partial<NewChatLook>,
-  ) => {
-    imageFileToDataUrl(file, maxSide, type).then(
+  const addImage = (file: File) => {
+    imageFileToDataUrl(file, BACKGROUND_MAX_SIDE, 'image/jpeg').then(
       (image) => {
-        apply(toPatch(image));
+        try {
+          addSavedBackground(image);
+          setError(null);
+        } catch {
+          setError('Not enough room to save that image. Remove a saved one and try again.');
+        }
       },
       () => {
         setError('That file could not be read as an image.');
       },
     );
   };
-
-  const logoOptions: { value: LogoChoice; label: string }[] = [
-    { value: 'harness', label: 'Harness logo' },
-    { value: 'wordmark', label: 'DROIDEX wordmark' },
-    ...(look.logoImage ? [{ value: 'custom' as const, label: 'Uploaded logo' }] : []),
-    { value: 'none', label: 'None' },
-  ];
 
   return (
     <>
@@ -103,65 +169,22 @@ export function NewChatLookSettings() {
           label="Logo"
           description="Shown above the greeting. The harness logo follows the harness you pick."
         >
-          <div className="flex shrink-0 items-center gap-2">
-            {look.logoImage && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={Trash}
-                aria-label="Remove uploaded logo"
-                onClick={() => {
-                  apply({ logoImage: null });
-                }}
-              />
-            )}
-            <UploadButton
-              label="Upload"
-              onFile={(file) => {
-                upload(file, LOGO_MAX_SIDE, 'image/png', (logoImage) => ({
-                  logoImage,
-                  logo: 'custom',
-                }));
-              }}
-            />
-            <Dropdown
-              ariaLabel="Logo"
-              value={look.logo}
-              options={logoOptions}
-              onChange={(value) => {
-                const choice = logoOptions.find((option) => option.value === value);
-                if (choice) apply({ logo: choice.value });
-              }}
-            />
-          </div>
+          <Dropdown
+            ariaLabel="Logo"
+            value={look.logo}
+            options={LOGO_OPTIONS}
+            onChange={(value) => {
+              const choice = LOGO_OPTIONS.find((option) => option.value === value);
+              if (choice) choose({ logo: choice.value });
+            }}
+          />
         </SettingRow>
 
         <SettingRow
           label="Background"
-          description="Shown behind the composer until the chat starts, lit in the harness color."
+          description="Shown behind the composer until the chat starts. Add your own images to keep them here."
         >
-          <div className="flex shrink-0 items-center gap-2">
-            {look.backgroundImage && (
-              <Button
-                variant="ghost"
-                size="sm"
-                icon={Trash}
-                aria-label="Remove uploaded background"
-                onClick={() => {
-                  apply({ backgroundImage: null });
-                }}
-              />
-            )}
-            <UploadButton
-              label="Upload image"
-              onFile={(file) => {
-                upload(file, BACKGROUND_MAX_SIDE, 'image/jpeg', (backgroundImage) => ({
-                  backgroundImage,
-                  backdrop: 'custom',
-                }));
-              }}
-            />
-          </div>
+          <AddImageButton disabled={atLimit} onFile={addImage} />
         </SettingRow>
 
         <div className="grid grid-cols-3 gap-3 px-4 pb-4">
@@ -169,7 +192,7 @@ export function NewChatLookSettings() {
             label="None"
             active={look.backdrop === 'none'}
             onClick={() => {
-              apply({ backdrop: 'none' });
+              choose({ backdrop: 'none' });
             }}
           >
             <div className="size-full bg-bg" />
@@ -180,7 +203,7 @@ export function NewChatLookSettings() {
               label={PRESET_LABELS[preset]}
               active={look.backdrop === preset}
               onClick={() => {
-                apply({ backdrop: preset });
+                choose({ backdrop: preset });
               }}
             >
               <div className="relative size-full bg-bg">
@@ -188,39 +211,29 @@ export function NewChatLookSettings() {
               </div>
             </PreviewCard>
           ))}
-          {look.backgroundImage && (
-            <PreviewCard
-              label="Uploaded"
-              active={look.backdrop === 'custom'}
-              onClick={() => {
-                apply({ backdrop: 'custom' });
-              }}
-            >
-              <div className="relative size-full bg-bg">
-                {look.ditherImage ? (
-                  <DitherArt
-                    source={{ kind: 'image', url: look.backgroundImage }}
-                    provider={harness}
-                    cellPx={2}
-                  />
-                ) : (
-                  <img src={look.backgroundImage} alt="" className="size-full object-cover" />
-                )}
-              </div>
-            </PreviewCard>
-          )}
+          {look.savedBackgrounds.map((background, index) => (
+            <SavedBackgroundTile
+              key={background.id}
+              background={background}
+              index={index}
+              active={look.backdrop === background.id}
+              dither={look.ditherImage}
+              harness={harness}
+              onError={setError}
+            />
+          ))}
         </div>
 
-        {look.backgroundImage && (
+        {look.savedBackgrounds.length > 0 && (
           <SettingRow
-            label="Dither uploaded image"
-            description="Redraw it as halftone dots in the harness color"
+            label="Dither your images"
+            description="Redraw them as halftone dots in the harness color"
           >
             <Switch
-              label="Dither uploaded image"
+              label="Dither your images"
               checked={look.ditherImage}
               onChange={(ditherImage) => {
-                apply({ ditherImage });
+                choose({ ditherImage });
               }}
             />
           </SettingRow>
