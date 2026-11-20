@@ -40,6 +40,10 @@ export async function devinPermission(
     },
     confirmationType: kind === 'spec' ? 'exit_spec_mode' : kind,
     signal,
+    canApproveFor: (actor) =>
+      actor.provider === 'devin' &&
+      ((kind === 'edit' && actor.autonomy !== 'off') ||
+        (kind === 'exec' && actor.autonomy === 'high')),
   });
   if (isCancelled() || outcome === 'cancel') return cancelled;
   let preferred = 'reject_once';
