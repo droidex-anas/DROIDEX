@@ -291,9 +291,6 @@ export function hasJsonRender(text: string): boolean {
   return text.includes('<json-render>');
 }
 
-export const __resolveColorForTest = resolveColor;
-export const __statusColorForTest = statusColor;
-
 // Test seam: render a spec and report how many nodes were actually expanded, so
 // the global budget can be asserted without a DOM. Returns at most MAX_NODES.
 export function __renderBudgetForTest(spec: Spec): number {
