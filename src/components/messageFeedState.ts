@@ -97,24 +97,6 @@ function finalResponseKeysInRange(items: FeedItem[], start: number): ReadonlySet
   return finalKey ? new Set([finalKey]) : new Set();
 }
 
-// Only genuinely appended items animate in. A prepend encounters an existing
-// tail key immediately and therefore leaves every historical row still.
-export function appendedFeedItemKeys(
-  items: readonly { key: string }[],
-  previous: { identity: string; keys: Set<string> } | null,
-  identity: string,
-): Set<string> {
-  const appended = new Set<string>();
-  if (previous?.identity !== identity) return appended;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const key = items.at(index)?.key;
-    if (key === undefined) continue;
-    if (previous.keys.has(key)) break;
-    appended.add(key);
-  }
-  return appended;
-}
-
 export function appendedFeedItemKeysFromProjection(
   items: readonly { key: string }[],
   previous: { identity: string; items: readonly { key: string }[] } | null,

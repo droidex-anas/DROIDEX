@@ -117,15 +117,6 @@ export function buildGroupedFeed(
   return groupTurns(buildFeed(events, feedOptions), pending, specContent, changes);
 }
 
-// Public helper so the chat view can derive the same anchors MessageFeed stamps.
-export function conversationAnchors(
-  events: TranscriptEvent[],
-  pending: boolean,
-  options?: GroupedFeedOptions,
-): ConversationAnchor[] {
-  return promptAnchorsFromItems(buildGroupedFeed(events, pending, options));
-}
-
 // Best-effort end timestamp of a feed item, used to time the live working cue.
 export function tailTimestamp(item?: FeedItem): number | undefined {
   if (!item) return undefined;
