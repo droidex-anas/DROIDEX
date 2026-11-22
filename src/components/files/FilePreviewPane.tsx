@@ -158,7 +158,11 @@ export function FilePreviewPane({
 
 function samePreviewPayload(left: FilePreviewPayload, right: FilePreviewPayload): boolean {
   return (
-    left.data === right.data &&
+    (left.data === right.data ||
+      (left.encoding === 'binary' &&
+        right.encoding === 'binary' &&
+        left.mtimeMs === right.mtimeMs &&
+        left.totalSize === right.totalSize)) &&
     JSON.stringify({ ...left, data: undefined }) === JSON.stringify({ ...right, data: undefined })
   );
 }

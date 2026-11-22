@@ -196,6 +196,7 @@ export interface FilesListing {
 export interface FilePreviewPayload {
   category: 'text' | 'image' | 'pdf' | 'docx' | 'xlsx' | 'external';
   totalSize: number;
+  mtimeMs: number;
   sizeCapBytes: number;
   previewable: boolean;
   oversize?: boolean;

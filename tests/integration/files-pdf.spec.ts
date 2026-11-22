@@ -37,15 +37,28 @@ function pdfFixture(width = 1000): number[] {
 
 test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
   await openFiles(page, { '/repo': { '': { 'edges.pdf': 'file' } } });
+  const rendering = await page.evaluateHandle(() => {
+    const rendering = { workers: 0 };
+    const OriginalWorker = window.Worker;
+    window.Worker = class extends OriginalWorker {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        rendering.workers += 1;
+      }
+    };
+    return rendering;
+  });
   const disk = await page.evaluateHandle((data) => {
-    const disk = { data, reads: 0 };
+    const disk = { data, reads: 0, mtimeMs: 1 };
     Object.assign(window.droidex, {
       filesPreview: async () => {
         disk.reads += 1;
         return {
           category: 'pdf',
+          encoding: 'binary',
+          mtimeMs: disk.mtimeMs,
           previewable: true,
-          data: disk.data,
+          data: disk.data.slice(),
           totalSize: disk.data.length,
           sizeCapBytes: 10_000_000,
         };
@@ -58,8 +71,24 @@ test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
   const canvas = page.locator('canvas');
   await expect(canvas).toHaveAttribute('width', '1400');
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Next page', exact: true }).click();
+  await expect(canvas).toHaveAttribute('width', '251');
+  const workers = await rendering.evaluate((rendering) => rendering.workers);
+  const reads = await disk.evaluate((disk) => disk.reads);
+  await page.getByRole('button', { name: 'Refresh files' }).click();
+  await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  expect(await rendering.evaluate((rendering) => rendering.workers)).toBe(workers);
+  await expect(canvas).toHaveAttribute('width', '251');
+  await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeDisabled();
   await disk.evaluate((disk, data) => {
     disk.data = data;
+    disk.mtimeMs += 1;
   }, pdfFixture(600));
   await page.getByRole('button', { name: 'Refresh files' }).click();
   await expect(canvas).toHaveAttribute('width', '840');
