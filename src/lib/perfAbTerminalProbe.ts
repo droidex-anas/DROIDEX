@@ -41,14 +41,15 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
     for (let run = -2; run < 7; run += 1) {
       let hidden = scenario.id !== 'visible';
       let output = '';
-      const pump = pumpModule.createTerminalOutputPump({
-        write: (text) => {
-          output += text;
-        },
-        isHidden: () => hidden,
-        scheduleFrame: () => 1,
-        cancelFrame: () => undefined,
-      });
+      let pump: ReturnType<typeof createTerminalOutputPump> | undefined =
+        pumpModule.createTerminalOutputPump({
+          write: (text) => {
+            output += text;
+          },
+          isHidden: () => hidden,
+          scheduleFrame: () => 1,
+          cancelFrame: () => undefined,
+        });
       globalThis.gc?.();
       const heapBefore = process.memoryUsage().heapUsed;
       for (let index = 0; index < scenario.prefillPushes; index += 1) pump.push(scenario.prefill);
@@ -75,6 +76,9 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
         reveals.push(revealMs);
         heaps.push(retainedHeapBytes);
       }
+      pump.dispose();
+      pump = undefined;
+      output = '';
     }
     const method = 'median of 7 after 2 warmups; 96 pushes plus reveal, excluding prefill';
     metrics.push(
