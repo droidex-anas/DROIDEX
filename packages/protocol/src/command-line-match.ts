@@ -1,5 +1,5 @@
-// Matches the command an agent typed against a live process's full command
-// line, on whole tokens only — `npm run dev` must not match `npm run dev:api`.
+// Matches a command against a process's full command line on whole tokens only:
+// `npm run dev` must not match `npm run dev:api`.
 export function commandLineContains(commandLine: string, needle: string): boolean {
   let from = 0;
   while (from <= commandLine.length) {
