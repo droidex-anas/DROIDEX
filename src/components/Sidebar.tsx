@@ -379,7 +379,7 @@ export default function Sidebar({
       />
       <div
         ref={scrollRef}
-        className="scrollbar-while-scrolling min-h-0 flex-1 overflow-y-auto px-2"
+        className="scrollbar-while-scrolling scroll-fade-y-end min-h-0 flex-1 overflow-y-auto px-2"
       >
         <div className="space-y-3">
           {unreadOnly && unreadCount === 0 && (

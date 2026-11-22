@@ -315,6 +315,16 @@
       calc(100% - 3rem) 100%;
   }
 
+  /* A shallow fade on the bottom edge only, for a column whose top edge sits
+     flush under fixed chrome, such as the sidebar list above its footer. It is
+     shallow so the first row of a short list stays clear. */
+  .scroll-fade-y-end {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-end)), transparent);
+    animation: scroll-fade-y-end linear both;
+    animation-timeline: scroll(self block);
+    animation-range: calc(100% - 1.5rem) 100%;
+  }
+
   ::selection {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
   }
@@ -1401,7 +1411,7 @@
   }
 }
 
-/* Registered so the fade edges can animate as lengths (see .scroll-fade-x and -y). */
+/* Registered so the fade edges can animate as lengths (see the .scroll-fade-* utilities). */
 @property --fade-start {
   syntax: '<length>';
   inherits: false;
@@ -1437,6 +1447,15 @@
 @keyframes scroll-fade-bottom {
   from {
     --fade-end: 3rem;
+  }
+  to {
+    --fade-end: 0px;
+  }
+}
+
+@keyframes scroll-fade-y-end {
+  from {
+    --fade-end: 1.5rem;
   }
   to {
     --fade-end: 0px;
