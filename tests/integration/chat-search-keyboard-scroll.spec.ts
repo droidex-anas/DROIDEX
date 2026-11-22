@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { ClientCommand, ServerEvent } from '@droidex/protocol';
+import type { ClientCommand, ServerEvent, SessionSummary } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
 test.use({ video: 'on', viewport: { width: 1280, height: 800 } });
@@ -73,8 +73,9 @@ async function mockPlanSessions(page: Page, now: number) {
         })),
       });
     },
-    shrinkTo(count: number) {
-      emit({ type: 'sessions.list', sessions: sessions.slice(0, count), earlierSessionsByCwd: {} });
+    sessions,
+    listSessions(list: SessionSummary[]) {
+      emit({ type: 'sessions.list', sessions: list, earlierSessionsByCwd: {} });
     },
     async searchSent() {
       await expect.poll(() => searches.length).toBe(1);
@@ -120,15 +121,34 @@ test('arrow keys keep the selected result in view, and Enter opens it', async ({
   await expect.poll(() => bridge.opened).toContain('plan-12');
 });
 
-test('a shrinking result list keeps its last row selected', async ({ page }) => {
+test('a shrinking result list keeps a row selected, and regrowing does not restore the old one', async ({
+  page,
+}) => {
   const bridge = await mockPlanSessions(page, Date.now());
   const { input, results } = await searchPlans(page);
 
   await input.press('ArrowUp');
-  bridge.shrinkTo(3);
+  bridge.listSessions(bridge.sessions.slice(0, 3));
   await expect(results).toHaveCount(3);
+  bridge.listSessions(bridge.sessions);
+  await expect(results).toHaveCount(12);
   await input.press('Enter');
   await expect.poll(() => bridge.opened).toContain('plan-3');
+});
+
+test('wheel scrolling is kept when a listed chat updates', async ({ page }) => {
+  const bridge = await mockPlanSessions(page, Date.now());
+  const { input, results } = await searchPlans(page);
+
+  await results.first().hover();
+  await input.press('ArrowUp');
+  await expect(results.last()).toBeInViewport({ ratio: 1 });
+  await page.mouse.wheel(0, -1000);
+  await expect(results.first()).toBeInViewport({ ratio: 1 });
+  const [first, ...rest] = bridge.sessions;
+  bridge.listSessions([{ ...first, title: 'Plan 1 renamed' }, ...rest]);
+  await expect(results.first()).toContainText('Plan 1 renamed');
+  await expect(results.first()).toBeInViewport({ ratio: 1 });
 });
 
 test('editing the query and back selects the first result again', async ({ page }) => {

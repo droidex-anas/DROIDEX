@@ -91,12 +91,8 @@ export default function SidebarSearch({
     onClose();
   };
 
-  const { selected, selectedRowRef, setSelected, handleKeyDown } = usePaletteNavigation(
-    query,
-    entries,
-    open,
-    onClose,
-  );
+  const { selected, selectedRowRef, setSelected, handleKeyDown, handleWheel } =
+    usePaletteNavigation(query, entries, open, onClose);
 
   const now = Date.now();
   const trimmed = query.trim();
@@ -114,6 +110,7 @@ export default function SidebarSearch({
       query={query}
       onQueryChange={setQuery}
       onKeyDown={handleKeyDown}
+      onResultsWheel={handleWheel}
       placeholder="Search chats, messages, or PRs…"
       inputAriaLabel="Search chats, messages, and PRs"
       enterHint="Open session"

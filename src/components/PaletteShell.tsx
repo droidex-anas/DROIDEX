@@ -16,6 +16,7 @@ export default function PaletteShell({
   query,
   onQueryChange,
   onKeyDown,
+  onResultsWheel,
   placeholder,
   inputAriaLabel,
   enterHint,
@@ -26,6 +27,7 @@ export default function PaletteShell({
   query: string;
   onQueryChange: (query: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
+  onResultsWheel: () => void;
   placeholder: string;
   inputAriaLabel: string;
   enterHint: string;
@@ -108,7 +110,9 @@ export default function PaletteShell({
 
         {/* A fixed result height keeps the centred dialog, and so the search
             field, from moving as filtering changes the number of results. */}
-        <div className="h-80 min-h-0 overflow-y-auto px-1.5">{children}</div>
+        <div className="h-80 min-h-0 overflow-y-auto px-1.5" onWheel={onResultsWheel}>
+          {children}
+        </div>
 
         <div className="flex items-center justify-between gap-3 px-4 pt-2.5 pb-3">
           <div className="flex items-center gap-3 text-caption text-muted">

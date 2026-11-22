@@ -96,12 +96,8 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
     commandActions[cmd.id]();
   };
 
-  const { selected, selectedRowRef, setSelected, handleKeyDown } = usePaletteNavigation(
-    query,
-    filtered,
-    runCommand,
-    close,
-  );
+  const { selected, selectedRowRef, setSelected, handleKeyDown, handleWheel } =
+    usePaletteNavigation(query, filtered, runCommand, close);
 
   return (
     <PaletteShell
@@ -109,6 +105,7 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
       query={query}
       onQueryChange={setQuery}
       onKeyDown={handleKeyDown}
+      onResultsWheel={handleWheel}
       placeholder="Type a command or search..."
       inputAriaLabel="Command palette"
       enterHint="Select"
