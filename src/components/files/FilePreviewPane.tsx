@@ -163,7 +163,15 @@ function samePreviewPayload(left: FilePreviewPayload, right: FilePreviewPayload)
         right.encoding === 'binary' &&
         left.ctimeMs === right.ctimeMs &&
         left.totalSize === right.totalSize)) &&
-    JSON.stringify({ ...left, data: undefined }) === JSON.stringify({ ...right, data: undefined })
+    left.category === right.category &&
+    left.totalSize === right.totalSize &&
+    left.ctimeMs === right.ctimeMs &&
+    left.sizeCapBytes === right.sizeCapBytes &&
+    left.previewable === right.previewable &&
+    left.oversize === right.oversize &&
+    left.reason === right.reason &&
+    left.encoding === right.encoding &&
+    left.text === right.text
   );
 }
 
