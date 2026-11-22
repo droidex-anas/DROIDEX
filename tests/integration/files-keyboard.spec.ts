@@ -19,6 +19,12 @@ test('the files tree is one Tab stop with native activation and arrow navigation
   await page.getByRole('button', { name: 'Refresh files' }).focus();
   await page.keyboard.press('Tab');
   await expect(folder).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(readme).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(readme).toBeFocused();
+  await page.keyboard.press('ArrowUp');
+  await expect(folder).toBeFocused();
   await page.keyboard.press('ArrowRight');
   await expect(folder).toHaveAttribute('aria-expanded', 'true');
   await page.keyboard.press('ArrowRight');
