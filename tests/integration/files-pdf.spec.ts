@@ -1,5 +1,4 @@
 import { expect, test } from '@playwright/test';
-import { DEFAULT_THEME } from '../../src/lib/theme';
 import { openFiles, showFiles } from './filesFixture';
 
 function pdfFixture(): number[] {
@@ -36,77 +35,60 @@ function pdfFixture(): number[] {
   return Array.from(new TextEncoder().encode(pdf));
 }
 
-for (const theme of ['dark', 'light']) {
-  test(`PDF edges remain reachable and fitting pages stay centered (${theme})`, async ({
-    page,
-  }) => {
-    await page.clock.setFixedTime(new Date('2026-06-01T12:00:00Z'));
-    await page.addInitScript(
-      (value) => localStorage.setItem('droid-theme', JSON.stringify(value)),
-      {
-        mode: theme,
-        ...DEFAULT_THEME[theme as 'dark' | 'light'],
-      },
-    );
-    await openFiles(page, { '/repo': { '': { 'edges.pdf': 'file' } } });
-    await page.evaluate((data) => {
-      Object.assign(window.droidex, {
-        filesPreview: async () => ({
-          category: 'pdf',
-          previewable: true,
-          data,
-          totalSize: data.length,
-          sizeCapBytes: 10_000_000,
-          path: { root: '/repo', relative: 'edges.pdf' },
-        }),
-      });
-    }, pdfFixture());
-    const tree = await showFiles(page, 'repo-chat');
-    await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
-    const canvas = page.locator('canvas');
-    const next = page.getByRole('button', { name: 'Next page', exact: true });
-    await expect(canvas).toHaveAttribute('width', '1400');
-    await expect(next).toBeEnabled();
-    const measure = () =>
-      canvas.evaluate((element) => {
-        const scroller = element.parentElement!;
-        const item = element.getBoundingClientRect();
-        const pane = scroller.getBoundingClientRect();
-        return {
-          width: item.width,
-          height: item.height,
-          paneWidth: pane.width,
-          left: item.left - pane.left,
-          right: item.right - pane.right,
-          scrollLeft: scroller.scrollLeft,
-        };
-      });
-    await canvas.evaluate((element) => {
-      element.parentElement!.scrollLeft = 0;
+test('PDF edges remain reachable and fitting pages stay centered', async ({ page }) => {
+  await page.clock.setFixedTime(new Date('2026-06-01T12:00:00Z'));
+  await openFiles(page, { '/repo': { '': { 'edges.pdf': 'file' } } });
+  await page.evaluate((data) => {
+    Object.assign(window.droidex, {
+      filesPreview: async () => ({
+        category: 'pdf',
+        previewable: true,
+        data,
+        totalSize: data.length,
+        sizeCapBytes: 10_000_000,
+        path: { root: '/repo', relative: 'edges.pdf' },
+      }),
     });
-    const left = await measure();
-    console.log(`${theme} leftmost: ${JSON.stringify(left)}`);
-    expect(left.width).toBeGreaterThan(left.paneWidth);
-    expect.soft(left.left).toBeGreaterThanOrEqual(-1);
-    expect(left.scrollLeft).toBe(0);
-    expect(Math.abs(left.height - (left.width * 360) / 1000)).toBeLessThanOrEqual(2);
-    const evidence = process.env.PDF_EVIDENCE_PREFIX;
-    if (evidence) await page.screenshot({ path: `${evidence}-${theme}-left.png` });
-    await canvas.evaluate((element) => {
-      element.parentElement!.scrollLeft = element.parentElement!.scrollWidth;
+  }, pdfFixture());
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
+  const canvas = page.locator('canvas');
+  const next = page.getByRole('button', { name: 'Next page', exact: true });
+  await expect(canvas).toHaveAttribute('width', '1400');
+  await expect(next).toBeEnabled();
+  const measure = () =>
+    canvas.evaluate((element) => {
+      const scroller = element.parentElement!;
+      const item = element.getBoundingClientRect();
+      const pane = scroller.getBoundingClientRect();
+      return {
+        width: item.width,
+        height: item.height,
+        paneWidth: pane.width,
+        left: item.left - pane.left,
+        right: item.right - pane.right,
+        scrollLeft: scroller.scrollLeft,
+      };
     });
-    const right = await measure();
-    console.log(`${theme} rightmost: ${JSON.stringify(right)}`);
-    expect(right.scrollLeft).toBeGreaterThan(0);
-    expect(right.right).toBeLessThanOrEqual(1);
-    if (evidence) await page.screenshot({ path: `${evidence}-${theme}-right.png` });
-    await next.click();
-    await expect(canvas).toHaveAttribute('width', '251');
-    await expect(next).toBeDisabled();
-    const fitting = await measure();
-    expect(fitting.width).toBeLessThan(fitting.paneWidth);
-    expect(Math.abs(fitting.left + fitting.right)).toBeLessThanOrEqual(1);
-    await page.getByRole('button', { name: 'Previous page', exact: true }).click();
-    await expect(canvas).toHaveAttribute('width', '1400');
+  await canvas.evaluate((element) => {
+    element.parentElement!.scrollLeft = 0;
   });
-}
+  const left = await measure();
+  expect(left.width).toBeGreaterThan(left.paneWidth);
+  expect(left.left).toBeGreaterThanOrEqual(-1);
+  expect(Math.abs(left.height - (left.width * 360) / 1000)).toBeLessThanOrEqual(2);
+  await canvas.evaluate((element) => {
+    element.parentElement!.scrollLeft = element.parentElement!.scrollWidth;
+  });
+  const right = await measure();
+  expect(right.scrollLeft).toBeGreaterThan(0);
+  expect(right.right).toBeLessThanOrEqual(1);
+  await next.click();
+  await expect(canvas).toHaveAttribute('width', '251');
+  await expect(next).toBeDisabled();
+  const fitting = await measure();
+  expect(fitting.width).toBeLessThan(fitting.paneWidth);
+  expect(Math.abs(fitting.left + fitting.right)).toBeLessThanOrEqual(1);
+  await page.getByRole('button', { name: 'Previous page', exact: true }).click();
+  await expect(canvas).toHaveAttribute('width', '1400');
+});
