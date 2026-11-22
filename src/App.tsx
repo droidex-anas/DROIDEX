@@ -500,7 +500,7 @@ export default function App() {
 
   const closeTerminalTab = useCallback(
     (tab: UtilityTab) => {
-      setConfirmCloseTabId(null);
+      setConfirmCloseTabId((current) => (current === tab.id ? null : current));
       dispatch({
         type: 'CLOSE_UTILITY_TAB',
         tabId: tab.id,
