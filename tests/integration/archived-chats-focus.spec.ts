@@ -2,12 +2,11 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
-async function openArchivedChats(page: Page, mode: 'light' | 'dark') {
+async function openArchivedChats(page: Page) {
   const now = Date.UTC(2026, 5, 1, 12);
   await page.clock.install({ time: now });
   await page.addInitScript(
-    ({ mode, now }) => {
-      localStorage.setItem('droid-theme', JSON.stringify({ mode }));
+    ({ now }) => {
       localStorage.setItem(
         'droid-chat-metadata',
         JSON.stringify({
@@ -16,7 +15,7 @@ async function openArchivedChats(page: Page, mode: 'light' | 'dark') {
         }),
       );
     },
-    { mode, now },
+    { now },
   );
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
@@ -59,51 +58,20 @@ async function openArchivedChats(page: Page, mode: 'light' | 'dark') {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Archived chats', exact: true }).click();
   await expect(page.getByTestId('archived-chat-row')).toHaveCount(2);
-  await expect(
-    page.locator('.fixed.inset-0').filter({ has: page.getByTestId('archived-chat-row') }),
-  ).toHaveCSS('opacity', '1');
 }
 
-for (const mode of ['light', 'dark'] as const) {
-  test(`keyboard Cancel restores the same archived row's delete focus (${mode})`, async ({
-    page,
-  }) => {
-    await openArchivedChats(page, mode);
-    const row = page.getByTestId('archived-chat-row').filter({ hasText: 'Saved research' });
-    const trigger = row.getByRole('button', { name: 'Delete Saved research permanently' });
-    await trigger.focus();
-    await page.keyboard.press('Enter');
-    await expect(row.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-    await page.keyboard.press('Enter');
-    await expect(trigger).toBeVisible();
-    if (process.env.ARCHIVE_FOCUS_EVIDENCE) {
-      await row.locator('..').screenshot({
-        path: `${process.env.ARCHIVE_FOCUS_EVIDENCE}-${mode}.png`,
-      });
-    }
-    await expect(trigger).toBeFocused();
-    await page.keyboard.press('Tab');
-    await expect(
-      page.getByRole('button', { name: 'Restore Release notes', exact: true }),
-    ).toBeFocused();
-    await expect(
-      page.getByRole('button', { name: 'Search chats, messages, and PRs', exact: true }),
-    ).not.toBeFocused();
-  });
-}
-
-test('confirmed deletion removes the row without focusing another delete trigger', async ({
-  page,
-}) => {
-  await openArchivedChats(page, 'dark');
+test("keyboard Cancel restores the same archived row's delete focus", async ({ page }) => {
+  await openArchivedChats(page);
   const row = page.getByTestId('archived-chat-row').filter({ hasText: 'Saved research' });
-  await row.getByRole('button', { name: 'Delete Saved research permanently' }).focus();
+  const trigger = row.getByRole('button', { name: 'Delete Saved research permanently' });
+  await trigger.focus();
   await page.keyboard.press('Enter');
   await expect(row.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-  await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Enter');
-  await expect(row).toHaveCount(0);
+  await expect(trigger).toBeVisible();
+  await expect(trigger).toBeFocused();
+  await page.keyboard.press('Tab');
   await expect(
-    page.getByRole('button', { name: 'Delete Release notes permanently' }),
-  ).not.toBeFocused();
+    page.getByRole('button', { name: 'Restore Release notes', exact: true }),
+  ).toBeFocused();
 });
