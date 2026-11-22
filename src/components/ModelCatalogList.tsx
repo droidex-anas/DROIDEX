@@ -8,12 +8,8 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import {
-  MODEL_LIST_HEIGHT_PX,
-  ModelListStatus,
-  SelectionHighlight,
-  useModelListVirtualizer,
-} from './modelListParts';
+import { ModelListStatus } from './modelListParts';
+import VirtualModelListbox from './VirtualModelListbox';
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
 export function defaultModelOf(models: ModelInfo[]) {
@@ -88,8 +84,6 @@ function ModelCatalogList({
   // -1 when the active model is filtered out: nothing is highlighted then.
   const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
 
-  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length, selectedIndex);
-
   const latest = useRef({ selectedModelId, onSelectModel, onSelectReasoning });
   latest.current = { selectedModelId, onSelectModel, onSelectReasoning };
   const pick = useCallback<Pick>((modelId, effort) => {
@@ -101,39 +95,20 @@ function ModelCatalogList({
   const rowProps = { pick, provider, disabled, reasoningLocked, showReasoning };
 
   return (
-    <div
-      ref={scrollRef}
-      className="-mx-1 min-h-0 overflow-y-auto overscroll-contain px-1"
-      style={{ height: MODEL_LIST_HEIGHT_PX }}
+    <VirtualModelListbox
+      rows={rows}
+      selectedIndex={selectedIndex}
+      renderRow={(model, selected) => (
+        <ModelRow
+          model={model}
+          selected={selected}
+          reasoning={selected ? reasoning : undefined}
+          {...rowProps}
+        />
+      )}
     >
-      <div
-        role="listbox"
-        aria-label="Models"
-        className="relative"
-        style={{ height: `${String(virtualizer.getTotalSize())}px` }}
-      >
-        <SelectionHighlight index={selectedIndex} />
-        {virtualizer.getVirtualItems().map((item) => {
-          const model = rows[item.index];
-          const selected = item.index === selectedIndex;
-          return (
-            <div
-              key={model.id}
-              className="absolute inset-x-0 top-0"
-              style={{ transform: `translateY(${String(item.start)}px)` }}
-            >
-              <ModelRow
-                model={model}
-                selected={selected}
-                reasoning={selected ? reasoning : undefined}
-                {...rowProps}
-              />
-            </div>
-          );
-        })}
-      </div>
       <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
-    </div>
+    </VirtualModelListbox>
   );
 }
 

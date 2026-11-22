@@ -6,12 +6,8 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import {
-  MODEL_LIST_HEIGHT_PX,
-  ModelListStatus,
-  SelectionHighlight,
-  useModelListVirtualizer,
-} from './modelListParts';
+import { ModelListStatus } from './modelListParts';
+import VirtualModelListbox from './VirtualModelListbox';
 
 /** The chat model picker's list: the virtualized, filtered catalog. */
 export default function ChatModelList({
@@ -30,43 +26,22 @@ export default function ChatModelList({
   const rows = hasRealModels ? models : [];
   const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
 
-  const { scrollRef, virtualizer } = useModelListVirtualizer(rows.length, selectedIndex);
-
   return (
-    <div
-      ref={scrollRef}
-      className="-mx-1 min-h-0 overflow-y-auto overscroll-contain px-1"
-      style={{ height: MODEL_LIST_HEIGHT_PX }}
+    <VirtualModelListbox
+      rows={rows}
+      selectedIndex={selectedIndex}
+      renderRow={(model, selected) => (
+        <ModelRow
+          model={model}
+          selected={selected}
+          onSelect={() => {
+            if (!selected) onSelectModel(model.id);
+          }}
+        />
+      )}
     >
-      <div
-        role="listbox"
-        aria-label="Models"
-        className="relative"
-        style={{ height: `${String(virtualizer.getTotalSize())}px` }}
-      >
-        <SelectionHighlight index={selectedIndex} />
-        {virtualizer.getVirtualItems().map((item) => {
-          const model = rows[item.index];
-          const selected = item.index === selectedIndex;
-          return (
-            <div
-              key={model.id}
-              className="absolute inset-x-0 top-0"
-              style={{ transform: `translateY(${String(item.start)}px)` }}
-            >
-              <ModelRow
-                model={model}
-                selected={selected}
-                onSelect={() => {
-                  if (!selected) onSelectModel(model.id);
-                }}
-              />
-            </div>
-          );
-        })}
-      </div>
       <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
-    </div>
+    </VirtualModelListbox>
   );
 }
 
