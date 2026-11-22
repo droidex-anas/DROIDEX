@@ -61,6 +61,11 @@ function MenuRoot({
   const selectingRef = useRef(false);
   const typeahead = useRef({ query: '', resetAt: 0 });
 
+  // A blink cut short by closing the menu must not hold over into the next opening.
+  useEffect(() => {
+    if (!open) selectingRef.current = false;
+  }, [open]);
+
   // Opening highlights the checked choice, or else the first item, so the
   // arrows start from where the user already is. Items that arrive after
   // opening (read asynchronously) get the same start while nothing is
