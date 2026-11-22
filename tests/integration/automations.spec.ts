@@ -494,6 +494,21 @@ test.describe('one-time DST-gap schedules', () => {
     await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
+    for (const zone of ['America / Phoenix', 'America / New York']) {
+      await card.getByRole('button', { name: 'Automation timezone', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Search Automation timezone options' }).fill(zone);
+      await page.getByRole('option', { name: zone, exact: true }).click();
+      await expect.soft(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+      if (zone === 'America / Phoenix') {
+        await expect(card.getByRole('alert')).toHaveCount(0);
+        await expect(confirm).toBeEnabled();
+        await setScheduleTime(card, '02');
+      }
+    }
+    await expect.soft(card.getByRole('alert')).toContainText('does not exist in America/New York');
+    await expect.soft(confirm).toBeDisabled();
+    await confirm.evaluate((button: HTMLButtonElement) => button.click());
+    expect(backend.requests).toEqual([]);
     await setScheduleTime(card, '04', '15');
     await expect(card.getByRole('alert')).toHaveCount(0);
     await expect(confirm).toBeEnabled();

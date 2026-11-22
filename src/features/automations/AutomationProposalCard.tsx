@@ -29,11 +29,12 @@ import {
 } from './proposalCardState';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
-  convertOnceRunAt,
+  epochFromZonedInput,
   formatSchedule,
   supportedTimeZones,
   validateAutomationDraft,
   workspaceLabel,
+  zonedInputParts,
 } from './schedule';
 import type { AutomationDraft } from './types';
 
@@ -126,13 +127,15 @@ export function AutomationProposalCard({
       updateDraft({ timezone });
       return;
     }
-    const runAt = convertOnceRunAt(workingDraft.schedule.runAt, workingDraft.timezone, timezone);
-    if (runAt === null) return;
+    const parts =
+      invalidInput ?? zonedInputParts(workingDraft.schedule.runAt, workingDraft.timezone);
+    const runAt = epochFromZonedInput(parts, timezone);
+    setInvalidInput(runAt === null ? parts : null, timezone);
     updateDraft({
       timezone,
       schedule: {
         kind: 'once',
-        runAt,
+        runAt: runAt ?? workingDraft.schedule.runAt,
       },
     });
   };
