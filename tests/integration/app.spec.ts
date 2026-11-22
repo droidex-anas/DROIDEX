@@ -169,6 +169,7 @@ test('each command palette row runs its command', async ({ page }) => {
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(tabs.nth(1)).toContainText('New chat');
   await page.keyboard.press(`${primary}+k`);
+  await expect(palette.getByText('New Tab', { exact: true })).toBeVisible();
   await expect(palette.getByText('New Terminal', { exact: true })).toHaveCount(0);
   await page.keyboard.press('Escape');
 
