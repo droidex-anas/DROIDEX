@@ -300,6 +300,56 @@ function submittedInstant(command: unknown) {
   return new Date(schedule.runAt).toISOString();
 }
 
+test('editor preserves invalid calendar dates until corrected', async ({ page }) => {
+  await page.clock.setFixedTime(DST_NOW);
+  const automation = scheduledPrompt(0, DST_NOW);
+  automation.schedule = { kind: 'once', runAt: Date.parse('2027-03-14T09:00:00Z') };
+  const backend = await automationBridge(page, [automation], [session], { now: DST_NOW });
+  await page.goto('/');
+  await page.getByTestId('automations-nav').click();
+  await page.getByText(automation.title, { exact: true }).click();
+  const editor = page.getByRole('complementary').filter({
+    has: page.getByRole('button', { name: 'Close automation editor' }),
+  });
+  const date = editor.getByRole('textbox', { name: 'Date, year month day' });
+  const save = editor.getByRole('button', { name: 'Save changes', exact: true });
+  for (const invalid of ['2027-04-31', '2027-02-', '2027-02-29']) {
+    await date.fill(invalid);
+    await date.press('Tab');
+    await expect(date).toHaveValue(invalid);
+    await expect(date).toHaveAttribute('aria-invalid', 'true');
+    await expect(editor.getByRole('alert')).toContainText('valid calendar date');
+    await expect(save).toBeDisabled();
+    expect(backend.requests).toEqual([]);
+    await date.fill('2027-03-14');
+    await date.press('Tab');
+    await expect(date).toHaveAttribute('aria-invalid', 'false');
+    await expect(editor.getByRole('alert')).toHaveCount(0);
+    await expect(save).toBeEnabled();
+  }
+  await date.fill('2027-04-31');
+  await date.press('Tab');
+  await setScheduleTime(editor, '10');
+  await expect(date).toHaveValue('2027-04-31');
+  await expect(save).toBeDisabled();
+  await date.fill('');
+  await date.press('Tab');
+  await expect(date).toHaveValue('2027-03-14');
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await expect(save).toBeEnabled();
+  for (const restored of ['', '2027-03-12']) {
+    await date.fill(restored);
+    await date.press('Tab');
+    await expect(date).toHaveValue('2027-03-14');
+    await expect(save).toBeEnabled();
+  }
+  await date.fill('2027-04-30');
+  await date.press('Tab');
+  await save.click();
+  await expect.poll(() => backend.requests.length).toBe(1);
+  expect(submittedInstant(backend.requests[0])).toBe('2027-04-30T10:00:00.000Z');
+});
+
 test.describe('one-time DST-gap schedules', () => {
   test.use({ timezoneId: 'America/New_York' });
 
