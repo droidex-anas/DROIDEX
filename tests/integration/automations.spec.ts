@@ -248,6 +248,29 @@ async function openSchedule(page: Page) {
   await page.getByRole('menuitem', { name: 'Schedule prompt…' }).click();
 }
 
+async function pasteAttachment(page: Page, save: () => Promise<string>) {
+  let saving = false;
+  await page.exposeFunction('saveTestAttachment', () => {
+    saving = true;
+    return save();
+  });
+  await page.getByRole('textbox', { name: 'Prompt', exact: true }).evaluate((editor) => {
+    Object.defineProperty(window, 'droidex', {
+      configurable: true,
+      value: {
+        saveAttachment: () => {
+          Reflect.deleteProperty(window, 'droidex');
+          return Reflect.get(window, 'saveTestAttachment')();
+        },
+      },
+    });
+    const clipboardData = new DataTransfer();
+    clipboardData.items.add(new File(['Review notes'], 'notes.txt', { type: 'text/plain' }));
+    editor.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData }));
+  });
+  await expect.poll(() => saving).toBe(true);
+}
+
 async function setScheduleTime(surface: Locator, hour: string, minute = '00') {
   await surface.getByRole('textbox', { name: 'Hour', exact: true }).fill(hour);
   const minutes = surface.getByRole('textbox', { name: 'Minute', exact: true });
@@ -475,6 +498,98 @@ test('scheduling targets the original conversation and preserves drafts until ac
   await page.getByTestId('automations-nav').click();
   await expect(page.getByText('Continue once the limit resets', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Open target conversation' })).toBeAttached();
+});
+
+test('switching chats while attachments settle abandons scheduling and preserves the draft', async ({
+  page,
+}) => {
+  const otherSession = { ...session, appSessionId: 'other-target', title: 'Review the design' };
+  const backend = await automationBridge(page, [], [session, otherSession]);
+  await openConversation(page);
+  const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
+  await composer.fill('Continue after the attachment is ready');
+  const attachment = Promise.withResolvers<string>();
+  await pasteAttachment(page, () => attachment.promise);
+  await openSchedule(page);
+  const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
+  await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Close schedule' })).toBeDisabled();
+  expect(backend.requests).toEqual([]);
+  await openChat(page, otherSession.title);
+  await expect(dialog).toHaveCount(0);
+  await expect(composer).toHaveText('Continue after the attachment is ready');
+  await composer.fill('Keep the newly visible draft');
+  attachment.resolve('/tmp/notes.txt');
+  // A rejected app command is also a barrier: attachment intake and the shared
+  // submit gate must have settled before another schedule can be validated.
+  await composer.fill('/compression');
+  await openSchedule(page);
+  await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'App commands cannot be scheduled. Write a prompt for the agent instead.',
+  );
+  expect(backend.requests).toEqual([]);
+  await dialog.getByRole('button', { name: 'Close schedule' }).click();
+  await composer.fill('Keep the newly visible draft');
+  await openChat(page, session.title);
+  await expect(composer).toHaveText('Keep the newly visible draft');
+  expect(backend.requests).toEqual([]);
+});
+
+test('switching chats after create keeps the acknowledgement scoped to its original target', async ({
+  page,
+}) => {
+  const otherSession = { ...session, appSessionId: 'other-target', title: 'Review the design' };
+  const backend = await automationBridge(page, [], [session, otherSession]);
+  await openConversation(page);
+  const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
+  await composer.fill('Continue the original review later');
+  await openSchedule(page);
+  const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
+  await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
+  await expect.poll(() => backend.requests.length).toBe(1);
+  await openChat(page, otherSession.title);
+  await expect(dialog).toHaveCount(0);
+  await composer.fill('Keep this design draft');
+  await pasteAttachment(page, () => Promise.resolve('/tmp/notes.txt'));
+  await expect(page.getByRole('button', { name: 'Remove file', exact: true })).toBeVisible();
+  await composer.focus();
+  backend.settle(true);
+  await expect(page.getByText('Prompt scheduled.', { exact: true })).toBeVisible();
+  await expect(composer).toHaveText('Keep this design draft');
+  await expect(page.getByRole('button', { name: 'Remove file', exact: true })).toBeVisible();
+  await expect(composer).toBeFocused();
+  const scheduled = page.getByRole('region', { name: 'Scheduled prompts', exact: true });
+  await expect(scheduled).toHaveCount(0);
+  expect(backend.requests).toHaveLength(1);
+  expect(backend.requests[0]).toMatchObject({
+    type: 'automations.create',
+    input: {
+      target: { kind: 'existing-session', appSessionId: session.appSessionId },
+      prompt: 'Continue the original review later',
+      files: [],
+    },
+  });
+  await openChat(page, session.title);
+  await expect(scheduled).toContainText('Continue the original review later');
+  await expect(composer).toHaveText('Keep this design draft');
+});
+
+test('scheduling a bare compact alias rejects the app command without changing the draft', async ({
+  page,
+}) => {
+  const backend = await automationBridge(page);
+  await openConversation(page);
+  const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
+  await composer.fill('/compression');
+  await openSchedule(page);
+  const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
+  await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'App commands cannot be scheduled. Write a prompt for the agent instead.',
+  );
+  expect(backend.requests).toEqual([]);
+  await expect(composer).toHaveText('/compression');
 });
 
 test('date editing keeps the schedule open and Escape restores focus on a narrow window', async ({
