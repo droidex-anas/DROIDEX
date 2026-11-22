@@ -4,6 +4,55 @@ import { openFiles, showFiles } from './filesFixture';
 
 const refresh = (page: Page) => page.getByRole('button', { name: 'Refresh files' }).click();
 
+test('Refresh preserves the text scroll container and reading position', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'notes.txt': 'file' } } });
+  const disk = await page.evaluateHandle(() => {
+    const disk = { text: Array.from({ length: 300 }, (_, i) => `Line ${i}`).join('\n'), reads: 0 };
+    Object.assign(window.droidex, {
+      filesPreview: async () => {
+        disk.reads += 1;
+        return {
+          category: 'text',
+          previewable: true,
+          text: disk.text,
+          totalSize: disk.text.length,
+          sizeCapBytes: 250_000,
+        };
+      },
+    });
+    return disk;
+  });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+  const code = page.locator('pre').filter({ hasText: 'Line 299' });
+  await expect(code).toBeVisible();
+  const scroller = await code.evaluateHandle((element) => element.parentElement!);
+  await scroller.evaluate((element) => {
+    element.scrollTop = 400;
+  });
+  for (const changed of [false, true]) {
+    const reads = await disk.evaluate((disk, changed) => {
+      if (changed) disk.text += '\nAppended line';
+      return disk.reads;
+    }, changed);
+    await refresh(page);
+    await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+    if (changed) await expect(code).toContainText('Appended line');
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await scroller.evaluate((element) => ({
+        connected: element.isConnected,
+        top: element.scrollTop,
+      })),
+    ).toEqual({ connected: true, top: 400 });
+  }
+});
+
 test('Refresh rereads the selected file without hiding its preview', async ({ page }) => {
   await openFiles(page, { '/repo': { '': { 'notes.txt': 'file' } } });
   const disk = await page.evaluateHandle(() => {

@@ -32,7 +32,6 @@ type PreviewState =
       relative: string;
       kind: 'ready';
       payload: FilePreviewPayload;
-      generation: number;
     };
 
 export function normalizePreviewBytes(data: unknown): Uint8Array {
@@ -75,14 +74,23 @@ export function FilePreviewPane({
     let cancelled = false;
     readFilePreview(accessToken, relative)
       .then((payload) => {
-        if (!cancelled)
-          setState({
-            accessToken,
-            relative,
-            kind: 'ready',
-            payload,
-            generation: refreshGeneration,
+        if (!cancelled) {
+          setState((previous) => {
+            if (
+              previous?.kind === 'ready' &&
+              previous.accessToken === accessToken &&
+              previous.relative === relative &&
+              samePreviewPayload(previous.payload, payload)
+            )
+              return previous;
+            return {
+              accessToken,
+              relative,
+              kind: 'ready',
+              payload,
+            };
           });
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -138,13 +146,28 @@ export function FilePreviewPane({
   return (
     <PreviewFrame>
       <PreviewBody
-        key={JSON.stringify([accessToken, relative, current.generation])}
+        key={JSON.stringify([accessToken, relative])}
         payload={current.payload}
         fileName={pathFileName(relative)}
         onOpenExternal={onOpenExternal}
         onReveal={onReveal}
       />
     </PreviewFrame>
+  );
+}
+
+function samePreviewPayload(left: FilePreviewPayload, right: FilePreviewPayload): boolean {
+  if (
+    JSON.stringify({ ...left, data: undefined }) !== JSON.stringify({ ...right, data: undefined })
+  ) {
+    return false;
+  }
+  if (left.data === right.data) return true;
+  const leftBytes = normalizePreviewBytes(left.data);
+  const rightBytes = normalizePreviewBytes(right.data);
+  return (
+    leftBytes.length === rightBytes.length &&
+    leftBytes.every((byte, index) => byte === rightBytes[index])
   );
 }
 

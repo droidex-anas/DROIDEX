@@ -63,9 +63,12 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
       });
     return () => {
       cancelled = true;
-      void loadingTask?.destroy();
-      pdfWorker?.destroy();
-      worker?.terminate();
+      const disposeWorker = () => {
+        pdfWorker?.destroy();
+        worker?.terminate();
+      };
+      if (loadingTask) void loadingTask.destroy().finally(disposeWorker);
+      else disposeWorker();
     };
   }, [bytes]);
 

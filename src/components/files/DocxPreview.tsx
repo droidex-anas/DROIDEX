@@ -81,14 +81,12 @@ export function DocxPreview({ bytes }: { bytes: Uint8Array }) {
     };
   }, [bytes]);
 
-  if (error) {
-    return <PreviewProblem title="Couldn't render this document" detail={error} />;
-  }
-
   return (
     <div className="relative h-full overflow-auto bg-surface/20 p-4">
+      {error && <PreviewProblem title="Couldn't render this document" detail={error} />}
       {loading && <PreviewBusyChip label="Rendering…" />}
       <div
+        hidden={!!error}
         ref={containerRef}
         // eslint-disable-next-line design-policy/design-tokens -- rendered document paper: documents are authored black on white
         className="mx-auto max-w-3xl rounded-sm bg-white p-6 text-black shadow-lg"
