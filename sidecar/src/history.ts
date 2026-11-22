@@ -31,10 +31,8 @@ import { SessionFileMirror } from './sessionFileMirror.js';
 import {
   parseFullSessionTranscript,
   readSessionRawWindow,
-  SessionTranscriptReader,
   type StoredMessageLine,
   type StoredSessionStart,
-  type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import { persistedChildSessionFromRow } from './persistedChildSessionRowDecoder.js';
@@ -58,8 +56,7 @@ import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permi
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
 import { droidexHistoryDir } from './droidexPaths.js';
 import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
-import { sessionNoticesRevision } from './sessionNotices.js';
-import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
+import { HistoryTranscriptWindow } from './historyTranscriptWindow.js';
 
 const SUMMARY_ROWS_SQL = `
   SELECT app_sessions.*, settings.value_json AS droid_profile_json
@@ -120,17 +117,6 @@ export interface PersistedChildSession {
   updatedAt: number;
 }
 
-// Safety cap for worker transcript events on the initial page (the orchestrator
-// scrollback is paged via the cursor, so only workers need bounding here).
-// How many orchestrator scrollback events to load per page (initial open and
-// each lazy older-page fetch). Bounds work for very long, multi-compaction chats.
-const DEFAULT_HISTORY_WINDOW = 400;
-// Per-segment span used to derive a global monotonic `seq` from a chain index +
-// in-segment position. Must exceed any single segment's seq band: the reader
-// assigns each line a LINE_EVENT_STRIDE band, so the ceiling is
-// (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
-// real sessions store, far beyond any observed file.
-const SEQ_SEGMENT_STRIDE = 1 << 27;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
 
@@ -541,143 +527,23 @@ function dedupeStrings(values: (string | undefined)[]): string[] {
   return out;
 }
 
-// Parsed-segment readers, LRU-bounded: repeat pages and session reopens hit a
-// warm reader instead of re-reading and re-parsing the file. Freshness is
-// validated by stat (mtime + size) on every window, so a live-appended or
-// compacted file is re-read exactly once per change.
-const MAX_TRANSCRIPT_READERS = 12;
-const transcriptReaders = new Map<
-  string,
-  {
-    mtimeMs: number;
-    sizeBytes: number;
-    appSessionId: string;
-    role: SessionRole;
-    reader: SessionTranscriptReader;
-  }
->();
-
-function transcriptReaderFor(
-  appSessionId: string,
-  providerSessionId: string,
-  path: string,
-  role: SessionRole,
-): SessionTranscriptReader {
-  const stat = statSync(path);
-  const cached = transcriptReaders.get(path);
-  if (
-    cached?.mtimeMs === stat.mtimeMs &&
-    cached.sizeBytes === stat.size &&
-    cached.appSessionId === appSessionId &&
-    cached.role === role &&
-    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId) &&
-    cached.reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
-  ) {
-    transcriptReaders.delete(path);
-    transcriptReaders.set(path, cached);
-    return cached.reader;
-  }
-  const reader = new SessionTranscriptReader(appSessionId, providerSessionId, path, role);
-  transcriptReaders.delete(path);
-  transcriptReaders.set(path, {
-    mtimeMs: stat.mtimeMs,
-    sizeBytes: stat.size,
-    appSessionId,
-    role,
-    reader,
-  });
-  if (transcriptReaders.size > MAX_TRANSCRIPT_READERS) {
-    const oldest = transcriptReaders.keys().next().value;
-    if (oldest) transcriptReaders.delete(oldest);
-  }
-  return reader;
-}
+const transcriptWindow = new HistoryTranscriptWindow();
 
 export function invalidateSessionTranscripts(): void {
-  transcriptReaders.clear();
+  transcriptWindow.invalidate();
 }
 
-// Transcript window cursors: "v2:<chainIdx>:<line>:<skip>" addresses a
-// line/event position inside one segment; "v2:<chainIdx>:end" starts at a
-// segment's tail. Pre-v2 cursors addressed item indexes that no longer exist;
-// only their "<chainIdx>:end" form still maps, anything else ends paging
-// cleanly (empty page, no cursor) instead of serving a wrong page.
-function parseTranscriptCursor(
-  cursor: string,
-): { ci: number; from?: TranscriptWindowCursor } | null {
-  const parts = cursor.split(':');
-  if (parts[0] === 'v2') {
-    const ci = Number(parts[1]);
-    if (!Number.isInteger(ci) || ci < 0) return null;
-    if (parts[2] === 'end' && parts.length === 3) return { ci };
-    const line = Number(parts[2]);
-    const skip = Number(parts[3]);
-    const notice = parts.length === 5 ? Number(parts[4]) : undefined;
-    if (
-      (parts.length !== 4 && parts.length !== 5) ||
-      !Number.isInteger(line) ||
-      !Number.isInteger(skip)
-    )
-      return null;
-    if (notice !== undefined && (!Number.isInteger(notice) || notice < -1)) return null;
-    if (line < (notice === undefined ? 0 : -1) || skip < 0) return null;
-    return { ci, from: { line, skip, ...(notice !== undefined ? { notice } : {}) } };
-  }
-  const ci = Number(parts[0]);
-  if (parts.length === 2 && parts[1] === 'end' && Number.isInteger(ci) && ci >= 0) return { ci };
-  return null;
-}
-
-// Window the primary transcript backward across the compaction chain.
-// Segments are read newest -> oldest only as far as needed to fill `limit`,
-// and each segment parses its lines lazily from the tail, so a months-long,
-// heavily-compacted chat opens fast and pages older history in on demand.
 export function loadSessionTranscriptWindow(
   appSessionId: string,
   chainProviderSessionIds: string[],
   opts: { cursor?: string; limit?: number; role?: SessionRole; fullText?: boolean } = {},
 ): { events: TranscriptEvent[]; olderCursor?: string } {
-  const limit = Math.max(1, opts.limit ?? DEFAULT_HISTORY_WINDOW);
-  const role = opts.role ?? 'primary';
-  const sessionIndex = sessionPathIndex();
-  const chain = chainProviderSessionIds.filter((id) => sessionIndex.has(id));
-  if (chain.length === 0) return { events: [] };
-
-  let startIdx = chain.length - 1;
-  let from: TranscriptWindowCursor | undefined;
-  if (opts.cursor) {
-    const parsed = parseTranscriptCursor(opts.cursor);
-    if (!parsed || parsed.ci >= chain.length) return { events: [] };
-    startIdx = parsed.ci;
-    from = parsed.from;
-  }
-
-  const picked: TranscriptEvent[] = [];
-  let olderCursor: string | undefined;
-  for (let ci = startIdx; ci >= 0; ci--) {
-    const path = sessionIndex.get(chain[ci])!;
-    const reader = opts.fullText
-      ? new SessionTranscriptReader(appSessionId, chain[ci], path, role, true)
-      : transcriptReaderFor(appSessionId, chain[ci], path, role);
-    // Chain-derived monotonic order: older segments (lower ci) and earlier
-    // in-segment positions sort first, independent of wall-clock ts.
-    const window = reader.windowBackward(
-      limit - picked.length,
-      ci * SEQ_SEGMENT_STRIDE,
-      ci === startIdx ? from : undefined,
-    );
-    picked.unshift(...window.events);
-    if (window.older) {
-      const notice = window.older.notice;
-      olderCursor = `v2:${String(ci)}:${String(window.older.line)}:${String(window.older.skip)}${notice !== undefined ? `:${String(notice)}` : ''}`;
-      break;
-    }
-    if (picked.length >= limit) {
-      if (ci > 0) olderCursor = `v2:${String(ci - 1)}:end`;
-      break;
-    }
-  }
-  return { events: picked, olderCursor };
+  return transcriptWindow.loadWindow(
+    sessionPathIndex(),
+    appSessionId,
+    chainProviderSessionIds,
+    opts,
+  );
 }
 
 /**
@@ -690,11 +556,7 @@ export function loadOpenTranscriptTail(
   limit: number,
   fullText = false,
 ): TranscriptEvent[] {
-  if (!existsSync(path)) return [];
-  const reader = fullText
-    ? new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true)
-    : transcriptReaderFor(appSessionId, appSessionId, path, 'primary');
-  return reader.windowBackward(Math.max(1, limit), 0).events;
+  return transcriptWindow.loadOpenTail(appSessionId, path, limit, fullText);
 }
 
 export function readFactoryDefaults(home = homedir()): FactoryDefaults {
