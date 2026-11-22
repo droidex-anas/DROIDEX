@@ -13,7 +13,7 @@ function lastNewlineBefore(text: string, end: number): number {
   }
 }
 
-/** `text.split('\n').slice(-count)` for a positive `count`, reading only as far back as those lines reach. */
+/** `text.split('\n').slice(-count)` for a positive integer `count`, reading only as far back as those lines reach. */
 export function lastLines(text: string, count: number): string[] {
   const lines: string[] = [];
   let end = text.length;
