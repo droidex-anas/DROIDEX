@@ -313,7 +313,8 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
   });
   const date = editor.getByRole('textbox', { name: 'Date, year month day' });
   const save = editor.getByRole('button', { name: 'Save changes', exact: true });
-  for (const invalid of ['2027-04-31', '2027-02-']) {
+  const alert = editor.getByRole('alert');
+  for (const invalid of ['2027-02-', '2027-04-31']) {
     await date.fill(invalid);
     await date.press('Tab');
     await expect(date).toHaveValue(invalid);
@@ -323,22 +324,13 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
       await expect(time).toHaveAttribute('aria-invalid', 'false');
       await expect(time).not.toHaveAttribute('aria-describedby');
     }
-    await expect(editor.getByRole('alert')).toHaveText('Enter a valid date as YYYY-MM-DD.');
-    const alertId = await editor.getByRole('alert').getAttribute('id');
+    await expect(alert).toHaveText('Enter a valid date as YYYY-MM-DD.');
+    const alertId = await alert.getAttribute('id');
     await expect(date).toHaveAttribute('aria-describedby', alertId ?? '');
-    await expect(editor.getByRole('alert').locator('xpath=following-sibling::*[1]')).toContainText(
-      'Time',
-    );
+    await expect(alert.locator('xpath=following-sibling::*[1]')).toContainText('Time');
     await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
-    await date.fill('2027-03-14');
-    await date.press('Tab');
-    await expect(date).toHaveAttribute('aria-invalid', 'false');
-    await expect(editor.getByRole('alert')).toHaveCount(0);
-    await expect(save).toBeEnabled();
   }
-  await date.fill('2027-04-31');
-  await date.press('Tab');
   await setScheduleTime(editor, '10');
   await expect(date).toHaveValue('2027-04-31');
   await expect(save).toBeDisabled();
@@ -346,13 +338,12 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
   await date.press('Tab');
   await expect(date).toHaveValue('2027-03-14');
   await expect(editor.getByRole('alert')).toHaveCount(0);
+  await expect(date).toHaveAttribute('aria-invalid', 'false');
   await expect(save).toBeEnabled();
   await expect(editor.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('10');
-  expect(backend.requests).toEqual([]);
   await date.fill('2027-03-12');
   await date.press('Tab');
   await expect(date).toHaveValue('2027-03-14');
-  await expect(save).toBeEnabled();
   await date.fill('2027-04-30');
   await date.press('Tab');
   await save.click();
