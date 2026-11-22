@@ -117,7 +117,7 @@ export async function openFiles(page: Page, disk: Disk) {
         socket.send(
           JSON.stringify({
             type: 'events.batch',
-            generation: 'files-refresh-test',
+            generation: 'files-test',
             firstSeq: seq,
             lastSeq: seq,
             events: [{ seq, event }],

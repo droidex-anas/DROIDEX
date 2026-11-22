@@ -178,6 +178,7 @@ export function FilesWorkspace({
       document.activeElement !== document.body
     )
       return;
+    focusedRowRef.current = null;
     let ancestor = previous.dataset.path ?? '';
     while (ancestor.includes('/')) {
       ancestor = ancestor.slice(0, ancestor.lastIndexOf('/'));
@@ -260,7 +261,7 @@ export function FilesWorkspace({
             }
           }}
           onBlur={(event) => {
-            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
               focusedRowRef.current = null;
             }
           }}

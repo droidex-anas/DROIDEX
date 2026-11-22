@@ -97,3 +97,27 @@ test('removed focused rows recover to a visible ancestor without stealing outsid
   await expect(tree.getByRole('treeitem')).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Refresh files' })).toBeFocused();
 });
+
+test('removing a row after clicking the preview does not restore tree focus', async ({ page }) => {
+  await openFiles(page, {
+    '/repo': { '': { src: 'directory', 'README.md': 'file' }, src: { 'index.ts': 'file' } },
+  });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'src', exact: true }).click();
+  await page.keyboard.press('ArrowRight');
+  const file = tree.getByRole('treeitem', { name: 'index.ts' });
+  await expect(file).toBeFocused();
+  await page.evaluate(() => {
+    window.filesHeld.push('/repo:src');
+    window.filesDisk['/repo'].src = {};
+  });
+  await page.getByRole('button', { name: 'Refresh files' }).click();
+  await page.keyboard.press('Tab');
+  await expect(file).toBeFocused();
+  await page.getByText('Select a file to preview.', { exact: true }).click();
+  await expect(page.locator('body')).toBeFocused();
+  await page.evaluate(() => window.releaseFiles());
+  await expect(file).toHaveCount(0);
+  await expect(page.locator('body')).toBeFocused();
+  await expect(tree.locator(':focus')).toHaveCount(0);
+});
