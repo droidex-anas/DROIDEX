@@ -2,6 +2,31 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
+const UNPAIRED_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u;
+
+interface PendingChunk {
+  text: string;
+  bytes: number;
+  next?: PendingChunk;
+}
+
+function trimChunkPrefix(chunk: PendingChunk, dropBytes: number): number {
+  let end = 0;
+  let bytes = 0;
+  while (bytes < dropBytes && end < chunk.text.length) {
+    const codeUnit = chunk.text.charCodeAt(end);
+    const isSurrogatePair = codeUnit >= 0xd800 && codeUnit <= 0xdbff;
+    if (codeUnit <= 0x7f) bytes += 1;
+    else if (codeUnit <= 0x7ff) bytes += 2;
+    else if (isSurrogatePair) bytes += 4;
+    else bytes += 3;
+    end += isSurrogatePair ? 2 : 1;
+  }
+  chunk.text = chunk.text.slice(end);
+  chunk.bytes -= bytes;
+  return bytes;
+}
 
 export function utf8ByteLength(text: string): number {
   return encoder.encode(text).byteLength;
@@ -33,7 +58,9 @@ export function createTerminalOutputPump(options: {
   maxHiddenBytes?: number;
 }) {
   const maxHiddenBytes = options.maxHiddenBytes ?? TERMINAL_HIDDEN_BUFFER_BYTES;
-  let pending = '';
+  let head: PendingChunk | undefined;
+  let tail: PendingChunk | undefined;
+  let hasUnpairedSurrogate = false;
   let pendingBytes = 0;
   let droppedBytes = 0;
   let truncated = false;
@@ -47,27 +74,69 @@ export function createTerminalOutputPump(options: {
 
   function capPending() {
     if (pendingBytes <= maxHiddenBytes) return;
-    const overflow = pendingBytes - maxHiddenBytes;
-    const trimmed = trimUtf8Prefix(pending, overflow);
-    pending = trimmed.text;
-    pendingBytes = utf8ByteLength(pending);
-    droppedBytes += trimmed.droppedBytes;
     truncated = true;
+
+    // Encoding concatenated strings can repair surrogate pairs split across pushes.
+    if (hasUnpairedSurrogate) {
+      const trimmed = trimUtf8Prefix(joinPending(), pendingBytes - maxHiddenBytes);
+      pendingBytes = utf8ByteLength(trimmed.text);
+      head = tail = trimmed.text ? { text: trimmed.text, bytes: pendingBytes } : undefined;
+      hasUnpairedSurrogate = false;
+      droppedBytes += trimmed.droppedBytes;
+      return;
+    }
+
+    while (head && pendingBytes > maxHiddenBytes) {
+      const overflow = pendingBytes - maxHiddenBytes;
+      if (head.bytes <= overflow) {
+        pendingBytes -= head.bytes;
+        droppedBytes += head.bytes;
+        head = head.next;
+        continue;
+      }
+      const bytes = trimChunkPrefix(head, overflow);
+      pendingBytes -= bytes;
+      droppedBytes += bytes;
+      if (!head.text) head = head.next;
+    }
+    // TextDecoder consumes a leading BOM without counting it as dropped output.
+    if (head?.text.startsWith('\uFEFF')) {
+      head.text = head.text.slice(1);
+      head.bytes -= 3;
+      pendingBytes -= 3;
+      if (!head.text) head = head.next;
+    }
+    if (!head) tail = undefined;
+  }
+
+  function joinPending() {
+    const chunks: string[] = [];
+    for (let chunk = head; chunk; chunk = chunk.next) chunks.push(chunk.text);
+    return chunks.join('');
+  }
+
+  function clearPending() {
+    head = tail = undefined;
+    pendingBytes = 0;
+    hasUnpairedSurrogate = false;
   }
 
   function flush() {
     cancel();
-    if (!pending || options.isHidden()) return;
-    const data = pending;
-    pending = '';
-    pendingBytes = 0;
+    if (!head || options.isHidden()) return;
+    const data = joinPending();
+    clearPending();
     options.write(data);
   }
 
   function push(data: string) {
     if (!data) return;
-    pending += data;
-    pendingBytes += utf8ByteLength(data);
+    const chunk: PendingChunk = { text: data, bytes: utf8ByteLength(data) };
+    if (tail) tail.next = chunk;
+    else head = chunk;
+    tail = chunk;
+    pendingBytes += chunk.bytes;
+    hasUnpairedSurrogate ||= UNPAIRED_SURROGATE.test(data);
     if (options.isHidden()) {
       capPending();
       return;
@@ -82,16 +151,14 @@ export function createTerminalOutputPump(options: {
 
   function dispose() {
     cancel();
-    pending = '';
-    pendingBytes = 0;
+    clearPending();
   }
 
   // Restart clears the screen: buffered output from the previous shell must
   // not land in it, and the trimmed banner must not stick across it.
   function reset() {
     cancel();
-    pending = '';
-    pendingBytes = 0;
+    clearPending();
     droppedBytes = 0;
     truncated = false;
   }

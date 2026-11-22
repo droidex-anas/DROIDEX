@@ -62,3 +62,29 @@ test('hidden output is bounded with UTF-8-safe trimming', () => {
   assert.equal(utf8ByteLength(trimUtf8Prefix(`🙂${'a'.repeat(10)}`, 6).text) <= 8, true);
   assert.deepEqual(writes, []);
 });
+
+test('hidden output evicts chunks and trims only complete UTF-8 code points', () => {
+  let hidden = true;
+  const writes: string[] = [];
+  const pump = createTerminalOutputPump({
+    write: (data) => writes.push(data),
+    isHidden: () => hidden,
+    scheduleFrame: () => 1,
+    cancelFrame: () => undefined,
+    maxHiddenBytes: 8,
+  });
+
+  pump.push('ab');
+  pump.push('🙂界\n');
+  assert.equal(pump.droppedBytes, 2);
+  pump.push('xy');
+  assert.equal(pump.droppedBytes, 6);
+  assert.equal(pump.truncated, true);
+  assert.deepEqual(writes, []);
+
+  hidden = false;
+  pump.reveal();
+  assert.deepEqual(writes, ['界\nxy']);
+  pump.flush();
+  assert.deepEqual(writes, ['界\nxy']);
+});
