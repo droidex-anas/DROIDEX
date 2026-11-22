@@ -162,7 +162,7 @@
       "count": 1
     }
   },
-  "src/hooks/useStore.tsx": {
+  "src/hooks/storeSessions.ts": {
     "@typescript-eslint/no-dynamic-delete": {
       "count": 5
     }

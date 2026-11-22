@@ -12,7 +12,6 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { bridge } from '../lib/bridge';
-import { isRemoteClient } from '../lib/desktop';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
@@ -20,9 +19,6 @@ import {
   composeOrigin,
   draftTileIds,
   enteredPlaceNavigation,
-  placeCreatedChat,
-  showChat,
-  showNewChat,
   showView,
   withComposeTileClosed,
   type ComposeOrigin,
@@ -30,10 +26,8 @@ import {
 import { activeTabDraft, loadTabStrip } from '../features/tabs/tabStorage';
 import {
   activeProduct,
-  chatsBesideFocus,
   fillsTab,
   isChatInView,
-  livePage,
   newDraft,
   reduceTabStrip,
   withoutChats,
@@ -42,13 +36,7 @@ import {
   type TabAction,
   type TabStrip,
 } from '../features/tabs/tabStrip';
-import { focusedTile } from '../features/tabs/tileGrid';
-import {
-  reduceVoice,
-  withoutVoiceSession,
-  type VoiceAction,
-  type VoiceSessions,
-} from '../features/voice/voiceSessions';
+import { reduceVoice, type VoiceAction, type VoiceSessions } from '../features/voice/voiceSessions';
 import { removeCustomTheme, upsertCustomTheme, type ThemePreset } from '../lib/theme';
 import { loadCustomThemes, loadTheme, type ThemeConfig } from './persistedThemePreferences';
 import {
@@ -124,7 +112,6 @@ import {
 import {
   archiveChat,
   deleteChat,
-  isChatHidden,
   loadChatMetadata,
   linkChatsPullRequest,
   markDesignChat,
@@ -143,19 +130,15 @@ import { removeSessionPanel, type UtilityPanelState } from '../lib/utilityPanel'
 import { settleSideChatStart, type SideChatPanel } from '../lib/sideChats';
 import type { FileChange } from '../lib/diff';
 import type { ImagePasteQuality } from '../lib/images';
-import {
-  estimateTranscriptCost,
-  INACTIVE_TRANSCRIPT_POLICY,
-  VIEWPORT_TRANSCRIPT_POLICY,
-} from '../lib/transcriptWindow';
+import { estimateTranscriptCost, VIEWPORT_TRANSCRIPT_POLICY } from '../lib/transcriptWindow';
 import {
   appendTranscriptEvent,
   applyMemoryPressureRelease,
-  pruneRemovedSessionState,
   releaseSessionTranscriptWindow,
-  withUpdatedTranscript,
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
+import { reduceSessions } from './storeSessions';
+import { closeLiveChat, withoutKey, withTilesSeen } from './storeSessionNavigation';
 import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
 import { reduceAgentSettings, type AgentSettingsAction } from './storeAgentSettings';
@@ -171,7 +154,6 @@ import {
   invalidateSelectedChildOpening,
   reduceChildSession,
   releaseInactiveChildTranscript,
-  releaseInactiveSelectedChild,
   type ChildAccess,
   type ChildHistoryState,
   type ChildRuntimeState,
@@ -790,38 +772,6 @@ function progressKey(entry: ProgressEntry): string {
   return `${entry.timestamp}|${entry.type}|${entry.featureId ?? ''}|${entry.workerChildSessionId ?? ''}|${entry.title ?? ''}`;
 }
 
-function withoutKey<T>(
-  record: Partial<Record<string, T>>,
-  key: string,
-): Partial<Record<string, T>> {
-  if (!(key in record)) return record;
-  return Object.fromEntries(Object.entries(record).filter(([k]) => k !== key));
-}
-
-// The action that closes the live chat's place, when that is `appSessionId`.
-function closeLiveChat(state: AppState, appSessionId: string): TabAction | null {
-  const live = livePage(state);
-  if (live.kind === 'chat' && live.appSessionId === appSessionId) {
-    return { type: 'CLOSE_TAB', tabId: state.tabStrip.activeTabId };
-  }
-  if (live.kind !== 'tiles') return null;
-  const tile = focusedTile(live.grid);
-  const shown = tile.page.kind === 'chat' && tile.page.appSessionId === appSessionId;
-  return shown ? { type: 'CLOSE_TILE', tileId: tile.id } : null;
-}
-
-// The tiles beside the focused one are on screen too, so showing them reads them.
-function withTilesSeen(state: AppState, seenAt: number): AppState {
-  const seen = chatsBesideFocus(state.tabStrip).filter(
-    (appSessionId) =>
-      Object.hasOwn(state.sessions, appSessionId) && state.sessionLastSeen[appSessionId] !== seenAt,
-  );
-  if (seen.length === 0) return state;
-  const sessionLastSeen = { ...state.sessionLastSeen };
-  for (const appSessionId of seen) sessionLastSeen[appSessionId] = seenAt;
-  return { ...state, sessionLastSeen };
-}
-
 // An archived or deleted chat leaves every tab, and cannot be reopened. The
 // tab or tile showing it closes, as a browser tab does when its page goes away.
 function withoutChatTabs(state: AppState, appSessionId: string): AppState {
@@ -851,21 +801,6 @@ function withoutChatTabs(state: AppState, appSessionId: string): AppState {
   )
     return dropped;
   return { ...dropped, canvasAttachments, canvasChatRequests, chatModeAppSessionId };
-}
-
-/**
- * Tells one pane-opening request which chat its create made. Only that
- * request's entry moves; every other one keeps waiting for its own reply.
- */
-function namedCanvasChatRequest(
-  requests: Record<string, CanvasChatRequest>,
-  clientRef: string,
-  appSessionId: string,
-): Record<string, CanvasChatRequest> {
-  if (!(clientRef in requests)) return requests;
-  const request = requests[clientRef];
-  if (request.appSessionId !== null) return requests;
-  return { ...requests, [clientRef]: { appSessionId } };
 }
 
 /** The pane requests left once the ones this names are settled. */
@@ -929,6 +864,15 @@ function withoutLeftDrafts(state: AppState): AppState {
 function reduceAction(state: AppState, action: Action): AppState {
   const sessionsById: Partial<AppState['sessions']> = state.sessions;
   switch (action.type) {
+    case 'SESSION_CREATED':
+    case 'SESSION_FORKED':
+    case 'SESSION_UPDATED':
+    case 'SESSION_CLOSED':
+    case 'SESSION_LIST':
+    case 'SET_ACTIVE_SESSION':
+    case 'START_CHAT':
+      return reduceSessions(state, action, reducer);
+
     case 'BATCH':
       return reduceStoreActionBatch(state, action.actions, reducer);
 
@@ -958,139 +902,6 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SESSION_CREATED': {
-      const pending = state.pendingCompose[action.clientRef];
-      // `session.created` is also emitted when an existing session resumes.
-      // Only a create matching this renderer's pending compose may take focus;
-      // background resumes must never replace the chat the user selected. A
-      // side chat opens beside its source, never in its place. A create sent
-      // from a tab or tile the user has since left opens there instead.
-      const ownsCreate = pending !== undefined && action.session.lineage?.kind !== 'side';
-      const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
-      // A design send's chat opens as a design from now on, in every window,
-      // and is placed as one.
-      const chatMetadata =
-        ownsCreate && action.clientRef in state.canvasChatRequests
-          ? (markDesignChat(state.chatMetadata, action.session.appSessionId) ?? state.chatMetadata)
-          : state.chatMetadata;
-      const placed = ownsCreate
-        ? placeCreatedChat(
-            { ...state, sessions, chatMetadata },
-            pending.origin,
-            action.session.appSessionId,
-          )
-        : null;
-      const shouldActivate = placed?.focus === true;
-      const tabStrip = placed?.tabStrip ?? state.tabStrip;
-      const targetIsActive = state.activeAppSessionId === action.session.appSessionId;
-      const childReset =
-        shouldActivate || targetIsActive ? invalidateSelectedChildOpening(state) : state;
-      const childAccess = { ...childReset.childAccess };
-      const childRuntime = { ...childReset.childRuntime };
-      delete childAccess[action.session.appSessionId];
-      delete childRuntime[action.session.appSessionId];
-      const order = state.sessionOrder.includes(action.session.appSessionId)
-        ? state.sessionOrder
-        : [action.session.appSessionId, ...state.sessionOrder];
-
-      // Seed the first user message: the goal is the user's opening prompt and the
-      // backend never echoes it back, so without this the first message never shows.
-      let seed: TranscriptEvent | undefined;
-      const transcripts: Partial<AppState['transcripts']> = state.transcripts;
-      const hasTranscript = (transcripts[action.session.appSessionId]?.length ?? 0) > 0;
-      if (action.session.goal && !hasTranscript) {
-        seed = {
-          id: `seed-${action.session.appSessionId}`,
-          appSessionId: action.session.appSessionId,
-          sourceSessionId: 'user',
-          role: 'primary',
-          ts: action.session.createdAt || Date.now(),
-          kind: 'text',
-          text: pending ? pending.text : action.session.goal,
-          author: 'user',
-          skills: pending?.skills.length ? pending.skills : undefined,
-          // Only a compose owned by this renderer is live metadata. A seed from
-          // another window or a resumed session is restored-equivalent content.
-          files: pending?.files,
-        };
-      }
-
-      const pendingCompose = withoutKey(state.pendingCompose, action.clientRef);
-      // Seeds that arrived for the draft while it was sent go to the chat it became.
-      const draftTileId = ownsCreate ? pending.origin?.tileId : undefined;
-      const composerSeeds = draftTileId
-        ? state.composerSeeds.map((pendingSeed) =>
-            pendingSeed.draftTileId === draftTileId
-              ? { ...pendingSeed, appSessionId: action.session.appSessionId, draftTileId: null }
-              : pendingSeed,
-          )
-        : state.composerSeeds;
-
-      const next: AppState = {
-        ...childReset,
-        sessions,
-        sessionOrder: order,
-        tabStrip,
-        activeAppSessionId: shouldActivate ? action.session.appSessionId : state.activeAppSessionId,
-        draftChat: shouldActivate ? null : state.draftChat,
-        draftAutonomy: shouldActivate ? null : state.draftAutonomy,
-        draftFastMode: shouldActivate ? false : state.draftFastMode,
-        draftContextWindowTokens: shouldActivate ? null : state.draftContextWindowTokens,
-        selectedChild: shouldActivate || targetIsActive ? null : childReset.selectedChild,
-        // A pending review-focus request belongs to the session that issued
-        // it; a different session becoming active must not inherit it.
-        reviewFocusPath:
-          shouldActivate && action.session.appSessionId !== state.activeAppSessionId
-            ? null
-            : state.reviewFocusPath,
-        reviewFocusChange:
-          shouldActivate && action.session.appSessionId !== state.activeAppSessionId
-            ? null
-            : state.reviewFocusChange,
-        childAccess,
-        childRuntime,
-        pendingCompose,
-        composerSeeds,
-        pendingForks: withoutKey(state.pendingForks, action.clientRef),
-        sideChats:
-          state.pendingForks[action.clientRef]?.kind === 'side'
-            ? settleSideChatStart(state.sideChats, action.clientRef, action.session.appSessionId)
-            : state.sideChats,
-        lastCreatedSessionRequest: shouldActivate
-          ? { clientRef: action.clientRef, appSessionId: action.session.appSessionId }
-          : state.lastCreatedSessionRequest,
-        // This create's own pane request, if it had one, now knows the chat
-        // it opens on. Another create in flight keeps its own target.
-        canvasChatRequests: namedCanvasChatRequest(
-          state.canvasChatRequests,
-          action.clientRef,
-          action.session.appSessionId,
-        ),
-        chatMetadata,
-        // A foreground chat just created by this renderer is already seen. A
-        // chat this client just learned of starts seen at its creation, so its
-        // first reply reads as unread.
-        sessionLastSeen:
-          shouldActivate || !Object.hasOwn(state.sessionLastSeen, action.session.appSessionId)
-            ? {
-                ...state.sessionLastSeen,
-                [action.session.appSessionId]: action.session.updatedAt,
-              }
-            : state.sessionLastSeen,
-      };
-      return seed
-        ? withUpdatedTranscript(
-            next,
-            action.session.appSessionId,
-            [seed],
-            estimateTranscriptCost([seed]),
-            {
-              mutation: { kind: 'append', previousLength: 0, firstChangedIndex: 0 },
-            },
-          )
-        : next;
-    }
-
     case 'FORK_REQUESTED':
       return {
         ...state,
@@ -1099,41 +910,6 @@ function reduceAction(state: AppState, action: Action): AppState {
           [action.clientRef]: action.fork,
         },
       };
-
-    // A same-harness copy arrives stored and closed. It carries its source's
-    // transcript on disk; only a first message the sidecar is about to send
-    // needs seeding, since the backend never echoes it back.
-    case 'SESSION_FORKED': {
-      const pending = state.pendingForks[action.clientRef];
-      const appSessionId = action.session.appSessionId;
-      let next: AppState = {
-        ...state,
-        sessions: { ...state.sessions, [appSessionId]: action.session },
-        sessionOrder: state.sessionOrder.includes(appSessionId)
-          ? state.sessionOrder
-          : [appSessionId, ...state.sessionOrder],
-        pendingForks: withoutKey(state.pendingForks, action.clientRef),
-        sideChats:
-          pending?.kind === 'side'
-            ? settleSideChatStart(state.sideChats, action.clientRef, appSessionId)
-            : state.sideChats,
-      };
-      if (pending?.prompt) {
-        const seed: TranscriptEvent = {
-          id: `seed-${appSessionId}`,
-          appSessionId,
-          sourceSessionId: 'user',
-          role: 'primary',
-          ts: action.session.lineage?.forkedAt ?? action.session.updatedAt,
-          kind: 'text',
-          text: pending.prompt,
-          author: 'user',
-        };
-        next = appendTranscriptEvent(next, seed);
-      }
-      if (!pending || action.session.lineage?.kind !== 'fork') return next;
-      return reducer(next, { type: 'SET_ACTIVE_SESSION', id: appSessionId });
-    }
 
     case 'SHOW_SIDE_CHAT':
     case 'PLACE_SIDE_CHATS':
@@ -1180,64 +956,6 @@ function reduceAction(state: AppState, action: Action): AppState {
         heldComposeOrigins: withoutKey(state.heldComposeOrigins, action.holdId),
       };
 
-    case 'SESSION_UPDATED': {
-      const previous = sessionsById[action.session.appSessionId];
-      const incoming = action.session;
-      // Compaction generations are monotonic. A delayed resume summary must not
-      // put a restored session back on generation zero after history already
-      // proved that compactions occurred.
-      const m =
-        previous && (previous.autoCompactions ?? 0) > (incoming.autoCompactions ?? 0)
-          ? {
-              ...incoming,
-              autoCompactions: previous.autoCompactions,
-              contextTokens: previous.contextTokens,
-              contextRemainingTokens: previous.contextRemainingTokens,
-              contextAccuracy: previous.contextAccuracy,
-              contextUpdatedAt: previous.contextUpdatedAt,
-            }
-          : incoming;
-      const previousCompactions =
-        (previous?.compactedFromProviderSessionIds?.length ?? 0) + (previous?.autoCompactions ?? 0);
-      const nextCompactions =
-        (m.compactedFromProviderSessionIds?.length ?? 0) + (m.autoCompactions ?? 0);
-      const contextStats =
-        nextCompactions > previousCompactions
-          ? {
-              ...state.contextStats,
-              primary: Object.fromEntries(
-                Object.entries(state.contextStats.primary).filter(
-                  ([appSessionId]) => appSessionId !== m.appSessionId,
-                ),
-              ),
-            }
-          : state.contextStats;
-      const inView = isChatInView(state, m.appSessionId);
-      // The active chat is never unread; a tile beside it is read as it changes.
-      const seenInTile =
-        inView &&
-        m.appSessionId !== state.activeAppSessionId &&
-        m.updatedAt > (state.sessionLastSeen[m.appSessionId] ?? 0);
-      const next = {
-        ...state,
-        sessions: { ...state.sessions, [m.appSessionId]: m },
-        contextStats,
-        sessionLastSeen: seenInTile
-          ? { ...state.sessionLastSeen, [m.appSessionId]: m.updatedAt }
-          : state.sessionLastSeen,
-      };
-      if (
-        !previous ||
-        !sessionIsLive(previous) ||
-        sessionIsLive(m) ||
-        m.updatedAt <= previous.updatedAt ||
-        inView ||
-        state.transcriptViewportPinned[m.appSessionId] === false
-      )
-        return next;
-      return releaseSessionTranscriptWindow(next, m.appSessionId, INACTIVE_TRANSCRIPT_POLICY);
-    }
-
     case 'PROJECTS_SNAPSHOT':
       return { ...state, projects: action.projects, projectsLoaded: true, projectsError: '' };
 
@@ -1256,41 +974,6 @@ function reduceAction(state: AppState, action: Action): AppState {
             )
           : { ...state.agentProcesses, [action.appSessionId]: action.processes };
       return { ...state, agentProcesses };
-    }
-
-    case 'SESSION_CLOSED': {
-      const childAccess = { ...state.childAccess };
-      const childRuntime = { ...state.childRuntime };
-      const childContext = { ...state.contextStats.child };
-      delete childAccess[action.appSessionId];
-      delete childRuntime[action.appSessionId];
-      delete childContext[action.appSessionId];
-      return {
-        ...state,
-        childAccess,
-        childRuntime,
-        pendingPermissions: Object.fromEntries(
-          Object.entries(state.pendingPermissions).filter(([id]) => id !== action.appSessionId),
-        ),
-        pendingQuestions: Object.fromEntries(
-          Object.entries(state.pendingQuestions).filter(([id]) => id !== action.appSessionId),
-        ),
-        contextStats: { ...state.contextStats, child: childContext },
-        pendingAutonomy: Object.fromEntries(
-          Object.entries(state.pendingAutonomy).filter(([id]) => id !== action.appSessionId),
-        ),
-        pendingModelUpdates: Object.fromEntries(
-          Object.entries(state.pendingModelUpdates).filter(([id]) => id !== action.appSessionId),
-        ),
-        agentProcesses: Object.fromEntries(
-          Object.entries(state.agentProcesses).filter(([id]) => id !== action.appSessionId),
-        ),
-        voiceSessions: withoutVoiceSession(state.voiceSessions, action.appSessionId),
-        selectedChild:
-          state.selectedChild?.parentAppSessionId === action.appSessionId
-            ? null
-            : state.selectedChild,
-      };
     }
 
     // Chat organization transforms return null for no-ops so these cases keep
@@ -1527,84 +1210,6 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
     }
 
-    case 'SESSION_LIST': {
-      const incoming = new Set(action.sessions.map((m) => m.appSessionId));
-      // The catalog retains admitted owned chats with unavailable transcripts.
-      // Only an omitted catalog record can prune a confirmed row; locally
-      // added rows survive until their first catalog listing.
-      const confirmed = new Set(state.listConfirmedSessionIds);
-      const isConfirmedGone = (id: string) => confirmed.has(id) && !incoming.has(id);
-      const map: Record<string, SessionSummary> = {};
-      for (const [id, summary] of Object.entries(state.sessions)) {
-        if (isConfirmedGone(id)) continue;
-        map[id] = summary;
-      }
-      for (const m of action.sessions) {
-        map[m.appSessionId] = m;
-      }
-      const mapById: Partial<AppState['sessions']> = map;
-      const order = [
-        ...new Set([
-          ...action.sessions.map((m) => m.appSessionId),
-          ...state.sessionOrder,
-          ...Object.keys(state.sessions),
-        ]),
-      ]
-        .filter((id) => mapById[id])
-        .sort((a, b) => map[b].updatedAt - map[a].updatedAt);
-      const retainedSessionIds = new Set(Object.keys(map));
-      const retainedState = pruneRemovedSessionState(state, retainedSessionIds);
-      // Seed last-seen for sessions this client has never tracked so existing
-      // history is not retroactively marked unread; only activity that arrives
-      // after this point (a newer updatedAt) flips a row to unread.
-      const seededLastSeen = { ...retainedState.sessionLastSeen };
-      const lastSeenById: Partial<AppState['sessionLastSeen']> = seededLastSeen;
-      for (const m of action.sessions) {
-        if (lastSeenById[m.appSessionId] === undefined) {
-          seededLastSeen[m.appSessionId] = m.updatedAt;
-        }
-      }
-      // If the active session was pruned above (a hydrated snapshot row the
-      // sidecar no longer reports), clear the dangling id so the UI does not
-      // point at a session that no longer exists.
-      const activeAppSessionId =
-        state.activeAppSessionId !== null && mapById[state.activeAppSessionId] !== undefined
-          ? state.activeAppSessionId
-          : null;
-      // Catalog omission cannot prove a hidden chat will never return.
-      // Keep its renderer-only tombstone; prune only orphaned preferences.
-      let chatMetadata = state.chatMetadata;
-      const orphaned = Object.keys(chatMetadata).filter(
-        (id) => isConfirmedGone(id) && !isChatHidden(chatMetadata[id]),
-      );
-      if (orphaned.length > 0) {
-        const drop = new Set(orphaned);
-        chatMetadata = Object.fromEntries(
-          Object.entries(chatMetadata).filter(([id]) => !drop.has(id)),
-        );
-      }
-      const listed: AppState = {
-        ...retainedState,
-        sessions: map,
-        sessionOrder: order,
-        sessionLastSeen: seededLastSeen,
-        chatMetadata,
-        listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
-        earlierSessionsByCwd: action.earlierSessionsByCwd,
-        activeAppSessionId,
-        // The list covers every folder in the sidebar, so a restored tab whose
-        // chat neither it nor the snapshot knows has nothing to show.
-        tabStrip: withoutChats(state.tabStrip, (id) => mapById[id] === undefined),
-      };
-      // A focused tile whose chat is gone closes like any other, so the tile
-      // beside it comes forward instead of a second new chat.
-      const goneTile =
-        state.activeAppSessionId !== null && activeAppSessionId === null
-          ? closeLiveChat(state, state.activeAppSessionId)
-          : null;
-      return goneTile?.type === 'CLOSE_TILE' ? reducer(listed, goneTile) : listed;
-    }
-
     case 'SESSION_HISTORY_LOADING_OLDER':
       return reduceSessionHistoryLoadingOlder(state, action);
 
@@ -1616,60 +1221,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'SESSION_HISTORY':
       return reduceSessionHistory(state, action);
-
-    case 'SET_ACTIVE_SESSION': {
-      // Stamp "seen now" on both the session being left (so responses received
-      // while it was open count as read) and the one being opened (clears its
-      // unread state immediately).
-      const now = Date.now();
-      const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
-        sessionLastSeen[state.activeAppSessionId] = now;
-      }
-      if (action.id) sessionLastSeen[action.id] = now;
-      const tabStrip = action.id ? showChat(state, action.id) : showNewChat(state, null);
-      let next = invalidateSelectedChildOpening(releaseInactiveSelectedChild(state));
-      const outgoingAppSessionId = state.activeAppSessionId;
-      const outgoingSession = outgoingAppSessionId ? sessionsById[outgoingAppSessionId] : undefined;
-      if (
-        outgoingAppSessionId &&
-        outgoingSession &&
-        !sessionIsLive(outgoingSession) &&
-        state.transcriptViewportPinned[outgoingAppSessionId] !== false &&
-        // A chat left for another tile stays on screen.
-        !isChatInView(
-          { mainView: 'session', activeAppSessionId: action.id, tabStrip },
-          outgoingAppSessionId,
-        )
-      ) {
-        next = releaseSessionTranscriptWindow(
-          next,
-          outgoingAppSessionId,
-          INACTIVE_TRANSCRIPT_POLICY,
-        );
-      }
-      return withTilesSeen(
-        {
-          ...next,
-          activeAppSessionId: action.id,
-          sessionLastSeen,
-          draftChat: null,
-          draftAutonomy: null,
-          draftFastMode: false,
-          draftContextWindowTokens: null,
-          selectedChild: null,
-          // A pending review-focus request belongs to the session that issued
-          // it; never let it fire in another session's panel after a switch.
-          reviewFocusPath: action.id === state.activeAppSessionId ? state.reviewFocusPath : null,
-          reviewFocusChange:
-            action.id === state.activeAppSessionId ? state.reviewFocusChange : null,
-          mainView: 'session',
-          automationEditorRequest: null,
-          tabStrip,
-        },
-        now,
-      );
-    }
 
     case 'MARK_ALL_SESSIONS_READ': {
       const sessionLastSeen = { ...state.sessionLastSeen };
@@ -1865,45 +1416,6 @@ function reduceAction(state: AppState, action: Action): AppState {
       return state.automationEditorRequest?.requestId === action.requestId
         ? { ...state, automationEditorRequest: null }
         : state;
-
-    case 'START_CHAT': {
-      // Design previews run in the laptop's own window, so a Remote browser
-      // starts a chat wherever a design would start.
-      if (action.canvas && isRemoteClient()) {
-        return reducer(state, { type: 'START_CHAT', ...newDraft(state, 'chat') });
-      }
-      // Stamp the session being left so model output produced while it was
-      // open doesn't surface as an unread badge after starting a new chat.
-      const sessionLastSeen = { ...state.sessionLastSeen };
-      if (state.activeAppSessionId && sessionsById[state.activeAppSessionId]) {
-        sessionLastSeen[state.activeAppSessionId] = Date.now();
-      }
-      const next = invalidateSelectedChildOpening(state);
-      const draftChat = {
-        cwd: action.cwd,
-        executionMode: action.executionMode,
-        branch: action.branch,
-        ...(action.project ? { project: action.project } : {}),
-        ...(action.canvas ? { canvas: action.canvas } : {}),
-      };
-      return {
-        ...next,
-        draftChat,
-        draftAutonomy: null,
-        draftFastMode: false,
-        draftContextWindowTokens: null,
-        activeAppSessionId: null,
-        missionControlMode: false,
-        selectedChild: null,
-        // Leaving for a fresh draft orphans any pending review-focus request.
-        reviewFocusPath: null,
-        reviewFocusChange: null,
-        sessionLastSeen,
-        mainView: 'session',
-        automationEditorRequest: null,
-        tabStrip: showNewChat(state, draftChat),
-      };
-    }
 
     // A seed belongs to its chat from the moment it arrives: the one named, or
     // else the chat focused now, or else the draft in the focused tab.
