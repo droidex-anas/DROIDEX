@@ -28,7 +28,7 @@ function parseTranscriptCursor(
     const ci = Number(parts[1]);
     if (!Number.isInteger(ci) || ci < 0) return null;
     if (parts[2] === 'end' && parts.length === 3) return { ci };
-    const from = parseTranscriptPosition(parts);
+    const from = parseTranscriptPosition(parts.slice(2));
     return from ? { ci, from } : null;
   }
   const ci = Number(parts[0]);
@@ -37,11 +37,11 @@ function parseTranscriptCursor(
 }
 
 function parseTranscriptPosition(parts: string[]): TranscriptWindowCursor | null {
-  const line = Number(parts[2]);
-  const skip = Number(parts[3]);
-  const notice = parts.length === 5 ? Number(parts[4]) : undefined;
+  const line = Number(parts[0]);
+  const skip = Number(parts[1]);
+  const notice = parts.length === 3 ? Number(parts[2]) : undefined;
   if (
-    (parts.length !== 4 && parts.length !== 5) ||
+    (parts.length !== 2 && parts.length !== 3) ||
     !Number.isInteger(line) ||
     !Number.isInteger(skip)
   )
@@ -136,8 +136,9 @@ export class HistoryTranscriptWindow {
 
     const picked: TranscriptEvent[] = [];
     let olderCursor: string | undefined;
-    for (let ci = startIdx; ci >= 0; ci--) {
-      const { providerSessionId, path } = chain[ci];
+    const segments = chain.slice(0, startIdx + 1).reverse();
+    for (const [offset, { providerSessionId, path }] of segments.entries()) {
+      const ci = startIdx - offset;
       const reader = opts.fullText
         ? new SessionTranscriptReader(appSessionId, providerSessionId, path, role, true)
         : this.readerFor(appSessionId, providerSessionId, path, role);
