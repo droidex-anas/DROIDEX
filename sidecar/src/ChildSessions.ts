@@ -1,4 +1,3 @@
-import { factoryReasoningEffort } from './DroidRuntime.js';
 import type { PersistedChildSession, PersistedChildSpawnLink } from './history.js';
 import type {
   ChildActivity,
@@ -52,7 +51,6 @@ import type {
   ChildOperation,
   ChildFileHistorySource,
   ChildSessionsDependencies,
-  ChildSettingsTarget,
 } from './ChildSessionsTypes.js';
 import {
   childRuntimeLimits,
@@ -76,6 +74,7 @@ import { ChildProviderCleanup } from './childProviderCleanup.js';
 import { childTokenStream } from './childStreamFidelity.js';
 import { isSettledChildStatus, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
+import { ChildSettingsTransactions } from './childSettingsTransactions.js';
 
 type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
 type ChildLoadHistoryCommand = Extract<ClientCommand, { type: 'child.loadHistory' }>;
@@ -93,11 +92,23 @@ export class ChildSessions {
   private nextParentGeneration = 0;
   private shuttingDown = false;
   private readonly providerCleanup: ChildProviderCleanup;
+  private readonly settingsTransactions: ChildSettingsTransactions;
   private readonly retirementTimer = new RuntimeRetirementTimer(() => {
     void this.retireIdleRuntimes();
   });
 
   constructor(private readonly d: ChildSessionsDependencies) {
+    this.settingsTransactions = new ChildSettingsTransactions({
+      isCurrentChild: (parent, child) => this.isCurrentChild(parent, child),
+      resolveDefaultSettings: (...args) => this.d.resolveDefaultSettings(...args),
+      commit: (child) => this.commit(child),
+      emitError: (identity, code, message) => {
+        this.emitError(identity, 'settings', null, code, message);
+      },
+      automaticTarget: (parent, child) => this.automaticTarget(parent, child),
+      compactionTarget: (parent, child, modelId) => this.compactionTarget(parent, child, modelId),
+      compaction: this.d.compaction,
+    });
     this.providerCleanup = new ChildProviderCleanup(d, (parentAppSessionId) => {
       const parent = this.parents.get(parentAppSessionId);
       if (parent) this.admitNextQueued(parent);
@@ -519,42 +530,10 @@ export class ChildSessions {
     this.commit(child);
   }
 
-  async updateSettings(command: ChildSettingsCommand): Promise<void> {
+  updateSettings(command: ChildSettingsCommand): Promise<void> {
     const parent = this.parents.get(command.parentAppSessionId);
     const child = parent?.children.get(command.childSessionId);
-    if (
-      !parent ||
-      !child ||
-      !Object.hasOwn(command, 'modelId') ||
-      !this.isSettingsTarget(parent, child)
-    ) {
-      this.emitError(
-        childIdentity(command.parentAppSessionId, command.childSessionId),
-        'settings',
-        null,
-        'child.settings_target_invalid',
-        `Child session ${command.childSessionId || '(missing)'} is not an active settings target for ${command.parentAppSessionId || '(missing)'}.`,
-      );
-      return;
-    }
-    const runtime = child.runtime;
-    if (!runtime) return;
-    const target = {
-      parent,
-      child,
-      runtime,
-      parentGeneration: parent.generation,
-      runtimeGeneration: runtime.generation,
-    };
-    const update = (child.mutationTail ?? Promise.resolve())
-      .catch(ignoreError)
-      .then(() => this.performSettingsUpdate(target, command));
-    child.mutationTail = update;
-    try {
-      await update;
-    } finally {
-      this.clearMutation(child, update);
-    }
+    return this.settingsTransactions.updateSettings(command, parent, child);
   }
 
   compactionRetuneTargets(): readonly CompactionRetuneTarget[] {
@@ -930,58 +909,6 @@ export class ChildSessions {
     );
   }
 
-  private async performSettingsUpdate(
-    target: ChildSettingsTarget,
-    command: ChildSettingsCommand,
-  ): Promise<void> {
-    if (!this.isSettingsTransaction(target)) return;
-    const { parent, child, runtime } = target;
-    target.configurationGeneration = child.configurationGeneration;
-    let modelId = command.modelId ?? undefined;
-    try {
-      if (command.modelId === null)
-        modelId = this.d.resolveDefaultSettings(
-          parent.lease.summary,
-          parentDroidSession(parent.lease).initResult,
-          child.role,
-        ).modelId;
-      if (!modelId) throw new Error(`No Factory default is available for ${child.role}.`);
-      if (!this.isSettingsTransaction(target)) return;
-      await runtime.session.updateSettings({
-        modelId,
-        ...(command.reasoningEffort === undefined
-          ? {}
-          : { reasoningEffort: factoryReasoningEffort(command.reasoningEffort) }),
-      });
-    } catch (error) {
-      if (this.isSettingsTransaction(target))
-        this.emitError(
-          child.identity,
-          'settings',
-          null,
-          'child.settings_update_failed',
-          `Could not update child settings: ${errMsg(error)}`,
-        );
-      return;
-    }
-    if (!this.isSettingsTransaction(target)) return;
-    if (child.turn.autoCompacting) this.d.compaction.cancel(this.automaticTarget(parent, child));
-    child.modelId = modelId;
-    if (command.reasoningEffort !== undefined) child.reasoningEffort = command.reasoningEffort;
-    child.configurationGeneration += 1;
-    this.commit(child);
-    try {
-      await this.d.compaction.rearmModelChangedChild(
-        this.compactionTarget(parent, child, modelId),
-        modelId,
-      );
-    } catch (error) {
-      console.error(
-        `[compaction] could not resolve exact-child limit for ${runtime.session.sessionId}: ${errMsg(error)}`,
-      );
-    }
-  }
-
   private complete(
     child?: ChildSessionState,
     status: 'completed' | 'failed' = 'completed',
@@ -1240,7 +1167,7 @@ export class ChildSessions {
       effectiveModelId: modelId,
       isCurrent: () =>
         target.isCurrent() &&
-        this.isSettingsTarget(parent, child) &&
+        this.settingsTransactions.isTarget(parent, child) &&
         child.configurationGeneration === configurationGeneration &&
         child.modelId === modelId,
     };
@@ -1290,24 +1217,6 @@ export class ChildSessions {
     generation: number,
   ): boolean {
     return this.isCurrentRuntime(parent, child, runtime) && child.turn.generation === generation;
-  }
-
-  private isSettingsTarget(parent: ParentChildSessions, child: ChildSessionState): boolean {
-    return (
-      this.isCurrentChild(parent, child) && child.runtime !== undefined && childAcceptsWork(child)
-    );
-  }
-
-  private isSettingsTransaction(target: ChildSettingsTarget): boolean {
-    const { parent, child, runtime } = target;
-    return (
-      parent.generation === target.parentGeneration &&
-      runtime.generation === target.runtimeGeneration &&
-      this.isSettingsTarget(parent, child) &&
-      child.runtime === runtime &&
-      (target.configurationGeneration === undefined ||
-        child.configurationGeneration === target.configurationGeneration)
-    );
   }
 
   private emitReady(runtime: ChildRuntimeState, child: ChildSessionState, id: string): void {
