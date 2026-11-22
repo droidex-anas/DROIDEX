@@ -278,6 +278,13 @@ async function setScheduleTime(surface: Locator, hour: string, minute = '00') {
   await minutes.press('Tab');
 }
 
+async function chooseZone(surface: Locator, zone: string) {
+  const page = surface.page();
+  await surface.getByRole('button', { name: 'Automation timezone', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search Automation timezone options' }).fill(zone);
+  await page.getByRole('option', { name: zone, exact: true }).click();
+}
+
 function submittedInstant(command: unknown) {
   const mutation = automationCommandSchema.parse(command);
   if (
@@ -310,20 +317,12 @@ test.describe('one-time DST-gap schedules', () => {
     const editor = page.getByRole('complementary').filter({
       has: page.getByRole('button', { name: 'Close automation editor' }),
     });
-    const chooseZone = async (zone: string) => {
-      await editor.getByRole('button', { name: 'Automation timezone', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Search Automation timezone options' }).fill(zone);
-      await page.getByRole('option', { name: zone, exact: true }).click();
-    };
-    await chooseZone('America / New York');
+    await chooseZone(editor, 'America / New York');
     const save = editor.getByRole('button', { name: 'Save changes', exact: true });
-    await expect
-      .soft(editor.getByRole('alert'))
-      .toContainText('does not exist in America/New York');
-    await expect.soft(save).toBeDisabled();
-    await save.evaluate((button: HTMLButtonElement) => button.click());
+    await expect(editor.getByRole('alert')).toContainText('does not exist in America/New York');
+    await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
-    await chooseZone('America / Phoenix');
+    await chooseZone(editor, 'America / Phoenix');
     await expect(editor.getByRole('alert')).toHaveCount(0);
     await expect(editor.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
     await expect(save).toBeEnabled();
@@ -335,7 +334,7 @@ test.describe('one-time DST-gap schedules', () => {
     });
     expect(submittedInstant(backend.requests[0])).toBe('2027-03-14T09:30:00.000Z');
     await page.getByText(automation.title, { exact: true }).click();
-    await chooseZone('America / New York');
+    await chooseZone(editor, 'America / New York');
     await expect(save).toBeDisabled();
     await setScheduleTime(editor, '03', '30');
     await expect(editor.getByRole('alert')).toHaveCount(0);
@@ -494,20 +493,14 @@ test.describe('one-time DST-gap schedules', () => {
     await expect(card.getByRole('alert')).toBeVisible();
     await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
-    for (const zone of ['America / Phoenix', 'America / New York']) {
-      await card.getByRole('button', { name: 'Automation timezone', exact: true }).click();
-      await page.getByRole('textbox', { name: 'Search Automation timezone options' }).fill(zone);
-      await page.getByRole('option', { name: zone, exact: true }).click();
-      await expect.soft(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
-      if (zone === 'America / Phoenix') {
-        await expect(card.getByRole('alert')).toHaveCount(0);
-        await expect(confirm).toBeEnabled();
-        await setScheduleTime(card, '02');
-      }
-    }
-    await expect.soft(card.getByRole('alert')).toContainText('does not exist in America/New York');
-    await expect.soft(confirm).toBeDisabled();
-    await confirm.evaluate((button: HTMLButtonElement) => button.click());
+    await chooseZone(card, 'America / Phoenix');
+    await expect(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+    await expect(card.getByRole('alert')).toHaveCount(0);
+    await expect(confirm).toBeEnabled();
+    await chooseZone(card, 'America / New York');
+    await expect(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+    await expect(card.getByRole('alert')).toContainText('does not exist in America/New York');
+    await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
     await setScheduleTime(card, '04', '15');
     await expect(card.getByRole('alert')).toHaveCount(0);

@@ -310,6 +310,20 @@ function zoneOffsetMs(epochMs: number, timezone: string): number {
   return utcFromZonedInput(zonedInputParts(epochMs, timezone)) - epochMs;
 }
 
+export function changeOnceTimezone(
+  schedule: Extract<AutomationSchedule, { kind: 'once' }>,
+  fromTimezone: string,
+  toTimezone: string,
+  invalidInput: ZonedInput | null,
+) {
+  const parts = invalidInput ?? zonedInputParts(schedule.runAt, fromTimezone);
+  const runAt = epochFromZonedInput(parts, toTimezone);
+  return {
+    schedule: { kind: 'once' as const, runAt: runAt ?? schedule.runAt },
+    invalidInput: runAt === null ? parts : null,
+  };
+}
+
 // Recurring times are already wall clock in the automation's own timezone, so
 // they are formatted as a fixed UTC instant: routing them through the device
 // zone (or today's date) would shift the displayed hour across a DST boundary.

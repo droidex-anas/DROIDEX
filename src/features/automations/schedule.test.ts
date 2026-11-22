@@ -7,6 +7,7 @@ import {
 } from '../../../tests/fixtures/cronCases';
 import {
   automationWorkspaceIssue,
+  changeOnceTimezone,
   cronExpressionIssue,
   defaultAutomationDraft,
   epochFromZonedInput,
@@ -67,6 +68,26 @@ test('zoned input rejects a nonexistent DST-gap time and preserves the first fal
   assert.equal(
     epochFromZonedInput({ year: 2025, month: 11, day: 2, hour: 1, minute: 30 }, 'America/New_York'),
     Date.UTC(2025, 10, 2, 5, 30),
+  );
+});
+
+test('one-time timezone changes preserve pending wall time and the first fallback occurrence', () => {
+  const schedule = { kind: 'once' as const, runAt: Date.UTC(2027, 2, 14, 2, 30) };
+  const gap = changeOnceTimezone(schedule, 'UTC', 'America/New_York', null);
+  assert.deepEqual(gap.schedule, schedule);
+  assert.deepEqual(gap.invalidInput, { year: 2027, month: 3, day: 14, hour: 2, minute: 30 });
+  assert.deepEqual(
+    changeOnceTimezone(gap.schedule, 'America/New_York', 'America/Phoenix', gap.invalidInput),
+    { schedule: { kind: 'once', runAt: Date.UTC(2027, 2, 14, 9, 30) }, invalidInput: null },
+  );
+  assert.deepEqual(
+    changeOnceTimezone(
+      { kind: 'once', runAt: Date.UTC(2027, 10, 7, 1, 30) },
+      'UTC',
+      'America/New_York',
+      null,
+    ),
+    { schedule: { kind: 'once', runAt: Date.UTC(2027, 10, 7, 5, 30) }, invalidInput: null },
   );
 });
 

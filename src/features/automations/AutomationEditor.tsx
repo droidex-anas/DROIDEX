@@ -10,11 +10,10 @@ import { SelectMenu } from './SelectMenu';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
   automationWorkspaceIssue,
-  epochFromZonedInput,
+  changeOnceTimezone,
   supportedTimeZones,
   validateAutomationDraft,
   workspaceLabel,
-  zonedInputParts,
 } from './schedule';
 import {
   EditorRow,
@@ -88,17 +87,9 @@ export function AutomationEditor({
       update('timezone', timezone);
       return;
     }
-    const parts = invalidInput ?? zonedInputParts(draft.schedule.runAt, draft.timezone);
-    const runAt = epochFromZonedInput(parts, timezone);
-    setInvalidInput(runAt === null ? parts : null, timezone);
-    onChange({
-      ...draft,
-      timezone,
-      schedule: {
-        kind: 'once',
-        runAt: runAt ?? draft.schedule.runAt,
-      },
-    });
+    const result = changeOnceTimezone(draft.schedule, draft.timezone, timezone, invalidInput);
+    setInvalidInput(result.invalidInput, timezone);
+    onChange({ ...draft, timezone, schedule: result.schedule });
   };
 
   return (
