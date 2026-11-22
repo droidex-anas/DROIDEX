@@ -59,6 +59,7 @@ export function FilesWorkspace({
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [focusedPath, setFocusedPath] = useState<string>();
   const treeRef = useRef<HTMLDivElement>(null);
+  const treeToggleRef = useRef<HTMLButtonElement>(null);
   const focusedRowRef = useRef<HTMLElement | null>(null);
   const rootVersionRef = useRef(0);
   const accessToken = authorization.root === root ? authorization.accessToken : '';
@@ -250,6 +251,7 @@ export function FilesWorkspace({
         </header>
         <div
           ref={treeRef}
+          tabIndex={-1}
           className="min-h-0 flex-1 overflow-auto px-1 pb-1"
           role="tree"
           aria-label="Session files"
@@ -320,7 +322,19 @@ export function FilesWorkspace({
                 type="button"
                 aria-label="Close file"
                 title="Close file"
-                onClick={() => {
+                onClick={(event) => {
+                  if (event.detail === 0) {
+                    if (treeCollapsed) treeToggleRef.current?.focus();
+                    else {
+                      let path = relative;
+                      while (path && !visible.some((entry) => entry.relative === path)) {
+                        path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+                      }
+                      const target = path || tabbablePath;
+                      if (target) focusRow(target);
+                      else treeRef.current?.focus();
+                    }
+                  }
                   onSelectPath('');
                 }}
                 className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
@@ -368,6 +382,7 @@ export function FilesWorkspace({
           </nav>
           <Tooltip label={treeCollapsed ? 'Show file tree' : 'Hide file tree'} placement="bottom">
             <Button
+              ref={treeToggleRef}
               variant="ghost"
               size="sm"
               icon={PanelLeft}

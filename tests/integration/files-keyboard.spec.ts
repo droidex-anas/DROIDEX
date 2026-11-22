@@ -1,6 +1,69 @@
 import { expect, test } from '@playwright/test';
 import { openFiles, showFiles } from './filesFixture';
 
+for (const fallback of ['ancestor', 'empty', 'error'] as const) {
+  test(`keyboard preview close recovers to the ${fallback} tree`, async ({ page }) => {
+    await openFiles(page, { '/repo': { '': { src: 'directory' }, src: { 'index.ts': 'file' } } });
+    const tree = await showFiles(page, 'repo-chat');
+    const folder = tree.getByRole('treeitem', { name: 'src', exact: true });
+    await folder.click();
+    await tree.getByRole('treeitem', { name: 'index.ts' }).click();
+    if (fallback === 'ancestor') await folder.click();
+    else {
+      await page.evaluate(() => {
+        window.filesDisk['/repo'][''] = {};
+      });
+      await page.getByRole('button', { name: 'Refresh files' }).click();
+      await expect(tree.getByRole('treeitem')).toHaveCount(0);
+      if (fallback === 'error') {
+        await page.evaluate(() => (window.filesFailing = ['/repo:']));
+        await page.getByRole('button', { name: 'Refresh files' }).click();
+        await expect(tree.getByText('/repo: failed')).toBeVisible();
+      }
+    }
+    await page.getByRole('button', { name: 'Close file', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(fallback === 'ancestor' ? folder : tree).toBeFocused();
+  });
+}
+
+test('pointer preview close does not move focus into the tree', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'first.ts': 'file' } } });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'first.ts' }).click();
+  await page.getByRole('button', { name: 'Close file', exact: true }).click();
+  await expect(page.getByText('Select a file to preview.', { exact: true })).toBeVisible();
+  await expect(tree.locator(':focus')).toHaveCount(0);
+});
+
+test('keyboard preview close returns to the selected row and arrow navigation continues', async ({
+  page,
+}) => {
+  await openFiles(page, { '/repo': { '': { 'first.ts': 'file', 'second.ts': 'file' } } });
+  const tree = await showFiles(page, 'repo-chat');
+  const first = tree.getByRole('treeitem', { name: 'first.ts' });
+  await first.click();
+  await expect(page.getByText('Preview of first.ts', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close file', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(first).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(tree.getByRole('treeitem', { name: 'second.ts' })).toBeFocused();
+});
+
+test('keyboard preview close keeps a hidden tree hidden and focuses its toggle', async ({
+  page,
+}) => {
+  await openFiles(page, { '/repo': { '': { 'first.ts': 'file' } } });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'first.ts' }).click();
+  await page.getByRole('button', { name: 'Hide file tree' }).click();
+  await page.getByRole('button', { name: 'Close file', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Show file tree' })).toBeFocused();
+  await expect(page.locator('#files-workspace-tree')).toHaveAttribute('inert', '');
+});
+
 test('the files tree is one Tab stop with native activation and arrow navigation', async ({
   page,
 }) => {
