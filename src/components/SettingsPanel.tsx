@@ -26,6 +26,7 @@ import {
   searchSettings,
   tabMatchesQuery,
   type SettingsSearchHit,
+  type SettingsTab,
 } from '../lib/settingsSearch';
 import { ToolActivitySettings } from './ToolActivitySettings';
 import { Button } from './ui/Button';
@@ -33,7 +34,7 @@ import { Input } from './ui/Field';
 import { Row } from './ui/Row';
 
 interface NavItem {
-  label: string;
+  label: SettingsTab;
 }
 const NAV: { group: string; items: NavItem[] }[] = [
   {
@@ -46,30 +47,17 @@ const NAV: { group: string; items: NavItem[] }[] = [
       { label: 'Appearance' },
       { label: 'Notifications' },
       { label: 'Configuration' },
-      { label: 'Personalization' },
       { label: 'Keyboard shortcuts' },
-      { label: 'Usage & billing' },
       { label: 'Privacy & diagnostics' },
     ],
   },
   {
     group: 'Integrations',
-    items: [
-      { label: 'Snapshots' },
-      { label: 'MCP servers' },
-      { label: 'Browser' },
-      { label: 'DroidProxy' },
-    ],
+    items: [{ label: 'MCP servers' }, { label: 'DroidProxy' }],
   },
   {
     group: 'Coding',
-    items: [
-      { label: 'Hooks' },
-      { label: 'Connections' },
-      { label: 'Git' },
-      { label: 'Environments' },
-      { label: 'Worktrees' },
-    ],
+    items: [{ label: 'Worktrees' }],
   },
   {
     group: 'Archived',
@@ -78,7 +66,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
 ];
 // The public profile is published with the laptop's Remote identity, which a
 // paired browser cannot use.
-const LAPTOP_ONLY_TABS: ReadonlySet<string> = new Set(['Profile']);
+const LAPTOP_ONLY_TABS: ReadonlySet<SettingsTab> = new Set(['Profile']);
 
 /* ── configuration content ── */
 function ConfigurationSection() {
@@ -143,17 +131,6 @@ function LaptopOnlySection({ title }: { title: string }) {
   );
 }
 
-function PlaceholderSection({ title }: { title: string }) {
-  return (
-    <div className="max-w-2xl mx-auto">
-      <SectionTitle title={title} />
-      <div className="rounded-xl bg-surface p-10 text-center">
-        <p className="text-body text-secondary">{title} settings are coming soon.</p>
-      </div>
-    </div>
-  );
-}
-
 /** Soft jump list above the active section while a search is active. */
 function SettingsSearchResults({
   hits,
@@ -161,7 +138,7 @@ function SettingsSearchResults({
   onOpen,
 }: {
   hits: SettingsSearchHit[];
-  activeTab: string;
+  activeTab: SettingsTab;
   onOpen: (hit: SettingsSearchHit) => void;
 }) {
   return (
@@ -214,7 +191,7 @@ export default function SettingsPanel() {
     };
   }, shallowEqual);
   const request = useStoreSelector((state) => state.settingsRequest);
-  const [active, setActive] = useState<string>(request?.tab ?? 'General');
+  const [active, setActive] = useState<SettingsTab>(request?.tab ?? 'General');
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -233,7 +210,7 @@ export default function SettingsPanel() {
   const q = query.trim();
   const remote = isRemoteClient();
   const hiddenTabs = remote ? LAPTOP_ONLY_TABS : NO_HIDDEN_TABS;
-  const showsTab = (label: string) => !hiddenTabs.has(label);
+  const showsTab = (label: SettingsTab) => !hiddenTabs.has(label);
   const hits = searchSettings(q, hiddenTabs);
 
   // Content-aware search: typing "play sound" jumps to Notifications so the
@@ -291,8 +268,6 @@ export default function SettingsPanel() {
     case 'Archived chats':
       content = <ArchivedChatsSettings />;
       break;
-    default:
-      content = <PlaceholderSection title={active} />;
   }
 
   const openHit = (hit: SettingsSearchHit) => {
