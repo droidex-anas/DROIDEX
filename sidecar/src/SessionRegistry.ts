@@ -495,7 +495,7 @@ function copyFeature(feature: BridgeFeature): BridgeFeature {
 }
 
 function isInside(parent: string, candidate: string): boolean {
-  if (!candidate || !isAbsolute(candidate)) return false;
+  if (!isAbsolute(candidate)) return false;
   const path = resolve(candidate);
   return path === parent || isPathInside(parent, path);
 }
