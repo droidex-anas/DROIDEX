@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { ArchiveRestore, Trash } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { archivedChats, chatDisplayTitle } from '../lib/chatMetadata';
@@ -23,6 +23,12 @@ export function ArchivedChatsSettings() {
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [returnFocusTo, setReturnFocusTo] = useState<string | null>(null);
+  const focusEmptyState = useCallback(
+    (node: HTMLParagraphElement | null) => {
+      if (returnFocusTo) node?.focus();
+    },
+    [returnFocusTo],
+  );
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
 
@@ -34,11 +40,13 @@ export function ArchivedChatsSettings() {
       />
       {rows.length === 0 ? (
         <div className="rounded-xl bg-surface p-10 text-center">
-          <p className="text-body text-secondary">No archived chats.</p>
+          <p tabIndex={-1} ref={focusEmptyState} className="text-body text-secondary">
+            No archived chats.
+          </p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
-          {rows.map(({ session, archivedAt }) => {
+          {rows.map(({ session, archivedAt }, index) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
             return (
               <div
@@ -63,6 +71,9 @@ export function ArchivedChatsSettings() {
                       variant="danger"
                       size="sm"
                       onClick={() => {
+                        const neighbor =
+                          rows.at(index + 1) ?? (index > 0 ? rows[index - 1] : undefined);
+                        setReturnFocusTo(neighbor?.session.appSessionId ?? session.appSessionId);
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
@@ -84,7 +95,10 @@ export function ArchivedChatsSettings() {
                     </Button>
                   </div>
                 ) : (
-                  <div key="actions" className="flex shrink-0 items-center gap-1">
+                  <div
+                    key={returnFocusTo === session.appSessionId ? 'focused-actions' : 'actions'}
+                    className="flex shrink-0 items-center gap-1"
+                  >
                     <Button
                       variant="ghost"
                       size="sm"
