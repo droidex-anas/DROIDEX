@@ -28,10 +28,10 @@ export function useSidebarContentSearch(query: string): {
 
   useEffect(() => {
     const trimmed = query.trim();
+    setContentResults(new Map());
     if (trimmed.length < SIDEBAR_CONTENT_SEARCH_MIN_QUERY) {
       latestRequestId.current = null;
       setSearchPending(false);
-      setContentResults(new Map());
       setIndexingIncomplete(false);
       setRequestUnavailable(false);
       return;
@@ -39,7 +39,6 @@ export function useSidebarContentSearch(query: string): {
     if (historyHealth.search === 'unavailable') {
       latestRequestId.current = null;
       setSearchPending(false);
-      setContentResults(new Map());
       setIndexingIncomplete(false);
       return;
     }
