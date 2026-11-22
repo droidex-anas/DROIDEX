@@ -1,8 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 // Shared arrow-key navigation for the command-palette overlays (⌘K command
 // palette, sidebar session search): selection wraps around, resets whenever
-// the query changes, Enter activates the selected entry, Escape closes.
+// the query changes, stays on a row when the list shrinks, Enter activates the
+// selected entry, Escape closes. A row selected from the keyboard is kept in
+// view as rows load or resize, until the pointer hovers a row or the wheel
+// scrolls the list.
+// Rows should select on mouse move, not mouseenter, which fires as rows scroll
+// under a resting pointer and would take the keyboard selection back.
 export function usePaletteNavigation<Entry>(
   query: string,
   entries: Entry[],
@@ -10,23 +15,47 @@ export function usePaletteNavigation<Entry>(
   onClose: () => void,
 ): {
   selected: number;
+  selectedRowRef: React.RefObject<HTMLButtonElement | null>;
   setSelected: (index: number) => void;
   handleKeyDown: (e: React.KeyboardEvent) => void;
+  handleWheel: (e: React.WheelEvent) => void;
 } {
-  const [selected, setSelected] = useState(0);
+  const [selection, setSelection] = useState({ query, index: 0, fromKeyboard: true });
+  const selectedRowRef = useRef<HTMLButtonElement>(null);
+
+  const lastIndex = Math.max(entries.length - 1, 0);
+  if (selection.query !== query) setSelection({ query, index: 0, fromKeyboard: true });
+  else if (selection.index > lastIndex) setSelection({ ...selection, index: lastIndex });
+  const selected = Math.min(selection.index, lastIndex);
+  const { fromKeyboard } = selection;
 
   useEffect(() => {
-    setSelected(0);
-  }, [query]);
+    if (fromKeyboard) selectedRowRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [fromKeyboard, selected, entries]);
+
+  const setSelected = (index: number) => {
+    if (index !== selected || fromKeyboard) setSelection({ query, index, fromKeyboard: false });
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    const scrollsList = e.deltaY !== 0 && !e.ctrlKey;
+    if (fromKeyboard && scrollsList) setSelection({ query, index: selected, fromKeyboard: false });
+  };
+
+  const moveSelection = (step: number) => {
+    if (entries.length === 0) return;
+    const index = (selected + step + entries.length) % entries.length;
+    setSelection({ query, index, fromKeyboard: true });
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      if (entries.length > 0) setSelected((prev) => (prev + 1) % entries.length);
+      moveSelection(1);
     }
     if (e.key === 'ArrowUp') {
       e.preventDefault();
-      if (entries.length > 0) setSelected((prev) => (prev - 1 + entries.length) % entries.length);
+      moveSelection(-1);
     }
     if (e.key === 'Enter') {
       const entry = entries.at(selected);
@@ -41,5 +70,5 @@ export function usePaletteNavigation<Entry>(
     }
   };
 
-  return { selected, setSelected, handleKeyDown };
+  return { selected, selectedRowRef, setSelected, handleKeyDown, handleWheel };
 }
