@@ -126,11 +126,8 @@ function createdSessionLastSeen(
     : state.sessionLastSeen;
 }
 
-function ownsSessionCreate(
-  pending: AppState['pendingCompose'][string],
-  session: SessionSummary,
-): boolean {
-  return pending !== undefined && session.lineage?.kind !== 'side';
+function isSideChat(session: SessionSummary): boolean {
+  return session.lineage?.kind === 'side';
 }
 
 export function reduceSessionCreated(
@@ -143,7 +140,7 @@ export function reduceSessionCreated(
   // background resumes must never replace the chat the user selected. A
   // side chat opens beside its source, never in its place. A create sent
   // from a tab or tile the user has since left opens there instead.
-  const ownsCreate = pending !== undefined && ownsSessionCreate(pending, action.session);
+  const ownsCreate = pending !== undefined && !isSideChat(action.session);
   const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
   const chatMetadata = createdChatMetadata(state, action, ownsCreate);
   const placed = ownsCreate
