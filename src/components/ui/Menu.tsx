@@ -62,13 +62,16 @@ function MenuRoot({
   const typeahead = useRef({ query: '', resetAt: 0 });
 
   // Opening highlights the checked choice, or else the first item, so the
-  // arrows start from where the user already is.
+  // arrows start from where the user already is. Items that arrive after
+  // opening (read asynchronously) get the same start while nothing is
+  // highlighted yet; the select blink also parks focus on the list.
   useEffect(() => {
-    if (!open) return;
-    const items = enabledItems(listRef.current);
+    const list = listRef.current;
+    if (!open || !list || document.activeElement !== list || selectingRef.current) return;
+    const items = enabledItems(list);
     const checked = items.find((item) => item.getAttribute('aria-checked') === 'true');
     (checked ?? items.at(0))?.focus({ preventScroll: true });
-  }, [open]);
+  }, [open, children]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
