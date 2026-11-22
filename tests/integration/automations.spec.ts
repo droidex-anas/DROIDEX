@@ -769,15 +769,14 @@ test('time zone search keeps Home and End for the caret', async ({ page }) => {
   const search = page.getByRole('textbox', { name: 'Search Automation timezone options' });
   const listbox = page.getByRole('listbox');
   await search.fill('america');
-  const firstOption = await listbox.getAttribute('aria-activedescendant');
   const caret = () => search.evaluate((input: HTMLInputElement) => input.selectionStart);
 
   await search.press('Home');
   expect(await caret()).toBe(0);
   await search.press('End');
   expect(await caret()).toBe('america'.length);
-  await expect(listbox).toHaveAttribute('aria-activedescendant', firstOption ?? '');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', /-0$/);
 
   await search.press('ArrowDown');
-  await expect(listbox).not.toHaveAttribute('aria-activedescendant', firstOption ?? '');
+  await expect(listbox).toHaveAttribute('aria-activedescendant', /-1$/);
 });
