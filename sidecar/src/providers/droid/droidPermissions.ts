@@ -19,43 +19,14 @@ interface ConfirmationDetail {
   [k: string]: unknown;
 }
 
-// Extract the primary confirmation detail. The Droid SDK shape is
-// `params.toolUses[0].details`; older/alternate shapes used `confirmations` or a
-// bare `confirmation`, which we still fall back to defensively.
+// The SDK parses every request against its schema before a handler runs, so
+// each tool use carries its confirmation `details` and its call `input`.
 function primaryConfirmation(params: RequestPermissionRequestParams): ConfirmationDetail {
-  const p = params as unknown as Record<string, unknown>;
-  const toolUses = p.toolUses as Record<string, unknown>[] | undefined;
-  if (Array.isArray(toolUses) && toolUses.length > 0) {
-    const details = toolUses[0].details as ConfirmationDetail | undefined;
-    if (details) return details;
-  }
-  const list = p.confirmations as Record<string, unknown>[] | undefined;
-  if (Array.isArray(list) && list.length > 0) {
-    const item = list[0];
-    const nested = item.confirmation;
-    if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
-      return nested as ConfirmationDetail;
-    }
-    return item;
-  }
-  const confirmation = p.confirmation;
-  if (confirmation && typeof confirmation === 'object' && !Array.isArray(confirmation)) {
-    return confirmation as ConfirmationDetail;
-  }
-  return {};
+  return params.toolUses.at(0)?.details ?? {};
 }
 
-// The tool's actual call arguments live on the tool-use block, not the
-// confirmation detail.
 function primaryToolInput(params: RequestPermissionRequestParams): Record<string, unknown> {
-  const p = params as unknown as Record<string, unknown>;
-  const toolUses = p.toolUses as Record<string, unknown>[] | undefined;
-  if (Array.isArray(toolUses) && toolUses.length > 0) {
-    const toolUse = toolUses[0].toolUse as Record<string, unknown> | undefined;
-    const input = toolUse?.input;
-    if (input && typeof input === 'object') return input as Record<string, unknown>;
-  }
-  return {};
+  return params.toolUses.at(0)?.toolUse.input ?? {};
 }
 
 // Build a readable summary of an MCP tool request: its arguments (so the user
