@@ -12,7 +12,7 @@ import {
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
-import { findPlanStep, planFromSteps, stepNumber, type PlanStepInput } from './plan.js';
+import { findPlanStep, planFromSteps, stepNumber } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import { ProjectReads, acknowledgeReply, type ThreadReadout } from './projectReads.js';
@@ -33,6 +33,7 @@ import {
 } from './threadStart.js';
 import type {
   Project,
+  ProjectStep,
   ProjectTodo,
   ProjectView,
   ThreadDelivery,
@@ -41,6 +42,8 @@ import type {
   ThreadSpawnInput,
   RuntimeLoad,
 } from './types.js';
+
+type PlanStepInput = Omit<ProjectStep, 'id'> & { id?: string };
 
 // Closing a side chat deletes it, so it cannot be the chat a project reports to.
 const SIDE_CHAT_CANNOT_LEAD =

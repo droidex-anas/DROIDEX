@@ -1,11 +1,9 @@
 import { LEDGER_LIMITS } from './store.js';
 import type { ProjectStep } from './types.js';
 
-export type PlanStepInput = Omit<ProjectStep, 'id'> & { id?: string };
-
 /** Retains existing identities through reordering; explicit ids also survive renaming. */
 export function planFromSteps(
-  steps: readonly PlanStepInput[],
+  steps: readonly (Omit<ProjectStep, 'id'> & { id?: string })[],
   previous: readonly ProjectStep[],
   lastStepId = 0,
 ): ProjectStep[] {
