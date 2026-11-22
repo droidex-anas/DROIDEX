@@ -343,6 +343,7 @@ export default function App() {
     state.rightPanelOpen &&
     hasSessionContent;
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
+  const latestCloseRequestRef = useRef(0);
   // The side tab leaving the pane must not hand its expansion to the next tab.
   const sideChatClose = useCloseSideChat(() => {
     setExpandedPaneAppSessionId(null);
@@ -906,6 +907,7 @@ export default function App() {
                       dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
                     }}
                     onCloseTab={(tab) => {
+                      const closeRequest = ++latestCloseRequestRef.current;
                       if (tab.tool === 'terminal') {
                         const status = terminalInstances.get(tab.id)?.getState().status;
                         if (!tab.terminalId || status !== 'running') {
@@ -913,6 +915,7 @@ export default function App() {
                           return;
                         }
                         const armCloseConfirm = () => {
+                          if (closeRequest !== latestCloseRequestRef.current) return;
                           // The check may resolve after the user switched
                           // sessions or closed the pane; only arm the
                           // confirmation if this tab is still on screen.

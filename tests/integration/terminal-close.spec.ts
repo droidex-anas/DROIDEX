@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
-test('an idle close reply preserves another terminal tab’s busy confirmation', async ({ page }) => {
+async function openTerminalsWithPendingCloses(page: Page) {
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
     (socket) => {
@@ -44,7 +44,7 @@ test('an idle close reply preserves another terminal tab’s busy confirmation',
   await composer.press('Enter');
   await page.evaluate(() => {
     let created = 0;
-    const checks = new Map<string, (busy: boolean) => void>();
+    const checks = new Map<string, { resolve: (busy: boolean) => void; reject: () => void }>();
     const killed: string[] = [];
     Reflect.set(window, 'terminalCloseTest', { checks, killed });
     const calls = {
@@ -62,8 +62,8 @@ test('an idle close reply preserves another terminal tab’s busy confirmation',
         killed.push(id);
       },
       terminalHasChildren: (id: string) =>
-        new Promise<boolean>((resolve) => {
-          checks.set(id, resolve);
+        new Promise<boolean>((resolve, reject) => {
+          checks.set(id, { resolve, reject: () => reject(new Error('Child check failed')) });
         }),
       terminalSubscribe: () => ({ postInput: () => {}, onEvent: () => () => {}, close: () => {} }),
       terminalUnsubscribe: async () => {},
@@ -89,34 +89,61 @@ test('an idle close reply preserves another terminal tab’s busy confirmation',
   const pendingChecks = () =>
     page.evaluate(() => {
       const state = Reflect.get(window, 'terminalCloseTest') as {
-        checks: Map<string, (busy: boolean) => void>;
+        checks: Map<string, { resolve: (busy: boolean) => void; reject: () => void }>;
       };
       return [...state.checks.keys()];
     });
   await expect.poll(pendingChecks).toEqual(['terminal-1', 'terminal-2']);
-  const reply = async (id: string, busy: boolean) => {
+  const reply = async (id: string, result: boolean | 'failed') => {
     await page.evaluate(
-      ({ id, busy }) => {
+      async ({ id, result }) => {
         const state = Reflect.get(window, 'terminalCloseTest') as {
-          checks: Map<string, (busy: boolean) => void>;
+          checks: Map<string, { resolve: (busy: boolean) => void; reject: () => void }>;
         };
-        state.checks.get(id)?.(busy);
+        const check = state.checks.get(id);
+        if (!check) throw new Error(`No pending check for ${id}`);
+        if (result === 'failed') check.reject();
+        else check.resolve(result);
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
       },
-      { id, busy },
+      { id, result },
     );
   };
-  await reply('terminal-2', true);
   const stopAndClose = page.getByRole('button', { name: 'Stop and close', exact: true });
+  const killed = () =>
+    page.evaluate(() => {
+      return (Reflect.get(window, 'terminalCloseTest') as { killed: string[] }).killed;
+    });
+  return { tabB, reply, stopAndClose, killed };
+}
+
+test('an idle close reply preserves another terminal tab’s busy confirmation', async ({ page }) => {
+  const { tabB, reply, stopAndClose, killed } = await openTerminalsWithPendingCloses(page);
+  await reply('terminal-2', true);
   await expect(stopAndClose).toBeVisible();
   await reply('terminal-1', false);
   await expect(page.getByRole('tab', { name: 'shell-1', exact: true })).toHaveCount(0);
   await expect(tabB).toHaveAttribute('aria-selected', 'true');
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        return (Reflect.get(window, 'terminalCloseTest') as { killed: string[] }).killed;
-      }),
-    )
-    .toEqual(['terminal-1']);
+  await expect.poll(killed).toEqual(['terminal-1']);
   await expect(stopAndClose).toBeVisible();
 });
+
+for (const result of [true, 'failed'] as const) {
+  test(`a superseded ${result === true ? 'busy' : 'failed'} check cannot replace the latest close confirmation`, async ({
+    page,
+  }) => {
+    const { tabB, reply, stopAndClose, killed } = await openTerminalsWithPendingCloses(page);
+    const tabA = page.getByRole('tab', { name: 'shell-1', exact: true });
+    await reply('terminal-2', true);
+    await expect(stopAndClose).toBeVisible();
+    await reply('terminal-1', result);
+    await expect(tabB).toHaveAttribute('aria-selected', 'true');
+    await expect(tabA).toBeVisible();
+    await expect(stopAndClose).toBeVisible();
+    await stopAndClose.click();
+    await expect(tabB).toHaveCount(0);
+    await expect(tabA).toHaveAttribute('aria-selected', 'true');
+    await expect.poll(killed).toEqual(['terminal-2']);
+    await expect(stopAndClose).toHaveCount(0);
+  });
+}
