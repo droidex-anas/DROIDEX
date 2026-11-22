@@ -40,6 +40,36 @@ export function SettingRow({
   );
 }
 
+/* ── preview card: a live thumbnail with its label, picked like a radio ── */
+export function PreviewCard({
+  label,
+  active,
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      onClick={onClick}
+      className={`select-none rounded-xl p-2 text-left transition-colors duration-150 ease-out ${
+        active ? 'bg-active' : 'bg-surface hover:bg-elevated'
+      }`}
+    >
+      <div className="h-24 overflow-hidden rounded-md shadow-sm">{children}</div>
+      <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
+        <span className={`text-label ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
+        {active && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
+      </div>
+    </button>
+  );
+}
+
 /* ── generic in-app dropdown (replaces native <select>) ── */
 export interface DropdownOption {
   value: string;

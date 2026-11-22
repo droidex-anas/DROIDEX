@@ -5,7 +5,6 @@
 
 import { Suspense, useEffect, useState, type ReactNode } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BrandMark } from './BrandMark';
 import { Button } from './ui/Button';
 import { ProductSwitch } from './composer/ProductSwitch';
 import { SKETCH_INK as INK, SKETCH_MARK as MARK, StarterTiles, type Starter } from './StarterTile';
@@ -14,6 +13,7 @@ import { useStoreApi, useStoreDispatch } from '../hooks/useStore';
 import { preloadLazySurface } from '../lib/chunkPreloader';
 import { LazyCanvasTabName, LazyRecentCanvases } from '../lib/lazySurfaces';
 import { DESIGN_STARTERS, StarterSketch } from '../features/canvas/designStarters';
+import { NewChatMark } from '../features/new-chat/NewChatMark';
 
 // Each entry seeds the beginning of a prompt (it never sends), so the user
 // just continues typing the specifics.
@@ -158,7 +158,7 @@ export function NewChatHeading({ start, folder }: { start: NewChatStart; folder?
     // A short tile scrolls the heading instead of clipping its top.
     <div className="flex min-h-full flex-col items-center justify-end px-8 pb-8 pt-6">
       <div className="droid-rise">
-        <BrandMark size={34} className="text-accent" />
+        <NewChatMark />
       </div>
       <div className="droid-rise mt-6 w-full" style={{ animationDelay: '90ms' }}>
         <Swap start={start} align="items-end">

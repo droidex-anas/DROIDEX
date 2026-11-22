@@ -1,4 +1,4 @@
-import type { Provider } from '../../components/ModelIcon';
+import type { MARK_PATHS } from '../../components/ModelIcon';
 import type {
   DroidProfile,
   ModelInfo,
@@ -38,7 +38,7 @@ export const PROVIDER_SIGN_IN_COMMANDS: Record<ProviderKind, string> = {
 };
 
 // Harness marks share one size across the provider pickers.
-export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {
+export const PROVIDER_MARKS: Record<ProviderKind, keyof typeof MARK_PATHS> = {
   droid: 'factory',
   claude: 'claude',
   codex: 'openai',
