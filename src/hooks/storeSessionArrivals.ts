@@ -5,7 +5,7 @@ import { settleSideChatStart } from '../lib/sideChats';
 import { appendTranscriptEvent, withUpdatedTranscript } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import { invalidateSelectedChildOpening } from './storeChildSession';
-import { withoutKey } from './storeSessionNavigation';
+import { withoutKey } from '../lib/records';
 import type { Action, AppState, CanvasChatRequest } from './useStore';
 
 /**
@@ -82,7 +82,7 @@ function createdSessionFocus(
   state: AppState,
   appSessionId: string,
   shouldActivate: boolean,
-  childReset: AppState,
+  targetIsActive: boolean,
 ): Pick<
   AppState,
   | 'activeAppSessionId'
@@ -94,14 +94,13 @@ function createdSessionFocus(
   | 'reviewFocusPath'
   | 'reviewFocusChange'
 > {
-  const targetIsActive = state.activeAppSessionId === appSessionId;
   return {
     activeAppSessionId: shouldActivate ? appSessionId : state.activeAppSessionId,
     draftChat: shouldActivate ? null : state.draftChat,
     draftAutonomy: shouldActivate ? null : state.draftAutonomy,
     draftFastMode: shouldActivate ? false : state.draftFastMode,
     draftContextWindowTokens: shouldActivate ? null : state.draftContextWindowTokens,
-    selectedChild: shouldActivate || targetIsActive ? null : childReset.selectedChild,
+    selectedChild: shouldActivate || targetIsActive ? null : state.selectedChild,
     // A pending review-focus request belongs to the session that issued
     // it; a different session becoming active must not inherit it.
     reviewFocusPath:
@@ -130,7 +129,7 @@ function createdSessionLastSeen(
 function ownsSessionCreate(
   pending: AppState['pendingCompose'][string],
   session: SessionSummary,
-): pending is NonNullable<AppState['pendingCompose'][string]> {
+): boolean {
   return pending !== undefined && session.lineage?.kind !== 'side';
 }
 
@@ -144,7 +143,7 @@ export function reduceSessionCreated(
   // background resumes must never replace the chat the user selected. A
   // side chat opens beside its source, never in its place. A create sent
   // from a tab or tile the user has since left opens there instead.
-  const ownsCreate = ownsSessionCreate(pending, action.session);
+  const ownsCreate = pending !== undefined && ownsSessionCreate(pending, action.session);
   const sessions = { ...state.sessions, [action.session.appSessionId]: action.session };
   const chatMetadata = createdChatMetadata(state, action, ownsCreate);
   const placed = ownsCreate
@@ -178,7 +177,7 @@ export function reduceSessionCreated(
     sessions,
     sessionOrder: order,
     tabStrip,
-    ...createdSessionFocus(state, action.session.appSessionId, shouldActivate, childReset),
+    ...createdSessionFocus(state, action.session.appSessionId, shouldActivate, targetIsActive),
     childAccess,
     childRuntime,
     pendingCompose,

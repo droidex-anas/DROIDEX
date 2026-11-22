@@ -138,7 +138,8 @@ import {
 } from '../lib/transcriptStoreMemory';
 import { type TranscriptMutation } from '../lib/transcriptMutation';
 import { reduceSessions } from './storeSessions';
-import { closeLiveChat, withoutKey, withTilesSeen } from './storeSessionNavigation';
+import { closeLiveChat, withTilesSeen } from './storeSessionNavigation';
+import { withoutKey } from '../lib/records';
 import { reduceSessionChildren } from './storeSessionChildren';
 import { reduceStoreActionBatch } from './storeActionBatch';
 import { reduceAgentSettings, type AgentSettingsAction } from './storeAgentSettings';
