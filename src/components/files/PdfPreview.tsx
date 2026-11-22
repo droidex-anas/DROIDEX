@@ -67,8 +67,12 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
         pdfWorker?.destroy();
         worker?.terminate();
       };
-      if (loadingTask) void loadingTask.destroy().finally(disposeWorker);
-      else disposeWorker();
+      void Promise.resolve()
+        .then(() => loadingTask?.destroy())
+        .finally(disposeWorker)
+        .catch((err: unknown) => {
+          console.error('Failed to clean up PDF preview', err);
+        });
     };
   }, [bytes]);
 

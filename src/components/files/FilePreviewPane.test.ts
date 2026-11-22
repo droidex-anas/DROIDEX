@@ -56,7 +56,7 @@ test('PDF loading does not create a task after the preview is cancelled', async 
   assert.equal(getDocumentCalled, false);
 });
 
-test('PDF loading destroys a completed task when cancellation wins the race', async () => {
+test('PDF loading leaves teardown to its owner when cancellation wins the race', async () => {
   let resolveDocument: ((document: PDFDocumentProxy) => void) | undefined;
   const document = { numPages: 1 } as PDFDocumentProxy;
   const documentPromise = new Promise<PDFDocumentProxy>((resolve) => {
@@ -82,7 +82,7 @@ test('PDF loading destroys a completed task when cancellation wins the race', as
   resolveDocument?.(document);
 
   assert.equal(await loading, null);
-  assert.equal(destroyed, 1);
+  assert.equal(destroyed, 0);
 });
 
 test('PDF loading disables JavaScript evaluation', async () => {
