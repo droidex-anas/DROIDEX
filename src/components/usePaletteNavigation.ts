@@ -30,7 +30,10 @@ export function usePaletteNavigation<Entry>(
     }
     if (e.key === 'Enter') {
       const entry = entries.at(selected);
-      if (entry) onEnter(entry);
+      if (!entry) return;
+      // Activation can close the palette and restore focus to its opener.
+      e.preventDefault();
+      onEnter(entry);
     }
     if (e.key === 'Escape') {
       e.preventDefault();

@@ -181,6 +181,36 @@ test('each command palette row runs its command', async ({ page }) => {
   await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(2);
 });
 
+test('Enter runs the palette command without reopening chat search', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+  });
+  await sessionBridge(page, [session]);
+  await page.goto(appUrl);
+
+  const searchLabel = 'Search chats, messages, and PRs';
+  const chatSearch = page.getByRole('dialog', { name: searchLabel });
+  await page.getByRole('button', { name: searchLabel, exact: true }).click();
+  await chatSearch.getByRole('button', { name: new RegExp(session.title) }).click();
+  await expect(chatSearch).toHaveCount(0);
+  await expect(page.getByTestId('session-row')).toHaveAttribute('aria-current', 'true');
+
+  const primary = await page.evaluate(() =>
+    navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+  );
+  await page.keyboard.press(`${primary}+k`);
+  const commandInput = page.getByRole('textbox', { name: 'Command palette' });
+  await expect(commandInput).toBeFocused();
+  await commandInput.fill('Settings');
+  await page.keyboard.press('Enter');
+
+  const settingsSearch = page.getByRole('textbox', { name: 'Search settings' });
+  await expect(settingsSearch).toBeVisible();
+  await expect(chatSearch).toHaveCount(0);
+  await settingsSearch.click();
+  await expect(settingsSearch).toBeFocused();
+});
+
 // The sidebar's right-click menus are ui/Menu: a right-click anchors them at
 // the pointer, the chat row's trailing button anchors its menu to its own right
 // edge, and Escape closes either one.
