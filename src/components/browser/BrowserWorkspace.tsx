@@ -35,7 +35,12 @@ import { DesignQuickPrompt, useDesignQuickPrompt } from './DesignQuickPrompt';
 import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
-import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
+import {
+  browserAddressValue,
+  isLocalBrowserUrl,
+  isSelfBrowserUrl,
+  safeBrowserUrl,
+} from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
 import { useElementSize } from './useElementSize';
 import { isEditTool } from '../../lib/diff';
@@ -143,7 +148,7 @@ export default function BrowserWorkspace({
     // Eligibility is checked first so navigating away from a local dev server
     // cancels any reload that was scheduled while the URL was still eligible;
     // otherwise a stale edit reload could fire against an unrelated page.
-    if (!/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(activeUrl)) {
+    if (!isLocalBrowserUrl(activeUrl)) {
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
         reloadTimerRef.current = null;
