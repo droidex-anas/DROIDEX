@@ -39,8 +39,7 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
   const store = useStoreApi();
   const [query, setQuery] = useState('');
 
-  // Each row mirrors an action the app already performs, and only where that
-  // action can run: an embedded app has no tabs, a terminal needs a session.
+  // An embedded app has no tabs, and a terminal needs a session.
   const commands: Command[] = [];
   if (!isEmbedded()) {
     commands.push({
@@ -77,22 +76,24 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
       c.label.toLowerCase().includes(query.toLowerCase()) || c.id.includes(query.toLowerCase()),
   );
 
+  const commandActions: Record<Command['id'], () => void> = {
+    'new-tab': () => {
+      dispatch({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) });
+    },
+    'new-terminal': () => {
+      onOpenTool('terminal');
+    },
+    'pull-requests': () => {
+      dispatch({ type: 'OPEN_PULL_REQUESTS', cwd: resolvePrWorkspaceCwd(prWorkspace) });
+    },
+    settings: () => {
+      dispatch({ type: 'TOGGLE_SETTINGS' });
+    },
+  };
+
   const runCommand = (cmd: Command) => {
     dispatch({ type: 'CLOSE_COMMAND_PALETTE' });
-    switch (cmd.id) {
-      case 'new-tab':
-        dispatch({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) });
-        break;
-      case 'new-terminal':
-        onOpenTool('terminal');
-        break;
-      case 'pull-requests':
-        dispatch({ type: 'OPEN_PULL_REQUESTS', cwd: resolvePrWorkspaceCwd(prWorkspace) });
-        break;
-      case 'settings':
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-        break;
-    }
+    commandActions[cmd.id]();
   };
 
   const { selected, setSelected, handleKeyDown } = usePaletteNavigation(
