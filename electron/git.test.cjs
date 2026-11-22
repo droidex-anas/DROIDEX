@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFile } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -20,6 +20,7 @@ const {
   createWorktree,
   removeWorktree,
   sanitizeSegment,
+  worktrees,
 } = require('./gitWorktrees.cjs');
 
 // Integration tests for the last_turn review scope, driven through the Git
@@ -209,6 +210,120 @@ test('last_turn works in an unborn repo via the write-tree baseline', async () =
   const res = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
   assert.ok(pathsOf(res).includes('first.txt'));
 });
+
+test('worktree listing preserves newline-containing paths', async () => {
+  const dir = await makeRepo();
+  await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+  const root = await fsp.realpath(dir);
+  const target = path.join(root, 'line\nbreak');
+  await git(dir, ['worktree', 'add', '-b', 'newline', target]);
+
+  const entries = await worktrees(root);
+  assert.deepEqual(
+    entries.map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+    [
+      { path: root, isMain: true, isCurrent: true },
+      { path: target, isMain: false, isCurrent: false },
+    ],
+  );
+  const linkedEntries = await worktrees(target);
+  assert.deepEqual(
+    linkedEntries.map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+    [
+      { path: root, isMain: true, isCurrent: false },
+      { path: target, isMain: false, isCurrent: true },
+    ],
+  );
+});
+
+test('worktree listing preserves paths and detached and locked states', async () => {
+  const dir = await makeRepo();
+  await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+  const root = await fsp.realpath(dir);
+  const ordinary = path.join(root, 'ordinary');
+  const spaced = path.join(root, ' with space ');
+  const unicode = path.join(root, 'café');
+  await git(root, ['worktree', 'add', '--detach', ordinary]);
+  await git(root, ['worktree', 'add', '--detach', spaced]);
+  await git(root, ['worktree', 'lock', spaced]);
+  await git(root, ['worktree', 'add', '--detach', unicode]);
+  await git(root, ['worktree', 'lock', '--reason', 'first\n\nsecond', unicode]);
+
+  const entries = await worktrees(root);
+  assert.deepEqual(
+    entries.map(({ path, isMain, isCurrent, detached, locked }) => ({
+      path,
+      isMain,
+      isCurrent,
+      detached,
+      locked,
+    })),
+    [
+      { path: root, isMain: true, isCurrent: true, detached: false, locked: false },
+      { path: spaced, isMain: false, isCurrent: false, detached: true, locked: true },
+      { path: unicode, isMain: false, isCurrent: false, detached: true, locked: true },
+      { path: ordinary, isMain: false, isCurrent: false, detached: true, locked: false },
+    ],
+  );
+});
+
+test(
+  'worktree listing supports old Git and returns no entries on failure',
+  {
+    skip: process.platform === 'win32',
+  },
+  async () => {
+    const dir = await makeRepo();
+    await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+    const root = await fsp.realpath(dir);
+    const target = path.join(root, ' with space ');
+    await git(root, ['worktree', 'add', '--detach', target]);
+    const denied = await fsp.realpath(await makeRepo());
+    const unrelated = await fsp.realpath(await makeRepo());
+    const shimDir = path.join(dir, 'bin');
+    await fsp.mkdir(shimDir);
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    await fsp.writeFile(
+      path.join(shimDir, 'git'),
+      `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('worktree') && args.includes('list')) {
+  if (args[1] === ${JSON.stringify(denied)}) {
+    process.stderr.write('fatal: permission denied\\n');
+    process.exit(128);
+  }
+  if (args[1] === ${JSON.stringify(unrelated)}) {
+    process.stderr.write('fatal: unable to read worktrees\\n');
+    process.exit(128);
+  }
+  if (args.includes('-z')) {
+    process.stderr.write("Fehler: Unbekannter Schalter \\x60z'\\n");
+    process.exit(129);
+  }
+}
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o755 },
+    );
+    const originalPath = process.env.PATH;
+    process.env.PATH = shimDir + path.delimiter + originalPath;
+    try {
+      assert.deepEqual(
+        (await worktrees(root)).map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+        [
+          { path: root, isMain: true, isCurrent: true },
+          { path: target, isMain: false, isCurrent: false },
+        ],
+      );
+      assert.deepEqual(await worktrees(denied), []);
+      assert.deepEqual(await worktrees(unrelated), []);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  },
+);
 
 test('a created worktree keeps its review diff after its base branch merges it', async () => {
   const dir = await makeRepo();

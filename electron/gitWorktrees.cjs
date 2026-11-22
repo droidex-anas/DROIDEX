@@ -15,11 +15,9 @@ const { validBranchName } = require('./gitBranches.cjs');
 
 const WORKTREE_ADD_TIMEOUT = 45000;
 
-// Parse `git worktree list --porcelain` into structured entries.
-function parseWorktrees(stdout, currentRoot) {
+function parseWorktrees(stdout, currentRoot, separator) {
   const blocks = String(stdout || '')
-    .split(/\n\n+/)
-    .map((b) => b.trim())
+    .split(separator + separator)
     .filter(Boolean);
   return blocks.map((block, index) => {
     const entry = {
@@ -32,8 +30,8 @@ function parseWorktrees(stdout, currentRoot) {
       isMain: index === 0,
       isCurrent: false,
     };
-    for (const line of block.split('\n')) {
-      if (line.startsWith('worktree ')) entry.path = line.slice('worktree '.length).trim();
+    for (const line of block.split(separator)) {
+      if (line.startsWith('worktree ')) entry.path = line.slice('worktree '.length);
       else if (line.startsWith('HEAD '))
         entry.head = line.slice('HEAD '.length).trim().slice(0, 12);
       else if (line.startsWith('branch '))
@@ -52,8 +50,15 @@ async function worktrees(dir) {
   const root = await repoRootOf(dir);
   if (!root) return [];
   return cachedRead(root, 'worktrees', async () => {
-    const out = await tryRun(root, ['worktree', 'list', '--porcelain']);
-    return parseWorktrees(out, root);
+    try {
+      const out = await run(root, ['worktree', 'list', '--porcelain', '-z']);
+      return parseWorktrees(out, root, '\0');
+    } catch (error) {
+      if (error.code !== 129) return [];
+      // Git < 2.36 lacks NUL-framed worktree listings; drop this fallback once DROIDEX requires Git 2.36+.
+      const out = await tryRun(root, ['worktree', 'list', '--porcelain']);
+      return parseWorktrees(out, root, '\n');
+    }
   });
 }
 
