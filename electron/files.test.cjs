@@ -87,7 +87,7 @@ test('readPreview supports names beginning with two dots', async () => {
 // listDirectory
 // ---------------------------------------------------------------------------
 
-test('listDirectory returns folders-first, alphabetical, non-recursive entries with metadata', async () => {
+test('listDirectory returns folders-first, alphabetical, non-recursive entries', async () => {
   const listing = await listDirectory(root);
   assert.equal(listing.capped, false);
   assert.equal(listing.permissionDenied, false);
@@ -103,11 +103,10 @@ test('listDirectory returns folders-first, alphabetical, non-recursive entries w
   assert.ok(!names.includes('nested.txt'));
   // alpha.md, beta.txt, zeta.json live at the top level.
   assert.ok(names.includes('alpha.md'));
-  // Each entry must carry kind, size, and mtimeMs.
+  assert.ok(!names.includes('escape-link'));
   for (const entry of listing.entries) {
     assert.ok(entry.kind === 'directory' || entry.kind === 'file');
-    assert.equal(typeof entry.size, 'number');
-    assert.equal(typeof entry.mtimeMs, 'number');
+    assert.deepEqual(Object.keys(entry).sort(), ['kind', 'name']);
   }
 });
 
@@ -133,7 +132,7 @@ test('listDirectory respects the cap and reports truncation', async () => {
   assert.ok(listing.totalSeen >= 5);
 });
 
-test('listDirectory does not read metadata beyond the listing cap', async () => {
+test('listDirectory does not read child metadata', async () => {
   const capDir = path.join(root, 'metadata-cap-dir');
   await fsp.mkdir(capDir, { recursive: true });
   for (let i = 0; i < 5; i += 1) {
@@ -141,15 +140,21 @@ test('listDirectory does not read metadata beyond the listing cap', async () => 
   }
 
   let childMetadataReads = 0;
-  await listDirectory(root, 'metadata-cap-dir', {
-    cap: 2,
-    lstat: async (target) => {
+  const originalLstat = fsp.lstat;
+  const capDirReal = await fsp.realpath(capDir);
+  const mock = test.mock.method(fsp, 'lstat', async (target) => {
+    if (path.dirname(target) === capDirReal) {
       childMetadataReads += 1;
-      return fsp.lstat(target);
-    },
+    }
+    return originalLstat(target);
   });
-
-  assert.equal(childMetadataReads, 2);
+  try {
+    const listing = await listDirectory(root, 'metadata-cap-dir', { cap: 2 });
+    assert.equal(listing.entries.length, 2);
+    assert.equal(childMetadataReads, 0);
+  } finally {
+    mock.mock.restore();
+  }
 });
 
 // ---------------------------------------------------------------------------
