@@ -21,9 +21,9 @@ export function usePaletteNavigation<Entry>(
   const [selection, setSelection] = useState({ query, index: 0, fromKeyboard: true });
   const selectedRowRef = useRef<HTMLButtonElement>(null);
 
-  const isCurrentQuery = selection.query === query;
-  const selected = isCurrentQuery ? Math.min(selection.index, Math.max(entries.length - 1, 0)) : 0;
-  const fromKeyboard = !isCurrentQuery || selection.fromKeyboard;
+  if (selection.query !== query) setSelection({ query, index: 0, fromKeyboard: true });
+  const selected = Math.min(selection.index, Math.max(entries.length - 1, 0));
+  const { fromKeyboard } = selection;
 
   useEffect(() => {
     if (fromKeyboard) selectedRowRef.current?.scrollIntoView({ block: 'nearest' });

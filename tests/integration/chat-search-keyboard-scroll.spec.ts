@@ -130,3 +130,16 @@ test('a shrinking result list keeps its last row selected', async ({ page }) => 
   await input.press('Enter');
   await expect.poll(() => bridge.opened).toContain('plan-3');
 });
+
+test('editing the query and back selects the first result again', async ({ page }) => {
+  const bridge = await mockPlanSessions(page, Date.now());
+  const { input, results } = await searchPlans(page);
+
+  await input.press('ArrowUp');
+  await input.press('s');
+  await expect(results).toHaveCount(0);
+  await input.press('Backspace');
+  await expect(results).toHaveCount(12);
+  await input.press('Enter');
+  await expect.poll(() => bridge.opened).toContain('plan-1');
+});
