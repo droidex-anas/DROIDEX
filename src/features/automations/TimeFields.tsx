@@ -164,7 +164,7 @@ export function AutomationDateInput({
   minimum?: { year: number; month: number; day: number };
   errorId?: string | undefined;
   invalidText?: string | undefined;
-  onInvalidChange: (text: string) => void;
+  onInvalidChange: (text: string | null) => void;
   onChange: (value: { year: number; month: number; day: number }) => void;
 }) {
   const formatted = formatDate(value);
@@ -183,7 +183,7 @@ export function AutomationDateInput({
     }
     if (!parsed || (minimum && isCalendarDateBefore(parsed, minimum))) {
       setText(formatDate(value));
-      onChange(value);
+      onInvalidChange(null);
       return;
     }
     setText(formatDate(parsed));

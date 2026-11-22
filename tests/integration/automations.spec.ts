@@ -313,11 +313,18 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
   });
   const date = editor.getByRole('textbox', { name: 'Date, year month day' });
   const save = editor.getByRole('button', { name: 'Save changes', exact: true });
+  const pristineSaveEnabled = await save.isEnabled();
   for (const invalid of ['2027-04-31', '2027-02-', '2027-02-29']) {
     await date.fill(invalid);
     await date.press('Tab');
     await expect(date).toHaveValue(invalid);
     await expect(date).toHaveAttribute('aria-invalid', 'true');
+    for (const name of ['Hour', 'Minute']) {
+      const time = editor.getByRole('textbox', { name, exact: true });
+      await expect(time).toHaveAttribute('aria-invalid', 'false');
+      await expect(time).not.toHaveAttribute('aria-describedby');
+      await expect(time).not.toHaveClass(/bg-danger-soft/);
+    }
     await expect(editor.getByRole('alert')).toContainText('valid calendar date');
     await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
@@ -336,7 +343,9 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
   await date.press('Tab');
   await expect(date).toHaveValue('2027-03-14');
   await expect(editor.getByRole('alert')).toHaveCount(0);
-  await expect(save).toBeEnabled();
+  expect(await save.isEnabled()).toBe(pristineSaveEnabled);
+  await expect(editor.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('09');
+  expect(backend.requests).toEqual([]);
   for (const restored of ['', '2027-03-12']) {
     await date.fill(restored);
     await date.press('Tab');
@@ -347,7 +356,7 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
   await date.press('Tab');
   await save.click();
   await expect.poll(() => backend.requests.length).toBe(1);
-  expect(submittedInstant(backend.requests[0])).toBe('2027-04-30T10:00:00.000Z');
+  expect(submittedInstant(backend.requests[0])).toBe('2027-04-30T09:00:00.000Z');
 });
 
 test.describe('one-time DST-gap schedules', () => {

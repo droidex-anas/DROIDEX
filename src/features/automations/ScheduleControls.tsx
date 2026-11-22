@@ -56,6 +56,10 @@ export function ScheduleControls({
     case 'once': {
       const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, timezone);
       const minimumDate = zonedInputParts(Date.now(), timezone);
+      const errorMessages = {
+        date: 'Enter a valid calendar date (YYYY-MM-DD) before saving.',
+        time: `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`,
+      };
       const updateInput = (input: ZonedInput) => {
         const runAt = epochFromZonedInput(input, timezone);
         onInvalidInputChange(runAt === null ? { kind: 'time', parts: input } : null);
@@ -70,7 +74,13 @@ export function ScheduleControls({
               minimum={minimumDate}
               invalidText={invalidInput?.kind === 'date' ? invalidInput.text : undefined}
               onInvalidChange={(text) => {
-                onInvalidInputChange({ kind: 'date', parts, text });
+                if (text !== null) {
+                  onInvalidInputChange({ kind: 'date', parts, text });
+                } else if (invalidInput?.kind === 'date') {
+                  onInvalidInputChange(
+                    epochFromZonedInput(parts, timezone) === null ? { kind: 'time', parts } : null,
+                  );
+                }
               }}
               onChange={(date) => {
                 updateInput({ ...parts, ...date });
@@ -79,7 +89,7 @@ export function ScheduleControls({
           </EditorRow>
           <EditorRow label="Time">
             <AutomationTimeInput
-              errorId={invalidInput ? errorId : undefined}
+              errorId={invalidInput?.kind === 'time' ? errorId : undefined}
               value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
               onChange={(time) => {
                 const [hourText = '', minuteText = ''] = time.split(':');
@@ -98,9 +108,7 @@ export function ScheduleControls({
           </EditorRow>
           {invalidInput && (
             <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
-              {invalidInput.kind === 'date'
-                ? 'Enter a valid calendar date (YYYY-MM-DD) before saving.'
-                : `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`}
+              {errorMessages[invalidInput.kind]}
             </p>
           )}
         </>
