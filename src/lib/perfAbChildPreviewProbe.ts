@@ -10,6 +10,8 @@ import type { ChildStreamSnapshot } from './childSessionStream';
 const CHILDREN = 27;
 const ANSWER_BYTES = 720_000;
 const RUNS = 11;
+const MULTI_LINE_ID = 'childPreview.unchangedProjectionMs';
+const ONE_LINE_ID = 'childPreview.unchangedOneLineProjectionMs';
 
 interface ChildStreamModule {
   projectChildStreamSnapshots: (
@@ -22,19 +24,20 @@ interface ChildStreamModule {
 
 export async function measureChildPreviews(treeRoot: string): Promise<AbProbeMetric[]> {
   const streamPath = join(treeRoot, 'src/lib/childSessionStream.ts');
-  const ids = ['childPreview.unchangedProjectionMs', 'childPreview.unchangedOneLineProjectionMs'];
   if (!existsSync(streamPath)) {
-    return ids.map((id) => metric(id, NaN, 'childSessionStream.ts missing'));
+    return [MULTI_LINE_ID, ONE_LINE_ID].map((id) =>
+      metric(id, NaN, 'childSessionStream.ts missing'),
+    );
   }
   const stream = (await import(pathToFileURL(streamPath).href)) as ChildStreamModule;
   const line = `${'output token stream '.repeat(4).slice(0, 71)}\n`;
   return [
     metric(
-      ids[0],
+      MULTI_LINE_ID,
       medianProjectionMs(stream, line.repeat(ANSWER_BYTES / line.length)),
       '72-char lines',
     ),
-    metric(ids[1], medianProjectionMs(stream, 'x'.repeat(ANSWER_BYTES)), 'a single line'),
+    metric(ONE_LINE_ID, medianProjectionMs(stream, 'x'.repeat(ANSWER_BYTES)), 'a single line'),
   ];
 }
 
@@ -55,7 +58,7 @@ function medianProjectionMs(stream: ChildStreamModule, answer: string): number {
     stream.projectChildStreamSnapshots(children, activityFor, undefined, previous);
     durations.push(performance.now() - started);
   }
-  return durations.sort((a, b) => a - b)[Math.floor(RUNS / 2)];
+  return durations.sort((a, b) => a - b)[Math.floor(RUNS / 2)] ?? NaN;
 }
 
 function runningChild(childSessionId: string): ChildSessionSummary {
