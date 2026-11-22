@@ -170,6 +170,19 @@ export function FilesWorkspace({
     row?.focus();
   };
 
+  const focusNearestVisibleRow = (path: string) => {
+    while (path) {
+      if (visible.some((entry) => entry.relative === path)) {
+        focusRow(path);
+        return true;
+      }
+      path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    }
+    if (!tabbablePath) return false;
+    focusRow(tabbablePath);
+    return true;
+  };
+
   useLayoutEffect(() => {
     const previous = focusedRowRef.current;
     if (
@@ -180,15 +193,7 @@ export function FilesWorkspace({
     )
       return;
     focusedRowRef.current = null;
-    let ancestor = previous.dataset.path ?? '';
-    while (ancestor.includes('/')) {
-      ancestor = ancestor.slice(0, ancestor.lastIndexOf('/'));
-      if (visible.some((entry) => entry.relative === ancestor)) {
-        focusRow(ancestor);
-        return;
-      }
-    }
-    if (tabbablePath) focusRow(tabbablePath);
+    focusNearestVisibleRow(previous.dataset.path ?? '');
   });
 
   const toggleDirectory = (relative: string) => {
@@ -208,19 +213,7 @@ export function FilesWorkspace({
       treeToggleRef.current?.focus();
       return;
     }
-    let path = relative;
-    while (path) {
-      if (visible.some((entry) => entry.relative === path)) {
-        focusRow(path);
-        return;
-      }
-      path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-    }
-    if (tabbablePath) {
-      focusRow(tabbablePath);
-      return;
-    }
-    treeRef.current?.focus();
+    if (!focusNearestVisibleRow(relative)) treeRef.current?.focus();
   };
 
   const fileName = relative ? pathFileName(relative) : '';
@@ -342,9 +335,8 @@ export function FilesWorkspace({
                 type="button"
                 aria-label="Close file"
                 title="Close file"
-                onClick={(event) => {
-                  // Detail 0 means keyboard activation; pointer close keeps its focus behavior.
-                  if (event.detail === 0) focusTreeAfterPreviewClose();
+                onClick={() => {
+                  focusTreeAfterPreviewClose();
                   onSelectPath('');
                 }}
                 className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
