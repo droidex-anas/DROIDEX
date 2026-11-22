@@ -1,27 +1,17 @@
-import type { BrowserTranscriptReference, DesignReference } from '@droidex/protocol';
+import type { DesignAnchor, DesignReference } from './browser.js';
+import type { BrowserTranscriptReference } from './transcript.js';
 
 export function browserTranscriptReferenceFromDesignReference(
-  reference: DesignReference,
+  reference: Partial<DesignReference>,
 ): BrowserTranscriptReference | null {
   const anchor = reference.anchor;
   const id = reference.id ?? anchor?.id;
   if (!id || !anchor) return null;
 
-  const attributes = reference.detail?.attributes;
-  const label = normalizeBrowserReferenceLabel(
-    anchor.name ??
-      attributes?.['data-testid'] ??
-      attributes?.id ??
-      anchor.text ??
-      anchor.role ??
-      anchor.tag,
-    anchor.kind === 'element' ? (anchor.tag ?? 'element') : anchor.kind,
-  );
-
   return {
     id,
     kind: anchor.kind,
-    label,
+    label: browserReferenceLabel(anchor, reference.detail?.attributes),
     url: reference.url,
     selector: reference.detail?.selector,
     imageDataUrl: reference.screenshot?.base64
@@ -31,11 +21,23 @@ export function browserTranscriptReferenceFromDesignReference(
 }
 
 export function browserTranscriptReferencesFromDesignReferences(
-  references: DesignReference[],
+  references: readonly Partial<DesignReference>[],
 ): BrowserTranscriptReference[] {
   return references
     .map(browserTranscriptReferenceFromDesignReference)
     .filter((reference): reference is BrowserTranscriptReference => Boolean(reference));
+}
+
+function browserReferenceLabel(anchor: DesignAnchor, attributes?: Record<string, string>): string {
+  return normalizeBrowserReferenceLabel(
+    anchor.name ??
+      attributes?.['data-testid'] ??
+      attributes?.id ??
+      anchor.text ??
+      anchor.role ??
+      anchor.tag,
+    anchor.kind === 'element' ? (anchor.tag ?? 'element') : anchor.kind,
+  );
 }
 
 export function normalizeBrowserReferenceLabel(

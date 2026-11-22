@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import {
   browserTranscriptReferenceFromDesignReference,
   normalizeBrowserReferenceLabel,
-} from './browserTranscriptReferences';
-import type { DesignReference } from '@droidex/protocol';
+} from './browser-transcript-references.js';
+import type { DesignReference } from './browser.js';
 
 test('normalizeBrowserReferenceLabel creates compact mention labels', () => {
   assert.equal(normalizeBrowserReferenceLabel('Hero title', 'element'), 'Hero-title');

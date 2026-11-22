@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { browserTranscriptReferencesFromDesignReferences } from '@droidex/protocol';
 import { useStoreApi, useStoreDispatch, type AppState } from '../../hooks/useStore';
 import { promptWithCanvasPins } from '../../features/canvas/framePins';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
@@ -17,7 +18,6 @@ import {
   promptChips,
   type QueuedPrompt,
 } from '../../lib/promptQueue';
-import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
 
 export function useQueuedPromptDelivery({
   appSessionId,
