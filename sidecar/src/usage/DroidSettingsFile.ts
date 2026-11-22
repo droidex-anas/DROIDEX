@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { lstat, open, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, sep } from 'node:path';
+import { isPathInside } from './isPathInside.js';
 
 import type { OpaqueUsageCursor, OpaqueUsageSourceStore } from './UsageSourceContract.js';
 import { COUNT_KEYS, completeSum, count } from './tokenCounts.js';
@@ -194,7 +194,7 @@ async function readMetadata(root: string, candidate: string): Promise<FileMetada
   const stats = await lstat(candidate);
   if (!stats.isFile() || stats.isSymbolicLink()) return null;
   const sourcePath = await realpath(candidate);
-  if (!inside(root, sourcePath)) return null;
+  if (!isPathInside(root, sourcePath)) return null;
   const mtimeMs = timestamp(stats.mtimeMs);
   if (mtimeMs === null || !Number.isSafeInteger(stats.size) || stats.size < 0) return null;
   return {
@@ -422,11 +422,6 @@ function sourceId(path: string): string {
 
 function hash(value: string | Uint8Array): string {
   return createHash('sha256').update(value).digest('hex');
-}
-
-function inside(root: string, candidate: string): boolean {
-  const child = relative(root, candidate);
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 
 function cursorError(sourcePath: string): Error {

@@ -1,6 +1,7 @@
 import { watch, type FSWatcher } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
+import { isPathInside } from './isPathInside.js';
 
 import type { UsageDatabase } from './UsageDatabase.js';
 import {
@@ -215,7 +216,7 @@ export class UsageIngest {
             return;
           }
           const path = resolve(canonicalRoot, filename);
-          if (!inside(canonicalRoot, path)) {
+          if (!isPathInside(canonicalRoot, path)) {
             this.scheduleReconcile(250, true);
             return;
           }
@@ -288,11 +289,6 @@ export class UsageIngest {
 
 export function createUsageIngest(options: UsageIngestOptions): UsageIngest {
   return new UsageIngest(options);
-}
-
-function inside(root: string, path: string): boolean {
-  const child = relative(root, path);
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 
 function isUnavailable(error: unknown): boolean {

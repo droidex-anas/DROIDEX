@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import { lstat, open, realpath, type FileHandle } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
+import { isPathInside } from './isPathInside.js';
 
 import type { UsageDatabase, UsageCursorAdvance } from './UsageDatabase.js';
 import type { UsageSourceFile } from './UsageDiscovery.js';
@@ -29,7 +30,7 @@ export async function ingestUsageFile(
   if (isUnchangedCompleteFile(candidateCursor, candidate, candidateId, parserState)) return null;
 
   const canonicalPath = await realpath(file.path);
-  if (!inside(file.rootPath, canonicalPath)) return null;
+  if (!isPathInside(file.rootPath, canonicalPath)) return null;
   const handle = await open(canonicalPath, constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
     const before = await handle.stat();
@@ -209,10 +210,6 @@ function fileIdentity(stats: Stats, fallback: string): string {
 }
 function sourceId(parserName: UsageParserName, path: string): string {
   return `${parserName}:${createHash('sha256').update(resolve(path)).digest('hex').slice(0, 32)}`;
-}
-function inside(root: string, path: string): boolean {
-  const child = relative(root, path);
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 
 function isUnchangedCompleteFile(

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { watch, type FSWatcher } from 'node:fs';
 import { lstat, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, dirname, isAbsolute, join, normalize, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
+import { isPathInside } from './isPathInside.js';
 
 import {
   readDroidSettingsDirectoryPage,
@@ -273,7 +274,7 @@ export class DroidSettingsIngest {
         if (basename(name) !== name || !name.endsWith(SETTINGS_SUFFIX)) return;
         const path = resolve(directory, name);
         if (
-          !insideRoot(root, path) ||
+          !isPathInside(root, path) ||
           (!this.dirtyFiles.has(path) && this.dirtyFiles.size >= MAX_DIRTY_FILES)
         ) {
           return;
@@ -412,11 +413,6 @@ function validDirectory(directory: unknown): directory is string {
         !directory.startsWith(`..${sep}`) &&
         normalize(directory) === directory))
   );
-}
-
-function insideRoot(root: string, candidate: string): boolean {
-  const child = relative(root, candidate);
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }
 
 function normalizeRoots(roots: readonly string[]): string[] {
