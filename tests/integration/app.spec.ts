@@ -128,10 +128,53 @@ test('the command palette is a centred dialog that keeps focus inside', async ({
 
   await search.fill('settings');
   await expect(palette.getByText('Settings', { exact: true })).toBeVisible();
-  await expect(palette.getByText('New Thread', { exact: true })).toHaveCount(0);
+  await expect(palette.getByText('New Tab', { exact: true })).toHaveCount(0);
 
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);
+});
+
+// Each row runs what it names: a palette row that only closes the palette
+// reads as a broken command.
+test('each command palette row runs its command', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+  });
+  await sessionBridge(page, [session]);
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto(appUrl);
+  const primary = await page.evaluate(() =>
+    navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+  );
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  const runCommand = async (label: string) => {
+    await page.keyboard.press(`${primary}+k`);
+    await palette.getByText(label, { exact: true }).click();
+    await expect(palette).toHaveCount(0);
+  };
+  await page.getByTestId('session-row').click();
+
+  await page.keyboard.press(`${primary}+k`);
+  await expect(palette.getByRole('button').filter({ hasText: /./ })).toHaveText([
+    /^New Tab/,
+    /^New Terminal/,
+    /^Pull Requests/,
+    /^Settings/,
+  ]);
+  await page.keyboard.press('Escape');
+
+  const tabs = page.getByRole('tablist', { name: 'Tabs', exact: true }).getByRole('tab');
+  await runCommand('New Tab');
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.nth(1)).toContainText('New chat');
+
+  await page.keyboard.press(`${primary}+1`);
+  const utilityTabs = page.getByRole('tablist', { name: 'Open utility tools' }).getByRole('tab');
+  await runCommand('New Terminal');
+  await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(1);
+  await runCommand('New Terminal');
+  await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(2);
 });
 
 // The sidebar's right-click menus are ui/Menu: a right-click anchors them at
