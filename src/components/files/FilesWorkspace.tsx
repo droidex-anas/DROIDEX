@@ -59,6 +59,7 @@ export function FilesWorkspace({
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [focusedPath, setFocusedPath] = useState<string>();
   const treeRef = useRef<HTMLDivElement>(null);
+  const treeToggleRef = useRef<HTMLButtonElement>(null);
   const focusedRowRef = useRef<HTMLElement | null>(null);
   const rootVersionRef = useRef(0);
   const accessToken = authorization.root === root ? authorization.accessToken : '';
@@ -169,6 +170,19 @@ export function FilesWorkspace({
     row?.focus();
   };
 
+  const focusNearestVisibleRow = (path: string) => {
+    while (path) {
+      if (visible.some((entry) => entry.relative === path)) {
+        focusRow(path);
+        return true;
+      }
+      path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    }
+    if (!tabbablePath) return false;
+    focusRow(tabbablePath);
+    return true;
+  };
+
   useLayoutEffect(() => {
     const previous = focusedRowRef.current;
     if (
@@ -179,15 +193,7 @@ export function FilesWorkspace({
     )
       return;
     focusedRowRef.current = null;
-    let ancestor = previous.dataset.path ?? '';
-    while (ancestor.includes('/')) {
-      ancestor = ancestor.slice(0, ancestor.lastIndexOf('/'));
-      if (visible.some((entry) => entry.relative === ancestor)) {
-        focusRow(ancestor);
-        return;
-      }
-    }
-    if (tabbablePath) focusRow(tabbablePath);
+    focusNearestVisibleRow(previous.dataset.path ?? '');
   });
 
   const toggleDirectory = (relative: string) => {
@@ -202,6 +208,14 @@ export function FilesWorkspace({
   };
 
   const relative = selectedPath ?? '';
+  const focusTreeAfterPreviewClose = () => {
+    if (treeCollapsed) {
+      treeToggleRef.current?.focus();
+      return;
+    }
+    if (!focusNearestVisibleRow(relative)) treeRef.current?.focus();
+  };
+
   const fileName = relative ? pathFileName(relative) : '';
   // A bare `/` or drive-letter root has no file name; show the root itself.
   const rootName = pathFileName(root) || root;
@@ -250,6 +264,7 @@ export function FilesWorkspace({
         </header>
         <div
           ref={treeRef}
+          tabIndex={-1}
           className="min-h-0 flex-1 overflow-auto px-1 pb-1"
           role="tree"
           aria-label="Session files"
@@ -321,6 +336,7 @@ export function FilesWorkspace({
                 aria-label="Close file"
                 title="Close file"
                 onClick={() => {
+                  focusTreeAfterPreviewClose();
                   onSelectPath('');
                 }}
                 className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
@@ -368,6 +384,7 @@ export function FilesWorkspace({
           </nav>
           <Tooltip label={treeCollapsed ? 'Show file tree' : 'Hide file tree'} placement="bottom">
             <Button
+              ref={treeToggleRef}
               variant="ghost"
               size="sm"
               icon={PanelLeft}
