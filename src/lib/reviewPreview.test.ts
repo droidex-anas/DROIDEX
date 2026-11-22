@@ -27,7 +27,7 @@ function textPreview(text: string): FilePreviewPayload {
   return {
     category: 'text',
     totalSize: text.length,
-    mtimeMs: 0,
+    ctimeMs: 0,
     sizeCapBytes: 100,
     previewable: true,
     text,

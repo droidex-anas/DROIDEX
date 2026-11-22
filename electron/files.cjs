@@ -314,7 +314,7 @@ async function readPreview(rootDir, relativePath) {
       return {
         category,
         totalSize,
-        mtimeMs: stat.mtimeMs,
+        ctimeMs: stat.ctimeMs,
         sizeCapBytes,
         previewable: false,
         reason: 'external-fallback',
@@ -326,7 +326,7 @@ async function readPreview(rootDir, relativePath) {
       return {
         category,
         totalSize,
-        mtimeMs: stat.mtimeMs,
+        ctimeMs: stat.ctimeMs,
         sizeCapBytes,
         previewable: true,
         oversize: true,
@@ -340,7 +340,7 @@ async function readPreview(rootDir, relativePath) {
         return {
           category: 'external',
           totalSize,
-          mtimeMs: stat.mtimeMs,
+          ctimeMs: stat.ctimeMs,
           sizeCapBytes: BINARY_PREVIEW_CAP_BYTES,
           previewable: false,
           reason: 'binary-in-text-extension',
@@ -350,7 +350,7 @@ async function readPreview(rootDir, relativePath) {
       return {
         category: 'text',
         totalSize,
-        mtimeMs: stat.mtimeMs,
+        ctimeMs: stat.ctimeMs,
         sizeCapBytes,
         previewable: true,
         encoding: 'utf8',
@@ -361,7 +361,7 @@ async function readPreview(rootDir, relativePath) {
     return {
       category,
       totalSize,
-      mtimeMs: stat.mtimeMs,
+      ctimeMs: stat.ctimeMs,
       sizeCapBytes,
       previewable: true,
       encoding: 'binary',

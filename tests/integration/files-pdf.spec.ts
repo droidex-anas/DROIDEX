@@ -49,14 +49,14 @@ test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
     return rendering;
   });
   const disk = await page.evaluateHandle((data) => {
-    const disk = { data, reads: 0, mtimeMs: 1 };
+    const disk = { data, reads: 0, ctimeMs: 1 };
     Object.assign(window.droidex, {
       filesPreview: async () => {
         disk.reads += 1;
         return {
           category: 'pdf',
           encoding: 'binary',
-          mtimeMs: disk.mtimeMs,
+          ctimeMs: disk.ctimeMs,
           previewable: true,
           data: disk.data.slice(),
           totalSize: disk.data.length,
@@ -65,11 +65,11 @@ test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
       },
     });
     return disk;
-  }, pdfFixture());
+  }, pdfFixture(600));
   const tree = await showFiles(page, 'repo-chat');
   await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
   const canvas = page.locator('canvas');
-  await expect(canvas).toHaveAttribute('width', '1400');
+  await expect(canvas).toHaveAttribute('width', '840');
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Next page', exact: true }).click();
   await expect(canvas).toHaveAttribute('width', '251');
@@ -86,12 +86,14 @@ test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
   expect(await rendering.evaluate((rendering) => rendering.workers)).toBe(workers);
   await expect(canvas).toHaveAttribute('width', '251');
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeDisabled();
+  const replacement = pdfFixture(800);
+  expect(replacement).toHaveLength(pdfFixture(600).length);
   await disk.evaluate((disk, data) => {
     disk.data = data;
-    disk.mtimeMs += 1;
-  }, pdfFixture(600));
+    disk.ctimeMs += 1;
+  }, replacement);
   await page.getByRole('button', { name: 'Refresh files' }).click();
-  await expect(canvas).toHaveAttribute('width', '840');
+  await expect(canvas).toHaveAttribute('width', '1120');
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
   await expect(page.getByText("Couldn't render this PDF", { exact: true })).toHaveCount(0);
 });
