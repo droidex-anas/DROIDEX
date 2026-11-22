@@ -42,6 +42,22 @@ interface EventIdIndex {
   buckets: readonly (ReadonlySet<string> | undefined)[];
 }
 
+function copyOnFirstWrite<K, V>(index: ReadonlyMap<K, V>): () => Map<K, V> {
+  let owned: Map<K, V> | undefined;
+  return () => (owned ??= new Map(index));
+}
+
+function batchIndexMaps(indexes: TranscriptIndexes) {
+  return {
+    latestActivityBySource: copyOnFirstWrite(indexes.latestActivityBySource),
+    childSpawns: copyOnFirstWrite(indexes.childSpawns),
+    toolCallIndexByUseId: copyOnFirstWrite(indexes.toolCallIndexByUseId),
+    textIndexByMessageId: copyOnFirstWrite(indexes.textIndexByMessageId),
+  };
+}
+
+type WritableIndexMaps = ReturnType<typeof batchIndexMaps>;
+
 const EVENT_ID_BUCKET_COUNT = 256;
 const transcriptRuntimes = new WeakMap<readonly TranscriptEvent[], TranscriptRuntime>();
 
@@ -56,6 +72,8 @@ export function ingestTranscriptEvents(
   let events = previousRuntime.events;
   let eventIds = previousRuntime.eventIds;
   let indexes = previousRuntime.indexes;
+  const writableIndexes = batchIndexMaps(indexes);
+  const appendEventId = batchEventIdIndex(eventIds);
   let estimatedCost = previousCost;
   let firstChangedIndex: number | undefined;
 
@@ -71,7 +89,7 @@ export function ingestTranscriptEvents(
       const grown = grownSpokenRow(events, event);
       if (!grown) continue;
       events = replaceChunkedSequenceAt(events, grown.index, grown.merged);
-      indexes = replaceIndexedEvent(indexes, grown.existing, grown.merged);
+      indexes = replaceIndexedEvent(indexes, grown.existing, grown.merged, writableIndexes);
       recordChange(grown.index);
       estimatedCost = estimateReplacedTranscriptEventCost(
         estimatedCost,
@@ -99,7 +117,7 @@ export function ingestTranscriptEvents(
               event.forkPointId,
             );
       events = replaceChunkedSequenceAt(events, textTarget.index, merged);
-      indexes = replaceIndexedEvent(indexes, textTarget.previous, merged);
+      indexes = replaceIndexedEvent(indexes, textTarget.previous, merged, writableIndexes);
       recordChange(textTarget.index);
       estimatedCost = estimateReplacedTranscriptEventCost(
         estimatedCost,
@@ -134,7 +152,7 @@ export function ingestTranscriptEvents(
       // A live-only snapshot becomes durable once the stored call joins it.
       if (!event.transient) delete mergedCall.transient;
       events = replaceChunkedSequenceAt(events, mergeTarget.index, mergedCall);
-      indexes = replaceIndexedEvent(indexes, mergeTarget.existing, mergedCall);
+      indexes = replaceIndexedEvent(indexes, mergeTarget.existing, mergedCall, writableIndexes);
       recordChange(mergeTarget.index);
       estimatedCost = estimateReplacedTranscriptEventCost(
         estimatedCost,
@@ -147,8 +165,8 @@ export function ingestTranscriptEvents(
     const changedIndex = events.length;
     events = replaceChunkedSequenceSuffix(events, changedIndex, [event]);
     recordChange(changedIndex);
-    eventIds = addEventId(eventIds, event.id);
-    indexes = appendIndexes(indexes, event, changedIndex);
+    eventIds = appendEventId(event.id);
+    indexes = appendIndexes(indexes, event, changedIndex, writableIndexes);
     estimatedCost = estimateAppendedTranscriptCost(estimatedCost, event);
   }
 
@@ -342,6 +360,7 @@ function appendIndexes(
   indexes: TranscriptIndexes,
   event: TranscriptEvent,
   eventIndex: number,
+  writable: WritableIndexMaps,
 ): TranscriptIndexes {
   const firstUserEvent = indexes.firstUserEvent ?? (event.author === 'user' ? event : undefined);
   const firstUserIndex =
@@ -351,7 +370,7 @@ function appendIndexes(
     isChildActivityEvent(event) &&
     isNewerActivity(event, latestActivityBySource.get(event.sourceSessionId))
   ) {
-    const updated = new Map(latestActivityBySource);
+    const updated = writable.latestActivityBySource();
     updated.set(event.sourceSessionId, event);
     latestActivityBySource = updated;
   }
@@ -359,20 +378,20 @@ function appendIndexes(
   if (isChildSpawnEvent(event)) {
     const key = childSpawnKey(event);
     const existing = childSpawns.get(key);
-    const updated = new Map(childSpawns);
+    const updated = writable.childSpawns();
     updated.set(key, existing ? mergeChildSessionSpawn(existing, event) : event);
     childSpawns = updated;
   }
   let toolCallIndexByUseId = indexes.toolCallIndexByUseId;
   if (event.kind === 'tool_call' && event.toolUseId) {
-    const updated = new Map(toolCallIndexByUseId);
+    const updated = writable.toolCallIndexByUseId();
     updated.set(toolCallIndexKey(event.sourceSessionId, event.toolUseId), eventIndex);
     toolCallIndexByUseId = updated;
   }
   let textIndexByMessageId = indexes.textIndexByMessageId;
   const messageKey = textMessageKey(event);
   if (messageKey) {
-    const updated = new Map(textIndexByMessageId);
+    const updated = writable.textIndexByMessageId();
     updated.set(messageKey, eventIndex);
     textIndexByMessageId = updated;
   }
@@ -393,6 +412,7 @@ function replaceIndexedEvent(
   indexes: TranscriptIndexes,
   previous: TranscriptEvent,
   next: TranscriptEvent,
+  writable: WritableIndexMaps,
 ): TranscriptIndexes {
   let latestActivityBySource = indexes.latestActivityBySource;
   const latestActivity = latestActivityBySource.get(previous.sourceSessionId);
@@ -400,7 +420,7 @@ function replaceIndexedEvent(
     latestActivity === previous ||
     (isChildActivityEvent(next) && isNewerActivity(next, latestActivity))
   ) {
-    const updated = new Map(latestActivityBySource);
+    const updated = writable.latestActivityBySource();
     if (isChildActivityEvent(next)) updated.set(next.sourceSessionId, next);
     else updated.delete(previous.sourceSessionId);
     latestActivityBySource = updated;
@@ -410,7 +430,7 @@ function replaceIndexedEvent(
   const previousKey = isChildSpawnEvent(previous) ? childSpawnKey(previous) : undefined;
   const nextKey = isChildSpawnEvent(next) ? childSpawnKey(next) : undefined;
   if (previousKey || nextKey) {
-    const updated = new Map(childSpawns);
+    const updated = writable.childSpawns();
     if (previousKey && previousKey !== nextKey) updated.delete(previousKey);
     if (nextKey) {
       const existing = updated.get(nextKey);
@@ -497,6 +517,23 @@ function addEventIds(index: EventIdIndex, events: readonly TranscriptEvent[]): E
     if (!hasEventId(next, event.id)) next = addEventId(next, event.id);
   }
   return next;
+}
+
+function batchEventIdIndex(index: EventIdIndex): (eventId: string) => EventIdIndex {
+  let buckets: (ReadonlySet<string> | undefined)[] | undefined;
+  const owned = new Map<number, Set<string>>();
+  return (eventId) => {
+    buckets ??= index.buckets.slice();
+    const bucketIndex = eventIdBucket(eventId);
+    let bucket = owned.get(bucketIndex);
+    if (!bucket) {
+      bucket = new Set(buckets[bucketIndex]);
+      owned.set(bucketIndex, bucket);
+      buckets[bucketIndex] = bucket;
+    }
+    bucket.add(eventId);
+    return { buckets };
+  };
 }
 
 function addEventId(index: EventIdIndex, eventId: string): EventIdIndex {
