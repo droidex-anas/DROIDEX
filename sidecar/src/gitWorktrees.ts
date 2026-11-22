@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { promisify } from 'node:util';
 
 import { childEnv } from './childEnv.js';
+import { isPathInside } from './usage/isPathInside.js';
 
 /* The git plumbing DROIDEX uses whenever it runs work in its own worktree:
    automation runs and project threads. Both keep the same shape,
@@ -88,10 +89,10 @@ export async function requireRealDirectoryPath(
   target: string,
   outsideMessage: string,
 ): Promise<void> {
-  const relativePath = relative(root, target);
-  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+  if (!isPathInside(root, target)) {
     throw new Error(outsideMessage);
   }
+  const relativePath = relative(root, target);
   let current = root;
   for (const segment of relativePath.split(sep)) {
     current = join(current, segment);

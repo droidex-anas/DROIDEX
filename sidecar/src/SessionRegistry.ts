@@ -7,6 +7,7 @@ import {
   type SessionListPage,
 } from './sessionListFilter.js';
 import { uniqueStrings } from './values.js';
+import { isPathInside } from './usage/isPathInside.js';
 
 export interface RegisteredSession {
   summary: SessionSummary;
@@ -495,6 +496,6 @@ function copyFeature(feature: BridgeFeature): BridgeFeature {
 
 function isInside(parent: string, candidate: string): boolean {
   if (!candidate || !isAbsolute(candidate)) return false;
-  const path = relative(parent, resolve(candidate));
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+  const path = resolve(candidate);
+  return path === parent || isPathInside(parent, path);
 }
