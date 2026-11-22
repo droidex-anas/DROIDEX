@@ -6,7 +6,13 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { branches, validBranchName } = require('./gitBranches.cjs');
-const { adoptTurnBaseline, diffFiles, fileDiff, markTurnStart } = require('./gitDiff.cjs');
+const {
+  adoptTurnBaseline,
+  diffFiles,
+  fileDiff,
+  markTurnStart,
+  workingTreeDiff,
+} = require('./gitDiff.cjs');
 const { matchRemote } = require('./gitEnvironment.cjs');
 const { isWithin, repoStatus } = require('./gitRepository.cjs');
 const {
@@ -56,6 +62,46 @@ const pathsOf = (res) => res.files.map((f) => f.path);
 
 test.after(async () => {
   await Promise.all(repos.map((dir) => fsp.rm(dir, { recursive: true, force: true })));
+});
+
+test('review preserves untracked paths that Git quotes', async () => {
+  const dir = await makeRepo();
+  await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+  await git(dir, ['config', 'core.quotePath', 'true']);
+  const names = ['café.ts', 'with\ttab.ts', 'plain.ts', 'with space.ts'];
+  for (const name of names) await write(dir, name, 'first\nsecond\n');
+
+  const review = await diffFiles(dir, { mode: 'uncommitted' });
+  assert.deepEqual(new Set(pathsOf(review)), new Set(names));
+  for (const file of review.files) {
+    assert.equal(file.additions, 2, file.path);
+    const patch = await fileDiff(dir, { mode: 'uncommitted', path: file.path });
+    assert.match(patch.diff, /\+first\n\+second/);
+  }
+});
+
+test('last_turn includes edited quoted untracked paths but excludes unchanged files', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'seed.txt', 'seed\n');
+  await commitAll(dir, 'init');
+  await git(dir, ['config', 'core.quotePath', 'true']);
+  for (const name of ['café.ts', 'with\ttab.ts', 'plain.ts', 'with space.ts']) {
+    await write(dir, name, 'before\n');
+  }
+  assert.equal((await markTurnStart(dir, 'quoted-session')).ok, true);
+  for (const name of ['café.ts', 'with\ttab.ts']) await write(dir, name, 'after\nextra\n');
+  const review = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'quoted-session' });
+  assert.deepEqual(new Set(pathsOf(review)), new Set(['café.ts', 'with\ttab.ts']));
+});
+
+test('workingTreeDiff exports a quoted untracked file as the only change', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'seed.txt', 'seed\n');
+  await commitAll(dir, 'init');
+  await git(dir, ['config', 'core.quotePath', 'true']);
+  assert.equal(await workingTreeDiff(dir), '');
+  await write(dir, 'café.ts', 'first\nsecond\n');
+  assert.match(await workingTreeDiff(dir), /\+first\n\+second/);
 });
 
 test('last_turn with a baseline lists the turn changes and hides preexisting untracked files', async () => {
