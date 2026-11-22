@@ -187,8 +187,8 @@ function compareEntries(a, b) {
  *
  * Returns folders-first, alphabetical entries capped at `options.cap`
  * (default 1000, hard-clamped to LISTING_CAP_MAX). Each entry carries its
- * name and kind. The payload
- * reports whether the cap truncated the result so the UI can warn the user.
+ * name and kind. The payload reports whether the cap truncated the result so
+ * the UI can warn the user.
  */
 async function listDirectory(rootDir, relativePath, options = {}) {
   const cap = clampCap(options.cap);
