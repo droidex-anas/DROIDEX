@@ -18,6 +18,7 @@ import { FileTypeIcon } from '../FileTypeIcon';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { FilePreviewPane } from './FilePreviewPane';
+import { navigateTree } from './treeNavigation';
 
 const FILE_TREE_ID = 'files-workspace-tree';
 
@@ -56,6 +57,9 @@ export function FilesWorkspace({
   const [authorization, setAuthorization] = useState({ root: '', accessToken: '' });
   const [authorizationAttempt, setAuthorizationAttempt] = useState(0);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [focusedPath, setFocusedPath] = useState<string>();
+  const treeRef = useRef<HTMLDivElement>(null);
+  const focusedRowRef = useRef<HTMLElement | null>(null);
   const rootVersionRef = useRef(0);
   const accessToken = authorization.root === root ? authorization.accessToken : '';
 
@@ -153,6 +157,38 @@ export function FilesWorkspace({
     return rows;
   }, [expanded, listings]);
 
+  const tabbablePath =
+    visible.find((entry) => entry.relative === focusedPath)?.relative ??
+    visible.find((entry) => entry.relative === selectedPath)?.relative ??
+    visible[0]?.relative;
+
+  const focusRow = (path: string) => {
+    const row = Array.from(
+      treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    ).find((element) => element.dataset.path === path);
+    row?.focus();
+  };
+
+  useLayoutEffect(() => {
+    const previous = focusedRowRef.current;
+    if (
+      treeCollapsed ||
+      !previous ||
+      previous.isConnected ||
+      document.activeElement !== document.body
+    )
+      return;
+    let ancestor = previous.dataset.path ?? '';
+    while (ancestor.includes('/')) {
+      ancestor = ancestor.slice(0, ancestor.lastIndexOf('/'));
+      if (visible.some((entry) => entry.relative === ancestor)) {
+        focusRow(ancestor);
+        return;
+      }
+    }
+    if (tabbablePath) focusRow(tabbablePath);
+  });
+
   const toggleDirectory = (relative: string) => {
     const willExpand = !expanded.has(relative);
     setExpanded((current) => {
@@ -212,9 +248,35 @@ export function FilesWorkspace({
           <HeaderButton label="Refresh files" icon={RefreshCw} onClick={refresh} />
         </header>
         <div
+          ref={treeRef}
           className="min-h-0 flex-1 overflow-auto px-1 pb-1"
           role="tree"
           aria-label="Session files"
+          onFocus={(event) => {
+            const row = event.target.closest<HTMLElement>('[role="treeitem"]');
+            if (row) {
+              focusedRowRef.current = row;
+              setFocusedPath(row.dataset.path);
+            }
+          }}
+          onBlur={(event) => {
+            if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+              focusedRowRef.current = null;
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            const path =
+              event.target instanceof HTMLElement
+                ? event.target.closest<HTMLElement>('[role="treeitem"]')?.dataset.path
+                : undefined;
+            if (!path) return;
+            const action = navigateTree(visible, path, expanded, event.key);
+            if (!action) return;
+            event.preventDefault();
+            if (action.type === 'toggle') toggleDirectory(action.path);
+            else focusRow(action.path);
+          }}
         >
           {!rootListing && !errors[''] && (
             <div className="flex items-center gap-2 px-2 py-3 text-body text-muted">
@@ -231,7 +293,9 @@ export function FilesWorkspace({
               expanded={expanded.has(entry.relative)}
               loading={loading.has(entry.relative)}
               error={errors[entry.relative]}
+              tabIndex={entry.relative === tabbablePath ? 0 : -1}
               onClick={() => {
+                setFocusedPath(entry.relative);
                 if (entry.kind === 'directory') toggleDirectory(entry.relative);
                 else onSelectPath(entry.relative);
               }}
@@ -348,6 +412,7 @@ function FileTreeRow({
   expanded,
   loading,
   error,
+  tabIndex,
   onClick,
 }: {
   entry: VisibleEntry;
@@ -355,6 +420,7 @@ function FileTreeRow({
   expanded: boolean;
   loading: boolean;
   error?: string;
+  tabIndex: number;
   onClick: () => void;
 }) {
   const chevron =
@@ -370,6 +436,9 @@ function FileTreeRow({
       <button
         type="button"
         role="treeitem"
+        data-path={entry.relative}
+        tabIndex={tabIndex}
+        aria-level={entry.depth + 1}
         aria-selected={selected}
         aria-expanded={entry.kind === 'directory' ? expanded : undefined}
         onClick={onClick}
