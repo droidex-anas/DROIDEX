@@ -162,7 +162,7 @@ export function loadSessionPage(
   cursor?: string,
   limit = 200,
 ): HistoryPage {
-  const path = sessionIndex().get(providerSessionId);
+  const path = buildSessionIndex().get(providerSessionId);
   if (!path) throw new Error(`Session history not found for ${providerSessionId}`);
   const role = roleFromSessionStart(readSessionStart(path, statSync(path).size));
   const all = parseFullSessionTranscript(appSessionId, providerSessionId, path, role);
@@ -176,11 +176,11 @@ export function loadSessionPage(
 }
 
 export function sessionFilePath(providerSessionId: string): string | undefined {
-  return sessionIndex().get(providerSessionId);
+  return buildSessionIndex().get(providerSessionId);
 }
 
 export function sessionOrganizationId(providerSessionId: string): string | undefined {
-  const path = sessionIndex().get(providerSessionId);
+  const path = buildSessionIndex().get(providerSessionId);
   if (!path) return undefined;
   try {
     return readSessionStart(path, statSync(path).size).organizationId;
@@ -523,7 +523,7 @@ export function resolveSessionChain(appSessionId: string, providerSessionId: str
   const patches = readStoredSummaryPatches();
   const patch = patches.get(appSessionId) ?? patches.get(providerSessionId);
   const currentSession = patch?.providerSessionId ?? providerSessionId;
-  const sessionFiles = sessionIndex();
+  const sessionFiles = buildSessionIndex();
   const compactedFrom = patch?.compactedFromProviderSessionIds ?? [];
   return dedupeStrings([appSessionId, ...compactedFrom, currentSession]).filter((id) =>
     sessionFiles.has(id),
@@ -757,10 +757,6 @@ export function invalidateSessionIndex(): void {
 function buildSessionIndex(): Map<string, string> {
   sessionIndexMemo ??= new Map();
   return sessionIndexMemo;
-}
-
-function sessionIndex(): Map<string, string> {
-  return buildSessionIndex();
 }
 
 // Builds the base summary and launch settings for one on-disk session file

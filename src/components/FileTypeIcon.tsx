@@ -26,7 +26,7 @@ import {
 import type { AriaAttributes } from 'react';
 import { resolveFilePresentation, type FilePresentationKind } from '../lib/filePresentation';
 
-export interface FileTypeIconProps extends Pick<AriaAttributes, 'aria-hidden' | 'aria-label'> {
+interface FileTypeIconProps extends Pick<AriaAttributes, 'aria-hidden' | 'aria-label'> {
   filename: string;
   isDirectory?: boolean;
   expanded?: boolean;

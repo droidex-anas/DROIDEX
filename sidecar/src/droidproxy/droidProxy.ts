@@ -94,16 +94,12 @@ function providerKeyForAuthType(type: string): DroidProxyProviderKey | undefined
   }
 }
 
-function home(): string {
-  return homedir();
-}
-
 function authDir(): string {
-  return join(home(), '.cli-proxy-api');
+  return join(homedir(), '.cli-proxy-api');
 }
 
 function droidProxyDir(): string {
-  return join(home(), '.droidproxy');
+  return join(homedir(), '.droidproxy');
 }
 
 // Only metadata crosses the bridge: email/login, expiry, disabled. Tokens and
@@ -297,7 +293,7 @@ async function readMetaContributorMode(): Promise<boolean> {
 export function droidProxyAppPath(): string | undefined {
   const candidates = [
     '/Applications/DroidProxy.app',
-    join(home(), 'Applications', 'DroidProxy.app'),
+    join(homedir(), 'Applications', 'DroidProxy.app'),
   ];
   return candidates.find((path) => existsSync(path));
 }

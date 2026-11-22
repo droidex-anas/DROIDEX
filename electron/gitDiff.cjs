@@ -240,10 +240,6 @@ function parseRawZ(out) {
   return rows;
 }
 
-async function untrackedFileList(root) {
-  return scanUntracked(root);
-}
-
 // Resolve a review scope to the `git diff` arguments, the base ref it compares
 // against, and whether untracked working-tree files should be folded in.
 async function scopeRange(root, scope, appSessionId) {
@@ -316,7 +312,7 @@ async function diffFiles(dir, options = {}) {
   const identities = new Map(rows.map((row) => [row.path, row.identity]));
   const files = parseDiffFileList(numstat, rows);
   if (includeUntracked) {
-    for (const u of await untrackedFileList(root)) {
+    for (const u of await scanUntracked(root)) {
       if (priorUntracked) {
         const priorSig = priorUntracked.get(u.path);
         // Hide files that predate the turn only when byte-for-byte unchanged;

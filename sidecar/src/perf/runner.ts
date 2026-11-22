@@ -313,7 +313,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
       environment: {
         node: process.version,
         platform: `${process.platform}/${process.arch}`,
-        cpus: availableParallelism(),
+        cpus: osAvailableParallelism(),
       },
     };
   }
@@ -444,10 +444,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function availableParallelism(): number {
-  return osAvailableParallelism();
 }
 
 function stubMcpResource(): { start(): Promise<McpServerConfig>; close(): Promise<void> } {
