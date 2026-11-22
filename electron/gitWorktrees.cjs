@@ -54,10 +54,9 @@ async function worktrees(dir) {
       const out = await run(root, ['worktree', 'list', '--porcelain', '-z']);
       return parseWorktrees(out, root, '\0');
     } catch (error) {
-      if (error.code !== 129 || !/unknown (?:option|switch) [`']z'/.test(error.message))
-        throw error;
+      if (error.code !== 129 || !/unknown (?:option|switch) [`']z'/.test(error.message)) return [];
       // Git < 2.36 does not support NUL-framed worktree listings.
-      const out = await run(root, ['worktree', 'list', '--porcelain']);
+      const out = await tryRun(root, ['worktree', 'list', '--porcelain']);
       return parseWorktrees(out, root, '\n');
     }
   });

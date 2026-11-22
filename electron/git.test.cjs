@@ -268,7 +268,7 @@ test('worktree listing preserves paths and detached and locked states', async ()
 });
 
 test(
-  'worktree listing supports old Git without hiding other failures',
+  'worktree listing supports old Git and returns no entries on failure',
   {
     skip: process.platform === 'win32',
   },
@@ -317,8 +317,8 @@ process.exit(result.status ?? 1);
           { path: target, isMain: false, isCurrent: false },
         ],
       );
-      await assert.rejects(worktrees(denied), /permission denied/);
-      await assert.rejects(worktrees(unrelated), /unknown option 'other'/);
+      assert.deepEqual(await worktrees(denied), []);
+      assert.deepEqual(await worktrees(unrelated), []);
     } finally {
       process.env.PATH = originalPath;
     }
