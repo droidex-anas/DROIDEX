@@ -132,44 +132,58 @@ test('Refresh replaces stale text with read failures and empty files', async ({ 
   await expect(page.getByText('Loading preview…', { exact: true })).toHaveCount(0);
 });
 
-test('a pending preview refresh cannot replace another file or root', async ({ page }) => {
-  const emit = await openFiles(page, {
-    '/repo': { '': { 'notes.txt': 'file', 'other.txt': 'file' } },
-    '/other': { '': { 'other.txt': 'file' } },
-  });
-  const disk = await page.evaluateHandle(() => {
-    const disk = { hold: false, reads: 0, release: () => {} };
-    Object.assign(window.droidex, {
-      filesPreview: async (root: string, relative: string) => {
-        disk.reads += 1;
-        if (disk.hold) {
-          disk.hold = false;
-          await new Promise<void>((resolve) => {
-            disk.release = resolve;
-          });
-        }
-        return {
-          category: 'text',
-          previewable: true,
-          text: `${root}/${relative}`,
-          totalSize: 20,
-          sizeCapBytes: 250_000,
-        };
-      },
+for (const target of ['file', 'root'] as const) {
+  test(`a settled stale preview cannot replace another ${target}`, async ({ page }) => {
+    const emit = await openFiles(page, {
+      '/repo': { '': { 'notes.txt': 'file', 'other.txt': 'file' } },
+      '/other': { '': { 'other.txt': 'file' } },
     });
-    return disk;
-  });
-  const tree = await showFiles(page, 'repo-chat');
-  await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
-  await expect(page.getByText('/repo/notes.txt', { exact: true })).toBeVisible();
-  for (const switchRoot of [false, true]) {
+    const disk = await page.evaluateHandle((target) => {
+      const disk = { hold: false, reads: 0, release: async () => {} };
+      Object.assign(window.droidex, {
+        filesPreview: (root: string, relative: string) => {
+          disk.reads += 1;
+          const held = disk.hold;
+          disk.hold = false;
+          let resume = () => {};
+          const gate = held
+            ? new Promise<void>((resolve) => {
+                resume = resolve;
+              })
+            : Promise.resolve();
+          const response = gate.then(() => {
+            return {
+              category: 'text',
+              previewable: true,
+              text: held ? `Stale ${target} refresh` : `${root}/${relative}`,
+              totalSize: 20,
+              sizeCapBytes: 250_000,
+            };
+          });
+          if (held)
+            disk.release = async () => {
+              resume();
+              await response;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+              );
+            };
+          return response;
+        },
+      });
+      return disk;
+    }, target);
+    const tree = await showFiles(page, 'repo-chat');
+    await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+    await expect(page.getByText('/repo/notes.txt', { exact: true })).toBeVisible();
     const reads = await disk.evaluate((disk) => {
       disk.hold = true;
       return disk.reads;
     });
     await refresh(page);
     await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
-    if (switchRoot) {
+    if (target === 'root') {
       emit({
         type: 'session.updated',
         session: sessionSummary('repo-chat', { cwd: '/other', updatedAt: 9 }),
@@ -177,13 +191,14 @@ test('a pending preview refresh cannot replace another file or root', async ({ p
     } else {
       await tree.getByRole('treeitem', { name: 'other.txt' }).click();
     }
-    const text = switchRoot ? '/other/other.txt' : '/repo/other.txt';
+    const text = target === 'root' ? '/other/other.txt' : '/repo/other.txt';
+    if (target === 'root') await tree.getByRole('treeitem', { name: 'other.txt' }).click();
     await expect(page.getByText(text, { exact: true })).toBeVisible();
     await disk.evaluate((disk) => disk.release());
     await expect(page.getByText(text, { exact: true })).toBeVisible();
-    await expect(page.getByText('/repo/notes.txt', { exact: true })).toHaveCount(0);
-  }
-});
+    await expect(page.getByText(`Stale ${target} refresh`, { exact: true })).toHaveCount(0);
+  });
+}
 
 test('Refresh reloads expanded folders and keeps them open', async ({ page }) => {
   await openFiles(page, {
