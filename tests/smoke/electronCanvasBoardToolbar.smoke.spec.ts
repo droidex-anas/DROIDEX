@@ -75,6 +75,7 @@ test('the toolbar renames a frame, switches its version and opens its source', a
 test('versions read after the menu opens highlight the version on show', async ({ page }) => {
   await openBoard(page);
   await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect.poll(() => page.evaluate(() => window.boardHarness.historyReads)).toEqual(['a']);
   await page.evaluate(() => window.boardHarness.answerHistory(0));
   const chip = page
     .getByRole('toolbar', { name: 'Design A actions' })
@@ -102,18 +103,27 @@ test('a menu closed during its select blink highlights the version on show when 
 }) => {
   await openBoard(page);
   await page.evaluate(() => window.boardHarness.select(['a']));
+  await expect.poll(() => page.evaluate(() => window.boardHarness.historyReads)).toEqual(['a']);
   await page.evaluate(() => window.boardHarness.answerHistory(0));
   const chip = page
     .getByRole('toolbar', { name: 'Design A actions' })
     .getByRole('button', { name: /^Versions of Design A/ });
   const menu = page.getByRole('menu', { name: 'Versions of Design A' });
   await chip.click();
-  await menu.getByRole('menuitemradio', { name: /^v1/ }).click();
+  const v1 = menu.getByRole('menuitemradio', { name: /^v1/ });
+  await v1.click();
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
+  await page.clock.runFor(125);
 
   await chip.click();
-  await expect(menu.getByRole('menuitemradio', { name: /^v2/ })).toBeFocused();
+  const v2 = menu.getByRole('menuitemradio', { name: /^v2/ });
+  await expect(v2).toBeFocused();
+  // The cut-short blink ends during this one and must leave it in charge.
+  await v2.click();
+  await page.clock.runFor(60);
+  await v1.hover();
+  await expect(menu).toBeFocused();
 });
 
 test('a rename saves over a build that landed meanwhile, but not over another rename', async ({
