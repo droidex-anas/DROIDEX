@@ -22,8 +22,12 @@ export function ArchivedChatsSettings() {
     shallowEqual,
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  // `from` names the row whose action moved focus, so a repeated target still
+  // gets a fresh key and its autoFocus fires again.
   const [focusTarget, setFocusTarget] = useState<
-    { kind: 'row'; appSessionId: string } | { kind: 'empty' } | null
+    | { kind: 'row'; appSessionId: string; control: 'restore' | 'delete'; from: string }
+    | { kind: 'empty' }
+    | null
   >(null);
   const focusEmptyState = useCallback(
     (node: HTMLDivElement | null) => {
@@ -33,6 +37,24 @@ export function ArchivedChatsSettings() {
   );
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
+
+  const focusNeighborOfRemoved = (
+    index: number,
+    removedId: string,
+    control: 'restore' | 'delete',
+  ) => {
+    const neighbor = rows.at(index + 1) ?? (index > 0 ? rows.at(index - 1) : undefined);
+    setFocusTarget(
+      neighbor
+        ? {
+            kind: 'row',
+            appSessionId: neighbor.session.appSessionId,
+            control,
+            from: removedId,
+          }
+        : { kind: 'empty' },
+    );
+  };
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -48,8 +70,10 @@ export function ArchivedChatsSettings() {
         <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
           {rows.map(({ session, archivedAt }, index) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
-            const shouldFocusRow =
-              focusTarget?.kind === 'row' && focusTarget.appSessionId === session.appSessionId;
+            const rowFocus =
+              focusTarget?.kind === 'row' && focusTarget.appSessionId === session.appSessionId
+                ? focusTarget
+                : null;
             return (
               <div
                 key={session.appSessionId}
@@ -63,7 +87,7 @@ export function ArchivedChatsSettings() {
                     {session.cwd ? ` · ${workspaceName(session.cwd)}` : ''}
                   </div>
                 </div>
-                {/* Distinct keys force a remount so the trash button's autoFocus fires. */}
+                {/* Distinct keys force a remount so the targeted button's autoFocus fires. */}
                 {confirmingDelete === session.appSessionId ? (
                   <div key="confirmation" className="flex shrink-0 items-center gap-2">
                     <span aria-live="polite" className="text-caption text-danger">
@@ -73,13 +97,7 @@ export function ArchivedChatsSettings() {
                       variant="danger"
                       size="sm"
                       onClick={() => {
-                        const neighbor =
-                          rows.at(index + 1) ?? (index > 0 ? rows.at(index - 1) : undefined);
-                        setFocusTarget(
-                          neighbor
-                            ? { kind: 'row', appSessionId: neighbor.session.appSessionId }
-                            : { kind: 'empty' },
-                        );
+                        focusNeighborOfRemoved(index, session.appSessionId, 'delete');
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
@@ -93,7 +111,12 @@ export function ArchivedChatsSettings() {
                       // focus the safe action to keep keyboard users in place.
                       autoFocus
                       onClick={() => {
-                        setFocusTarget({ kind: 'row', appSessionId: session.appSessionId });
+                        setFocusTarget({
+                          kind: 'row',
+                          appSessionId: session.appSessionId,
+                          control: 'delete',
+                          from: session.appSessionId,
+                        });
                         setConfirmingDelete(null);
                       }}
                     >
@@ -102,7 +125,7 @@ export function ArchivedChatsSettings() {
                   </div>
                 ) : (
                   <div
-                    key={shouldFocusRow ? 'focused-actions' : 'actions'}
+                    key={rowFocus ? `focus-${rowFocus.control}-from-${rowFocus.from}` : 'actions'}
                     className="flex shrink-0 items-center gap-1"
                   >
                     <Button
@@ -111,9 +134,11 @@ export function ArchivedChatsSettings() {
                       icon={ArchiveRestore}
                       title="Restore to sidebar"
                       aria-label={`Restore ${title}`}
+                      autoFocus={rowFocus?.control === 'restore'}
                       onClick={() => {
-                        setFocusTarget(null);
+                        focusNeighborOfRemoved(index, session.appSessionId, 'restore');
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
+                        setConfirmingDelete(null);
                       }}
                     />
                     <Button
@@ -122,7 +147,7 @@ export function ArchivedChatsSettings() {
                       icon={Trash}
                       title="Delete permanently"
                       aria-label={`Delete ${title} permanently`}
-                      autoFocus={shouldFocusRow}
+                      autoFocus={rowFocus?.control === 'delete'}
                       onClick={() => {
                         setFocusTarget(null);
                         setConfirmingDelete(session.appSessionId);
