@@ -5,6 +5,7 @@ import React, { createElement, type ComponentType } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Virtualizer } from '@tanstack/virtual-core';
 
+import { measureChildPreviews } from './perfAbChildPreviewProbe';
 import { measureSidecarStartup } from './perfAbSidecarStartupProbe';
 import { measureTerminalFlood } from './perfAbTerminalProbe';
 
@@ -42,6 +43,7 @@ export async function runAbProbes(treeRoot: string): Promise<AbProbeResult> {
   await capture(notes, metrics, 'mounted rows', () => measureMountedRows(treeRoot, HISTORY_10K));
   await capture(notes, metrics, 'feed projection', async () => measureFeedProjection(treeRoot));
   await capture(notes, metrics, 'markdown', () => measureMarkdown(treeRoot));
+  await capture(notes, metrics, 'child previews', () => measureChildPreviews(treeRoot));
   await capture(notes, metrics, 'terminal flood', () => measureTerminalFlood(treeRoot));
   await capture(notes, metrics, 'sidecar startup', () => measureSidecarStartup(treeRoot));
 
