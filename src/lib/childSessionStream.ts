@@ -5,6 +5,7 @@ import type {
   TranscriptEvent,
 } from '@droidex/protocol';
 import { childSessionKey, childSessionLatest, type ChildSessionActivity } from './childSessions';
+import { lastLines } from './textTail';
 
 export const CHILD_STREAM_PREVIEW_MAX_LINES = 3;
 export const CHILD_STREAM_PREVIEW_MAX_CHARS = 280;
@@ -38,15 +39,10 @@ export interface ChildStreamSnapshot {
   live: boolean;
 }
 
-export function boundChildStreamPreview(
-  text: string,
-  maxLines = CHILD_STREAM_PREVIEW_MAX_LINES,
-  maxChars = CHILD_STREAM_PREVIEW_MAX_CHARS,
-): string {
+export function boundChildStreamPreview(text: string): string {
   if (!text) return '';
-  const lines = text.replace(/\s+$/u, '').split('\n');
-  const tail = lines.slice(-Math.max(1, maxLines));
-  const perLine = Math.max(32, Math.floor(maxChars / Math.max(tail.length, 1)));
+  const tail = lastLines(text.trimEnd(), CHILD_STREAM_PREVIEW_MAX_LINES);
+  const perLine = Math.max(32, Math.floor(CHILD_STREAM_PREVIEW_MAX_CHARS / tail.length));
   return tail
     .map((line) => (line.length <= perLine ? line : line.slice(line.length - perLine)))
     .join('\n');

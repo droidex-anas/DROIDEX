@@ -61,6 +61,19 @@ export const METRIC_CATALOG: readonly MetricDefinition[] = [
     availability: 'Both refs export src/components/Markdown.tsx and render with react-markdown.',
   },
   {
+    id: 'childPreview.unchangedProjectionMs',
+    class: 'ab',
+    unit: 'ms',
+    availability:
+      'Both refs export projectChildStreamSnapshots from src/lib/childSessionStream.ts.',
+  },
+  {
+    id: 'childPreview.unchangedOneLineProjectionMs',
+    class: 'ab',
+    unit: 'ms',
+    availability: 'Same production projector as childPreview.unchangedProjectionMs.',
+  },
+  {
     id: 'terminal.deliveriesPerFlood',
     class: 'ab',
     unit: 'messages',
