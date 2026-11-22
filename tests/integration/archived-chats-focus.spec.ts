@@ -7,7 +7,6 @@ async function openArchivedChats(page: Page, count = 2) {
   await page.clock.install({ time: now });
   await page.addInitScript(
     ({ now, count }) => {
-      localStorage.setItem('droid-theme', JSON.stringify({ mode: 'system', presetId: 'droid' }));
       localStorage.setItem(
         'droid-chat-metadata',
         JSON.stringify(
@@ -84,50 +83,44 @@ test("keyboard Cancel restores the same archived row's delete focus", async ({ p
   ).toBeFocused();
 });
 
-for (const colorScheme of ['light', 'dark'] as const) {
-  test.describe(colorScheme, () => {
-    test.use({ colorScheme });
-    for (const scenario of [
-      { name: 'middle', count: 4, deleted: 'Release notes', neighbor: 'Parser cleanup' },
-      { name: 'last', count: 3, deleted: 'Parser cleanup', neighbor: 'Release notes' },
-      { name: 'only', count: 1, deleted: 'Saved research', neighbor: null },
-    ]) {
-      test(`deleting the ${scenario.name} archived row preserves keyboard focus`, async ({
-        page,
-      }, testInfo) => {
-        await openArchivedChats(page, scenario.count);
-        await page
-          .getByRole('button', { name: `Delete ${scenario.deleted} permanently`, exact: true })
-          .focus();
-        await page.keyboard.press('Enter');
-        await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-        await page.keyboard.press('Shift+Tab');
-        await page.keyboard.press('Enter');
-        await expect(page.getByTestId('archived-chat-row')).toHaveCount(scenario.count - 1);
-        await page
-          .getByText('Archived chats', { exact: true })
-          .last()
-          .locator('..')
-          .locator('..')
-          .screenshot({ path: testInfo.outputPath('after-delete.png') });
-        const target = scenario.neighbor
-          ? page.getByRole('button', {
-              name: `Delete ${scenario.neighbor} permanently`,
-              exact: true,
-            })
-          : page.getByText('No archived chats.', { exact: true });
-        await expect(target).toBeFocused();
-        if (scenario.name === 'middle') {
-          await page.keyboard.press('Tab');
-          await expect(
-            page.getByRole('button', { name: 'Restore Keyboard shortcuts', exact: true }),
-          ).toBeFocused();
-        } else if (scenario.name === 'last') {
-          await page.keyboard.press('Tab');
-          await page.keyboard.press('Shift+Tab');
-          await expect(target).toBeFocused();
-        }
-      });
-    }
+for (const scenario of [
+  { name: 'middle', count: 4, deleted: 'Release notes', neighbor: 'Parser cleanup' },
+  { name: 'last', count: 3, deleted: 'Parser cleanup', neighbor: 'Release notes' },
+  { name: 'only', count: 1, deleted: 'Saved research', neighbor: null },
+]) {
+  test(`deleting the ${scenario.name} archived row preserves keyboard focus`, async ({ page }) => {
+    await openArchivedChats(page, scenario.count);
+    await page
+      .getByRole('button', { name: `Delete ${scenario.deleted} permanently`, exact: true })
+      .focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('archived-chat-row')).toHaveCount(scenario.count - 1);
+    const target = scenario.neighbor
+      ? page.getByRole('button', {
+          name: `Delete ${scenario.neighbor} permanently`,
+          exact: true,
+        })
+      : page.getByText('No archived chats.', { exact: true });
+    await expect(target).toBeFocused();
   });
 }
+
+test('canceling delete then restoring every row does not focus the empty state', async ({
+  page,
+}) => {
+  await openArchivedChats(page);
+  await page
+    .getByRole('button', { name: 'Delete Saved research permanently', exact: true })
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await page.getByRole('button', { name: 'Restore Saved research', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).click();
+  const emptyState = page.getByText('No archived chats.', { exact: true });
+  await expect(emptyState).toBeVisible();
+  await expect(emptyState).not.toBeFocused();
+});

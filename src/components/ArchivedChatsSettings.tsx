@@ -23,11 +23,12 @@ export function ArchivedChatsSettings() {
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const [returnFocusTo, setReturnFocusTo] = useState<string | null>(null);
+  const [shouldFocusEmptyState, setShouldFocusEmptyState] = useState(false);
   const focusEmptyState = useCallback(
     (node: HTMLParagraphElement | null) => {
-      if (returnFocusTo) node?.focus();
+      if (shouldFocusEmptyState) node?.focus();
     },
-    [returnFocusTo],
+    [shouldFocusEmptyState],
   );
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
@@ -71,9 +72,9 @@ export function ArchivedChatsSettings() {
                       variant="danger"
                       size="sm"
                       onClick={() => {
-                        const neighbor =
-                          rows.at(index + 1) ?? (index > 0 ? rows[index - 1] : undefined);
-                        setReturnFocusTo(neighbor?.session.appSessionId ?? session.appSessionId);
+                        const neighbor = rows[index + 1] ?? rows[index - 1];
+                        setReturnFocusTo(rows.length > 1 ? neighbor.session.appSessionId : null);
+                        setShouldFocusEmptyState(rows.length === 1);
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
