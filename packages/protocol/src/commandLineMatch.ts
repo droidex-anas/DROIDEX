@@ -1,8 +1,5 @@
-// Matches a configured command against a live process's full command line, on
-// whole tokens only — `npx -y mcp` must not match `npx -y mcp-other`. Mirrors
-// `src/lib/commandLineMatch.ts`; the sidecar builds separately and cannot
-// import from the renderer. Keep the two function bodies byte-for-byte
-// identical — edit both or neither.
+// Matches the command an agent typed against a live process's full command
+// line, on whole tokens only — `npm run dev` must not match `npm run dev:api`.
 export function commandLineContains(commandLine: string, needle: string): boolean {
   let from = 0;
   while (from <= commandLine.length) {
