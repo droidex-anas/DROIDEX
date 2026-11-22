@@ -12,6 +12,10 @@ import { numberValue, stringValue } from './values.js';
 
 const HISTORY_SCHEMA_VERSION = 5;
 type HistorySchemaVersion = 1 | 2 | 3 | 4 | 5;
+const APP_SESSIONS_PROVIDER_INDEX = `
+  CREATE INDEX IF NOT EXISTS app_sessions_provider_session_id
+    ON app_sessions (provider_session_id);
+`;
 
 export function ensureCanonicalHistorySchema(db: DatabaseSync): void {
   const row = db.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
@@ -37,6 +41,7 @@ export function ensureCanonicalHistorySchema(db: DatabaseSync): void {
   }
   if (version < HISTORY_SCHEMA_VERSION) addChatPreferenceColumns(db);
   if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
+  db.exec(APP_SESSIONS_PROVIDER_INDEX);
 }
 
 export function assertCanonicalHistorySchema(db: DatabaseSync): void {
@@ -90,6 +95,7 @@ function createSchema(db: DatabaseSync): void {
         max_context_tokens INTEGER,
         auto_compactions INTEGER
       );
+      ${APP_SESSIONS_PROVIDER_INDEX}
       CREATE TABLE IF NOT EXISTS child_sessions ${CHILD_SESSIONS_TABLE_SCHEMA};
       CREATE UNIQUE INDEX child_sessions_provider_identity
         ON child_sessions (parent_app_session_id, provider_session_id)
