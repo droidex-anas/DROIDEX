@@ -326,6 +326,11 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
       await expect(time).not.toHaveClass(/bg-danger-soft/);
     }
     await expect(editor.getByRole('alert')).toContainText('valid calendar date');
+    const alertId = await editor.getByRole('alert').getAttribute('id');
+    await expect(date).toHaveAttribute('aria-describedby', alertId ?? '');
+    await expect(editor.getByRole('alert').locator('xpath=following-sibling::*[1]')).toContainText(
+      'Time',
+    );
     await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
     await date.fill('2027-03-14');

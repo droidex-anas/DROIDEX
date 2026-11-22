@@ -60,6 +60,16 @@ export function ScheduleControls({
         date: 'Enter a valid calendar date (YYYY-MM-DD) before saving.',
         time: `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`,
       };
+      const dateError = invalidInput?.kind === 'date';
+      const timeError = invalidInput?.kind === 'time';
+      const errors: Partial<Record<InvalidScheduleInput['kind'], ReactNode>> = {};
+      if (invalidInput) {
+        errors[invalidInput.kind] = (
+          <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
+            {errorMessages[invalidInput.kind]}
+          </p>
+        );
+      }
       const updateInput = (input: ZonedInput) => {
         const runAt = epochFromZonedInput(input, timezone);
         onInvalidInputChange(runAt === null ? { kind: 'time', parts: input } : null);
@@ -72,11 +82,11 @@ export function ScheduleControls({
               errorId={invalidInput ? errorId : undefined}
               value={parts}
               minimum={minimumDate}
-              invalidText={invalidInput?.kind === 'date' ? invalidInput.text : undefined}
+              invalidText={dateError ? invalidInput.text : undefined}
               onInvalidChange={(text) => {
                 if (text !== null) {
                   onInvalidInputChange({ kind: 'date', parts, text });
-                } else if (invalidInput?.kind === 'date') {
+                } else if (dateError) {
                   onInvalidInputChange(
                     epochFromZonedInput(parts, timezone) === null ? { kind: 'time', parts } : null,
                   );
@@ -87,9 +97,10 @@ export function ScheduleControls({
               }}
             />
           </EditorRow>
+          {errors.date}
           <EditorRow label="Time">
             <AutomationTimeInput
-              errorId={invalidInput?.kind === 'time' ? errorId : undefined}
+              errorId={timeError ? errorId : undefined}
               value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
               onChange={(time) => {
                 const [hourText = '', minuteText = ''] = time.split(':');
@@ -98,7 +109,7 @@ export function ScheduleControls({
                   hour: clampNumber(hourText, 0, 23, parts.hour),
                   minute: clampNumber(minuteText, 0, 59, parts.minute),
                 };
-                if (invalidInput?.kind === 'date') {
+                if (dateError) {
                   onInvalidInputChange({ ...invalidInput, parts: input });
                 } else {
                   updateInput(input);
@@ -106,11 +117,7 @@ export function ScheduleControls({
               }}
             />
           </EditorRow>
-          {invalidInput && (
-            <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
-              {errorMessages[invalidInput.kind]}
-            </p>
-          )}
+          {errors.time}
         </>
       );
     }
