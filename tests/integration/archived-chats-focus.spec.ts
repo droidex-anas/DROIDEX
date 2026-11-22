@@ -74,16 +74,8 @@ for (const mode of ['light', 'dark'] as const) {
     await page.keyboard.press('Enter');
     await expect(trigger).toBeVisible();
     if (process.env.ARCHIVE_FOCUS_EVIDENCE) {
-      const bounds = await page.getByTestId('archived-chat-row').first().boundingBox();
-      if (!bounds) throw new Error('Archived row is not visible');
-      await page.screenshot({
+      await row.locator('..').screenshot({
         path: `${process.env.ARCHIVE_FOCUS_EVIDENCE}-${mode}.png`,
-        clip: {
-          x: bounds.x - 8,
-          y: bounds.y - 8,
-          width: bounds.width + 16,
-          height: bounds.height * 2 + 16,
-        },
       });
     }
     await expect(trigger).toBeFocused();
