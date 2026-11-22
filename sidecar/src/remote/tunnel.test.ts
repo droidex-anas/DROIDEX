@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { EventEmitter, once } from 'node:events';
 import { test } from 'node:test';
 import { SendBudget, Tunnel, type TunnelFrame } from '../../../packages/remote/src/tunnel';
 
 const UNLIMITED = { bytesPerSecond: Number.MAX_SAFE_INTEGER, framesPerSecond: 1_000_000 };
 
-function tunnelPair() {
+function tunnelPair(messageCount: number) {
   const received: unknown[] = [];
-  const failures: unknown[] = [];
+  const events = new EventEmitter();
+  const delivered = once(events, 'delivered');
+  const fail = (error: unknown) => events.emit('error', error);
   let unacked = 0;
   let maxUnacked = 0;
   let largestChunk = 0;
@@ -16,7 +19,7 @@ function tunnelPair() {
     setImmediate(() => {
       void target()
         .receive(JSON.parse(JSON.stringify(frame)))
-        .catch((error: unknown) => failures.push(error));
+        .catch(fail);
     });
     return Promise.resolve();
   };
@@ -29,8 +32,8 @@ function tunnelPair() {
       }
       return deliver(() => receiver, frame);
     },
-    deliver: () => failures.push(new Error('sender received a message')),
-    fail: (error) => failures.push(error),
+    deliver: () => fail(new Error('sender received a message')),
+    fail,
     budget: new SendBudget(UNLIMITED),
     maxReceiveChars: 1024,
   });
@@ -40,40 +43,40 @@ function tunnelPair() {
       if (frame.type === 'ack') acked = frame.seq;
       return deliver(() => sender, frame);
     },
-    deliver: (message) => received.push(message),
-    fail: (error) => failures.push(error),
+    deliver: (message) => {
+      received.push(message);
+      if (received.length === messageCount) events.emit('delivered');
+    },
+    fail,
     budget: new SendBudget(UNLIMITED),
     maxReceiveChars: 64 * 1024 * 1024,
   });
   return {
     sender,
     received,
-    failures,
+    delivered,
     stats: () => ({ maxUnacked, largestChunk }),
   };
 }
 
-async function settle(until: () => boolean): Promise<void> {
-  for (let turn = 0; turn < 10_000 && !until(); turn++) {
-    await new Promise<void>((resolve) => setImmediate(resolve));
-  }
-}
+test(
+  'tunnel delivers large and small messages in order within the chunk window',
+  { timeout: 10_000 },
+  async () => {
+    const { sender, received, delivered, stats } = tunnelPair(3);
+    const large = randomBytes(600_000).toString('base64');
+    sender.send({ n: 1 });
+    sender.send({ n: 2, large });
+    sender.send({ n: 3 });
 
-test('tunnel delivers large and small messages in order within the chunk window', async () => {
-  const { sender, received, failures, stats } = tunnelPair();
-  const large = randomBytes(600_000).toString('base64');
-  sender.send({ n: 1 });
-  sender.send({ n: 2, large });
-  sender.send({ n: 3 });
+    await delivered;
 
-  await settle(() => received.length === 3 || failures.length > 0);
-
-  assert.deepEqual(failures, []);
-  assert.deepEqual(received, [{ n: 1 }, { n: 2, large }, { n: 3 }]);
-  assert.ok(stats().maxUnacked <= 4, `window exceeded: ${String(stats().maxUnacked)}`);
-  assert.ok(stats().largestChunk <= 40_000);
-  assert.equal(sender.queuedChars, 0);
-});
+    assert.deepEqual(received, [{ n: 1 }, { n: 2, large }, { n: 3 }]);
+    assert.ok(stats().maxUnacked <= 4, `window exceeded: ${String(stats().maxUnacked)}`);
+    assert.ok(stats().largestChunk <= 40_000);
+    assert.equal(sender.queuedChars, 0);
+  },
+);
 
 test('tunnel rejects a frame that skips the sequence', async () => {
   const tunnel = new Tunnel({
