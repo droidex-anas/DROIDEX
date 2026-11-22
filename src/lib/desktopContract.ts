@@ -182,8 +182,6 @@ export interface DirectoryListing {
 export interface FilesEntry {
   name: string;
   kind: 'directory' | 'file';
-  size: number;
-  mtimeMs: number;
 }
 
 export interface FilesListing {
