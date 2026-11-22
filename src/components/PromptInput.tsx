@@ -54,7 +54,6 @@ import {
 } from '../lib/chatWorkspace';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { removeDesignMark, setDesignMarks, useDesignMarks } from './browser/designMarks';
-import { composePrompt, promptTextWithVisualize, runsAsCompactCommand } from '../lib/composePrompt';
 import { draftEffortFor, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
@@ -96,17 +95,14 @@ import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
-import {
-  submitComposerPrompt,
-  USAGE_COMMAND,
-  type SubmitMode,
-} from './composer/submitComposerPrompt';
+import { submitComposerPrompt, type SubmitMode } from './composer/submitComposerPrompt';
 import type { DraftMode } from './composer/submitDraftPrompt';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
 import ComposerMenu from './ComposerMenu';
 import { useComposerSlashCommands } from './composer/useComposerSlashCommands';
+import { useComposerPromptSchedule } from './composer/useComposerPromptSchedule';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
 import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';
@@ -135,8 +131,6 @@ import {
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
 import type { Autonomy, SkillInfo, ProviderMention } from '@droidex/protocol';
-import { feedbackDraftFromCommand } from '../lib/feedbackReport';
-import { sideChatPromptFromCommand } from '../lib/sideChats';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
 import { toast } from '../lib/toast';
@@ -368,11 +362,9 @@ export default function PromptInput({
   const modelControlsRef = useRef<HTMLDivElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
-  const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
   // Scheduling lives in the draft's right-click menu; its popover opens from the
   // send button, where the prompt would otherwise go.
   const scheduleAnchorRef = useRef<HTMLDivElement>(null);
-  const scheduleGeneration = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
   const [attachedFiles, setAttachedFilesState] = useState<string[]>([]);
@@ -688,15 +680,6 @@ export default function PromptInput({
     references.canvasKey,
     trigger?.kind === 'file',
   );
-
-  // Switching conversations abandons any schedule in progress; the bumped
-  // generation also stops an in-flight save from clearing the new draft.
-  useEffect(() => {
-    setScheduleTarget(null);
-    return () => {
-      scheduleGeneration.current += 1;
-    };
-  }, [visibleTargetKey]);
 
   useEffect(() => {
     if (
@@ -1227,87 +1210,57 @@ export default function PromptInput({
     return holdId;
   };
 
-  const schedulePrompt = async (runAt: number, timezone: string) => {
-    if (!activeSession || visibleTarget.kind !== 'primary') {
-      throw new Error('Open the conversation you want to continue.');
-    }
-    if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
-    const scheduledAppSessionId = activeSession.appSessionId;
-    const scheduledTargetKey = visibleTargetKey;
-    const generation = scheduleGeneration.current;
-    const revision = composerRevisionRef.current;
-    const intakeCutoff = nextIntakeSeqRef.current;
-    const text = promptTextWithVisualize(input.trim(), visualizeSelected);
-    const skills = activeSkills.map((skill) => skill.name);
-    const attachedPaths = stagedFilesInIntakeOrder();
-    // The generation moves in a target switch's passive effects; the key moves
-    // in its commit, before an awaited result can see the old target.
-    const stillTargeted = () =>
-      scheduleGeneration.current === generation &&
-      visibleTargetKeyRef.current === scheduledTargetKey;
-    submittingRef.current = true;
-    try {
-      const [images, documents, client, schedules] = await Promise.all([
-        imageAttachments.whenReady(intakeCutoff),
-        fileAttachments.whenReady(intakeCutoff),
-        import('../features/automations/client'),
-        import('../features/automations/schedule'),
-      ]);
-      if (!stillTargeted()) throw new Error('The conversation changed. Nothing was scheduled.');
-      const paths = pathsInSequence([...attachedPaths, ...documents, ...images]);
-      if (!text && skills.length === 0 && paths.length === 0) {
-        throw new Error('Write a prompt or add an attachment first.');
-      }
-      if (mentionsForRows(composerProvider, activeSkills).length > 0) {
-        throw new Error(
-          'Apps and plugins cannot be scheduled yet. Remove them, or send this prompt now.',
-        );
-      }
-      if (
-        input.trim() === USAGE_COMMAND ||
-        findFastCommand(input.trim()) !== undefined ||
-        runsAsCompactCommand(text, {
+  const primaryScheduleTarget =
+    activeSession && visibleTarget.kind === 'primary'
+      ? { appSessionId: activeSession.appSessionId }
+      : null;
+  const promptSchedule = useComposerPromptSchedule({
+    target: primaryScheduleTarget,
+    visibleTargetKey,
+    visibleTargetKeyRef,
+    beginSave: () => {
+      if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
+      const revision = composerRevisionRef.current;
+      const intakeCutoff = nextIntakeSeqRef.current;
+      const attachedPaths = stagedFilesInIntakeOrder();
+      submittingRef.current = true;
+      return {
+        draft: {
+          input,
           visualizeSelected,
-          skillCount: skills.length,
-          fileCount: paths.length,
-        }) ||
-        feedbackDraftFromCommand(text) ||
-        sideChatPromptFromCommand(text) !== null
-      ) {
-        throw new Error('App commands cannot be scheduled. Write a prompt for the agent instead.');
-      }
-      await client.createAutomation({
-        ...schedules.defaultAutomationDraft(null, null, null),
-        title: (input.trim() || skills[0] || 'Scheduled prompt').replace(/\s+/g, ' ').slice(0, 80),
-        prompt: composePrompt(text, skills, []),
-        files: paths,
-        target: { kind: 'existing-session', appSessionId: scheduledAppSessionId },
-        schedule: { kind: 'once', runAt },
-        timezone,
-      });
-      if (stillTargeted()) {
-        resetComposerAfterSubmit({
-          draftUntouched: composerRevisionRef.current === revision,
-          clearImages: () => {
-            imageAttachments.clearReady(intakeCutoff);
-            fileAttachments.clearReady(intakeCutoff);
-            setViewerImageId(null);
-            setViewerPath(null);
-          },
-          resetDraft: () => {
-            setInput('');
-            setHistoryIndex(null);
-            clearDraftSelections();
-            attachedFileSeqRef.current.clear();
-            setAttachedFiles([]);
-          },
-        });
-      }
-      toast.success('Prompt scheduled.');
-    } finally {
-      settleSubmit();
-    }
-  };
+          activeSkills,
+          provider: composerProvider,
+          isFastCommand: findFastCommand(input.trim()) !== undefined,
+        },
+        whenReady: async () => {
+          const [images, documents] = await Promise.all([
+            imageAttachments.whenReady(intakeCutoff),
+            fileAttachments.whenReady(intakeCutoff),
+          ]);
+          return pathsInSequence([...attachedPaths, ...documents, ...images]);
+        },
+        resetIfUntouched: () => {
+          resetComposerAfterSubmit({
+            draftUntouched: composerRevisionRef.current === revision,
+            clearImages: () => {
+              imageAttachments.clearReady(intakeCutoff);
+              fileAttachments.clearReady(intakeCutoff);
+              setViewerImageId(null);
+              setViewerPath(null);
+            },
+            resetDraft: () => {
+              setInput('');
+              setHistoryIndex(null);
+              clearDraftSelections();
+              attachedFileSeqRef.current.clear();
+              setAttachedFiles([]);
+            },
+          });
+        },
+        settle: settleSubmit,
+      };
+    },
+  });
 
   const queue: QueuedPrompt[] = state.promptQueue ?? [];
 
@@ -2248,22 +2201,16 @@ export default function PromptInput({
         onEdit={draftEditing.applyEdit}
         onClose={draftEditing.closeMenu}
         canSchedule={hasContent && !appUpdateInstalling}
-        onSchedule={
-          activeSession && visibleTarget.kind === 'primary'
-            ? () => {
-                setScheduleTarget({ appSessionId: activeSession.appSessionId });
-              }
-            : undefined
-        }
+        onSchedule={primaryScheduleTarget ? promptSchedule.open : undefined}
       />
-      {scheduleTarget &&
-        activeSession?.appSessionId === scheduleTarget.appSessionId &&
+      {promptSchedule.scheduleTarget &&
+        activeSession?.appSessionId === promptSchedule.scheduleTarget.appSessionId &&
         visibleTarget.kind === 'primary' && (
           <Suspense fallback={null}>
             <SchedulePromptPopover
               anchorRef={scheduleAnchorRef}
               sessionTitle={activeSession.title}
-              onSave={schedulePrompt}
+              onSave={promptSchedule.save}
               onClose={() => {
                 // Scheduling opens from the draft's menu, so a close from inside
                 // the panel (Escape, Close, Save) hands focus back to the draft;
@@ -2272,7 +2219,7 @@ export default function PromptInput({
                 if (focused instanceof Element && focused.closest('[role="dialog"]')) {
                   editorRef.current?.focus();
                 }
-                setScheduleTarget((current) => (current === scheduleTarget ? null : current));
+                promptSchedule.close();
               }}
             />
           </Suspense>
