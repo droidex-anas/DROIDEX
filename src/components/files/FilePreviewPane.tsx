@@ -20,13 +20,20 @@ const TEXT_CHAR_LIMIT = 250_000;
 interface FilePreviewPaneProps {
   accessToken: string;
   relative: string;
+  refreshGeneration?: number;
   onOpenExternal: () => void;
   onReveal: () => void;
 }
 
 type PreviewState =
   | { accessToken: string; relative: string; kind: 'error'; message: string }
-  | { accessToken: string; relative: string; kind: 'ready'; payload: FilePreviewPayload };
+  | {
+      accessToken: string;
+      relative: string;
+      kind: 'ready';
+      payload: FilePreviewPayload;
+      generation: number;
+    };
 
 export function normalizePreviewBytes(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
@@ -57,6 +64,7 @@ const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
 export function FilePreviewPane({
   accessToken,
   relative,
+  refreshGeneration = 0,
   onOpenExternal,
   onReveal,
 }: FilePreviewPaneProps) {
@@ -67,7 +75,14 @@ export function FilePreviewPane({
     let cancelled = false;
     readFilePreview(accessToken, relative)
       .then((payload) => {
-        if (!cancelled) setState({ accessToken, relative, kind: 'ready', payload });
+        if (!cancelled)
+          setState({
+            accessToken,
+            relative,
+            kind: 'ready',
+            payload,
+            generation: refreshGeneration,
+          });
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -82,7 +97,7 @@ export function FilePreviewPane({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, relative]);
+  }, [accessToken, relative, refreshGeneration]);
 
   if (!relative) {
     return (
@@ -123,7 +138,7 @@ export function FilePreviewPane({
   return (
     <PreviewFrame>
       <PreviewBody
-        key={relative}
+        key={JSON.stringify([accessToken, relative, current.generation])}
         payload={current.payload}
         fileName={pathFileName(relative)}
         onOpenExternal={onOpenExternal}

@@ -56,6 +56,7 @@ export function FilesWorkspace({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [authorization, setAuthorization] = useState({ root: '', accessToken: '' });
   const [authorizationAttempt, setAuthorizationAttempt] = useState(0);
+  const [previewRefresh, setPreviewRefresh] = useState(0);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [focusedPath, setFocusedPath] = useState<string>();
   const treeRef = useRef<HTMLDivElement>(null);
@@ -133,6 +134,7 @@ export function FilesWorkspace({
   // Reloads every open folder in place and drops the cached listings of
   // closed ones, so they load fresh when opened again.
   const refresh = () => {
+    setPreviewRefresh((generation) => generation + 1);
     if (!accessToken) {
       setAuthorizationAttempt((attempt) => attempt + 1);
       return;
@@ -400,6 +402,7 @@ export function FilesWorkspace({
         <FilePreviewPane
           accessToken={accessToken}
           relative={relative}
+          refreshGeneration={previewRefresh}
           onOpenExternal={handleOpenExternal}
           onReveal={handleReveal}
         />
