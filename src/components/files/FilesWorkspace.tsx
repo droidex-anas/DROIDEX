@@ -54,6 +54,7 @@ export function FilesWorkspace({
   const [loading, setLoading] = useState<Set<string>>(() => new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [authorization, setAuthorization] = useState({ root: '', accessToken: '' });
+  const [authorizationAttempt, setAuthorizationAttempt] = useState(0);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const rootVersionRef = useRef(0);
   const accessToken = authorization.root === root ? authorization.accessToken : '';
@@ -105,13 +106,14 @@ export function FilesWorkspace({
       setErrors({ '': 'This session has no workspace folder.' });
       return;
     }
+    // The token is kept even when the first listing fails, so Refresh can retry it.
     void authorizeFilesRoot(root)
-      .then(async (token) => ({ token, listing: await listDirectory(token, '') }))
-      .then(({ token, listing }) => {
-        if (!cancelled) {
-          setAuthorization({ root, accessToken: token });
-          setListings({ '': listing });
-        }
+      .then((token) => {
+        if (cancelled) return;
+        setAuthorization({ root, accessToken: token });
+        return listDirectory(token, '').then((listing) => {
+          if (!cancelled) setListings({ '': listing });
+        });
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -121,7 +123,20 @@ export function FilesWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [root]);
+  }, [root, authorizationAttempt]);
+
+  // Reloads every open folder in place and drops the cached listings of
+  // closed ones, so they load fresh when opened again.
+  const refresh = () => {
+    if (!accessToken) {
+      setAuthorizationAttempt((attempt) => attempt + 1);
+      return;
+    }
+    setListings((current) =>
+      Object.fromEntries(Object.entries(current).filter(([key]) => expanded.has(key))),
+    );
+    for (const key of expanded) void load(key, true);
+  };
 
   const visible = useMemo(() => {
     const rows: VisibleEntry[] = [];
@@ -194,11 +209,7 @@ export function FilesWorkspace({
           <span className="min-w-0 flex-1 truncate text-label text-secondary" title={root}>
             {rootName}
           </span>
-          <HeaderButton
-            label="Refresh files"
-            icon={RefreshCw}
-            onClick={() => void load('', true)}
-          />
+          <HeaderButton label="Refresh files" icon={RefreshCw} onClick={refresh} />
         </header>
         <div
           className="min-h-0 flex-1 overflow-auto px-1 pb-1"
