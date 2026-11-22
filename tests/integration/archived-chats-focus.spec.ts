@@ -146,6 +146,20 @@ test('restoring two rows in turn toward the same neighbor keeps keyboard focus',
   await expect(neighbor).toBeFocused();
 });
 
+test('restoring toward a row with an open delete confirmation keeps keyboard focus', async ({
+  page,
+}) => {
+  await openArchivedChats(page, 3);
+  await page
+    .getByRole('button', { name: 'Delete Parser cleanup permanently', exact: true })
+    .click();
+  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }),
+  ).toBeFocused();
+});
+
 test('an emptying delete does not pull focus from rows restored after new ones arrive', async ({
   page,
 }) => {

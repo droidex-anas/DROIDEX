@@ -38,7 +38,11 @@ export function ArchivedChatsSettings() {
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
 
-  const focusNeighborOfRemoved = (index: number, control: 'restore' | 'delete') => {
+  const focusNeighborOfRemoved = (
+    index: number,
+    removedId: string,
+    control: 'restore' | 'delete',
+  ) => {
     const neighbor = rows.at(index + 1) ?? (index > 0 ? rows.at(index - 1) : undefined);
     setFocusTarget(
       neighbor
@@ -46,7 +50,7 @@ export function ArchivedChatsSettings() {
             kind: 'row',
             appSessionId: neighbor.session.appSessionId,
             control,
-            from: rows[index].session.appSessionId,
+            from: removedId,
           }
         : { kind: 'empty' },
     );
@@ -93,7 +97,7 @@ export function ArchivedChatsSettings() {
                       variant="danger"
                       size="sm"
                       onClick={() => {
-                        focusNeighborOfRemoved(index, 'delete');
+                        focusNeighborOfRemoved(index, session.appSessionId, 'delete');
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
@@ -132,8 +136,9 @@ export function ArchivedChatsSettings() {
                       aria-label={`Restore ${title}`}
                       autoFocus={rowFocus?.control === 'restore'}
                       onClick={() => {
-                        focusNeighborOfRemoved(index, 'restore');
+                        focusNeighborOfRemoved(index, session.appSessionId, 'restore');
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
+                        setConfirmingDelete(null);
                       }}
                     />
                     <Button
