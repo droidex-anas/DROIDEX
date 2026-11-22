@@ -112,3 +112,25 @@ test('unpersisted prefixes disappear but persisted prefixes and distant events s
     full,
   ]);
 });
+
+test('duplicate replay IDs retain the final replacement and supersede earlier matched prefixes', () => {
+  const first = textEvent('first', { ts: 10_000, text: 'abcd' });
+  const last = textEvent('last', { ts: 10_001, text: 'abcdef' });
+  const page = [first, last].map((event) =>
+    textEvent('replay', { ts: 10_000, text: capped(event.text ?? '', 2) }),
+  );
+  assert.deepEqual(reconcileRestoredTranscript([first, last], page, true), [last, last]);
+});
+
+test('a persisted prefix with a different ID protects same-text live prefixes', () => {
+  const first = textEvent('first', { ts: 9_000, text: 'a complete' });
+  const second = { ...first, id: 'second', ts: 9_001 };
+  const full = textEvent('full', { ts: 10_000, text: 'a complete answer' });
+  const persisted = { ...first, id: 'persisted' };
+  const replay = textEvent('replay', { ts: 10_000, text: capped(full.text ?? '', 5) });
+  assert.deepEqual(reconcileRestoredTranscript([first, second, full], [persisted, replay], true), [
+    persisted,
+    second,
+    full,
+  ]);
+});

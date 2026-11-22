@@ -321,7 +321,7 @@ function truncatedReplayReplacements(
     )) {
       if (
         !supersededLiveIds.has(candidate.id) &&
-        !matchedLiveIds.has(candidate.id) &&
+        candidate.id !== closestLive.id &&
         isUnpersistedTextPrefix(candidate, closestLive, persistedById, persistedByText)
       ) {
         supersededLiveIds.add(candidate.id);
