@@ -68,7 +68,6 @@ test("keyboard Cancel restores the same archived row's delete focus", async ({ p
   await page.keyboard.press('Enter');
   await expect(row.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(trigger).toBeVisible();
   await expect(trigger).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(

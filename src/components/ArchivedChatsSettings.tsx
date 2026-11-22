@@ -53,6 +53,7 @@ export function ArchivedChatsSettings() {
                     {session.cwd ? ` · ${workspaceName(session.cwd)}` : ''}
                   </div>
                 </div>
+                {/* Distinct keys force a remount so the trash button's autoFocus fires. */}
                 {confirmingDelete === session.appSessionId ? (
                   <div key="confirmation" className="flex shrink-0 items-center gap-2">
                     <span aria-live="polite" className="text-caption text-danger">
