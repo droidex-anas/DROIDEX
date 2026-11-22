@@ -141,7 +141,7 @@ function sessionTitle(start: StoredSessionStart, providerSessionId: string): str
 
 export function loadSessionHistory(): SessionHistoryEntry[] {
   const rows: SessionHistoryEntry[] = [];
-  for (const [providerSessionId, path] of buildSessionIndex()) {
+  for (const [providerSessionId, path] of sessionPathIndex()) {
     const stat = statSync(path);
     const start = readSessionStart(path, stat.size);
     rows.push({
@@ -162,7 +162,7 @@ export function loadSessionPage(
   cursor?: string,
   limit = 200,
 ): HistoryPage {
-  const path = buildSessionIndex().get(providerSessionId);
+  const path = sessionPathIndex().get(providerSessionId);
   if (!path) throw new Error(`Session history not found for ${providerSessionId}`);
   const role = roleFromSessionStart(readSessionStart(path, statSync(path).size));
   const all = parseFullSessionTranscript(appSessionId, providerSessionId, path, role);
@@ -176,11 +176,11 @@ export function loadSessionPage(
 }
 
 export function sessionFilePath(providerSessionId: string): string | undefined {
-  return buildSessionIndex().get(providerSessionId);
+  return sessionPathIndex().get(providerSessionId);
 }
 
 export function sessionOrganizationId(providerSessionId: string): string | undefined {
-  const path = buildSessionIndex().get(providerSessionId);
+  const path = sessionPathIndex().get(providerSessionId);
   if (!path) return undefined;
   try {
     return readSessionStart(path, statSync(path).size).organizationId;
@@ -523,7 +523,7 @@ export function resolveSessionChain(appSessionId: string, providerSessionId: str
   const patches = readStoredSummaryPatches();
   const patch = patches.get(appSessionId) ?? patches.get(providerSessionId);
   const currentSession = patch?.providerSessionId ?? providerSessionId;
-  const sessionFiles = buildSessionIndex();
+  const sessionFiles = sessionPathIndex();
   const compactedFrom = patch?.compactedFromProviderSessionIds ?? [];
   return dedupeStrings([appSessionId, ...compactedFrom, currentSession]).filter((id) =>
     sessionFiles.has(id),
@@ -639,7 +639,7 @@ export function loadSessionTranscriptWindow(
 ): { events: TranscriptEvent[]; olderCursor?: string } {
   const limit = Math.max(1, opts.limit ?? DEFAULT_HISTORY_WINDOW);
   const role = opts.role ?? 'primary';
-  const sessionIndex = buildSessionIndex();
+  const sessionIndex = sessionPathIndex();
   const chain = chainProviderSessionIds.filter((id) => sessionIndex.has(id));
   if (chain.length === 0) return { events: [] };
 
@@ -754,7 +754,7 @@ export function invalidateSessionIndex(): void {
   sessionIndexMemo = null;
 }
 
-function buildSessionIndex(): Map<string, string> {
+function sessionPathIndex(): Map<string, string> {
   sessionIndexMemo ??= new Map();
   return sessionIndexMemo;
 }
