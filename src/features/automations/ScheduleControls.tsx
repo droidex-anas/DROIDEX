@@ -57,7 +57,7 @@ export function ScheduleControls({
       const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, timezone);
       const minimumDate = zonedInputParts(Date.now(), timezone);
       const errorMessages = {
-        date: 'Enter a valid calendar date (YYYY-MM-DD) before saving.',
+        date: 'Enter a valid date as YYYY-MM-DD.',
         time: `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`,
       };
       const dateError = invalidInput?.kind === 'date';
@@ -87,9 +87,7 @@ export function ScheduleControls({
                 if (text !== null) {
                   onInvalidInputChange({ kind: 'date', parts, text });
                 } else if (dateError) {
-                  onInvalidInputChange(
-                    epochFromZonedInput(parts, timezone) === null ? { kind: 'time', parts } : null,
-                  );
+                  updateInput(parts);
                 }
               }}
               onChange={(date) => {
