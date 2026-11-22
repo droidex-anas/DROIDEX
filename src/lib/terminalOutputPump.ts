@@ -1,6 +1,7 @@
 const encoder = new TextEncoder();
 
 const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
+const TERMINAL_PENDING_BLOCK_BYTES = 16 * 1024;
 
 interface PendingChunk {
   text: string;
@@ -93,11 +94,22 @@ export function createTerminalOutputPump(options: {
 
   function push(data: string) {
     if (!data) return;
-    const chunk: PendingChunk = { text: data, bytes: utf8ByteLength(data) };
-    if (tail) tail.next = chunk;
-    else head = chunk;
-    tail = chunk;
-    pendingBytes += chunk.bytes;
+    let bytes = utf8ByteLength(data);
+    const lastCodeUnit = tail?.text.charCodeAt(tail.text.length - 1);
+    const endsWithHighSurrogate =
+      lastCodeUnit !== undefined && lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff;
+    if (tail && (tail.bytes < TERMINAL_PENDING_BLOCK_BYTES || endsWithHighSurrogate)) {
+      const firstCodeUnit = data.charCodeAt(0);
+      if (endsWithHighSurrogate && firstCodeUnit >= 0xdc00 && firstCodeUnit <= 0xdfff) bytes -= 2;
+      tail.text += data;
+      tail.bytes += bytes;
+    } else {
+      const chunk: PendingChunk = { text: data, bytes };
+      if (tail) tail.next = chunk;
+      else head = chunk;
+      tail = chunk;
+    }
+    pendingBytes += bytes;
     if (options.isHidden()) {
       capPending();
       return;

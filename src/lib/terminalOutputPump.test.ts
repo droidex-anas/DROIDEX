@@ -102,4 +102,20 @@ test('hidden output evicts chunks and trims only complete UTF-8 code points', ()
     pump.reveal();
     assert.equal(writes.at(-1), 'ab🙂xy');
   }
+
+  const splitPump = createTerminalOutputPump({
+    write: (data) => writes.push(data),
+    isHidden: () => hidden,
+    scheduleFrame: () => 1,
+    cancelFrame: () => undefined,
+    maxHiddenBytes: 6,
+  });
+  hidden = true;
+  splitPump.push('xxx\uD83D');
+  splitPump.push('\uDE42');
+  splitPump.push('a');
+  assert.equal(splitPump.droppedBytes, 2);
+  hidden = false;
+  splitPump.reveal();
+  assert.equal(writes.at(-1), 'x🙂a');
 });

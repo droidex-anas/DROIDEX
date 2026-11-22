@@ -2,9 +2,104 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { EventEmitter } from 'node:events';
 import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import assert from 'node:assert/strict';
+import type { createTerminalOutputPump } from './terminalOutputPump';
 
 export const TERMINAL_FLOOD_CHUNKS = 1_000;
 const TERMINAL_CHUNK = 'x'.repeat(64);
+
+export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetric[]> {
+  const pumpPath = join(treeRoot, 'src/lib/terminalOutputPump.ts');
+  const pumpModule = (await import(pathToFileURL(pumpPath).href)) as {
+    createTerminalOutputPump: typeof createTerminalOutputPump;
+  };
+  const cap = 2 * 1024 * 1024;
+  const scenarios = [
+    { id: 'hiddenAscii', chunk: 'a'.repeat(16384), prefill: 'x'.repeat(cap), prefillPushes: 1 },
+    {
+      id: 'hiddenUtf8',
+      chunk: '🙂界a'.repeat(2048),
+      prefill: '🙂界a'.repeat(cap / 8),
+      prefillPushes: 1,
+    },
+    { id: 'hiddenTiny', chunk: 'abcdefgh', prefill: '12345678', prefillPushes: cap / 8 },
+    { id: 'hiddenBelowCap', chunk: 'a'.repeat(1024), prefill: '', prefillPushes: 0 },
+    { id: 'visible', chunk: 'a'.repeat(16384), prefill: '', prefillPushes: 0 },
+  ];
+  const metrics: AbProbeMetric[] = [];
+  for (const scenario of scenarios) {
+    const input = scenario.prefill.repeat(scenario.prefillPushes) + scenario.chunk.repeat(96);
+    const encoded = new TextEncoder().encode(input);
+    const expected =
+      scenario.id === 'visible'
+        ? input
+        : new TextDecoder().decode(encoded.subarray(Math.max(0, encoded.length - cap)));
+    const durations: number[] = [];
+    const reveals: number[] = [];
+    const heaps: number[] = [];
+    for (let run = -2; run < 7; run += 1) {
+      let hidden = scenario.id !== 'visible';
+      let output = '';
+      const pump = pumpModule.createTerminalOutputPump({
+        write: (text) => {
+          output += text;
+        },
+        isHidden: () => hidden,
+        scheduleFrame: () => 1,
+        cancelFrame: () => undefined,
+      });
+      globalThis.gc?.();
+      const heapBefore = process.memoryUsage().heapUsed;
+      for (let index = 0; index < scenario.prefillPushes; index += 1) pump.push(scenario.prefill);
+      const started = performance.now();
+      for (let index = 0; index < 96; index += 1) {
+        pump.push(scenario.chunk);
+        if (!hidden) pump.flush();
+      }
+      const pushMs = performance.now() - started;
+      let retainedHeapBytes = NaN;
+      if (scenario.id === 'hiddenTiny' && globalThis.gc) {
+        globalThis.gc();
+        retainedHeapBytes = process.memoryUsage().heapUsed - heapBefore;
+      }
+      hidden = false;
+      const revealStarted = performance.now();
+      pump.reveal();
+      const revealMs = performance.now() - revealStarted;
+      assert.equal(output, expected, `${scenario.id} output`);
+      const expectedDropped = scenario.id === 'visible' ? 0 : Math.max(0, encoded.length - cap);
+      assert.equal(pump.droppedBytes, expectedDropped, `${scenario.id} dropped bytes`);
+      if (run >= 0) {
+        durations.push(pushMs + revealMs);
+        reveals.push(revealMs);
+        heaps.push(retainedHeapBytes);
+      }
+    }
+    const method = 'median of 7 after 2 warmups; 96 pushes plus reveal, excluding prefill';
+    metrics.push(
+      metric(`terminal.pump.${scenario.id}.ms`, median(durations), 'ms', method),
+      metric(`terminal.pump.${scenario.id}.revealMs`, median(reveals), 'ms', method),
+    );
+    if (scenario.id === 'hiddenTiny') {
+      metrics.push(
+        metric(
+          'terminal.pump.hiddenTiny.retainedHeapBytes',
+          median(heaps),
+          'bytes',
+          globalThis.gc
+            ? 'post-GC heap delta before reveal; 2 MiB filled with 8-byte pushes, then 96 more'
+            : 'unmeasured: launch Node with --expose-gc',
+        ),
+      );
+    }
+  }
+  return metrics;
+}
+
+function median(samples: number[]): number {
+  return samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)] ?? NaN;
+}
 
 export async function measureTerminalFlood(treeRoot: string): Promise<AbProbeMetric> {
   const terminalPath = join(treeRoot, 'electron/terminal.cjs');
