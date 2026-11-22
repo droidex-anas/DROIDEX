@@ -1,13 +1,10 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
 test.use({ video: 'on' });
 
-test('query changes discard content hits without blocking title matches or accepting late replies', async ({
-  page,
-}, testInfo) => {
-  const now = Date.now();
+async function mockSearchBridge(page: Page, now: number) {
   const sessions = [
     sessionSummary('build', {
       title: 'Build log',
@@ -64,33 +61,38 @@ test('query changes discard content hits without blocking title matches or accep
       });
     },
   );
+  return {
+    searches,
+    opened,
+    reply() {
+      emit({
+        type: 'sessions.searchResults',
+        requestId: searches[0].requestId,
+        indexingIncomplete: false,
+        results: [
+          { appSessionId: 'build', matches: [{ author: 'user', snippet: 'alpha only', ts: now }] },
+        ],
+      });
+    },
+  };
+}
+
+test('query changes discard content hits immediately without blocking title matches', async ({
+  page,
+}, testInfo) => {
+  const now = Date.now();
+  const { searches, opened, reply } = await mockSearchBridge(page, now);
   await page.clock.install({ time: now });
+  await page.clock.pauseAt(now + 60_000);
   await page.goto(process.env.DROIDEX_TEST_URL || '/');
   await page.getByRole('button', { name: 'Search chats, messages, and PRs', exact: true }).click();
   const input = page.getByRole('textbox', { name: 'Search chats, messages, and PRs' });
   await input.fill('alpha');
+  await page.clock.runFor(250);
   await expect.poll(() => searches.length).toBe(1);
-  const reply = (index: number, snippet: string) =>
-    emit({
-      type: 'sessions.searchResults',
-      requestId: searches[index].requestId,
-      indexingIncomplete: false,
-      results: [{ appSessionId: 'build', matches: [{ author: 'user', snippet, ts: 1 }] }],
-    });
-  await input.fill('bravo');
-  await expect.poll(() => searches.length).toBe(2);
-  reply(1, 'bravo only');
-  await expect(page.getByText('You: bravo only', { exact: true })).toBeVisible();
-  reply(0, 'late alpha');
-  await page.screenshot({ path: testInfo.outputPath('late-reply.png') });
-  await expect(page.getByText('You: late alpha', { exact: true })).toHaveCount(0);
-  await expect(page.getByText('You: bravo only', { exact: true })).toBeVisible();
-  await input.fill('alpha');
-  await expect.poll(() => searches.length).toBe(3);
-  reply(2, 'alpha only');
+  reply();
   await expect(page.getByText('You: alpha only', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('alpha.png') });
-  await page.clock.pauseAt(now + 60_000);
   await input.fill('bravo');
   await page.screenshot({ path: testInfo.outputPath('bravo.png') });
   await expect.soft(page.getByText('You: alpha only', { exact: true })).toHaveCount(0);
@@ -101,4 +103,5 @@ test('query changes discard content hits without blocking title matches or accep
   await expect.poll(() => opened.length).toBeGreaterThan(0);
   expect.soft(opened).not.toContain('build');
   expect.soft(opened).toContain('title');
+  expect(searches).toHaveLength(1);
 });

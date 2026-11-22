@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { act, createElement } from 'react';
+import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { bridge } from '../lib/bridge';
 import { useSidebarContentSearch } from './useSidebarContentSearch';
@@ -46,8 +46,12 @@ test('content hits belong only to the current query, including during debounce',
   });
   t.mock.timers.enable({ apis: ['setTimeout'] });
   let result!: ReturnType<typeof useSidebarContentSearch>;
+  const commits: { query: string; hitCount: number }[] = [];
   function Harness({ query }: { query: string }) {
     result = useSidebarContentSearch(query);
+    useLayoutEffect(() => {
+      commits.push({ query, hitCount: result.contentResults.size });
+    });
     return null;
   }
   const root = createRoot(container as unknown as HTMLElement);
@@ -69,6 +73,11 @@ test('content hits belong only to the current query, including during debounce',
   await reply(requests[0], 'alpha only');
   assert.equal(result.contentResults.get('build')?.[0].snippet, 'alpha only');
   await render('bravo');
+  assert.equal(
+    commits.find((commit) => commit.query === 'bravo')?.hitCount,
+    0,
+    'the first committed render for bravo must not expose alpha hits',
+  );
   assert.equal(result.contentResults.size, 0, 'previous query hits must disappear before debounce');
   await act(async () => t.mock.timers.tick(250));
   await reply(requests[1], 'bravo only');

@@ -7,6 +7,7 @@ import { SIDEBAR_CONTENT_SEARCH_MIN_QUERY } from '../lib/sidebarSearchStatus';
 import type { SessionSearchMatch } from '@droidex/protocol';
 
 const DEBOUNCE_MS = 250;
+const EMPTY_RESULTS: ReadonlyMap<string, SessionSearchMatch[]> = new Map();
 
 export function useSidebarContentSearch(query: string): {
   pending: boolean;
@@ -15,9 +16,11 @@ export function useSidebarContentSearch(query: string): {
   indexingIncomplete: boolean;
 } {
   const historyHealth = useHistoryHealth();
-  const [contentResults, setContentResults] = useState<ReadonlyMap<string, SessionSearchMatch[]>>(
-    new Map(),
-  );
+  const trimmed = query.trim();
+  const [acceptedResults, setAcceptedResults] = useState<{
+    query: string;
+    results: ReadonlyMap<string, SessionSearchMatch[]>;
+  } | null>(null);
   const [searchPending, setSearchPending] = useState(false);
   const [indexingIncomplete, setIndexingIncomplete] = useState(false);
   const [requestUnavailable, setRequestUnavailable] = useState(false);
@@ -27,11 +30,10 @@ export function useSidebarContentSearch(query: string): {
   const searchUnavailable = historyHealth.search === 'unavailable' || requestUnavailable;
 
   useEffect(() => {
-    const trimmed = query.trim();
-    setContentResults(new Map());
     if (trimmed.length < SIDEBAR_CONTENT_SEARCH_MIN_QUERY) {
       latestRequestId.current = null;
       setSearchPending(false);
+      setAcceptedResults(null);
       setIndexingIncomplete(false);
       setRequestUnavailable(false);
       return;
@@ -39,6 +41,7 @@ export function useSidebarContentSearch(query: string): {
     if (historyHealth.search === 'unavailable') {
       latestRequestId.current = null;
       setSearchPending(false);
+      setAcceptedResults(null);
       setIndexingIncomplete(false);
       return;
     }
@@ -53,7 +56,7 @@ export function useSidebarContentSearch(query: string): {
     return () => {
       clearTimeout(timer);
     };
-  }, [historyHealth.search, query]);
+  }, [historyHealth.search, trimmed]);
 
   useEffect(() => {
     return bridge.subscribe((ev) => {
@@ -62,7 +65,10 @@ export function useSidebarContentSearch(query: string): {
         setSearchPending(false);
         setRequestUnavailable(false);
         setIndexingIncomplete(ev.indexingIncomplete);
-        setContentResults(new Map(ev.results.map((r) => [r.appSessionId, r.matches])));
+        setAcceptedResults({
+          query: trimmed,
+          results: new Map(ev.results.map((r) => [r.appSessionId, r.matches])),
+        });
         return;
       }
       if (ev.type !== 'error' || ev.code !== 'history.search_unavailable') return;
@@ -70,13 +76,18 @@ export function useSidebarContentSearch(query: string): {
       setSearchPending(false);
       setRequestUnavailable(true);
       setIndexingIncomplete(false);
-      setContentResults(new Map());
+      setAcceptedResults(null);
     });
-  }, []);
+  }, [trimmed]);
 
   return {
     pending: searchPending,
-    contentResults,
+    contentResults:
+      acceptedResults?.query === trimmed &&
+      trimmed.length >= SIDEBAR_CONTENT_SEARCH_MIN_QUERY &&
+      !searchUnavailable
+        ? acceptedResults.results
+        : EMPTY_RESULTS,
     searchUnavailable,
     indexingIncomplete,
   };
