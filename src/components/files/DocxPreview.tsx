@@ -20,6 +20,8 @@ export function DocxPreview({ bytes }: { bytes: Uint8Array }) {
       return;
     }
     let cancelled = false;
+    const isCancelled = () => cancelled;
+    const objectUrls = new Set<string>();
     const container = containerRef.current;
     const renderingDocument = document.implementation.createHTMLDocument('');
     const renderedBody = renderingDocument.createElement('div');
@@ -28,12 +30,31 @@ export function DocxPreview({ bytes }: { bytes: Uint8Array }) {
     setLoading(true);
     setError('');
     import('docx-preview')
-      .then(({ renderAsync }) =>
-        renderAsync(new Blob([bytes as unknown as BlobPart]), renderedBody, renderedStyles, {
+      .then(async ({ parseAsync, renderDocument }) => {
+        const options = {
           ...DOCX_PREVIEW_OPTIONS,
           h: createSanitizedDocxElementFactory(renderingDocument),
-        }),
-      )
+        };
+        const document = (await parseAsync(new Blob([bytes as unknown as BlobPart]), options)) as {
+          blobToURL: (blob: Blob, path: string) => string | null;
+        };
+        if (cancelled) return;
+        const blobToURL = document.blobToURL.bind(document);
+        document.blobToURL = (blob, path) => {
+          const url = blobToURL(blob, path);
+          if (url?.startsWith('blob:')) {
+            if (cancelled) URL.revokeObjectURL(url);
+            else objectUrls.add(url);
+          }
+          return url;
+        };
+        const nodes = await renderDocument(document, options);
+        if (!isCancelled()) {
+          for (const node of nodes) {
+            (node.nodeName === 'STYLE' ? renderedStyles : renderedBody).appendChild(node);
+          }
+        }
+      })
       .then(() => {
         if (!cancelled) {
           sanitizeDocxPreview(renderedBody);
@@ -55,6 +76,8 @@ export function DocxPreview({ bytes }: { bytes: Uint8Array }) {
     return () => {
       cancelled = true;
       container.innerHTML = '';
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+      objectUrls.clear();
     };
   }, [bytes]);
 
