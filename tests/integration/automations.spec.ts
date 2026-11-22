@@ -758,3 +758,26 @@ test('the unified list bounds mounted rows and edits scheduled prompts without m
   await expect(page.getByText('Continue review 399', { exact: true })).toBeVisible();
   expect(await list.getByRole('listitem').count()).toBeLessThan(25);
 });
+
+test('time zone search keeps Home and End for the caret', async ({ page }) => {
+  const automation = scheduledPrompt();
+  await automationBridge(page, [automation]);
+  await page.goto('/');
+  await page.getByTestId('automations-nav').click();
+  await page.getByText(automation.title, { exact: true }).click();
+  await page.getByRole('button', { name: 'Automation timezone' }).click();
+  const search = page.getByRole('textbox', { name: 'Search Automation timezone options' });
+  const listbox = page.getByRole('listbox');
+  await search.fill('america');
+  const firstOption = await listbox.getAttribute('aria-activedescendant');
+  const caret = () => search.evaluate((input: HTMLInputElement) => input.selectionStart);
+
+  await search.press('Home');
+  expect(await caret()).toBe(0);
+  await search.press('End');
+  expect(await caret()).toBe('america'.length);
+  await expect(listbox).toHaveAttribute('aria-activedescendant', firstOption ?? '');
+
+  await search.press('ArrowDown');
+  await expect(listbox).not.toHaveAttribute('aria-activedescendant', firstOption ?? '');
+});
