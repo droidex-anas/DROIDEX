@@ -333,10 +333,7 @@ export async function loadPdfDocumentForPreview(
   });
   onLoadingTask(loadingTask);
   const doc = await loadingTask.promise;
-  if (isCancelled()) {
-    await loadingTask.destroy();
-    return null;
-  }
+  if (isCancelled()) return null;
   return doc;
 }
 

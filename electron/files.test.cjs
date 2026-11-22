@@ -176,9 +176,23 @@ test('readPreview returns a Buffer (not base64) for binary previewable categorie
   const payload = await readPreview(root, 'sub/tiny.png');
   assert.equal(payload.category, 'image');
   assert.equal(payload.encoding, 'binary');
+  assert.equal(payload.ctimeMs, (await fsp.stat(path.join(root, 'sub', 'tiny.png'))).ctimeMs);
   assert.ok(Buffer.isBuffer(payload.data), 'data should be a Buffer');
   assert.deepEqual(Array.from(payload.data.slice(0, 4)), [0x89, 0x05, 0x4e, 0x47]);
   assert.equal(payload.oversize, undefined);
+  const unchanged = await readPreview(root, 'sub/tiny.png');
+  assert.equal(unchanged.ctimeMs, payload.ctimeMs);
+  const target = path.join(root, 'sub', 'tiny.png');
+  const originalStat = await fsp.stat(target);
+  const replacement = Buffer.from(payload.data);
+  replacement[1] = 6;
+  await fsp.writeFile(target, replacement);
+  await fsp.utimes(target, originalStat.atime, originalStat.mtime);
+  const updated = await readPreview(root, 'sub/tiny.png');
+  assert.equal(updated.totalSize, payload.totalSize);
+  assert.deepEqual(updated.data, replacement);
+  assert.ok(Math.abs((await fsp.stat(target)).mtimeMs - originalStat.mtimeMs) < 1);
+  assert.notEqual(updated.ctimeMs, payload.ctimeMs);
 });
 
 test('readPreview short-circuits external categories without reading bytes', async () => {

@@ -4,6 +4,202 @@ import { openFiles, showFiles } from './filesFixture';
 
 const refresh = (page: Page) => page.getByRole('button', { name: 'Refresh files' }).click();
 
+test('Refresh preserves the text scroll container and reading position', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'notes.txt': 'file' } } });
+  const disk = await page.evaluateHandle(() => {
+    const disk = { text: Array.from({ length: 300 }, (_, i) => `Line ${i}`).join('\n'), reads: 0 };
+    Object.assign(window.droidex, {
+      filesPreview: async () => {
+        disk.reads += 1;
+        return {
+          category: 'text',
+          previewable: true,
+          text: disk.text,
+          totalSize: disk.text.length,
+          sizeCapBytes: 250_000,
+        };
+      },
+    });
+    return disk;
+  });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+  const code = page.locator('pre').filter({ hasText: 'Line 299' });
+  await expect(code).toBeVisible();
+  const scroller = await code.evaluateHandle((element) => element.parentElement!);
+  await scroller.evaluate((element) => {
+    element.scrollTop = 400;
+  });
+  for (const changed of [false, true]) {
+    const reads = await disk.evaluate((disk, changed) => {
+      if (changed) disk.text += '\nAppended line';
+      return disk.reads;
+    }, changed);
+    await refresh(page);
+    await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+    if (changed) await expect(code).toContainText('Appended line');
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    expect(
+      await scroller.evaluate((element) => ({
+        connected: element.isConnected,
+        top: element.scrollTop,
+      })),
+    ).toEqual({ connected: true, top: 400 });
+  }
+});
+
+test('Refresh rereads the selected file without hiding its preview', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'notes.txt': 'file' } } });
+  const disk = await page.evaluateHandle(() => {
+    const disk = { text: 'Original disk content', reads: 0, release: () => {} };
+    Object.assign(window.droidex, {
+      filesPreview: async () => {
+        disk.reads += 1;
+        const text = disk.text;
+        if (text !== 'Original disk content') {
+          await new Promise<void>((resolve) => {
+            disk.release = resolve;
+          });
+        }
+        return {
+          category: 'text',
+          previewable: true,
+          text,
+          totalSize: text.length,
+          sizeCapBytes: 250_000,
+        };
+      },
+    });
+    return disk;
+  });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByText('Original disk content', { exact: true })).toBeVisible();
+  const reads = await disk.evaluate((disk) => disk.reads);
+  await disk.evaluate((disk) => {
+    disk.text = 'Updated disk content';
+  });
+  await refresh(page);
+  await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+  await expect(page.getByText('Original disk content', { exact: true })).toBeVisible();
+  await disk.evaluate((disk) => disk.release());
+  await expect(page.getByText('Updated disk content', { exact: true })).toBeVisible();
+  expect(await disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+});
+
+test('Refresh replaces stale text with read failures and empty files', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'notes.txt': 'file' } } });
+  const disk = await page.evaluateHandle(() => {
+    const disk = { text: 'Original disk content', fail: false, reads: 0 };
+    Object.assign(window.droidex, {
+      filesPreview: async () => {
+        disk.reads += 1;
+        if (disk.fail) throw new Error('File no longer readable');
+        return {
+          category: 'text',
+          previewable: true,
+          text: disk.text,
+          totalSize: disk.text.length,
+          sizeCapBytes: 250_000,
+        };
+      },
+    });
+    return disk;
+  });
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+  await expect(page.getByText('Original disk content', { exact: true })).toBeVisible();
+  await disk.evaluate((disk) => {
+    disk.fail = true;
+  });
+  await refresh(page);
+  await expect(page.getByText('File no longer readable', { exact: true })).toBeVisible();
+  await expect(page.getByText('Original disk content', { exact: true })).toHaveCount(0);
+  const reads = await disk.evaluate((disk) => disk.reads);
+  await disk.evaluate((disk) => {
+    disk.fail = false;
+    disk.text = '';
+  });
+  await refresh(page);
+  await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+  await expect(page.getByText('File no longer readable', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Original disk content', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Loading preview…', { exact: true })).toHaveCount(0);
+});
+
+for (const target of ['file', 'root'] as const) {
+  test(`a settled stale preview cannot replace another ${target}`, async ({ page }) => {
+    const emit = await openFiles(page, {
+      '/repo': { '': { 'notes.txt': 'file', 'other.txt': 'file' } },
+      '/other': { '': { 'other.txt': 'file' } },
+    });
+    const disk = await page.evaluateHandle((target) => {
+      const disk = { hold: false, reads: 0, release: async () => {} };
+      Object.assign(window.droidex, {
+        filesPreview: (root: string, relative: string) => {
+          disk.reads += 1;
+          const held = disk.hold;
+          disk.hold = false;
+          let resume = () => {};
+          const gate = held
+            ? new Promise<void>((resolve) => {
+                resume = resolve;
+              })
+            : Promise.resolve();
+          const response = gate.then(() => {
+            return {
+              category: 'text',
+              previewable: true,
+              text: held ? `Stale ${target} refresh` : `${root}/${relative}`,
+              totalSize: 20,
+              sizeCapBytes: 250_000,
+            };
+          });
+          if (held)
+            disk.release = async () => {
+              resume();
+              await response;
+              await new Promise((resolve) => setTimeout(resolve, 0));
+              await new Promise<void>((resolve) =>
+                requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+              );
+            };
+          return response;
+        },
+      });
+      return disk;
+    }, target);
+    const tree = await showFiles(page, 'repo-chat');
+    await tree.getByRole('treeitem', { name: 'notes.txt' }).click();
+    await expect(page.getByText('/repo/notes.txt', { exact: true })).toBeVisible();
+    const reads = await disk.evaluate((disk) => {
+      disk.hold = true;
+      return disk.reads;
+    });
+    await refresh(page);
+    await expect.poll(() => disk.evaluate((disk) => disk.reads)).toBe(reads + 1);
+    if (target === 'root') {
+      emit({
+        type: 'session.updated',
+        session: sessionSummary('repo-chat', { cwd: '/other', updatedAt: 9 }),
+      });
+    } else {
+      await tree.getByRole('treeitem', { name: 'other.txt' }).click();
+    }
+    const text = target === 'root' ? '/other/other.txt' : '/repo/other.txt';
+    if (target === 'root') await tree.getByRole('treeitem', { name: 'other.txt' }).click();
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+    await disk.evaluate((disk) => disk.release());
+    await expect(page.getByText(text, { exact: true })).toBeVisible();
+    await expect(page.getByText(`Stale ${target} refresh`, { exact: true })).toHaveCount(0);
+  });
+}
+
 test('Refresh reloads expanded folders and keeps them open', async ({ page }) => {
   await openFiles(page, {
     '/repo': { '': { src: 'directory', 'README.md': 'file' }, src: { 'before.ts': 'file' } },

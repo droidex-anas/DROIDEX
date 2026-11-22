@@ -20,13 +20,19 @@ const TEXT_CHAR_LIMIT = 250_000;
 interface FilePreviewPaneProps {
   accessToken: string;
   relative: string;
+  refreshGeneration?: number;
   onOpenExternal: () => void;
   onReveal: () => void;
 }
 
 type PreviewState =
   | { accessToken: string; relative: string; kind: 'error'; message: string }
-  | { accessToken: string; relative: string; kind: 'ready'; payload: FilePreviewPayload };
+  | {
+      accessToken: string;
+      relative: string;
+      kind: 'ready';
+      payload: FilePreviewPayload;
+    };
 
 export function normalizePreviewBytes(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
@@ -57,6 +63,7 @@ const TABULAR_EXTENSIONS = new Set(['csv', 'tsv']);
 export function FilePreviewPane({
   accessToken,
   relative,
+  refreshGeneration = 0,
   onOpenExternal,
   onReveal,
 }: FilePreviewPaneProps) {
@@ -67,7 +74,23 @@ export function FilePreviewPane({
     let cancelled = false;
     readFilePreview(accessToken, relative)
       .then((payload) => {
-        if (!cancelled) setState({ accessToken, relative, kind: 'ready', payload });
+        if (!cancelled) {
+          setState((previous) => {
+            if (
+              previous?.kind === 'ready' &&
+              previous.accessToken === accessToken &&
+              previous.relative === relative &&
+              samePreviewPayload(previous.payload, payload)
+            )
+              return previous;
+            return {
+              accessToken,
+              relative,
+              kind: 'ready',
+              payload,
+            };
+          });
+        }
       })
       .catch((err: unknown) => {
         if (!cancelled) {
@@ -82,7 +105,7 @@ export function FilePreviewPane({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, relative]);
+  }, [accessToken, relative, refreshGeneration]);
 
   if (!relative) {
     return (
@@ -123,13 +146,32 @@ export function FilePreviewPane({
   return (
     <PreviewFrame>
       <PreviewBody
-        key={relative}
+        key={JSON.stringify([accessToken, relative])}
         payload={current.payload}
         fileName={pathFileName(relative)}
         onOpenExternal={onOpenExternal}
         onReveal={onReveal}
       />
     </PreviewFrame>
+  );
+}
+
+function samePreviewPayload(left: FilePreviewPayload, right: FilePreviewPayload): boolean {
+  return (
+    (left.data === right.data ||
+      (left.encoding === 'binary' &&
+        right.encoding === 'binary' &&
+        left.ctimeMs === right.ctimeMs &&
+        left.totalSize === right.totalSize)) &&
+    left.category === right.category &&
+    left.totalSize === right.totalSize &&
+    left.ctimeMs === right.ctimeMs &&
+    left.sizeCapBytes === right.sizeCapBytes &&
+    left.previewable === right.previewable &&
+    left.oversize === right.oversize &&
+    left.reason === right.reason &&
+    left.encoding === right.encoding &&
+    left.text === right.text
   );
 }
 
