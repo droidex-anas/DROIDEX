@@ -2,9 +2,10 @@
 import { createHash } from 'node:crypto';
 import { lstat, opendir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { join, relative, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { objectValue } from '../values.js';
+import { isPathInside } from './isPathInside.js';
 import { normalizeOpenCodeRow, readOpenCodeText, type OpenCodeMessageRow } from './OpenCodeRow.js';
 import type { OpaqueUsageCursor, OpaqueUsageSourceStore } from './UsageSourceContract.js';
 import type { UsageEvent } from './types.js';
@@ -108,7 +109,9 @@ export class OpenCodeIngest {
     const stats = await lstat(candidate);
     if (!stats.isFile() || stats.isSymbolicLink()) return null;
     const sourcePath = await realpath(candidate);
-    if (!inside(await realpath(root), sourcePath)) return null;
+    const canonicalRoot = await realpath(root);
+    if (relative(canonicalRoot, sourcePath) !== '' && !isPathInside(canonicalRoot, sourcePath))
+      return null;
     const source = { sourcePath, sourceId: `opencode:${hash(sourcePath)}` };
     const cursor = this.options.store.usageSourceCursor(sourcePath, ADAPTER_NAME);
     const prior = cursor ? restoreState(cursor, source) : null;
@@ -405,10 +408,6 @@ function expandHome(path: string, homeDir: string): string {
 function envValue(env: Readonly<Record<string, string | undefined>>, name: string) { return env[name] }
 // prettier-ignore
 function compareDatabaseNames(left: string, right: string): number { if (left === 'opencode.db') return -1; if (right === 'opencode.db') return 1; return left.localeCompare(right) }
-function inside(root: string, candidate: string): boolean {
-  const path = relative(resolve(root), candidate);
-  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
 function field(record: Record<string, unknown> | null | undefined, name: string): unknown {
   return record?.[name];
 }
