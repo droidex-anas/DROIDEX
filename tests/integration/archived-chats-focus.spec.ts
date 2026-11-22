@@ -3,22 +3,24 @@ import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
 async function openArchivedChats(page: Page, count = 2) {
+  let emitServerEvent: ((event: ServerEvent) => void) | undefined;
   const now = Date.UTC(2026, 5, 1, 12);
   await page.clock.install({ time: now });
   await page.addInitScript(
-    ({ now, count }) => {
+    ({ now }) => {
       localStorage.setItem(
         'droid-chat-metadata',
         JSON.stringify(
           Object.fromEntries(
-            ['first', 'second', 'third', 'fourth']
-              .slice(0, count)
-              .map((id, index) => [id, { archivedAt: now - (index + 1) * 60_000 }]),
+            ['first', 'second', 'third', 'fourth'].map((id, index) => [
+              id,
+              { archivedAt: now - (index + 1) * 60_000 },
+            ]),
           ),
         ),
       );
     },
-    { now, count },
+    { now },
   );
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
@@ -36,6 +38,7 @@ async function openArchivedChats(page: Page, count = 2) {
           }),
         );
       };
+      emitServerEvent = emit;
       socket.onMessage((message) => {
         if (typeof message !== 'string') return;
         const command = JSON.parse(message) as ClientCommand;
@@ -66,6 +69,10 @@ async function openArchivedChats(page: Page, count = 2) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Archived chats', exact: true }).click();
   await expect(page.getByTestId('archived-chat-row')).toHaveCount(count);
+  return (event: ServerEvent) => {
+    if (!emitServerEvent) throw new Error('Archive test bridge is not connected');
+    emitServerEvent(event);
+  };
 }
 
 test("keyboard Cancel restores the same archived row's delete focus", async ({ page }) => {
@@ -103,7 +110,7 @@ for (const scenario of [
           name: `Delete ${scenario.neighbor} permanently`,
           exact: true,
         })
-      : page.getByText('No archived chats.', { exact: true });
+      : page.getByText('No archived chats.', { exact: true }).locator('..');
     await expect(target).toBeFocused();
   });
 }
@@ -111,16 +118,31 @@ for (const scenario of [
 test('canceling delete then restoring every row does not focus the empty state', async ({
   page,
 }) => {
-  await openArchivedChats(page);
+  const emit = await openArchivedChats(page, 1);
   await page
     .getByRole('button', { name: 'Delete Saved research permanently', exact: true })
     .focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
   await page.keyboard.press('Enter');
-  await page.getByRole('button', { name: 'Restore Saved research', exact: true }).click();
+  await expect(page.getByText('No archived chats.', { exact: true })).toBeVisible();
+  emit({
+    type: 'sessions.list',
+    sessions: [
+      sessionSummary('second', { title: 'Release notes', cwd: '' }),
+      sessionSummary('third', { title: 'Parser cleanup', cwd: '' }),
+    ],
+    earlierSessionsByCwd: {},
+  });
+  await page.getByRole('button', { name: 'Delete Release notes permanently', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Restore Release notes', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }).click();
   const emptyState = page.getByText('No archived chats.', { exact: true });
   await expect(emptyState).toBeVisible();
   await expect(emptyState).not.toBeFocused();
+  await expect(emptyState.locator('..')).not.toBeFocused();
 });

@@ -22,13 +22,14 @@ export function ArchivedChatsSettings() {
     shallowEqual,
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
-  const [returnFocusTo, setReturnFocusTo] = useState<string | null>(null);
-  const [shouldFocusEmptyState, setShouldFocusEmptyState] = useState(false);
+  const [focusTarget, setFocusTarget] = useState<
+    { kind: 'row'; appSessionId: string } | { kind: 'empty' } | null
+  >(null);
   const focusEmptyState = useCallback(
-    (node: HTMLParagraphElement | null) => {
-      if (shouldFocusEmptyState) node?.focus();
+    (node: HTMLDivElement | null) => {
+      if (focusTarget?.kind === 'empty') node?.focus();
     },
-    [shouldFocusEmptyState],
+    [focusTarget],
   );
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
@@ -40,15 +41,15 @@ export function ArchivedChatsSettings() {
         sub="Hidden from your sidebar. Restore a chat to bring it back, or delete it for good."
       />
       {rows.length === 0 ? (
-        <div className="rounded-xl bg-surface p-10 text-center">
-          <p tabIndex={-1} ref={focusEmptyState} className="text-body text-secondary">
-            No archived chats.
-          </p>
+        <div tabIndex={-1} ref={focusEmptyState} className="rounded-xl bg-surface p-10 text-center">
+          <p className="text-body text-secondary">No archived chats.</p>
         </div>
       ) : (
         <div className="overflow-hidden rounded-xl bg-surface shadow-lg">
           {rows.map(({ session, archivedAt }, index) => {
             const title = chatDisplayTitle(session, chatMetadata[session.appSessionId]);
+            const shouldFocusRow =
+              focusTarget?.kind === 'row' && focusTarget.appSessionId === session.appSessionId;
             return (
               <div
                 key={session.appSessionId}
@@ -73,8 +74,11 @@ export function ArchivedChatsSettings() {
                       size="sm"
                       onClick={() => {
                         const neighbor = rows[index + 1] ?? rows[index - 1];
-                        setReturnFocusTo(rows.length > 1 ? neighbor.session.appSessionId : null);
-                        setShouldFocusEmptyState(rows.length === 1);
+                        setFocusTarget(
+                          rows.length > 1
+                            ? { kind: 'row', appSessionId: neighbor.session.appSessionId }
+                            : { kind: 'empty' },
+                        );
                         dispatch({ type: 'DELETE_CHAT', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
@@ -88,7 +92,7 @@ export function ArchivedChatsSettings() {
                       // focus the safe action to keep keyboard users in place.
                       autoFocus
                       onClick={() => {
-                        setReturnFocusTo(session.appSessionId);
+                        setFocusTarget({ kind: 'row', appSessionId: session.appSessionId });
                         setConfirmingDelete(null);
                       }}
                     >
@@ -97,7 +101,7 @@ export function ArchivedChatsSettings() {
                   </div>
                 ) : (
                   <div
-                    key={returnFocusTo === session.appSessionId ? 'focused-actions' : 'actions'}
+                    key={shouldFocusRow ? 'focused-actions' : 'actions'}
                     className="flex shrink-0 items-center gap-1"
                   >
                     <Button
@@ -107,6 +111,7 @@ export function ArchivedChatsSettings() {
                       title="Restore to sidebar"
                       aria-label={`Restore ${title}`}
                       onClick={() => {
+                        setFocusTarget(null);
                         dispatch({ type: 'RESTORE_CHAT', appSessionId: session.appSessionId });
                       }}
                     />
@@ -116,9 +121,9 @@ export function ArchivedChatsSettings() {
                       icon={Trash}
                       title="Delete permanently"
                       aria-label={`Delete ${title} permanently`}
-                      autoFocus={returnFocusTo === session.appSessionId}
+                      autoFocus={shouldFocusRow}
                       onClick={() => {
-                        setReturnFocusTo(null);
+                        setFocusTarget(null);
                         setConfirmingDelete(session.appSessionId);
                       }}
                     />
