@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { lstat, opendir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join, relative, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { objectValue } from '../values.js';
 import { isPathInside } from './isPathInside.js';
@@ -110,8 +110,7 @@ export class OpenCodeIngest {
     if (!stats.isFile() || stats.isSymbolicLink()) return null;
     const sourcePath = await realpath(candidate);
     const canonicalRoot = await realpath(root);
-    if (relative(canonicalRoot, sourcePath) !== '' && !isPathInside(canonicalRoot, sourcePath))
-      return null;
+    if (sourcePath !== canonicalRoot && !isPathInside(canonicalRoot, sourcePath)) return null;
     const source = { sourcePath, sourceId: `opencode:${hash(sourcePath)}` };
     const cursor = this.options.store.usageSourceCursor(sourcePath, ADAPTER_NAME);
     const prior = cursor ? restoreState(cursor, source) : null;
