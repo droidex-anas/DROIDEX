@@ -14,20 +14,22 @@ export function useInvalidScheduleInput(
   timezone: string | undefined,
   owner?: string,
 ) {
-  const key = JSON.stringify([
-    owner,
-    schedule?.kind,
-    schedule?.kind === 'once' ? schedule.runAt : null,
-    timezone,
-  ]);
+  const inputKey = (zone: string | undefined) =>
+    JSON.stringify([
+      owner,
+      schedule?.kind,
+      schedule?.kind === 'once' ? schedule.runAt : null,
+      zone,
+    ]);
+  const key = inputKey(timezone);
   const [invalidEdit, setInvalidEdit] = useState<{
     key: string;
     parts: ZonedInput;
   } | null>(null);
   if (invalidEdit && invalidEdit.key !== key) setInvalidEdit(null);
   const invalidInput = invalidEdit?.key === key ? invalidEdit.parts : null;
-  const setInvalidInput = (parts: ZonedInput | null) => {
-    setInvalidEdit(parts ? { key, parts } : null);
+  const setInvalidInput = (parts: ZonedInput | null, zone = timezone) => {
+    setInvalidEdit(parts ? { key: inputKey(zone), parts } : null);
   };
   return [invalidInput, setInvalidInput] as const;
 }
