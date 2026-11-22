@@ -223,7 +223,7 @@ export class DroidRuntime implements FactoryRuntime {
   status(): RuntimeStatus {
     return {
       mode: 'cli_auth',
-      droidPath: this.resolveDroidPath(),
+      droidPath: resolveDroidPath(),
       apiKeyConfigured: this.explicitApiKey.length > 0,
     };
   }
@@ -353,10 +353,6 @@ export class DroidRuntime implements FactoryRuntime {
     else delete env.FACTORY_API_KEY;
 
     return env;
-  }
-
-  private resolveDroidPath(): string {
-    return resolveDroidPath();
   }
 }
 

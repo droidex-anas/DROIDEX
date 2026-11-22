@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { availableParallelism as osAvailableParallelism, tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { McpServerConfigSchema, type McpServerConfig } from '@factory/droid-sdk';
@@ -444,10 +444,6 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
-}
-
-function availableParallelism(): number {
-  return osAvailableParallelism();
 }
 
 function stubMcpResource(): { start(): Promise<McpServerConfig>; close(): Promise<void> } {

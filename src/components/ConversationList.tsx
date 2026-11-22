@@ -31,7 +31,7 @@ export interface ConversationListHandle {
   scrollToRow: (rowId: string) => void;
 }
 
-export interface ConversationListProps {
+interface ConversationListProps {
   items: readonly FeedItem[];
   updateKind?: 'full' | 'append' | 'prepend';
   rebuiltFromItemIndex?: number;

@@ -206,7 +206,7 @@ export class HistoryPersistence {
   }
 
   async setIndexingIdle(isIdle: boolean): Promise<void> {
-    this.indexingIdle = isIdle && !this.hasActiveIndexingWork();
+    this.indexingIdle = isIdle && !this.durability.hasActiveWork();
     if (!this.searchClient || this.searchUnavailable) return;
     try {
       await this.searchClient.setIndexingIdle(this.indexingIdle);
@@ -426,10 +426,6 @@ export class HistoryPersistence {
         console.error(`Could not pause history search indexing: ${asError(error).message}`);
       });
     }
-  }
-
-  private hasActiveIndexingWork(): boolean {
-    return this.durability.hasActiveWork();
   }
 
   private async runBoundary(): Promise<void> {
