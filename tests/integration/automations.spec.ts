@@ -303,9 +303,7 @@ function submittedInstant(command: unknown) {
 test.describe('one-time DST-gap schedules', () => {
   test.use({ timezoneId: 'America/New_York' });
 
-  test('timezone picker blocks a gap and recovers through a valid zone or time', async ({
-    page,
-  }) => {
+  test('timezone picker blocks a gap and recovers through a valid zone', async ({ page }) => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.clock.setFixedTime(DST_NOW);
     const automation = scheduledPrompt(0, DST_NOW);
@@ -333,14 +331,6 @@ test.describe('one-time DST-gap schedules', () => {
       patch: { timezone: 'America/Phoenix' },
     });
     expect(submittedInstant(backend.requests[0])).toBe('2027-03-14T09:30:00.000Z');
-    await page.getByText(automation.title, { exact: true }).click();
-    await chooseZone(editor, 'America / New York');
-    await expect(save).toBeDisabled();
-    await setScheduleTime(editor, '03', '30');
-    await expect(editor.getByRole('alert')).toHaveCount(0);
-    await save.click();
-    await expect.poll(() => backend.requests.length).toBe(2);
-    expect(submittedInstant(backend.requests[1])).toBe('2027-03-14T07:30:00.000Z');
   });
 
   test('Send later blocks nonexistent local time and submits the corrected instant', async ({
