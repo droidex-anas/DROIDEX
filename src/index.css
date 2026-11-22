@@ -1013,15 +1013,16 @@
     }
   }
 
-  /* The sidebar footer floats over the session list (SidebarFooter). The list
-     reserves the footer's height at its end, and its scrollbar stops above it. */
+  /* The sidebar footer overlaps the end of the session list by its top padding
+     (SidebarFooter). The list reserves that overlap at its end, and its
+     scrollbar stops above it. */
   .sidebar-list {
-    padding-bottom: var(--sidebar-footer-height, 0px);
-    scroll-padding-bottom: var(--sidebar-footer-height, 0px);
+    padding-bottom: theme('spacing.4');
+    scroll-padding-bottom: theme('spacing.4');
   }
 
   .sidebar-list::-webkit-scrollbar-track {
-    margin-bottom: var(--sidebar-footer-height, 0px);
+    margin-bottom: theme('spacing.4');
   }
 
   /* While rows sit under the footer they blur and fade into the sidebar tone

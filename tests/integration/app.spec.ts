@@ -218,6 +218,24 @@ test('the sidebar context menus open at the pointer and from the row button', as
   await expect(menu).toHaveCount(0);
 });
 
+// The footer (welcome card and Settings) sits below the chat list rather than
+// over it, so the first rows stay visible even at the minimum window size.
+test('the sidebar welcome card never covers the first chat rows', async ({ page }) => {
+  await sessionBridge(page, []);
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto(appUrl);
+
+  await expect(page.getByText('Welcome to DROIDEX', { exact: true })).toBeVisible();
+  const emptyRow = page.getByText('No chats yet.', { exact: true });
+  await expect(emptyRow).toBeVisible();
+  const isOnTop = await emptyRow.evaluate((row) => {
+    const box = row.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return hit !== null && row.contains(hit);
+  });
+  expect(isOnTop).toBe(true);
+});
+
 test('slash feedback returns a durable copyable report receipt', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.goto(appUrl);

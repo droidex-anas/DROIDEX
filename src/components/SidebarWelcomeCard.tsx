@@ -14,7 +14,8 @@ const WELCOME_IMAGE_URL = new URL('../assets/welcome-nebula.jpg', import.meta.ur
 export const SIDEBAR_WELCOME_CARD_ID = 'welcome-to-droidex';
 
 // First-run card pinned above the sidebar Settings button: nebula header,
-// one-line pitch, and a primary action that starts a chat. The motion wrapper
+// one-line pitch, and a primary action that starts a chat. Short windows drop
+// the header so the chat list above keeps room. The motion wrapper
 // owns entrance and the height-collapse exit so the footer reflows smoothly;
 // Sidebar gates visibility and persistence.
 export function SidebarWelcomeCard({
@@ -35,12 +36,12 @@ export function SidebarWelcomeCard({
       <div className="relative overflow-hidden rounded-xl bg-raised shadow-lg">
         {/* Visual: nebula artwork melting into the card body, a multi-stop
             blend instead of a hard edge. */}
-        <div className="relative h-28 overflow-hidden">
+        <div className="relative h-28 overflow-hidden short:hidden">
           <img src={WELCOME_IMAGE_URL} alt="" className="h-full w-full scale-105 object-cover" />
           <div className="absolute inset-0 bg-gradient-to-t from-elevated via-elevated/35 to-transparent" />
         </div>
 
-        <div className="relative -mt-6 px-3.5 pb-3">
+        <div className="relative -mt-6 px-3.5 pb-3 short:mt-0 short:pt-3">
           <span className="text-body-strong text-primary">Welcome to DROIDEX</span>
           <p className="mt-1 text-body text-muted">
             Chats, workspaces and missions live here. Start a chat and put Droid to work.

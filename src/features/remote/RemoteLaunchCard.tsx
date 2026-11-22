@@ -151,10 +151,11 @@ export function RemoteLaunchCard({
         aria-labelledby="remote-launch-title"
         className="relative overflow-hidden rounded-xl bg-raised shadow-lg"
       >
-        <div className="bg-elevated/60 px-5 pb-2 pt-5">
+        {/* Short windows drop the art so the chat list above keeps room. */}
+        <div className="bg-elevated/60 px-5 pb-2 pt-5 short:hidden">
           <LaunchArt />
         </div>
-        <div className="px-3.5 pb-3 pt-2.5">
+        <div className="px-3.5 pb-3 pt-2.5 short:pt-3">
           <h2 id="remote-launch-title" className="text-body-strong text-primary">
             DROIDEX, from any browser
           </h2>

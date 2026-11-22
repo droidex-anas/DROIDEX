@@ -38,6 +38,11 @@ export default {
       full: '9999px',
     },
     extend: {
+      // Windows too short for the sidebar's announcement art and a readable
+      // chat list at once (the Electron minimum is 600px tall).
+      screens: {
+        short: { raw: '(max-height: 720px)' },
+      },
       // Names follow docs/design-system (README "Naming"). Text colours read
       // `text-primary`/`text-secondary`/`text-muted`; `text` is the same colour
       // for fills and rings (`bg-text`, `ring-text`).
