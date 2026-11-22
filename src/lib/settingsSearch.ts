@@ -8,25 +8,37 @@ import {
 } from './finishNotificationControls';
 import { SHORTCUT_DEFINITIONS } from './shortcuts';
 
+export type SettingsTab =
+  | 'General'
+  | 'Setup & updates'
+  | 'Profile'
+  | 'Remote'
+  | 'Appearance'
+  | 'Notifications'
+  | 'Configuration'
+  | 'Keyboard shortcuts'
+  | 'Privacy & diagnostics'
+  | 'MCP servers'
+  | 'DroidProxy'
+  | 'Worktrees'
+  | 'Archived chats';
+
 interface SettingsSearchEntry {
   /** Settings nav tab to open. */
-  tab: string;
+  tab: SettingsTab;
   /** Human label shown in search hits (usually the control name). */
   label: string;
   /** Extra tokens matched case-insensitively. */
   keywords?: string[];
 }
 
-function e(tab: string, label: string, keywords: string[] = []): SettingsSearchEntry {
+function e(tab: SettingsTab, label: string, keywords: string[] = []): SettingsSearchEntry {
   return { tab, label, keywords };
 }
 
-/**
- * Indexed settings content for every shipped tab. Placeholder tabs are indexed
- * by name/aliases so search still navigates even before those screens exist.
- */
 const SHORTCUT_KEYWORDS = ['hotkeys', 'keymap', 'bindings', 'shortcuts', 'cmd'];
 
+/** Indexed settings content for every tab, plus each tab's name and common aliases. */
 const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Profile', 'Profile and usage', [
     'username',
@@ -229,19 +241,9 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     e('Keyboard shortcuts', definition.label, SHORTCUT_KEYWORDS),
   ),
 
-  // ── Placeholder tabs (name + common aliases until those screens ship) ────
+  // ── Tab names and common aliases ─────────────────────────────────────────
   e('Profile', 'Profile', ['account', 'user', 'avatar', 'identity']),
-  e('Personalization', 'Personalization', [
-    'persona',
-    'instructions',
-    'custom instructions',
-    'memory',
-    'preferences',
-  ]),
-  e('Usage & billing', 'Usage & billing', ['billing', 'usage', 'quota', 'invoice', 'plan', 'cost']),
-  e('Snapshots', 'Snapshots', ['snapshot', 'checkpoint', 'restore']),
   e('MCP servers', 'MCP servers', ['mcp', 'tools server', 'model context protocol']),
-  e('Browser', 'Browser', ['native browser', 'web browser', 'browser pane']),
   e('DroidProxy', 'DroidProxy', ['droidproxy', 'proxy', 'localhost:8317']),
   e('DroidProxy', 'Subscriptions', [
     'oauth',
@@ -258,15 +260,11 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'factory settings',
     'droidproxy models',
   ]),
-  e('Hooks', 'Hooks', ['lifecycle hooks', 'script hooks']),
-  e('Connections', 'Connections', ['integrations', 'connected apps']),
-  e('Git', 'Git', ['github', 'vcs', 'version control', 'commit', 'branch']),
-  e('Environments', 'Environments', ['env', 'environment variables', 'runtime']),
   e('Archived chats', 'Archived chats', ['archive', 'archived', 'hidden chats']),
 ];
 
 export interface SettingsSearchHit {
-  tab: string;
+  tab: SettingsTab;
   label: string;
   score: number;
 }
@@ -342,7 +340,7 @@ export function searchSettings(
 export function bestTabForQuery(
   query: string,
   hiddenTabs: ReadonlySet<string> = NO_HIDDEN_TABS,
-): string | null {
+): SettingsTab | null {
   const hits = searchSettings(query, hiddenTabs, 1);
   return hits[0]?.tab ?? null;
 }
