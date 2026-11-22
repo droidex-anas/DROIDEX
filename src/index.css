@@ -317,12 +317,14 @@
 
   /* A shallow fade on the bottom edge only, for a column whose top edge sits
      flush under fixed chrome, such as the sidebar list above its footer. It is
-     shallow so the first row of a short list stays clear. */
+     shallow so the first row of a short list stays clear, and keyboard focus
+     scrolls rows clear of it. */
   .scroll-fade-y-end {
     mask-image: linear-gradient(to bottom, #000 calc(100% - var(--fade-end)), transparent);
     animation: scroll-fade-y-end linear both;
     animation-timeline: scroll(self block);
     animation-range: calc(100% - 1.5rem) 100%;
+    scroll-padding-bottom: 1.5rem;
   }
 
   ::selection {
