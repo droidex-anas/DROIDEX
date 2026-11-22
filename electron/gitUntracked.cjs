@@ -1,6 +1,6 @@
 const path = require('node:path');
 const fsp = require('node:fs/promises');
-const { tryRun } = require('./gitCommand.cjs');
+const { run } = require('./gitCommand.cjs');
 const { cachedRead, setRepoCache } = require('./gitRepository.cjs');
 
 const UNTRACKED_FILE_CAP = 1000;
@@ -22,12 +22,13 @@ function scanUntracked(root) {
   return cachedRead(root, 'untracked', () => scanUntrackedOf(root));
 }
 
+async function readUntrackedPaths(root) {
+  const listing = await run(root, ['ls-files', '--others', '--exclude-standard', '-z']);
+  return listing.split('\0').filter(Boolean);
+}
+
 async function scanUntrackedOf(root) {
-  const listing = await tryRun(root, ['ls-files', '--others', '--exclude-standard']);
-  const names = String(listing || '')
-    .split('\n')
-    .filter(Boolean)
-    .slice(0, UNTRACKED_FILE_CAP);
+  const names = (await readUntrackedPaths(root).catch(() => [])).slice(0, UNTRACKED_FILE_CAP);
   const prior = untrackedScanCache.get(root) || new Map();
   const next = new Map();
   const out = new Array(names.length);
@@ -96,4 +97,9 @@ async function scanUntrackedOf(root) {
   return out;
 }
 
-module.exports = { scanUntracked, UNTRACKED_FILE_CAP, UNTRACKED_SCAN_CONCURRENCY };
+module.exports = {
+  readUntrackedPaths,
+  scanUntracked,
+  UNTRACKED_FILE_CAP,
+  UNTRACKED_SCAN_CONCURRENCY,
+};

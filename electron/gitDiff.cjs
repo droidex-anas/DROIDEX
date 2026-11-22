@@ -6,6 +6,7 @@ const { run, runSoft, tryRun } = require('./gitCommand.cjs');
 const { isWithin, repoRootOf, cachedRead, setRepoCache } = require('./gitRepository.cjs');
 const { effectiveBaseRef } = require('./gitEnvironment.cjs');
 const {
+  readUntrackedPaths,
   scanUntracked,
   UNTRACKED_FILE_CAP,
   UNTRACKED_SCAN_CONCURRENCY,
@@ -435,13 +436,10 @@ async function markTurnStart(dir, ownerId) {
   // the same turn-start state. Capture them concurrently so repositories with
   // large tracked and untracked trees do not add both scan times to prompt
   // delivery latency.
-  const [baseline, priorListingOutput] = await Promise.all([
+  const [baseline, priorListing] = await Promise.all([
     baselinePromise,
-    tryRun(root, ['ls-files', '--others', '--exclude-standard']),
+    readUntrackedPaths(root).catch(() => []),
   ]);
-  const priorListing = String(priorListingOutput || '')
-    .split('\n')
-    .filter(Boolean);
   const priorNames = priorListing.slice(0, UNTRACKED_FILE_CAP);
   // When the untracked listing exceeded the cap, the signature map can't answer
   // "did this path predate the turn?" for entries beyond it. Keep the full name
@@ -487,9 +485,7 @@ async function adoptTurnBaseline(dir, clientRef, appSessionId) {
 // Every change against HEAD as one patch, untracked files included.
 async function workingTreeDiff(root) {
   const parts = [await run(root, ['diff', 'HEAD', '--'])];
-  const untracked = (await run(root, ['ls-files', '--others', '--exclude-standard']))
-    .split(/\r?\n/)
-    .filter(Boolean);
+  const untracked = await readUntrackedPaths(root);
   for (const file of untracked) {
     parts.push(await runSoft(root, ['diff', '--no-index', '--', os.devNull, file]));
   }
