@@ -1,7 +1,7 @@
 import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { placeCreatedChat } from '../features/tabs/tabNavigation';
 import { markDesignChat } from '../lib/chatMetadata';
-import { settleSideChatStart } from '../lib/sideChats';
+import { isSideChat, settleSideChatStart } from '../lib/sideChats';
 import { appendTranscriptEvent, withUpdatedTranscript } from '../lib/transcriptStoreMemory';
 import { estimateTranscriptCost } from '../lib/transcriptWindow';
 import { invalidateSelectedChildOpening } from './storeChildSession';
@@ -124,10 +124,6 @@ function createdSessionLastSeen(
         [session.appSessionId]: session.updatedAt,
       }
     : state.sessionLastSeen;
-}
-
-function isSideChat(session: SessionSummary): boolean {
-  return session.lineage?.kind === 'side';
 }
 
 export function reduceSessionCreated(
