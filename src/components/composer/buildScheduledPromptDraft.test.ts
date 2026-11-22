@@ -9,7 +9,7 @@ const draft: ScheduledPromptDraft = {
   visualizeSelected: false,
   activeSkills: [],
   provider: 'droid',
-  findFastCommand: () => undefined,
+  isFastCommand: false,
 };
 const schedule = { appSessionId: 'original-chat', runAt: 1_800_000_000_000, timezone: 'UTC' };
 
@@ -69,7 +69,7 @@ test('scheduled app commands are rejected, while an attached compact alias remai
   );
 });
 
-test('unsupported mentions are rejected before command matching', () => {
+test('unsupported mentions are rejected before app commands', () => {
   assert.throws(
     () =>
       buildScheduledPromptDraft({
@@ -88,9 +88,7 @@ test('unsupported mentions are rejected before command matching', () => {
               filePath: 'app://calendar',
             },
           ],
-          findFastCommand: () => {
-            throw new Error('Command matching must not run.');
-          },
+          isFastCommand: true,
         },
         paths: [],
         defaults,

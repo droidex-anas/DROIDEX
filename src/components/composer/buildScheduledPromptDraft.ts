@@ -7,7 +7,6 @@ import {
 } from '../../lib/composePrompt';
 import { feedbackDraftFromCommand } from '../../lib/feedbackReport';
 import { sideChatPromptFromCommand } from '../../lib/sideChats';
-import type { SlashCommand } from '../ComposerMenu';
 import { mentionsForRows } from './composerCatalog';
 import { USAGE_COMMAND } from './submitComposerPrompt';
 
@@ -16,7 +15,7 @@ export interface ScheduledPromptDraft {
   visualizeSelected: boolean;
   activeSkills: SkillInfo[];
   provider: ProviderKind;
-  findFastCommand: (text: string) => SlashCommand | undefined;
+  isFastCommand: boolean;
 }
 
 export function buildScheduledPromptDraft({
@@ -34,7 +33,7 @@ export function buildScheduledPromptDraft({
   timezone: string;
   defaults: AutomationDraft;
 }): AutomationDraft {
-  const { input, visualizeSelected, activeSkills, provider, findFastCommand } = draft;
+  const { input, visualizeSelected, activeSkills, provider, isFastCommand } = draft;
   const text = promptTextWithVisualize(input.trim(), visualizeSelected);
   const skills = activeSkills.map((skill) => skill.name);
   if (!text && skills.length === 0 && paths.length === 0) {
@@ -47,7 +46,7 @@ export function buildScheduledPromptDraft({
   }
   if (
     input.trim() === USAGE_COMMAND ||
-    findFastCommand(input.trim()) !== undefined ||
+    isFastCommand ||
     runsAsCompactCommand(text, {
       visualizeSelected,
       skillCount: skills.length,

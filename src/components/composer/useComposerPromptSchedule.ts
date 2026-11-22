@@ -24,6 +24,7 @@ export function useComposerPromptSchedule({
   const scheduleGeneration = useRef(0);
 
   useEffect(() => {
+    // Switching abandons the schedule; the generation stops an in-flight save resetting the new draft.
     setScheduleTarget(null);
     return () => {
       scheduleGeneration.current += 1;
@@ -67,7 +68,7 @@ export function useComposerPromptSchedule({
   return {
     scheduleTarget,
     open: () => {
-      if (target) setScheduleTarget({ appSessionId: target.appSessionId });
+      setScheduleTarget(target);
     },
     close: () => {
       setScheduleTarget((current) => (current === scheduleTarget ? null : current));

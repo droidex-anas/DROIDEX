@@ -1210,11 +1210,12 @@ export default function PromptInput({
     return holdId;
   };
 
+  const primaryScheduleTarget =
+    activeSession && visibleTarget.kind === 'primary'
+      ? { appSessionId: activeSession.appSessionId }
+      : null;
   const promptSchedule = useComposerPromptSchedule({
-    target:
-      activeSession && visibleTarget.kind === 'primary'
-        ? { appSessionId: activeSession.appSessionId }
-        : null,
+    target: primaryScheduleTarget,
     visibleTargetKey,
     visibleTargetKeyRef,
     beginSave: () => {
@@ -1229,7 +1230,7 @@ export default function PromptInput({
           visualizeSelected,
           activeSkills,
           provider: composerProvider,
-          findFastCommand,
+          isFastCommand: findFastCommand(input.trim()) !== undefined,
         },
         whenReady: async () => {
           const [images, documents] = await Promise.all([
@@ -1260,7 +1261,6 @@ export default function PromptInput({
       };
     },
   });
-  const { scheduleTarget } = promptSchedule;
 
   const queue: QueuedPrompt[] = state.promptQueue ?? [];
 
@@ -2201,12 +2201,10 @@ export default function PromptInput({
         onEdit={draftEditing.applyEdit}
         onClose={draftEditing.closeMenu}
         canSchedule={hasContent && !appUpdateInstalling}
-        onSchedule={
-          activeSession && visibleTarget.kind === 'primary' ? promptSchedule.open : undefined
-        }
+        onSchedule={primaryScheduleTarget ? promptSchedule.open : undefined}
       />
-      {scheduleTarget &&
-        activeSession?.appSessionId === scheduleTarget.appSessionId &&
+      {promptSchedule.scheduleTarget &&
+        activeSession?.appSessionId === promptSchedule.scheduleTarget.appSessionId &&
         visibleTarget.kind === 'primary' && (
           <Suspense fallback={null}>
             <SchedulePromptPopover

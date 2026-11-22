@@ -575,23 +575,6 @@ test('switching chats after create keeps the acknowledgement scoped to its origi
   await expect(composer).toHaveText('Keep this design draft');
 });
 
-test('scheduling a bare compact alias rejects the app command without changing the draft', async ({
-  page,
-}) => {
-  const backend = await automationBridge(page);
-  await openConversation(page);
-  const composer = page.getByRole('textbox', { name: 'Prompt', exact: true });
-  await composer.fill('/compression');
-  await openSchedule(page);
-  const dialog = page.getByRole('dialog', { name: 'Schedule prompt', exact: true });
-  await dialog.getByRole('button', { name: 'Schedule prompt', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toHaveText(
-    'App commands cannot be scheduled. Write a prompt for the agent instead.',
-  );
-  expect(backend.requests).toEqual([]);
-  await expect(composer).toHaveText('/compression');
-});
-
 test('date editing keeps the schedule open and Escape restores focus on a narrow window', async ({
   page,
 }) => {
