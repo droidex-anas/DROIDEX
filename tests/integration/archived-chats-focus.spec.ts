@@ -4,7 +4,7 @@ import { sessionSummary } from '../../src/test/sessionSummary';
 
 async function openArchivedChats(page: Page, mode: 'light' | 'dark') {
   const now = Date.UTC(2026, 5, 1, 12);
-  await page.clock.setFixedTime(now);
+  await page.clock.install({ time: now });
   await page.addInitScript(
     ({ mode, now }) => {
       localStorage.setItem('droid-theme', JSON.stringify({ mode }));
@@ -59,6 +59,9 @@ async function openArchivedChats(page: Page, mode: 'light' | 'dark') {
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Archived chats', exact: true }).click();
   await expect(page.getByTestId('archived-chat-row')).toHaveCount(2);
+  await expect(
+    page.locator('.fixed.inset-0').filter({ has: page.getByTestId('archived-chat-row') }),
+  ).toHaveCSS('opacity', '1');
 }
 
 for (const mode of ['light', 'dark'] as const) {
