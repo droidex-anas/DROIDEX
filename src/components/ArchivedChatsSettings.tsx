@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ArchiveRestore, Trash } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { archivedChats, chatDisplayTitle } from '../lib/chatMetadata';
@@ -22,6 +22,10 @@ export function ArchivedChatsSettings() {
     shallowEqual,
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const restoreDeleteFocus = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    restoreDeleteFocus.current = null;
+  });
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
 
@@ -74,6 +78,7 @@ export function ArchivedChatsSettings() {
                       // focus the safe action to keep keyboard users in place.
                       autoFocus
                       onClick={() => {
+                        restoreDeleteFocus.current = session.appSessionId;
                         setConfirmingDelete(null);
                       }}
                     >
@@ -98,6 +103,12 @@ export function ArchivedChatsSettings() {
                       icon={Trash}
                       title="Delete permanently"
                       aria-label={`Delete ${title} permanently`}
+                      ref={(button) => {
+                        if (button && restoreDeleteFocus.current === session.appSessionId) {
+                          button.focus();
+                          restoreDeleteFocus.current = null;
+                        }
+                      }}
                       onClick={() => {
                         setConfirmingDelete(session.appSessionId);
                       }}
