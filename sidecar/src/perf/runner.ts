@@ -3,7 +3,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { availableParallelism as osAvailableParallelism, tmpdir } from 'node:os';
+import { availableParallelism, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { McpServerConfigSchema, type McpServerConfig } from '@factory/droid-sdk';
@@ -313,7 +313,7 @@ export async function runReplay(options: ReplayRunOptions): Promise<ReplayReport
       environment: {
         node: process.version,
         platform: `${process.platform}/${process.arch}`,
-        cpus: osAvailableParallelism(),
+        cpus: availableParallelism(),
       },
     };
   }
