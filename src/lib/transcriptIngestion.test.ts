@@ -6,12 +6,58 @@ import {
   firstUserTranscriptEvent,
   latestTranscriptActivityForSource,
   normalizeTranscriptUpdate,
+  childSpawnTranscriptEvents,
 } from './transcriptIngestion';
 import { estimateTranscriptCost } from './transcriptWindow';
 import { textEvent } from '../test/textEvent';
 
 const transcriptEvent = (id: string, overrides: Partial<TranscriptEvent> = {}) =>
   textEvent(id, { appSessionId: 'session-a', author: 'assistant', ...overrides });
+
+test('batched indexes stay private to each retained branch and match single-event ingestion', () => {
+  const retained = [
+    toolCall('old-call', 'shared', { path: 'old' }, { toolName: 'Read' }),
+    transcriptEvent('old-text', {
+      author: undefined,
+      textUpdate: { kind: 'snapshot', messageId: 'message' },
+    }),
+  ];
+  const cost = estimateTranscriptCost(retained);
+  const original = structuredClone(retained);
+  const activity = latestTranscriptActivityForSource(retained, 'primary');
+  const spawns = childSpawnTranscriptEvents(retained);
+  const call = toolCall('new-call', 'new', { path: 'new' }, { toolName: 'Read', ts: 2 });
+  const incoming = [
+    call,
+    toolCall('other-source', 'new', { path: 'child' }, { sourceSessionId: 'child' }),
+    transcriptEvent('snapshot', {
+      author: undefined,
+      text: 'updated',
+      textUpdate: { kind: 'snapshot', messageId: 'message' },
+    }),
+    toolCall('partial', 'new', { line: 2 }, { ts: 3 }),
+    toolCall('spawn', 'spawn', { description: 'work' }, { toolName: 'Task' }),
+    toolCall('spawn-update', 'spawn', { subagent_type: 'worker' }),
+    call,
+    transcriptEvent('result', { kind: 'tool_result', toolUseId: 'new', isError: true }),
+  ];
+  const batch = ingestTranscriptEvents(retained, cost, incoming);
+  let sequential = { events: retained, estimatedCost: cost };
+  for (const event of incoming) {
+    sequential = ingestTranscriptEvents(sequential.events, sequential.estimatedCost, [event]);
+  }
+  assert.deepEqual([...batch.events], [...sequential.events]);
+  assert.equal(batch.estimatedCost, sequential.estimatedCost);
+  assert.equal(batch.estimatedCost, estimateTranscriptCost(batch.events));
+  assert.deepEqual(retained, original);
+  assert.equal(latestTranscriptActivityForSource(retained, 'primary'), activity);
+  assert.deepEqual(childSpawnTranscriptEvents(retained), spawns);
+  const branch = ingestTranscriptEvents(retained, cost, [call]);
+  assert.deepEqual([...branch.events], [...original, call]);
+  assert.deepEqual([...batch.events], [...sequential.events]);
+  assert.deepEqual(ingestTranscriptEvents(retained, cost, []).events, original);
+  assert.equal(ingestTranscriptEvents(retained, cost, [retained[0]]).change, null);
+});
 
 /** A streamed tool-call snapshot: no author or text, merged by `toolUseId`. */
 function toolCall(
