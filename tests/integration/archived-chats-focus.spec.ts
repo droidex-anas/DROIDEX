@@ -115,7 +115,38 @@ for (const scenario of [
   });
 }
 
-test('restoring newly arrived rows after an emptying delete does not focus the empty state', async ({
+for (const scenario of [
+  { name: 'middle', count: 4, restored: 'Release notes', neighbor: 'Parser cleanup' },
+  { name: 'last', count: 3, restored: 'Parser cleanup', neighbor: 'Release notes' },
+  { name: 'only', count: 1, restored: 'Saved research', neighbor: null },
+]) {
+  test(`restoring the ${scenario.name} archived row preserves keyboard focus`, async ({ page }) => {
+    await openArchivedChats(page, scenario.count);
+    await page.getByRole('button', { name: `Restore ${scenario.restored}`, exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('archived-chat-row')).toHaveCount(scenario.count - 1);
+    const target = scenario.neighbor
+      ? page.getByRole('button', { name: `Restore ${scenario.neighbor}`, exact: true })
+      : page.getByText('No archived chats.', { exact: true }).locator('..');
+    await expect(target).toBeFocused();
+  });
+}
+
+test('restoring two rows in turn toward the same neighbor keeps keyboard focus', async ({
+  page,
+}) => {
+  await openArchivedChats(page, 4);
+  await page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  const neighbor = page.getByRole('button', { name: 'Restore Keyboard shortcuts', exact: true });
+  await expect(neighbor).toBeFocused();
+  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByTestId('archived-chat-row')).toHaveCount(2);
+  await expect(neighbor).toBeFocused();
+});
+
+test('an emptying delete does not pull focus from rows restored after new ones arrive', async ({
   page,
 }) => {
   const emit = await openArchivedChats(page, 1);
@@ -135,9 +166,9 @@ test('restoring newly arrived rows after an emptying delete does not focus the e
     ],
     earlierSessionsByCwd: {},
   });
-  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).click();
-  await page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }).click();
-  const emptyState = page.getByText('No archived chats.', { exact: true });
-  await expect(emptyState).toBeVisible();
-  await expect(emptyState.locator('..')).not.toBeFocused();
+  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await expect(
+    page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }),
+  ).toBeFocused();
 });
