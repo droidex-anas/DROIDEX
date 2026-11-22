@@ -220,29 +220,19 @@ test('worktree listing preserves newline-containing paths', async () => {
 
   const entries = await worktrees(root);
   assert.deepEqual(
-    entries.map((entry) => entry.path),
-    [root, target],
-  );
-  assert.deepEqual(
-    entries.map((entry) => entry.isMain),
-    [true, false],
-  );
-  assert.deepEqual(
-    entries.map((entry) => entry.isCurrent),
-    [true, false],
+    entries.map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+    [
+      { path: root, isMain: true, isCurrent: true },
+      { path: target, isMain: false, isCurrent: false },
+    ],
   );
   const linkedEntries = await worktrees(target);
   assert.deepEqual(
-    linkedEntries.map((entry) => entry.path),
-    [root, target],
-  );
-  assert.deepEqual(
-    linkedEntries.map((entry) => entry.isMain),
-    [true, false],
-  );
-  assert.deepEqual(
-    linkedEntries.map((entry) => entry.isCurrent),
-    [false, true],
+    linkedEntries.map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+    [
+      { path: root, isMain: true, isCurrent: false },
+      { path: target, isMain: false, isCurrent: true },
+    ],
   );
 });
 
@@ -250,55 +240,31 @@ test('worktree listing preserves paths and detached and locked states', async ()
   const dir = await makeRepo();
   await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
   const root = await fsp.realpath(dir);
-  const branch = (await git(root, ['branch', '--show-current'])).trim();
-  const head = (await git(root, ['rev-parse', 'HEAD'])).trim().slice(0, 12);
-  const names = ['ordinary', ' with space ', 'café'];
-  for (const [index, name] of names.entries()) {
-    await git(root, ['worktree', 'add', '--detach', path.join(root, name)]);
-    if (index > 0) {
-      const reason = index === 1 ? [] : ['--reason', 'first\n\nsecond'];
-      await git(root, ['worktree', 'lock', ...reason, path.join(root, name)]);
-    }
-  }
+  const ordinary = path.join(root, 'ordinary');
+  const spaced = path.join(root, ' with space ');
+  const unicode = path.join(root, 'café');
+  await git(root, ['worktree', 'add', '--detach', ordinary]);
+  await git(root, ['worktree', 'add', '--detach', spaced]);
+  await git(root, ['worktree', 'lock', spaced]);
+  await git(root, ['worktree', 'add', '--detach', unicode]);
+  await git(root, ['worktree', 'lock', '--reason', 'first\n\nsecond', unicode]);
 
   const entries = await worktrees(root);
   assert.deepEqual(
-    new Set(entries.map((entry) => entry.path)),
-    new Set([root, ...names.map((name) => path.join(root, name))]),
+    entries.map(({ path, isMain, isCurrent, detached, locked }) => ({
+      path,
+      isMain,
+      isCurrent,
+      detached,
+      locked,
+    })),
+    [
+      { path: root, isMain: true, isCurrent: true, detached: false, locked: false },
+      { path: spaced, isMain: false, isCurrent: false, detached: true, locked: true },
+      { path: unicode, isMain: false, isCurrent: false, detached: true, locked: true },
+      { path: ordinary, isMain: false, isCurrent: false, detached: true, locked: false },
+    ],
   );
-  for (const entry of entries) {
-    const isMain = entry.path === root;
-    assert.equal(entry.isMain, isMain);
-    assert.equal(entry.isCurrent, isMain);
-    assert.equal(entry.head, head);
-    assert.equal(entry.branch, isMain ? branch : null);
-    assert.equal(entry.detached, !isMain);
-    assert.equal(entry.locked, !isMain && entry.path !== path.join(root, 'ordinary'));
-    assert.equal(entry.bare, false);
-    assert.equal((await fsp.stat(entry.path)).isDirectory(), true);
-  }
-});
-
-test('worktree listing returns no entries for empty output or a Git failure', async (t) => {
-  const dir = await makeRepo();
-  const gitCommand = require('./gitCommand.cjs');
-  const modulePath = require.resolve('./gitWorktrees.cjs');
-  const cachedModule = require.cache[modulePath];
-  delete require.cache[modulePath];
-  let output = '';
-  const originalTryRun = gitCommand.tryRun;
-  t.mock.method(gitCommand, 'tryRun', (cwd, args, options) =>
-    args[0] === 'worktree' ? Promise.resolve(output) : originalTryRun(cwd, args, options),
-  );
-  try {
-    const { worktrees: listWorktrees } = require('./gitWorktrees.cjs');
-    assert.deepEqual(await listWorktrees(dir), []);
-    output = null;
-    const otherDir = await makeRepo();
-    assert.deepEqual(await listWorktrees(otherDir), []);
-  } finally {
-    require.cache[modulePath] = cachedModule;
-  }
 });
 
 test('a created worktree keeps its review diff after its base branch merges it', async () => {

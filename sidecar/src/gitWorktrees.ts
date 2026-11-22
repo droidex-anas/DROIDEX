@@ -141,7 +141,7 @@ export async function addWorktree(
 
 function parseWorktreePaths(output: string): string[] {
   return output
-    .split('\n')
+    .split('\0')
     .filter((line) => line.startsWith('worktree '))
     .map((line) => line.slice('worktree '.length));
 }
@@ -189,7 +189,9 @@ export async function removeManagedWorktree(target: string): Promise<void> {
     await unlink(target).catch(() => undefined);
     return;
   }
-  const worktrees = parseWorktreePaths(await git(target, ['worktree', 'list', '--porcelain']));
+  const worktrees = parseWorktreePaths(
+    await git(target, ['worktree', 'list', '--porcelain', '-z']),
+  );
   const main = worktrees[0];
   const canonicalTarget = await registeredWorktreePath(worktrees, target);
   if (!main || !canonicalTarget || !(await isManagedWorktreePath(worktrees, canonicalTarget))) {
