@@ -10,25 +10,20 @@ interface TokenReference {
 
 export type TokenScope = 'shared' | 'light' | 'dark';
 
-export interface SourceTokens {
-  modes: Record<'light' | 'dark', Record<string, string>>;
+interface SourceTokens {
+  modes: Record<'light' | 'dark', Set<string>>;
   references: TokenReference[];
   diagnostics: CanvasDiagnostic[];
   localTokens: Set<string>;
 }
 
 /** Only global declarations with an explicit mode (or an explicit shared value) become kit tokens. */
-export function sourceTokens(files: SourceFiles): SourceTokens {
+function sourceTokens(files: SourceFiles): SourceTokens {
   const result: SourceTokens = {
-    modes: { light: {}, dark: {} },
+    modes: { light: new Set(), dark: new Set() },
     references: [],
     diagnostics: [],
     localTokens: new Set(),
-  };
-  const scopes: Record<TokenScope, Record<string, string>> = {
-    shared: {},
-    light: result.modes.light,
-    dark: result.modes.dark,
   };
   for (const [file, content] of Object.entries(files)) {
     if (!/\.(?:css|[jt]sx?)$/.test(file)) continue;
@@ -46,12 +41,6 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
       }
       for (const match of text.matchAll(/(['"])(--[^'"\s]+)\1\s*:/g)) {
         result.localTokens.add(match[2]);
-        result.diagnostics.push({
-          code: 'manual_interpretation_required',
-          message: `${match[2]} is an inline source override. Define its global light and dark values explicitly before extracting it as a token.`,
-          file,
-          line: lineAt(text, match.index),
-        });
       }
       continue;
     }
@@ -89,29 +78,16 @@ export function sourceTokens(files: SourceFiles): SourceTokens {
           : [];
       if (modes.length === 0) {
         result.localTokens.add(declaration.prop);
-        result.diagnostics.push({
-          code: 'manual_interpretation_required',
-          message: `${declaration.prop} is scoped or conditional. Define its kit values explicitly in light and dark root rules.`,
-          file,
-          line: declaration.source?.start?.line,
-        });
         return;
       }
-      declareToken(
-        scopes,
-        {
-          name: declaration.prop,
-          value: declaration.value,
-          targets: modes,
-          file,
-          line: declaration.source?.start?.line,
-        },
-        result.diagnostics,
-      );
+      for (const mode of modes) {
+        if (mode === 'shared') {
+          result.modes.light.add(declaration.prop);
+          result.modes.dark.add(declaration.prop);
+        } else result.modes[mode].add(declaration.prop);
+      }
     });
   }
-  for (const mode of ['light', 'dark'] as const)
-    result.modes[mode] = { ...scopes.shared, ...result.modes[mode] };
   return result;
 }
 
@@ -171,10 +147,6 @@ export function declareToken(
   }
 }
 
-export function lineAt(text: string, offset: number): number {
-  return text.slice(0, offset).split('\n').length;
-}
-
 /** One actionable location per missing token; kit values never fill in source-owned values. */
 export function unmappedTokens(
   files: SourceFiles,
@@ -186,7 +158,7 @@ export function unmappedTokens(
   const diagnostics = source.references.flatMap(({ token, file, line }) => {
     if (
       Object.hasOwn(tokens, token) ||
-      Object.hasOwn(source.modes[mode], token) ||
+      source.modes[mode].has(token) ||
       source.localTokens.has(token) ||
       reported.has(token)
     )
@@ -201,5 +173,5 @@ export function unmappedTokens(
       },
     ];
   });
-  return [...source.diagnostics.filter((entry) => entry.code === 'css_error'), ...diagnostics];
+  return [...source.diagnostics, ...diagnostics];
 }
