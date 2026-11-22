@@ -41,3 +41,20 @@ test('settings search ranks controls under their shipped tabs and jumps to the r
   assert.equal(bestTabForQuery('zzzz-no-match'), null);
   assert.equal(bestTabForQuery(''), null);
 });
+
+// A Remote browser hides laptop-only tabs; ranking them anyway made search
+// auto-open the hidden Profile tab instead of the visible match.
+test('settings search ranks only the tabs that are shown', () => {
+  const remoteHidden = new Set(['Profile']);
+
+  assert.equal(bestTabForQuery('tokens'), 'Profile');
+  assert.deepEqual(
+    searchSettings('tokens', remoteHidden).map((hit) => hit.tab),
+    ['General'],
+  );
+  assert.equal(bestTabForQuery('tokens', remoteHidden), 'General');
+
+  assert.equal(bestTabForQuery('username'), 'Profile');
+  assert.deepEqual(searchSettings('username', remoteHidden), []);
+  assert.equal(bestTabForQuery('username', remoteHidden), null);
+});
