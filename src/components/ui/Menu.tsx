@@ -25,7 +25,8 @@ const ENABLED_ITEM = '[role^="menuitem"]:not([aria-disabled="true"])';
 
 interface MenuContextValue {
   listRef: RefObject<HTMLDivElement | null>;
-  selectingRef: RefObject<boolean>;
+  /** The item whose select blink is running, if any. */
+  blinkingRef: RefObject<HTMLButtonElement | null>;
   close: () => void;
 }
 
@@ -58,17 +59,25 @@ function MenuRoot({
 }: MenuProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const mergedRef = useMergeRefs([listRef, ref]);
-  const selectingRef = useRef(false);
+  const blinkingRef = useRef<HTMLButtonElement>(null);
   const typeahead = useRef({ query: '', resetAt: 0 });
 
-  // Opening highlights the checked choice, or else the first item, so the
-  // arrows start from where the user already is.
+  // A blink cut short by closing the menu must not hold over into the next opening.
   useEffect(() => {
-    if (!open) return;
-    const items = enabledItems(listRef.current);
+    if (!open) blinkingRef.current = null;
+  }, [open]);
+
+  // Opening highlights the checked choice, or else the first item, so the
+  // arrows start from where the user already is. Items that arrive after
+  // opening (read asynchronously) get the same start while nothing is
+  // highlighted yet; the select blink also parks focus on the list.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!open || !list || document.activeElement !== list || blinkingRef.current) return;
+    const items = enabledItems(list);
     const checked = items.find((item) => item.getAttribute('aria-checked') === 'true');
     (checked ?? items.at(0))?.focus({ preventScroll: true });
-  }, [open]);
+  }, [open, children]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     onKeyDown?.(event);
@@ -97,7 +106,7 @@ function MenuRoot({
   };
 
   return (
-    <MenuContext.Provider value={{ listRef, selectingRef, close: onClose }}>
+    <MenuContext.Provider value={{ listRef, blinkingRef, close: onClose }}>
       <Popover
         {...rest}
         ref={mergedRef}
@@ -142,19 +151,20 @@ function MenuItem({
   children,
   ...rest
 }: MenuItemProps) {
-  const { listRef, selectingRef, close } = useMenu();
+  const { listRef, blinkingRef, close } = useMenu();
   const itemRef = useRef<HTMLButtonElement>(null);
   const mergedRef = useMergeRefs([itemRef, ref]);
 
   const select = async () => {
     const item = itemRef.current;
-    if (disabled || !item || selectingRef.current) return;
-    selectingRef.current = true;
+    if (disabled || !item || blinkingRef.current) return;
+    blinkingRef.current = item;
     listRef.current?.focus({ preventScroll: true });
     await wait(SELECT_BLINK_MS);
     item.focus({ preventScroll: true });
     await wait(SELECT_BLINK_MS);
-    selectingRef.current = false;
+    // A blink cut short by closing may already have handed the guard to the next one.
+    if (blinkingRef.current === item) blinkingRef.current = null;
     // The menu may have been closed from elsewhere during the blink.
     if (!item.isConnected) return;
     close();
@@ -177,7 +187,7 @@ function MenuItem({
       onPointerMove={(event) => {
         onPointerMove?.(event);
         const item = itemRef.current;
-        if (disabled || selectingRef.current || item === document.activeElement) return;
+        if (disabled || blinkingRef.current || item === document.activeElement) return;
         item?.focus({ preventScroll: true });
       }}
       className={cn(
