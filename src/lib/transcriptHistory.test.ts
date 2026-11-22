@@ -6,23 +6,43 @@ import { textEvent } from '../test/textEvent';
 const capped = (text: string, keep = 12_000) =>
   `${text.slice(0, keep)}\n\n[truncated ${text.length - keep} chars]`;
 
-for (const size of [1, 100, 400]) {
-  test(`capped restore preserves the full provider events at size ${size}`, () => {
-    const live = Array.from({ length: size }, (_, index) =>
-      textEvent(`live-${index}`, {
-        sourceSessionId: 'provider-session',
-        ts: index * 10_000,
-        text: `${index}:`.padEnd(13_000, 'x'),
-      }),
-    );
-    const page = live.map((event, index) =>
-      textEvent(`replay-${index}`, { ts: event.ts, text: capped(event.text ?? '') }),
-    );
-    const result = reconcileRestoredTranscript(live, page, true);
-    assert.deepEqual(result, live);
-    result.forEach((event, index) => assert.equal(event, live[index]));
+test('a nearer sibling cannot replace the intended child replay or discard its prefixes', () => {
+  const text = 'a complete answer';
+  const sibling = textEvent('sibling', {
+    role: 'worker',
+    sourceSessionId: 'child-b',
+    ts: 10_000,
+    text,
   });
-}
+  const prefix = { ...sibling, id: 'sibling-prefix', text: 'a complete' };
+  const intended = { ...sibling, id: 'intended', sourceSessionId: 'child-a', ts: 10_001 };
+  const replay = { ...intended, id: 'replay', ts: 10_000, text: capped(text, 4) };
+  const result = reconcileRestoredTranscript([sibling, prefix, intended], [replay], true);
+  assert.deepEqual(result, [sibling, prefix, intended]);
+  assert.equal(result[2], intended);
+});
+
+test('capped matching respects reversed intervals and exact and fractional time boundaries', () => {
+  for (const [ts, endTs, replayTs, matches] of [
+    [20_000, 1_000, 5_000, true],
+    [0, 0, 5_000, true],
+    [0, 0, 5_001, false],
+    [2 ** -41, 2 ** -41, 5_000 + 2 ** -40, true],
+  ] as const) {
+    const live = textEvent('live', { ts, endTs, text: 'a complete answer' });
+    const replay = textEvent('replay', { ts: replayTs, text: capped(live.text ?? '', 4) });
+    assert.deepEqual(
+      reconcileRestoredTranscript([live], [replay], true),
+      matches ? [live] : [live, replay],
+    );
+  }
+});
+
+test('the same retained prefix and time do not match a different full length', () => {
+  const live = textEvent('live', { ts: 10_000, text: 'a complete answer' });
+  const replay = textEvent('replay', { ts: 10_000, text: capped('a complete answer!', 4) });
+  assert.deepEqual(reconcileRestoredTranscript([live], [replay], true), [replay, live]);
+});
 
 test('normal, empty and nonmatching restores retain their exact arrays', () => {
   const live = textEvent('live', { ts: 10_000, text: 'answer' });

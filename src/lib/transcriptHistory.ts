@@ -88,29 +88,29 @@ function indexReplayCandidates(
   events: TranscriptEvent[],
   candidateKey: (event: TranscriptEvent) => string | undefined,
 ): Map<string, ReplayCandidateTree> {
-  const scopes = new Map<string, ReplayCandidate[]>();
+  const buckets = new Map<string, ReplayCandidate[]>();
   events.forEach((event, order) => {
-    const scope = candidateKey(event);
-    if (scope === undefined) return;
-    const candidates = scopes.get(scope) ?? [];
+    const bucketKey = candidateKey(event);
+    if (bucketKey === undefined) return;
+    const candidates = buckets.get(bucketKey) ?? [];
     candidates.push({
       event,
       order,
       start: Math.min(event.ts, event.endTs ?? event.ts),
       end: Math.max(event.ts, event.endTs ?? event.ts),
     });
-    scopes.set(scope, candidates);
+    buckets.set(bucketKey, candidates);
   });
   const build = (
     candidates: ReplayCandidate[],
-    start: number,
-    end: number,
+    from: number,
+    to: number,
   ): ReplayCandidateTree | undefined => {
-    if (start >= end) return undefined;
-    const middle = (start + end) >>> 1;
+    if (from >= to) return undefined;
+    const middle = (from + to) >>> 1;
     const candidate = candidates[middle];
-    const left = build(candidates, start, middle);
-    const right = build(candidates, middle + 1, end);
+    const left = build(candidates, from, middle);
+    const right = build(candidates, middle + 1, to);
     return {
       candidate,
       left,
@@ -119,10 +119,10 @@ function indexReplayCandidates(
     };
   };
   const index = new Map<string, ReplayCandidateTree>();
-  for (const [scope, candidates] of scopes) {
+  for (const [bucketKey, candidates] of buckets) {
     candidates.sort((left, right) => left.start - right.start);
     const tree = build(candidates, 0, candidates.length);
-    if (tree) index.set(scope, tree);
+    if (tree) index.set(bucketKey, tree);
   }
   return index;
 }
@@ -131,15 +131,19 @@ function nearbyReplayCandidates(
   index: Map<string, ReplayCandidateTree>,
   event: TranscriptEvent,
   key: string,
+  limit = Infinity,
 ): ReplayCandidate[] {
-  const start = Math.min(event.ts, event.endTs ?? event.ts) - REPLAY_DEDUP_TOLERANCE_MS;
-  const end = Math.max(event.ts, event.endTs ?? event.ts) + REPLAY_DEDUP_TOLERANCE_MS;
+  const start = Math.min(event.ts, event.endTs ?? event.ts);
+  const end = Math.max(event.ts, event.endTs ?? event.ts);
   const candidates: ReplayCandidate[] = [];
   const visit = (tree: ReplayCandidateTree | undefined) => {
-    if (!tree || tree.maxEnd < start) return;
+    if (!tree || candidates.length >= limit || start - tree.maxEnd > REPLAY_DEDUP_TOLERANCE_MS)
+      return;
     visit(tree.left);
-    if (tree.candidate.start > end) return;
-    if (tree.candidate.end >= start) candidates.push(tree.candidate);
+    if (candidates.length >= limit || tree.candidate.start - end > REPLAY_DEDUP_TOLERANCE_MS)
+      return;
+    if (replayTimeDifferenceMs(tree.candidate.event, event) <= REPLAY_DEDUP_TOLERANCE_MS)
+      candidates.push(tree.candidate);
     visit(tree.right);
   };
   visit(index.get(key));
@@ -192,7 +196,8 @@ function isFullTextForTruncatedReplay(full: string, replayed: string): boolean {
 function isUnpersistedTextPrefix(
   candidate: TranscriptEvent,
   full: TranscriptEvent,
-  page: TranscriptEvent[],
+  persistedById: Map<string, ReplayCandidateTree>,
+  persistedByText: Map<string, ReplayCandidateTree>,
 ): boolean {
   if (replayScope(candidate) !== replayScope(full)) return false;
   if (typeof candidate.text !== 'string' || typeof full.text !== 'string') return false;
@@ -204,12 +209,14 @@ function isUnpersistedTextPrefix(
   ) {
     return false;
   }
-  return !page.some(
-    (replayed) =>
-      (replayed.id === candidate.id ||
-        (replayScope(replayed) === replayScope(candidate) && replayed.text === candidate.text)) &&
-      replayTimeDifferenceMs(candidate, replayed) <= REPLAY_DEDUP_TOLERANCE_MS,
+  return (
+    nearbyReplayCandidates(persistedById, candidate, candidate.id, 1).length === 0 &&
+    nearbyReplayCandidates(persistedByText, candidate, replayTextKey(candidate), 1).length === 0
   );
+}
+
+function replayTextKey(event: TranscriptEvent): string {
+  return JSON.stringify([replayScope(event), event.text]);
 }
 
 function replayedTextSupersedesLiveGap(live: TranscriptEvent, replayed: TranscriptEvent): boolean {
@@ -292,7 +299,9 @@ function truncatedReplayReplacements(
     (event) => typeof event.text === 'string' && TRUNCATED_TEXT_TAIL.test(event.text),
   );
   if (truncatedPage.length === 0) return liveReplacementByPageId;
-  const replayCandidates = indexReplayCandidates(unkeyedExisting, replayScope);
+  let replayCandidates: Map<string, ReplayCandidateTree> | undefined;
+  let persistedById: Map<string, ReplayCandidateTree> | undefined;
+  let persistedByText: Map<string, ReplayCandidateTree> | undefined;
   const fullTextCandidates = indexReplayCandidates(unkeyedExisting, (event) => {
     const text = event.text;
     return typeof text === 'string' ? `${replayScope(event)}:${String(text.length)}` : undefined;
@@ -302,14 +311,18 @@ function truncatedReplayReplacements(
     if (!closestLive) continue;
     liveReplacementByPageId.set(replayed.id, closestLive);
     matchedLiveIds.add(closestLive.id);
+    replayCandidates ??= indexReplayCandidates(unkeyedExisting, replayScope);
+    persistedById ??= indexReplayCandidates(unkeyedPage, (event) => event.id);
+    persistedByText ??= indexReplayCandidates(unkeyedPage, replayTextKey);
     for (const { event: candidate } of nearbyReplayCandidates(
       replayCandidates,
       closestLive,
       replayScope(closestLive),
     )) {
       if (
-        candidate.id !== closestLive.id &&
-        isUnpersistedTextPrefix(candidate, closestLive, unkeyedPage)
+        !supersededLiveIds.has(candidate.id) &&
+        !matchedLiveIds.has(candidate.id) &&
+        isUnpersistedTextPrefix(candidate, closestLive, persistedById, persistedByText)
       ) {
         supersededLiveIds.add(candidate.id);
       }
