@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { execFile } = require('node:child_process');
+const { execFile, execFileSync } = require('node:child_process');
 const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -266,6 +266,64 @@ test('worktree listing preserves paths and detached and locked states', async ()
     ],
   );
 });
+
+test(
+  'worktree listing supports old Git without hiding other failures',
+  {
+    skip: process.platform === 'win32',
+  },
+  async () => {
+    const dir = await makeRepo();
+    await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+    const root = await fsp.realpath(dir);
+    const target = path.join(root, ' with space ');
+    await git(root, ['worktree', 'add', '--detach', target]);
+    const denied = await fsp.realpath(await makeRepo());
+    const unrelated = await fsp.realpath(await makeRepo());
+    const shimDir = path.join(dir, 'bin');
+    await fsp.mkdir(shimDir);
+    const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    await fsp.writeFile(
+      path.join(shimDir, 'git'),
+      `#!${process.execPath}
+const { spawnSync } = require('node:child_process');
+const args = process.argv.slice(2);
+if (args.includes('worktree') && args.includes('list')) {
+  if (args[1] === ${JSON.stringify(denied)}) {
+    process.stderr.write('fatal: permission denied\\n');
+    process.exit(128);
+  }
+  if (args[1] === ${JSON.stringify(unrelated)}) {
+    process.stderr.write("error: unknown option 'other'\\n");
+    process.exit(129);
+  }
+  if (args.includes('-z')) {
+    process.stderr.write("error: unknown switch \\x60z'\\nusage: git worktree list [--porcelain]\\n");
+    process.exit(129);
+  }
+}
+const result = spawnSync(${JSON.stringify(realGit)}, args, { stdio: 'inherit' });
+process.exit(result.status ?? 1);
+`,
+      { mode: 0o755 },
+    );
+    const originalPath = process.env.PATH;
+    process.env.PATH = shimDir + path.delimiter + originalPath;
+    try {
+      assert.deepEqual(
+        (await worktrees(root)).map(({ path, isMain, isCurrent }) => ({ path, isMain, isCurrent })),
+        [
+          { path: root, isMain: true, isCurrent: true },
+          { path: target, isMain: false, isCurrent: false },
+        ],
+      );
+      await assert.rejects(worktrees(denied), /permission denied/);
+      await assert.rejects(worktrees(unrelated), /unknown option 'other'/);
+    } finally {
+      process.env.PATH = originalPath;
+    }
+  },
+);
 
 test('a created worktree keeps its review diff after its base branch merges it', async () => {
   const dir = await makeRepo();
