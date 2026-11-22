@@ -54,7 +54,7 @@ export function ArchivedChatsSettings() {
                   </div>
                 </div>
                 {confirmingDelete === session.appSessionId ? (
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div key="confirmation" className="flex shrink-0 items-center gap-2">
                     <span aria-live="polite" className="text-caption text-danger">
                       Delete permanently?
                     </span>
@@ -83,7 +83,7 @@ export function ArchivedChatsSettings() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div key="actions" className="flex shrink-0 items-center gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
