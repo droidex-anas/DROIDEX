@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createTerminalOutputPump, trimUtf8Prefix, utf8ByteLength } from './terminalOutputPump';
+import { createTerminalOutputPump } from './terminalOutputPump';
 
 /** A pump whose writes and scheduled animation frames the test can inspect. */
 function framedPump(isHidden: () => boolean) {
@@ -47,10 +47,11 @@ test('output pump skips xterm writes while hidden and flushes on reveal', () => 
 });
 
 test('hidden output is bounded with UTF-8-safe trimming', () => {
+  let hidden = true;
   const writes: string[] = [];
   const pump = createTerminalOutputPump({
     write: (data) => writes.push(data),
-    isHidden: () => true,
+    isHidden: () => hidden,
     scheduleFrame: () => 1,
     cancelFrame: () => undefined,
     maxHiddenBytes: 8,
@@ -59,8 +60,10 @@ test('hidden output is bounded with UTF-8-safe trimming', () => {
   pump.push(`🙂${'a'.repeat(10)}`);
   assert.equal(pump.truncated, true);
   assert.equal(pump.droppedBytes > 0, true);
-  assert.equal(utf8ByteLength(trimUtf8Prefix(`🙂${'a'.repeat(10)}`, 6).text) <= 8, true);
   assert.deepEqual(writes, []);
+  hidden = false;
+  pump.reveal();
+  assert.deepEqual(writes, ['a'.repeat(8)]);
 });
 
 test('hidden output evicts chunks and trims only complete UTF-8 code points', () => {
@@ -87,4 +90,16 @@ test('hidden output evicts chunks and trims only complete UTF-8 code points', ()
   assert.deepEqual(writes, ['界\nxy']);
   pump.flush();
   assert.deepEqual(writes, ['界\nxy']);
+
+  for (const surrogate of ['\ud800', '\udc00']) {
+    pump.reset();
+    hidden = true;
+    pump.push(`${surrogate}ab🙂`);
+    assert.equal(pump.droppedBytes, 3);
+    pump.push('xy');
+    assert.equal(pump.droppedBytes, 3);
+    hidden = false;
+    pump.reveal();
+    assert.equal(writes.at(-1), 'ab🙂xy');
+  }
 });
