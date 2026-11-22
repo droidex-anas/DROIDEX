@@ -20,6 +20,7 @@ const {
   createWorktree,
   removeWorktree,
   sanitizeSegment,
+  worktrees,
 } = require('./gitWorktrees.cjs');
 
 // Integration tests for the last_turn review scope, driven through the Git
@@ -208,6 +209,96 @@ test('last_turn works in an unborn repo via the write-tree baseline', async () =
   await write(dir, 'first.txt', 'x\n');
   const res = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
   assert.ok(pathsOf(res).includes('first.txt'));
+});
+
+test('worktree listing preserves newline-containing paths', async () => {
+  const dir = await makeRepo();
+  await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+  const root = await fsp.realpath(dir);
+  const target = path.join(root, 'line\nbreak');
+  await git(dir, ['worktree', 'add', '-b', 'newline', target]);
+
+  const entries = await worktrees(root);
+  assert.deepEqual(
+    entries.map((entry) => entry.path),
+    [root, target],
+  );
+  assert.deepEqual(
+    entries.map((entry) => entry.isMain),
+    [true, false],
+  );
+  assert.deepEqual(
+    entries.map((entry) => entry.isCurrent),
+    [true, false],
+  );
+  const linkedEntries = await worktrees(target);
+  assert.deepEqual(
+    linkedEntries.map((entry) => entry.path),
+    [root, target],
+  );
+  assert.deepEqual(
+    linkedEntries.map((entry) => entry.isMain),
+    [true, false],
+  );
+  assert.deepEqual(
+    linkedEntries.map((entry) => entry.isCurrent),
+    [false, true],
+  );
+});
+
+test('worktree listing preserves paths and detached and locked states', async () => {
+  const dir = await makeRepo();
+  await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
+  const root = await fsp.realpath(dir);
+  const branch = (await git(root, ['branch', '--show-current'])).trim();
+  const head = (await git(root, ['rev-parse', 'HEAD'])).trim().slice(0, 12);
+  const names = ['ordinary', ' with space ', 'café'];
+  for (const [index, name] of names.entries()) {
+    await git(root, ['worktree', 'add', '--detach', path.join(root, name)]);
+    if (index > 0) {
+      const reason = index === 1 ? [] : ['--reason', 'first\n\nsecond'];
+      await git(root, ['worktree', 'lock', ...reason, path.join(root, name)]);
+    }
+  }
+
+  const entries = await worktrees(root);
+  assert.deepEqual(
+    new Set(entries.map((entry) => entry.path)),
+    new Set([root, ...names.map((name) => path.join(root, name))]),
+  );
+  for (const entry of entries) {
+    const isMain = entry.path === root;
+    assert.equal(entry.isMain, isMain);
+    assert.equal(entry.isCurrent, isMain);
+    assert.equal(entry.head, head);
+    assert.equal(entry.branch, isMain ? branch : null);
+    assert.equal(entry.detached, !isMain);
+    assert.equal(entry.locked, !isMain && entry.path !== path.join(root, 'ordinary'));
+    assert.equal(entry.bare, false);
+    assert.equal((await fsp.stat(entry.path)).isDirectory(), true);
+  }
+});
+
+test('worktree listing returns no entries for empty output or a Git failure', async (t) => {
+  const dir = await makeRepo();
+  const gitCommand = require('./gitCommand.cjs');
+  const modulePath = require.resolve('./gitWorktrees.cjs');
+  const cachedModule = require.cache[modulePath];
+  delete require.cache[modulePath];
+  let output = '';
+  const originalTryRun = gitCommand.tryRun;
+  t.mock.method(gitCommand, 'tryRun', (cwd, args, options) =>
+    args[0] === 'worktree' ? Promise.resolve(output) : originalTryRun(cwd, args, options),
+  );
+  try {
+    const { worktrees: listWorktrees } = require('./gitWorktrees.cjs');
+    assert.deepEqual(await listWorktrees(dir), []);
+    output = null;
+    const otherDir = await makeRepo();
+    assert.deepEqual(await listWorktrees(otherDir), []);
+  } finally {
+    require.cache[modulePath] = cachedModule;
+  }
 });
 
 test('a created worktree keeps its review diff after its base branch merges it', async () => {
