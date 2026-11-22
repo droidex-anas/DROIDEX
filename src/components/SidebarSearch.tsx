@@ -91,7 +91,7 @@ export default function SidebarSearch({
     onClose();
   };
 
-  const { selected, setSelected, handleKeyDown } = usePaletteNavigation(
+  const { selected, selectedRowRef, setSelected, handleKeyDown } = usePaletteNavigation(
     query,
     entries,
     open,
@@ -123,8 +123,9 @@ export default function SidebarSearch({
       {entries.map((entry, i) => (
         <button
           key={entry.session.appSessionId}
+          ref={i === selected ? selectedRowRef : undefined}
           data-testid="sidebar-search-result"
-          onMouseEnter={() => {
+          onMouseMove={() => {
             setSelected(i);
           }}
           onClick={() => {

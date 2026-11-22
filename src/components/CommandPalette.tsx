@@ -96,7 +96,7 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
     commandActions[cmd.id]();
   };
 
-  const { selected, setSelected, handleKeyDown } = usePaletteNavigation(
+  const { selected, selectedRowRef, setSelected, handleKeyDown } = usePaletteNavigation(
     query,
     filtered,
     runCommand,
@@ -121,7 +121,8 @@ export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
         return (
           <button
             key={cmd.id}
-            onMouseEnter={() => {
+            ref={i === selected ? selectedRowRef : undefined}
+            onMouseMove={() => {
               setSelected(i);
             }}
             onClick={() => {
