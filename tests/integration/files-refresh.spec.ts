@@ -9,53 +9,63 @@ declare global {
     filesDisk: Disk;
     filesFailing: string[];
     filesHeld: string[];
-    releaseFiles: () => void;
+    releaseFiles: () => Promise<void>;
     installFiles: () => void;
   }
 }
 
 // A fake desktop Files API backed by an in-page disk keyed by workspace root.
 // `filesFailing` rejects every matching call; `filesHeld` parks
-// listings of `<root>:<relative>` until `releaseFiles()`.
+// listings of `<root>:<relative>` until `releaseFiles()`, which settles once
+// the app has handled every listing and rendered the result.
 async function openFiles(page: Page, disk: Disk) {
   await page.addInitScript((initialDisk: Disk) => {
     window.filesDisk = initialDisk;
     window.filesFailing = [];
     window.filesHeld = [];
     const parked: (() => void)[] = [];
-    window.releaseFiles = () => {
+    const listings: Promise<unknown>[] = [];
+    window.releaseFiles = async () => {
       window.filesHeld = [];
       parked.splice(0).forEach((resume) => resume());
+      await Promise.allSettled(listings.splice(0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
     };
     const failIfFailing = (call: string) => {
       if (window.filesFailing.includes(call)) throw new Error(`${call} failed`);
+    };
+    const list = async (root: string, relative: string) => {
+      const call = `${root}:${relative}`;
+      if (window.filesHeld.includes(call)) {
+        await new Promise<void>((resume) => parked.push(resume));
+      }
+      failIfFailing(call);
+      const children = window.filesDisk[root][relative] ?? {};
+      const entries = Object.entries(children).map(([name, kind]) => ({
+        name,
+        kind,
+        size: 0,
+        mtimeMs: 0,
+      }));
+      return {
+        root,
+        relative,
+        entries,
+        totalSeen: entries.length,
+        capped: false,
+        permissionDenied: false,
+      };
     };
     const files = {
       filesAuthorizeRoot: async (root: string) => {
         failIfFailing(`authorize:${root}`);
         return root;
       },
-      filesList: async (root: string, relative: string) => {
-        const call = `${root}:${relative}`;
-        if (window.filesHeld.includes(call)) {
-          await new Promise<void>((resume) => parked.push(resume));
-        }
-        failIfFailing(call);
-        const children = window.filesDisk[root][relative] ?? {};
-        const entries = Object.entries(children).map(([name, kind]) => ({
-          name,
-          kind,
-          size: 0,
-          mtimeMs: 0,
-        }));
-        return {
-          root,
-          relative,
-          entries,
-          totalSeen: entries.length,
-          capped: false,
-          permissionDenied: false,
-        };
+      filesList: (root: string, relative: string) => {
+        const listing = list(root, relative);
+        listings.push(listing);
+        return listing;
       },
     };
     // Installed once the app is up, so start-up runs as the browser build. The
@@ -200,6 +210,5 @@ test('a refresh that settles after the workspace moves cannot replace its files'
   await expect(tree.getByRole('treeitem')).toHaveText(['other.md']);
 
   await page.evaluate(() => window.releaseFiles());
-  await page.evaluate(() => new Promise((resolve) => setTimeout(resolve, 0)));
   await expect(tree.getByRole('treeitem')).toHaveText(['other.md']);
 });
