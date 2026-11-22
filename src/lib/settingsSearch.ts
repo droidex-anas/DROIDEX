@@ -278,7 +278,7 @@ function entryHaystack(entry: SettingsSearchEntry): string {
 }
 
 /** True if this tab should stay visible for the current query. */
-export function tabMatchesQuery(tab: string, query: string): boolean {
+export function tabMatchesQuery(tab: SettingsTab, query: string): boolean {
   const q = normalizeQuery(query);
   if (!q) return true;
   if (tab.toLowerCase().includes(q)) return true;
@@ -301,7 +301,7 @@ function scoreEntry(entry: SettingsSearchEntry, q: string): number {
   return 0;
 }
 
-export const NO_HIDDEN_TABS: ReadonlySet<string> = new Set();
+export const NO_HIDDEN_TABS: ReadonlySet<SettingsTab> = new Set();
 
 /**
  * Ranked setting hits for the query, leaving out `hiddenTabs`. Empty query → no
@@ -310,7 +310,7 @@ export const NO_HIDDEN_TABS: ReadonlySet<string> = new Set();
  */
 export function searchSettings(
   query: string,
-  hiddenTabs: ReadonlySet<string> = NO_HIDDEN_TABS,
+  hiddenTabs: ReadonlySet<SettingsTab> = NO_HIDDEN_TABS,
   limit = 16,
 ): SettingsSearchHit[] {
   const q = normalizeQuery(query);
@@ -339,7 +339,7 @@ export function searchSettings(
 /** Best tab to open for a query, or null when no visible tab matches. */
 export function bestTabForQuery(
   query: string,
-  hiddenTabs: ReadonlySet<string> = NO_HIDDEN_TABS,
+  hiddenTabs: ReadonlySet<SettingsTab> = NO_HIDDEN_TABS,
 ): SettingsTab | null {
   const hits = searchSettings(query, hiddenTabs, 1);
   return hits[0]?.tab ?? null;
