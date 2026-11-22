@@ -203,6 +203,26 @@ export function FilesWorkspace({
   };
 
   const relative = selectedPath ?? '';
+  const focusTreeAfterPreviewClose = () => {
+    if (treeCollapsed) {
+      treeToggleRef.current?.focus();
+      return;
+    }
+    let path = relative;
+    while (path) {
+      if (visible.some((entry) => entry.relative === path)) {
+        focusRow(path);
+        return;
+      }
+      path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    }
+    if (tabbablePath) {
+      focusRow(tabbablePath);
+      return;
+    }
+    treeRef.current?.focus();
+  };
+
   const fileName = relative ? pathFileName(relative) : '';
   // A bare `/` or drive-letter root has no file name; show the root itself.
   const rootName = pathFileName(root) || root;
@@ -323,18 +343,8 @@ export function FilesWorkspace({
                 aria-label="Close file"
                 title="Close file"
                 onClick={(event) => {
-                  if (event.detail === 0) {
-                    if (treeCollapsed) treeToggleRef.current?.focus();
-                    else {
-                      let path = relative;
-                      while (path && !visible.some((entry) => entry.relative === path)) {
-                        path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-                      }
-                      const target = path || tabbablePath;
-                      if (target) focusRow(target);
-                      else treeRef.current?.focus();
-                    }
-                  }
+                  // Detail 0 means keyboard activation; pointer close keeps its focus behavior.
+                  if (event.detail === 0) focusTreeAfterPreviewClose();
                   onSelectPath('');
                 }}
                 className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
