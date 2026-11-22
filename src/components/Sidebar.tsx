@@ -78,7 +78,6 @@ export default function Sidebar({
   const [searchOpen, setSearchOpen] = useState(false);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   useScrolling(scrollRef);
 
   const documentVisible = useDocumentVisible();
@@ -380,9 +379,9 @@ export default function Sidebar({
       />
       <div
         ref={scrollRef}
-        className="sidebar-list scrollbar-while-scrolling min-h-0 flex-1 overflow-y-auto px-2"
+        className="scrollbar-while-scrolling min-h-0 flex-1 overflow-y-auto px-2"
       >
-        <div ref={listRef} className="space-y-3">
+        <div className="space-y-3">
           {unreadOnly && unreadCount === 0 && (
             <div className="px-3 pt-2 pb-1 text-caption text-muted">No unread sessions.</div>
           )}
@@ -427,8 +426,6 @@ export default function Sidebar({
         </div>
       </div>
       <SidebarFooter
-        scrollRef={scrollRef}
-        contentRef={listRef}
         welcomeVisible={welcomeVisible}
         onStartChat={newChat}
         onDismissWelcome={dismissWelcome}
