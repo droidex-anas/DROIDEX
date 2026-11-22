@@ -30,8 +30,11 @@ import { commitPrimaryPromptAfterBaseline } from '../../lib/promptSend';
 import { canRunAgents } from '../../lib/runtimeHealth';
 import { sideChatPromptFromCommand } from '../../lib/sideChats';
 import { toast } from '../../lib/toast';
-import type { ProviderKind, SkillInfo } from '@droidex/protocol';
-import { browserTranscriptReferencesFromDesignReferences } from '../browser/browserTranscriptReferences';
+import {
+  browserTranscriptReferencesFromDesignReferences,
+  type ProviderKind,
+  type SkillInfo,
+} from '@droidex/protocol';
 import {
   designMarks as stagedDesignMarks,
   restartDesignMarkNumbers,

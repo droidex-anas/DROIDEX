@@ -1,7 +1,8 @@
-import type { BrowserTranscriptReference, DesignReference } from '@droidex/protocol';
+import type { DesignReference } from './browser.js';
+import type { BrowserTranscriptReference } from './transcript.js';
 
 export function browserTranscriptReferenceFromDesignReference(
-  reference: DesignReference,
+  reference: Partial<DesignReference>,
 ): BrowserTranscriptReference | null {
   const anchor = reference.anchor;
   const id = reference.id ?? anchor?.id;
@@ -31,7 +32,7 @@ export function browserTranscriptReferenceFromDesignReference(
 }
 
 export function browserTranscriptReferencesFromDesignReferences(
-  references: DesignReference[],
+  references: readonly Partial<DesignReference>[],
 ): BrowserTranscriptReference[] {
   return references
     .map(browserTranscriptReferenceFromDesignReference)

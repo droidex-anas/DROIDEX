@@ -3,6 +3,7 @@ export * from './sessions.js';
 export * from './transcript.js';
 export * from './environment.js';
 export * from './browser.js';
+export { browserTranscriptReferencesFromDesignReferences } from './browser-transcript-references.js';
 export * from './commands.js';
 export * from './events.js';
 export * from './mcp.js';
