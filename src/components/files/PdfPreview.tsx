@@ -98,14 +98,14 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
   }
 
   return (
-    <div className="flex h-full flex-col items-center overflow-auto bg-surface/20 p-4">
+    <div className="flex h-full flex-col overflow-auto bg-surface/20 p-4">
       <canvas
         ref={canvasRef}
-        className="max-h-full rounded-sm shadow-lg"
+        className="mx-auto max-h-full rounded-sm shadow-lg"
         style={{ maxHeight: 'calc(100% - 32px)' }}
       />
       {numPages > 1 && (
-        <div className="mt-2 flex items-center gap-1 rounded-lg bg-elevated p-1">
+        <div className="mx-auto mt-2 flex items-center gap-1 rounded-lg bg-elevated p-1">
           <Button
             variant="ghost"
             size="sm"
