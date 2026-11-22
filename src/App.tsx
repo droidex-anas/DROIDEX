@@ -1145,7 +1145,7 @@ export default function App() {
 
       {state.commandPaletteOpen && (
         <Suspense fallback={<CommandPaletteSkeleton />}>
-          <LazyCommandPalette />
+          <LazyCommandPalette onOpenTool={openUtilityTool} />
         </Suspense>
       )}
       <Suspense fallback={null}>
