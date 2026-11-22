@@ -73,9 +73,10 @@ export function ArchivedChatsSettings() {
                       variant="danger"
                       size="sm"
                       onClick={() => {
-                        const neighbor = rows[index + 1] ?? rows[index - 1];
+                        const neighbor =
+                          rows.at(index + 1) ?? (index > 0 ? rows.at(index - 1) : undefined);
                         setFocusTarget(
-                          rows.length > 1
+                          neighbor
                             ? { kind: 'row', appSessionId: neighbor.session.appSessionId }
                             : { kind: 'empty' },
                         );

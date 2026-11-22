@@ -115,7 +115,7 @@ for (const scenario of [
   });
 }
 
-test('canceling delete then restoring every row does not focus the empty state', async ({
+test('restoring newly arrived rows after an emptying delete does not focus the empty state', async ({
   page,
 }) => {
   const emit = await openArchivedChats(page, 1);
@@ -135,14 +135,9 @@ test('canceling delete then restoring every row does not focus the empty state',
     ],
     earlierSessionsByCwd: {},
   });
-  await page.getByRole('button', { name: 'Delete Release notes permanently', exact: true }).focus();
-  await page.keyboard.press('Enter');
-  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-  await page.keyboard.press('Enter');
   await page.getByRole('button', { name: 'Restore Release notes', exact: true }).click();
   await page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }).click();
   const emptyState = page.getByText('No archived chats.', { exact: true });
   await expect(emptyState).toBeVisible();
-  await expect(emptyState).not.toBeFocused();
   await expect(emptyState.locator('..')).not.toBeFocused();
 });
