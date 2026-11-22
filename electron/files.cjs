@@ -183,16 +183,15 @@ function compareEntries(a, b) {
 }
 
 /**
- * Non-recursive directory listing with per-entry metadata.
+ * Non-recursive directory listing.
  *
  * Returns folders-first, alphabetical entries capped at `options.cap`
  * (default 1000, hard-clamped to LISTING_CAP_MAX). Each entry carries its
- * kind, byte size, and mtime in milliseconds since the epoch. The payload
+ * name and kind. The payload
  * reports whether the cap truncated the result so the UI can warn the user.
  */
 async function listDirectory(rootDir, relativePath, options = {}) {
   const cap = clampCap(options.cap);
-  const lstat = options.lstat ?? ((target) => fsp.lstat(target));
   const resolved = await resolveWithin(rootDir, relativePath);
   const stat = await fsp.lstat(resolved.target);
   if (!stat.isDirectory()) {
@@ -228,23 +227,9 @@ async function listDirectory(rootDir, relativePath, options = {}) {
       capped = true;
       continue;
     }
-    const childPath = path.join(resolved.target, dirent.name);
-    let size = 0;
-    let mtimeMs = 0;
-    try {
-      const childStat = await lstat(childPath);
-      size = childStat.size;
-      mtimeMs = Math.floor(Number(childStat.mtimeMs) || 0);
-    } catch {
-      // Lstat failure for a single child should not poison the whole listing.
-      size = 0;
-      mtimeMs = 0;
-    }
     entries.push({
       name: dirent.name,
       kind: dirent.isDirectory() ? 'directory' : 'file',
-      size,
-      mtimeMs,
     });
   }
   entries.sort(compareEntries);
