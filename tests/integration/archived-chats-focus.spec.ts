@@ -2,17 +2,22 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
-async function openArchivedChats(page: Page) {
+async function openArchivedChats(page: Page, count = 2) {
+  let emitServerEvent: ((event: ServerEvent) => void) | undefined;
   const now = Date.UTC(2026, 5, 1, 12);
   await page.clock.install({ time: now });
   await page.addInitScript(
     ({ now }) => {
       localStorage.setItem(
         'droid-chat-metadata',
-        JSON.stringify({
-          first: { archivedAt: now - 60_000 },
-          second: { archivedAt: now - 120_000 },
-        }),
+        JSON.stringify(
+          Object.fromEntries(
+            ['first', 'second', 'third', 'fourth'].map((id, index) => [
+              id,
+              { archivedAt: now - (index + 1) * 60_000 },
+            ]),
+          ),
+        ),
       );
     },
     { now },
@@ -33,6 +38,7 @@ async function openArchivedChats(page: Page) {
           }),
         );
       };
+      emitServerEvent = emit;
       socket.onMessage((message) => {
         if (typeof message !== 'string') return;
         const command = JSON.parse(message) as ClientCommand;
@@ -41,9 +47,14 @@ async function openArchivedChats(page: Page) {
         if (command.type === 'sessions.list')
           emit({
             type: 'sessions.list',
-            sessions: ['first', 'second'].map((id) =>
+            sessions: ['first', 'second', 'third', 'fourth'].slice(0, count).map((id) =>
               sessionSummary(id, {
-                title: id === 'first' ? 'Saved research' : 'Release notes',
+                title: {
+                  first: 'Saved research',
+                  second: 'Release notes',
+                  third: 'Parser cleanup',
+                  fourth: 'Keyboard shortcuts',
+                }[id],
                 cwd: '',
                 createdAt: now - 300_000,
                 updatedAt: now - 180_000,
@@ -57,7 +68,11 @@ async function openArchivedChats(page: Page) {
   await page.goto(process.env.DROIDEX_TEST_URL || '/');
   await page.getByRole('button', { name: 'Settings', exact: true }).click();
   await page.getByRole('button', { name: 'Archived chats', exact: true }).click();
-  await expect(page.getByTestId('archived-chat-row')).toHaveCount(2);
+  await expect(page.getByTestId('archived-chat-row')).toHaveCount(count);
+  return (event: ServerEvent) => {
+    if (!emitServerEvent) throw new Error('Archive test bridge is not connected');
+    emitServerEvent(event);
+  };
 }
 
 test("keyboard Cancel restores the same archived row's delete focus", async ({ page }) => {
@@ -73,4 +88,56 @@ test("keyboard Cancel restores the same archived row's delete focus", async ({ p
   await expect(
     page.getByRole('button', { name: 'Restore Release notes', exact: true }),
   ).toBeFocused();
+});
+
+for (const scenario of [
+  { name: 'middle', count: 4, deleted: 'Release notes', neighbor: 'Parser cleanup' },
+  { name: 'last', count: 3, deleted: 'Parser cleanup', neighbor: 'Release notes' },
+  { name: 'only', count: 1, deleted: 'Saved research', neighbor: null },
+]) {
+  test(`deleting the ${scenario.name} archived row preserves keyboard focus`, async ({ page }) => {
+    await openArchivedChats(page, scenario.count);
+    await page
+      .getByRole('button', { name: `Delete ${scenario.deleted} permanently`, exact: true })
+      .focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Enter');
+    await expect(page.getByTestId('archived-chat-row')).toHaveCount(scenario.count - 1);
+    const target = scenario.neighbor
+      ? page.getByRole('button', {
+          name: `Delete ${scenario.neighbor} permanently`,
+          exact: true,
+        })
+      : page.getByText('No archived chats.', { exact: true }).locator('..');
+    await expect(target).toBeFocused();
+  });
+}
+
+test('restoring newly arrived rows after an emptying delete does not focus the empty state', async ({
+  page,
+}) => {
+  const emit = await openArchivedChats(page, 1);
+  await page
+    .getByRole('button', { name: 'Delete Saved research permanently', exact: true })
+    .focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Enter');
+  await expect(page.getByText('No archived chats.', { exact: true })).toBeVisible();
+  emit({
+    type: 'sessions.list',
+    sessions: [
+      sessionSummary('second', { title: 'Release notes', cwd: '' }),
+      sessionSummary('third', { title: 'Parser cleanup', cwd: '' }),
+    ],
+    earlierSessionsByCwd: {},
+  });
+  await page.getByRole('button', { name: 'Restore Release notes', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore Parser cleanup', exact: true }).click();
+  const emptyState = page.getByText('No archived chats.', { exact: true });
+  await expect(emptyState).toBeVisible();
+  await expect(emptyState.locator('..')).not.toBeFocused();
 });
