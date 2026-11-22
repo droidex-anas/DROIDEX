@@ -7,6 +7,7 @@ import { isPathInside } from './isPathInside.js';
 test('accepts only strict descendants after resolving path segments', () => {
   const root = resolve('/a/b');
   assert.equal(isPathInside(root, resolve(root, 'nested/file.json')), true);
+  assert.equal(isPathInside(root, resolve(root, '..foo/bar')), true);
   assert.equal(isPathInside(root, root), false);
   assert.equal(isPathInside(root, resolve('/a/bc/file.json')), false);
   assert.equal(isPathInside(root, `${root}/../escape.json`), false);
