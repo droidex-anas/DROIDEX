@@ -42,19 +42,21 @@ interface EventIdIndex {
   buckets: readonly (ReadonlySet<string> | undefined)[];
 }
 
-function batchMap<K, V>(index: ReadonlyMap<K, V>): () => Map<K, V> {
+function copyOnFirstWrite<K, V>(index: ReadonlyMap<K, V>): () => Map<K, V> {
   let owned: Map<K, V> | undefined;
   return () => (owned ??= new Map(index));
 }
 
 function batchIndexMaps(indexes: TranscriptIndexes) {
   return {
-    latestActivityBySource: batchMap(indexes.latestActivityBySource),
-    childSpawns: batchMap(indexes.childSpawns),
-    toolCallIndexByUseId: batchMap(indexes.toolCallIndexByUseId),
-    textIndexByMessageId: batchMap(indexes.textIndexByMessageId),
+    latestActivityBySource: copyOnFirstWrite(indexes.latestActivityBySource),
+    childSpawns: copyOnFirstWrite(indexes.childSpawns),
+    toolCallIndexByUseId: copyOnFirstWrite(indexes.toolCallIndexByUseId),
+    textIndexByMessageId: copyOnFirstWrite(indexes.textIndexByMessageId),
   };
 }
+
+type WritableIndexMaps = ReturnType<typeof batchIndexMaps>;
 
 const EVENT_ID_BUCKET_COUNT = 256;
 const transcriptRuntimes = new WeakMap<readonly TranscriptEvent[], TranscriptRuntime>();
@@ -358,7 +360,7 @@ function appendIndexes(
   indexes: TranscriptIndexes,
   event: TranscriptEvent,
   eventIndex: number,
-  writable: ReturnType<typeof batchIndexMaps>,
+  writable: WritableIndexMaps,
 ): TranscriptIndexes {
   const firstUserEvent = indexes.firstUserEvent ?? (event.author === 'user' ? event : undefined);
   const firstUserIndex =
@@ -410,7 +412,7 @@ function replaceIndexedEvent(
   indexes: TranscriptIndexes,
   previous: TranscriptEvent,
   next: TranscriptEvent,
-  writable: ReturnType<typeof batchIndexMaps>,
+  writable: WritableIndexMaps,
 ): TranscriptIndexes {
   let latestActivityBySource = indexes.latestActivityBySource;
   const latestActivity = latestActivityBySource.get(previous.sourceSessionId);

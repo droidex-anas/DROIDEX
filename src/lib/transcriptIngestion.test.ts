@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type { TranscriptEvent } from '@droidex/protocol';
 import {
-  ingestTranscriptEvents,
+  childSpawnTranscriptEvents,
   firstUserTranscriptEvent,
+  ingestTranscriptEvents,
   latestTranscriptActivityForSource,
   normalizeTranscriptUpdate,
-  childSpawnTranscriptEvents,
 } from './transcriptIngestion';
 import { estimateTranscriptCost } from './transcriptWindow';
 import { textEvent } from '../test/textEvent';
@@ -49,12 +49,22 @@ test('batched indexes stay private to each retained branch and match single-even
   assert.deepEqual([...batch.events], [...sequential.events]);
   assert.equal(batch.estimatedCost, sequential.estimatedCost);
   assert.equal(batch.estimatedCost, estimateTranscriptCost(batch.events));
+  const batchPrimary = latestTranscriptActivityForSource(batch.events, 'primary');
+  const batchChild = latestTranscriptActivityForSource(batch.events, 'child');
+  const batchSpawns = childSpawnTranscriptEvents(batch.events);
+  assert.deepEqual(batchPrimary, latestTranscriptActivityForSource(sequential.events, 'primary'));
+  assert.deepEqual(batchChild, latestTranscriptActivityForSource(sequential.events, 'child'));
+  assert.deepEqual(batchSpawns, childSpawnTranscriptEvents(sequential.events));
   assert.deepEqual(retained, original);
   assert.equal(latestTranscriptActivityForSource(retained, 'primary'), activity);
   assert.deepEqual(childSpawnTranscriptEvents(retained), spawns);
   const branch = ingestTranscriptEvents(retained, cost, [call]);
   assert.deepEqual([...branch.events], [...original, call]);
+  assert.equal(latestTranscriptActivityForSource(branch.events, 'primary'), call);
   assert.deepEqual([...batch.events], [...sequential.events]);
+  assert.equal(latestTranscriptActivityForSource(batch.events, 'primary'), batchPrimary);
+  assert.equal(latestTranscriptActivityForSource(batch.events, 'child'), batchChild);
+  assert.deepEqual(childSpawnTranscriptEvents(batch.events), batchSpawns);
   assert.deepEqual(ingestTranscriptEvents(retained, cost, []).events, original);
   assert.equal(ingestTranscriptEvents(retained, cost, [retained[0]]).change, null);
 });
