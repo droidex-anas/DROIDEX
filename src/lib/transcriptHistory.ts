@@ -86,13 +86,12 @@ interface ReplayCandidateTree {
 
 function indexReplayCandidates(
   events: TranscriptEvent[],
-  byLength = false,
+  candidateKey: (event: TranscriptEvent) => string | undefined,
 ): Map<string, ReplayCandidateTree> {
   const scopes = new Map<string, ReplayCandidate[]>();
   events.forEach((event, order) => {
-    const text = byLength ? event.text : undefined;
-    if (byLength && typeof text !== 'string') return;
-    const scope = `${replayScope(event)}:${byLength ? String(text?.length) : ''}`;
+    const scope = candidateKey(event);
+    if (scope === undefined) return;
     const candidates = scopes.get(scope) ?? [];
     candidates.push({
       event,
@@ -131,7 +130,7 @@ function indexReplayCandidates(
 function nearbyReplayCandidates(
   index: Map<string, ReplayCandidateTree>,
   event: TranscriptEvent,
-  fullLength?: number,
+  key: string,
 ): ReplayCandidate[] {
   const start = Math.min(event.ts, event.endTs ?? event.ts) - REPLAY_DEDUP_TOLERANCE_MS;
   const end = Math.max(event.ts, event.endTs ?? event.ts) + REPLAY_DEDUP_TOLERANCE_MS;
@@ -143,7 +142,7 @@ function nearbyReplayCandidates(
     if (tree.candidate.end >= start) candidates.push(tree.candidate);
     visit(tree.right);
   };
-  visit(index.get(`${replayScope(event)}:${fullLength === undefined ? '' : String(fullLength)}`));
+  visit(index.get(key));
   return candidates;
 }
 
@@ -152,17 +151,14 @@ function closestFullTextForReplay(
   replayed: TranscriptEvent,
   matchedLiveIds: Set<string>,
 ): TranscriptEvent | undefined {
-  const text = replayed.text ?? '';
-  const tail = TRUNCATED_TEXT_TAIL.exec(text);
-  if (!tail) return undefined;
-  const removedCount = Number(tail[1]);
-  if (!Number.isSafeInteger(removedCount) || removedCount <= 0) return undefined;
-  const prefix = text.slice(0, tail.index);
+  const truncated = parseTruncatedReplay(replayed.text ?? '');
+  if (!truncated) return undefined;
   let closest: ReplayCandidate | undefined;
   let closestDifferenceMs = Infinity;
-  for (const candidate of nearbyReplayCandidates(index, replayed, tail.index + removedCount)) {
+  const key = `${replayScope(replayed)}:${String(truncated.fullLength)}`;
+  for (const candidate of nearbyReplayCandidates(index, replayed, key)) {
     const live = candidate.event;
-    if (matchedLiveIds.has(live.id) || !live.text?.startsWith(prefix)) continue;
+    if (matchedLiveIds.has(live.id) || !live.text?.startsWith(truncated.retainedPrefix)) continue;
     const differenceMs = replayTimeDifferenceMs(live, replayed);
     if (
       differenceMs < closestDifferenceMs ||
@@ -175,17 +171,22 @@ function closestFullTextForReplay(
   return closest?.event;
 }
 
-function isFullTextForTruncatedReplay(full: string, replayed: string): boolean {
+function parseTruncatedReplay(
+  replayed: string,
+): { retainedPrefix: string; fullLength: number } | undefined {
   const tail = TRUNCATED_TEXT_TAIL.exec(replayed);
-  if (tail?.index === undefined) return false;
+  if (!tail) return undefined;
   const removedCount = Number(tail[1]);
-  const retainedPrefix = replayed.slice(0, tail.index);
-  return (
-    Number.isSafeInteger(removedCount) &&
-    removedCount > 0 &&
-    full.length === retainedPrefix.length + removedCount &&
-    full.startsWith(retainedPrefix)
-  );
+  if (!Number.isSafeInteger(removedCount) || removedCount <= 0) return undefined;
+  return {
+    retainedPrefix: replayed.slice(0, tail.index),
+    fullLength: tail.index + removedCount,
+  };
+}
+
+function isFullTextForTruncatedReplay(full: string, replayed: string): boolean {
+  const truncated = parseTruncatedReplay(replayed);
+  return full.length === truncated?.fullLength && full.startsWith(truncated.retainedPrefix);
 }
 
 function isUnpersistedTextPrefix(
@@ -291,14 +292,21 @@ function truncatedReplayReplacements(
     (event) => typeof event.text === 'string' && TRUNCATED_TEXT_TAIL.test(event.text),
   );
   if (truncatedPage.length === 0) return liveReplacementByPageId;
-  const replayCandidates = indexReplayCandidates(unkeyedExisting);
-  const fullTextCandidates = indexReplayCandidates(unkeyedExisting, true);
+  const replayCandidates = indexReplayCandidates(unkeyedExisting, replayScope);
+  const fullTextCandidates = indexReplayCandidates(unkeyedExisting, (event) => {
+    const text = event.text;
+    return typeof text === 'string' ? `${replayScope(event)}:${String(text.length)}` : undefined;
+  });
   for (const replayed of truncatedPage) {
     const closestLive = closestFullTextForReplay(fullTextCandidates, replayed, matchedLiveIds);
     if (!closestLive) continue;
     liveReplacementByPageId.set(replayed.id, closestLive);
     matchedLiveIds.add(closestLive.id);
-    for (const { event: candidate } of nearbyReplayCandidates(replayCandidates, closestLive)) {
+    for (const { event: candidate } of nearbyReplayCandidates(
+      replayCandidates,
+      closestLive,
+      replayScope(closestLive),
+    )) {
       if (
         candidate.id !== closestLive.id &&
         isUnpersistedTextPrefix(candidate, closestLive, unkeyedPage)
