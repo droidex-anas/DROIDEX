@@ -4,7 +4,6 @@ import type { ProjectStep } from '@droidex/protocol';
 /** Retains existing identities through reordering; explicit ids also survive renaming. */
 export function planFromSteps(
   steps: readonly (Omit<ProjectStep, 'id'> & { id?: string })[],
-  isMember: (appSessionId: string) => boolean,
   previous: readonly ProjectStep[],
   lastStepId = 0,
 ): ProjectStep[] {
@@ -12,8 +11,6 @@ export function planFromSteps(
   const reserved = new Set(steps.flatMap((step) => (step.id ? [step.id] : [])));
   let nextId = Math.max(lastStepId, ...previous.map((step) => stepNumber(step.id)));
   return steps.map((step) => {
-    if (step.threadAppSessionId && !isMember(step.threadAppSessionId))
-      throw new Error('Thread is outside this project.');
     const existing = step.id
       ? previous.find((candidate) => candidate.id === step.id)
       : previous.find((candidate) => candidate.title === step.title && !used.has(candidate.id));
