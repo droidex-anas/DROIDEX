@@ -22,6 +22,7 @@ export function ArchivedChatsSettings() {
     shallowEqual,
   );
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [returnFocusTo, setReturnFocusTo] = useState<string | null>(null);
   const rows = archivedChats(sessionOrder.map((id) => sessions[id]).filter(Boolean), chatMetadata);
   const now = Date.now();
 
@@ -52,8 +53,9 @@ export function ArchivedChatsSettings() {
                     {session.cwd ? ` · ${workspaceName(session.cwd)}` : ''}
                   </div>
                 </div>
+                {/* Distinct keys force a remount so the trash button's autoFocus fires. */}
                 {confirmingDelete === session.appSessionId ? (
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div key="confirmation" className="flex shrink-0 items-center gap-2">
                     <span aria-live="polite" className="text-caption text-danger">
                       Delete permanently?
                     </span>
@@ -74,6 +76,7 @@ export function ArchivedChatsSettings() {
                       // focus the safe action to keep keyboard users in place.
                       autoFocus
                       onClick={() => {
+                        setReturnFocusTo(session.appSessionId);
                         setConfirmingDelete(null);
                       }}
                     >
@@ -81,7 +84,7 @@ export function ArchivedChatsSettings() {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex shrink-0 items-center gap-1">
+                  <div key="actions" className="flex shrink-0 items-center gap-1">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -98,7 +101,9 @@ export function ArchivedChatsSettings() {
                       icon={Trash}
                       title="Delete permanently"
                       aria-label={`Delete ${title} permanently`}
+                      autoFocus={returnFocusTo === session.appSessionId}
                       onClick={() => {
+                        setReturnFocusTo(null);
                         setConfirmingDelete(session.appSessionId);
                       }}
                     />
