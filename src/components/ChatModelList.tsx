@@ -6,7 +6,6 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import { ModelListStatus } from './modelListParts';
 import VirtualModelListbox from './VirtualModelListbox';
 
 /** The chat model picker's list: the virtualized, filtered catalog. */
@@ -23,13 +22,12 @@ export default function ChatModelList({
   query: string;
   onSelectModel: (modelId: string) => void;
 }) {
-  const rows = hasRealModels ? models : [];
-  const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
-
   return (
     <VirtualModelListbox
-      rows={rows}
-      selectedIndex={selectedIndex}
+      models={models}
+      hasRealModels={hasRealModels}
+      selectedModelId={selectedModelId}
+      query={query}
       renderRow={(model, selected) => (
         <ModelRow
           model={model}
@@ -39,9 +37,7 @@ export default function ChatModelList({
           }}
         />
       )}
-    >
-      <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
-    </VirtualModelListbox>
+    />
   );
 }
 

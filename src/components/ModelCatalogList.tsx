@@ -8,7 +8,6 @@ import {
   providerOf,
   shortModelName,
 } from './ModelIcon';
-import { ModelListStatus } from './modelListParts';
 import VirtualModelListbox from './VirtualModelListbox';
 
 /** The catalog entry Droid CLI falls back to when no model is chosen. */
@@ -80,10 +79,6 @@ function ModelCatalogList({
   /** False where the provider publishes no efforts, so no row offers one. */
   showReasoning?: boolean;
 }) {
-  const rows = hasRealModels ? models : [];
-  // -1 when the active model is filtered out: nothing is highlighted then.
-  const selectedIndex = rows.findIndex((model) => model.id === selectedModelId);
-
   const latest = useRef({ selectedModelId, onSelectModel, onSelectReasoning });
   latest.current = { selectedModelId, onSelectModel, onSelectReasoning };
   const pick = useCallback<Pick>((modelId, effort) => {
@@ -96,8 +91,10 @@ function ModelCatalogList({
 
   return (
     <VirtualModelListbox
-      rows={rows}
-      selectedIndex={selectedIndex}
+      models={models}
+      hasRealModels={hasRealModels}
+      selectedModelId={selectedModelId}
+      query={query}
       renderRow={(model, selected) => (
         <ModelRow
           model={model}
@@ -106,9 +103,7 @@ function ModelCatalogList({
           {...rowProps}
         />
       )}
-    >
-      <ModelListStatus hasRealModels={hasRealModels} empty={models.length === 0} query={query} />
-    </VirtualModelListbox>
+    />
   );
 }
 
