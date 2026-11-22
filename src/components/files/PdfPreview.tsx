@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PDFDocumentLoadingTask, PDFDocumentProxy, RenderTask } from 'pdfjs-dist';
+import type { PDFDocumentLoadingTask, PDFDocumentProxy, PDFWorker, RenderTask } from 'pdfjs-dist';
 import { ChevronLeft, ChevronRight } from '@droidex/icons';
 import { loadPdfDocumentForPreview } from '../../lib/filePreview';
 import { Button } from '../ui/Button';
@@ -10,8 +10,7 @@ const PDF_RENDER_SCALE = 1.4;
 async function loadPdfjsImpl() {
   const pdfjsLib = await import('pdfjs-dist');
   const workerModule = await import('pdfjs-dist/build/pdf.worker.min.mjs?worker&inline');
-  pdfjsLib.GlobalWorkerOptions.workerPort = new workerModule.default();
-  return pdfjsLib;
+  return { pdfjsLib, PreviewWorker: workerModule.default };
 }
 
 let pdfjsModulePromise: ReturnType<typeof loadPdfjsImpl> | null = null;
@@ -22,21 +21,32 @@ function loadPdfjs(): ReturnType<typeof loadPdfjsImpl> {
 
 export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const documentRef = useRef<PDFDocumentProxy | null>(null);
+  const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
-  const [numPages, setNumPages] = useState(0);
+  const numPages = document?.numPages ?? 0;
   const [error, setError] = useState('');
   const [rendering, setRendering] = useState(true);
 
   useEffect(() => {
     setPage(1);
-    setNumPages(0);
+    setDocument(null);
     setError('');
     setRendering(true);
     let cancelled = false;
     let loadingTask: PDFDocumentLoadingTask | null = null;
+    let worker: Worker | null = null;
+    let pdfWorker: PDFWorker | null = null;
     loadPdfDocumentForPreview(
-      loadPdfjs,
+      async () => {
+        const { pdfjsLib, PreviewWorker } = await loadPdfjs();
+        return {
+          getDocument: (input) => {
+            worker = new PreviewWorker();
+            pdfWorker = pdfjsLib.PDFWorker.create({ port: worker });
+            return pdfjsLib.getDocument({ ...input, worker: pdfWorker });
+          },
+        };
+      },
       bytes,
       () => cancelled,
       (task) => {
@@ -45,8 +55,7 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
     )
       .then((doc) => {
         if (!doc) return;
-        documentRef.current = doc;
-        setNumPages(doc.numPages);
+        setDocument(doc);
         setRendering(false);
       })
       .catch((err: unknown) => {
@@ -54,13 +63,14 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
       });
     return () => {
       cancelled = true;
-      documentRef.current = null;
       void loadingTask?.destroy();
+      pdfWorker?.destroy();
+      worker?.terminate();
     };
   }, [bytes]);
 
   useEffect(() => {
-    const doc = documentRef.current;
+    const doc = document;
     if (!doc || !numPages || !canvasRef.current) return;
     let cancelled = false;
     const isCancelled = () => cancelled;
@@ -91,15 +101,13 @@ export function PdfPreview({ bytes }: { bytes: Uint8Array }) {
       cancelled = true;
       renderTask?.cancel();
     };
-  }, [page, numPages]);
-
-  if (error) {
-    return <PreviewProblem title="Couldn't render this PDF" detail={error} />;
-  }
+  }, [page, numPages, document]);
 
   return (
     <div className="flex h-full flex-col overflow-auto bg-surface/20 p-4">
+      {error && <PreviewProblem title="Couldn't render this PDF" detail={error} />}
       <canvas
+        hidden={!!error}
         ref={canvasRef}
         className="mx-auto max-h-full rounded-sm shadow-lg"
         style={{ maxHeight: 'calc(100% - 32px)' }}

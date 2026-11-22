@@ -1,19 +1,19 @@
 import { expect, test } from '@playwright/test';
 import { openFiles, showFiles } from './filesFixture';
 
-function pdfFixture(): number[] {
+function pdfFixture(width = 1000): number[] {
   const stream = (width: number, height: number) =>
     `1 1 1 rg 0 0 ${width} ${height} re f\n` +
     `1 0 0 rg 0 0 60 ${height} re f\n` +
     `0 0 1 rg ${width - 60} 0 60 ${height} re f\n` +
     `0 0 0 rg BT /F1 18 Tf 5 160 Td (LEFT) Tj ET\n` +
     `BT /F1 18 Tf ${width - 58} 160 Td (RIGHT) Tj ET\n`;
-  const wide = stream(1000, 360);
+  const wide = stream(width, 360);
   const portrait = stream(180, 360);
   const objects = [
     '<< /Type /Catalog /Pages 2 0 R >>',
     '<< /Type /Pages /Kids [3 0 R 4 0 R] /Count 2 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 1000 360] /Resources << /Font << /F1 7 0 R >> >> /Contents 5 0 R >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${width} 360] /Resources << /Font << /F1 7 0 R >> >> /Contents 5 0 R >>`,
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 180 360] /Resources << /Font << /F1 7 0 R >> >> /Contents 6 0 R >>',
     `<< /Length ${wide.length} >>\nstream\n${wide}endstream`,
     `<< /Length ${portrait.length} >>\nstream\n${portrait}endstream`,
@@ -34,6 +34,38 @@ function pdfFixture(): number[] {
   pdf += `trailer\n<< /Size ${offsets.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Array.from(new TextEncoder().encode(pdf));
 }
+
+test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
+  await openFiles(page, { '/repo': { '': { 'edges.pdf': 'file' } } });
+  const disk = await page.evaluateHandle((data) => {
+    const disk = { data, reads: 0 };
+    Object.assign(window.droidex, {
+      filesPreview: async () => {
+        disk.reads += 1;
+        return {
+          category: 'pdf',
+          previewable: true,
+          data: disk.data,
+          totalSize: disk.data.length,
+          sizeCapBytes: 10_000_000,
+        };
+      },
+    });
+    return disk;
+  }, pdfFixture());
+  const tree = await showFiles(page, 'repo-chat');
+  await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
+  const canvas = page.locator('canvas');
+  await expect(canvas).toHaveAttribute('width', '1400');
+  await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
+  await disk.evaluate((disk, data) => {
+    disk.data = data;
+  }, pdfFixture(600));
+  await page.getByRole('button', { name: 'Refresh files' }).click();
+  await expect(canvas).toHaveAttribute('width', '840');
+  await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
+  await expect(page.getByText("Couldn't render this PDF", { exact: true })).toHaveCount(0);
+});
 
 test('PDF edges remain reachable and fitting pages stay centered', async ({ page }) => {
   await page.clock.setFixedTime(new Date('2026-06-01T12:00:00Z'));
