@@ -7,9 +7,20 @@ test.use({ video: 'on' });
 test('query changes discard content hits without blocking title matches or accepting late replies', async ({
   page,
 }, testInfo) => {
+  const now = Date.now();
   const sessions = [
-    sessionSummary('build', { title: 'Build log', cwd: '/repo' }),
-    sessionSummary('title', { title: 'Bravo plan', cwd: '/repo' }),
+    sessionSummary('build', {
+      title: 'Build log',
+      cwd: '/repo',
+      createdAt: now - 4 * 60_000,
+      updatedAt: now - 4 * 60_000,
+    }),
+    sessionSummary('title', {
+      title: 'Bravo plan',
+      cwd: '/repo',
+      createdAt: now - 2 * 60 * 60_000,
+      updatedAt: now - 2 * 60 * 60_000,
+    }),
   ];
   const searches: Extract<ClientCommand, { type: 'sessions.search' }>[] = [];
   const opened: string[] = [];
@@ -53,7 +64,7 @@ test('query changes discard content hits without blocking title matches or accep
       });
     },
   );
-  await page.clock.install({ time: new Date('2030-01-01T00:00:00Z') });
+  await page.clock.install({ time: now });
   await page.goto(process.env.DROIDEX_TEST_URL || '/');
   await page.getByRole('button', { name: 'Search chats, messages, and PRs', exact: true }).click();
   const input = page.getByRole('textbox', { name: 'Search chats, messages, and PRs' });
@@ -79,7 +90,7 @@ test('query changes discard content hits without blocking title matches or accep
   reply(2, 'alpha only');
   await expect(page.getByText('You: alpha only', { exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('alpha.png') });
-  await page.clock.pauseAt(new Date('2030-01-01T00:01:00Z'));
+  await page.clock.pauseAt(now + 60_000);
   await input.fill('bravo');
   await page.screenshot({ path: testInfo.outputPath('bravo.png') });
   await expect.soft(page.getByText('You: alpha only', { exact: true })).toHaveCount(0);
