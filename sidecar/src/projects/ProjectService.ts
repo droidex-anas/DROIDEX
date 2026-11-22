@@ -12,7 +12,7 @@ import {
 } from './projectTurns.js';
 import { randomUUID } from 'node:crypto';
 import type { ServerEvent, SessionSummary } from '../protocol.js';
-import { findPlanStep, planFromSteps, stepNumber } from './plan.js';
+import { findPlanStep, planFromSteps, stepNumber, type PlanStepInput } from './plan.js';
 import { SpawnedChats, type StartedChat } from './spawnedChats.js';
 import { fitLedger, LEDGER_LIMITS, type ProjectPersistence } from './store.js';
 import { ProjectReads, acknowledgeReply, type ThreadReadout } from './projectReads.js';
@@ -33,7 +33,6 @@ import {
 } from './threadStart.js';
 import type {
   Project,
-  ProjectStep,
   ProjectTodo,
   ProjectView,
   ThreadDelivery,
@@ -451,65 +450,64 @@ export class ProjectService {
    */
   async setPlan(
     source: string,
-    steps: readonly (Omit<ProjectStep, 'id'> & { id?: string })[],
+    steps: readonly PlanStepInput[],
     title?: string,
     brief?: string,
   ): Promise<number> {
+    let prepared = this.preparePlan(source, steps, brief);
+    if (!prepared) return 0;
+    const name = title?.slice(0, LEDGER_LIMITS.title);
+    if (name && name !== prepared.project?.title) {
+      await this.sessions.rename(source, name);
+      // Membership and step identities can change while the provider renames.
+      prepared = this.preparePlan(source, steps, brief);
+      if (!prepared) return 0;
+    }
+    const { owner, plan } = prepared;
+    const project = owner ? this.adoption(source, owner) : prepared.project;
+    if (owner) this.commitAdoption(source, project);
+    if (name) {
+      project.title = name;
+      requireThread(project, source).title = name;
+    }
+    project.plan = plan;
+    project.lastStepId = Math.max(
+      project.lastStepId ?? 0,
+      // Only whole-number ids advance the counter; a lead may name steps "1.1".
+      ...plan.map((step) => stepNumber(step.id)),
+    );
+    if (brief !== undefined) project.brief = brief;
+    if (plan.some((step) => step.state !== 'done')) delete project.done;
+    this.settleAdoption(project);
+    await this.save();
+    return project.plan.length;
+  }
+
+  private preparePlan(source: string, steps: readonly PlanStepInput[], brief: string | undefined) {
     this.requireOpen();
     if (brief !== undefined && brief.length > LEDGER_LIMITS.brief)
       throw new Error('Project brief must be at most 2000 characters.');
     if (steps.length > LEDGER_LIMITS.planSteps)
       throw new Error(`A project plan holds at most ${String(LEDGER_LIMITS.planSteps)} steps.`);
-    let project = this.membership.get(source);
-    if (project && requireThread(project, source).ownerAppSessionId)
-      throw new Error('Only the chat that leads a project keeps its plan.');
-    // Named before anything changes: a name the chat refuses leaves no project
-    // half made and no plan replaced; Droid keeps the title itself and can refuse it.
-    const name = title?.slice(0, LEDGER_LIMITS.title);
-    if (name && name !== project?.title && (project || steps.length)) {
-      await this.sessions.rename(source, name);
-      // Another plan for this chat may have made its project meanwhile.
-      project = this.membership.get(source);
-    }
+    const project = this.membership.get(source);
     if (!project) {
-      // With no project there is no plan to clear.
-      if (!steps.length) return 0;
+      if (!steps.length) return;
       const owner = this.requireSession(source);
       if (owner.sessionPurpose !== 'chat')
         throw new Error('Only ordinary chats can keep a project plan.');
       if (owner.lineage?.kind === 'side') throw new Error(SIDE_CHAT_CANNOT_LEAD);
       if (steps.some((step) => step.threadAppSessionId))
         throw new Error('This chat has started no threads yet; leave threadId out.');
-      project = this.adoption(source, owner);
-      this.commitAdoption(source, project);
+      return { owner, plan: planFromSteps(steps, []) };
     }
-    if (name) {
-      project.title = name;
-      requireThread(project, source).title = name;
-    }
-    const resolved = steps.map((step) => ({
-      ...step,
-      ...(step.threadAppSessionId
-        ? { threadAppSessionId: this.resolveThreadId(source, step.threadAppSessionId) }
-        : {}),
-    }));
-    const members = new Set(project.threads.map((thread) => thread.appSessionId));
-    project.plan = planFromSteps(
-      resolved,
-      (id) => members.has(id),
-      project.plan,
-      project.lastStepId,
+    if (requireThread(project, source).ownerAppSessionId)
+      throw new Error('Only the chat that leads a project keeps its plan.');
+    const resolved = steps.map((step) =>
+      step.threadAppSessionId
+        ? { ...step, threadAppSessionId: this.resolveThreadId(source, step.threadAppSessionId) }
+        : step,
     );
-    project.lastStepId = Math.max(
-      project.lastStepId ?? 0,
-      // Only whole-number ids advance the counter; a lead may name steps "1.1".
-      ...project.plan.map((step) => stepNumber(step.id)),
-    );
-    if (brief !== undefined) project.brief = brief;
-    if (project.plan.some((step) => step.state !== 'done')) delete project.done;
-    this.settleAdoption(project);
-    await this.save();
-    return project.plan.length;
+    return { project, plan: planFromSteps(resolved, project.plan, project.lastStepId) };
   }
 
   /** The lead's word that the goal is achieved. Spawning again reopens the project. */

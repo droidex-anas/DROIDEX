@@ -7,6 +7,7 @@ import {
   gitRepository,
   harness,
   input,
+  ordinaryChat,
   summary,
 } from '../testing/projectServiceHarness.js';
 import { registerProjectService } from './service.js';
@@ -727,15 +728,79 @@ test('a first plan can name its step ids and mix new explicit ids with generated
     ['write', '2', '1'],
   );
   assert.equal(plan[0].title, 'Revise');
-  assert.equal(
-    (
-      await call(main, 'plan_set', {
-        steps: [
-          { id: 'write', title: 'A' },
-          { id: 'write', title: 'B' },
-        ],
-      })
-    ).ok,
-    false,
-  );
+});
+
+for (const scenario of ['first save', 'replacement']) {
+  test(`plan_set with duplicate step ids leaves chat and project unchanged on ${scenario}`, async (t) => {
+    const h = await ordinaryChat(t);
+    const main = 'ordinary';
+    registerProjectService(Promise.resolve(h.projects));
+    if (scenario === 'replacement') {
+      const first = await call(main, 'plan_set', {
+        title: 'Existing project',
+        brief: 'Keep this brief.',
+        steps: [{ id: '1', title: 'Keep this step', state: 'doing' }],
+      });
+      assert.equal(first.ok, true);
+    }
+
+    const snapshot = () => ({
+      chatTitle: h.sessions.get(main)?.title,
+      projects: h.projects.list(),
+      ledger: h.state.saved,
+    });
+    const before = structuredClone(snapshot());
+    const rejected = await call(main, 'plan_set', {
+      title: 'Rejected title',
+      brief: 'Rejected brief',
+      steps: [
+        { id: '1', title: 'A' },
+        { id: '1', title: 'B' },
+      ],
+    });
+    assert.equal(rejected.ok, false);
+    assert.match(String(rejected.error), /Plan step id "1" appears more than once/);
+    assert.deepEqual(snapshot(), before);
+  });
+}
+
+test('plan_set does not adopt a chat if the provider refuses its rename', async (t) => {
+  const h = await ordinaryChat(t);
+  registerProjectService(Promise.resolve(h.projects));
+  h.port.rename = () => Promise.reject(new Error('Rename refused'));
+
+  const result = await call('ordinary', 'plan_set', {
+    title: 'New project',
+    steps: [{ title: 'Ship' }],
+  });
+  assert.equal(result.ok, false);
+  assert.match(String(result.error), /Rename refused/);
+  assert.deepEqual(h.projects.list(), []);
+  assert.deepEqual(h.state.saved, []);
+});
+
+test('plan_set keeps step identities established while a chat rename was pending', async (t) => {
+  const h = await ordinaryChat(t);
+  const main = 'ordinary';
+  registerProjectService(Promise.resolve(h.projects));
+  const rename = h.port.rename;
+  const renaming = deferred();
+  const release = deferred();
+  h.port.rename = async (...args) => {
+    renaming.resolve();
+    await release.promise;
+    await rename(...args);
+  };
+
+  const named = call(main, 'plan_set', { title: 'Release', steps: [{ title: 'Ship' }] });
+  await renaming.promise;
+  const concurrent = await call(main, 'plan_set', {
+    steps: [{ id: '7', title: 'Ship', state: 'doing' }],
+  });
+  assert.equal(concurrent.ok, true);
+  release.resolve();
+  assert.equal((await named).ok, true);
+  assert.equal(h.state.saved.length, 1);
+  assert.equal(h.state.saved[0]?.title, 'Release');
+  assert.deepEqual(h.state.saved[0]?.plan, [{ id: '7', title: 'Ship', state: 'doing' }]);
 });
