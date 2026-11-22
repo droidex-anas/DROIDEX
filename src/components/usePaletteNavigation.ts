@@ -18,7 +18,7 @@ export function usePaletteNavigation<Entry>(
   selectedRowRef: React.RefObject<HTMLButtonElement | null>;
   setSelected: (index: number) => void;
   handleKeyDown: (e: React.KeyboardEvent) => void;
-  handleWheel: () => void;
+  handleWheel: (e: React.WheelEvent) => void;
 } {
   const [selection, setSelection] = useState({ query, index: 0, fromKeyboard: true });
   const selectedRowRef = useRef<HTMLButtonElement>(null);
@@ -37,8 +37,9 @@ export function usePaletteNavigation<Entry>(
     if (index !== selected || fromKeyboard) setSelection({ query, index, fromKeyboard: false });
   };
 
-  const handleWheel = () => {
-    if (fromKeyboard) setSelection({ query, index: selected, fromKeyboard: false });
+  const handleWheel = (e: React.WheelEvent) => {
+    const scrollsList = e.deltaY !== 0 && !e.ctrlKey;
+    if (fromKeyboard && scrollsList) setSelection({ query, index: selected, fromKeyboard: false });
   };
 
   const moveSelection = (step: number) => {

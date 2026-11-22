@@ -27,7 +27,7 @@ export default function PaletteShell({
   query: string;
   onQueryChange: (query: string) => void;
   onKeyDown: (e: React.KeyboardEvent) => void;
-  onResultsWheel: () => void;
+  onResultsWheel: (e: React.WheelEvent) => void;
   placeholder: string;
   inputAriaLabel: string;
   enterHint: string;
