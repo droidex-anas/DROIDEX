@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
-async function openTerminalsWithPendingCloses(page: Page) {
+async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' = 'B') {
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
     (socket) => {
@@ -84,6 +84,7 @@ async function openTerminalsWithPendingCloses(page: Page) {
   await page.getByRole('menuitem', { name: /^Terminal/ }).click();
   const tabB = page.getByRole('tab', { name: 'shell-2', exact: true });
   await expect(tabB).toBeVisible();
+  if (activeTab === 'A') await page.getByRole('tab', { name: 'shell-1', exact: true }).click();
   await page.getByRole('button', { name: 'Close shell-1', exact: true }).click();
   await page.getByRole('button', { name: 'Close shell-2', exact: true }).click();
   const pendingChecks = () =>
@@ -132,7 +133,10 @@ for (const result of [true, 'failed'] as const) {
   test(`a superseded ${result === true ? 'busy' : 'failed'} check cannot replace the latest close confirmation`, async ({
     page,
   }) => {
-    const { tabB, reply, stopAndClose, killed } = await openTerminalsWithPendingCloses(page);
+    const { tabB, reply, stopAndClose, killed } = await openTerminalsWithPendingCloses(
+      page,
+      result === 'failed' ? 'A' : 'B',
+    );
     const tabA = page.getByRole('tab', { name: 'shell-1', exact: true });
     await reply('terminal-2', true);
     await expect(stopAndClose).toBeVisible();
@@ -147,3 +151,17 @@ for (const result of [true, 'failed'] as const) {
     await expect(stopAndClose).toHaveCount(0);
   });
 }
+
+test('an older busy check still asks after a newer idle close', async ({ page }) => {
+  const { tabB, reply, stopAndClose, killed } = await openTerminalsWithPendingCloses(page);
+  const tabA = page.getByRole('tab', { name: 'shell-1', exact: true });
+  await reply('terminal-2', false);
+  await expect(tabB).toHaveCount(0);
+  await expect.poll(killed).toEqual(['terminal-2']);
+  await reply('terminal-1', true);
+  await expect(tabA).toHaveAttribute('aria-selected', 'true');
+  await expect(stopAndClose).toBeVisible();
+  await stopAndClose.click();
+  await expect(tabA).toHaveCount(0);
+  await expect.poll(killed).toEqual(['terminal-2', 'terminal-1']);
+});

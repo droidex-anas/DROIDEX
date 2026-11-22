@@ -343,7 +343,6 @@ export default function App() {
     state.rightPanelOpen &&
     hasSessionContent;
   const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
-  const latestCloseRequestRef = useRef(0);
   // The side tab leaving the pane must not hand its expansion to the next tab.
   const sideChatClose = useCloseSideChat(() => {
     setExpandedPaneAppSessionId(null);
@@ -415,15 +414,22 @@ export default function App() {
   // raised it, in the active session's still-open panel. Switching sessions
   // (utilityPanel now points at a different panel), closing the panel
   // (UtilityPane unmounts), or activating a different tab must not leave a
-  // stale id armed for a tab no longer on screen. `onCloseTab` activates the
-  // confirming tab itself (to bring its TerminalWorkspace on screen before
-  // arming the dialog), so this only clears when the active tab has changed
-  // to something other than the one currently confirming.
+  // stale id armed for a tab no longer on screen. Arming a prompt brings its
+  // TerminalWorkspace on screen, so this only clears when the active tab
+  // changes to something other than the one currently confirming.
   useEffect(() => {
     setConfirmCloseTabId((current) =>
       utilityPanel.open && current === utilityPanel.activeTabId ? current : null,
     );
   }, [activeSession?.appSessionId, utilityPanel.open, utilityPanel.activeTabId]);
+
+  useEffect(() => {
+    const panel = visibleUtilityPanelRef.current;
+    if (!confirmCloseTabId || !panel || confirmCloseTabId === panel.activeTabId) return;
+    // Only the active tab's TerminalWorkspace can render its confirmation.
+    setExpandedPaneAppSessionId(null);
+    dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: confirmCloseTabId });
+  }, [confirmCloseTabId, dispatch]);
 
   // A chat that is deleted or archived drops its utility panel from the store
   // (see the useStore reducer — a closing session keeps its panel, because the
@@ -907,7 +913,6 @@ export default function App() {
                       dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
                     }}
                     onCloseTab={(tab) => {
-                      const closeRequest = ++latestCloseRequestRef.current;
                       if (tab.tool === 'terminal') {
                         const status = terminalInstances.get(tab.id)?.getState().status;
                         if (!tab.terminalId || status !== 'running') {
@@ -915,7 +920,6 @@ export default function App() {
                           return;
                         }
                         const armCloseConfirm = () => {
-                          if (closeRequest !== latestCloseRequestRef.current) return;
                           // The check may resolve after the user switched
                           // sessions or closed the pane; only arm the
                           // confirmation if this tab is still on screen.
@@ -923,15 +927,7 @@ export default function App() {
                           if (!panel?.tabs.some((current) => current.id === tab.id)) {
                             return;
                           }
-                          // Only the active tab's TerminalWorkspace is
-                          // mounted, so the confirmation has nowhere to
-                          // render unless this tab is brought forward first
-                          // — mirror onActivateTab's browser-expanded reset.
-                          if (tab.id !== panel.activeTabId) {
-                            setExpandedPaneAppSessionId(null);
-                            dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: tab.id });
-                          }
-                          setConfirmCloseTabId(tab.id);
+                          setConfirmCloseTabId((current) => current ?? tab.id);
                         };
                         void terminalHasChildren(tab.terminalId)
                           .then((busy) => {
