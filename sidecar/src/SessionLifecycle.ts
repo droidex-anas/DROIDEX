@@ -34,7 +34,7 @@ import type { SessionEventFlow } from './SessionEventFlow.js';
 import type { LiveOperationTarget, SessionContext } from './SessionContext.js';
 import type { ChildSessions } from './ChildSessions.js';
 import type { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
-import { commandLineContains } from './processes/commandLineMatch.js';
+import { commandLineContains } from '@droidex/protocol';
 import { errMsg } from './errors.js';
 import {
   buildCreatedSessionSummary,
