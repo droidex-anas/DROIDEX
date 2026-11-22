@@ -51,6 +51,7 @@ import type {
   ChildOperation,
   ChildFileHistorySource,
   ChildSessionsDependencies,
+  ChildSettingsCommand,
 } from './ChildSessionsTypes.js';
 import {
   childRuntimeLimits,
@@ -76,7 +77,6 @@ import { isSettledChildStatus, type SettledAgent } from './childWaveWake.js';
 import { dequeueQueuedChild, prepareChildInterrupt } from './childTurnCancellation.js';
 import { ChildSettingsTransactions } from './childSettingsTransactions.js';
 
-type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
 type ChildLoadHistoryCommand = Extract<ClientCommand, { type: 'child.loadHistory' }>;
 
 const ignoreError = (): undefined => undefined;

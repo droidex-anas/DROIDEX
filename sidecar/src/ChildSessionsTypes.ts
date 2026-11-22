@@ -1,6 +1,6 @@
 import type { FactoryRuntime, SessionInitResult } from './DroidRuntime.js';
 import type { HistoryIndex, PersistedChildSession } from './history.js';
-import type { ServerEvent, SessionSummary } from '@droidex/protocol';
+import type { ClientCommand, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { SessionRegistry } from './SessionRegistry.js';
 import type { SessionTimeline } from './SessionTimeline.js';
 import type { SessionEventFlow } from './SessionEventFlow.js';
@@ -18,6 +18,8 @@ export interface ChildFileHistorySource {
 }
 
 export type ChildOperation = 'open' | 'loadHistory' | 'send' | 'interrupt' | 'settings';
+
+export type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
 
 export type ChildSettingsTarget = ChildRuntimeTarget & {
   parentGeneration: number;

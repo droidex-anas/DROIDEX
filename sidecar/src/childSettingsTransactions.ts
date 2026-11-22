@@ -1,4 +1,3 @@
-import type { ClientCommand } from '@droidex/protocol';
 import { factoryReasoningEffort } from './DroidRuntime.js';
 import {
   childAcceptsWork,
@@ -8,11 +7,13 @@ import {
   type ChildSessionState,
   type ParentChildSessions,
 } from './ChildSessionState.js';
-import type { ChildSessionsDependencies, ChildSettingsTarget } from './ChildSessionsTypes.js';
+import type {
+  ChildSessionsDependencies,
+  ChildSettingsCommand,
+  ChildSettingsTarget,
+} from './ChildSessionsTypes.js';
 import type { ChildAutomaticCompactionTarget, ChildCompactionTarget } from './SessionCompaction.js';
 import { errMsg } from './errors.js';
-
-type ChildSettingsCommand = Extract<ClientCommand, { type: 'child.updateSettings' }>;
 
 interface ChildSettingsOperations {
   isCurrentChild(parent: ParentChildSessions, child: ChildSessionState): boolean;
