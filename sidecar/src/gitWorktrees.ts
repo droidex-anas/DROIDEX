@@ -196,9 +196,8 @@ export async function removeManagedWorktree(target: string): Promise<void> {
       '\0',
     );
   } catch (error) {
-    const failure = error as Error & { code?: number; stderr?: string };
-    if (failure.code !== 129 || !/unknown (?:option|switch) [`']z'/.test(failure.stderr ?? ''))
-      throw error;
+    const failure = error as Error & { code?: number };
+    if (failure.code !== 129) throw error;
     // Git < 2.36 lacks NUL-framed worktree listings; drop this fallback once DROIDEX requires Git 2.36+.
     worktrees = parseWorktreePaths(await git(target, ['worktree', 'list', '--porcelain']), '\n');
   }

@@ -294,11 +294,11 @@ if (args.includes('worktree') && args.includes('list')) {
     process.exit(128);
   }
   if (args[1] === ${JSON.stringify(unrelated)}) {
-    process.stderr.write("error: unknown option 'other'\\n");
-    process.exit(129);
+    process.stderr.write('fatal: unable to read worktrees\\n');
+    process.exit(128);
   }
   if (args.includes('-z')) {
-    process.stderr.write("error: unknown switch \\x60z'\\nusage: git worktree list [--porcelain]\\n");
+    process.stderr.write("Fehler: Unbekannter Schalter \\x60z'\\n");
     process.exit(129);
   }
 }

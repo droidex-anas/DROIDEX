@@ -54,7 +54,7 @@ async function worktrees(dir) {
       const out = await run(root, ['worktree', 'list', '--porcelain', '-z']);
       return parseWorktrees(out, root, '\0');
     } catch (error) {
-      if (error.code !== 129 || !/unknown (?:option|switch) [`']z'/.test(error.message)) return [];
+      if (error.code !== 129) return [];
       // Git < 2.36 lacks NUL-framed worktree listings; drop this fallback once DROIDEX requires Git 2.36+.
       const out = await tryRun(root, ['worktree', 'list', '--porcelain']);
       return parseWorktrees(out, root, '\n');
