@@ -157,17 +157,9 @@ export function FilePreviewPane({
 }
 
 function samePreviewPayload(left: FilePreviewPayload, right: FilePreviewPayload): boolean {
-  if (
-    JSON.stringify({ ...left, data: undefined }) !== JSON.stringify({ ...right, data: undefined })
-  ) {
-    return false;
-  }
-  if (left.data === right.data) return true;
-  const leftBytes = normalizePreviewBytes(left.data);
-  const rightBytes = normalizePreviewBytes(right.data);
   return (
-    leftBytes.length === rightBytes.length &&
-    leftBytes.every((byte, index) => byte === rightBytes[index])
+    left.data === right.data &&
+    JSON.stringify({ ...left, data: undefined }) === JSON.stringify({ ...right, data: undefined })
   );
 }
 
