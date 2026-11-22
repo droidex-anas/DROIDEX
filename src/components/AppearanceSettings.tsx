@@ -1,9 +1,9 @@
 // Appearance settings composition: color-scheme cards with live wireframe
 // previews, the theme preset card (see ThemePresetCard.tsx), the app icon
-// selector, and the typography/behavior card. Manual color edits still work
+// selector, the new-chat look, and the typography/behavior card. Manual color edits still work
 // directly; they become an unsaved "custom" look until saved as a theme.
 
-import { Check, Monitor, Moon, Sun } from '@droidex/icons';
+import { Monitor, Moon, Sun } from '@droidex/icons';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ThemeConfig } from '../hooks/persistedThemePreferences';
 import {
@@ -15,7 +15,8 @@ import {
   UI_FONTS,
   type ThemeMode,
 } from '../lib/theme';
-import { Dropdown, GroupLabel, SectionTitle } from './settingsKit';
+import { NewChatLookSettings } from '../features/new-chat/NewChatLookSettings';
+import { Dropdown, GroupLabel, PreviewCard, SectionTitle } from './settingsKit';
 import { ThemePresetCard } from './ThemePresetCard';
 import { SchemePreview } from './ThemePreview';
 import { Switch } from './Switch';
@@ -92,36 +93,6 @@ function Slider({
   );
 }
 
-/* ── color scheme card (System / Light / Dark) ── */
-function SchemeCard({
-  label,
-  active,
-  onClick,
-  children,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`select-none rounded-xl p-2 text-left transition-colors duration-150 ease-out ${
-        active ? 'bg-active' : 'bg-surface hover:bg-elevated'
-      }`}
-    >
-      <div className="h-24 overflow-hidden rounded-md shadow-sm">{children}</div>
-      <div className="mt-2 flex items-center justify-between px-0.5 pb-0.5">
-        <span className={`text-label ${active ? 'text-primary' : 'text-secondary'}`}>{label}</span>
-        {active && <Check aria-hidden="true" className="size-icon-sm text-accent" />}
-      </div>
-    </button>
-  );
-}
-
 /* ── appearance content ── */
 export function AppearanceSection() {
   const dispatch = useStoreDispatch();
@@ -164,7 +135,7 @@ export function AppearanceSection() {
       <GroupLabel>Color scheme</GroupLabel>
       <div className="grid grid-cols-3 gap-3 mb-8">
         {schemes.map(({ mode, label }) => (
-          <SchemeCard
+          <PreviewCard
             key={mode}
             label={label}
             active={theme.mode === mode}
@@ -173,7 +144,7 @@ export function AppearanceSection() {
             }}
           >
             <SchemePreview preset={previewPreset} scheme={mode} />
-          </SchemeCard>
+          </PreviewCard>
         ))}
       </div>
 
@@ -218,6 +189,8 @@ export function AppearanceSection() {
           </div>
         </div>
       </div>
+
+      <NewChatLookSettings />
 
       {/* Typography + behavior */}
       <GroupLabel>Typography & behavior</GroupLabel>

@@ -1,4 +1,4 @@
-import type { Provider } from '../../components/ModelIcon';
+import type { MARK_PATHS } from '../../components/ModelIcon';
 import type {
   DroidProfile,
   ModelInfo,
@@ -36,7 +36,7 @@ export const PROVIDER_SIGN_IN_COMMANDS: Record<ProviderKind, string> = {
 
 // Each provider carries the official mark of the harness it runs, full color
 // and at one size so the three read as one family.
-export const PROVIDER_MARKS: Record<ProviderKind, Provider> = {
+export const PROVIDER_MARKS: Record<ProviderKind, keyof typeof MARK_PATHS> = {
   droid: 'factory',
   claude: 'claude',
   codex: 'openai',
