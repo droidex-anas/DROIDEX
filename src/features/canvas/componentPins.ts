@@ -3,7 +3,7 @@
 // composer shows them as chips, writes them into the prompt and clears them, as
 // framePins.ts does for frames, by chat.
 
-import { useSyncExternalStore } from 'react';
+import { chatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import type { DesignSystemChoice } from './designSystemChoices';
 import type { CatalogListing, DesignSystemRef, PropPick } from '@droidex/protocol';
@@ -21,31 +21,8 @@ export interface ComponentPin {
   props: readonly PropPick[];
 }
 
-const NONE: readonly ComponentPin[] = [];
-// Only chats holding pins have an entry, so this never grows with the chats visited.
-let pinsByChat: Readonly<Record<string, readonly ComponentPin[]>> = {};
-const listeners = new Set<() => void>();
-
-function publish(appSessionId: string, pins: readonly ComponentPin[]) {
-  const others = Object.entries(pinsByChat).filter(([id]) => id !== appSessionId);
-  pinsByChat = Object.fromEntries(pins.length > 0 ? [...others, [appSessionId, pins]] : others);
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function componentPins(appSessionId: string): readonly ComponentPin[] {
-  return pinsByChat[appSessionId] ?? NONE;
-}
-
-export function useComponentPins(appSessionId: string | null): readonly ComponentPin[] {
-  return useSyncExternalStore(subscribe, () => (appSessionId ? componentPins(appSessionId) : NONE));
-}
+const { get: componentPins, usePins: useComponentPins, publish } = chatPinStore<ComponentPin>();
+export { componentPins, useComponentPins };
 
 /** One tag's identity: the entry of one kit, whichever version it was tagged from. */
 export function componentPinKey({ kit, name }: ComponentPin): string {
