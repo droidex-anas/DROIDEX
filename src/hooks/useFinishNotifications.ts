@@ -18,7 +18,8 @@ import { useStoreApi, useStoreDispatch, type AppState } from './useStore';
 import { isChatInView } from '../features/tabs/tabStrip';
 
 // Desktop finish banners: working→idle sessions raise a short OS notification.
-// Clicks open that chat via a main-process pending queue (push + focus pull).
+// Clicks open that chat via a main-process pending queue (push + focus pull);
+// a click for a chat the store does not know yet waits for the session list.
 
 export function useFinishNotifications(enabled: boolean): void {
   const dispatch = useStoreDispatch();
@@ -26,15 +27,24 @@ export function useFinishNotifications(enabled: boolean): void {
   const previouslyWorking = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
   const lastOpenedRef = useRef<{ id: string; at: number } | null>(null);
+  const heldActivationRef = useRef<string | null>(null);
 
   const openSessionFromNotification = useCallback(
     (appSessionId: string) => {
       if (!appSessionId) return;
       const state = store.getState();
       if (!(appSessionId in state.sessions)) {
+        // A reloaded renderer starts from a partial snapshot; only the
+        // sidecar's session list can say the chat is gone.
+        if (!state.sessionListLoaded) {
+          heldActivationRef.current = appSessionId;
+          return;
+        }
+        heldActivationRef.current = null;
         void ackNotificationActivate(appSessionId);
         return;
       }
+      heldActivationRef.current = null;
       const now = Date.now();
       if (lastOpenedRef.current?.id === appSessionId && now - lastOpenedRef.current.at < 1500) {
         void ackNotificationActivate(appSessionId);
@@ -55,6 +65,14 @@ export function useFinishNotifications(enabled: boolean): void {
       if (appSessionId) openSessionFromNotification(appSessionId);
     });
   }, [enabled, openSessionFromNotification]);
+
+  useEffect(() => {
+    if (!enabled || !isDesktop()) return;
+    return store.subscribe(() => {
+      const held = heldActivationRef.current;
+      if (held !== null) openSessionFromNotification(held);
+    });
+  }, [enabled, openSessionFromNotification, store]);
 
   useEffect(() => {
     if (!enabled || !isDesktop()) return;

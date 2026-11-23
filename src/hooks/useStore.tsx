@@ -206,6 +206,9 @@ export interface AppState {
   // Rows added locally this run (SESSION_CREATED/SESSION_UPDATED) are not in
   // the set and survive lists that do not mention them yet.
   listConfirmedSessionIds: string[] | null;
+  // False until the sidecar's first session list this run; until then the
+  // restored snapshot cannot prove a session is gone.
+  sessionListLoaded: boolean;
   // Pre-existing sessions the sidecar withheld per workspace cwd, so the
   // sidebar can offer to load a folder's older Droid sessions on demand.
   earlierSessionsByCwd: Record<string, number>;
@@ -654,6 +657,7 @@ export const initialState: AppState = {
   projectsLoaded: false,
   projectsError: '',
   listConfirmedSessionIds: sessionSnapshot?.listConfirmedSessionIds ?? null,
+  sessionListLoaded: false,
   earlierSessionsByCwd: {},
   revealEarlierCwds: persistedUiState.revealEarlierCwds ?? [],
   activeAppSessionId: persistedUiState.activeAppSessionId ?? null,
