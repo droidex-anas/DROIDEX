@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   ackNotificationActivate,
   isDesktop,
@@ -27,19 +27,22 @@ export function useFinishNotifications(enabled: boolean): void {
   const previouslyWorking = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
   const lastOpenedRef = useRef<{ id: string; at: number } | null>(null);
-  const heldActivationRef = useRef<string | null>(null);
 
-  const openSessionFromNotification = useCallback(
-    (appSessionId: string) => {
-      if (!appSessionId) return;
+  useEffect(() => {
+    if (!enabled || !isDesktop()) return;
+    // Push and pull replies travel separately; only the latest may act.
+    let generation = 0;
+    let heldAppSessionId: string | null = null;
+
+    const openSession = (appSessionId: string) => {
       const state = store.getState();
       if (!(appSessionId in state.sessions)) {
         // A reloaded renderer starts from a partial snapshot. Leave the click
         // unacked so main keeps it until the chat loads or the click expires.
-        heldActivationRef.current = appSessionId;
+        heldAppSessionId = appSessionId;
         return;
       }
-      heldActivationRef.current = null;
+      heldAppSessionId = null;
       const now = Date.now();
       if (lastOpenedRef.current?.id === appSessionId && now - lastOpenedRef.current.at < 1500) {
         void ackNotificationActivate(appSessionId);
@@ -50,48 +53,42 @@ export function useFinishNotifications(enabled: boolean): void {
       dispatch({ type: 'SELECT_CHILD', selection: null });
       if (state.settingsOpen) dispatch({ type: 'TOGGLE_SETTINGS' });
       void ackNotificationActivate(appSessionId);
-    },
-    [dispatch, store],
-  );
+    };
 
-  useEffect(() => {
-    if (!enabled || !isDesktop()) return;
-    return onNotificationActivate(({ appSessionId }) => {
-      if (appSessionId) openSessionFromNotification(appSessionId);
-    });
-  }, [enabled, openSessionFromNotification]);
-
-  const openPendingActivation = useCallback(() => {
-    void readPendingNotificationSession().then((pending) => {
-      if (pending) openSessionFromNotification(pending.appSessionId);
-      else heldActivationRef.current = null;
-    });
-  }, [openSessionFromNotification]);
-
-  useEffect(() => {
-    if (!enabled || !isDesktop()) return;
-    return store.subscribe(() => {
-      const held = heldActivationRef.current;
-      if (held !== null && held in store.getState().sessions) openPendingActivation();
-    });
-  }, [enabled, openPendingActivation, store]);
-
-  useEffect(() => {
-    if (!enabled || !isDesktop()) return;
+    const readPending = () => {
+      const readGeneration = ++generation;
+      void readPendingNotificationSession().then((pending) => {
+        if (readGeneration !== generation) return;
+        if (pending) openSession(pending.appSessionId);
+        else heldAppSessionId = null;
+      });
+    };
 
     const onVisibility = () => {
-      if (isDocumentVisible()) openPendingActivation();
+      if (isDocumentVisible()) readPending();
     };
 
-    window.addEventListener('focus', openPendingActivation);
+    const unsubActivate = onNotificationActivate(({ appSessionId }) => {
+      generation += 1;
+      if (appSessionId) openSession(appSessionId);
+    });
+    const unsubStore = store.subscribe(() => {
+      if (heldAppSessionId !== null && heldAppSessionId in store.getState().sessions) {
+        readPending();
+      }
+    });
+    window.addEventListener('focus', readPending);
     const unsubVisibility = subscribeVisibilityChange(onVisibility);
-    openPendingActivation();
+    readPending();
 
     return () => {
-      window.removeEventListener('focus', openPendingActivation);
+      generation += 1;
+      unsubActivate();
+      unsubStore();
+      window.removeEventListener('focus', readPending);
       unsubVisibility();
     };
-  }, [enabled, openPendingActivation]);
+  }, [enabled, dispatch, store]);
 
   useEffect(() => {
     if (!enabled || !isDesktop()) return;
