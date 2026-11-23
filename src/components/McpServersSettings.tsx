@@ -33,6 +33,14 @@ import { Button } from './ui/Button';
 
 let requestSequence = 0;
 const nextRequestId = () => `mcp-${Date.now().toString(36)}-${String(++requestSequence)}`;
+const UNCONFIRMED_CHANGE =
+  'The agent runtime restarted before confirming this change. The list shows its current state.';
+
+interface ActiveRequest {
+  requestId: string;
+  isMutation: boolean;
+  isAnswered: boolean;
+}
 
 interface McpServersSectionProps {
   servers: McpServerInfo[];
@@ -63,12 +71,12 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
   const [isLoading, setIsLoading] = useState(true);
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string>();
-  const activeRequest = useRef<string | undefined>(undefined);
+  const activeRequest = useRef<ActiveRequest | undefined>(undefined);
   const listedCwd = useRef(cwd);
 
   const start = useCallback((mutation: boolean, send: (requestId: string) => void) => {
     const requestId = nextRequestId();
-    activeRequest.current = requestId;
+    activeRequest.current = { requestId, isMutation: mutation, isAnswered: false };
     setError(undefined);
     if (mutation) setIsMutating(true);
     else setIsLoading(true);
@@ -83,18 +91,21 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
 
   useEffect(() => {
     const unsubscribe = bridge.subscribe((event) => {
-      if (!('requestId' in event) || event.requestId !== activeRequest.current) return;
+      const request = activeRequest.current;
+      if (!request || !('requestId' in event) || event.requestId !== request.requestId) return;
       if (event.type === 'mcp.authRequested' && event.authUrl) {
         void window.droidex?.openExternal(event.authUrl);
         return;
       }
       if (event.type === 'mcp.error') {
+        request.isAnswered = true;
         setError(event.message);
         setIsLoading(false);
         setIsMutating(false);
         return;
       }
       if (event.type !== 'mcp.catalog') return;
+      request.isAnswered = true;
       setServers(event.servers);
       setTools(event.tools);
       setSummary(event.summary);
@@ -109,8 +120,20 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
       setTools([]);
       setSummary(EMPTY_SUMMARY);
     }
+    // A replaced sidecar never answers what the old one was handling, so read
+    // its catalog afresh. A lost change is not replayed: it may have applied.
+    const unsubscribeReplaced = bridge.subscribeRuntimeReplaced((_, resentRequestIds) => {
+      const request = activeRequest.current;
+      if (request && resentRequestIds.has(request.requestId)) return;
+      const isChangeUnconfirmed = request?.isMutation === true && !request.isAnswered;
+      refresh();
+      if (isChangeUnconfirmed) setError(UNCONFIRMED_CHANGE);
+    });
     refresh();
-    return unsubscribe;
+    return () => {
+      unsubscribe();
+      unsubscribeReplaced();
+    };
   }, [cwd, refresh]);
 
   return (
