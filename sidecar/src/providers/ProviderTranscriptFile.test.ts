@@ -5,8 +5,8 @@ import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from '../testing/sessionTranscriptSupport.js';
 import { ProviderTranscriptFile } from './ProviderTranscriptFile.js';
-import { SessionTranscriptReader } from '../sessionTranscript.js';
 import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 function reply(messageId: string, text: string): TranscriptEvent {
@@ -33,9 +33,7 @@ function transcriptFile(t: TestContext): { file: ProviderTranscriptFile; userDat
 }
 
 function savedTexts(file: ProviderTranscriptFile): (string | undefined)[] {
-  return new SessionTranscriptReader('chat', 'codex', file.path, 'primary', true)
-    .windowBackward(Number.MAX_SAFE_INTEGER, 0)
-    .events.map((event) => event.text);
+  return readFullTranscript('chat', 'codex', file.path, 'primary').map((event) => event.text);
 }
 
 test('a line a crash left half-written does not swallow the replies after it', async (t) => {

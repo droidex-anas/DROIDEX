@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import {
   MAX_SESSION_BYTES,
   SessionTranscriptReader,
@@ -166,10 +167,7 @@ test('corrupt lines are skipped without losing their neighbors', () => {
   const path = writeSession([assistant('a1'), '{not json', badIdentity, assistant('a2')]);
   for (const events of [
     collectAll(path, 10),
-    new SessionTranscriptReader('app', 'provider', path, 'primary', true).windowBackward(
-      Number.MAX_SAFE_INTEGER,
-      0,
-    ).events,
+    readFullTranscript('app', 'provider', path, 'primary'),
   ]) {
     assert.deepEqual(
       events.map((e) => e.text),
@@ -241,10 +239,7 @@ test('Canvas results with reused tool IDs project by occurrence regardless of pa
     r.windowBackward(20, 0).events,
     new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary').windowBackward(20, 0)
       .events,
-    new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true).windowBackward(
-      Number.MAX_SAFE_INTEGER,
-      0,
-    ).events,
+    readFullTranscript(appSessionId, appSessionId, path, 'primary'),
   ]) {
     assert.deepEqual(
       events.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
@@ -420,13 +415,7 @@ for (const provider of ['claude', 'codex'] as const) {
       cursor = page.older;
     } while (cursor);
     for (const reloaded of [
-      new SessionTranscriptReader(
-        appSessionId,
-        appSessionId,
-        file.path,
-        'primary',
-        true,
-      ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events,
+      readFullTranscript(appSessionId, appSessionId, file.path, 'primary'),
       paged,
     ]) {
       assert.deepEqual(
@@ -476,10 +465,7 @@ test('full-window and paged replay hide internal user messages, show Droid notic
 
   for (const events of [
     collectAll(path, 1),
-    new SessionTranscriptReader('app', 'provider', path, 'primary', true).windowBackward(
-      Number.MAX_SAFE_INTEGER,
-      0,
-    ).events,
+    readFullTranscript('app', 'provider', path, 'primary'),
   ]) {
     assert.deepEqual(
       events.map(({ text, author, skills, sourceSessionId }) => [
@@ -570,13 +556,7 @@ test('an oversized file pages back to its very first message without trimming', 
 
 test('transcript windows replay a mid-file compaction marker in position', () => {
   const path = writeSession([assistant('before'), compactionState(3), assistant('after')]);
-  const events = new SessionTranscriptReader(
-    'app',
-    'provider',
-    path,
-    'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  const events = readFullTranscript('app', 'provider', path, 'primary');
   assert.deepEqual(
     events.map((e) => (e.kind === 'compaction' ? `divider:${e.removedCount}` : e.text)),
     ['before', 'divider:3', 'after'],

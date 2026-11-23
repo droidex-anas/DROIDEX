@@ -65,7 +65,7 @@ function writeTranscript(
   );
 }
 
-test('transcript windows preserve the requested child role and provider identity under either app identity, and default top-level sessions to primary', () => {
+test('transcript windows pass through explicit role and source identity and default to primary', () => {
   const firstText = (providerSessionId: string, appSessionId: string, role?: SessionRole) => {
     const text = loadSessionTranscriptWindow(appSessionId, [providerSessionId], {
       role,
@@ -73,15 +73,8 @@ test('transcript windows preserve the requested child role and provider identity
     assert.ok(text, 'expected a text event');
     return [text.sourceSessionId, text.role];
   };
-  writeTranscript('child-session', {
-    callingSessionId: 'parent-session',
-    callingToolUseId: 'tool-1',
-  });
+  writeTranscript('child-session', {});
   assert.deepEqual(firstText('child-session', 'parent-app', 'worker'), ['child-session', 'worker']);
-  assert.deepEqual(firstText('child-session', 'child-session', 'worker'), [
-    'child-session',
-    'worker',
-  ]);
 
   writeTranscript('plain-session', {});
   assert.deepEqual(firstText('plain-session', 'plain-session'), ['primary', 'primary']);

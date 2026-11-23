@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import { transcriptToMarkdown } from './sessionMarkdown.js';
-import { SessionTranscriptReader } from './sessionTranscript.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { CodexEventMapper } from './providers/codex/codexEvents.js';
@@ -193,13 +193,7 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
   );
   const path = join(directory, `${appSessionId}.jsonl`);
   writeFileSync(path, `${lines.join('\n')}\n`);
-  const replayed = new SessionTranscriptReader(
-    appSessionId,
-    appSessionId,
-    path,
-    'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  const replayed = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const md = transcriptToMarkdown(replayed, META);
   assert.match(md, /\*\*Canvas:\*\* Updated design · rev-1/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
@@ -279,13 +273,12 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
     );
   }
   await file.flush();
-  const replayed = new SessionTranscriptReader(
+  const replayed = readFullTranscript(
     summary.appSessionId,
     summary.appSessionId,
     file.path,
     'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  );
   assert.deepEqual(
     replayed
       .filter((event) => event.kind === 'tool_result')

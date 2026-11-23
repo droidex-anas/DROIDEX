@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import fs, {
   mkdirSync,
   mkdtempSync,
@@ -456,13 +457,7 @@ test('native message chunks replay once with complete item pages and distinct co
     assert.ok(latest.older);
     const earlier = reader.windowBackward(2, 0, latest.older);
     assert.equal(earlier.older, undefined);
-    const fullWindow = new SessionTranscriptReader(
-      appSessionId,
-      sourceSessionId,
-      path,
-      role,
-      true,
-    ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+    const fullWindow = readFullTranscript(appSessionId, sourceSessionId, path, role);
     for (const events of [fullWindow, [...earlier.events, ...latest.events]]) {
       assert.deepEqual(
         events.map(({ kind, text, textUpdate }) => ({ kind, text, textUpdate })),
@@ -524,9 +519,8 @@ test('native message chunks replay once with complete item pages and distinct co
       );
       assert.deepEqual(
         events.map((event) => event.id),
-        new SessionTranscriptReader(forkId, forkId, forkPath, 'primary', true)
-          .windowBackward(Number.MAX_SAFE_INTEGER, 0)
-          .events.slice(-events.length)
+        readFullTranscript(forkId, forkId, forkPath, 'primary')
+          .slice(-events.length)
           .map((event) => event.id),
       );
     }
@@ -556,13 +550,7 @@ test('a failed transcript write reaches its caller and does not stop the lines a
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Answer.' }));
   await transcript.flush();
 
-  const events = new SessionTranscriptReader(
-    appSessionId,
-    appSessionId,
-    path,
-    'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  const events = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   assert.deepEqual(
     events.map((event) => event.text),
     ['kept', 'Answer.'],
@@ -597,13 +585,7 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', a
   );
 
   const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
-  const fullWindow = new SessionTranscriptReader(
-    appSessionId,
-    appSessionId,
-    path,
-    'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  const fullWindow = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const lazy = new SessionTranscriptReader(
     appSessionId,
     appSessionId,
@@ -747,13 +729,12 @@ test('a fork reads behind the queued lines and copies the transcript through its
     },
   );
 
-  const events = new SessionTranscriptReader(
+  const events = readFullTranscript(
     'provider-transcript-fork-copy',
     'provider-transcript-fork-copy',
     path,
     'primary',
-    true,
-  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
+  );
   assert.deepEqual(
     events.map((event) => [event.author ?? event.text, event.forkPointId]),
     [

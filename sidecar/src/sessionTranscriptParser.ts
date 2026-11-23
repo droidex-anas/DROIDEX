@@ -81,8 +81,7 @@ interface EventBase {
   ts: number;
 }
 
-// The first defined, non-empty string: what the `a || b || ''` chains in the
-// original eager parser computed, kept exact (empty strings fall through).
+// The first defined, non-empty string (empty strings fall through).
 function nonEmpty(...values: (string | undefined)[]): string {
   for (const value of values) if (value) return value;
   return '';
