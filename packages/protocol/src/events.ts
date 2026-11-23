@@ -244,7 +244,6 @@ export type ServerEvent =
     }
   | { type: 'mission.progress'; appSessionId: string; missionId?: string; entries: ProgressEntry[] }
   | SessionChildEvent
-  | { type: 'spec.content'; appSessionId: string; path: string; content: string }
   | {
       type: 'sessions.list';
       sessions: SessionSummary[];

@@ -326,8 +326,6 @@ export function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.runtimeAvailable === 'boolean' &&
         nonNegativeSafeInteger(value.runtimeGeneration)
       );
-    case 'spec.content':
-      return hasStrings(value, ['appSessionId', 'path', 'content']);
     case 'sessions.list':
       return (
         Array.isArray(value.sessions) &&

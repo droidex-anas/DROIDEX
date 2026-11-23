@@ -33,7 +33,6 @@ export type ClientCommand =
   | McpClientCommand
   | { type: 'connect'; apiKey?: string }
   | { type: 'runtime.status' }
-  | { type: 'auth.status' }
   | { type: 'env.detect' }
   | { type: 'cli.install'; channel: InstallChannel }
   | { type: 'cli.update'; channel?: InstallChannel }
@@ -60,7 +59,6 @@ export type ClientCommand =
   // process when no session of the harness is live. `immediate` skips the
   // pause kept between automatic reads.
   | { type: 'usage.refresh'; provider: ProviderKind; panelOpen: boolean; immediate: boolean }
-  | { type: 'catalog.tools'; providerSessionId?: string }
   | { type: 'catalog.skills'; providerSessionId?: string }
   | { type: 'settings.defaults' }
   | {
@@ -174,8 +172,6 @@ export type ClientCommand =
       title?: string;
     }
   | { type: 'sessions.reanchorCwd'; requestId: string; fromCwd: string; toCwd: string }
-  | { type: 'session.rewindInfo'; appSessionId: string }
-  | { type: 'session.rewind'; appSessionId: string; rewindId?: string }
   | { type: 'session.close'; appSessionId: string }
   | { type: 'session.processes.stop'; appSessionId: string; pid: number }
   | {
@@ -246,7 +242,6 @@ export type ClientCommand =
       answers: QuestionAnswer[];
     }
   | { type: 'history.list' }
-  | { type: 'history.page'; providerSessionId: string; cursor?: string; limit?: number }
   | {
       type: 'settings.agent.update';
       appSessionId?: string;

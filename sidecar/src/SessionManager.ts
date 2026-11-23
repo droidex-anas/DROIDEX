@@ -1126,7 +1126,6 @@ export class SessionManager {
         this.connect(cmd.apiKey);
         return;
       case 'runtime.status':
-      case 'auth.status':
         this.emit({ type: 'runtime.updated', status: this.runtime.status() });
         return;
       case 'env.detect':
@@ -1166,9 +1165,6 @@ export class SessionManager {
         return;
       case 'usage.refresh':
         await this.accountUsage.refresh(cmd.provider, cmd);
-        return;
-      case 'catalog.tools':
-        await this.emitToolCatalog(cmd.providerSessionId);
         return;
       case 'catalog.skills':
         await this.emitSkillCatalog(cmd.providerSessionId);
@@ -1301,14 +1297,6 @@ export class SessionManager {
           });
         }
         return;
-      case 'session.rewindInfo':
-        await this.withSession(cmd.appSessionId, (session) => session.getRewindInfo({} as never));
-        return;
-      case 'session.rewind':
-        await this.withSession(cmd.appSessionId, (session) =>
-          session.executeRewind({ rewindId: cmd.rewindId } as never),
-        );
-        return;
       case 'session.resume':
         await this.lifecycle.resume(cmd.appSessionId);
         return;
@@ -1327,9 +1315,6 @@ export class SessionManager {
         return;
       case 'history.list':
         this.timeline.list();
-        return;
-      case 'history.page':
-        this.timeline.loadProviderPage(cmd.providerSessionId, cmd.cursor, cmd.limit);
         return;
       case 'session.loadHistory':
         await this.sessionFiles.whenBootReconciled();
@@ -2344,30 +2329,6 @@ export class SessionManager {
       ...(droidProfile ? { droidProfile } : {}),
     });
     return { session, close: () => session.close() };
-  }
-
-  // Tool discovery remains Droid-only. Skill-style catalogs belong to the
-  // provider session named by the request, while an unbound draft keeps Droid's
-  // existing discovery path.
-  private isDroidCatalogTarget(providerSessionId?: string): boolean {
-    return (
-      providerSessionId === undefined ||
-      this.sessionProvider(providerSessionId) === DEFAULT_PROVIDER
-    );
-  }
-
-  private async emitToolCatalog(providerSessionId?: string): Promise<void> {
-    if (!this.isDroidCatalogTarget(providerSessionId)) {
-      this.emit({ type: 'catalog.updated', catalog: 'tools', items: [] });
-      return;
-    }
-    const { session, close } = await this.catalogSession(providerSessionId);
-    try {
-      const result = await session.listTools();
-      this.emit({ type: 'catalog.updated', catalog: 'tools', items: arrayItems(result, 'tools') });
-    } finally {
-      await close();
-    }
   }
 
   private async emitSkillCatalog(providerSessionId?: string): Promise<void> {

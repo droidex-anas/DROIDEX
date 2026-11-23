@@ -119,12 +119,8 @@ export class ReplayFactorySession implements FactorySession {
     Promise.reject(new Error('forkSession is not replayable.'));
   readonly renameSession: FactorySession['renameSession'] = () =>
     Promise.reject(new Error('renameSession is not replayable.'));
-  readonly getRewindInfo: FactorySession['getRewindInfo'] = () =>
-    Promise.reject(new Error('getRewindInfo is not replayable.'));
   readonly executeRewind: FactorySession['executeRewind'] = () =>
     Promise.reject(new Error('executeRewind is not replayable.'));
-  readonly listTools: FactorySession['listTools'] = () =>
-    Promise.reject(new Error('listTools is not replayable.'));
   readonly listSkills: FactorySession['listSkills'] = () =>
     Promise.reject(new Error('listSkills is not replayable.'));
   readonly listMcpServers: FactorySession['listMcpServers'] = () =>
