@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import type { ClientCommand, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../../src/test/sessionSummary';
 
-async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' = 'B') {
+async function openTerminals(page: Page, activeTab: 'A' | 'B' = 'B') {
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
     (socket) => {
@@ -85,8 +85,6 @@ async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' =
   const tabB = page.getByRole('tab', { name: 'shell-2', exact: true });
   await expect(tabB).toBeVisible();
   if (activeTab === 'A') await page.getByRole('tab', { name: 'shell-1', exact: true }).click();
-  await page.getByRole('button', { name: 'Close shell-1', exact: true }).click();
-  await page.getByRole('button', { name: 'Close shell-2', exact: true }).click();
   const pendingChecks = () =>
     page.evaluate(() => {
       const state = Reflect.get(window, 'terminalCloseTest') as {
@@ -94,7 +92,10 @@ async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' =
       };
       return [...state.checks.keys()];
     });
-  await expect.poll(pendingChecks).toEqual(['terminal-1', 'terminal-2']);
+  const closeTab = async (tab: '1' | '2') => {
+    await page.getByRole('button', { name: `Close shell-${tab}`, exact: true }).click();
+    await expect.poll(pendingChecks).toContain(`terminal-${tab}`);
+  };
   const reply = async (id: string, result: boolean | 'failed') => {
     await page.evaluate(
       async ({ id, result }) => {
@@ -115,7 +116,14 @@ async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' =
     page.evaluate(() => {
       return (Reflect.get(window, 'terminalCloseTest') as { killed: string[] }).killed;
     });
-  return { tabB, reply, stopAndClose, killed };
+  return { tabB, reply, stopAndClose, killed, closeTab };
+}
+
+async function openTerminalsWithPendingCloses(page: Page, activeTab: 'A' | 'B' = 'B') {
+  const terminals = await openTerminals(page, activeTab);
+  await terminals.closeTab('1');
+  await terminals.closeTab('2');
+  return terminals;
 }
 
 test('an idle close reply preserves another terminal tab’s busy confirmation', async ({ page }) => {
@@ -164,4 +172,22 @@ test('an older busy check still asks after a newer idle close', async ({ page })
   await stopAndClose.click();
   await expect(tabA).toHaveCount(0);
   await expect.poll(killed).toEqual(['terminal-2', 'terminal-1']);
+});
+
+test('a later close replaces an armed prompt', async ({ page }) => {
+  const { tabB, reply, stopAndClose, killed, closeTab } = await openTerminals(page);
+  const tabA = page.getByRole('tab', { name: 'shell-1', exact: true });
+  await closeTab('1');
+  await reply('terminal-1', true);
+  await expect(stopAndClose).toBeVisible();
+  await expect(tabA).toHaveAttribute('aria-selected', 'true');
+  await closeTab('2');
+  await reply('terminal-2', true);
+  await expect(tabB).toHaveAttribute('aria-selected', 'true');
+  await expect(stopAndClose).toBeVisible();
+  await stopAndClose.click();
+  await expect(tabB).toHaveCount(0);
+  await expect(tabA).toHaveAttribute('aria-selected', 'true');
+  await expect.poll(killed).toEqual(['terminal-2']);
+  await expect(stopAndClose).toHaveCount(0);
 });
