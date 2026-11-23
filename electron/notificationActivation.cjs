@@ -37,11 +37,10 @@ function createNotificationActivation({ openMainWindow }) {
     getMainWindow().webContents.send('notification-activate', payload);
   }
 
-  /** Return and clear the pending open (renderer pull on focus). */
-  function takePendingNotificationOpen() {
-    const payload = pendingNotificationPayload();
-    pendingNotificationOpen = null;
-    return payload;
+  // Renderer pull on focus or load. Only a matching ack or expiry clears the
+  // open, so a reload before its chat has loaded still gets it.
+  function readPendingNotificationOpen() {
+    return pendingNotificationPayload();
   }
   function acknowledge(appSessionId) {
     if (
@@ -56,7 +55,7 @@ function createNotificationActivation({ openMainWindow }) {
   return {
     queueNotificationSessionOpen,
     deliverPendingNotificationOpen,
-    takePendingNotificationOpen,
+    readPendingNotificationOpen,
     acknowledge,
   };
 }

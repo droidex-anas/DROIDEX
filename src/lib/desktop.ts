@@ -218,13 +218,13 @@ export function onNotificationActivate(
   return api.onNotificationActivate(handler);
 }
 
-/** Pull a pending open-session request queued by a notification click. */
-export async function takePendingNotificationSession(): Promise<{
+/** Read the open-session request a notification click queued; main keeps it until ack or expiry. */
+export async function readPendingNotificationSession(): Promise<{
   appSessionId: string;
 } | null> {
   const api = desktopApi();
   if (!api) return null;
-  const pending = await api.takePendingNotificationSession();
+  const pending = await api.readPendingNotificationSession();
   if (!pending || typeof pending.appSessionId !== 'string' || !pending.appSessionId.trim()) {
     return null;
   }

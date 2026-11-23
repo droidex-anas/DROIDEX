@@ -315,7 +315,7 @@ export interface DroidexApi {
   pathForFile: (file: File) => string;
   notify: (title: string, body: string, options?: NotifyOptions) => Promise<NotifyResult>;
   onNotificationActivate: (handler: (payload: { appSessionId: string }) => void) => () => void;
-  takePendingNotificationSession: () => Promise<{ appSessionId: string } | null>;
+  readPendingNotificationSession: () => Promise<{ appSessionId: string } | null>;
   ackNotificationActivate: (appSessionId: string) => Promise<{ ok: boolean }>;
   getApiKey: () => Promise<string | null>;
   setApiKey: (key: string) => Promise<void>;

@@ -13,7 +13,7 @@ import {
   type AppState,
 } from './useStore';
 
-test('a notification click before the session list opens its chat once the list arrives', async (t) => {
+test('a notification click for a chat that has not loaded opens it once the chat arrives', async (t) => {
   t.after(async () => {
     await act(async () => root.unmount());
   });
@@ -25,7 +25,7 @@ test('a notification click before the session list opens its chat once the list 
     addEventListener() {},
     removeEventListener() {},
   };
-  // Main's pending open is take-and-clear: the renderer's first pull consumes it.
+  // Main keeps the pending open until a matching ack.
   let pending: { appSessionId: string } | null = { appSessionId: 'restored' };
   const acks: string[] = [];
   const window = {
@@ -42,13 +42,10 @@ test('a notification click before the session list opens its chat once the list 
     },
     droidex: {
       onNotificationActivate: () => () => {},
-      takePendingNotificationSession: async () => {
-        const taken = pending;
-        pending = null;
-        return taken;
-      },
+      readPendingNotificationSession: async () => pending,
       ackNotificationActivate: async (appSessionId: string) => {
         acks.push(appSessionId);
+        if (pending?.appSessionId === appSessionId) pending = null;
         return { ok: true };
       },
     },
@@ -83,12 +80,13 @@ test('a notification click before the session list opens its chat once the list 
   };
   const root = createRoot(container as unknown as HTMLElement);
   await act(async () => root.render(createElement(StoreProvider, null, createElement(Harness))));
-  assert.equal(pending, null);
   assert.deepEqual(acks, []);
+  assert.deepEqual(pending, { appSessionId: 'restored' });
 
   await act(async () => {
     dispatch({ type: 'SESSION_LIST', sessions: [sessionSummary('restored')] });
   });
   assert.equal(getState().activeAppSessionId, 'restored');
   assert.deepEqual(acks, ['restored']);
+  assert.equal(pending, null);
 });

@@ -205,7 +205,6 @@ function reduceSessionList(
     sessionLastSeen: seededLastSeen,
     chatMetadata,
     listConfirmedSessionIds: action.sessions.map((m) => m.appSessionId),
-    sessionListLoaded: true,
     earlierSessionsByCwd: action.earlierSessionsByCwd,
     activeAppSessionId,
     // The list covers every folder in the sidebar, so a restored tab whose
