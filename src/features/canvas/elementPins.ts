@@ -2,7 +2,7 @@
 // the board; the composer shows them as chips, sends them as the turn's element
 // references and clears them, as framePins.ts does for frames, by chat.
 
-import { useSyncExternalStore } from 'react';
+import { createChatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import { attachedBoard } from './framePins';
 import type { PickedElement } from './pickedElement';
@@ -23,31 +23,8 @@ export interface ElementPin {
   element: PickedElement;
 }
 
-const NONE: readonly ElementPin[] = [];
-// Only chats holding pins have an entry, so this never grows with the chats visited.
-let pinsByChat: Readonly<Record<string, readonly ElementPin[]>> = {};
-const listeners = new Set<() => void>();
-
-function publish(appSessionId: string, pins: readonly ElementPin[]) {
-  const others = Object.entries(pinsByChat).filter(([id]) => id !== appSessionId);
-  pinsByChat = Object.fromEntries(pins.length > 0 ? [...others, [appSessionId, pins]] : others);
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function elementPins(appSessionId: string): readonly ElementPin[] {
-  return pinsByChat[appSessionId] ?? NONE;
-}
-
-export function useElementPins(appSessionId: string | null): readonly ElementPin[] {
-  return useSyncExternalStore(subscribe, () => (appSessionId ? elementPins(appSessionId) : NONE));
-}
+const { get: elementPins, usePins: useElementPins, publish } = createChatPinStore<ElementPin>();
+export { elementPins, useElementPins };
 
 /** One pick's identity: the element instance, and for a text range the words it spans. */
 export function elementPinKey({ canvasId, element }: ElementPin): string {
