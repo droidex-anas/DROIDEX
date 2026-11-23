@@ -36,10 +36,13 @@ function show(key: string, png: string | null): void {
 function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): Promise<void> {
   return canvasClient.designSystems.readCapture(ref, item).then(
     (png) => {
-      if (!captures.has(key)) show(key, png);
+      if (captures.needsRead(key)) show(key, png);
     },
     (error: unknown) => {
       console.error('A design system preview capture could not be read:', error);
+      if (!captures.needsRead(key)) return;
+      captures.fail(key);
+      for (const listener of listeners) listener();
     },
   );
 }
@@ -52,8 +55,8 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * The capture's URL: undefined until a read succeeds, null when that item has not
- * been captured in that mode yet, or when `ref` is null. An entry `item` must
+ * The capture's URL: undefined while unread, null when the read failed, that item
+ * has not been captured in that mode yet, or `ref` is null. An entry `item` must
  * keep its identity across renders.
  */
 export function useKitCapture(
@@ -68,7 +71,8 @@ export function useKitCapture(
   useEffect(() => {
     if (key === null || id === undefined || version === undefined || mode === undefined) return;
     const release = captures.hold(key);
-    if (!captures.has(key)) reads.request(key, () => readCapture(key, { id, version, mode }, item));
+    if (captures.needsRead(key))
+      reads.request(key, () => readCapture(key, { id, version, mode }, item));
     return () => {
       release();
       if (!captures.isHeld(key)) reads.cancel(key);

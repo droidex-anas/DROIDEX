@@ -63,6 +63,7 @@ test('failed capture reads retry on remount, while absence stays cached and in-f
   await render();
   assert.equal(read.mock.callCount(), 1);
   await act(async () => fail(new Error('transient read failure')));
+  assert.equal(shown, null, 'a failed read lets current consumers fall back');
   await render();
   assert.equal(read.mock.callCount(), 1, 'a failure must not start a retry loop');
   await unmount();

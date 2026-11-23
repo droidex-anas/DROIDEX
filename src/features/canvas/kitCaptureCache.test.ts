@@ -4,6 +4,24 @@ import { KitCaptureCache } from './kitCaptureCache';
 
 const BUDGET_CHARS = 10;
 
+test('failed reads display null, trim with entries, and are replaced by settled results', () => {
+  const cache = new KitCaptureCache(BUDGET_CHARS, 1);
+  cache.fail('old');
+  assert.equal(cache.get('old'), null);
+  assert.equal(cache.needsRead('old'), true);
+  cache.fail('new');
+  assert.equal(cache.has('old'), false);
+  assert.equal(cache.get('old'), undefined);
+  cache.set('old', null);
+  assert.equal(cache.has('new'), false);
+  assert.equal(cache.needsRead('old'), false);
+  cache.fail('old');
+  cache.set('old', 'url!');
+  assert.equal(cache.get('old'), 'url!');
+  assert.equal(cache.needsRead('old'), false);
+  assert.equal(cache.retainedChars, 4);
+});
+
 test('absent captures are bounded, oldest first, without evicting held entries', async () => {
   const cache = new KitCaptureCache(BUDGET_CHARS, 2);
   const release = cache.hold('held');

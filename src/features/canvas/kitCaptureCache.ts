@@ -2,9 +2,11 @@
 // captures no consumer holds are let go, least recently held first; one a
 // consumer holds stays, since letting it go would blank a tile on screen.
 
+const READ_FAILED = Symbol('read failed');
+
 export class KitCaptureCache {
-  /** A data URL per key, or null once its read found none; least recently held first. */
-  private readonly urls = new Map<string, string | null>();
+  /** Least recently held first; failed reads display like absence but remain retryable. */
+  private readonly urls = new Map<string, string | null | typeof READ_FAILED>();
   private readonly holds = new Map<string, number>();
   private retained = 0;
 
@@ -17,13 +19,19 @@ export class KitCaptureCache {
     return this.retained;
   }
 
-  /** The capture's URL, null when there is none, undefined when it is not here. */
+  /** The URL, null on absence or read failure, undefined when it is not here. */
   get(key: string): string | null | undefined {
-    return this.urls.get(key);
+    const url = this.urls.get(key);
+    return url === READ_FAILED ? null : url;
   }
 
   has(key: string): boolean {
     return this.urls.has(key);
+  }
+
+  needsRead(key: string): boolean {
+    const url = this.urls.get(key);
+    return url === undefined || url === READ_FAILED;
   }
 
   /** Whether a consumer still holds `key`. */
@@ -35,6 +43,12 @@ export class KitCaptureCache {
     this.forget(key);
     this.urls.set(key, url);
     this.retained += url?.length ?? 0;
+    this.trim();
+  }
+
+  fail(key: string): void {
+    this.forget(key);
+    this.urls.set(key, READ_FAILED);
     this.trim();
   }
 
@@ -69,7 +83,8 @@ export class KitCaptureCache {
   }
 
   private forget(key: string): void {
-    this.retained -= this.urls.get(key)?.length ?? 0;
+    const url = this.urls.get(key);
+    this.retained -= typeof url === 'string' ? url.length : 0;
     this.urls.delete(key);
   }
 }
