@@ -24,8 +24,6 @@ function deferred() {
   return { promise, resolve };
 }
 
-const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
-
 test('insertBySequence keeps paste order, puts unreserved images last, and copies the list', () => {
   // Pasted a, b, c in that order; the variably slow encodes finish c, a, b.
   const sequences = new Map([
@@ -48,26 +46,6 @@ test('insertBySequence keeps paste order, puts unreserved images last, and copie
     insertBySequence(third, img('late'), sequences).map((i) => i.id),
     ['a', 'b', 'c', 'late'],
   );
-});
-
-test('settled keeps waiting when an addition starts mid-wait', async () => {
-  // Regression for the submit race: a paste that begins while runSubmit is
-  // already awaiting still has to land before the snapshot is taken.
-  const additions = createPendingAdditions();
-  const first = deferred();
-  const second = deferred();
-  additions.track(first.promise);
-  let settled = false;
-  const waiting = additions.settled().then(() => {
-    settled = true;
-  });
-  additions.track(second.promise);
-  first.resolve();
-  await tick();
-  assert.equal(settled, false);
-  second.resolve();
-  await waiting;
-  assert.equal(settled, true);
 });
 
 test('knownSettled ignores additions that start after the snapshot', async () => {

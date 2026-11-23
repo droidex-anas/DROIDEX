@@ -17,7 +17,6 @@ export interface AttachedImage {
 }
 
 export function useImageAttachments(quality: ImagePasteQuality) {
-  const staged = useStagedAttachments<AttachedImage>(discardImage);
   const {
     items: images,
     itemsRef: imagesRef,
@@ -27,7 +26,10 @@ export function useImageAttachments(quality: ImagePasteQuality) {
     clear,
     clearAndDiscard,
     clearReady,
-  } = staged;
+    reserveSequence,
+    insert,
+    whenReady: stagedWhenReady,
+  } = useStagedAttachments<AttachedImage>(discardImage);
   const cropOwnersRef = useRef(new Map<string, symbol>());
   const [crops] = useState(createCropMutations);
 
@@ -38,7 +40,7 @@ export function useImageAttachments(quality: ImagePasteQuality) {
     }
     // Reserve the chip's position synchronously: a paste whose encode runs
     // long must not overtake one that was added later but finished earlier.
-    const seq = staged.reserveSequence(sequence);
+    const seq = reserveSequence(sequence);
     const stamp = additions.stamp();
     const task = (async () => {
       try {
@@ -54,7 +56,7 @@ export function useImageAttachments(quality: ImagePasteQuality) {
         // rather than reviving a chip on the next prompt.
         if (path === null) return;
         const image = { id: crypto.randomUUID(), path, preview: processed, sequence: seq };
-        staged.insert(image, seq);
+        insert(image, seq);
       } catch {
         toast.error('Could not attach that image');
       }
@@ -100,7 +102,7 @@ export function useImageAttachments(quality: ImagePasteQuality) {
     }
   };
 
-  const whenReady = (cutoff: number) => staged.whenReady(cutoff, crops.waitBeforeCutoff);
+  const whenReady = (cutoff: number) => stagedWhenReady(cutoff, crops.waitBeforeCutoff);
 
   return { images, addBlob, remove, applyCrop, clear, clearAndDiscard, whenReady, clearReady };
 }

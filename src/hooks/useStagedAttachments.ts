@@ -10,6 +10,7 @@ export function useStagedAttachments<T extends { id: string; path: string }>(
   const nextSeqRef = useRef(0);
   const [additions] = useState(createPendingAdditions);
 
+  // Keep commit and clear stable: PromptInput effects depend on their identity.
   const commit = useCallback((next: T[]) => {
     itemsRef.current = next;
     setItems(next);
@@ -31,6 +32,7 @@ export function useStagedAttachments<T extends { id: string; path: string }>(
     if (!hit) return;
     sequencesRef.current.delete(id);
     commit(itemsRef.current.filter((item) => item.id !== id));
+    // Discard outside state updaters so StrictMode fires it only once.
     void discard(hit.path);
   };
 
@@ -41,6 +43,7 @@ export function useStagedAttachments<T extends { id: string; path: string }>(
     commit([]);
   }, [additions, commit]);
 
+  // Non-submit clears delete files that no prompt references.
   const clearAndDiscard = useCallback(() => {
     for (const item of itemsRef.current) void discard(item.path);
     clear();

@@ -14,19 +14,16 @@ export function createPendingAdditions() {
       };
       void task.then(done, done);
     },
-
-    settled: async (): Promise<void> => {
-      while (pending.size > 0) await Promise.allSettled([...pending]);
-    },
-
+    // Snapshot only: a late paste during submit stays for the next prompt.
     knownSettled: async (): Promise<void> => {
       await Promise.allSettled([...pending]);
     },
   };
 }
 
-export type PendingAdditions = ReturnType<typeof createPendingAdditions>;
+type PendingAdditions = ReturnType<typeof createPendingAdditions>;
 
+// Submit waits only for crops of attachments before its cutoff.
 export function createCropMutations() {
   const pending = new Set<{ sequence: number; promise: Promise<unknown> }>();
   return {
@@ -54,12 +51,14 @@ export async function saveImageUnlessStale(
   save: () => Promise<string>,
   discard: (path: string) => Promise<void>,
 ): Promise<string | null> {
+  // A file cleared while writing can only be deleted after its save resolves.
   const path = await save();
   if (!additions.isStale(stamp)) return path;
   void discard(path);
   return null;
 }
 
+// Sequence is reserved before slow encoding, so completion order cannot reorder chips.
 export function insertBySequence<T extends { id: string }>(
   items: T[],
   item: T,
