@@ -40,6 +40,7 @@ import type {
   DiffFileList,
   DiffScope,
   DiffStatMode,
+  FileDiffOptions,
   FileDiffResult,
   GitActionResult,
   GitBranchList,
@@ -366,10 +367,7 @@ export interface DroidexApi {
     dir: string,
     options: { mode: DiffScope; appSessionId?: string },
   ) => Promise<DiffFileList>;
-  gitFileDiff: (
-    dir: string,
-    options: { mode: DiffScope; path: string; ignoreWhitespace?: boolean; appSessionId?: string },
-  ) => Promise<FileDiffResult>;
+  gitFileDiff: (dir: string, options: FileDiffOptions) => Promise<FileDiffResult>;
   gitMarkTurnStart: (
     dir: string,
     appSessionId?: string,

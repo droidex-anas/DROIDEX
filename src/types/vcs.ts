@@ -41,7 +41,16 @@ export interface DiffFile {
 export interface DiffFileList {
   mode: DiffScope;
   base: string | null;
-  files: (DiffFile & { fingerprint: string })[];
+  // `oldPath` is the rename or copy source; a per-file patch request passes it back.
+  files: (DiffFile & { oldPath: string | null; fingerprint: string })[];
+}
+
+export interface FileDiffOptions {
+  mode: DiffScope;
+  path: string;
+  oldPath: string | null;
+  ignoreWhitespace?: boolean;
+  appSessionId?: string;
 }
 
 export interface FileDiffResult {

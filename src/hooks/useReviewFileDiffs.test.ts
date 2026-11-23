@@ -17,6 +17,7 @@ async function setup(t: test.TestContext, fileCount = 1) {
     additions: 1,
     deletions: 1,
     binary: false,
+    oldPath: null,
     fingerprint: 'initial',
   }));
   let tick = () => {};
@@ -79,7 +80,7 @@ async function setup(t: test.TestContext, fileCount = 1) {
   let diffs!: ReturnType<typeof useReviewFileDiffs>;
   function Harness() {
     review = useReviewDiff(cwd, scope, true);
-    diffs = useReviewFileDiffs(cwd, scope, ignoreWhitespace, review.fileSignatures, appSessionId);
+    diffs = useReviewFileDiffs(cwd, scope, ignoreWhitespace, review.fileVersions, appSessionId);
     useEffect(() => {
       open.forEach(diffs.ensure);
       if (active) diffs.ensure(active);

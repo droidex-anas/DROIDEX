@@ -4,19 +4,26 @@ import type { DiffFile, DiffScope } from '../types/vcs';
 
 const POLL_MS = 8000;
 
+// What a lazy patch load needs from the list snapshot: `signature` changes
+// whenever the patch may have, and `oldPath` pairs a rename with its source.
+export interface ReviewFileVersion {
+  signature: string;
+  oldPath: string | null;
+}
+
 export interface ReviewDiffState {
   files: DiffFile[];
   base: string | null;
   loadingList: boolean;
   signature: string;
-  fileSignatures: ReadonlyMap<string, string>;
+  fileVersions: ReadonlyMap<string, ReviewFileVersion>;
   refresh: () => void;
 }
 
 // Drives the Review tab's file list, kept fresh with light polling so the view
 // tracks the agent's edits. Per-file diffs are loaded lazily by
 // useReviewFileDiffs when a section is expanded, so this hook only owns the
-// list structure and per-file content signatures for lazy patch loading.
+// list structure and the per-file versions lazy patch loading reads.
 export function useReviewDiff(
   cwd: string,
   scope: DiffScope,
@@ -26,7 +33,9 @@ export function useReviewDiff(
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [base, setBase] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
-  const [fileSignatures, setFileSignatures] = useState<ReadonlyMap<string, string>>(new Map());
+  const [fileVersions, setFileVersions] = useState<ReadonlyMap<string, ReviewFileVersion>>(
+    new Map(),
+  );
   const listReq = useRef(0);
   // In-flight flag: poll ticks consult this so a tick that fires while the
   // previous load is still pending is skipped (no stacked git subprocesses).
@@ -50,7 +59,7 @@ export function useReviewDiff(
       loadedKey.current = null;
       setFiles([]);
       setBase(null);
-      setFileSignatures(new Map());
+      setFileVersions(new Map());
       setLoadingList(false);
       return;
     }
@@ -74,17 +83,20 @@ export function useReviewDiff(
         }));
         setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(nextFiles) ? prev : nextFiles));
         // Fresh snapshots retry failed patches on idle polls without invalidating loaded ones.
-        setFileSignatures(
+        setFileVersions(
           new Map(
             res.files.map((file) => [
               file.path,
-              JSON.stringify([
-                file.status,
-                file.additions,
-                file.deletions,
-                file.binary,
-                file.fingerprint,
-              ]),
+              {
+                signature: JSON.stringify([
+                  file.status,
+                  file.additions,
+                  file.deletions,
+                  file.binary,
+                  file.fingerprint,
+                ]),
+                oldPath: file.oldPath,
+              },
             ]),
           ),
         );
@@ -146,7 +158,7 @@ export function useReviewDiff(
     base,
     loadingList: loadingList || !listSettled,
     signature,
-    fileSignatures,
+    fileVersions,
     refresh: loadList,
   };
 }

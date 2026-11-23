@@ -170,36 +170,18 @@ function parseNumstatZ(out) {
   return rows;
 }
 
-// Parse `git diff --name-status -z`. A normal record is a `status` token then a
-// `path` record; a rename/copy is `Rxx`/`Cxx` then old and new path records.
-function parseNameStatusZ(out) {
-  const tokens = splitNul(out);
-  const rows = [];
-  for (let i = 0; i < tokens.length; i++) {
-    const status = tokens[i];
-    if (!status) continue;
-    if (/^[RC]/.test(status)) {
-      rows.push({ status, from: tokens[i + 1] ?? '', path: tokens[i + 2] ?? '' });
-      i += 2;
-    } else {
-      rows.push({ status, from: null, path: tokens[i + 1] ?? '' });
-      i += 1;
-    }
-  }
-  return rows;
-}
-
 function parseDiffFileList(numstatOut, rows) {
   // Both inputs are NUL-delimited (`-z`), so paths are emitted verbatim with no
   // shell-style quoting — this is what lets Review open files whose names would
   // otherwise be git-quoted (spaces, unicode, control chars). Raw metadata owns
-  // statuses and post-rename paths.
+  // statuses and both paths of a rename or copy.
   const files = [];
   const byPath = new Map();
-  for (const { status, path: target } of rows) {
+  for (const { status, oldPath, path: target } of rows) {
     if (!target) continue;
     const file = {
       path: target,
+      oldPath,
       status: statusLabel(status),
       additions: 0,
       deletions: 0,
@@ -221,7 +203,7 @@ function parseDiffFileList(numstatOut, rows) {
       existing.deletions = counts.deletions;
       existing.binary = counts.binary;
     } else {
-      const file = { path: target, status: 'modified', ...counts };
+      const file = { path: target, oldPath: null, status: 'modified', ...counts };
       files.push(file);
       byPath.set(target, file);
     }
@@ -236,8 +218,14 @@ function parseRawZ(out) {
     const header = tokens[i];
     const status = header.slice(header.lastIndexOf(' ') + 1);
     const from = tokens[++i];
-    const target = /^[RC]/.test(status) ? tokens[++i] : from;
-    rows.push({ status, path: target, identity: `${header}\0${from}` });
+    const isPair = /^[RC]/.test(status);
+    const target = isPair ? tokens[++i] : from;
+    rows.push({
+      status,
+      oldPath: isPair ? from : null,
+      path: target,
+      identity: `${header}\0${from}`,
+    });
   }
   return rows;
 }
@@ -335,6 +323,7 @@ async function diffFiles(dir, options = {}) {
       if (!files.some((f) => f.path === u.path)) {
         files.push({
           path: u.path,
+          oldPath: null,
           status: 'untracked',
           additions: u.additions,
           deletions: 0,
@@ -362,33 +351,26 @@ async function diffFiles(dir, options = {}) {
   return { mode: scope, base: base || null, files };
 }
 
-// Resolve the pre-rename path for a file within a diff range. Uses the same
-// detection as the file list (parseDiffFileList), so it only reports an old
-// path when the list already classified the file as a rename/copy.
-async function renameSource(root, args, file) {
-  const out = await runSoft(root, ['diff', ...args, '--name-status', '-z']).catch(() => '');
-  for (const row of parseNameStatusZ(out)) {
-    if (row.from && row.path === file) return row.from;
-  }
-  return null;
-}
-
+// `oldPath` is the rename or copy source the file list reported for this file.
 async function fileDiff(dir, options = {}) {
   const scope = normalizeScope(options.mode);
   const file = options.path;
+  const oldPath = options.oldPath || null;
   const root = await repoRootOf(dir);
   if (!root || !file) return { path: file || null, diff: '', binary: false };
   // Diff paths are repo-relative; anything resolving outside the root (absolute
   // path, ../ escape) would let the --no-index fallback read arbitrary files.
-  if (!isWithin(root, path.resolve(root, file))) return { path: file, diff: '', binary: false };
+  const isRepoPath = (rel) => isWithin(root, path.resolve(root, rel));
+  if (!isRepoPath(file) || (oldPath && !isRepoPath(oldPath))) {
+    return { path: file, diff: '', binary: false };
+  }
   const { args, includeUntracked } = await scopeRange(root, scope, options.appSessionId);
   if (!args) return { path: file, diff: '', binary: false };
   const ws = options.ignoreWhitespace ? ['-w'] : [];
   // A rename restricted to just the new path can't be paired with its deleted
   // source, so git would render the whole file as newly added. Diff both paths
   // with rename detection on so the rename/edit hunk shows instead.
-  const renameOld = await renameSource(root, args, file);
-  const pathSpec = renameOld ? ['-M', '--', renameOld, file] : ['--', file];
+  const pathSpec = oldPath ? ['-M', '--', oldPath, file] : ['--', file];
   let out = await runSoft(root, ['--literal-pathspecs', 'diff', ...ws, ...args, ...pathSpec]);
   // Untracked files (incl. preexisting ones the agent edited) have no tree-side
   // to diff against, so render their full current content via --no-index. Gate

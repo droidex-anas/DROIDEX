@@ -111,7 +111,10 @@ test('fileDiff treats both rename paths as literal pathspecs', async () => {
   await git(dir, ['mv', 'old*.txt', 'new*.txt']);
   for (const name of ['old-other.txt', 'new-other.txt']) await write(dir, name, 'changed\n');
 
-  const patch = await fileDiff(dir, { mode: 'uncommitted', path: 'new*.txt' });
+  const review = await diffFiles(dir, { mode: 'uncommitted' });
+  const renamed = review.files.find((file) => file.path === 'new*.txt');
+  assert.equal(renamed?.oldPath, 'old*.txt');
+  const patch = await fileDiff(dir, { mode: 'uncommitted', ...renamed });
   assert.deepEqual(patch.diff.match(/^diff --git .*$/gm), ['diff --git a/old*.txt b/new*.txt']);
   assert.match(patch.diff, /^rename from old\*\.txt$/m);
   assert.match(patch.diff, /^rename to new\*\.txt$/m);
@@ -631,9 +634,19 @@ test('uncommitted file entries all render a current diff', async () => {
   assert.equal(result.files.find((file) => file.path === 'moved.txt')?.status, 'renamed');
 
   for (const file of result.files) {
-    const rendered = await fileDiff(dir, { mode: 'uncommitted', path: file.path });
+    const rendered = await fileDiff(dir, {
+      mode: 'uncommitted',
+      path: file.path,
+      oldPath: file.oldPath,
+    });
     assert.notEqual(rendered.diff, '', `${file.status} ${file.path} had no diff`);
   }
+  const moved = await fileDiff(dir, {
+    mode: 'uncommitted',
+    path: 'moved.txt',
+    oldPath: 'renamed.txt',
+  });
+  assert.match(moved.diff, /^rename from renamed\.txt\nrename to moved\.txt$/m);
 });
 
 for (const mode of [
