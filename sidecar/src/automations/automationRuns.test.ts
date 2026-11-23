@@ -87,9 +87,13 @@ test('queued drain backs off storage failures and resumes when writes recover', 
   for (let wake = 0; wake < 5; wake++) runs.startQueued();
   await runs.pending();
   assert.ok(attempts <= 2, 'external wakes must respect the pending retry');
-  t.mock.timers.tick(60_000);
+  const attemptsBeforeRetry = attempts;
+  t.mock.timers.tick(59_999);
   await runs.pending();
-  assert.ok(attempts <= 4, 'continued storage failure must remain bounded');
+  assert.equal(attempts, attemptsBeforeRetry, 'must not retry before the 60-second deadline');
+  t.mock.timers.tick(1);
+  await runs.pending();
+  assert.equal(attempts, attemptsBeforeRetry + 2, 'one retry attempts starting and failed writes');
   failing = false;
   t.mock.timers.tick(60_000);
   await runs.pending();
