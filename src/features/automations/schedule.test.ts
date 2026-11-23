@@ -75,7 +75,10 @@ test('one-time timezone changes preserve pending wall time and the first fallbac
   const schedule = { kind: 'once' as const, runAt: Date.UTC(2027, 2, 14, 2, 30) };
   const gap = changeOnceTimezone(schedule, 'UTC', 'America/New_York', null);
   assert.deepEqual(gap.schedule, schedule);
-  assert.deepEqual(gap.invalidInput, { year: 2027, month: 3, day: 14, hour: 2, minute: 30 });
+  assert.deepEqual(gap.invalidInput, {
+    kind: 'time',
+    parts: { year: 2027, month: 3, day: 14, hour: 2, minute: 30 },
+  });
   assert.deepEqual(
     changeOnceTimezone(gap.schedule, 'America/New_York', 'America/Phoenix', gap.invalidInput),
     { schedule: { kind: 'once', runAt: Date.UTC(2027, 2, 14, 9, 30) }, invalidInput: null },
@@ -89,6 +92,19 @@ test('one-time timezone changes preserve pending wall time and the first fallbac
     ),
     { schedule: { kind: 'once', runAt: Date.UTC(2027, 10, 7, 5, 30) }, invalidInput: null },
   );
+});
+
+test('timezone changes retain invalid date text and pending time until the date is reset', () => {
+  const schedule = { kind: 'once' as const, runAt: Date.UTC(2027, 2, 14, 9) };
+  const invalidInput = {
+    kind: 'date' as const,
+    parts: { year: 2027, month: 3, day: 14, hour: 10, minute: 15 },
+    text: '2027-04-31',
+  };
+  assert.deepEqual(changeOnceTimezone(schedule, 'UTC', 'America/New_York', invalidInput), {
+    schedule,
+    invalidInput,
+  });
 });
 
 test('workspace validation waits for discovery and rejects a disappeared selection', () => {

@@ -1,234 +1,12 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type {
-  Automation,
-  AutomationProposal,
-  AutomationSnapshot,
-  ServerEvent,
-  SessionSummary,
-  TranscriptEvent,
-} from '@droidex/protocol';
+import type { AutomationProposal, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 import { defaultAutomationDraft } from '../../src/features/automations/schedule';
 import { automationCommandSchema } from '../../sidecar/src/automations/automationSchemas';
-import {
-  createAutomationRecord,
-  normalizeAutomationInput,
-} from '../../sidecar/src/automations/automationInput';
-
-const session: SessionSummary = {
-  appSessionId: 'scheduled-target',
-  provider: 'droid',
-  providerSessionId: 'replaceable-provider',
-  sessionPurpose: 'chat',
-  interactionMode: 'auto',
-  role: 'primary',
-  title: 'Continue the review',
-  goal: 'Review the pending changes',
-  cwd: '',
-  workspaceKind: 'none',
-  autonomy: 'medium',
-  phase: 'completed',
-  features: [],
-  tokensIn: 0,
-  tokensOut: 0,
-  contextTokens: 0,
-  createdAt: Date.now(),
-  updatedAt: Date.now(),
-};
+import { normalizeAutomationInput } from '../../sidecar/src/automations/automationInput';
+import { automationBridge, scheduledPrompt, session } from '../fixtures/automationFixtures';
 
 const DST_NOW = Date.parse('2027-03-13T17:00:00Z');
-
-function scheduledPrompt(index = 0, now = Date.now()): Automation {
-  return {
-    ...defaultAutomationDraft(null, null, null),
-    id: `scheduled-${String(index)}`,
-    title: `Continue review ${String(index)}`,
-    prompt: 'Continue once the limit resets',
-    target: { kind: 'existing-session', appSessionId: session.appSessionId },
-    schedule: { kind: 'once', runAt: now + 3_600_000 },
-    timezone: 'UTC',
-    nextRunAt: now + 3_600_000,
-    lastRunAt: null,
-    lastRunStatus: null,
-    lastRunError: null,
-    lastRunDurationMs: null,
-    lastAppSessionId: null,
-    completedAt: null,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-async function automationBridge(
-  page: Page,
-  automations: Automation[] = [],
-  sessions: SessionSummary[] = [session],
-  options: { proposals?: AutomationProposal[]; history?: TranscriptEvent[]; now?: number } = {},
-) {
-  const now = () => options.now ?? Date.now();
-  const snapshot: AutomationSnapshot = {
-    automations,
-    runs: [],
-    proposals: options.proposals ?? [],
-    sessionOrigins: {},
-    activeRunCount: 0,
-    queuedRunCount: 0,
-    scheduler: { ready: true, nextWakeAt: null, activeRunId: null },
-  };
-  const requests: unknown[] = [];
-  let settle: ((ok: boolean) => void) | undefined;
-  let emitSnapshot = () => {
-    throw new Error('Bridge is not connected.');
-  };
-  await page.routeWebSocket(
-    (url) => url.searchParams.has('bridgeProtocol'),
-    (socket) => {
-      let sequence = 0;
-      const emit = (event: ServerEvent) => {
-        sequence += 1;
-        socket.send(
-          JSON.stringify({
-            type: 'events.batch',
-            generation: 'automation-test',
-            firstSeq: sequence,
-            lastSeq: sequence,
-            events: [{ seq: sequence, event }],
-          }),
-        );
-      };
-      emitSnapshot = () => emit({ type: 'automations.snapshot', snapshot });
-      socket.onMessage((message) => {
-        if (typeof message !== 'string') return;
-        const command: unknown = JSON.parse(message);
-        if (typeof command !== 'object' || command === null || !('type' in command)) return;
-        if (command.type === 'connect') {
-          emit({ type: 'connection', status: 'connected' });
-        }
-        if (command.type === 'sessions.list') {
-          emit({
-            type: 'sessions.list',
-            sessions,
-            earlierSessionsByCwd: {},
-          });
-        }
-        if (
-          command.type === 'session.loadHistory' &&
-          'appSessionId' in command &&
-          typeof command.appSessionId === 'string'
-        ) {
-          emit({
-            type: 'session.history',
-            appSessionId: command.appSessionId,
-            progress: [],
-            transcripts: options.history ?? [],
-          });
-        }
-        // The chat list waits for the project graph before it draws, as it
-        // does against the real sidecar.
-        if (command.type === 'projects.list') {
-          emit({ type: 'projects.snapshot', projects: [] });
-        }
-        if (command.type === 'automations.list') {
-          emit({ type: 'automations.snapshot', snapshot });
-        }
-        if (command.type === 'catalog.models') {
-          emit({
-            type: 'catalog.updated',
-            catalog: 'models',
-            items: [
-              {
-                id: 'default-model',
-                displayName: 'Default model',
-                isCustom: false,
-                isDefault: true,
-                supportedReasoningEfforts: ['high'],
-                defaultReasoningEffort: 'high',
-              },
-            ],
-          });
-        }
-        const parsed = automationCommandSchema.safeParse(command);
-        if (!parsed.success) return;
-        const mutation = parsed.data;
-        if (mutation.type === 'automations.confirmProposal') {
-          requests.push(command);
-          const proposal = snapshot.proposals.find((entry) => entry.id === mutation.id);
-          if (!proposal) throw new Error('The proposal being confirmed does not exist.');
-          const automation = createAutomationRecord(
-            normalizeAutomationInput(mutation.input ?? proposal.draft),
-            now(),
-          );
-          snapshot.automations.push(automation);
-          Object.assign(proposal, {
-            status: 'confirmed',
-            draft: mutation.input ?? proposal.draft,
-            automationId: automation.id,
-            confirmedAt: now(),
-          });
-          emit({ type: 'automations.snapshot', snapshot });
-          emit({ type: 'automations.result', requestId: mutation.requestId, ok: true });
-        }
-        if (mutation.type === 'automations.update' || mutation.type === 'automations.setEnabled') {
-          requests.push(command);
-          const automation = snapshot.automations.find((entry) => entry.id === mutation.id);
-          if (!automation) throw new Error('The automation being changed does not exist.');
-          if (mutation.type === 'automations.update') {
-            Object.assign(
-              automation,
-              normalizeAutomationInput({ ...automation, ...mutation.patch }),
-            );
-          } else {
-            automation.enabled = mutation.enabled;
-            if (!mutation.enabled) {
-              automation.nextRunAt = null;
-              if (
-                automation.lastRunStatus === 'queued' ||
-                automation.lastRunStatus === 'starting'
-              ) {
-                automation.lastRunStatus = 'failed';
-              }
-            }
-          }
-          emit({ type: 'automations.snapshot', snapshot });
-          emit({ type: 'automations.result', requestId: mutation.requestId, ok: true });
-        }
-        if (mutation.type === 'automations.create') {
-          const requestId = mutation.requestId;
-          requests.push(command);
-          settle = (ok) => {
-            if (ok) {
-              snapshot.automations.push(
-                createAutomationRecord(normalizeAutomationInput(mutation.input), now()),
-              );
-              emit({ type: 'automations.snapshot', snapshot });
-            }
-            emit(
-              ok
-                ? { type: 'automations.result', requestId, ok: true }
-                : {
-                    type: 'automations.result',
-                    requestId,
-                    ok: false,
-                    error: 'The attachment could not be saved.',
-                  },
-            );
-          };
-        }
-      });
-    },
-  );
-  return {
-    requests,
-    refresh(proposals?: AutomationProposal[]) {
-      if (proposals) snapshot.proposals = proposals;
-      emitSnapshot();
-    },
-    settle(ok: boolean) {
-      if (!settle) throw new Error('No automation save is pending.');
-      settle(ok);
-    },
-  };
-}
 
 // The chat's own sidebar row, not the first text that happens to match: the
 // open chat's header carries the same title.
@@ -299,6 +77,56 @@ function submittedInstant(command: unknown) {
   if (schedule?.kind !== 'once') throw new Error('Expected a one-time schedule command.');
   return new Date(schedule.runAt).toISOString();
 }
+
+test('editor preserves invalid calendar dates until corrected', async ({ page }) => {
+  await page.clock.setFixedTime(DST_NOW);
+  const automation = scheduledPrompt(0, DST_NOW);
+  automation.schedule = { kind: 'once', runAt: Date.parse('2027-03-14T09:00:00Z') };
+  const backend = await automationBridge(page, [automation], [session], { now: DST_NOW });
+  await page.goto('/');
+  await page.getByTestId('automations-nav').click();
+  await page.getByText(automation.title, { exact: true }).click();
+  const editor = page.getByRole('complementary').filter({
+    has: page.getByRole('button', { name: 'Close automation editor' }),
+  });
+  const date = editor.getByRole('textbox', { name: 'Date, year month day' });
+  const save = editor.getByRole('button', { name: 'Save changes', exact: true });
+  const alert = editor.getByRole('alert');
+  for (const invalid of ['2027-02-', '2027-04-31']) {
+    await date.fill(invalid);
+    await date.press('Tab');
+    await expect(date).toHaveValue(invalid);
+    await expect(date).toHaveAttribute('aria-invalid', 'true');
+    for (const name of ['Hour', 'Minute']) {
+      const time = editor.getByRole('textbox', { name, exact: true });
+      await expect(time).toHaveAttribute('aria-invalid', 'false');
+      await expect(time).not.toHaveAttribute('aria-describedby');
+    }
+    await expect(alert).toHaveText('Enter a valid date as YYYY-MM-DD.');
+    await expect(date).toHaveAccessibleDescription('Enter a valid date as YYYY-MM-DD.');
+    await expect(alert.locator('xpath=following-sibling::*[1]')).toContainText('Time');
+    await expect(save).toBeDisabled();
+    expect(backend.requests).toEqual([]);
+  }
+  await setScheduleTime(editor, '10');
+  await expect(date).toHaveValue('2027-04-31');
+  await expect(save).toBeDisabled();
+  await date.fill('');
+  await date.press('Tab');
+  await expect(date).toHaveValue('2027-03-14');
+  await expect(editor.getByRole('alert')).toHaveCount(0);
+  await expect(date).toHaveAttribute('aria-invalid', 'false');
+  await expect(save).toBeEnabled();
+  await expect(editor.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('10');
+  await date.fill('2027-03-12');
+  await date.press('Tab');
+  await expect(date).toHaveValue('2027-03-14');
+  await date.fill('2027-04-30');
+  await date.press('Tab');
+  await save.click();
+  await expect.poll(() => backend.requests.length).toBe(1);
+  expect(submittedInstant(backend.requests[0])).toBe('2027-04-30T10:00:00.000Z');
+});
 
 test.describe('one-time DST-gap schedules', () => {
   test.use({ timezoneId: 'America/New_York' });

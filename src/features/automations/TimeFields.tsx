@@ -157,10 +157,14 @@ export function AutomationDateInput({
   minimum,
   onChange,
   errorId,
+  invalidText,
+  onInvalidChange,
 }: {
   value: { year: number; month: number; day: number };
   minimum?: { year: number; month: number; day: number };
   errorId?: string | undefined;
+  invalidText?: string | undefined;
+  onInvalidChange: (text: string | null) => void;
   onChange: (value: { year: number; month: number; day: number }) => void;
 }) {
   const formatted = formatDate(value);
@@ -168,13 +172,18 @@ export function AutomationDateInput({
   const focused = useRef(false);
 
   useEffect(() => {
-    if (!focused.current) setText(formatDate(value));
-  }, [value]);
+    if (!focused.current) setText(invalidText ?? formatted);
+  }, [formatted, invalidText]);
 
   const commit = () => {
     const parsed = parseDate(text);
+    if (!parsed && text.trim()) {
+      onInvalidChange(text);
+      return;
+    }
     if (!parsed || (minimum && isCalendarDateBefore(parsed, minimum))) {
       setText(formatDate(value));
+      onInvalidChange(null);
       return;
     }
     setText(formatDate(parsed));
