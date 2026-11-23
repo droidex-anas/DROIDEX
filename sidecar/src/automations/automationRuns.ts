@@ -38,6 +38,7 @@ const MAX_ABANDONED_REFS = 32;
 const MAX_LAUNCH_ATTEMPTS = 3;
 const MAX_CONSECUTIVE_FAILURES = 3;
 const DEFAULT_LAUNCH_RETRY_MS = 400;
+const DRAIN_RETRY_MS = 60_000;
 // Lifecycle keeps `streaming` true for the whole turn, including tool calls.
 // This grace only debounces the turn-end update and covers a brief flicker
 // after the stream closes (compaction, a late summary patch).
@@ -88,6 +89,7 @@ export class AutomationRuns {
   private readonly launchRetryMs: number;
   private recovered: InterruptedRunCleanup = { appSessionIds: [], workspaces: [] };
   private drainPromise: Promise<void> | null = null;
+  private drainRetryTimer: NodeJS.Timeout | null = null;
   private eventTail: Promise<void> = Promise.resolve();
   private readonly pendingAdopts = new Set<string>();
   private readonly timerWork = new Set<Promise<void>>();
@@ -162,13 +164,19 @@ export class AutomationRuns {
 
   /** Starts the next queued run unless one is already running. */
   startQueued(): void {
-    if (this.options.isClosed() || this.drainPromise) return;
+    if (this.options.isClosed() || this.drainPromise || this.drainRetryTimer) return;
     // Nothing awaits the drain, so a failure here (a rejected store write) must
     // be reported rather than escape as an unhandled rejection that would take
     // the sidecar - and every live session with it - down.
     this.drainPromise = this.drain()
       .catch((error: unknown) => {
         console.error('Could not start the next automation run', error);
+        if (this.options.isClosed()) return;
+        this.drainRetryTimer = setTimeout(() => {
+          this.drainRetryTimer = null;
+          this.startQueued();
+        }, DRAIN_RETRY_MS);
+        this.drainRetryTimer.unref();
       })
       .finally(() => {
         this.drainPromise = null;
@@ -337,6 +345,8 @@ export class AutomationRuns {
 
   /** Stops watching every run. Live chats keep running; DROIDEX is exiting. */
   stop(): void {
+    if (this.drainRetryTimer) clearTimeout(this.drainRetryTimer);
+    this.drainRetryTimer = null;
     this.timers.clearAll();
     this.streamingSeen.clear();
     this.runFailures.clear();
