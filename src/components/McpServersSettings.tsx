@@ -125,8 +125,9 @@ export function McpServersSettings({ cwd }: { cwd?: string }) {
     const unsubscribeReplaced = bridge.subscribeRuntimeReplaced((_, resentRequestIds) => {
       const request = activeRequest.current;
       if (request && resentRequestIds.has(request.requestId)) return;
+      const isChangeUnconfirmed = request?.isMutation === true && !request.isAnswered;
       refresh();
-      if (request?.isMutation && !request.isAnswered) setError(UNCONFIRMED_CHANGE);
+      if (isChangeUnconfirmed) setError(UNCONFIRMED_CHANGE);
     });
     refresh();
     return () => {
