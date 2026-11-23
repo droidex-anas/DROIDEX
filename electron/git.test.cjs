@@ -81,6 +81,53 @@ test('review preserves untracked paths that Git quotes', async () => {
   }
 });
 
+test('fileDiff treats tracked filenames as literal pathspecs', async () => {
+  const dir = await makeRepo();
+  const names = ['star*.txt', 'star-other.txt', 'plain.txt'];
+  for (const name of names) await write(dir, name, 'before\n');
+  await commitAll(dir, 'init');
+  for (const name of names) await write(dir, name, 'after\n');
+
+  for (const name of names) {
+    const patch = await fileDiff(dir, { mode: 'uncommitted', path: name });
+    assert.deepEqual(patch.diff.match(/^diff --git .*$/gm), [`diff --git a/${name} b/${name}`]);
+    assert.match(patch.diff, /\+after/);
+  }
+  await write(dir, 'star*.txt', 'before \n');
+  const empty = await fileDiff(dir, {
+    mode: 'uncommitted',
+    path: 'star*.txt',
+    ignoreWhitespace: true,
+  });
+  assert.equal(empty.diff, '');
+});
+
+test('fileDiff treats both rename paths as literal pathspecs', async () => {
+  const dir = await makeRepo();
+  for (const name of ['old*.txt', 'old-other.txt', 'new-other.txt']) {
+    await write(dir, name, 'rename me\n');
+  }
+  await commitAll(dir, 'init');
+  await git(dir, ['mv', 'old*.txt', 'new*.txt']);
+  for (const name of ['old-other.txt', 'new-other.txt']) await write(dir, name, 'changed\n');
+
+  const patch = await fileDiff(dir, { mode: 'uncommitted', path: 'new*.txt' });
+  assert.deepEqual(patch.diff.match(/^diff --git .*$/gm), ['diff --git a/old*.txt b/new*.txt']);
+  assert.match(patch.diff, /^rename from old\*\.txt$/m);
+  assert.match(patch.diff, /^rename to new\*\.txt$/m);
+});
+
+test('fileDiff does not mistake an untracked glob filename for a tracked match', async () => {
+  const dir = await makeRepo();
+  await write(dir, 'star-other.txt', 'tracked\n');
+  await commitAll(dir, 'init');
+  await write(dir, 'star*.txt', 'untracked\n');
+
+  const patch = await fileDiff(dir, { mode: 'uncommitted', path: 'star*.txt' });
+  assert.deepEqual(patch.diff.match(/^diff --git .*$/gm), ['diff --git a/star*.txt b/star*.txt']);
+  assert.match(patch.diff, /\+untracked/);
+});
+
 test('last_turn includes edited quoted untracked paths but excludes unchanged files', async () => {
   const dir = await makeRepo();
   await write(dir, 'seed.txt', 'seed\n');
