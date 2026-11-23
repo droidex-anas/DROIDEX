@@ -3,17 +3,15 @@ import test from 'node:test';
 import { idleProject, input } from '../testing/projectServiceHarness.js';
 import { LEDGER_LIMITS } from './store.js';
 
-test('a repeat spawn suggests continuing an idle shortened duplicate', async (t) => {
+test('a shared prefix does not suggest continuing a different long task', async (t) => {
   const { h, main } = await idleProject(t);
-  const title = 'x'.repeat(LEDGER_LIMITS.title);
+  const prefix = 'x'.repeat(118);
+  const title = `${prefix}AA`;
   await h.projects.spawn(main, { ...input, title });
   const duplicate = await h.projects.spawn(main, { ...input, title });
   await h.finish(duplicate.appSessionId);
-  const repeat = await h.projects.spawn(main, { ...input, title });
-  assert.equal(
-    repeat.reuseNote,
-    `${duplicate.title} (${duplicate.appSessionId}) is idle; thread_send continues it instead of spawning another.`,
-  );
+  const different = await h.projects.spawn(main, { ...input, title: `${prefix}BB` });
+  assert.equal(different.reuseNote, undefined);
 });
 
 for (const length of [119, 120]) {
