@@ -104,7 +104,7 @@ test('a notification click for a chat that has not loaded opens it once the chat
   assert.deepEqual(acks, ['restored']);
 });
 
-test('a pending read that settles after a newer click does not reopen the older chat', async (t) => {
+test('a read that settles after a newer click does not reopen the older chat', async (t) => {
   const delayedReads: Array<(pending: PendingOpen) => void> = [];
   let readCount = 0;
   const acks: string[] = [];
@@ -124,11 +124,11 @@ test('a pending read that settles after a newer click does not reopen the older 
       sessions: [sessionSummary('older'), sessionSummary('newer')],
     });
   });
-  assert.ok(delayedReads.length > 0);
   await act(async () => app.push({ appSessionId: 'newer' }));
-  await act(async () => {
-    for (const resolve of delayedReads) resolve({ appSessionId: 'older' });
-  });
+  assert.equal(delayedReads.length, 2);
+  const [olderRead, newerRead] = delayedReads;
+  await act(async () => newerRead({ appSessionId: 'newer' }));
+  await act(async () => olderRead({ appSessionId: 'older' }));
   assert.equal(app.getState().activeAppSessionId, 'newer');
   assert.deepEqual(acks, ['newer']);
 });

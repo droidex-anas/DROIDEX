@@ -30,8 +30,10 @@ export function useFinishNotifications(enabled: boolean): void {
 
   useEffect(() => {
     if (!enabled || !isDesktop()) return;
-    // Push and pull replies travel separately; only the latest may act.
+    // Main owns the pending click, so a push only prompts a read; push and
+    // read replies travel separately, and only the latest read may act.
     let generation = 0;
+    let readInFlight = false;
     let heldAppSessionId: string | null = null;
 
     const openSession = (appSessionId: string) => {
@@ -57,8 +59,10 @@ export function useFinishNotifications(enabled: boolean): void {
 
     const readPending = () => {
       const readGeneration = ++generation;
+      readInFlight = true;
       void readPendingNotificationSession().then((pending) => {
         if (readGeneration !== generation) return;
+        readInFlight = false;
         if (pending) openSession(pending.appSessionId);
         else heldAppSessionId = null;
       });
@@ -68,14 +72,10 @@ export function useFinishNotifications(enabled: boolean): void {
       if (isDocumentVisible()) readPending();
     };
 
-    const unsubActivate = onNotificationActivate(({ appSessionId }) => {
-      generation += 1;
-      if (appSessionId) openSession(appSessionId);
-    });
+    const unsubActivate = onNotificationActivate(readPending);
     const unsubStore = store.subscribe(() => {
-      if (heldAppSessionId !== null && heldAppSessionId in store.getState().sessions) {
-        readPending();
-      }
+      if (readInFlight || heldAppSessionId === null) return;
+      if (heldAppSessionId in store.getState().sessions) readPending();
     });
     window.addEventListener('focus', readPending);
     const unsubVisibility = subscribeVisibilityChange(onVisibility);
