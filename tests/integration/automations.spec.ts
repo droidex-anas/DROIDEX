@@ -278,6 +278,13 @@ async function setScheduleTime(surface: Locator, hour: string, minute = '00') {
   await minutes.press('Tab');
 }
 
+async function chooseZone(surface: Locator, zone: string) {
+  const page = surface.page();
+  await surface.getByRole('button', { name: 'Automation timezone', exact: true }).click();
+  await page.getByRole('textbox', { name: 'Search Automation timezone options' }).fill(zone);
+  await page.getByRole('option', { name: zone, exact: true }).click();
+}
+
 function submittedInstant(command: unknown) {
   const mutation = automationCommandSchema.parse(command);
   if (
@@ -295,6 +302,36 @@ function submittedInstant(command: unknown) {
 
 test.describe('one-time DST-gap schedules', () => {
   test.use({ timezoneId: 'America/New_York' });
+
+  test('timezone picker blocks a gap and recovers through a valid zone', async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.clock.setFixedTime(DST_NOW);
+    const automation = scheduledPrompt(0, DST_NOW);
+    automation.schedule = { kind: 'once', runAt: Date.parse('2027-03-14T02:30:00Z') };
+    const backend = await automationBridge(page, [automation], [session], { now: DST_NOW });
+    await page.goto('/');
+    await page.getByTestId('automations-nav').click();
+    await page.getByText(automation.title, { exact: true }).click();
+    const editor = page.getByRole('complementary').filter({
+      has: page.getByRole('button', { name: 'Close automation editor' }),
+    });
+    await chooseZone(editor, 'America / New York');
+    const save = editor.getByRole('button', { name: 'Save changes', exact: true });
+    await expect(editor.getByRole('alert')).toContainText('does not exist in America/New York');
+    await expect(save).toBeDisabled();
+    expect(backend.requests).toEqual([]);
+    await chooseZone(editor, 'America / Phoenix');
+    await expect(editor.getByRole('alert')).toHaveCount(0);
+    await expect(editor.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+    await expect(save).toBeEnabled();
+    await save.click();
+    await expect.poll(() => backend.requests.length).toBe(1);
+    expect(backend.requests[0]).toMatchObject({
+      type: 'automations.update',
+      patch: { timezone: 'America/Phoenix' },
+    });
+    expect(submittedInstant(backend.requests[0])).toBe('2027-03-14T09:30:00.000Z');
+  });
 
   test('Send later blocks nonexistent local time and submits the corrected instant', async ({
     page,
@@ -444,6 +481,15 @@ test.describe('one-time DST-gap schedules', () => {
       'Refreshed proposal',
     );
     await expect(card.getByRole('alert')).toBeVisible();
+    await expect(confirm).toBeDisabled();
+    expect(backend.requests).toEqual([]);
+    await chooseZone(card, 'America / Phoenix');
+    await expect(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+    await expect(card.getByRole('alert')).toHaveCount(0);
+    await expect(confirm).toBeEnabled();
+    await chooseZone(card, 'America / New York');
+    await expect(card.getByRole('textbox', { name: 'Hour', exact: true })).toHaveValue('02');
+    await expect(card.getByRole('alert')).toContainText('does not exist in America/New York');
     await expect(confirm).toBeDisabled();
     expect(backend.requests).toEqual([]);
     await setScheduleTime(card, '04', '15');

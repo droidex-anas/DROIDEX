@@ -29,7 +29,7 @@ import {
 } from './proposalCardState';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
-  convertOnceRunAt,
+  changeOnceTimezone,
   formatSchedule,
   supportedTimeZones,
   validateAutomationDraft,
@@ -126,15 +126,14 @@ export function AutomationProposalCard({
       updateDraft({ timezone });
       return;
     }
-    const runAt = convertOnceRunAt(workingDraft.schedule.runAt, workingDraft.timezone, timezone);
-    if (runAt === null) return;
-    updateDraft({
+    const result = changeOnceTimezone(
+      workingDraft.schedule,
+      workingDraft.timezone,
       timezone,
-      schedule: {
-        kind: 'once',
-        runAt,
-      },
-    });
+      invalidInput,
+    );
+    setInvalidInput(result.invalidInput, timezone);
+    updateDraft({ timezone, schedule: result.schedule });
   };
 
   const confirm = async () => {

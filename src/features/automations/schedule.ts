@@ -310,12 +310,18 @@ function zoneOffsetMs(epochMs: number, timezone: string): number {
   return utcFromZonedInput(zonedInputParts(epochMs, timezone)) - epochMs;
 }
 
-export function convertOnceRunAt(
-  runAt: number,
+export function changeOnceTimezone(
+  schedule: Extract<AutomationSchedule, { kind: 'once' }>,
   fromTimezone: string,
   toTimezone: string,
-): number | null {
-  return epochFromZonedInput(zonedInputParts(runAt, fromTimezone), toTimezone);
+  invalidInput: ZonedInput | null,
+) {
+  const parts = invalidInput ?? zonedInputParts(schedule.runAt, fromTimezone);
+  const runAt = epochFromZonedInput(parts, toTimezone);
+  return {
+    schedule: { kind: 'once' as const, runAt: runAt ?? schedule.runAt },
+    invalidInput: runAt === null ? parts : null,
+  };
 }
 
 // Recurring times are already wall clock in the automation's own timezone, so

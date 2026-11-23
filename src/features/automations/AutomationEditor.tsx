@@ -10,7 +10,7 @@ import { SelectMenu } from './SelectMenu';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
   automationWorkspaceIssue,
-  convertOnceRunAt,
+  changeOnceTimezone,
   supportedTimeZones,
   validateAutomationDraft,
   workspaceLabel,
@@ -87,16 +87,9 @@ export function AutomationEditor({
       update('timezone', timezone);
       return;
     }
-    const runAt = convertOnceRunAt(draft.schedule.runAt, draft.timezone, timezone);
-    if (runAt === null) return;
-    onChange({
-      ...draft,
-      timezone,
-      schedule: {
-        kind: 'once',
-        runAt,
-      },
-    });
+    const result = changeOnceTimezone(draft.schedule, draft.timezone, timezone, invalidInput);
+    setInvalidInput(result.invalidInput, timezone);
+    onChange({ ...draft, timezone, schedule: result.schedule });
   };
 
   return (
