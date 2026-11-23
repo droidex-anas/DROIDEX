@@ -194,6 +194,15 @@ test('the renderer accepts every design system reply and event the sidecar sends
     },
     {
       type: 'canvas.result',
+      requestId: 'req_content',
+      ok: true,
+      reply: {
+        kind: 'designSystemVersionContent',
+        content: { name: paper.name, cover: paper.cover, sections: paper.sections },
+      },
+    },
+    {
+      type: 'canvas.result',
       requestId: 'req_03',
       ok: true,
       reply: { kind: 'designSystem', system: { ...paper, provenance: { project: fromProject } } },
@@ -246,6 +255,22 @@ test('the renderer accepts every design system reply and event the sidecar sends
     assert.ok(
       isRecord(serialized) && isCanvasEvent(serialized),
       `rejected ${JSON.stringify(event).slice(0, 80)}`,
+    );
+  }
+  for (const content of [
+    null,
+    { name: 'Kit', cover: null },
+    { name: 'Kit', cover: { kind: 'image', assetId: '../bad' }, sections: [] },
+    { name: 'Kit', cover: null, sections: [{ kind: 'unknown', items: [] }] },
+  ]) {
+    assert.equal(
+      isCanvasEvent({
+        type: 'canvas.result',
+        requestId: 'req_content',
+        ok: true,
+        reply: { kind: 'designSystemVersionContent', content },
+      }),
+      false,
     );
   }
   // A token has one value or one per mode, never both.

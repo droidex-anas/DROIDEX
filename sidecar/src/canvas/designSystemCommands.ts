@@ -36,6 +36,7 @@ export type DesignSystemCommand = Extract<
     type: `canvas.${
       | 'listDesignSystems'
       | 'readDesignSystem'
+      | 'readDesignSystemVersionContent'
       | 'readEditTokens'
       | 'saveDesignSystem'
       | 'listDesignSystemVersions'
@@ -55,6 +56,7 @@ export type DesignSystemCommand = Extract<
 const COMMAND_TYPES = new Set<CanvasCommand['type']>([
   'canvas.listDesignSystems',
   'canvas.readDesignSystem',
+  'canvas.readDesignSystemVersionContent',
   'canvas.readEditTokens',
   'canvas.saveDesignSystem',
   'canvas.listDesignSystemVersions',
@@ -85,6 +87,10 @@ export async function answerDesignSystemCommand(
       return { kind: 'designSystems', systems: await listDesignSystems() };
     case 'canvas.readDesignSystem':
       return { kind: 'designSystem', system: await readDocument(command.ref) };
+    case 'canvas.readDesignSystemVersionContent': {
+      const { name, cover, sections } = await readDesignSystem(command.ref);
+      return { kind: 'designSystemVersionContent', content: { name, cover, sections } };
+    }
     case 'canvas.readEditTokens': {
       const modes = kitModes((await readDesignSystem(command.ref)).sections);
       return { kind: 'editTokens', tokens: editTokens(modes.light, modes.dark) };

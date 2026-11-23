@@ -225,15 +225,22 @@ export function isKitSummary(value: unknown): boolean {
   );
 }
 
+export function isKitVersionContent(value: unknown): boolean {
+  return (
+    record(value) &&
+    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    isCover(value.cover) &&
+    isDocumentSections(value.sections)
+  );
+}
+
 /** A kit version as its document shows it. */
 export function isKitDocument(value: unknown): boolean {
   return (
     isKitVersion(value) &&
     count(value.latestVersion) &&
-    boundedText(value.name, MAX_KIT_NAME_LENGTH) &&
+    isKitVersionContent(value) &&
     isKitKind(value.kind) &&
-    isCover(value.cover) &&
-    isDocumentSections(value.sections) &&
     boundedList(value.examples, MAX_EXAMPLES, isSourcePath) &&
     boundedList(value.catalog, MAX_CATALOG_ENTRIES, isCatalogListing) &&
     isUniqueBy(value.catalog, 'name') &&

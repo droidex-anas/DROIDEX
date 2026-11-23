@@ -161,6 +161,13 @@ export interface PropPick {
   value: string;
 }
 
+/** Immutable authored content used to compare saved kit versions. */
+export interface DesignSystemVersionContent {
+  name: string;
+  cover: DesignSystemCover;
+  sections: DocumentSection[];
+}
+
 /** A kit version as its document shows it: everything but its source. */
 export interface DesignSystemDocumentView {
   id: string;

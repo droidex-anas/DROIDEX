@@ -7,6 +7,7 @@ import type {
   CanvasDiagnostic,
   DesignSystemCover,
   DesignSystemDocumentView,
+  DesignSystemVersionContent,
   DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
@@ -36,6 +37,15 @@ export class DesignSystemRequests {
   async read(ref: DesignSystemVersionRef): Promise<DesignSystemDocumentView> {
     const event = await this.send({ type: 'canvas.readDesignSystem', requestId: requestId(), ref });
     return reply(event, 'designSystem').system;
+  }
+
+  async readVersionContent(ref: DesignSystemVersionRef): Promise<DesignSystemVersionContent> {
+    const event = await this.send({
+      type: 'canvas.readDesignSystemVersionContent',
+      requestId: requestId(),
+      ref,
+    });
+    return reply(event, 'designSystemVersionContent').content;
   }
 
   /**
