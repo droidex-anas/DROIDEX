@@ -1,5 +1,6 @@
 import type { Action, AppState } from '../../hooks/useStore';
-import { pathsInSequence, type useImageAttachments } from '../../hooks/useImageAttachments';
+import { pathsInSequence } from '../../hooks/attachmentStaging';
+import type { useImageAttachments } from '../../hooks/useImageAttachments';
 import type { useFileAttachments } from '../../hooks/useFileAttachments';
 import { isAppUpdateInstalling } from '../../lib/appUpdate';
 import {

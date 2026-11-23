@@ -30,11 +30,8 @@ import {
 } from '../lib/commands';
 import { pickFiles, listFiles, isDesktop, pathForFile } from '../lib/desktop';
 import type { FeedbackReportRequest } from '../lib/desktopContract';
-import {
-  pathsInSequence,
-  useImageAttachments,
-  type AttachedImage,
-} from '../hooks/useImageAttachments';
+import { pathsInSequence } from '../hooks/attachmentStaging';
+import { useImageAttachments, type AttachedImage } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { useVoiceControls } from '../features/voice/VoiceProvider';
 import { canUseVoice } from '../features/voice/voiceAvailability';
