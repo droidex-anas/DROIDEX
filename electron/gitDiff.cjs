@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto');
 const { run, runSoft, tryRun } = require('./gitCommand.cjs');
 const { isWithin, repoRootOf, cachedRead, setRepoCache } = require('./gitRepository.cjs');
 const { effectiveBaseRef } = require('./gitEnvironment.cjs');
+const { captureTrackedTurnBaseline } = require('./gitTurnSnapshot.cjs');
 const {
   readUntrackedPaths,
   scanUntracked,
@@ -422,15 +423,7 @@ async function fileSignature(root, rel) {
 async function markTurnStart(dir, ownerId) {
   const root = await repoRootOf(dir);
   if (!root || !ownerId) return { ok: false };
-  const baselinePromise = (async () => {
-    let value = await tryRun(root, ['stash', 'create']);
-    if (!value) value = await tryRun(root, ['rev-parse', 'HEAD']);
-    // Unborn repo (no commits yet): `stash create` and `rev-parse HEAD` both
-    // fail, so capture the current index as a tree object instead. Diffing
-    // against it makes the agent's first-turn work show once it commits.
-    if (!value) value = await tryRun(root, ['write-tree']);
-    return value;
-  })();
+  const baselinePromise = captureTrackedTurnBaseline(root);
   // `git stash create` captures tracked changes but omits untracked files, while
   // the last-turn diff folds in every current untracked file. Snapshot each
   // preexisting untracked path with a size+mtime signature so files that predate

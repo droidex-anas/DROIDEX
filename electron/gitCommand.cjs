@@ -7,12 +7,14 @@ const DEFAULT_TIMEOUT = 6000;
 const MAX_BUFFER = 16 * 1024 * 1024;
 
 // Resolve and reject on a non-zero exit so callers can try/catch.
-function run(cwd, args, { timeout = DEFAULT_TIMEOUT } = {}) {
+function run(cwd, args, { timeout = DEFAULT_TIMEOUT, indexFile } = {}) {
+  const env = childEnv();
+  if (indexFile) env.GIT_INDEX_FILE = indexFile;
   return new Promise((resolve, reject) => {
     execFile(
       'git',
       ['-C', cwd, ...args],
-      { timeout, maxBuffer: MAX_BUFFER, env: childEnv() },
+      { timeout, maxBuffer: MAX_BUFFER, env },
       (err, stdout) => {
         if (err) reject(err);
         else resolve(String(stdout));

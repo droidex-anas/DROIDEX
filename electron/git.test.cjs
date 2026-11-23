@@ -246,16 +246,52 @@ test('last_turn fileDiff renders a file created during the turn', async () => {
   assert.ok(res.diff.includes('hello turn'), 'turn-created file diff should show its content');
 });
 
-test('last_turn works in an unborn repo via the write-tree baseline', async () => {
+test('last_turn shows new files in an empty unborn repo', async () => {
   const dir = await makeRepo();
-  // No commits yet: stash create and rev-parse HEAD both fail, so the
-  // baseline falls back to the (empty) index tree.
   const mark = await markTurnStart(dir, 'session-a');
   assert.equal(mark.ok, true);
 
   await write(dir, 'first.txt', 'x\n');
   const res = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
   assert.ok(pathsOf(res).includes('first.txt'));
+});
+
+test('last_turn excludes pre-turn working-tree edits in an unborn repo', async () => {
+  const dir = await makeRepo();
+  const file = 'notes.txt';
+  await write(dir, file, 'staged\n');
+  await git(dir, ['add', '--', file]);
+  await write(dir, file, 'staged\npre-turn\n');
+  const indexPath = path.join(dir, '.git', 'index');
+  const indexBefore = await fsp.readFile(indexPath);
+  const options = { mode: 'last_turn', appSessionId: 'session-a' };
+
+  assert.equal((await markTurnStart(dir, options.appSessionId)).ok, true);
+  assert.deepEqual((await diffFiles(dir, options)).files, []);
+  assert.equal((await fileDiff(dir, { ...options, path: file })).diff, '');
+  assert.deepEqual(await fsp.readFile(indexPath), indexBefore);
+  await assert.rejects(git(dir, ['rev-parse', '--verify', 'HEAD']));
+  assert.equal(await fsp.readFile(path.join(dir, file), 'utf8'), 'staged\npre-turn\n');
+
+  await write(dir, file, 'staged\npre-turn\nin-turn\n');
+  const checkTurnEdit = async () => {
+    const { files } = await diffFiles(dir, options);
+    assert.deepEqual(
+      files.map(({ path, status, additions, deletions }) => ({
+        path,
+        status,
+        additions,
+        deletions,
+      })),
+      [{ path: file, status: 'modified', additions: 1, deletions: 0 }],
+    );
+    const { diff } = await fileDiff(dir, { ...options, path: file });
+    assert.match(diff, /^\+in-turn$/m);
+    assert.doesNotMatch(diff, /^\+pre-turn$/m);
+  };
+  await checkTurnEdit();
+  await commitAll(dir, 'initial commit');
+  await checkTurnEdit();
 });
 
 test('worktree listing preserves newline-containing paths', async () => {
