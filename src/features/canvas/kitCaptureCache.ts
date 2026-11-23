@@ -1,5 +1,5 @@
-// Kit captures held in memory within a budget of data URL characters. Past
-// it, captures no consumer holds are let go, least recently held first; one a
+// Kit captures held within character and entry budgets. Past either budget,
+// captures no consumer holds are let go, least recently held first; one a
 // consumer holds stays, since letting it go would blank a tile on screen.
 
 export class KitCaptureCache {
@@ -8,7 +8,10 @@ export class KitCaptureCache {
   private readonly holds = new Map<string, number>();
   private retained = 0;
 
-  constructor(private readonly budgetChars: number) {}
+  constructor(
+    private readonly budgetChars: number,
+    private readonly maxEntries = 1024,
+  ) {}
 
   get retainedChars(): number {
     return this.retained;
@@ -59,9 +62,9 @@ export class KitCaptureCache {
   }
 
   private trim(): void {
-    for (const [key, url] of this.urls) {
-      if (this.retained <= this.budgetChars) return;
-      if (url !== null && !this.holds.has(key)) this.forget(key);
+    for (const [key] of this.urls) {
+      if (this.retained <= this.budgetChars && this.urls.size <= this.maxEntries) return;
+      if (!this.holds.has(key)) this.forget(key);
     }
   }
 

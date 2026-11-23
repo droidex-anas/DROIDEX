@@ -40,7 +40,6 @@ function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): P
     },
     (error: unknown) => {
       console.error('A design system preview capture could not be read:', error);
-      if (!captures.has(key)) show(key, null);
     },
   );
 }
@@ -53,7 +52,7 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * The capture's URL: undefined while it is read, null when that item has not
+ * The capture's URL: undefined until a read succeeds, null when that item has not
  * been captured in that mode yet, or when `ref` is null. An entry `item` must
  * keep its identity across renders.
  */

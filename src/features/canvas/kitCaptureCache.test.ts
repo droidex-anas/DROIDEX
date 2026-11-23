@@ -4,6 +4,26 @@ import { KitCaptureCache } from './kitCaptureCache';
 
 const BUDGET_CHARS = 10;
 
+test('absent captures are bounded, oldest first, without evicting held entries', async () => {
+  const cache = new KitCaptureCache(BUDGET_CHARS, 2);
+  const release = cache.hold('held');
+  cache.set('held', null);
+  cache.set('old', null);
+  cache.set('new', null);
+  assert.equal(cache.has('old'), false);
+  assert.equal(cache.get('held'), null);
+  assert.equal(cache.get('new'), null);
+  const releaseNew = cache.hold('new');
+  const releaseLatest = cache.hold('latest');
+  cache.set('latest', null);
+  assert.equal(cache.get('held'), null);
+  release();
+  await Promise.resolve();
+  assert.equal(cache.has('held'), false);
+  releaseNew();
+  releaseLatest();
+});
+
 test('captures stay over the budget while shown and drop to it once let go, oldest first', async () => {
   const cache = new KitCaptureCache(BUDGET_CHARS);
   const releases = ['a', 'b', 'c', 'd'].map((key) => {
