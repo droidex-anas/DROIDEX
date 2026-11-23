@@ -4,7 +4,7 @@ import { act, createElement, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { useReviewDiff } from './useReviewDiff';
 import { useReviewFileDiffs } from './useReviewFileDiffs';
-import type { DiffFileList, DiffScope, FileDiffResult } from '../types/vcs';
+import type { DiffFileList, DiffScope, FileDiffOptions, FileDiffResult } from '../types/vcs';
 
 async function setup(t: test.TestContext, fileCount = 1) {
   let root: Root | undefined;
@@ -23,6 +23,7 @@ async function setup(t: test.TestContext, fileCount = 1) {
   let tick = () => {};
   let patch = '-original\n+change-A';
   let requestCount = 0;
+  const requestedOldPaths: (string | null)[] = [];
   let listCount = 0;
   let failPatch = false;
   let pending: Promise<FileDiffResult> | undefined;
@@ -46,8 +47,9 @@ async function setup(t: test.TestContext, fileCount = 1) {
         listCount++;
         return { mode, base: null, files: files.map((file) => ({ ...file })) };
       },
-      async gitFileDiff(_cwd: string, { path }: { path: string }) {
+      async gitFileDiff(_cwd: string, { path, oldPath }: FileDiffOptions) {
         requestCount++;
+        requestedOldPaths.push(oldPath);
         if (failPatch) throw new Error('git unavailable');
         return pending ?? { path, diff: patch, binary: false };
       },
@@ -95,12 +97,18 @@ async function setup(t: test.TestContext, fileCount = 1) {
     review: () => review,
     diffs: () => diffs,
     requests: () => requestCount,
+    requestedOldPaths: () => requestedOldPaths,
     lists: () => listCount,
     setPatch(value: string, path = 'file-0') {
       patch = value;
       const file = files.find((file) => file.path === path);
       assert.ok(file);
       file.fingerprint += '.';
+    },
+    setOldPath(path: string, oldPath: string) {
+      const file = files.find((file) => file.path === path);
+      assert.ok(file);
+      file.oldPath = oldPath;
     },
     setFailure(value: boolean) {
       failPatch = value;
@@ -146,6 +154,14 @@ test('an open patch refreshes after a same-numstat edit without reopening', asyn
   assert.equal(h.diffs().entries['file-0']?.diff, '-original\n+change-B');
   assert.equal(h.review().files, files);
   assert.equal(h.review().signature, signature);
+});
+
+test('a renamed file requests its patch with the old path from the list', async (t) => {
+  const h = await setup(t);
+  h.setOldPath('file-0', 'before-0');
+  await h.poll();
+  await h.render(['file-0']);
+  assert.deepEqual(h.requestedOldPaths(), ['before-0']);
 });
 
 test('idle polls fetch no patches and a same-count edit fetches only its open file', async (t) => {
