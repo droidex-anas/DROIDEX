@@ -259,6 +259,7 @@ test('last_turn shows new files in an empty unborn repo', async () => {
 test('last_turn excludes pre-turn working-tree edits in an unborn repo', async () => {
   const dir = await makeRepo();
   const file = 'notes.txt';
+  await git(dir, ['config', 'core.splitIndex', 'true']);
   await write(dir, file, 'staged\n');
   await git(dir, ['add', '--', file]);
   await write(dir, file, 'staged\npre-turn\n');
@@ -267,9 +268,10 @@ test('last_turn excludes pre-turn working-tree edits in an unborn repo', async (
   const options = { mode: 'last_turn', appSessionId: 'session-a' };
 
   assert.equal((await markTurnStart(dir, options.appSessionId)).ok, true);
+  const indexAfter = await fsp.readFile(indexPath);
   assert.deepEqual((await diffFiles(dir, options)).files, []);
   assert.equal((await fileDiff(dir, { ...options, path: file })).diff, '');
-  assert.deepEqual(await fsp.readFile(indexPath), indexBefore);
+  assert.ok(indexBefore.equals(indexAfter), 'turn marker rewrote the index');
   await assert.rejects(git(dir, ['rev-parse', '--verify', 'HEAD']));
   assert.equal(await fsp.readFile(path.join(dir, file), 'utf8'), 'staged\npre-turn\n');
 
