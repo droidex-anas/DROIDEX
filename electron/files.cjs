@@ -17,7 +17,7 @@
  *   readPreview(rootDir, relativePath, options?)    -> Promise<PreviewPayload>
  *   openDefault(rootDir, relativePath, shell)       -> Promise<OpenResult>
  *   revealInFolder(rootDir, relativePath, shell)    -> Promise<OpenResult>
- *   classifyByName(name)                             -> PreviewCategory
+ *   classifyByName(name)                             -> FilePreviewPayload['category']
  */
 
 const fs = require('node:fs');

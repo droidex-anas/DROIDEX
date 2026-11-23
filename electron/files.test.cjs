@@ -329,7 +329,7 @@ test('classifyByName routes previewable types to their categories and the rest t
   assert.equal(classifyByName('paper.pdf'), 'pdf');
   assert.equal(classifyByName('report.docx'), 'docx');
   assert.equal(classifyByName('sheet.xlsx'), 'xlsx');
-  // Legacy and macro-enabled Office formats are never rendered inline.
+  // Legacy and macro-enabled Office formats open externally, like archives and unknown types.
   for (const name of [
     'old.doc',
     'macro.docm',
