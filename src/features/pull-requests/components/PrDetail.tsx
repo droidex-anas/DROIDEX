@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
@@ -8,6 +8,7 @@ import type { PullRequest } from '../../../types/vcs';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
 import { isCubicRemembered, rememberCubic } from '../lib/cubicMemory';
 import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib/prReview';
+import { arrowKeyTab } from '../lib/prTabs';
 import { PrDiff } from './PrDiff';
 import { PrMergeButton } from './PrMergeButton';
 import { PrReviewButton } from './PrReviewButton';
@@ -157,6 +158,14 @@ export function PrDetail({
     });
   };
 
+  const onTabsKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const next = arrowKeyTab(TABS, tab, event.key);
+    if (!next) return;
+    event.preventDefault();
+    setTab(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
   const composer = {
     viewerLogin,
     draft,
@@ -178,6 +187,7 @@ export function PrDetail({
         <div
           role="tablist"
           aria-label="Pull request views"
+          onKeyDown={onTabsKeyDown}
           className="flex items-center gap-0.5 rounded-md bg-elevated/50 p-0.5"
         >
           {TABS.map((item) => (
@@ -188,6 +198,7 @@ export function PrDetail({
               id={tabId(item.id)}
               aria-controls={tabPanelId(item.id)}
               aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
               onClick={() => {
                 setTab(item.id);
               }}
