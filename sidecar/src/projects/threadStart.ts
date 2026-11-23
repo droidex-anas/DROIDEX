@@ -1,4 +1,5 @@
 import { droidHome } from '../droidProfiles.js';
+import { clip } from '../automations/automationInput.js';
 import type {
   Autonomy,
   ModelInfo,
@@ -235,7 +236,7 @@ export async function discardThreadCheckout(cwd: string, checkout: ThreadCheckou
 
 export function numberedTitle(title: string, suffix: number): string {
   const ending = ` ${String(suffix)}`;
-  const base = title.slice(0, LEDGER_LIMITS.title - ending.length).trimEnd();
+  const base = clip(title, LEDGER_LIMITS.title - ending.length).trimEnd();
   return `${base}${ending}`;
 }
 

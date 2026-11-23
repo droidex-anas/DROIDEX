@@ -31,9 +31,24 @@ for (const length of [119, 120]) {
     assert.equal(new Set(titles).size, titles.length);
     assert.equal(titles[0], title);
     assert.equal(titles[3], similar);
+    assert.match(titles[1] ?? '', / 2$/);
+    assert.match(titles[2] ?? '', / 3$/);
+    assert.match(titles[4] ?? '', / 4$/);
+    assert.match(titles[5] ?? '', / 5$/);
     for (const chosen of titles) {
       assert.ok(chosen.length > 0 && chosen.length <= LEDGER_LIMITS.title);
       assert.equal(chosen, chosen.trimEnd());
     }
   });
 }
+
+test('numbered thread titles do not split an astral character at the ledger limit', async (t) => {
+  const { h, main } = await idleProject(t);
+  const prefix = 'x'.repeat(117);
+  const title = `${prefix}😀y`;
+  await h.projects.spawn(main, { ...input, title });
+  const second = await h.projects.spawn(main, { ...input, title });
+  const third = await h.projects.spawn(main, { ...input, title });
+  assert.equal(second.title, `${prefix} 2`);
+  assert.equal(third.title, `${prefix} 3`);
+});
