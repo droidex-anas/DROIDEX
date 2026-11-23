@@ -1,4 +1,5 @@
 import { droidHome } from '../droidProfiles.js';
+import { clip } from '../clipText.js';
 import type {
   Autonomy,
   ModelInfo,
@@ -238,11 +239,12 @@ export async function discardThreadCheckout(cwd: string, checkout: ThreadCheckou
 export function uniqueTitle(project: Project, title: string): string {
   const taken = new Set(project.threads.map((thread) => thread.title));
   if (!taken.has(title)) return title;
-  for (let suffix = 2; suffix < 100; suffix += 1) {
-    const candidate = `${title} ${String(suffix)}`.slice(0, LEDGER_LIMITS.title);
+  for (let suffix = 2; ; suffix += 1) {
+    const ending = ` ${String(suffix)}`;
+    const base = clip(title, LEDGER_LIMITS.title - ending.length).trimEnd();
+    const candidate = `${base}${ending}`;
     if (!taken.has(candidate)) return candidate;
   }
-  return title;
 }
 
 /* Where a thread is told to work. A tree of its own says so and says it is

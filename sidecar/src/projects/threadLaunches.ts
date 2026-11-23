@@ -15,6 +15,7 @@ import { LEDGER_LIMITS } from './store.js';
 
 interface ThreadLaunchInput extends ThreadInput {
   workspace?: ThreadCheckout;
+  requestedTitle?: string;
 }
 
 /** Owns queued launch order and binding before the first task reaches a provider. */
@@ -48,7 +49,7 @@ export class ThreadLaunches {
 
   async enqueue(
     project: Project,
-    { workspace, ...input }: ThreadLaunchInput,
+    { workspace, requestedTitle, ...input }: ThreadLaunchInput,
     ownerAppSessionId: string,
     isCurrent: () => boolean,
   ): Promise<ProjectThreadRecord> {
@@ -59,6 +60,7 @@ export class ThreadLaunches {
       appSessionId: randomUUID(),
       ownerAppSessionId,
       title: input.title,
+      ...(requestedTitle !== undefined ? { requestedTitle } : {}),
       reply: '',
       waiting: false,
       queuedSpawn: { phase, input, order: ++this.spawnOrder, workspace },
