@@ -103,34 +103,12 @@ async function openSidebar(page: Page, loseInitialResponse: boolean) {
   };
 }
 
-async function captureSidebar(page: Page, state: string) {
-  const dir = process.env.SIDEBAR_EVIDENCE_DIR;
-  if (!dir) return;
-  for (const mode of ['dark', 'light']) {
-    await page.getByRole('button', { name: 'Settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Appearance', exact: true }).click();
-    await page
-      .getByRole('button', { name: mode === 'light' ? 'Light' : 'Dark', exact: true })
-      .first()
-      .click();
-    await expect(page.locator('html')).toHaveAttribute('data-theme', mode);
-    await page.getByRole('button', { name: 'Back to app', exact: true }).click();
-    await page.mouse.move(1200, 700);
-    await page.screenshot({ path: `${dir}/${state}-${mode}.png`, animations: 'disabled' });
-  }
-}
-
 test('a lost initial list is restored after a live-only generation reset', async ({ page }) => {
   const sidebar = await openSidebar(page, true);
   await expect.poll(sidebar.connections).toBe(2);
-  if (process.env.SIDEBAR_EVIDENCE_STATE === 'before') {
-    await expect(sidebar.history).toHaveCount(0);
-    await captureSidebar(page, 'before');
-  }
   await expect(sidebar.history).toBeVisible();
   expect(sidebar.lists).toHaveLength(2);
   expect(sidebar.lists[1]).toEqual(sidebar.lists[0]);
-  await captureSidebar(page, 'after');
 });
 
 test('unchanged scopes refresh on silent replay and live-only replacement, not first connect', async ({
