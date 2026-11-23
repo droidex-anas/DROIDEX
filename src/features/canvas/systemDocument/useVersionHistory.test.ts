@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
-import { act, createElement } from 'react';
+import { act, createElement, useLayoutEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 import { canvasClient } from '../canvasClient';
 import { useVersionHistory } from './useVersionHistory';
 import type { DesignSystemVersionContent } from '@droidex/protocol';
 
-async function mountHistory(t: TestContext, id: string) {
+async function mountHistory(t: TestContext, id: string, onUnmountCommit?: () => void) {
   t.after(async () => unmount());
   const document = {
     nodeType: 9,
@@ -35,6 +35,7 @@ async function mountHistory(t: TestContext, id: string) {
   let history!: ReturnType<typeof useVersionHistory>;
   function Harness() {
     history = useVersionHistory(id);
+    useLayoutEffect(() => onUnmountCommit, [onUnmountCommit]);
     return null;
   }
   const root = createRoot(container as unknown as HTMLElement);
@@ -66,12 +67,12 @@ for (const stop of ['unmount', 'close'] as const) {
         return reads.length === 1 ? pending : content;
       },
     );
-    const app = await mountHistory(t, stop);
+    const app = await mountHistory(t, stop, () => finish(content));
     await act(async () => app.current().openMenu());
     assert.deepEqual(reads, [3]);
     if (stop === 'unmount') await app.unmount();
     else await act(async () => app.current().close());
-    await act(async () => finish(content));
+    if (stop === 'close') await act(async () => finish(content));
     assert.deepEqual(reads, [3], 'only the already-dispatched read may finish');
   });
 }
@@ -84,7 +85,7 @@ test('history summarizes each immutable version once and handles empty and faile
     'readVersionContent',
     async ({ version }: { version: number }) => {
       reads.push(version);
-      return content;
+      return contents[version];
     },
   );
   const app = await mountHistory(t, 'healthy');
@@ -92,8 +93,8 @@ test('history summarizes each immutable version once and handles empty and faile
   assert.deepEqual(
     [...app.current().summarized],
     [
-      [3, 'No changes'],
-      [2, 'No changes'],
+      [3, 'Cover added'],
+      [2, 'Renamed'],
       [1, 'Created'],
     ],
   );
@@ -110,4 +111,28 @@ test('history summarizes each immutable version once and handles empty and faile
   });
   await act(async () => app.current().openMenu());
   assert.deepEqual(app.current().list, { status: 'failed', message: 'Unavailable' });
+});
+
+const contents: Record<number, DesignSystemVersionContent> = {
+  1: { name: 'Original', cover: null, sections: [] },
+  2: { name: 'Renamed', cover: null, sections: [] },
+  3: { name: 'Renamed', cover: { kind: 'preview', example: 'cover.tsx' }, sections: [] },
+};
+
+test('a restored history entry changes the cached summary comparison base', async (t) => {
+  let listed = versions.filter(({ version }) => version !== 2);
+  t.mock.method(canvasClient.designSystems, 'versions', async () => listed);
+  t.mock.method(
+    canvasClient.designSystems,
+    'readVersionContent',
+    async ({ version }: { version: number }) => contents[version],
+  );
+  const app = await mountHistory(t, 'restored-base');
+  await act(async () => app.current().openMenu());
+  assert.equal(app.current().summarized.get(3), 'Renamed, cover added');
+  await act(async () => app.current().close());
+  listed = versions;
+  await act(async () => app.current().openMenu());
+  assert.equal(app.current().summarized.get(3), 'Cover added');
+  assert.equal(app.current().summarized.get(2), 'Renamed');
 });

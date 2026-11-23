@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { DesignSystemVersionContent, DesignSystemVersionEntry } from '@droidex/protocol';
 import { canvasClient } from '../canvasClient';
 import { canvasMessage } from '../client';
@@ -9,7 +9,7 @@ type VersionList =
   | { status: 'failed'; message: string }
   | { status: 'listed'; versions: DesignSystemVersionEntry[] };
 
-// Versions never change, so what each changed is read once per app session.
+// A summary is immutable only while its comparison base stays the same.
 const summaries = new Map<string, string>();
 
 export function useVersionHistory(id: string) {
@@ -17,7 +17,7 @@ export function useVersionHistory(id: string) {
   const [list, setList] = useState<VersionList>({ status: 'loading' });
   const [summarized, setSummarized] = useState<ReadonlyMap<number, string>>(new Map());
   const requestRef = useRef(0);
-  useEffect(
+  useLayoutEffect(
     () => () => {
       requestRef.current += 1;
     },
@@ -69,14 +69,14 @@ async function summarize(
   let carried: DesignSystemVersionContent | null = null;
   for (const [index, { version }] of versions.entries()) {
     if (!isLive()) return;
-    const key = `${id}@${String(version)}`;
+    const older = versions.at(index + 1)?.version;
+    const key = `${id}@${String(version)}:${String(older ?? 'none')}`;
     const known = summaries.get(key);
     if (known !== undefined) {
       onSummary(version, known);
       carried = null;
       continue;
     }
-    const older = versions.at(index + 1)?.version;
     const current = carried ?? (await read(version));
     if (!isLive()) return;
     const previous = older === undefined ? null : await read(older);
