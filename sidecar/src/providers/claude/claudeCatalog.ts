@@ -87,7 +87,8 @@ export class ClaudeCatalog {
 
   private refreshCommands(): void {
     if (this.closed) return;
-    const pending = (this.refresh ?? this.initial)
+    this.refresh = (this.refresh ?? this.initial)
+      .catch(() => undefined)
       .then(async () => {
         if (this.closed) return;
         const items = await this.fetch();
@@ -96,10 +97,6 @@ export class ClaudeCatalog {
       .catch((error: unknown) => {
         if (!this.closed) console.warn('Claude catalog refresh failed:', error);
       });
-    this.refresh = pending;
-    void pending.then(() => {
-      if (this.refresh === pending) this.refresh = undefined;
-    });
   }
 
   private publish(items: SkillInfo[]): void {
