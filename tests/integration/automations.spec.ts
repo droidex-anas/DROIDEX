@@ -4,7 +4,7 @@ import type { AutomationProposal, SessionSummary, TranscriptEvent } from '@droid
 import { defaultAutomationDraft } from '../../src/features/automations/schedule';
 import { automationCommandSchema } from '../../sidecar/src/automations/automationSchemas';
 import { normalizeAutomationInput } from '../../sidecar/src/automations/automationInput';
-import { automationBridge, scheduledPrompt, session } from './automationFixtures';
+import { automationBridge, scheduledPrompt, session } from '../fixtures/automationFixtures.spec';
 
 const DST_NOW = Date.parse('2027-03-13T17:00:00Z');
 

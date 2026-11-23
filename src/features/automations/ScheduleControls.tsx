@@ -40,6 +40,81 @@ export function useInvalidScheduleInput(
   return [invalidInput, setInvalidInput] as const;
 }
 
+function OnceScheduleControls({
+  schedule,
+  timezone,
+  onChange,
+  invalidInput,
+  onInvalidInputChange,
+}: {
+  schedule: Extract<AutomationSchedule, { kind: 'once' }>;
+  timezone: string;
+  onChange: (schedule: AutomationSchedule) => void;
+  invalidInput: InvalidScheduleInput | null;
+  onInvalidInputChange: (input: InvalidScheduleInput | null) => void;
+}) {
+  const errorId = useId();
+  const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, timezone);
+  const minimumDate = zonedInputParts(Date.now(), timezone);
+  const dateError = invalidInput?.kind === 'date';
+  const timeError = invalidInput?.kind === 'time';
+  const error = (kind: InvalidScheduleInput['kind']) => (
+    <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
+      {kind === 'date'
+        ? 'Enter a valid date as YYYY-MM-DD.'
+        : `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`}
+    </p>
+  );
+  const updateInput = (input: ZonedInput) => {
+    const runAt = epochFromZonedInput(input, timezone);
+    onInvalidInputChange(runAt === null ? { kind: 'time', parts: input } : null);
+    if (runAt !== null) onChange({ kind: 'once', runAt });
+  };
+  return (
+    <>
+      <EditorRow label="Date">
+        <AutomationDateInput
+          errorId={invalidInput ? errorId : undefined}
+          value={parts}
+          minimum={minimumDate}
+          invalidText={dateError ? invalidInput.text : undefined}
+          onInvalidChange={(text) => {
+            if (text !== null) {
+              onInvalidInputChange({ kind: 'date', parts, text });
+            } else if (dateError) {
+              updateInput(parts);
+            }
+          }}
+          onChange={(date) => {
+            updateInput({ ...parts, ...date });
+          }}
+        />
+      </EditorRow>
+      {dateError && error('date')}
+      <EditorRow label="Time">
+        <AutomationTimeInput
+          errorId={timeError ? errorId : undefined}
+          value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
+          onChange={(time) => {
+            const [hourText = '', minuteText = ''] = time.split(':');
+            const input = {
+              ...parts,
+              hour: clampNumber(hourText, 0, 23, parts.hour),
+              minute: clampNumber(minuteText, 0, 59, parts.minute),
+            };
+            if (dateError) {
+              onInvalidInputChange({ ...invalidInput, parts: input });
+            } else {
+              updateInput(input);
+            }
+          }}
+        />
+      </EditorRow>
+      {timeError && error('time')}
+    </>
+  );
+}
+
 export function ScheduleControls({
   schedule,
   timezone,
@@ -53,69 +128,17 @@ export function ScheduleControls({
   invalidInput: InvalidScheduleInput | null;
   onInvalidInputChange: (input: InvalidScheduleInput | null) => void;
 }) {
-  const errorId = useId();
   switch (schedule.kind) {
-    case 'once': {
-      const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, timezone);
-      const minimumDate = zonedInputParts(Date.now(), timezone);
-      const dateError = invalidInput?.kind === 'date';
-      const timeError = invalidInput?.kind === 'time';
-      const error = (kind: InvalidScheduleInput['kind']) => (
-        <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
-          {kind === 'date'
-            ? 'Enter a valid date as YYYY-MM-DD.'
-            : `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`}
-        </p>
-      );
-      const updateInput = (input: ZonedInput) => {
-        const runAt = epochFromZonedInput(input, timezone);
-        onInvalidInputChange(runAt === null ? { kind: 'time', parts: input } : null);
-        if (runAt !== null) onChange({ kind: 'once', runAt });
-      };
+    case 'once':
       return (
-        <>
-          <EditorRow label="Date">
-            <AutomationDateInput
-              errorId={invalidInput ? errorId : undefined}
-              value={parts}
-              minimum={minimumDate}
-              invalidText={dateError ? invalidInput.text : undefined}
-              onInvalidChange={(text) => {
-                if (text !== null) {
-                  onInvalidInputChange({ kind: 'date', parts, text });
-                } else if (dateError) {
-                  updateInput(parts);
-                }
-              }}
-              onChange={(date) => {
-                updateInput({ ...parts, ...date });
-              }}
-            />
-          </EditorRow>
-          {dateError && error('date')}
-          <EditorRow label="Time">
-            <AutomationTimeInput
-              errorId={timeError ? errorId : undefined}
-              value={`${String(parts.hour).padStart(2, '0')}:${String(parts.minute).padStart(2, '0')}`}
-              onChange={(time) => {
-                const [hourText = '', minuteText = ''] = time.split(':');
-                const input = {
-                  ...parts,
-                  hour: clampNumber(hourText, 0, 23, parts.hour),
-                  minute: clampNumber(minuteText, 0, 59, parts.minute),
-                };
-                if (dateError) {
-                  onInvalidInputChange({ ...invalidInput, parts: input });
-                } else {
-                  updateInput(input);
-                }
-              }}
-            />
-          </EditorRow>
-          {timeError && error('time')}
-        </>
+        <OnceScheduleControls
+          schedule={schedule}
+          timezone={timezone}
+          onChange={onChange}
+          invalidInput={invalidInput}
+          onInvalidInputChange={onInvalidInputChange}
+        />
       );
-    }
     case 'hourly':
       return (
         <EditorRow label="At">
