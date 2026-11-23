@@ -87,7 +87,7 @@ function subscribe(listener: () => void): () => void {
     stopWatching?.();
     stopWatching = undefined;
     // Kit changes are unobserved while there are no readers.
-    generation += 1;
+    activeRead = null;
     stale = true;
   };
 }
