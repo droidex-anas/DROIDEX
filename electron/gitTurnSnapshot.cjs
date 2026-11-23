@@ -17,8 +17,19 @@ async function captureTrackedTurnBaseline(root) {
     });
     // Read an existing split index, but don't write shared index files.
     const noSplitIndex = ['-c', 'core.splitIndex=false'];
-    await run(root, [...noSplitIndex, 'add', '--update'], { indexFile });
-    return (await run(root, [...noSplitIndex, 'write-tree'], { indexFile })).trim();
+    const writeTree = [...noSplitIndex, 'write-tree'];
+    const options = { indexFile };
+    const stagedTree = (await run(root, writeTree, options)).trim();
+    // Safe CRLF checks protect staging, not a read-only comparison snapshot.
+    const updated = await tryRun(
+      root,
+      [...noSplitIndex, '-c', 'core.safecrlf=false', 'add', '--update'],
+      options,
+    );
+    // A broken clean filter can still prevent a working-tree snapshot. Keep
+    // the staged baseline so Last turn continues to show unrelated files.
+    if (updated === null) return stagedTree;
+    return (await tryRun(root, writeTree, options)) || stagedTree;
   } finally {
     await fsp.rm(tempDir, { recursive: true, force: true });
   }

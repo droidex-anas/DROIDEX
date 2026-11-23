@@ -260,9 +260,11 @@ test('last_turn excludes pre-turn working-tree edits in an unborn repo', async (
   const dir = await makeRepo();
   const file = 'notes.txt';
   await git(dir, ['config', 'core.splitIndex', 'true']);
-  await write(dir, file, 'staged\n');
+  await git(dir, ['config', 'core.autocrlf', 'true']);
+  await git(dir, ['config', 'core.safecrlf', 'true']);
+  await write(dir, file, 'staged\r\n');
   await git(dir, ['add', '--', file]);
-  await write(dir, file, 'staged\npre-turn\n');
+  await write(dir, file, 'staged\r\npre-turn\n');
   const indexPath = path.join(dir, '.git', 'index');
   const indexBefore = await fsp.readFile(indexPath);
   const options = { mode: 'last_turn', appSessionId: 'session-a' };
@@ -273,9 +275,9 @@ test('last_turn excludes pre-turn working-tree edits in an unborn repo', async (
   assert.equal((await fileDiff(dir, { ...options, path: file })).diff, '');
   assert.ok(indexBefore.equals(indexAfter), 'turn marker rewrote the index');
   await assert.rejects(git(dir, ['rev-parse', '--verify', 'HEAD']));
-  assert.equal(await fsp.readFile(path.join(dir, file), 'utf8'), 'staged\npre-turn\n');
+  assert.equal(await fsp.readFile(path.join(dir, file), 'utf8'), 'staged\r\npre-turn\n');
 
-  await write(dir, file, 'staged\npre-turn\nin-turn\n');
+  await write(dir, file, 'staged\r\npre-turn\nin-turn\n');
   const checkTurnEdit = async () => {
     const { files } = await diffFiles(dir, options);
     assert.deepEqual(
@@ -292,8 +294,24 @@ test('last_turn excludes pre-turn working-tree edits in an unborn repo', async (
     assert.doesNotMatch(diff, /^\+pre-turn$/m);
   };
   await checkTurnEdit();
+  await write(dir, file, 'staged\r\npre-turn\r\nin-turn\r\n');
   await commitAll(dir, 'initial commit');
   await checkTurnEdit();
+});
+
+test('last_turn still shows new files when Git cannot snapshot a tracked file', async () => {
+  const dir = await makeRepo();
+  await write(dir, '.gitattributes', 'notes.txt filter=unavailable\n');
+  await write(dir, 'notes.txt', 'staged\n');
+  await git(dir, ['add', '--', '.gitattributes', 'notes.txt']);
+  await git(dir, ['config', 'filter.unavailable.clean', 'exit 1']);
+  await git(dir, ['config', 'filter.unavailable.required', 'true']);
+  await write(dir, 'notes.txt', 'pre-turn edit\n');
+
+  await markTurnStart(dir, 'session-a');
+  await write(dir, 'new.txt', 'in-turn\n');
+  const review = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
+  assert.ok(pathsOf(review).includes('new.txt'));
 });
 
 test('worktree listing preserves newline-containing paths', async () => {
