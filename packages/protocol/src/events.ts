@@ -217,7 +217,7 @@ export type ServerEvent =
     }
   | {
       type: 'catalog.updated';
-      catalog: 'models' | 'tools' | 'skills';
+      catalog: 'models' | 'skills';
       items: unknown[];
       providerSessionId?: string | null;
     }
