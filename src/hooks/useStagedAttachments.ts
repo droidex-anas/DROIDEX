@@ -10,7 +10,7 @@ export function useStagedAttachments<T extends { id: string; path: string }>(
   const nextSeqRef = useRef(0);
   const [additions] = useState(createPendingAdditions);
 
-  // Keep commit and clear stable: PromptInput effects depend on their identity.
+  // Keep commit, clear and clearAndDiscard stable: PromptInput effects depend on them.
   const commit = useCallback((next: T[]) => {
     itemsRef.current = next;
     setItems(next);

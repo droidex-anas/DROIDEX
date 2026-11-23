@@ -28,8 +28,17 @@ const MAX_PASTED_FILE_BYTES = 40 * 1024 * 1024;
  * adds, stale-save discard, submit settle) is shared with the image store.
  */
 export function useFileAttachments() {
-  const staged = useStagedAttachments<AttachedFile>(discardImage);
-  const { items: files, additions, remove, clear, clearAndDiscard, whenReady, clearReady } = staged;
+  const {
+    items: files,
+    additions,
+    remove,
+    clear,
+    clearAndDiscard,
+    whenReady,
+    clearReady,
+    reserveSequence,
+    insert,
+  } = useStagedAttachments<AttachedFile>(discardImage);
 
   const addBlob = (file: File, sequence?: number) => {
     if (!isDesktop()) {
@@ -40,7 +49,7 @@ export function useFileAttachments() {
       toast.error('That file is too large to paste. Drop it onto the composer instead.');
       return;
     }
-    const seq = staged.reserveSequence(sequence);
+    const seq = reserveSequence(sequence);
     const stamp = additions.stamp();
     const task = (async () => {
       try {
@@ -53,7 +62,7 @@ export function useFileAttachments() {
         );
         if (path === null) return; // cleared while encoding; fresh file deleted
         const attached = { id: crypto.randomUUID(), path, name: file.name, sequence: seq };
-        staged.insert(attached, seq);
+        insert(attached, seq);
       } catch (error) {
         toast.error(
           error instanceof Error && error.message.includes('size limit')
