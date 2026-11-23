@@ -388,13 +388,19 @@ async function fileDiff(dir, options = {}) {
   // with rename detection on so the rename/edit hunk shows instead.
   const renameOld = await renameSource(root, args, file);
   const pathSpec = renameOld ? ['-M', '--', renameOld, file] : ['--', file];
-  let out = await runSoft(root, ['diff', ...ws, ...args, ...pathSpec]);
+  let out = await runSoft(root, ['--literal-pathspecs', 'diff', ...ws, ...args, ...pathSpec]);
   // Untracked files (incl. preexisting ones the agent edited) have no tree-side
   // to diff against, so render their full current content via --no-index. Gate
   // this on the file actually being untracked: with -w a tracked file can yield
   // an empty diff (whitespace-only edits), which must not be shown as brand new.
   if (!out && includeUntracked) {
-    const tracked = await run(root, ['ls-files', '--error-unmatch', '--', file])
+    const tracked = await run(root, [
+      '--literal-pathspecs',
+      'ls-files',
+      '--error-unmatch',
+      '--',
+      file,
+    ])
       .then(() => true)
       .catch(() => false);
     if (!tracked) {
