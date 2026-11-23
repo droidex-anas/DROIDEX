@@ -18,9 +18,6 @@
  *   openDefault(rootDir, relativePath, shell)       -> Promise<OpenResult>
  *   revealInFolder(rootDir, relativePath, shell)    -> Promise<OpenResult>
  *   classifyByName(name)                             -> PreviewCategory
- *
- * The classification tables mirror src/lib/filePreview.ts. Keep them in sync;
- * the paired unit tests exercise the shared edge cases.
  */
 
 const fs = require('node:fs');
