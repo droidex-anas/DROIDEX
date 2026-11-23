@@ -325,8 +325,7 @@ test('editor preserves invalid calendar dates until corrected', async ({ page })
       await expect(time).not.toHaveAttribute('aria-describedby');
     }
     await expect(alert).toHaveText('Enter a valid date as YYYY-MM-DD.');
-    const alertId = await alert.getAttribute('id');
-    await expect(date).toHaveAttribute('aria-describedby', alertId ?? '');
+    await expect(date).toHaveAccessibleDescription('Enter a valid date as YYYY-MM-DD.');
     await expect(alert.locator('xpath=following-sibling::*[1]')).toContainText('Time');
     await expect(save).toBeDisabled();
     expect(backend.requests).toEqual([]);
