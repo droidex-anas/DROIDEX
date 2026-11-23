@@ -5,8 +5,7 @@ import { extractFileChange } from './diff';
 // The explicit content taxonomy the transcript renderer is driven by. Classifying
 // every event up front (instead of re-deriving from kind/tool-name heuristics at
 // render time) is what lets the feed guarantee its invariants: chat content is
-// never folded into activity, internal orchestration never poses as chat, and
-// spec content only ever appears in the spec surface.
+// never folded into activity and internal orchestration never poses as chat.
 export type ContentType =
   | 'user'
   | 'assistant_chat'
@@ -17,8 +16,7 @@ export type ContentType =
   | 'compaction'
   | 'child_session_event'
   | 'error'
-  | 'status'
-  | 'spec_content';
+  | 'status';
 
 export function classifyEvent(ev: TranscriptEvent): ContentType {
   if (ev.author === 'user') return 'user';

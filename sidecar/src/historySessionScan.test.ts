@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import fs, {
   mkdirSync,
   mkdtempSync,
@@ -28,10 +29,13 @@ process.env.HOME = home;
 // developer's environment would aim this suite at their real session files.
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { HistoryIndex, SESSION_INDEX_FILENAME, createHistorySessionFileCache } =
-  await import('./history.js');
-const { parseFullSessionTranscript, SessionTranscriptReader } =
-  await import('./sessionTranscript.js');
+const {
+  HistoryIndex,
+  SESSION_INDEX_FILENAME,
+  createHistorySessionFileCache,
+  loadSessionTranscriptWindow,
+} = await import('./history.js');
+const { SessionTranscriptReader } = await import('./sessionTranscript.js');
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
 const { ProviderTranscriptFile, forkedTranscript, writeForkedTranscript } =
   await import('./providers/ProviderTranscriptFile.js');
@@ -273,12 +277,9 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   assert.equal(restored?.summary.fastMode, false);
   assert.equal(restored?.summary.contextWindowTokens, 200000);
 
-  const events = parseFullSessionTranscript(
-    appSessionId,
-    appSessionId,
-    join(providerSessionsDir(), `${appSessionId}.jsonl`),
-    'primary',
-  );
+  const events = loadSessionTranscriptWindow(appSessionId, [appSessionId], {
+    fullText: true,
+  }).events;
   const paged = new SessionTranscriptReader(
     appSessionId,
     appSessionId,
@@ -392,12 +393,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       !reconciledHistorySessions().some((row) => row.summary.appSessionId.startsWith('child-')),
     );
     assert.deepEqual(
-      parseFullSessionTranscript(
-        appSessionId,
-        appSessionId,
-        join(providerSessionsDir(), `${appSessionId}.jsonl`),
-        'primary',
-      ),
+      loadSessionTranscriptWindow(appSessionId, [appSessionId], { fullText: true }).events,
       events,
     );
   } finally {
@@ -461,8 +457,8 @@ test('native message chunks replay once with complete item pages and distinct co
     assert.ok(latest.older);
     const earlier = reader.windowBackward(2, 0, latest.older);
     assert.equal(earlier.older, undefined);
-    const eager = parseFullSessionTranscript(appSessionId, sourceSessionId, path, role);
-    for (const events of [eager, [...earlier.events, ...latest.events]]) {
+    const fullWindow = readFullTranscript(appSessionId, sourceSessionId, path, role);
+    for (const events of [fullWindow, [...earlier.events, ...latest.events]]) {
       assert.deepEqual(
         events.map(({ kind, text, textUpdate }) => ({ kind, text, textUpdate })),
         [
@@ -523,7 +519,7 @@ test('native message chunks replay once with complete item pages and distinct co
       );
       assert.deepEqual(
         events.map((event) => event.id),
-        parseFullSessionTranscript(forkId, forkId, forkPath, 'primary')
+        readFullTranscript(forkId, forkId, forkPath, 'primary')
           .slice(-events.length)
           .map((event) => event.id),
       );
@@ -554,7 +550,7 @@ test('a failed transcript write reaches its caller and does not stop the lines a
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Answer.' }));
   await transcript.flush();
 
-  const events = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const events = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   assert.deepEqual(
     events.map((event) => event.text),
     ['kept', 'Answer.'],
@@ -589,14 +585,14 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', a
   );
 
   const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
-  const eager = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const fullWindow = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const lazy = new SessionTranscriptReader(
     appSessionId,
     appSessionId,
     path,
     'primary',
   ).windowBackward(20, 0).events;
-  for (const events of [eager, lazy]) {
+  for (const events of [fullWindow, lazy]) {
     assert.deepEqual(
       events.map(({ id, sourceSessionId, text, author, spoken }) => ({
         id,
@@ -733,7 +729,7 @@ test('a fork reads behind the queued lines and copies the transcript through its
     },
   );
 
-  const events = parseFullSessionTranscript(
+  const events = readFullTranscript(
     'provider-transcript-fork-copy',
     'provider-transcript-fork-copy',
     path,

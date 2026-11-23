@@ -9,7 +9,6 @@
 // arbitrarily large session stays reachable by cursor.
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import {
-  event,
   parseSessionLineEvents,
   type StoredMessageLine,
   type StoredSessionStart,
@@ -28,9 +27,8 @@ import { storedMessageAnchors } from './providers/ProviderTranscriptAnchors.js';
 // the history path's import stays stable.
 export type { StoredMessageLine, StoredSessionStart } from './sessionTranscriptParser.js';
 
-// Byte cap for the eager history.page parser: it materializes file text, so
-// oversized files are tail-windowed. The lazy SessionTranscriptReader and
-// worker-owned search index have no whole-file materialization cap.
+// Byte budget for summary scans and message-chunk expansion. The lazy reader
+// and worker-owned search index have no whole-file materialization cap.
 export const MAX_SESSION_BYTES = 5_000_000;
 // seq band per line: a line yields one event per content block, so (line,
 // event-in-line) maps to a unique, stable, monotonically increasing seq
@@ -66,7 +64,7 @@ interface ParsedLine {
   messageSeqs: Map<string, number>;
 }
 
-// Read the bytes an EAGER transcript parse can see: the whole file, or the
+// Read the bytes a summary scan can see: the whole file, or the
 // newest MAX_SESSION_BYTES tail for oversized files (the partial first line
 // of the window is dropped).
 export function readSessionRawWindow(
@@ -89,59 +87,6 @@ export function readSessionRawWindow(
   }
 }
 
-// Full eager parse of one session file, including the oversized-trim status
-// head. Used by the provider-scoped history.page path, which slices a
-// materialized event array by item index and so cannot window lazily.
-export function parseFullSessionTranscript(
-  appSessionId: string,
-  providerSessionId: string,
-  path: string,
-  role: SessionRole,
-): TranscriptEvent[] {
-  const stat = statSync(path);
-  const events: TranscriptEvent[] = [];
-  if (stat.size > MAX_SESSION_BYTES) {
-    events.push(oversizedStatusEvent(appSessionId, providerSessionId, role, stat.mtimeMs));
-    events.push(
-      ...new SessionTranscriptReader(appSessionId, providerSessionId, path, role).readTail(),
-    );
-  } else {
-    const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
-    for (const raw of readFileSync(path, 'utf8').split(/\r?\n/)) {
-      const trimmed = raw.trim();
-      if (!trimmed) continue;
-      try {
-        const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
-        events.push(
-          ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
-        );
-      } catch {
-        /* skip partial/corrupt JSONL rows */
-      }
-    }
-  }
-  const notices = readSessionNotices(appSessionId, providerSessionId, role);
-  // Corrections append to JSONL; replay exposes only the latest text per row
-  // id. Most chats have never been spoken to, and they pay one scan for that
-  // rather than two rebuilds of the whole transcript.
-  const latestSpoken = new Set<string>();
-  const uniqueEvents = events.some((event) => event.spoken)
-    ? events
-        .toReversed()
-        .filter((event) => {
-          if (!event.spoken) return true;
-          if (latestSpoken.has(event.id)) return false;
-          latestSpoken.add(event.id);
-          return true;
-        })
-        .reverse()
-    : events;
-  const messages = coalesceMessages(uniqueEvents);
-  return notices.length
-    ? [...messages, ...notices].sort((left, right) => left.ts - right.ts)
-    : messages;
-}
-
 function appendMessageChunk(older: TranscriptEvent, newer: TranscriptEvent): TranscriptEvent {
   return {
     ...older,
@@ -158,20 +103,6 @@ function messageSnapshot(event: TranscriptEvent): TranscriptEvent {
     ...event,
     textUpdate: { messageId: event.textUpdate.messageId, kind: 'snapshot' },
   };
-}
-
-function coalesceMessages(events: TranscriptEvent[]): TranscriptEvent[] {
-  const messages: TranscriptEvent[] = [];
-  const indexes = new Map<string, number>();
-  for (const event of events) {
-    const index = event.textUpdate ? indexes.get(event.id) : undefined;
-    if (index !== undefined) messages[index] = appendMessageChunk(messages[index], event);
-    else {
-      if (event.textUpdate) indexes.set(event.id, messages.length);
-      messages.push(event);
-    }
-  }
-  return messages.map(messageSnapshot);
 }
 
 // Byte offset of every line start in the file, bounded to `size` so bytes
@@ -238,25 +169,6 @@ export class SessionTranscriptReader {
     this.notices = this.noticesRevision
       ? readSessionNotices(appSessionId, providerSessionId, role)
       : [];
-  }
-
-  // Eager history keeps its byte cap, but result provenance can precede it.
-  readTail(): TranscriptEvent[] {
-    const firstLine = this.lineStarts.findIndex(
-      (start) => start > this.sizeBytes - MAX_SESSION_BYTES,
-    );
-    if (firstLine < 0) return [];
-    const file: LazyFile = { fd: null };
-    const events: TranscriptEvent[] = [];
-    try {
-      for (let line = firstLine; line < this.lineStarts.length; line += 1) {
-        for (const candidate of this.parseLine(file, line).events)
-          events.push(this.projectEvent(file, line, candidate));
-      }
-    } finally {
-      if (file.fd !== null) closeSync(file.fd);
-    }
-    return events;
   }
 
   // Serve up to `limit` events ending at `from` (or the segment tail),
@@ -438,26 +350,4 @@ export class SessionTranscriptReader {
     }
     return parsed;
   }
-}
-
-function oversizedStatusEvent(
-  appSessionId: string,
-  providerSessionId: string,
-  role: SessionRole,
-  mtimeMs: number,
-): TranscriptEvent {
-  return event(
-    {
-      appSessionId,
-      sourceProviderSessionId: providerSessionId,
-      role,
-      messageId: 'history-window',
-      ts: mtimeMs,
-    },
-    0,
-    'status',
-    {
-      text: `Loaded latest ${String(Math.round(MAX_SESSION_BYTES / 1_000_000))} MB of this oversized session for UI performance.`,
-    },
-  );
 }

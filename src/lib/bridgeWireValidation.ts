@@ -301,7 +301,7 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       if (!Array.isArray(value.items)) return false;
       if (value.catalog === 'models') return value.items.every(isModelInfo);
       if (value.catalog === 'skills') return value.items.every(isSkillInfo);
-      return value.catalog === 'tools';
+      return false;
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'usage.updated':
@@ -326,8 +326,6 @@ export function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.runtimeAvailable === 'boolean' &&
         nonNegativeSafeInteger(value.runtimeGeneration)
       );
-    case 'spec.content':
-      return hasStrings(value, ['appSessionId', 'path', 'content']);
     case 'sessions.list':
       return (
         Array.isArray(value.sessions) &&

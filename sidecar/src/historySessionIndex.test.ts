@@ -17,7 +17,6 @@ const {
   createHistorySessionFileCache,
   invalidateSessionIndex,
   loadSessionHistory,
-  loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
 } = await import('./history.js');
@@ -147,7 +146,7 @@ test('a worker reconciliation delta seeds provider paths without a main-thread t
       removedProviderSessionIds: [],
     });
 
-    assert.equal(loadSessionPage(id, id).events[0]?.text, 'outside tree');
+    assert.equal(loadSessionTranscriptWindow(id, [id]).events[0]?.text, 'outside tree');
   } finally {
     index.close();
     rmSync(directory, { recursive: true, force: true });
@@ -175,22 +174,23 @@ test('resolveSessionChain sees new files only after a worker reconciliation delt
   }
 });
 
-test('loadSessionPage uses worker-published paths for newly created files', () => {
+test('transcript windows use worker-published paths for newly created files', () => {
   invalidateSessionIndex();
   const index = new HistoryIndex();
   try {
     const first = nextId('page-first');
     const firstPath = writeSession(first, 'first');
     reconcileHistoryIndex(index, [{ providerSessionId: first, path: firstPath }]);
-    loadSessionPage(first, first);
+    assert.equal(loadSessionTranscriptWindow(first, [first]).events[0]?.text, 'first');
 
     const later = nextId('page-later');
     const laterPath = writeSession(later, 'later hello');
-    assert.throws(() => loadSessionPage(later, later), /not found/);
+    assert.deepEqual(loadSessionTranscriptWindow(later, [later]).events, []);
     reconcileHistoryIndex(index, [{ providerSessionId: later, path: laterPath }]);
-    const page = loadSessionPage(later, later);
+    const page = loadSessionTranscriptWindow(later, [later]);
     assert.equal(page.events.length, 1);
     assert.equal(page.events[0]?.kind, 'text');
+    assert.equal(page.events[0]?.text, 'later hello');
   } finally {
     index.close();
   }

@@ -19,7 +19,7 @@ process.env.HOME = home;
 delete process.env.DROIDEX_ALT_HOME;
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { createHistorySessionFileCache, loadSessionPage, SESSION_INDEX_FILENAME } =
+const { createHistorySessionFileCache, loadSessionTranscriptWindow, SESSION_INDEX_FILENAME } =
   await import('./history.js');
 const { droidexHistoryDir } = await import('./droidexPaths.js');
 
@@ -60,7 +60,7 @@ test('opted-in Alt transcripts restore beside Main with separate profile and rep
       rows.find((row) => row.summary.appSessionId === 'main-transcript')?.summary.droidProfile,
       undefined,
     );
-    const replay = loadSessionPage('alt-transcript', 'alt-thread').events;
+    const replay = loadSessionTranscriptWindow('alt-thread', ['alt-transcript']).events;
     assert.ok(replay.length > 0);
     assert.ok(replay.every((event) => event.appSessionId === 'alt-thread'));
   } finally {
