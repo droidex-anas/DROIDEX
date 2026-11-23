@@ -397,7 +397,13 @@ export class ProjectService {
       const isCurrent = () => guard() && !spawn.stopped;
       const thread = await this.threadLaunches.enqueue(
         project,
-        { ...input, title, ...(cwd ? { cwd } : {}), workspace },
+        {
+          ...input,
+          title,
+          ...(!title.startsWith(input.title) ? { requestedTitle: input.title } : {}),
+          ...(cwd ? { cwd } : {}),
+          workspace,
+        },
         spawn.source,
         isCurrent,
       );
@@ -425,7 +431,7 @@ export class ProjectService {
     const reuse = scopedThreads(project, spawn.source).find((thread) => {
       if (
         thread.appSessionId === appSessionId ||
-        taskTitle(thread.title) !== taskTitle(input.title)
+        taskTitle(thread.requestedTitle ?? thread.title) !== taskTitle(input.title)
       )
         return false;
       const state = this.reads.threadStatus(project, thread).state;

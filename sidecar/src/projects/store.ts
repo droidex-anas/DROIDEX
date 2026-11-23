@@ -153,6 +153,7 @@ const project = z
           ask: ask.optional(),
           ownerAppSessionId: id.optional(),
           title: z.string().max(LEDGER_LIMITS.title),
+          requestedTitle: z.string().max(LEDGER_LIMITS.title).optional(),
           reply: text,
           replyId: id.optional(),
           earlierReplies: z.array(text).max(LEDGER_LIMITS.earlierReplies).optional(),

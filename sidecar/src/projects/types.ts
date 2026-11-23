@@ -58,6 +58,7 @@ export interface ProjectThreadRecord {
   // The owner is another top-level conversation, not a harness subagent.
   ownerAppSessionId?: string;
   title: string;
+  requestedTitle?: string;
   /** Its latest final reply, which its report only excerpts. The lead's stays
       empty, because nothing reads it back. */
   reply: string;
