@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SessionRole } from '@droidex/protocol';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-role-'));
 process.env.HOME = home;
 
-const { HistoryIndex, loadSessionPage, loadSessionTranscriptWindow } = await import('./history.js');
+const { HistoryIndex, loadSessionTranscriptWindow } = await import('./history.js');
 const index = new HistoryIndex();
 let sessionFileRevision = 0;
 
@@ -64,11 +65,11 @@ function writeTranscript(
   );
 }
 
-test('loadSessionPage replays a Task child as a worker under its provider id, whatever it opens under, and a top-level session as primary', () => {
-  const firstText = (providerSessionId: string, appSessionId: string) => {
-    const text = loadSessionPage(providerSessionId, appSessionId, undefined, 200).events.find(
-      (e) => e.kind === 'text',
-    );
+test('transcript windows preserve the requested child role and provider identity under either app identity, and default top-level sessions to primary', () => {
+  const firstText = (providerSessionId: string, appSessionId: string, role?: SessionRole) => {
+    const text = loadSessionTranscriptWindow(appSessionId, [providerSessionId], {
+      role,
+    }).events.find((e) => e.kind === 'text');
     assert.ok(text, 'expected a text event');
     return [text.sourceSessionId, text.role];
   };
@@ -76,9 +77,11 @@ test('loadSessionPage replays a Task child as a worker under its provider id, wh
     callingSessionId: 'parent-session',
     callingToolUseId: 'tool-1',
   });
-  assert.deepEqual(firstText('child-session', 'parent-app'), ['child-session', 'worker']);
-  // Opened as its own session, it is still never reclassified as top-level.
-  assert.deepEqual(firstText('child-session', 'child-session'), ['child-session', 'worker']);
+  assert.deepEqual(firstText('child-session', 'parent-app', 'worker'), ['child-session', 'worker']);
+  assert.deepEqual(firstText('child-session', 'child-session', 'worker'), [
+    'child-session',
+    'worker',
+  ]);
 
   writeTranscript('plain-session', {});
   assert.deepEqual(firstText('plain-session', 'plain-session'), ['primary', 'primary']);

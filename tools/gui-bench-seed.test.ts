@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 import { readSessionFileHead } from '../sidecar/src/sessionFileHead.ts';
-import { parseFullSessionTranscript } from '../sidecar/src/sessionTranscript.ts';
+import { SessionTranscriptReader } from '../sidecar/src/sessionTranscript.ts';
 import { GUI_BENCH_SESSION_IDS, seedGuiBenchHistory } from './gui-bench-seed.ts';
 
 const home = mkdtempSync(join(tmpdir(), 'gui-bench-seed-'));
@@ -35,13 +35,17 @@ test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content 
   for (const session of [chat3k, chat10k, children]) {
     const size = readFileSync(session.path).byteLength;
     assert.equal(readSessionFileHead(session.path, size).hasCompletedConversation, true);
-    const events = parseFullSessionTranscript(session.id, session.id, session.path, 'primary');
+    const events = new SessionTranscriptReader(
+      session.id, session.id, session.path, 'primary', true,
+    ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
     assert.ok(events.length >= session.eventCount - 2);
     const kinds = new Set(events.map((event) => event.kind));
     assert.ok(kinds.has('text'));
   }
 
-  const events3k = parseFullSessionTranscript(chat3k.id, chat3k.id, chat3k.path, 'primary');
+  const events3k = new SessionTranscriptReader(
+    chat3k.id, chat3k.id, chat3k.path, 'primary', true,
+  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
   const kinds3k = new Set(events3k.map((event) => event.kind));
   assert.ok(kinds3k.has('tool_call'));
   assert.ok(kinds3k.has('tool_result'));
@@ -56,7 +60,9 @@ test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content 
 
   const heavy = byId.get(GUI_BENCH_SESSION_IDS.chatHeavy);
   assert.ok(heavy);
-  const heavyEvents = parseFullSessionTranscript(heavy.id, heavy.id, heavy.path, 'primary');
+  const heavyEvents = new SessionTranscriptReader(
+    heavy.id, heavy.id, heavy.path, 'primary', true,
+  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
   const heavyText = heavyEvents.map((event) => event.text ?? '').join('\n');
   assert.ok(heavyText.includes('```mermaid'));
   assert.ok(heavyText.includes('<json-render>'));

@@ -10,7 +10,7 @@ import { SessionEventFlow } from '../SessionEventFlow.js';
 import { SessionTimeline } from '../SessionTimeline.js';
 import { ProviderTranscriptFile } from '../providers/ProviderTranscriptFile.js';
 import { ClaudeEventMapper } from '../providers/claude/claudeEvents.js';
-import { parseFullSessionTranscript } from '../sessionTranscript.js';
+import { SessionTranscriptReader } from '../sessionTranscript.js';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 import { appendCanvasToolBinding, readCanvasToolBindings } from './canvasToolBindings.js';
 import { CanvasToolPresentation, canvasToolProvenance } from './canvasToolPresentation.js';
@@ -385,7 +385,13 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
   }
   await timeline.settleStreaming('app-1', 'app-1');
   const childPath = join(directory, 'provider-sessions', 'child-1.jsonl');
-  const replay = parseFullSessionTranscript('app-1', 'child-1', childPath, 'worker');
+  const replay = new SessionTranscriptReader(
+    'app-1',
+    'child-1',
+    childPath,
+    'worker',
+    true,
+  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
   for (const rows of [recorded, emitted.filter((row) => row.author !== 'user'), replay]) {
     assert.ok(!JSON.stringify(rows).includes(canary));
     const result = rows.find((row) => row.kind === 'tool_result');
@@ -480,12 +486,13 @@ test('a streaming Canvas write shows its frame live before its input ends, and s
   ]);
   const stored = await file.read();
   assert.equal(stored.split('"tool_use"').length - 1, 1);
-  const replay = parseFullSessionTranscript(
+  const replay = new SessionTranscriptReader(
     'app-1',
     'app-1',
     join(directory, 'provider-sessions', 'app-1.jsonl'),
     'primary',
-  );
+    true,
+  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
   assert.deepEqual(
     replay
       .filter((row) => row.canvasActivity)

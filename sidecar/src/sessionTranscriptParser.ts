@@ -88,10 +88,7 @@ function nonEmpty(...values: (string | undefined)[]): string {
   return '';
 }
 
-// Builds one TranscriptEvent from the shared per-line context. Exported so
-// the eager full parse can synthesize the oversized-trim status head event
-// with the same canonical id / sourceSessionId rules.
-export function event(
+function event(
   base: EventBase,
   index: number,
   kind: TranscriptEvent['kind'],

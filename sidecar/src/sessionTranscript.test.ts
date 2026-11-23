@@ -6,7 +6,6 @@ import { join } from 'node:path';
 import {
   MAX_SESSION_BYTES,
   SessionTranscriptReader,
-  parseFullSessionTranscript,
   readSessionRawWindow,
   type TranscriptWindowCursor,
 } from './sessionTranscript.js';
@@ -167,7 +166,10 @@ test('corrupt lines are skipped without losing their neighbors', () => {
   const path = writeSession([assistant('a1'), '{not json', badIdentity, assistant('a2')]);
   for (const events of [
     collectAll(path, 10),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
+    new SessionTranscriptReader('app', 'provider', path, 'primary', true).windowBackward(
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ).events,
   ]) {
     assert.deepEqual(
       events.map((e) => e.text),
@@ -239,7 +241,10 @@ test('Canvas results with reused tool IDs project by occurrence regardless of pa
     r.windowBackward(20, 0).events,
     new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary').windowBackward(20, 0)
       .events,
-    parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary'),
+    new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true).windowBackward(
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ).events,
   ]) {
     assert.deepEqual(
       events.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.text),
@@ -268,11 +273,17 @@ test('Canvas results with reused tool IDs project by occurrence regardless of pa
       ),
       line('result-2', 'user', [result(output)]),
     ]);
-    const eager = parseFullSessionTranscript(appSessionId, appSessionId, oversized, 'primary');
-    assert.equal(eager[0]?.kind, 'status');
-    assert.equal(eager.filter((entry) => entry.kind === 'tool_call').length, 0);
+    const fullTextTail = new SessionTranscriptReader(
+      appSessionId,
+      appSessionId,
+      oversized,
+      'primary',
+      true,
+    ).windowBackward(1, 0).events;
+    assert.equal(fullTextTail.filter((entry) => entry.kind === 'tool_call').length, 0);
+    assert.equal(fullTextTail.filter((entry) => entry.kind === 'status').length, 0);
     for (const tail of [
-      eager,
+      fullTextTail,
       new SessionTranscriptReader(appSessionId, appSessionId, oversized, 'primary').windowBackward(
         1,
         0,
@@ -409,7 +420,13 @@ for (const provider of ['claude', 'codex'] as const) {
       cursor = page.older;
     } while (cursor);
     for (const reloaded of [
-      parseFullSessionTranscript(appSessionId, appSessionId, file.path, 'primary'),
+      new SessionTranscriptReader(
+        appSessionId,
+        appSessionId,
+        file.path,
+        'primary',
+        true,
+      ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events,
       paged,
     ]) {
       assert.deepEqual(
@@ -430,7 +447,7 @@ for (const provider of ['claude', 'codex'] as const) {
   });
 }
 
-test('eager and paged replay hide internal user messages, show Droid notices as status, and restore skill activations', () => {
+test('full-window and paged replay hide internal user messages, show Droid notices as status, and restore skill activations', () => {
   // Internal skill bodies arrive as ordinary user text, after leading whitespace.
   const notification =
     ' <system-notification>\n<skill filePath="builtin:review">private instructions</skill>\n</system-notification>';
@@ -459,7 +476,10 @@ test('eager and paged replay hide internal user messages, show Droid notices as 
 
   for (const events of [
     collectAll(path, 1),
-    parseFullSessionTranscript('app', 'provider', path, 'primary'),
+    new SessionTranscriptReader('app', 'provider', path, 'primary', true).windowBackward(
+      Number.MAX_SAFE_INTEGER,
+      0,
+    ).events,
   ]) {
     assert.deepEqual(
       events.map(({ text, author, skills, sourceSessionId }) => [
@@ -548,23 +568,15 @@ test('an oversized file pages back to its very first message without trimming', 
   assert.equal(all.filter((e) => e.kind === 'status').length, 0);
 });
 
-test('parseFullSessionTranscript stays eager: trim status first, no head-read divider', () => {
-  const filler = 'y'.repeat(30_000);
-  const lines: string[] = [compactionState(7)];
-  for (let i = 0; i < 200; i++) lines.push(assistant(`${i}-${filler}`));
-  const path = writeSession(lines);
-
-  const events = parseFullSessionTranscript('app', 'provider', path, 'primary');
-  assert.equal(events[0]?.kind, 'status');
-  // The leading compaction_state was tail-windowed away, and the eager parse
-  // does not head-read it back (loadSessionPage behavior is unchanged).
-  assert.equal(events.filter((e) => e.kind === 'compaction').length, 0);
-  assert.ok(events.some((e) => e.kind === 'text'));
-});
-
-test('parseFullSessionTranscript replays a mid-file compaction marker in position', () => {
+test('transcript windows replay a mid-file compaction marker in position', () => {
   const path = writeSession([assistant('before'), compactionState(3), assistant('after')]);
-  const events = parseFullSessionTranscript('app', 'provider', path, 'primary');
+  const events = new SessionTranscriptReader(
+    'app',
+    'provider',
+    path,
+    'primary',
+    true,
+  ).windowBackward(Number.MAX_SAFE_INTEGER, 0).events;
   assert.deepEqual(
     events.map((e) => (e.kind === 'compaction' ? `divider:${e.removedCount}` : e.text)),
     ['before', 'divider:3', 'after'],
@@ -585,7 +597,7 @@ test('a single message larger than MAX_SESSION_BYTES still parses in the reader'
 });
 
 test('readSessionRawWindow tail window drops the partial first line', () => {
-  // The eager window (search / legacy history.page) stays byte-capped; the
+  // The summary scan stays byte-capped; the
   // partial first line inside the window must not survive as garbage.
   const huge = 'z'.repeat(MAX_SESSION_BYTES + 1000);
   const path = writeSession([assistant(huge), assistant('tail')]);

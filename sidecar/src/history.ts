@@ -29,7 +29,6 @@ import {
 } from './sessionFileCache.js';
 import { SessionFileMirror } from './sessionFileMirror.js';
 import {
-  parseFullSessionTranscript,
   readSessionRawWindow,
   type StoredMessageLine,
   type StoredSessionStart,
@@ -84,11 +83,6 @@ export interface HydratedSessionHistory {
 
 export type FactoryDefaults = FactoryDefaultSettings;
 
-export interface HistoryPage {
-  events: TranscriptEvent[];
-  nextCursor?: string;
-}
-
 type PersistedChildRole = 'worker' | 'validator';
 type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
 
@@ -140,25 +134,6 @@ export function loadSessionHistory(): SessionHistoryEntry[] {
     });
   }
   return rows.sort((a, b) => b.modifiedTime - a.modifiedTime);
-}
-
-export function loadSessionPage(
-  providerSessionId: string,
-  appSessionId: string,
-  cursor?: string,
-  limit = 200,
-): HistoryPage {
-  const path = sessionPathIndex().get(providerSessionId);
-  if (!path) throw new Error(`Session history not found for ${providerSessionId}`);
-  const role = roleFromSessionStart(readSessionStart(path, statSync(path).size));
-  const all = parseFullSessionTranscript(appSessionId, providerSessionId, path, role);
-  const safeLimit = Math.max(1, Math.min(limit, 500));
-  const end = cursor ? Math.max(0, Number(cursor) || 0) : all.length;
-  const start = Math.max(0, end - safeLimit);
-  return {
-    events: all.slice(start, end),
-    nextCursor: start > 0 ? String(start) : undefined,
-  };
 }
 
 export function sessionFilePath(providerSessionId: string): string | undefined {
@@ -827,17 +802,6 @@ function sessionInteractionModeValue(
 function workspaceKind(value?: string): SessionSummary['workspaceKind'] | undefined {
   if (value === 'folder' || value === 'none') return value;
   return undefined;
-}
-
-function roleFromSessionStart(start: StoredSessionStart): SessionRole {
-  if (start.decompSessionType === 'validator') return 'validator';
-  if (start.decompSessionType === 'worker') return 'worker';
-  // Factory Task-tool children carry no decompSessionType but have a parent
-  // session's tool call (callingSessionId/callingToolUseId). Replay them as
-  // workers so their transcript keys to their own session id instead of being
-  // folded into 'primary' (which would leave the opened child blank).
-  if (start.callingSessionId || start.callingToolUseId) return 'worker';
-  return 'primary';
 }
 
 function contextWindowTokensValue(value: unknown): ContextWindowTokens | undefined {
