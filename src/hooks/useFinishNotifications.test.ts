@@ -15,11 +15,9 @@ import {
 
 type PendingOpen = { appSessionId: string } | null;
 
-async function mountWithNotifications(
-  t: TestContext,
-  readPending: () => Promise<PendingOpen>,
-  acks: string[],
-) {
+// Faithful fake of main's pending click: reads leave it, a matching ack clears it.
+async function mountWithNotifications(t: TestContext, main: { pending: PendingOpen }) {
+  const acks: string[] = [];
   const storage = new Map<string, string>();
   const document = {
     nodeType: 9,
@@ -46,9 +44,10 @@ async function mountWithNotifications(
         push = handler;
         return () => {};
       },
-      readPendingNotificationSession: readPending,
+      readPendingNotificationSession: async () => main.pending,
       ackNotificationActivate: async (appSessionId: string) => {
         acks.push(appSessionId);
+        if (main.pending?.appSessionId === appSessionId) main.pending = null;
         return { ok: true };
       },
     },
@@ -88,47 +87,35 @@ async function mountWithNotifications(
     for (const restore of restoreGlobals) restore();
   });
   await act(async () => root.render(createElement(StoreProvider, null, createElement(Harness))));
-  return { getState: () => getState(), dispatch: (action: Action) => dispatch(action), push };
+  return { acks, getState: () => getState(), dispatch: (action: Action) => dispatch(action), push };
 }
 
 test('a notification click for a chat that has not loaded opens it once the chat arrives', async (t) => {
-  // Main keeps the pending open until a matching ack.
-  const acks: string[] = [];
-  const app = await mountWithNotifications(t, async () => ({ appSessionId: 'restored' }), acks);
-  assert.deepEqual(acks, []);
+  const main = { pending: { appSessionId: 'restored' } as PendingOpen };
+  const app = await mountWithNotifications(t, main);
+  assert.deepEqual(app.acks, []);
+  assert.deepEqual(main.pending, { appSessionId: 'restored' });
 
   await act(async () => {
     app.dispatch({ type: 'SESSION_LIST', sessions: [sessionSummary('restored')] });
   });
   assert.equal(app.getState().activeAppSessionId, 'restored');
-  assert.deepEqual(acks, ['restored']);
+  assert.deepEqual(app.acks, ['restored']);
+  assert.equal(main.pending, null);
 });
 
-test('a read that settles after a newer click does not reopen the older chat', async (t) => {
-  const delayedReads: Array<(pending: PendingOpen) => void> = [];
-  let readCount = 0;
-  const acks: string[] = [];
-  const app = await mountWithNotifications(
-    t,
-    () => {
-      readCount += 1;
-      if (readCount === 1) return Promise.resolve({ appSessionId: 'older' });
-      return new Promise((resolve) => delayedReads.push(resolve));
-    },
-    acks,
-  );
-
+test('a late push for an older click does not replace the chat main opened', async (t) => {
+  const main = { pending: { appSessionId: 'newer' } as PendingOpen };
+  const app = await mountWithNotifications(t, main);
   await act(async () => {
     app.dispatch({
       type: 'SESSION_LIST',
       sessions: [sessionSummary('older'), sessionSummary('newer')],
     });
   });
-  await act(async () => app.push({ appSessionId: 'newer' }));
-  assert.equal(delayedReads.length, 2);
-  const [olderRead, newerRead] = delayedReads;
-  await act(async () => newerRead({ appSessionId: 'newer' }));
-  await act(async () => olderRead({ appSessionId: 'older' }));
   assert.equal(app.getState().activeAppSessionId, 'newer');
-  assert.deepEqual(acks, ['newer']);
+
+  await act(async () => app.push({ appSessionId: 'older' }));
+  assert.equal(app.getState().activeAppSessionId, 'newer');
+  assert.deepEqual(app.acks, ['newer']);
 });
