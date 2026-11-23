@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type KeyboardEvent } from 'react';
 import { ChevronRight, ListTodo, Search, Undo2 } from 'lucide-react';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
@@ -22,6 +22,7 @@ import {
   type PrInboxTab,
 } from '../lib/prInbox';
 import { prBacklogId } from '../lib/prBacklog';
+import { arrowKeyTab } from '../lib/prTabs';
 import type { InboxRepoError } from '../lib/prListState';
 import { displayLogin } from '../lib/prIdentity';
 import { prAbsoluteTime, prRelativeTime } from '../lib/prTime';
@@ -33,6 +34,12 @@ const TABS: { id: PrInboxTab; label: string }[] = [
   { id: 'authored', label: 'Authored' },
   { id: 'backlog', label: 'Backlog' },
 ];
+
+const TAB_PANEL_ID = 'pull-request-filter-tabpanel';
+
+function tabId(tab: PrInboxTab): string {
+  return `pull-request-filter-${tab}-tab`;
+}
 
 function rowIsSelected(
   pr: InboxPullRequest,
@@ -327,6 +334,14 @@ export function PrInbox({
   const showSkeleton = loading && prs.length === 0;
   const multiRepo = groups.length > 1 || repoErrors.length > 0;
 
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: PrInboxTab) => {
+    const next = arrowKeyTab(TABS, current, event.key);
+    if (!next) return;
+    event.preventDefault();
+    setTab(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-col px-3 pt-3 pb-2">
       <div className="flex items-center gap-3 px-1">
@@ -341,6 +356,12 @@ export function PrInbox({
               type="button"
               role="tab"
               aria-selected={tab === item.id}
+              id={tabId(item.id)}
+              aria-controls={TAB_PANEL_ID}
+              tabIndex={tab === item.id ? 0 : -1}
+              onKeyDown={(event) => {
+                onTabKeyDown(event, item.id);
+              }}
               onClick={() => {
                 setTab(item.id);
               }}
@@ -385,7 +406,12 @@ export function PrInbox({
         </div>
       ) : null}
 
-      <div className="pr-workspace-scroll mt-2 min-h-0 flex-1 overflow-y-auto">
+      <div
+        role="tabpanel"
+        id={TAB_PANEL_ID}
+        aria-labelledby={tabId(tab)}
+        className="pr-workspace-scroll mt-2 min-h-0 flex-1 overflow-y-auto"
+      >
         <InboxList
           loading={showSkeleton}
           error={error}
