@@ -1,5 +1,5 @@
 import { droidHome } from '../droidProfiles.js';
-import { clip } from '../automations/automationInput.js';
+import { clip } from '../clipText.js';
 import type {
   Autonomy,
   ModelInfo,

@@ -6,7 +6,8 @@ import type {
   AutomationRun,
   AutomationRunStatus,
 } from '@droidex/protocol';
-import { assertModelSelection, clip, PAUSED_AFTER_FAILURES } from './automationInput.js';
+import { assertModelSelection, PAUSED_AFTER_FAILURES } from './automationInput.js';
+import { clip } from '../clipText.js';
 import {
   auditRunSelection,
   failInterruptedRuns,
