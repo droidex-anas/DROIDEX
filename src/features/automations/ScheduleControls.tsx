@@ -1,6 +1,12 @@
 import { useId, useState, type ReactNode } from 'react';
 import { SelectMenu } from './SelectMenu';
-import { epochFromZonedInput, WEEKDAYS, zonedInputParts, type ZonedInput } from './schedule';
+import {
+  epochFromZonedInput,
+  WEEKDAYS,
+  zonedInputParts,
+  type InvalidScheduleInput,
+  type ZonedInput,
+} from './schedule';
 import {
   AutomationDateInput,
   AutomationMinuteInput,
@@ -8,10 +14,6 @@ import {
   clampNumber,
 } from './TimeFields';
 import type { AutomationSchedule } from '@droidex/protocol';
-
-type InvalidScheduleInput =
-  | { kind: 'date'; parts: ZonedInput; text: string }
-  | { kind: 'time'; parts: ZonedInput };
 
 export function useInvalidScheduleInput(
   schedule: AutomationSchedule | undefined,

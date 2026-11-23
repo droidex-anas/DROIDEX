@@ -283,6 +283,10 @@ export interface ZonedInput {
   minute: number;
 }
 
+export type InvalidScheduleInput =
+  | { kind: 'date'; parts: ZonedInput; text: string }
+  | { kind: 'time'; parts: ZonedInput };
+
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /**
@@ -314,13 +318,17 @@ export function changeOnceTimezone(
   schedule: Extract<AutomationSchedule, { kind: 'once' }>,
   fromTimezone: string,
   toTimezone: string,
-  invalidInput: ZonedInput | null,
-) {
-  const parts = invalidInput ?? zonedInputParts(schedule.runAt, fromTimezone);
+  invalidInput: InvalidScheduleInput | null,
+): {
+  schedule: Extract<AutomationSchedule, { kind: 'once' }>;
+  invalidInput: InvalidScheduleInput | null;
+} {
+  if (invalidInput?.kind === 'date') return { schedule, invalidInput };
+  const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, fromTimezone);
   const runAt = epochFromZonedInput(parts, toTimezone);
   return {
     schedule: { kind: 'once' as const, runAt: runAt ?? schedule.runAt },
-    invalidInput: runAt === null ? parts : null,
+    invalidInput: runAt === null ? { kind: 'time', parts } : null,
   };
 }
 
