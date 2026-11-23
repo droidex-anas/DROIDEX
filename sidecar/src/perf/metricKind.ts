@@ -80,6 +80,29 @@ export const METRIC_CATALOG: readonly MetricDefinition[] = [
     availability:
       'Uses each tree’s own output path: sender.send on main, MessagePort batches when terminalPort exists.',
   },
+  ...['hiddenAscii', 'hiddenUtf8', 'hiddenTiny', 'hiddenBelowCap', 'visible'].flatMap((scenario) =>
+    ['ms', 'revealMs'].map(
+      (measurement): MetricDefinition => ({
+        id: `terminal.pump.${scenario}.${measurement}`,
+        class: 'ab',
+        unit: 'ms',
+        availability:
+          'Runs each tree’s createTerminalOutputPump with the same output and byte checks.',
+      }),
+    ),
+  ),
+  {
+    id: 'terminal.pump.hiddenTiny.prefillMs',
+    class: 'ab',
+    unit: 'ms',
+    availability: 'Times filling each tree’s empty pump to 2 MiB using 8-byte pushes.',
+  },
+  {
+    id: 'terminal.pump.hiddenTiny.retainedHeapBytes',
+    class: 'ab',
+    unit: 'bytes',
+    availability: 'Post-GC retained heap on each tree; requires Node --expose-gc.',
+  },
   {
     id: 'sidecar.readyMs',
     class: 'ab',

@@ -31,6 +31,23 @@ cached in `sidecar/src/perf/baselines/origin-main.json` with the measured
 commit and the A/B metrics it covers. A SHA or metric-set mismatch is a stale
 cache, not a silent reuse.
 
+For terminal output buffering only, create a baseline worktree and run the
+existing A/B probe entry point against both trees:
+
+```bash
+git worktree add --detach ../DROIDEX-terminal-base origin/integration/swf-cleanup
+node --expose-gc --import tsx tools/perf-ab-probes.ts --terminal-pump ../DROIDEX-terminal-base
+```
+
+This reports median timings over seven runs after two warmups: 96 pushes
+plus reveal, excluding prefill, for hidden-at-cap ASCII and UTF-8 16 KiB
+chunks, 8-byte chunks, below-cap output, and visible flush-per-chunk output.
+The tiny scenario fills the 2 MiB buffer with 8-byte pushes and separately
+reports that prefill time (`terminal.pump.hiddenTiny.prefillMs`) and post-GC
+retained heap before reveal. Both trees must produce the expected
+output and dropped-byte counts. The normal JSON probes include these metrics;
+retained heap is unmeasured unless Node runs with `--expose-gc`.
+
 `perf:canvas` builds the board harness (`tests/smoke/board`) for production
 and streams 12 gestures at 120 Hz on a 30- and a 100-frame board in headless
 Chromium: pans, wheel zooms, frame drags, a marquee, Edit hover, Alt
