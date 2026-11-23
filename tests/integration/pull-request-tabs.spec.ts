@@ -139,4 +139,10 @@ test('the detail views switch with the arrows and keep their number shortcuts', 
     'aria-selected',
     'true',
   );
+
+  // A shortcut can select Code while Summary keeps focus; the arrows move from the focused tab.
+  await views.getByRole('tab', { name: 'Summary', exact: true }).click();
+  await page.keyboard.press('2');
+  await page.keyboard.press('ArrowRight');
+  await expectSelected(views, 'Code');
 });

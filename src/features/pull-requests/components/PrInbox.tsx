@@ -334,8 +334,8 @@ export function PrInbox({
   const showSkeleton = loading && prs.length === 0;
   const multiRepo = groups.length > 1 || repoErrors.length > 0;
 
-  const onTabsKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const next = arrowKeyTab(TABS, tab, event.key);
+  const onTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: PrInboxTab) => {
+    const next = arrowKeyTab(TABS, current, event.key);
     if (!next) return;
     event.preventDefault();
     setTab(next);
@@ -348,7 +348,6 @@ export function PrInbox({
         <div
           role="tablist"
           aria-label="Pull request filters"
-          onKeyDown={onTabsKeyDown}
           className="flex min-w-0 items-center gap-2.5"
         >
           {TABS.map((item) => (
@@ -360,6 +359,9 @@ export function PrInbox({
               id={tabId(item.id)}
               aria-controls={TAB_PANEL_ID}
               tabIndex={tab === item.id ? 0 : -1}
+              onKeyDown={(event) => {
+                onTabKeyDown(event, item.id);
+              }}
               onClick={() => {
                 setTab(item.id);
               }}

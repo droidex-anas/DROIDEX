@@ -158,8 +158,8 @@ export function PrDetail({
     });
   };
 
-  const onTabsKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const next = arrowKeyTab(TABS, tab, event.key);
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: PrDetailTab) => {
+    const next = arrowKeyTab(TABS, current, event.key);
     if (!next) return;
     event.preventDefault();
     setTab(next);
@@ -187,7 +187,6 @@ export function PrDetail({
         <div
           role="tablist"
           aria-label="Pull request views"
-          onKeyDown={onTabsKeyDown}
           className="flex items-center gap-0.5 rounded-md bg-elevated/50 p-0.5"
         >
           {TABS.map((item) => (
@@ -199,6 +198,9 @@ export function PrDetail({
               aria-controls={tabPanelId(item.id)}
               aria-selected={tab === item.id}
               tabIndex={tab === item.id ? 0 : -1}
+              onKeyDown={(event) => {
+                onTabKeyDown(event, item.id);
+              }}
               onClick={() => {
                 setTab(item.id);
               }}
