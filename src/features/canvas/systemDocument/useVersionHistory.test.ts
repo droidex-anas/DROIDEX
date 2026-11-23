@@ -33,15 +33,35 @@ async function mountHistory(t: TestContext, id: string, onUnmountCommit?: () => 
     textContent: '',
   };
   let history!: ReturnType<typeof useVersionHistory>;
+  let committed!: () => void;
+  const unmounted = new Promise<void>((resolve) => {
+    committed = resolve;
+  });
   function Harness() {
     history = useVersionHistory(id);
-    useLayoutEffect(() => onUnmountCommit, [onUnmountCommit]);
+    useLayoutEffect(
+      () => () => {
+        onUnmountCommit?.();
+        committed();
+      },
+      [onUnmountCommit],
+    );
     return null;
   }
   const root = createRoot(container as unknown as HTMLElement);
   const unmount = () => act(async () => root.unmount());
   await act(async () => root.render(createElement(Harness)));
-  return { current: () => history, unmount };
+  const unmountAtCommit = async () => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: false });
+    try {
+      root.render(null);
+      await unmounted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    } finally {
+      Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    }
+  };
+  return { current: () => history, unmountAtCommit };
 }
 
 const content: DesignSystemVersionContent = { name: 'Kit', cover: null, sections: [] };
@@ -70,7 +90,7 @@ for (const stop of ['unmount', 'close'] as const) {
     const app = await mountHistory(t, stop, () => finish(content));
     await act(async () => app.current().openMenu());
     assert.deepEqual(reads, [3]);
-    if (stop === 'unmount') await app.unmount();
+    if (stop === 'unmount') await app.unmountAtCommit();
     else await act(async () => app.current().close());
     if (stop === 'close') await act(async () => finish(content));
     assert.deepEqual(reads, [3], 'only the already-dispatched read may finish');
