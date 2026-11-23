@@ -21,11 +21,19 @@ async function openMcpSettings(page: Page) {
   let isRestarting = false;
   let loseNextMcpCommand = false;
   let announceAfter: ClientCommand['type'] | undefined;
+  let onReconnect: (() => void) | undefined;
 
   const emit = (event: ServerEvent) => {
     seq += 1;
-    const message = { type: 'events.batch', generation, firstSeq: seq, lastSeq: seq, events: [] };
-    socket?.send(JSON.stringify({ ...message, events: [{ seq, event }] }));
+    socket?.send(
+      JSON.stringify({
+        type: 'events.batch',
+        generation,
+        firstSeq: seq,
+        lastSeq: seq,
+        events: [{ seq, event }],
+      }),
+    );
   };
   const announceReplacement = () => {
     isRestarting = false;
@@ -47,7 +55,6 @@ async function openMcpSettings(page: Page) {
         },
       }),
     );
-    emit({ type: 'connection', status: 'connected' });
   };
   const restart = () => {
     isRestarting = true;
@@ -58,11 +65,12 @@ async function openMcpSettings(page: Page) {
     (url) => url.searchParams.has('bridgeProtocol'),
     (route) => {
       socket = route;
+      if (isRestarting) onReconnect?.();
       if (isRestarting && !announceAfter) announceReplacement();
       route.onMessage((message) => {
         if (typeof message !== 'string') return;
         const command = JSON.parse(message) as ClientCommand;
-        if (command.type === 'connect' && !isRestarting) {
+        if (command.type === 'connect' && !(isRestarting && announceAfter)) {
           emit({ type: 'connection', status: 'connected' });
         }
         if (command.type === 'projects.list') emit({ type: 'projects.snapshot', projects: [] });
@@ -76,6 +84,7 @@ async function openMcpSettings(page: Page) {
         if (isRestarting && command.type === announceAfter) {
           announceAfter = undefined;
           announceReplacement();
+          emit({ type: 'connection', status: 'connected' });
         }
         emit({
           type: 'mcp.catalog',
@@ -101,9 +110,13 @@ async function openMcpSettings(page: Page) {
     restartOnNextMcpCommand: () => {
       loseNextMcpCommand = true;
     },
-    restartAnnouncingAfter: (type: ClientCommand['type']) => {
+    restartAnnouncingAfter: async (type: ClientCommand['type']) => {
       announceAfter = type;
+      const reconnected = new Promise<void>((resolve) => {
+        onReconnect = resolve;
+      });
       restart();
+      await reconnected;
     },
   };
 }
@@ -134,7 +147,7 @@ test('a change lost with a replaced sidecar is not replayed', async ({ page }) =
 test('a change resent to the replaced sidecar is trusted', async ({ page }) => {
   const mcp = await openMcpSettings(page);
 
-  mcp.restartAnnouncingAfter('mcp.toggle');
+  await mcp.restartAnnouncingAfter('mcp.toggle');
   await mcp.toggle.click();
 
   await expect(mcp.refresh).toBeEnabled();
