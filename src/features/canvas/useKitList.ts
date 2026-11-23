@@ -11,7 +11,7 @@ import type { KitList } from './designSystemsState';
 
 let list: KitList = { status: 'loading' };
 let stale = true;
-let reading = false;
+let activeRead: symbol | null = null;
 let generation = 0;
 const listeners = new Set<() => void>();
 
@@ -21,14 +21,16 @@ function publish(next: KitList): void {
 }
 
 function read(): void {
-  if (reading || !stale || listeners.size === 0 || getRuntimeHealth().transport !== 'connected')
+  if (activeRead || !stale || listeners.size === 0 || getRuntimeHealth().transport !== 'connected')
     return;
-  reading = true;
+  const token = Symbol();
+  activeRead = token;
   stale = false;
   const started = generation;
   void canvasClient.designSystems.list().then(
     (systems) => {
-      reading = false;
+      if (activeRead !== token) return;
+      activeRead = null;
       if (started === generation) {
         followLatest(systems);
         publish({ status: 'listed', systems });
@@ -36,7 +38,8 @@ function read(): void {
       read();
     },
     (error: unknown) => {
-      reading = false;
+      if (activeRead !== token) return;
+      activeRead = null;
       if (started === generation) {
         stale = true;
         publish({ status: 'failed', message: canvasMessage(error) });
@@ -69,16 +72,15 @@ function subscribe(listener: () => void): () => void {
       const next = getRuntimeHealth().transport;
       if (next === transport) return;
       transport = next;
+      activeRead = null;
       reread();
     });
     stopWatching = () => {
       stopChanges();
       stopHealth();
     };
-    read();
-  } else if (!reading) {
-    read();
   }
+  read();
   return () => {
     listeners.delete(listener);
     if (listeners.size !== 0) return;

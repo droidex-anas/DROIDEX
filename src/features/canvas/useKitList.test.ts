@@ -141,14 +141,24 @@ test('kit readers share reads, invalidation, failures and socket recovery', asyn
   assert.equal(count(), 6);
   await reply([kit]);
 
+  await act(async () => readers[0].reread());
+  const lostRequestId = bridge.last('canvas.listDesignSystems').requestId;
+  assert.equal(count(), 7);
   await act(async () => setTransportHealth('disconnected'));
   await act(async () => readers[0].reread());
-  assert.equal(count(), 6);
-  await act(async () => {
-    setTransportHealth('connected');
-    bridge.reconnect();
-  });
-  assert.equal(count(), 7, 'a replay resume needs no store connection event');
+  assert.equal(count(), 7);
+  await act(async () => setTransportHealth('connected'));
+  assert.equal(count(), 8, 'reconnect starts a read without waiting for the lost reply');
+  await act(async () =>
+    bridge.deliver({
+      type: 'canvas.result',
+      requestId: lostRequestId,
+      ok: true,
+      reply: { kind: 'designSystems', systems: [] },
+    }),
+  );
+  assert.deepEqual(readers[0].list, { status: 'listed', systems: [kit] });
+  assert.equal(count(), 8, 'the abandoned read cannot start another request');
   await reply([{ ...kit, name: 'Renamed while offline' }]);
   assert.ok(
     readers.every(
@@ -158,5 +168,5 @@ test('kit readers share reads, invalidation, failures and socket recovery', asyn
   await render(0);
   assert.equal(subscriptions, 0);
   await act(async () => change());
-  assert.equal(count(), 7, 'last unmount releases the change watch');
+  assert.equal(count(), 8, 'last unmount releases the change watch');
 });
