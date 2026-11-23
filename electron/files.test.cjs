@@ -311,25 +311,36 @@ test('revealInFolder invokes the injected shell.showItemInFolder for files and d
   await assert.rejects(() => revealInFolder(root, '../outside', shell), /escapes root/);
 });
 
-// ---------------------------------------------------------------------------
-// Classification parity smoke (mirrors src/lib/filePreview.ts)
-// ---------------------------------------------------------------------------
-
-test('classifyByName mirrors the renderer-side categories', () => {
-  assert.equal(classifyByName('readme.md'), 'text');
-  assert.equal(classifyByName('data.csv'), 'text');
-  assert.equal(classifyByName('schema.json'), 'text');
-  assert.equal(classifyByName('Dockerfile'), 'text');
-  assert.equal(classifyByName('.gitignore'), 'text');
+test('classifyByName routes previewable types to their categories and the rest to external', () => {
+  for (const name of [
+    'readme.md',
+    'data.csv',
+    'schema.json',
+    'Dockerfile',
+    'MAKEFILE',
+    '.gitignore',
+    '.npmrc',
+  ]) {
+    assert.equal(classifyByName(name), 'text', `expected ${name} to be text`);
+  }
   assert.equal(classifyByName('logo.png'), 'image');
   assert.equal(classifyByName('photo.JPG'), 'image');
+  assert.equal(classifyByName('icon.svg'), 'image');
   assert.equal(classifyByName('paper.pdf'), 'pdf');
   assert.equal(classifyByName('report.docx'), 'docx');
   assert.equal(classifyByName('sheet.xlsx'), 'xlsx');
-  // External fallbacks
-  assert.equal(classifyByName('old.doc'), 'external');
-  assert.equal(classifyByName('macro.docm'), 'external');
-  assert.equal(classifyByName('archive.zip'), 'external');
-  assert.equal(classifyByName('binary.exe'), 'external');
-  assert.equal(classifyByName('noextension'), 'external');
+  // Legacy and macro-enabled Office formats open externally, like archives and unknown types.
+  for (const name of [
+    'old.doc',
+    'macro.docm',
+    'legacy.xls',
+    'macro.xlsm',
+    'slides.ppt',
+    'macro.pptm',
+    'archive.zip',
+    'binary.exe',
+    'noextension',
+  ]) {
+    assert.equal(classifyByName(name), 'external', `expected ${name} to be external`);
+  }
 });

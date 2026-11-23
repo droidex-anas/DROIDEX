@@ -18,12 +18,11 @@ const DRIVE_LETTER = /^[a-z]:/i;
 const FILE_EXTENSION =
   /\.(?:tsx?|jsx?|mjs|cjs|json|jsonc|css|scss|html|md|mdx|txt|ya?ml|toml|ini|cfg|env|sql|sh|bash|zsh|py|rb|go|rs|java|kt|swift|c|h|cc|cpp|cs|php|lock)$/i;
 
-// Repo files whose whole name identifies them, so no extension can. Mirrors the
-// extensionless names in ./filePreview, which belongs to the lazily loaded Files
-// pane and must not be pulled into the transcript's bundle. "profile" is left
-// out on purpose: as inline code it reads as the word, not the file. The dotted
-// names are listed apart because without their dot they are ordinary words:
-// "gitignore" in a sentence is prose, ".gitignore" is a file.
+// Repo files whose whole name identifies them, so no extension can. Drawn from
+// the text filenames of the Files classifier in electron/files.cjs. "profile"
+// is left out on purpose: as inline code it reads as the word, not the file.
+// The dotted names are listed apart because without their dot they are
+// ordinary words: "gitignore" in a sentence is prose, ".gitignore" is a file.
 const WHOLE_NAME_FILES = new Set(['dockerfile', 'makefile', 'rakefile', 'gemfile', 'procfile']);
 
 const DOTFILE_NAMES = new Set([

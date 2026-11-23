@@ -14,13 +14,10 @@
  *
  * Exported contract (consumed by the renderer via IPC):
  *   listDirectory(rootDir, relativePath?, options?) -> Promise<DirectoryListing>
- *   readPreview(rootDir, relativePath, options?)    -> Promise<PreviewPayload>
+ *   readPreview(rootDir, relativePath, options?)    -> Promise<FilePreviewPayload>
  *   openDefault(rootDir, relativePath, shell)       -> Promise<OpenResult>
  *   revealInFolder(rootDir, relativePath, shell)    -> Promise<OpenResult>
- *   classifyByName(name)                             -> PreviewCategory
- *
- * The classification tables mirror src/lib/filePreview.ts. Keep them in sync;
- * the paired unit tests exercise the shared edge cases.
+ *   classifyByName(name)                             -> FilePreviewPayload['category']
  */
 
 const fs = require('node:fs');
