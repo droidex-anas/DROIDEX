@@ -56,20 +56,16 @@ export function ScheduleControls({
     case 'once': {
       const parts = invalidInput?.parts ?? zonedInputParts(schedule.runAt, timezone);
       const minimumDate = zonedInputParts(Date.now(), timezone);
-      const errorMessages = {
-        date: 'Enter a valid date as YYYY-MM-DD.',
-        time: `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`,
-      };
       const dateError = invalidInput?.kind === 'date';
       const timeError = invalidInput?.kind === 'time';
-      const errors: Partial<Record<InvalidScheduleInput['kind'], ReactNode>> = {};
-      if (invalidInput) {
-        errors[invalidInput.kind] = (
+      const error = (kind: InvalidScheduleInput['kind']) =>
+        invalidInput?.kind === kind && (
           <p id={errorId} role="alert" className="px-3.5 py-2 text-caption text-danger">
-            {errorMessages[invalidInput.kind]}
+            {kind === 'date'
+              ? 'Enter a valid date as YYYY-MM-DD.'
+              : `This local time does not exist in ${timezone.replaceAll('_', ' ')}. Choose a time outside the daylight-saving gap.`}
           </p>
         );
-      }
       const updateInput = (input: ZonedInput) => {
         const runAt = epochFromZonedInput(input, timezone);
         onInvalidInputChange(runAt === null ? { kind: 'time', parts: input } : null);
@@ -95,7 +91,7 @@ export function ScheduleControls({
               }}
             />
           </EditorRow>
-          {errors.date}
+          {error('date')}
           <EditorRow label="Time">
             <AutomationTimeInput
               errorId={timeError ? errorId : undefined}
@@ -115,7 +111,7 @@ export function ScheduleControls({
               }}
             />
           </EditorRow>
-          {errors.time}
+          {error('time')}
         </>
       );
     }
