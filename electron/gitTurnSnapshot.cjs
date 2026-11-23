@@ -19,7 +19,8 @@ async function captureTrackedTurnBaseline(root) {
     const noSplitIndex = ['-c', 'core.splitIndex=false'];
     const writeTree = [...noSplitIndex, 'write-tree'];
     const options = { indexFile };
-    const stagedTree = (await run(root, writeTree, options)).trim();
+    // An unmerged index can't be written as a tree until it is updated.
+    const stagedTree = await tryRun(root, writeTree, options);
     // Safe CRLF checks protect staging, not a read-only comparison snapshot.
     const updated = await tryRun(
       root,

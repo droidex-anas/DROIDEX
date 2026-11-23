@@ -314,6 +314,32 @@ test('last_turn still shows new files when Git cannot snapshot a tracked file', 
   assert.ok(pathsOf(review).includes('new.txt'));
 });
 
+test('last_turn captures conflict content before an unborn cherry-pick is resolved', async () => {
+  const source = await makeRepo();
+  const dir = await makeRepo();
+  const file = 'notes.txt';
+  await write(source, file, 'base\n');
+  await commitAll(source, 'base');
+  await write(source, file, 'incoming\n');
+  await commitAll(source, 'incoming change');
+  await git(dir, ['fetch', source, 'HEAD']);
+  await assert.rejects(git(dir, ['cherry-pick', 'FETCH_HEAD']));
+  const conflictsBefore = await git(dir, ['ls-files', '--unmerged']);
+  assert.match(conflictsBefore, /notes\.txt/);
+
+  const options = { mode: 'last_turn', appSessionId: 'session-a' };
+  assert.equal((await markTurnStart(dir, options.appSessionId)).ok, true);
+  assert.equal(await git(dir, ['ls-files', '--unmerged']), conflictsBefore);
+  await write(dir, file, 'incoming\nresolved\n');
+  await git(dir, ['add', '--', file]);
+  await write(dir, 'new.txt', 'new during turn\n');
+
+  assert.deepEqual(pathsOf(await diffFiles(dir, options)).sort(), ['new.txt', file].sort());
+  const { diff } = await fileDiff(dir, { ...options, path: file });
+  assert.match(diff, /^\+resolved$/m);
+  assert.doesNotMatch(diff, /^\+incoming$/m);
+});
+
 test('worktree listing preserves newline-containing paths', async () => {
   const dir = await makeRepo();
   await git(dir, ['commit', '--allow-empty', '-qm', 'init']);
