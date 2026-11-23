@@ -44,14 +44,13 @@ test('bind increments generation and drops rows', () => {
     repoErrors: [],
     error: null,
   });
-  const bound = reducePrList(loaded, { type: 'bind', cwds: ['/other'] });
+  const bound = reducePrList(loaded, { type: 'bind' });
   assert.equal(bound.prs.length, 0);
   assert.equal(bound.generation, 1);
   assert.equal(bound.loaded, false);
-  assert.deepEqual(bound.cwds, ['/other']);
 });
 
-test('stale success is ignored and a failed load keeps last rows', () => {
+test('a stale result is ignored and the current result ends loading', () => {
   const start = reducePrList(initialPrListState, { type: 'load-start', generation: 1 });
   const stale = reducePrList(start, {
     type: 'load-success',
@@ -61,7 +60,7 @@ test('stale success is ignored and a failed load keeps last rows', () => {
     repoErrors: [],
     error: null,
   });
-  assert.equal(stale.prs.length, 0);
+  assert.equal(stale, start);
   const ok = reducePrList(start, {
     type: 'load-success',
     generation: 1,
@@ -70,9 +69,9 @@ test('stale success is ignored and a failed load keeps last rows', () => {
     repoErrors: [],
     error: null,
   });
-  const failed = reducePrList(ok, { type: 'load-failure', generation: 1, message: 'down' });
-  assert.equal(failed.prs[0].number, 1);
-  assert.equal(failed.error, 'down');
+  assert.equal(ok.loading, false);
+  assert.equal(ok.loaded, true);
+  assert.deepEqual(ok.prs, [sample]);
 });
 
 test('an unresolved repository does not wipe pull requests from other workspaces', () => {

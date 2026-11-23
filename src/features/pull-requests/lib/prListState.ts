@@ -11,7 +11,6 @@ export interface InboxRepoError {
 }
 
 export interface PrListState {
-  cwds: string[];
   generation: number;
   prs: InboxPullRequest[];
   viewerLogin: string | null;
@@ -22,7 +21,6 @@ export interface PrListState {
 }
 
 export const initialPrListState: PrListState = {
-  cwds: [],
   generation: 0,
   prs: [],
   viewerLogin: null,
@@ -33,7 +31,7 @@ export const initialPrListState: PrListState = {
 };
 
 export type PrListEvent =
-  | { type: 'bind'; cwds: string[] }
+  | { type: 'bind' }
   | { type: 'load-start'; generation: number }
   | {
       type: 'load-success';
@@ -42,12 +40,11 @@ export type PrListEvent =
       viewerLogin: string | null;
       repoErrors: InboxRepoError[];
       error: string | null;
-    }
-  | { type: 'load-failure'; generation: number; message: string };
+    };
 
 export function reducePrList(state: PrListState, event: PrListEvent): PrListState {
   if (event.type === 'bind') {
-    return { ...initialPrListState, cwds: event.cwds, generation: state.generation + 1 };
+    return { ...initialPrListState, generation: state.generation + 1 };
   }
   // load-start may adopt a newer generation so a load can begin without bind.
   if (event.type === 'load-start') {
@@ -55,22 +52,14 @@ export function reducePrList(state: PrListState, event: PrListEvent): PrListStat
     return { ...state, generation: event.generation, loading: true };
   }
   if (event.generation !== state.generation) return state;
-  if (event.type === 'load-success') {
-    return {
-      ...state,
-      loading: false,
-      loaded: true,
-      error: event.error,
-      repoErrors: event.repoErrors,
-      prs: event.prs,
-      viewerLogin: event.viewerLogin,
-    };
-  }
   return {
     ...state,
     loading: false,
     loaded: true,
-    error: event.message,
+    error: event.error,
+    repoErrors: event.repoErrors,
+    prs: event.prs,
+    viewerLogin: event.viewerLogin,
   };
 }
 

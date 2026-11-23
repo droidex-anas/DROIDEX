@@ -44,7 +44,7 @@ export function usePullRequestList(cwds: string[], enabled: boolean) {
   // Losing the binding (no listable repositories) must invalidate any in-flight
   // request too, or re-enabling the same set renders its rows.
   useLayoutEffect(() => {
-    dispatch({ type: 'bind', cwds: listedCwds });
+    dispatch({ type: 'bind' });
     generationRef.current += 1;
   }, [cwdsKey, enabled, listedCwds]);
 
