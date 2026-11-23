@@ -53,7 +53,6 @@ export type UtilityPanelsAction =
   | OpenReviewAtAction
   | { type: 'CLEAR_REVIEW_FOCUS' }
   | { type: 'SET_DIFF_VIEW'; mode: DiffViewMode }
-  | { type: 'TOGGLE_BROWSER' }
   | { type: 'SET_BROWSER_OPEN'; open: boolean }
   | { type: 'BROWSER_UPDATED'; browser: BrowserState }
   | {
@@ -277,24 +276,6 @@ export function reduceUtilityPanels(state: AppState, action: UtilityPanelsAction
 
     case 'SET_DIFF_VIEW':
       return { ...state, diffView: action.mode };
-
-    case 'TOGGLE_BROWSER': {
-      const key = activeBrowserKey(state);
-      if (!key) return state;
-      const current = utilityPanelForSession(state.utilityPanels, key);
-      const existing = current.tabs.find((tab) => tab.tool === 'browser');
-      const opening = !existing || !current.open || current.activeTabId !== existing.id;
-      return {
-        ...state,
-        rightPanelOpen: opening ? false : state.rightPanelOpen,
-        utilityPanels: {
-          ...state.utilityPanels,
-          [key]: opening
-            ? openUtilityTool(current, 'browser', () => `browser:${key}`)
-            : setUtilityPanelOpen(current, false),
-        },
-      };
-    }
 
     case 'SET_BROWSER_OPEN': {
       const key = activeBrowserKey(state);

@@ -135,7 +135,6 @@ test('loadPersistedUiState sanitizes persisted shell fields', () => {
             scroll: { x: 3, y: 7 },
           },
         },
-        selectedFeatureId: 'f1',
         mainView: 'pull-requests',
         prWorkspaceCwd: '/repo',
         prWorkspaceNumber: 42,
