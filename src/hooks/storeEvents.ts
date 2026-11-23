@@ -189,14 +189,11 @@ export function adaptEvent(ev: ServerEvent): Action | null {
       if (ev.catalog === 'models') {
         return { type: 'MODELS_LIST', models: ev.items as ModelInfo[] };
       }
-      if (ev.catalog === 'skills') {
-        return {
-          type: 'SKILLS_LIST',
-          skills: ev.items as SkillInfo[],
-          providerSessionId: ev.providerSessionId ?? null,
-        };
-      }
-      return null;
+      return {
+        type: 'SKILLS_LIST',
+        skills: ev.items as SkillInfo[],
+        providerSessionId: ev.providerSessionId ?? null,
+      };
     case 'provider.status':
       return { type: 'PROVIDER_STATUSES', statuses: ev.statuses };
     case 'usage.updated':
