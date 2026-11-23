@@ -4,7 +4,7 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 // The elements Design picks live beside them, in elementPins.ts.
 
-import { chatPinStore } from './chatPinStore';
+import { createChatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import { frameSizeLabel } from './canvasGeometry';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
@@ -30,7 +30,7 @@ export interface FramePin {
   designSystem: CanvasFrame['designSystem'];
 }
 
-const { get: framePins, usePins: useFramePins, publish } = chatPinStore<FramePin>();
+const { get: framePins, usePins: useFramePins, publish } = createChatPinStore<FramePin>();
 export { framePins, useFramePins };
 
 const NONE: readonly FramePin[] = [];

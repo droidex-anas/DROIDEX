@@ -1,14 +1,14 @@
 import { useSyncExternalStore } from 'react';
 
-export function chatPinStore<T>() {
+export function createChatPinStore<T>() {
   const NONE: readonly T[] = [];
   // Only chats holding pins have an entry, so this never grows with the chats visited.
-  let pinsByChat: Readonly<Record<string, readonly T[]>> = {};
+  const pinsByChat = new Map<string, readonly T[]>();
   const listeners = new Set<() => void>();
 
   function publish(appSessionId: string, pins: readonly T[]) {
-    const others = Object.entries(pinsByChat).filter(([id]) => id !== appSessionId);
-    pinsByChat = Object.fromEntries(pins.length > 0 ? [...others, [appSessionId, pins]] : others);
+    if (pins.length > 0) pinsByChat.set(appSessionId, pins);
+    else pinsByChat.delete(appSessionId);
     for (const listener of listeners) listener();
   }
 
@@ -20,7 +20,7 @@ export function chatPinStore<T>() {
   }
 
   function get(appSessionId: string): readonly T[] {
-    return pinsByChat[appSessionId] ?? NONE;
+    return pinsByChat.get(appSessionId) ?? NONE;
   }
 
   function usePins(appSessionId: string | null): readonly T[] {

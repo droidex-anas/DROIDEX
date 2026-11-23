@@ -2,7 +2,7 @@
 // the board; the composer shows them as chips, sends them as the turn's element
 // references and clears them, as framePins.ts does for frames, by chat.
 
-import { chatPinStore } from './chatPinStore';
+import { createChatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import { attachedBoard } from './framePins';
 import type { PickedElement } from './pickedElement';
@@ -23,7 +23,7 @@ export interface ElementPin {
   element: PickedElement;
 }
 
-const { get: elementPins, usePins: useElementPins, publish } = chatPinStore<ElementPin>();
+const { get: elementPins, usePins: useElementPins, publish } = createChatPinStore<ElementPin>();
 export { elementPins, useElementPins };
 
 /** One pick's identity: the element instance, and for a text range the words it spans. */

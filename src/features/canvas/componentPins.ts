@@ -3,7 +3,7 @@
 // composer shows them as chips, writes them into the prompt and clears them, as
 // framePins.ts does for frames, by chat.
 
-import { chatPinStore } from './chatPinStore';
+import { createChatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import type { DesignSystemChoice } from './designSystemChoices';
 import type { CatalogListing, DesignSystemRef, PropPick } from '@droidex/protocol';
@@ -21,7 +21,11 @@ export interface ComponentPin {
   props: readonly PropPick[];
 }
 
-const { get: componentPins, usePins: useComponentPins, publish } = chatPinStore<ComponentPin>();
+const {
+  get: componentPins,
+  usePins: useComponentPins,
+  publish,
+} = createChatPinStore<ComponentPin>();
 export { componentPins, useComponentPins };
 
 /** One tag's identity: the entry of one kit, whichever version it was tagged from. */
