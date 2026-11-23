@@ -40,8 +40,8 @@ function registerNotificationIpc({ desktopIpc, remoteAccess, notificationActivat
     return notificationActivation.acknowledge(appSessionId);
   });
   // Pull path: renderer asks on focus/visibility in case the push event was lost.
-  desktopIpc.handle('notification-take-pending', () => {
-    return notificationActivation.takePendingNotificationOpen();
+  desktopIpc.handle('notification-read-pending', () => {
+    return notificationActivation.readPendingNotificationOpen();
   });
 }
 
