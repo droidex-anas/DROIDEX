@@ -12,6 +12,8 @@ const commandsChanged: SDKCommandsChangedMessage = {
   session_id: 'session',
 };
 const command = (name: string): SlashCommand => ({ name, description: name, argumentHint: '' });
+const catalogNames = async (catalog: ClaudeCatalog) =>
+  (await catalog.catalogItems()).map((item) => item.name);
 
 test('Claude catalog recovers from initial and later fetch failures', async (t) => {
   const failure = new Error('transient control request failure');
@@ -31,24 +33,37 @@ test('Claude catalog recovers from initial and later fetch failures', async (t) 
 
   await assert.rejects(catalog.catalogItems(), failure);
   catalog.observe(commandsChanged);
+  assert.deepEqual(await catalogNames(catalog), ['recovered']);
+  assert.deepEqual(await catalogNames(catalog), ['recovered']);
+
+  catalog.observe({
+    type: 'system',
+    subtype: 'init',
+    apiKeySource: 'none',
+    claude_code_version: 'test',
+    cwd: '/unused',
+    tools: [],
+    mcp_servers: [],
+    model: 'test',
+    permissionMode: 'default',
+    slash_commands: ['recovered'],
+    output_style: 'default',
+    skills: ['recovered'],
+    plugins: [],
+    uuid: '00000000-0000-0000-0000-000000000002',
+    session_id: 'session',
+  });
   assert.deepEqual(
-    (await catalog.catalogItems()).map((item) => item.name),
-    ['recovered'],
-  );
-  assert.deepEqual(
-    (await catalog.catalogItems()).map((item) => item.name),
-    ['recovered'],
+    (await catalog.catalogItems()).map((item) => item.kind),
+    ['skill'],
   );
 
   catalog.observe(commandsChanged);
-  assert.deepEqual(
-    (await catalog.catalogItems()).map((item) => item.name),
-    ['recovered'],
-  );
+  assert.deepEqual(await catalogNames(catalog), ['recovered']);
   catalog.observe(commandsChanged);
   assert.deepEqual(await catalog.catalogItems(), []);
   assert.deepEqual(await catalog.catalogItems(), []);
-  assert.deepEqual(updates, [['recovered'], []]);
+  assert.deepEqual(updates, [['recovered'], ['recovered'], []]);
 });
 
 test('Claude catalog queues refreshes behind initialization and each other', async (t) => {
@@ -76,9 +91,6 @@ test('Claude catalog queues refreshes behind initialization and each other', asy
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(requests.length, 3);
   requests[2].resolve([command('second')]);
-  assert.deepEqual(
-    (await catalog.catalogItems()).map((item) => item.name),
-    ['second'],
-  );
+  assert.deepEqual(await catalogNames(catalog), ['second']);
   assert.deepEqual(updates, [['first'], ['second']]);
 });

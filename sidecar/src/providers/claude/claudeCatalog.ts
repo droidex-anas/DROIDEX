@@ -63,7 +63,7 @@ export class ClaudeCatalog {
       if (key === this.metadataKey) return;
       this.metadata = metadata;
       this.metadataKey = key;
-      void this.initial.then(
+      void (this.refresh ?? this.initial).then(
         () => {
           if (!this.closed) this.publish(claudeCatalogItemsFromCached(this.items, metadata));
         },
