@@ -76,9 +76,11 @@ export class KitCaptureCache {
   }
 
   private trim(): void {
-    for (const [key] of this.urls) {
+    for (const [key, url] of this.urls) {
       if (this.retained <= this.budgetChars && this.urls.size <= this.maxEntries) return;
-      if (!this.holds.has(key)) this.forget(key);
+      if (this.holds.has(key)) continue;
+      if (this.urls.size > this.maxEntries || (typeof url === 'string' && url.length > 0))
+        this.forget(key);
     }
   }
 

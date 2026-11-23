@@ -22,6 +22,7 @@ const MODES: readonly PreviewMode[] = ['light', 'dark'];
 // A capture let go is read again from the sidecar when one shows it.
 const captures = new KitCaptureCache(32 * 1024 * 1024);
 const reads = new KitCaptureReads(8);
+const pendingReads = new Map<string, symbol>();
 const listeners = new Set<() => void>();
 
 function captureKey(ref: DesignSystemRef, item: KitCaptureItem): string {
@@ -29,22 +30,30 @@ function captureKey(ref: DesignSystemRef, item: KitCaptureItem): string {
 }
 
 function show(key: string, png: string | null): void {
+  pendingReads.delete(key);
   captures.set(key, png === null ? null : `data:image/png;base64,${png}`);
   for (const listener of listeners) listener();
 }
 
 function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): Promise<void> {
-  return canvasClient.designSystems.readCapture(ref, item).then(
-    (png) => {
-      if (captures.needsRead(key)) show(key, png);
-    },
-    (error: unknown) => {
-      console.error('A design system preview capture could not be read:', error);
-      if (!captures.needsRead(key)) return;
-      captures.fail(key);
-      for (const listener of listeners) listener();
-    },
-  );
+  const token = Symbol();
+  pendingReads.set(key, token);
+  return canvasClient.designSystems
+    .readCapture(ref, item)
+    .then(
+      (png) => {
+        if (pendingReads.get(key) === token && captures.needsRead(key)) show(key, png);
+      },
+      (error: unknown) => {
+        console.error('A design system preview capture could not be read:', error);
+        if (pendingReads.get(key) !== token || !captures.needsRead(key)) return;
+        captures.fail(key);
+        for (const listener of listeners) listener();
+      },
+    )
+    .finally(() => {
+      if (pendingReads.get(key) === token) pendingReads.delete(key);
+    });
 }
 
 function subscribe(listener: () => void): () => void {

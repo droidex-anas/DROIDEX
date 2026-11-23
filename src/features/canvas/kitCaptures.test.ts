@@ -3,7 +3,7 @@ import test from 'node:test';
 import { act, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { canvasClient } from './canvasClient';
-import { useKitCapture } from './kitCaptures';
+import { keepImageCoverCapture, useKitCapture } from './kitCaptures';
 
 test('failed capture reads retry on remount, while absence stays cached and in-flight reads deduplicate', async (t) => {
   t.after(async () => {
@@ -85,4 +85,57 @@ test('failed capture reads retry on remount, while absence stays cached and in-f
   await unmount();
   await act(async () => root.render(createElement(Absent)));
   assert.equal(read.mock.callCount(), 3, 'absence remains cached');
+  await unmount();
+
+  class FakeImage {
+    naturalWidth = 1;
+    naturalHeight = 1;
+    async decode() {}
+  }
+  class FakeCanvas {
+    constructor(
+      readonly width: number,
+      readonly height: number,
+    ) {}
+    getContext() {
+      return { drawImage() {} };
+    }
+    async convertToBlob() {
+      return new Blob(['png']);
+    }
+  }
+  for (const [key, value] of Object.entries({ Image: FakeImage, OffscreenCanvas: FakeCanvas })) {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+    t.after(() => {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    });
+  }
+  t.mock.method(canvasClient.designSystems, 'saveCapture', async () => {});
+  const raceRef = { ...ref, id: 'saved-during-read' };
+  function Race() {
+    shown = useKitCapture(raceRef, 'cover');
+    return null;
+  }
+  await act(async () => root.render(createElement(Race)));
+  assert.equal(read.mock.callCount(), 4);
+  await unmount();
+  await keepImageCoverCapture(raceRef, 'image', { widthPx: 1, heightPx: 1 });
+  // Both modes of 512 more covers push the saved entry past the entry cap.
+  for (let i = 0; i < 512; i += 1) {
+    await keepImageCoverCapture({ ...ref, id: `eviction-${String(i)}` }, 'image', {
+      widthPx: 1,
+      heightPx: 1,
+    });
+  }
+  await act(async () => root.render(createElement(Race)));
+  assert.equal(shown, undefined, 'the saved entry was evicted');
+  assert.equal(read.mock.callCount(), 4, 'the stale read still occupies its slot');
+  await act(async () => settle(null));
+  await unmount();
+  await act(async () => root.render(createElement(Race)));
+  assert.equal(read.mock.callCount(), 5, 'an evicted save must not let a stale read cache absence');
+  await act(async () => settle('saved-png'));
+  assert.equal(shown, 'data:image/png;base64,saved-png');
 });

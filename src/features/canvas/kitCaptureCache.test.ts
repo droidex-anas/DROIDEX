@@ -4,6 +4,21 @@ import { KitCaptureCache } from './kitCaptureCache';
 
 const BUDGET_CHARS = 10;
 
+test('character pressure preserves zero-character entries while trimming PNGs', () => {
+  const cache = new KitCaptureCache(BUDGET_CHARS);
+  cache.set('absent', null);
+  cache.fail('failed');
+  cache.set('old-png', '123456');
+  cache.set('new-png', 'abcdef');
+  assert.equal(cache.get('absent'), null);
+  assert.equal(cache.get('failed'), null);
+  assert.equal(cache.needsRead('absent'), false);
+  assert.equal(cache.needsRead('failed'), true);
+  assert.equal(cache.has('old-png'), false);
+  assert.equal(cache.get('new-png'), 'abcdef');
+  assert.equal(cache.retainedChars, 6);
+});
+
 test('failed reads display null, trim with entries, and are replaced by settled results', () => {
   const cache = new KitCaptureCache(BUDGET_CHARS, 1);
   cache.fail('old');
