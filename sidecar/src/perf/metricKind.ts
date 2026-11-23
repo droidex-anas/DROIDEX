@@ -92,6 +92,12 @@ export const METRIC_CATALOG: readonly MetricDefinition[] = [
     ),
   ),
   {
+    id: 'terminal.pump.hiddenTiny.prefillMs',
+    class: 'ab',
+    unit: 'ms',
+    availability: 'Times filling each tree’s empty pump to 2 MiB using 8-byte pushes.',
+  },
+  {
     id: 'terminal.pump.hiddenTiny.retainedHeapBytes',
     class: 'ab',
     unit: 'bytes',

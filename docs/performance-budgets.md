@@ -42,8 +42,9 @@ node --expose-gc --import tsx tools/perf-ab-probes.ts --terminal-pump ../DROIDEX
 This reports median timings over seven runs after two warmups: 96 pushes
 plus reveal, excluding prefill, for hidden-at-cap ASCII and UTF-8 16 KiB
 chunks, 8-byte chunks, below-cap output, and visible flush-per-chunk output.
-The tiny scenario fills the 2 MiB buffer with 8-byte pushes and also reports
-post-GC retained heap before reveal. Both trees must produce the expected
+The tiny scenario fills the 2 MiB buffer with 8-byte pushes and separately
+reports that prefill time (`terminal.pump.hiddenTiny.prefillMs`) and post-GC
+retained heap before reveal. Both trees must produce the expected
 output and dropped-byte counts. The normal JSON probes include these metrics;
 retained heap is unmeasured unless Node runs with `--expose-gc`.
 

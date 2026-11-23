@@ -119,3 +119,24 @@ test('hidden output evicts chunks and trims only complete UTF-8 code points', ()
   splitPump.reveal();
   assert.equal(writes.at(-1), 'x🙂a');
 });
+
+test('split pairs remain intact when the pending block is full', () => {
+  let hidden = true;
+  const writes: string[] = [];
+  const blockBytes = 16 * 1024;
+  const pump = createTerminalOutputPump({
+    write: (data) => writes.push(data),
+    isHidden: () => hidden,
+    scheduleFrame: () => 1,
+    cancelFrame: () => undefined,
+    maxHiddenBytes: blockBytes,
+  });
+
+  pump.push('x'.repeat(blockBytes - 3) + '\uD83D');
+  for (let index = 0; index < 3; index += 1) pump.push('\uDE42\uD83D');
+  pump.push('\uDE42');
+  assert.equal(pump.droppedBytes, 13);
+  hidden = false;
+  pump.reveal();
+  assert.deepEqual(writes, ['x'.repeat(blockBytes - 16) + '🙂'.repeat(4)]);
+});

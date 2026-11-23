@@ -38,6 +38,7 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
     const durations: number[] = [];
     const reveals: number[] = [];
     const heaps: number[] = [];
+    const prefills: number[] = [];
     for (let run = -2; run < 7; run += 1) {
       let hidden = scenario.id !== 'visible';
       let output = '';
@@ -52,7 +53,9 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
         });
       globalThis.gc?.();
       const heapBefore = process.memoryUsage().heapUsed;
+      const prefillStarted = performance.now();
       for (let index = 0; index < scenario.prefillPushes; index += 1) pump.push(scenario.prefill);
+      const prefillMs = performance.now() - prefillStarted;
       const started = performance.now();
       for (let index = 0; index < 96; index += 1) {
         pump.push(scenario.chunk);
@@ -75,6 +78,7 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
         durations.push(pushMs + revealMs);
         reveals.push(revealMs);
         heaps.push(retainedHeapBytes);
+        prefills.push(prefillMs);
       }
       pump.dispose();
       pump = undefined;
@@ -87,6 +91,12 @@ export async function measureTerminalPump(treeRoot: string): Promise<AbProbeMetr
     );
     if (scenario.id === 'hiddenTiny') {
       metrics.push(
+        metric(
+          'terminal.pump.hiddenTiny.prefillMs',
+          median(prefills),
+          'ms',
+          'median of 7 after 2 warmups; fill an empty 2 MiB buffer with 8-byte pushes',
+        ),
         metric(
           'terminal.pump.hiddenTiny.retainedHeapBytes',
           median(heaps),

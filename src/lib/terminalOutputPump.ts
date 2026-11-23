@@ -4,17 +4,18 @@ const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
 const TERMINAL_PENDING_BLOCK_BYTES = 16 * 1024;
 
 interface PendingChunk {
-  text: string;
+  parts: string[];
   bytes: number;
   next?: PendingChunk;
 }
 
 function trimChunkPrefix(chunk: PendingChunk, dropBytes: number): number {
+  const text = chunk.parts.join('');
   let end = 0;
   let bytes = 0;
-  while (bytes < dropBytes && end < chunk.text.length) {
-    const codeUnit = chunk.text.charCodeAt(end);
-    const nextCodeUnit = chunk.text.charCodeAt(end + 1);
+  while (bytes < dropBytes && end < text.length) {
+    const codeUnit = text.charCodeAt(end);
+    const nextCodeUnit = text.charCodeAt(end + 1);
     const isSurrogatePair =
       codeUnit >= 0xd800 && codeUnit <= 0xdbff && nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff;
     if (codeUnit <= 0x7f) bytes += 1;
@@ -23,7 +24,7 @@ function trimChunkPrefix(chunk: PendingChunk, dropBytes: number): number {
     else bytes += 3;
     end += isSurrogatePair ? 2 : 1;
   }
-  chunk.text = chunk.text.slice(end);
+  chunk.parts = [text.slice(end)];
   chunk.bytes -= bytes;
   return bytes;
 }
@@ -42,6 +43,7 @@ export function createTerminalOutputPump(options: {
   const maxHiddenBytes = options.maxHiddenBytes ?? TERMINAL_HIDDEN_BUFFER_BYTES;
   let head: PendingChunk | undefined;
   let tail: PendingChunk | undefined;
+  let lastCodeUnit = 0;
   let pendingBytes = 0;
   let droppedBytes = 0;
   let truncated = false;
@@ -68,20 +70,23 @@ export function createTerminalOutputPump(options: {
       const bytes = trimChunkPrefix(head, overflow);
       pendingBytes -= bytes;
       droppedBytes += bytes;
-      if (!head.text) head = head.next;
+      if (!head.bytes) head = head.next;
     }
     if (!head) tail = undefined;
   }
 
   function joinPending() {
     const chunks: string[] = [];
-    for (let chunk = head; chunk; chunk = chunk.next) chunks.push(chunk.text);
+    for (let chunk = head; chunk; chunk = chunk.next) {
+      for (const part of chunk.parts) chunks.push(part);
+    }
     return chunks.join('');
   }
 
   function clearPending() {
     head = tail = undefined;
     pendingBytes = 0;
+    lastCodeUnit = 0;
   }
 
   function flush() {
@@ -92,24 +97,48 @@ export function createTerminalOutputPump(options: {
     options.write(data);
   }
 
+  function appendPending(data: string) {
+    let bytes = utf8ByteLength(data);
+    const firstCodeUnit = data.charCodeAt(0);
+    const completesPair =
+      tail !== undefined &&
+      lastCodeUnit >= 0xd800 &&
+      lastCodeUnit <= 0xdbff &&
+      firstCodeUnit >= 0xdc00 &&
+      firstCodeUnit <= 0xdfff;
+    const previousCodeUnit = lastCodeUnit;
+    lastCodeUnit = data.charCodeAt(data.length - 1);
+    if (completesPair) bytes -= 2;
+    pendingBytes += bytes;
+
+    if (tail && tail.bytes + bytes <= TERMINAL_PENDING_BLOCK_BYTES) {
+      tail.parts.push(data);
+      tail.bytes += bytes;
+      return;
+    }
+    if (tail) {
+      const text = tail.parts.join('');
+      tail.parts = [completesPair ? text.slice(0, -1) : text];
+      if (completesPair) {
+        tail.bytes -= 3;
+        data = String.fromCharCode(previousCodeUnit) + data;
+        bytes += 3;
+      }
+      if (!tail.bytes) {
+        tail.parts = [data];
+        tail.bytes = bytes;
+        return;
+      }
+    }
+    const chunk: PendingChunk = { parts: [data], bytes };
+    if (tail) tail.next = chunk;
+    else head = chunk;
+    tail = chunk;
+  }
+
   function push(data: string) {
     if (!data) return;
-    let bytes = utf8ByteLength(data);
-    const lastCodeUnit = tail?.text.charCodeAt(tail.text.length - 1);
-    const endsWithHighSurrogate =
-      lastCodeUnit !== undefined && lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff;
-    if (tail && (tail.bytes < TERMINAL_PENDING_BLOCK_BYTES || endsWithHighSurrogate)) {
-      const firstCodeUnit = data.charCodeAt(0);
-      if (endsWithHighSurrogate && firstCodeUnit >= 0xdc00 && firstCodeUnit <= 0xdfff) bytes -= 2;
-      tail.text += data;
-      tail.bytes += bytes;
-    } else {
-      const chunk: PendingChunk = { text: data, bytes };
-      if (tail) tail.next = chunk;
-      else head = chunk;
-      tail = chunk;
-    }
-    pendingBytes += bytes;
+    appendPending(data);
     if (options.isHidden()) {
       capPending();
       return;
