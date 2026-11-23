@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { getGitFileDiff } from '../lib/git';
 import type { DiffScope } from '../types/vcs';
+import type { ReviewFileVersion } from './useReviewDiff';
 
 export interface FileDiffEntry {
   diff: string;
@@ -20,7 +21,7 @@ export function useReviewFileDiffs(
   cwd: string,
   scope: DiffScope,
   ignoreWhitespace: boolean,
-  fileSignatures: ReadonlyMap<string, string>,
+  fileVersions: ReadonlyMap<string, ReviewFileVersion>,
   appSessionId?: string,
 ): ReviewFileDiffs {
   const [entries, setEntries] = useState<ReviewFileDiffs['entries']>({});
@@ -34,26 +35,26 @@ export function useReviewFileDiffs(
 
   const hardKey = `${cwd}\u0000${scope}\u0000${ignoreWhitespace}\u0000${appSessionId ?? ''}`;
   const hardRef = useRef(hardKey);
-  const sigRef = useRef(fileSignatures);
+  const versionsRef = useRef(fileVersions);
 
   // Adjust cache state during render (the supported React pattern for resetting
   // when inputs change) so a fresh generation is in effect before any effect
   // calls ensure() this commit.
   if (hardRef.current !== hardKey) {
     hardRef.current = hardKey;
-    sigRef.current = fileSignatures;
+    versionsRef.current = fileVersions;
     status.current.clear();
     fileGen.current.clear();
     gen.current += 1;
     setEntries({});
-  } else if (sigRef.current !== fileSignatures) {
-    const prev = sigRef.current;
-    sigRef.current = fileSignatures;
+  } else if (versionsRef.current !== fileVersions) {
+    const prev = versionsRef.current;
+    versionsRef.current = fileVersions;
     // Keep existing entries visible; ensure() refetches and overwrites in
     // place. Files whose line vanished also drop their status so a later
     // reappearance refetches instead of serving the stale diff.
     for (const path of status.current.keys()) {
-      if (fileSignatures.get(path) !== prev.get(path)) {
+      if (fileVersions.get(path)?.signature !== prev.get(path)?.signature) {
         status.current.delete(path);
         fileGen.current.set(path, (fileGen.current.get(path) ?? 0) + 1);
       }
@@ -94,7 +95,13 @@ export function useReviewFileDiffs(
           },
         };
       });
-      getGitFileDiff(cwd, scope, path, ignoreWhitespace, appSessionId)
+      getGitFileDiff(cwd, {
+        mode: scope,
+        path,
+        oldPath: fileVersions.get(path)?.oldPath ?? null,
+        ignoreWhitespace,
+        appSessionId,
+      })
         .then((res) => {
           if (stale()) return;
           if (res.failed) {
@@ -115,7 +122,7 @@ export function useReviewFileDiffs(
         })
         .catch(fail);
     },
-    [cwd, scope, ignoreWhitespace, appSessionId, fileSignatures],
+    [cwd, scope, ignoreWhitespace, appSessionId, fileVersions],
   );
 
   return { entries, ensure };
