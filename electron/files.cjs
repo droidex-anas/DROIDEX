@@ -14,7 +14,7 @@
  *
  * Exported contract (consumed by the renderer via IPC):
  *   listDirectory(rootDir, relativePath?, options?) -> Promise<DirectoryListing>
- *   readPreview(rootDir, relativePath, options?)    -> Promise<PreviewPayload>
+ *   readPreview(rootDir, relativePath, options?)    -> Promise<FilePreviewPayload>
  *   openDefault(rootDir, relativePath, shell)       -> Promise<OpenResult>
  *   revealInFolder(rootDir, relativePath, shell)    -> Promise<OpenResult>
  *   classifyByName(name)                             -> FilePreviewPayload['category']
