@@ -15,6 +15,7 @@ import {
   isKitSummary,
   isKitVersion,
   isKitVersionEntry,
+  isKitVersionContent,
   isTokenName,
   isTokenValue,
 } from './designSystemDocumentValidation';
@@ -75,6 +76,7 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'designSystemVersionContent',
   'editTokens',
   'designSystemVersions',
   'designSystemSaved',
@@ -211,6 +213,8 @@ function isReply(value: unknown): boolean {
       return list(value.systems, isKitSummary);
     case 'designSystem':
       return isKitDocument(value.system);
+    case 'designSystemVersionContent':
+      return isKitVersionContent(value.content);
     case 'editTokens':
       return isEditTokens(value.tokens);
     case 'designSystemVersions':

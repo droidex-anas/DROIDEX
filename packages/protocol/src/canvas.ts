@@ -37,6 +37,7 @@ import type {
   CanvasRemovalPreview,
   DesignSystemCover,
   DesignSystemDocumentView,
+  DesignSystemVersionContent,
   DesignSystemRef,
   DesignSystemSource,
   DesignSystemSummary,
@@ -195,6 +196,11 @@ export type CanvasCommand =
   // mutationId, so a retry finds the version it already saved.
   | { type: 'canvas.listDesignSystems'; requestId: string }
   | { type: 'canvas.readDesignSystem'; requestId: string; ref: DesignSystemVersionRef }
+  | {
+      type: 'canvas.readDesignSystemVersionContent';
+      requestId: string;
+      ref: DesignSystemVersionRef;
+    }
   | { type: 'canvas.readEditTokens'; requestId: string; ref: DesignSystemVersionRef }
   | {
       type: 'canvas.saveDesignSystem';
@@ -347,6 +353,7 @@ export type CanvasReply =
   | { kind: 'source'; files: SourceFiles }
   | { kind: 'designSystems'; systems: DesignSystemSummary[] }
   | { kind: 'designSystem'; system: DesignSystemDocumentView }
+  | { kind: 'designSystemVersionContent'; content: DesignSystemVersionContent }
   | { kind: 'editTokens'; tokens: Record<string, EditToken[]> }
   | { kind: 'designSystemVersions'; versions: DesignSystemVersionEntry[] }
   // Import diagnostics name what could not become a token; unmapped tokens are
