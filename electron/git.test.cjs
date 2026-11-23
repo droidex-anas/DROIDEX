@@ -246,16 +246,98 @@ test('last_turn fileDiff renders a file created during the turn', async () => {
   assert.ok(res.diff.includes('hello turn'), 'turn-created file diff should show its content');
 });
 
-test('last_turn works in an unborn repo via the write-tree baseline', async () => {
+test('last_turn shows new files in an empty unborn repo', async () => {
   const dir = await makeRepo();
-  // No commits yet: stash create and rev-parse HEAD both fail, so the
-  // baseline falls back to the (empty) index tree.
   const mark = await markTurnStart(dir, 'session-a');
   assert.equal(mark.ok, true);
 
   await write(dir, 'first.txt', 'x\n');
   const res = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
   assert.ok(pathsOf(res).includes('first.txt'));
+});
+
+test('last_turn excludes pre-turn working-tree edits in an unborn repo', async () => {
+  const dir = await makeRepo();
+  const file = 'notes.txt';
+  await git(dir, ['config', 'core.splitIndex', 'true']);
+  await git(dir, ['config', 'core.autocrlf', 'true']);
+  await git(dir, ['config', 'core.safecrlf', 'true']);
+  await write(dir, file, 'staged\r\n');
+  await git(dir, ['add', '--', file]);
+  await write(dir, file, 'staged\r\npre-turn\n');
+  const indexPath = path.join(dir, '.git', 'index');
+  const indexBefore = await fsp.readFile(indexPath);
+  const options = { mode: 'last_turn', appSessionId: 'session-a' };
+
+  assert.equal((await markTurnStart(dir, options.appSessionId)).ok, true);
+  const indexAfter = await fsp.readFile(indexPath);
+  assert.deepEqual((await diffFiles(dir, options)).files, []);
+  assert.equal((await fileDiff(dir, { ...options, path: file })).diff, '');
+  assert.ok(indexBefore.equals(indexAfter), 'turn marker rewrote the index');
+  await assert.rejects(git(dir, ['rev-parse', '--verify', 'HEAD']));
+  assert.equal(await fsp.readFile(path.join(dir, file), 'utf8'), 'staged\r\npre-turn\n');
+
+  await write(dir, file, 'staged\r\npre-turn\nin-turn\n');
+  const checkTurnEdit = async () => {
+    const { files } = await diffFiles(dir, options);
+    assert.deepEqual(
+      files.map(({ path, status, additions, deletions }) => ({
+        path,
+        status,
+        additions,
+        deletions,
+      })),
+      [{ path: file, status: 'modified', additions: 1, deletions: 0 }],
+    );
+    const { diff } = await fileDiff(dir, { ...options, path: file });
+    assert.match(diff, /^\+in-turn$/m);
+    assert.doesNotMatch(diff, /^\+pre-turn$/m);
+  };
+  await checkTurnEdit();
+  await write(dir, file, 'staged\r\npre-turn\r\nin-turn\r\n');
+  await commitAll(dir, 'initial commit');
+  await checkTurnEdit();
+});
+
+test('last_turn still shows new files when Git cannot snapshot a tracked file', async () => {
+  const dir = await makeRepo();
+  await write(dir, '.gitattributes', 'notes.txt filter=unavailable\n');
+  await write(dir, 'notes.txt', 'staged\n');
+  await git(dir, ['add', '--', '.gitattributes', 'notes.txt']);
+  await git(dir, ['config', 'filter.unavailable.clean', 'exit 1']);
+  await git(dir, ['config', 'filter.unavailable.required', 'true']);
+  await write(dir, 'notes.txt', 'pre-turn edit\n');
+
+  await markTurnStart(dir, 'session-a');
+  await write(dir, 'new.txt', 'in-turn\n');
+  const review = await diffFiles(dir, { mode: 'last_turn', appSessionId: 'session-a' });
+  assert.ok(pathsOf(review).includes('new.txt'));
+});
+
+test('last_turn captures conflict content before an unborn cherry-pick is resolved', async () => {
+  const source = await makeRepo();
+  const dir = await makeRepo();
+  const file = 'notes.txt';
+  await write(source, file, 'base\n');
+  await commitAll(source, 'base');
+  await write(source, file, 'incoming\n');
+  await commitAll(source, 'incoming change');
+  await git(dir, ['fetch', source, 'HEAD']);
+  await assert.rejects(git(dir, ['cherry-pick', 'FETCH_HEAD']));
+  const conflictsBefore = await git(dir, ['ls-files', '--unmerged']);
+  assert.match(conflictsBefore, /notes\.txt/);
+
+  const options = { mode: 'last_turn', appSessionId: 'session-a' };
+  assert.equal((await markTurnStart(dir, options.appSessionId)).ok, true);
+  assert.equal(await git(dir, ['ls-files', '--unmerged']), conflictsBefore);
+  await write(dir, file, 'incoming\nresolved\n');
+  await git(dir, ['add', '--', file]);
+  await write(dir, 'new.txt', 'new during turn\n');
+
+  assert.deepEqual(pathsOf(await diffFiles(dir, options)).sort(), ['new.txt', file].sort());
+  const { diff } = await fileDiff(dir, { ...options, path: file });
+  assert.match(diff, /^\+resolved$/m);
+  assert.doesNotMatch(diff, /^\+incoming$/m);
 });
 
 test('worktree listing preserves newline-containing paths', async () => {
