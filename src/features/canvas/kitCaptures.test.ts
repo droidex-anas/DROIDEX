@@ -133,9 +133,8 @@ test('failed capture reads retry on remount, while absence stays cached and in-f
   assert.equal(shown, undefined, 'the saved entry was evicted');
   assert.equal(read.mock.callCount(), 4, 'the stale read still occupies its slot');
   await act(async () => settle(null));
-  await unmount();
-  await act(async () => root.render(createElement(Race)));
-  assert.equal(read.mock.callCount(), 5, 'an evicted save must not let a stale read cache absence');
+  assert.equal(read.mock.callCount(), 5, 'the mounted consumer gets exactly one replacement read');
   await act(async () => settle('saved-png'));
   assert.equal(shown, 'data:image/png;base64,saved-png');
+  assert.equal(read.mock.callCount(), 5);
 });

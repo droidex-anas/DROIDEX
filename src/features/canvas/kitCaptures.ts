@@ -53,6 +53,7 @@ function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): P
     )
     .finally(() => {
       if (pendingReads.get(key) === token) pendingReads.delete(key);
+      else if (captures.isHeld(key) && captures.needsRead(key)) return readCapture(key, ref, item);
     });
 }
 
