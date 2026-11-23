@@ -11,8 +11,7 @@ import {
   providerDefaultModel,
   providerModelCatalog,
 } from '../features/providers/providerIdentity';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Hash, ChevronRight, FileText } from 'lucide-react';
+import { ChevronRight, FileText } from 'lucide-react';
 import {
   ModelIcon,
   DroidProxyMark,
@@ -50,7 +49,6 @@ export default function RightPanel() {
       models: current.models,
       providerStatuses: current.providerStatuses,
       selectedChild: current.selectedChild,
-      selectedFeatureId: current.selectedFeatureId,
       sessionSpecs: current.sessionSpecs,
     };
   }, shallowEqual);
@@ -269,46 +267,6 @@ export default function RightPanel() {
               />
             </div>
           )}
-
-          {/* Selected step detail */}
-          <AnimatePresence>
-            {activeSession &&
-              state.selectedFeatureId &&
-              (() => {
-                const f = activeSession.features.find((x) => x.id === state.selectedFeatureId);
-                if (!f) return null;
-                return (
-                  <motion.div
-                    key={f.id}
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
-                  >
-                    <div className="mx-3 my-1.5 rounded-lg bg-elevated/50 px-3 py-2.5 space-y-2">
-                      <div className="text-body text-primary">{f.description}</div>
-                      {f.skillName && (
-                        <div className="flex items-center gap-2">
-                          <Hash className="w-3.5 h-3.5 text-muted" />
-                          <span className="text-caption font-medium text-secondary">
-                            {f.skillName}
-                          </span>
-                        </div>
-                      )}
-                      {f.preconditions.length > 0 && (
-                        <div className="space-y-1">
-                          {f.preconditions.map((p, i) => (
-                            <div key={i} className="pl-3 text-caption text-muted">
-                              {p}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })()}
-          </AnimatePresence>
         </div>
       </div>
     </div>

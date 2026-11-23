@@ -378,7 +378,6 @@ export interface AppState {
   voiceSessions: VoiceSessions;
 
   // Mission Control view
-  selectedFeatureId: string | null;
   selectedChild: ChildSelection | null;
 
   // Models, the model each harness starts a new chat on, and Mission Control's
@@ -511,14 +510,6 @@ export type Action =
     }
   | ChildSessionAction
   | {
-      type: 'SESSION_TOKENS';
-      appSessionId: string;
-      tokensIn: number;
-      tokensOut: number;
-      contextTokens: number;
-      maxContextTokens?: number;
-    }
-  | {
       type: 'CONTEXT_UPDATED';
       appSessionId: string;
       sourceSessionId: string;
@@ -579,7 +570,6 @@ export type Action =
   | { type: 'TOGGLE_SIDEBAR' }
   | { type: 'TOGGLE_SETTINGS' }
   | { type: 'OPEN_SETTINGS'; request: SettingsRequest }
-  | { type: 'TOGGLE_MISSION_CONTROL' }
   | { type: 'OPEN_PROJECTS' }
   | { type: 'CLOSE_PROJECTS' }
   | { type: 'OPEN_AUTOMATIONS'; automationId?: string }
@@ -620,7 +610,6 @@ export type Action =
   | { type: 'SET_THEME'; theme: Partial<ThemeConfig> }
   | { type: 'SAVE_CUSTOM_THEME'; preset: ThemePreset }
   | { type: 'DELETE_CUSTOM_THEME'; id: string }
-  | { type: 'SELECT_FEATURE'; id: string | null }
   | AgentSettingsAction
   | { type: 'SET_LIVE_ENTER_BEHAVIOR'; behavior: LiveEnterBehavior }
   | { type: 'SET_IMAGE_PASTE_QUALITY'; quality: ImagePasteQuality }
@@ -735,7 +724,6 @@ export const initialState: AppState = {
   browserGlobalError: undefined,
   designModes: {},
   voiceSessions: {},
-  selectedFeatureId: persistedUiState.selectedFeatureId ?? null,
   selectedChild: null,
   models: [],
   providerStatuses: [],
@@ -1080,25 +1068,6 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'SELECT_CHILD':
       return reduceChildSession(state, action);
 
-    case 'SESSION_TOKENS': {
-      const mid = action.appSessionId;
-      const existing = sessionsById[mid];
-      if (!existing) return state;
-      return {
-        ...state,
-        sessions: {
-          ...state.sessions,
-          [mid]: {
-            ...existing,
-            tokensIn: action.tokensIn,
-            tokensOut: action.tokensOut,
-            contextTokens: action.contextTokens,
-            maxContextTokens: action.maxContextTokens ?? existing.maxContextTokens,
-          },
-        },
-      };
-    }
-
     case 'CONTEXT_UPDATED': {
       const existing = sessionsById[action.appSessionId];
       if (action.parentAppSessionId && action.childSessionId) {
@@ -1250,7 +1219,6 @@ function reduceAction(state: AppState, action: Action): AppState {
     case 'OPEN_REVIEW_AT':
     case 'CLEAR_REVIEW_FOCUS':
     case 'SET_DIFF_VIEW':
-    case 'TOGGLE_BROWSER':
     case 'SET_BROWSER_OPEN':
     case 'BROWSER_UPDATED':
     case 'BROWSER_NAVIGATED':
@@ -1321,9 +1289,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'OPEN_SETTINGS':
       return { ...state, settingsOpen: true, settingsRequest: action.request };
-
-    case 'TOGGLE_MISSION_CONTROL':
-      return { ...state, missionControlMode: !state.missionControlMode };
 
     case 'VOICE_CONNECTING':
     case 'VOICE_ANSWERED':
@@ -1499,9 +1464,6 @@ function reduceAction(state: AppState, action: Action): AppState {
 
     case 'DELETE_CUSTOM_THEME':
       return { ...state, customThemes: removeCustomTheme(state.customThemes, action.id) };
-
-    case 'SELECT_FEATURE':
-      return { ...state, selectedFeatureId: action.id };
 
     case 'MODELS_LIST':
     case 'PROVIDER_STATUSES':

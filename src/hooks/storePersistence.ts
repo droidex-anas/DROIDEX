@@ -38,7 +38,6 @@ const UI_STATE_FIELDS = [
   'specMode',
   'missionControlMode',
   'browsers',
-  'selectedFeatureId',
   'mainView',
   'prWorkspaceCwd',
   'prWorkspaceNumber',
