@@ -139,6 +139,7 @@ export function useImageAttachments(quality: ImagePasteQuality) {
   const [images, setImages] = useState<AttachedImage[]>([]);
   const imagesRef = useRef(images);
   const sequencesRef = useRef(new Map<string, number>());
+  const cropOwnersRef = useRef(new Map<string, symbol>());
   const nextSeqRef = useRef(0);
   // Stable per-mount instance; not React state in the render sense.
   const [additions] = useState(() => createPendingAdditions());
@@ -200,6 +201,8 @@ export function useImageAttachments(quality: ImagePasteQuality) {
   const applyCrop = async (id: string, rect: CropRect) => {
     const target = imagesRef.current.find((i) => i.id === id);
     if (!target) return;
+    const owner = Symbol();
+    cropOwnersRef.current.set(id, owner);
     // Tracked as a mutation of an existing chip, not a new add: whenReady
     // waits for crops that start while an earlier encode is still in flight.
     const stamp = additions.stamp();
@@ -214,10 +217,9 @@ export function useImageAttachments(quality: ImagePasteQuality) {
         discardImage,
       );
       if (path === null) return;
-      // The chip may have been removed while the crop was saving; discard the
-      // new file instead of orphaning it in the temp dir.
+      // Removed chips and superseded crops discard only their own saved file.
       const existing = imagesRef.current.find((i) => i.id === id);
-      if (!existing) {
+      if (!existing || cropOwnersRef.current.get(id) !== owner) {
         void discardImage(path);
         return;
       }
@@ -226,7 +228,11 @@ export function useImageAttachments(quality: ImagePasteQuality) {
       void discardImage(existing.path);
     })();
     crops.track(target.sequence, task);
-    await task;
+    try {
+      await task;
+    } finally {
+      if (cropOwnersRef.current.get(id) === owner) cropOwnersRef.current.delete(id);
+    }
   };
 
   // After a submit the saved files are referenced by the in-flight prompt, so
