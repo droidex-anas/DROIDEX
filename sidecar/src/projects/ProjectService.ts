@@ -31,6 +31,7 @@ import {
   discardThreadCheckout,
   type CheckoutClaim,
   LEAD_BRIEF,
+  numberedTitle,
   resolveModelId,
   spawnSettings,
   threadCheckout,
@@ -423,11 +424,11 @@ export class ProjectService {
     }
     const status = this.reads.threadStatus(project, requireThread(project, appSessionId));
     const reuse = scopedThreads(project, spawn.source).find((thread) => {
-      if (
-        thread.appSessionId === appSessionId ||
-        taskTitle(thread.title) !== taskTitle(input.title)
-      )
-        return false;
+      const suffix = / (\d+)$/.exec(thread.title)?.[1];
+      const matchesTitle =
+        taskTitle(thread.title) === taskTitle(input.title) ||
+        (suffix !== undefined && thread.title === numberedTitle(input.title, Number(suffix)));
+      if (thread.appSessionId === appSessionId || !matchesTitle) return false;
       const state = this.reads.threadStatus(project, thread).state;
       return state === 'stopped' || state === 'idle' || state === 'queued';
     });

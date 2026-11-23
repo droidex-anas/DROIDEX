@@ -233,15 +233,19 @@ export async function discardThreadCheckout(cwd: string, checkout: ThreadCheckou
   });
 }
 
+export function numberedTitle(title: string, suffix: number): string {
+  const ending = ` ${String(suffix)}`;
+  const base = title.slice(0, LEDGER_LIMITS.title - ending.length).trimEnd();
+  return `${base}${ending}`;
+}
+
 /* Threads are named, not numbered, everywhere a person reads them, so two of
    them cannot wear one name. A repeat gets the next free number. */
 export function uniqueTitle(project: Project, title: string): string {
   const taken = new Set(project.threads.map((thread) => thread.title));
   if (!taken.has(title)) return title;
   for (let suffix = 2; ; suffix += 1) {
-    const ending = ` ${String(suffix)}`;
-    const base = title.slice(0, LEDGER_LIMITS.title - ending.length).trimEnd();
-    const candidate = `${base}${ending}`;
+    const candidate = numberedTitle(title, suffix);
     if (!taken.has(candidate)) return candidate;
   }
 }

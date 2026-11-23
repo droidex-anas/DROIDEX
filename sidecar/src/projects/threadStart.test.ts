@@ -3,6 +3,19 @@ import test from 'node:test';
 import { idleProject, input } from '../testing/projectServiceHarness.js';
 import { LEDGER_LIMITS } from './store.js';
 
+test('a repeat spawn suggests continuing an idle shortened duplicate', async (t) => {
+  const { h, main } = await idleProject(t);
+  const title = 'x'.repeat(LEDGER_LIMITS.title);
+  await h.projects.spawn(main, { ...input, title });
+  const duplicate = await h.projects.spawn(main, { ...input, title });
+  await h.finish(duplicate.appSessionId);
+  const repeat = await h.projects.spawn(main, { ...input, title });
+  assert.equal(
+    repeat.reuseNote,
+    `${duplicate.title} (${duplicate.appSessionId}) is idle; thread_send continues it instead of spawning another.`,
+  );
+});
+
 for (const length of [119, 120]) {
   test(`repeated ${length}-character thread titles keep their unique suffixes`, async (t) => {
     const { h, main } = await idleProject(t);
