@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, ChevronDown, FileDiff, FolderOpen } from 'lucide-react';
+import { Check } from '@droidex/icons';
+import { ChevronDown, FileDiff, FolderOpen } from 'lucide-react';
 import { listEditors, notify, openProject } from '../lib/desktop';
 import { toast } from '../lib/toast';
 import { EditorIcon } from './EditorIcon';

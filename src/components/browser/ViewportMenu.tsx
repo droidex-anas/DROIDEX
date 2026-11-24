@@ -131,7 +131,6 @@ export function ViewportMenu({
                   <span className="text-caption tabular-nums text-muted">{size(choice)}</span>
                   <Check
                     className={`size-icon-sm shrink-0 text-accent ${selected ? '' : 'invisible'}`}
-                    strokeWidth={2.6}
                   />
                 </button>
               );
