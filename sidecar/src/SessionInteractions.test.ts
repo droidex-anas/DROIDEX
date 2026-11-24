@@ -216,7 +216,9 @@ test('ask-user normalizes omitted values and preserves identities and answers', 
 
   assert.equal(request.appSessionId, 'app-1');
   assert.match(request.requestId, /^req-/);
-  assert.deepEqual(request.questions, [{ index: 7, question: 'What should change?', options: [] }]);
+  assert.deepEqual(request.questions, [
+    { index: 7, question: 'What should change?', header: 'input', options: [] },
+  ]);
   const answers = [
     { index: 7, question: 'What should change?', selected: [], custom: 'The title' },
   ];
