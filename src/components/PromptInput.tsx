@@ -2372,6 +2372,16 @@ export default function PromptInput({
     }
   }, [activeSession, state.lastCreatedSessionRequest, state.pendingComposeWhileWaiting, voice]);
 
+  // A question covers the field and holds focus; once it settles the card is
+  // gone, so the caret comes back here unless the user has moved elsewhere.
+  const questionCoversField = state.questionPending && !voiceCoversComposer;
+  const questionCoveredField = useRef(questionCoversField);
+  useEffect(() => {
+    const settled = questionCoveredField.current && !questionCoversField;
+    questionCoveredField.current = questionCoversField;
+    if (settled && document.activeElement === document.body) editorRef.current?.focus();
+  }, [questionCoversField]);
+
   const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
   // the state with it so the hint never reopens without a hover or focus.
@@ -2707,7 +2717,7 @@ export default function PromptInput({
             raised rung is the elevated one. */}
         <div
           className={`relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5 ${
-            state.questionPending && !voiceCoversComposer ? 'hidden' : ''
+            questionCoversField ? 'hidden' : ''
           }`}
         >
           {(hasAttachmentChips || designMarks.length > 0) && (

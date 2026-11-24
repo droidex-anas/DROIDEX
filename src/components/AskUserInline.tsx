@@ -184,6 +184,12 @@ export function QuestionCard({
       return;
     }
     if (event.metaKey || event.ctrlKey || event.altKey) return;
+    // A focused row or button takes Enter as its own click.
+    if (event.key === 'Enter' && event.target === event.currentTarget) {
+      event.preventDefault();
+      next();
+      return;
+    }
     const option = /^[1-9]$/.test(event.key) ? q.options.at(Number(event.key) - 1) : undefined;
     if (!option) return;
     event.preventDefault();
