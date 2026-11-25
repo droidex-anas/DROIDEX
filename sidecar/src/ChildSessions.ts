@@ -767,7 +767,9 @@ export class ChildSessions {
       addChild(parent, child);
     }
     if (!this.isCurrentParent(parent)) return;
-    if (child.mutationTail) {
+    // Mutations chain by replacing the tail, so one await can finish behind:
+    // drain until no newer mutation has been queued.
+    while (child.mutationTail) {
       await child.mutationTail;
       if (!this.isCurrentParent(parent)) return;
     }

@@ -171,6 +171,17 @@ test('token usage counts context the way the daemon threshold does, never from c
   assert.deepEqual(cumulative?.tokens, { tokensIn: 12_925_421, tokensOut: 179_985 });
 });
 
+test('a usage frame without cumulative totals publishes nothing', () => {
+  assert.equal(stream({ type: 'session_token_usage_changed' }), null);
+  assert.equal(
+    stream({
+      type: 'session_token_usage_changed',
+      lastCallTokenUsage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 3 },
+    }),
+    null,
+  );
+});
+
 test('captures Task prompt metadata before the subagent session id exists', () => {
   const normalized = stream({
     type: 'tool_call',
