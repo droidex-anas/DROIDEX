@@ -265,7 +265,9 @@ export function applyObservedChild(
   if (spawnLink) setChildSpawn(parent, child, spawnLink);
   child.activity = observed.activity ?? child.activity;
   child.tokensUsed = observed.tokensUsed ?? child.tokensUsed;
-  child.transcriptAvailable = observed.transcriptAvailable ?? true;
+  // Availability is monotone: a failure signal for a spawn that never started
+  // carries false, but it must not erase access to a transcript that exists.
+  child.transcriptAvailable = child.transcriptAvailable || (observed.transcriptAvailable ?? true);
   child.streamFidelity = observed.streamFidelity ?? child.streamFidelity;
   child.startedAt ??= now;
   return { previousPrompt, previousStatus };
