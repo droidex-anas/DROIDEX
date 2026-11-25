@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
 import type { PrComment, PrCommit, PullRequest } from '../../../types/vcs';
@@ -121,7 +121,7 @@ export function PrTimeline({
   loading: boolean;
   error: string | null;
 }) {
-  const items = buildPrTimeline(comments, commits);
+  const items = useMemo(() => buildPrTimeline(comments, commits), [comments, commits]);
   const showEmpty = items.length === 0 && !loading;
   return (
     <div>

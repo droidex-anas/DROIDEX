@@ -2,7 +2,8 @@ import { memo, useCallback, type ReactElement } from 'react';
 import { ChevronRight } from 'lucide-react';
 import { AlertTriangle, Spinner } from '@droidex/icons';
 import { AnimatePresence, motion } from 'framer-motion';
-import { DiffBody } from './DiffBody';
+import { DiffBody, type DiffLineReview } from './DiffBody';
+import type { ParsedDiff } from '../../lib/unifiedDiff';
 import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
 import type { FileDiffEntry } from '../../hooks/useReviewFileDiffs';
 import type { DiffFile } from '../../types/vcs';
@@ -15,11 +16,15 @@ function DiffFileContent({
   binary,
   view,
   wrap,
+  lineReview,
+  parsed,
 }: {
   entry: FileDiffEntry | undefined;
   binary: boolean;
   view: DiffViewMode;
   wrap: boolean;
+  lineReview?: DiffLineReview;
+  parsed?: ParsedDiff;
 }): ReactElement {
   switch (entry?.status) {
     case undefined:
@@ -40,7 +45,16 @@ function DiffFileContent({
         </div>
       );
     case 'loaded':
-      return <DiffBody diff={entry.diff} view={view} binary={binary || entry.binary} wrap={wrap} />;
+      return (
+        <DiffBody
+          diff={entry.diff}
+          view={view}
+          binary={binary || entry.binary}
+          wrap={wrap}
+          lineReview={lineReview}
+          parsed={parsed}
+        />
+      );
   }
 }
 
@@ -60,6 +74,8 @@ export const DiffFileSection = memo(function DiffFileSection({
   wrap,
   onToggle,
   onSectionRef,
+  lineReview,
+  parsed,
 }: {
   file: DiffFile;
   cwd?: string;
@@ -70,6 +86,8 @@ export const DiffFileSection = memo(function DiffFileSection({
   wrap: boolean;
   onToggle: (path: string) => void;
   onSectionRef: (path: string, el: HTMLDivElement | null) => void;
+  lineReview?: DiffLineReview;
+  parsed?: ParsedDiff;
 }) {
   const { path } = file;
   const sectionRef = useCallback(
@@ -110,7 +128,7 @@ export const DiffFileSection = memo(function DiffFileSection({
             <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
           )}{' '}
           {file.deletions > 0 && (
-            <span style={{ color: 'var(--diff-del-fg)' }}>-{file.deletions}</span>
+            <span style={{ color: 'var(--diff-del-fg)' }}>−{file.deletions}</span>
           )}
         </span>
       </button>
@@ -129,7 +147,14 @@ export const DiffFileSection = memo(function DiffFileSection({
             exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
           >
-            <DiffFileContent entry={entry} binary={file.binary} view={view} wrap={wrap} />
+            <DiffFileContent
+              entry={entry}
+              binary={file.binary}
+              view={view}
+              wrap={wrap}
+              lineReview={lineReview}
+              parsed={parsed}
+            />
           </motion.div>
         )}
       </AnimatePresence>

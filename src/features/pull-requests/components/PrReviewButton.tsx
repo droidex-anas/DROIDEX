@@ -92,6 +92,7 @@ export function PrReviewButton({
         ))}
         {options.some((option) => option.action === 'enable-cubic') ? (
           <p
+            role="presentation"
             title="DROIDEX may receive a reward if you upgrade."
             className="px-2 pb-1 pt-0.5 text-caption text-muted"
           >

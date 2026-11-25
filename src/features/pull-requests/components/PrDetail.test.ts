@@ -11,7 +11,14 @@ function renderCodePane(diff: string | null, diffError: string | null): string {
     createElement(
       StaticStoreProvider,
       { state: initialState, dispatch: () => undefined },
-      createElement(CodePane, { diff, diffError }),
+      createElement(CodePane, {
+        diff,
+        diffError,
+        cwd: '/repo',
+        number: 4,
+        comments: [],
+        onSendReview: () => undefined,
+      }),
     ),
   );
 }
@@ -25,6 +32,7 @@ test('the Summary and Code views are an accessible tab list', () => {
       viewerLogin: null,
       onOpenChat: () => undefined,
       onReviewWithDroid: () => undefined,
+      onSendReview: () => undefined,
     }),
   );
   assert.match(html, /role="tablist" aria-label="Pull request views"/);

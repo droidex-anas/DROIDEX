@@ -1,3 +1,5 @@
+import { useMemo } from 'react';
+
 import { CheckStatusIcon, Octicon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
 import { Badge } from '../../../components/ui/Badge';
@@ -77,10 +79,10 @@ function Description({
   body: string;
   metaError: string | null;
 }) {
-  if (!loaded && !body) return <div className="h-16 rounded-lg bg-elevated/40" />;
   // Generated descriptions carry the same disclosures, footers, and badge links
   // as bot comments, so they go through the same renderer.
-  const blocks = body ? prCommentBlocks(body) : [];
+  const blocks = useMemo(() => (body ? prCommentBlocks(body) : []), [body]);
+  if (!loaded && !body) return <div className="h-16 rounded-lg bg-elevated/40" />;
   if (blocks.length === 0) {
     return <p className="text-body text-muted">{metaError ?? 'No description.'}</p>;
   }

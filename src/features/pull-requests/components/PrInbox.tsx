@@ -22,6 +22,7 @@ import {
   type PrInboxTab,
 } from '../lib/prInbox';
 import { prBacklogId } from '../lib/prBacklog';
+import { sortInboxPullRequests } from '../lib/prPriority';
 import { arrowKeyTab } from '../lib/prTabs';
 import type { InboxRepoError } from '../lib/prListState';
 import { displayLogin } from '../lib/prIdentity';
@@ -125,7 +126,7 @@ function PrInboxRow({
         onClick={() => {
           onToggleBacklog(pr);
         }}
-        className="mt-1.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-elevated hover:text-primary focus-visible:opacity-100"
+        className="mt-1.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-elevated hover:text-primary"
       >
         {backlogged ? <Undo2 size={14} /> : <ListTodo size={14} />}
       </button>
@@ -316,9 +317,20 @@ export function PrInbox({
   const [query, setQuery] = useState('');
   const [expandedOther, setExpandedOther] = useState<Set<string>>(() => new Set());
   const visible = useMemo(
-    () => searchPullRequests(filterPullRequests(prs, tab, viewerLogin, backlogIds), query),
+    () =>
+      searchPullRequests(
+        sortInboxPullRequests(filterPullRequests(prs, tab, viewerLogin, backlogIds), viewerLogin),
+        query,
+      ),
     [backlogIds, prs, query, tab, viewerLogin],
   );
+  const tabCounts = useMemo(() => {
+    const counts = new Map<PrInboxTab, number>();
+    for (const item of TABS) {
+      counts.set(item.id, filterPullRequests(prs, item.id, viewerLogin, backlogIds).length);
+    }
+    return counts;
+  }, [backlogIds, prs, viewerLogin]);
   const groups = useMemo(
     () =>
       orderInboxGroups(
@@ -370,6 +382,11 @@ export function PrInbox({
               }`}
             >
               {item.label}
+              {(tabCounts.get(item.id) ?? 0) > 0 ? (
+                <span className="ml-1 text-caption tabular-nums text-muted">
+                  {tabCounts.get(item.id)}
+                </span>
+              ) : null}
             </button>
           ))}
         </div>

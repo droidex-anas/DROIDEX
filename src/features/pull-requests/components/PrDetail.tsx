@@ -4,7 +4,8 @@ import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcon
 import { Button } from '../../../components/ui/Button';
 import { prKind } from '../../../lib/github';
 import { openExternal } from '../../../lib/onboarding';
-import type { PullRequest } from '../../../types/vcs';
+import type { PrComment, PullRequest } from '../../../types/vcs';
+import type { PrLineAnnotation } from '../lib/prAnnotations';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
 import { isCubicRemembered, rememberCubic } from '../lib/cubicMemory';
 import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib/prReview';
@@ -43,7 +44,21 @@ function isTypingTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
 }
 
-export function CodePane({ diff, diffError }: { diff: string | null; diffError: string | null }) {
+export function CodePane({
+  diff,
+  diffError,
+  cwd,
+  number,
+  comments,
+  onSendReview,
+}: {
+  diff: string | null;
+  diffError: string | null;
+  cwd: string;
+  number: number;
+  comments: PrComment[];
+  onSendReview: (annotations: PrLineAnnotation[]) => void;
+}) {
   if (diffError) {
     return (
       <div className="flex h-full items-center justify-center px-8">
@@ -51,7 +66,17 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
       </div>
     );
   }
-  if (diff !== null) return <PrDiff diff={diff} />;
+  if (diff !== null) {
+    return (
+      <PrDiff
+        diff={diff}
+        cwd={cwd}
+        number={number}
+        comments={comments}
+        onSendReview={onSendReview}
+      />
+    );
+  }
   return (
     <div className="flex h-full items-center justify-center px-8">
       <div className="h-16 w-full max-w-2xl rounded-lg bg-elevated/40" />
@@ -66,6 +91,7 @@ export function PrDetail({
   viewerLogin,
   onOpenChat,
   onReviewWithDroid,
+  onSendReview,
 }: {
   cwd: string;
   number: number;
@@ -73,6 +99,7 @@ export function PrDetail({
   viewerLogin: string | null;
   onOpenChat: (pr: PullRequest) => void;
   onReviewWithDroid: (pr: PullRequest) => void;
+  onSendReview: (pr: PullRequest, annotations: PrLineAnnotation[]) => void;
 }) {
   const [tab, setTab] = useState<PrDetailTab>('summary');
   const [draft, setDraft] = useState('');
@@ -106,10 +133,7 @@ export function PrDetail({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (isTypingTarget(event.target)) return;
-      if (
-        event.target instanceof HTMLElement &&
-        !event.target.closest('[data-testid="pull-requests-workspace"]')
-      ) {
+      if (event.target instanceof HTMLElement && !event.target.closest('[data-pr-detail-pane]')) {
         return;
       }
       const next = TABS.find((item) => item.key === event.key);
@@ -175,7 +199,7 @@ export function PrDetail({
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+    <div data-pr-detail-pane className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {/* This strip sits where the window's title bar would be, so it carries
           the drag region the session view gets from its floating controls. */}
       <div data-electron-drag-region className="flex items-center gap-2 px-8 pt-4 pb-2">
@@ -291,7 +315,16 @@ export function PrDetail({
               {...composer}
             />
           ) : (
-            <CodePane diff={detail.diff} diffError={detail.diffError} />
+            <CodePane
+              diff={detail.diff}
+              diffError={detail.diffError}
+              cwd={cwd}
+              number={number}
+              comments={detail.comments}
+              onSendReview={(annotations) => {
+                if (headerPr) onSendReview(headerPr, annotations);
+              }}
+            />
           )}
         </div>
       </div>

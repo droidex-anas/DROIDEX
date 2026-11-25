@@ -55,6 +55,37 @@ export type PrDetailEvent =
   | { type: 'diff-success'; generation: number; diff: string }
   | { type: 'diff-failure'; generation: number; message: string };
 
+// Poll ticks rebuild every list from scratch even when nothing changed, and
+// downstream memos (diff wiring, the timeline) key on identity. Adopt the
+// previous array when the new one is field-identical, so an unchanged poll
+// costs no re-render anywhere.
+function shallowSameItems<T extends object>(prev: readonly T[], next: readonly T[]): boolean {
+  if (prev.length !== next.length) return false;
+  for (let index = 0; index < prev.length; index += 1) {
+    const left = prev[index] as Record<string, unknown>;
+    const right = next[index] as Record<string, unknown>;
+    const keys = new Set([...Object.keys(left), ...Object.keys(right)]);
+    for (const key of keys) {
+      const a = left[key];
+      const b = right[key];
+      if (a === b) continue;
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        if (a.some((item, i) => JSON.stringify(item) !== JSON.stringify(b[i]))) return false;
+        continue;
+      }
+      return false;
+    }
+  }
+  return true;
+}
+
+export function sharedIfUnchanged<T extends object>(prev: readonly T[], next: readonly T[]): T[] {
+  // Both arrays are treated as immutable everywhere, so the unchanged case
+  // keeps the previous reference itself — identity is the whole point.
+  return shallowSameItems(prev, next) ? (prev as T[]) : (next as T[]);
+}
+
 export function reducePrDetail(state: PrDetailState, event: PrDetailEvent): PrDetailState {
   if (event.type === 'bind') {
     return {
@@ -78,9 +109,9 @@ export function reducePrDetail(state: PrDetailState, event: PrDetailEvent): PrDe
       loaded: true,
       metaError: event.metaError ?? null,
       body: event.body,
-      commits: event.commits,
-      checks: event.checks,
-      comments: event.comments,
+      commits: sharedIfUnchanged(state.commits, event.commits),
+      checks: sharedIfUnchanged(state.checks, event.checks),
+      comments: sharedIfUnchanged(state.comments, event.comments),
       checksError: event.checksError,
       commentsError: event.commentsError,
     };

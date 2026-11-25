@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
@@ -59,8 +59,10 @@ function CommentByline({ comment }: { comment: PrComment }) {
 // what, where, and the first line, then opens on click. A short open comment
 // has nothing worth folding, so it keeps a plain header with no chevron.
 export function PrCommentCard({ comment }: { comment: PrComment }) {
-  const blocks = prCommentBlocks(comment.body);
-  const prose = prCommentProse(blocks);
+  // The bot-markup parser is several regex passes over the body; key it on
+  // the string so keystrokes in the composer and unchanged polls cost nothing.
+  const blocks = useMemo(() => prCommentBlocks(comment.body), [comment.body]);
+  const prose = useMemo(() => prCommentProse(blocks), [blocks]);
   const foldable = commentStartsFolded(comment, prose);
   const [open, setOpen] = useState(!foldable);
   // Polling can edit or resolve a comment under the same id: a card that stops
@@ -122,9 +124,10 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
               onClick={() => {
                 if (comment.url) void openExternal(comment.url);
               }}
-              className="rounded-sm p-1 text-muted transition-colors hover:bg-active hover:text-primary"
+              aria-label="Open on GitHub"
+              className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-active hover:text-primary"
             >
-              <Octicon name="link-external" size={12} label="Open on GitHub" />
+              <Octicon name="link-external" size={12} />
             </button>
           ) : null}
         </span>

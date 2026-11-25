@@ -40,6 +40,7 @@ import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
 import { useUtilityPaneWidth } from './hooks/useUtilityPaneWidth';
 import { useAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
+import { LinkActionsProvider } from './components/linkActions';
 import { useThemeSync } from './hooks/useThemeSync';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
@@ -708,505 +709,510 @@ export default function App() {
   );
 
   return (
-    <div
-      id="app-root"
-      className="h-screen w-screen flex flex-col bg-bg text-primary overflow-hidden relative"
-    >
-      <div ref={bannerStackRef} className="shrink-0">
-        {showBanner && (
-          <SetupBanner
-            kind="blocker"
-            message="Finish setting up Droid to start running agents."
-            actionLabel="Finish setup"
-            onAction={() => {
-              setForceWizard(true);
-            }}
-            onDismiss={() => {
-              setBannerDismissed(true);
-            }}
-          />
-        )}
-        <RuntimeStatusBanner />
-      </div>
-      <div className="flex-1 flex min-h-0 relative">
-        {/* Sidebar with collapse animation */}
-        <AnimatePresence initial={false}>
-          {!state.sidebarCollapsed && (
-            <motion.div
-              key="sidebar"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 280, opacity: 1 }}
-              exit={{ width: 0, opacity: 0 }}
-              transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-              className="shrink-0 overflow-hidden h-full"
-            >
-              <Sidebar
-                workspaceScopes={workspaceScopes}
-                onShowEarlierSessions={showEarlierSessions}
-              />
-            </motion.div>
+    <LinkActionsProvider>
+      <div
+        id="app-root"
+        className="h-screen w-screen flex flex-col bg-bg text-primary overflow-hidden relative"
+      >
+        <div ref={bannerStackRef} className="shrink-0">
+          {showBanner && (
+            <SetupBanner
+              kind="blocker"
+              message="Finish setting up Droid to start running agents."
+              actionLabel="Finish setup"
+              onAction={() => {
+                setForceWizard(true);
+              }}
+              onDismiss={() => {
+                setBannerDismissed(true);
+              }}
+            />
           )}
-        </AnimatePresence>
+          <RuntimeStatusBanner />
+        </div>
+        <div className="flex-1 flex min-h-0 relative">
+          {/* Sidebar with collapse animation */}
+          <AnimatePresence initial={false}>
+            {!state.sidebarCollapsed && (
+              <motion.div
+                key="sidebar"
+                initial={{ width: 0, opacity: 0 }}
+                animate={{ width: 280, opacity: 1 }}
+                exit={{ width: 0, opacity: 0 }}
+                transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+                className="shrink-0 overflow-hidden h-full"
+              >
+                <Sidebar
+                  workspaceScopes={workspaceScopes}
+                  onShowEarlierSessions={showEarlierSessions}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Every view under `main` owns a drag row as its top row, so a view
+          {/* Every view under `main` owns a drag row as its top row, so a view
             never shifts when the sidebar collapses. Collapsing only moves the
             window controls and the floating sidebar toggle into that row; the
             chat header reads the collapsed state and leaves them room. With a
             second tab open, the tab strip stacks above and takes that role. */}
-        <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
-          {state.tabStripShown && (
-            <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
-          )}
-          <div ref={contentRowRef} className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <section
-              aria-hidden={chatObscured && !browserExpanded}
-              // Behind an expanded side chat or agent the column is hidden, and
-              // a few composer controls turn pointer events back on; inert
-              // keeps the whole column out of reach.
-              inert={chatObscured && !browserExpanded}
-              style={chatColumnStyle}
-              className={`flex min-w-0 flex-col overflow-hidden ${
-                browserExpanded
-                  ? 'pointer-events-none absolute inset-0 z-20'
-                  : `relative flex-1 ${chatObscured ? 'pointer-events-none' : ''}`
-              }`}
+          <main className="relative flex-1 min-w-0 flex flex-col min-h-0 overflow-hidden bg-bg">
+            {state.tabStripShown && (
+              <HeaderTabs leadPx={mainRowLeadPx(state) ?? 16} controls={sessionControls} />
+            )}
+            <div
+              ref={contentRowRef}
+              className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
             >
-              {!embedded && state.mainView === 'projects' ? (
-                <Suspense fallback={<PanelSkeleton title="projects" />}>
-                  <LazyProjectsRoute />
-                </Suspense>
-              ) : !embedded && state.mainView === 'pull-requests' ? (
-                <Suspense fallback={<PullRequestsSkeleton />}>
-                  <LazyPullRequestsView />
-                </Suspense>
-              ) : !embedded && state.mainView === 'automations' ? (
-                <Suspense fallback={<PanelSkeleton title="automations" />}>
-                  <LazyAutomationsRoute
-                    workspaceScopes={workspaceScopes}
-                    workspaceScopesReady={workspaceScopesReady}
-                  />
-                </Suspense>
-              ) : isMissionControlView ? (
-                <motion.div
-                  key="mission-control"
-                  className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden"
-                  initial={{ clipPath: 'inset(0 100% 0 0)', opacity: 0.4 }}
-                  animate={{ clipPath: 'inset(0 0% 0 0)', opacity: 1 }}
-                  transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <Suspense fallback={<MissionControlSkeleton />}>
-                    <LazyMissionControl />
+              <section
+                aria-hidden={chatObscured && !browserExpanded}
+                // Behind an expanded side chat or agent the column is hidden, and
+                // a few composer controls turn pointer events back on; inert
+                // keeps the whole column out of reach.
+                inert={chatObscured && !browserExpanded}
+                style={chatColumnStyle}
+                className={`flex min-w-0 flex-col overflow-hidden ${
+                  browserExpanded
+                    ? 'pointer-events-none absolute inset-0 z-20'
+                    : `relative flex-1 ${chatObscured ? 'pointer-events-none' : ''}`
+                }`}
+              >
+                {!embedded && state.mainView === 'projects' ? (
+                  <Suspense fallback={<PanelSkeleton title="projects" />}>
+                    <LazyProjectsRoute />
                   </Suspense>
-                </motion.div>
-              ) : (
-                <>
-                  <ChatTiles
-                    rightInset={rightPanelVisible}
-                    isObscured={chatObscured}
-                    besidePane={showUtilityPane}
-                    underBrowser={browserExpanded}
-                    composerHost={contentRowRef}
+                ) : !embedded && state.mainView === 'pull-requests' ? (
+                  <Suspense fallback={<PullRequestsSkeleton />}>
+                    <LazyPullRequestsView />
+                  </Suspense>
+                ) : !embedded && state.mainView === 'automations' ? (
+                  <Suspense fallback={<PanelSkeleton title="automations" />}>
+                    <LazyAutomationsRoute
+                      workspaceScopes={workspaceScopes}
+                      workspaceScopesReady={workspaceScopesReady}
+                    />
+                  </Suspense>
+                ) : isMissionControlView ? (
+                  <motion.div
+                    key="mission-control"
+                    className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden"
+                    initial={{ clipPath: 'inset(0 100% 0 0)', opacity: 0.4 }}
+                    animate={{ clipPath: 'inset(0 0% 0 0)', opacity: 1 }}
+                    transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+                  >
+                    <Suspense fallback={<MissionControlSkeleton />}>
+                      <LazyMissionControl />
+                    </Suspense>
+                  </motion.div>
+                ) : (
+                  <>
+                    <ChatTiles
+                      rightInset={rightPanelVisible}
+                      isObscured={chatObscured}
+                      besidePane={showUtilityPane}
+                      underBrowser={browserExpanded}
+                      composerHost={contentRowRef}
+                    />
+                    {activeSession && state.sideChatPlacement === 'floating' ? (
+                      <div
+                        aria-hidden={browserExpanded || undefined}
+                        className={browserExpanded ? 'invisible' : 'contents'}
+                      >
+                        <Suspense fallback={null}>
+                          <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
+                        </Suspense>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+                {canvasExpanded && (
+                  <PaneResizeHandle
+                    label="Resize chat"
+                    edge="right"
+                    width={chatBesideBoard.width}
+                    min={chatBesideBoard.min}
+                    max={chatBesideBoard.max}
+                    onResize={chatBesideBoard.resize}
+                    onResizeEnd={chatBesideBoard.commit}
                   />
-                  {activeSession && state.sideChatPlacement === 'floating' ? (
-                    <div
-                      aria-hidden={browserExpanded || undefined}
-                      className={browserExpanded ? 'invisible' : 'contents'}
-                    >
-                      <Suspense fallback={null}>
-                        <LazySideChatWindow sourceAppSessionId={activeSession.appSessionId} />
-                      </Suspense>
-                    </div>
-                  ) : null}
-                </>
-              )}
-              {canvasExpanded && (
-                <PaneResizeHandle
-                  label="Resize chat"
-                  edge="right"
-                  width={chatBesideBoard.width}
-                  min={chatBesideBoard.min}
-                  max={chatBesideBoard.max}
-                  onResize={chatBesideBoard.resize}
-                  onResizeEnd={chatBesideBoard.commit}
-                />
-              )}
-            </section>
-            {/* Holds the chat column's place while it floats, so the pane stays
+                )}
+              </section>
+              {/* Holds the chat column's place while it floats, so the pane stays
                 anchored on the right as it widens. */}
-            {browserExpanded && <div className="min-w-0 flex-1" />}
-            {sideChatClose.dialog}
+              {browserExpanded && <div className="min-w-0 flex-1" />}
+              {sideChatClose.dialog}
 
-            {/* Keyed once, so switching chats swaps the board in place instead
+              {/* Keyed once, so switching chats swaps the board in place instead
                 of replaying its entrance. It slides in from the row's edge at
                 its full width, so it never reflows on the way, and it leaves at
                 once: a fading board would squeeze whatever takes its place. */}
-            <MotionConfig reducedMotion="user">
-              <AnimatePresence initial={false}>
-                {designCanvasTab && activeSession && (
-                  <motion.div
-                    key="design-canvas"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0, transition: { duration: 0 } }}
-                    transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-                    style={{ width: boardWidth }}
-                    className="flex h-full shrink-0 justify-end overflow-hidden"
-                  >
-                    <div
-                      className="relative h-full shrink-0"
-                      style={{
-                        width: Math.max(0, contentRowWidth - chatBesideBoard.width),
-                        minWidth: '100%',
-                      }}
+              <MotionConfig reducedMotion="user">
+                <AnimatePresence initial={false}>
+                  {designCanvasTab && activeSession && (
+                    <motion.div
+                      key="design-canvas"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0, transition: { duration: 0 } }}
+                      transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                      style={{ width: boardWidth }}
+                      className="flex h-full shrink-0 justify-end overflow-hidden"
                     >
-                      {/* Blank until the board is ready, which then fades in. */}
-                      <Suspense fallback={null}>
-                        {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
-                      </Suspense>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </MotionConfig>
+                      <div
+                        className="relative h-full shrink-0"
+                        style={{
+                          width: Math.max(0, contentRowWidth - chatBesideBoard.width),
+                          minWidth: '100%',
+                        }}
+                      >
+                        {/* Blank until the board is ready, which then fades in. */}
+                        <Suspense fallback={null}>
+                          {renderCanvasWorkspace(activeSession.appSessionId, designCanvasTab, true)}
+                        </Suspense>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </MotionConfig>
 
-            <AnimatePresence initial={false}>
-              {showUtilityPane && !designCanvasTab && (
-                <motion.div
-                  key="utility-pane"
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{
-                    width:
-                      paneExpanded && contentRowWidth > 0
-                        ? expandedPaneWidth(
-                            contentRowWidth,
-                            canvasExpanded ? chatBesideBoard.width : null,
-                          )
-                        : utilityPaneWidth,
-                    opacity: 1,
-                  }}
-                  exit={{ width: 0, opacity: 0 }}
-                  transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-                  className="h-full min-w-0 shrink-0 overflow-hidden"
-                >
-                  <UtilityPane
-                    panel={utilityPanel}
-                    expanded={paneExpanded}
-                    {...(paneExpanded && activeUtilityTab?.tool === 'canvas'
-                      ? {
-                          header: (
-                            <Suspense fallback={<div className="min-w-0 flex-1" />}>
-                              <LazyCanvasHeader
-                                appSessionId={activeSession.appSessionId}
-                                canvasId={activeUtilityTab.canvasId ?? canvasAttachment}
-                                onDock={() => {
-                                  setExpandedPaneAppSessionId(null);
+              <AnimatePresence initial={false}>
+                {showUtilityPane && !designCanvasTab && (
+                  <motion.div
+                    key="utility-pane"
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{
+                      width:
+                        paneExpanded && contentRowWidth > 0
+                          ? expandedPaneWidth(
+                              contentRowWidth,
+                              canvasExpanded ? chatBesideBoard.width : null,
+                            )
+                          : utilityPaneWidth,
+                      opacity: 1,
+                    }}
+                    exit={{ width: 0, opacity: 0 }}
+                    transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+                    className="h-full min-w-0 shrink-0 overflow-hidden"
+                  >
+                    <UtilityPane
+                      panel={utilityPanel}
+                      expanded={paneExpanded}
+                      {...(paneExpanded && activeUtilityTab?.tool === 'canvas'
+                        ? {
+                            header: (
+                              <Suspense fallback={<div className="min-w-0 flex-1" />}>
+                                <LazyCanvasHeader
+                                  appSessionId={activeSession.appSessionId}
+                                  canvasId={activeUtilityTab.canvasId ?? canvasAttachment}
+                                  onDock={() => {
+                                    setExpandedPaneAppSessionId(null);
+                                  }}
+                                />
+                              </Suspense>
+                            ),
+                          }
+                        : {})}
+                      width={utilityPaneWidth}
+                      minWidth={utilityPaneMin}
+                      maxWidth={utilityPaneMax}
+                      onResize={setUtilityPaneWidth}
+                      onResizeEnd={persistUtilityPaneWidth}
+                      onOpenTool={openUtilityTool}
+                      onActivateTab={(tabId) => {
+                        const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
+                        if (!isExpandableTool(nextTab?.tool)) setExpandedPaneAppSessionId(null);
+                        dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
+                      }}
+                      onCloseTab={(tab) => {
+                        const request = ++closeRequestRef.current;
+                        if (tab.tool === 'terminal') {
+                          const status = terminalInstances.get(tab.id)?.getState().status;
+                          if (!tab.terminalId || status !== 'running') {
+                            closeTerminalTab(tab);
+                            return;
+                          }
+                          const armCloseConfirm = () => {
+                            // The check may resolve after the user switched
+                            // sessions or closed the pane; only arm the
+                            // confirmation if this tab is still on screen.
+                            const panel = visibleUtilityPanelRef.current;
+                            if (!panel?.tabs.some((current) => current.id === tab.id)) {
+                              return;
+                            }
+                            setCloseConfirmation((current) =>
+                              current && current.request > request
+                                ? current
+                                : { tabId: tab.id, request },
+                            );
+                          };
+                          void terminalHasChildren(tab.terminalId)
+                            .then((busy) => {
+                              if (!busy) {
+                                closeTerminalTab(tab);
+                                return;
+                              }
+                              armCloseConfirm();
+                            })
+                            .catch(() => {
+                              // Unverifiable shell state: fall back to asking
+                              // rather than silently doing nothing.
+                              armCloseConfirm();
+                            });
+                          return;
+                        }
+                        // The tab's Close is the side chat's own Close; hiding
+                        // the tab alone would bring the same chat back on the
+                        // next `/btw`. Minimize is the way to put it away.
+                        if (tab.tool === 'side') {
+                          sideChatClose.requestClose(activeSession.appSessionId);
+                          return;
+                        }
+                        if (isExpandableTool(tab.tool)) setExpandedPaneAppSessionId(null);
+                        dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
+                      }}
+                      onClosePane={() => {
+                        setExpandedPaneAppSessionId(null);
+                        dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
+                      }}
+                      renderTab={(tab) => {
+                        if (tab.tool === 'side') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('side')}>
+                              <LazySideChatsWorkspace
+                                sourceAppSessionId={activeSession.appSessionId}
+                                expanded={paneExpanded}
+                                onToggleExpanded={() => {
+                                  setExpandedPaneAppSessionId(
+                                    paneExpanded ? null : activeSession.appSessionId,
+                                  );
                                 }}
                               />
                             </Suspense>
-                          ),
-                        }
-                      : {})}
-                    width={utilityPaneWidth}
-                    minWidth={utilityPaneMin}
-                    maxWidth={utilityPaneMax}
-                    onResize={setUtilityPaneWidth}
-                    onResizeEnd={persistUtilityPaneWidth}
-                    onOpenTool={openUtilityTool}
-                    onActivateTab={(tabId) => {
-                      const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
-                      if (!isExpandableTool(nextTab?.tool)) setExpandedPaneAppSessionId(null);
-                      dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
-                    }}
-                    onCloseTab={(tab) => {
-                      const request = ++closeRequestRef.current;
-                      if (tab.tool === 'terminal') {
-                        const status = terminalInstances.get(tab.id)?.getState().status;
-                        if (!tab.terminalId || status !== 'running') {
-                          closeTerminalTab(tab);
-                          return;
-                        }
-                        const armCloseConfirm = () => {
-                          // The check may resolve after the user switched
-                          // sessions or closed the pane; only arm the
-                          // confirmation if this tab is still on screen.
-                          const panel = visibleUtilityPanelRef.current;
-                          if (!panel?.tabs.some((current) => current.id === tab.id)) {
-                            return;
-                          }
-                          setCloseConfirmation((current) =>
-                            current && current.request > request
-                              ? current
-                              : { tabId: tab.id, request },
                           );
-                        };
-                        void terminalHasChildren(tab.terminalId)
-                          .then((busy) => {
-                            if (!busy) {
-                              closeTerminalTab(tab);
-                              return;
-                            }
-                            armCloseConfirm();
-                          })
-                          .catch(() => {
-                            // Unverifiable shell state: fall back to asking
-                            // rather than silently doing nothing.
-                            armCloseConfirm();
-                          });
-                        return;
-                      }
-                      // The tab's Close is the side chat's own Close; hiding
-                      // the tab alone would bring the same chat back on the
-                      // next `/btw`. Minimize is the way to put it away.
-                      if (tab.tool === 'side') {
-                        sideChatClose.requestClose(activeSession.appSessionId);
-                        return;
-                      }
-                      if (isExpandableTool(tab.tool)) setExpandedPaneAppSessionId(null);
-                      dispatch({ type: 'CLOSE_UTILITY_TAB', tabId: tab.id });
-                    }}
-                    onClosePane={() => {
-                      setExpandedPaneAppSessionId(null);
-                      dispatch({ type: 'SET_UTILITY_PANEL_OPEN', open: false });
-                    }}
-                    renderTab={(tab) => {
-                      if (tab.tool === 'side') {
+                        }
+                        if (tab.tool === 'agents') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('agents')}>
+                              <LazyAgentsWorkspace
+                                tab={tab}
+                                expanded={paneExpanded}
+                                onToggleExpanded={() => {
+                                  setExpandedPaneAppSessionId(
+                                    paneExpanded ? null : activeSession.appSessionId,
+                                  );
+                                }}
+                              />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'threads') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('threads')}>
+                              <LazyThreadsWorkspace tab={tab} />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'background') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('background')}>
+                              <LazyBackgroundWorkspace appSessionId={activeSession.appSessionId} />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'canvas') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('canvas')}>
+                              {renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded)}
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'review') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('review')}>
+                              <LazyReviewPanel cwd={workingDirectory} />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'browser') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('browser')}>
+                              <LazyBrowserFocusWorkspace
+                                expanded={paneExpanded}
+                                ownComposer={paneExpanded && isMissionControlView}
+                                onToggleExpanded={() => {
+                                  setExpandedPaneAppSessionId(
+                                    paneExpanded ? null : activeSession.appSessionId,
+                                  );
+                                }}
+                              />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'terminal') {
+                          return (
+                            <Suspense fallback={utilityToolFallback('terminal')}>
+                              <LazyTerminalWorkspace
+                                tabId={tab.id}
+                                terminalId={tab.terminalId}
+                                appSessionId={activeSession.appSessionId}
+                                cwd={tab.cwd ?? workingDirectory}
+                                confirmClose={tab.id === confirmingTab?.id}
+                                onKeepOpen={() => {
+                                  setCloseConfirmation(null);
+                                }}
+                                onStopAndClose={() => {
+                                  closeTerminalTab(tab);
+                                }}
+                                onCreated={(terminalId, label) => {
+                                  dispatch({
+                                    type: 'UPDATE_UTILITY_TAB',
+                                    tabId: tab.id,
+                                    appSessionId: activeSession.appSessionId,
+                                    terminalId,
+                                    label,
+                                  });
+                                }}
+                              />
+                            </Suspense>
+                          );
+                        }
                         return (
-                          <Suspense fallback={utilityToolFallback('side')}>
-                            <LazySideChatsWorkspace
-                              sourceAppSessionId={activeSession.appSessionId}
-                              expanded={paneExpanded}
-                              onToggleExpanded={() => {
-                                setExpandedPaneAppSessionId(
-                                  paneExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                            />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'agents') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('agents')}>
-                            <LazyAgentsWorkspace
-                              tab={tab}
-                              expanded={paneExpanded}
-                              onToggleExpanded={() => {
-                                setExpandedPaneAppSessionId(
-                                  paneExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                            />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'threads') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('threads')}>
-                            <LazyThreadsWorkspace tab={tab} />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'background') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('background')}>
-                            <LazyBackgroundWorkspace appSessionId={activeSession.appSessionId} />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'canvas') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('canvas')}>
-                            {renderCanvasWorkspace(activeSession.appSessionId, tab, paneExpanded)}
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'review') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('review')}>
-                            <LazyReviewPanel cwd={workingDirectory} />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'browser') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('browser')}>
-                            <LazyBrowserFocusWorkspace
-                              expanded={paneExpanded}
-                              ownComposer={paneExpanded && isMissionControlView}
-                              onToggleExpanded={() => {
-                                setExpandedPaneAppSessionId(
-                                  paneExpanded ? null : activeSession.appSessionId,
-                                );
-                              }}
-                            />
-                          </Suspense>
-                        );
-                      }
-                      if (tab.tool === 'terminal') {
-                        return (
-                          <Suspense fallback={utilityToolFallback('terminal')}>
-                            <LazyTerminalWorkspace
-                              tabId={tab.id}
-                              terminalId={tab.terminalId}
-                              appSessionId={activeSession.appSessionId}
-                              cwd={tab.cwd ?? workingDirectory}
-                              confirmClose={tab.id === confirmingTab?.id}
-                              onKeepOpen={() => {
-                                setCloseConfirmation(null);
-                              }}
-                              onStopAndClose={() => {
-                                closeTerminalTab(tab);
-                              }}
-                              onCreated={(terminalId, label) => {
+                          <Suspense fallback={utilityToolFallback('files')}>
+                            <LazyFilesWorkspace
+                              root={workingDirectory}
+                              selectedPath={tab.filePath}
+                              onSelectPath={(filePath) => {
                                 dispatch({
                                   type: 'UPDATE_UTILITY_TAB',
                                   tabId: tab.id,
                                   appSessionId: activeSession.appSessionId,
-                                  terminalId,
-                                  label,
+                                  filePath,
                                 });
                               }}
                             />
                           </Suspense>
                         );
-                      }
-                      return (
-                        <Suspense fallback={utilityToolFallback('files')}>
-                          <LazyFilesWorkspace
-                            root={workingDirectory}
-                            selectedPath={tab.filePath}
-                            onSelectPath={(filePath) => {
-                              dispatch({
-                                type: 'UPDATE_UTILITY_TAB',
-                                tabId: tab.id,
-                                appSessionId: activeSession.appSessionId,
-                                filePath,
-                              });
-                            }}
-                          />
-                        </Suspense>
-                      );
-                    }}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
-            {state.productMode === 'design' && !embedded && <DesignDropTarget />}
-          </div>
-        </main>
+                      }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+              {state.productMode === 'design' && !embedded && <DesignDropTarget />}
+            </div>
+          </main>
 
-        {/* Floating overlay — does not take flex space, so `main` keeps full
+          {/* Floating overlay — does not take flex space, so `main` keeps full
             width and its scrollbar stays at the window's right edge. */}
-        <AnimatePresence initial={false}>
-          {rightPanelVisible && (
-            <motion.div
-              key="right-panel"
-              initial={{ opacity: 0, x: 12 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 12 }}
-              transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-              className="pointer-events-none absolute bottom-0 right-0 z-30 w-context-panel"
-              style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
-            >
-              <RightPanel />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+          <AnimatePresence initial={false}>
+            {rightPanelVisible && (
+              <motion.div
+                key="right-panel"
+                initial={{ opacity: 0, x: 12 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 12 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="pointer-events-none absolute bottom-0 right-0 z-30 w-context-panel"
+                style={{ top: state.tabStripShown ? TOP_ROW_HEIGHT_PX : 0 }}
+              >
+                <RightPanel />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
 
-      {/* Floating window controls — rendered LAST so their `no-drag` regions are
+        {/* Floating window controls — rendered LAST so their `no-drag` regions are
           accumulated after the full-width header drag regions (sidebar/chat/
           session headers). Earlier in the DOM, those overlapping drag regions
           would re-assert `drag` over these buttons and swallow their clicks
           (Electron #27149). They stay absolutely positioned, so paint order and
           layout are unchanged. */}
-      <div
-        data-electron-drag-region
-        className="absolute h-9 z-40 flex items-center"
-        style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
-      >
-        <Tooltip
-          label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
-          placement="bottom"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={PanelLeft}
-            onClick={() => {
-              dispatch({ type: 'TOGGLE_SIDEBAR' });
-            }}
-            aria-label="Toggle sidebar"
-          />
-        </Tooltip>
-      </div>
-
-      {/* Without tabs, the session's controls float at the end of the view's own top row. */}
-      {!state.tabStripShown && !showUtilityPane && !fullContentRoute && (
         <div
           data-electron-drag-region
-          className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
-          style={{ top: bannerStackHeight }}
+          className="absolute h-9 z-40 flex items-center"
+          style={{ top: bannerStackHeight, left: WINDOW_CONTROLS_INSET_PX }}
         >
-          {sessionControls}
+          <Tooltip
+            label={`Toggle sidebar (${formatChord(state.shortcutBindings.toggleSidebar)})`}
+            placement="bottom"
+          >
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={PanelLeft}
+              onClick={() => {
+                dispatch({ type: 'TOGGLE_SIDEBAR' });
+              }}
+              aria-label="Toggle sidebar"
+            />
+          </Tooltip>
         </div>
-      )}
 
-      {state.commandPaletteOpen && (
-        <Suspense fallback={<CommandPaletteSkeleton />}>
-          <LazyCommandPalette onOpenTool={openUtilityTool} />
+        {/* Without tabs, the session's controls float at the end of the view's own top row. */}
+        {!state.tabStripShown && !showUtilityPane && !fullContentRoute && (
+          <div
+            data-electron-drag-region
+            className="absolute right-0 h-9 z-40 flex items-center gap-1 pr-3"
+            style={{ top: bannerStackHeight }}
+          >
+            {sessionControls}
+          </div>
+        )}
+
+        {state.commandPaletteOpen && (
+          <Suspense fallback={<CommandPaletteSkeleton />}>
+            <LazyCommandPalette onOpenTool={openUtilityTool} />
+          </Suspense>
+        )}
+        <Suspense fallback={null}>
+          <LazySpecWikiModal />
         </Suspense>
-      )}
-      <Suspense fallback={null}>
-        <LazySpecWikiModal />
-      </Suspense>
-      {/* Each design draft whose chat now exists: the canvas it was started
+        {/* Each design draft whose chat now exists: the canvas it was started
           for is already committed and the board opens beside it (spec §4). Two drafts
           sent in a row each keep their own canvas. */}
-      {!embedded &&
-        canvasRequests.map(([clientRef, request]) => (
-          <Suspense key={clientRef} fallback={null}>
-            <LazyCanvasChatBootstrap clientRef={clientRef} appSessionId={request.appSessionId} />
-          </Suspense>
-        ))}
-      {/* Watches project threads for a block that needs the user. Nothing to
+        {!embedded &&
+          canvasRequests.map(([clientRef, request]) => (
+            <Suspense key={clientRef} fallback={null}>
+              <LazyCanvasChatBootstrap clientRef={clientRef} appSessionId={request.appSessionId} />
+            </Suspense>
+          ))}
+        {/* Watches project threads for a block that needs the user. Nothing to
           watch until a project exists, so it loads with the first one. */}
-      {hasProjects && !embedded && !showWizard && (
-        <Suspense fallback={null}>
-          <LazyThreadAttentionNotifier />
-        </Suspense>
-      )}
-      <Toaster />
-
-      {!isRemoteClient() && (
-        <Suspense fallback={null}>
-          <LazyRemoteApprovalPanel />
-        </Suspense>
-      )}
-      {!embedded && (
-        <Suspense fallback={null}>
-          <LazyComputerUsePictureInPicture
-            hidden={showWizard || state.settingsOpen || fullContentRoute}
-          />
-        </Suspense>
-      )}
-
-      <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
-
-      <AnimatePresence>
-        {showWizard && onboard.ready && (
-          <OnboardingLazyHost
-            controller={onboard}
-            onComplete={() => {
-              setForceWizard(false);
-              setBannerDismissed(false);
-            }}
-          />
+        {hasProjects && !embedded && !showWizard && (
+          <Suspense fallback={null}>
+            <LazyThreadAttentionNotifier />
+          </Suspense>
         )}
-      </AnimatePresence>
-      {/* Every chat's browser page. Last, so the pane's slot is laid out before
+        <Toaster />
+
+        {!isRemoteClient() && (
+          <Suspense fallback={null}>
+            <LazyRemoteApprovalPanel />
+          </Suspense>
+        )}
+        {!embedded && (
+          <Suspense fallback={null}>
+            <LazyComputerUsePictureInPicture
+              hidden={showWizard || state.settingsOpen || fullContentRoute}
+            />
+          </Suspense>
+        )}
+
+        <AnimatePresence>{state.settingsOpen && <SettingsLazyHost />}</AnimatePresence>
+
+        <AnimatePresence>
+          {showWizard && onboard.ready && (
+            <OnboardingLazyHost
+              controller={onboard}
+              onComplete={() => {
+                setForceWizard(false);
+                setBannerDismissed(false);
+              }}
+            />
+          )}
+        </AnimatePresence>
+        {/* Every chat's browser page. Last, so the pane's slot is laid out before
           the pages anchored to it. */}
-      {!embedded && hasNativeBrowser() && <BrowserHost />}
-    </div>
+        {!embedded && hasNativeBrowser() && <BrowserHost />}
+      </div>
+    </LinkActionsProvider>
   );
 }

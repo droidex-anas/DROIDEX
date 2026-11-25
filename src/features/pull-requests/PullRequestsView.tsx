@@ -11,6 +11,12 @@ import { prChatSeed } from './lib/prChatSeed';
 import type { InboxPullRequest } from './lib/prInbox';
 import { selectedInboxPullRequest } from './lib/prInbox';
 import { droidReviewSeed } from './lib/prReview';
+import {
+  formatAnnotationsForPrompt,
+  orderedAnnotations,
+  type PrLineAnnotation,
+} from './lib/prAnnotations';
+import { prReviewKey } from './lib/prReviewState';
 import { resolvePrInboxContext } from './lib/prWorkspaceCwd';
 
 // The view's top row is the window drag row every view under `main` owns, so
@@ -31,6 +37,7 @@ function WorkspaceDetail({
   viewerLogin,
   onOpenChat,
   onReviewWithDroid,
+  onSendReview,
 }: {
   cwd: string | null;
   number: number | null;
@@ -38,6 +45,7 @@ function WorkspaceDetail({
   viewerLogin: string | null;
   onOpenChat: (pr: InboxPullRequest) => void;
   onReviewWithDroid: (pr: InboxPullRequest) => void;
+  onSendReview: (pr: InboxPullRequest, annotations: PrLineAnnotation[]) => void;
 }) {
   if (cwd == null || number == null) {
     return (
@@ -67,25 +75,37 @@ function WorkspaceDetail({
           repoName: selected?.repoName ?? '',
         });
       }}
+      onSendReview={(item, annotations) => {
+        onSendReview(
+          {
+            ...item,
+            cwd,
+            repoName: selected?.repoName ?? '',
+          },
+          annotations,
+        );
+      }}
     />
   );
 }
 
 export function PullRequestsView() {
   const dispatch = useStoreDispatch();
+  // Select the active session itself rather than the sessions record: any
+  // background lifecycle update rebuilds the record, and the workspace must
+  // not re-render for chats it never shows.
   const state = useStoreSelector(
     (current) => ({
-      activeAppSessionId: current.activeAppSessionId,
+      active: current.activeAppSessionId ? current.sessions[current.activeAppSessionId] : null,
       draftChat: current.draftChat,
       prBacklogIds: current.prBacklogIds,
       prWorkspaceCwd: current.prWorkspaceCwd,
       prWorkspaceNumber: current.prWorkspaceNumber,
-      sessions: current.sessions,
       workspaceCwds: current.workspaceCwds,
     }),
     shallowEqual,
   );
-  const active = state.activeAppSessionId ? state.sessions[state.activeAppSessionId] : null;
+  const active = state.active;
   const inbox = useMemo(
     () =>
       resolvePrInboxContext({
@@ -165,6 +185,20 @@ export function PullRequestsView() {
           dispatch({ type: 'CLOSE_PULL_REQUESTS' });
           dispatch({ type: 'START_CHAT', cwd: pr.cwd, executionMode: 'local' });
           dispatch({ type: 'SEED_COMPOSER', text: droidReviewSeed(pr), replace: true });
+        }}
+        onSendReview={(pr, annotations) => {
+          // The notes move into the composer as an editable prompt — sending
+          // stays the user's decision — and the draft clears because its
+          // content now lives there.
+          const key = prReviewKey(pr.cwd, pr.number);
+          dispatch({ type: 'CLOSE_PULL_REQUESTS' });
+          dispatch({ type: 'START_CHAT', cwd: pr.cwd, executionMode: 'local' });
+          dispatch({
+            type: 'SEED_COMPOSER',
+            text: formatAnnotationsForPrompt(pr, orderedAnnotations(annotations)),
+            replace: true,
+          });
+          dispatch({ type: 'PR_REVIEW_NOTES_CLEAR', key });
         }}
       />
     </PrWorkspace>

@@ -58,6 +58,7 @@ export function PrComposer({
           }
         }}
         rows={1}
+        aria-label="Leave a comment"
         placeholder="Leave a comment"
         className="w-full resize-none bg-transparent px-3.5 pt-3 text-body-lg text-primary outline-none placeholder:text-muted"
       />

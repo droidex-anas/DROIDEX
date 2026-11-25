@@ -1,12 +1,21 @@
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Children, createContext, isValidElement, useContext, memo, type ReactNode } from 'react';
+import {
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  memo,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from 'react';
 import { AppBlock } from './AppBlock';
 import { appFencesInMarkdown, type MarkdownAppFence } from '../lib/appBlocks';
 import { CodeCard, highlightFence } from './MarkdownCode';
 import { markdownTableComponents } from './MarkdownTable';
 import { LinkBadge } from './transcript/LinkBadge';
+import { interceptLinkClick, LinkActionsContext } from './linkActions';
 import { describeLink, linkTextIsUrl } from '../lib/linkPresentation';
 import { remarkInlineCodeRuns } from '../lib/remarkInlineCodeRuns';
 import { TranscriptImage } from './media/TranscriptImage';
@@ -150,6 +159,59 @@ function MarkdownFence({
    images refetch, and anything the reader is interacting with is thrown away on
    every streamed token. Both maps are built once, at module load. */
 
+// The prose anchor is a real component rather than an inline arrow so its
+// hook use (the link actions) is what the linter can see: a component.
+function MarkdownAnchor({
+  children,
+  href,
+  node,
+}: ComponentPropsWithoutRef<'a'> & Partial<ExtraProps>): ReactNode {
+  const linkActions = useContext(LinkActionsContext);
+  // A linked markdown image would otherwise produce invalid nested
+  // interactive HTML (<a><button>), so the image viewer wins and the
+  // redundant outer link is omitted. Inspect the parsed markdown node
+  // rather than React element identity, which react-markdown wraps.
+  const linkedImage = node?.children.some(
+    (child) => child.type === 'element' && child.tagName === 'img',
+  );
+  if (linkedImage) return <>{children}</>;
+  // The site's mark leads the link so a list of sources can be scanned by
+  // where they point. A bare URL that names its own page — a pull request,
+  // an issue — shows that name instead, with the full address on hover; a
+  // link the author titled keeps their title. Links read by colour and
+  // underline on hover; a bare URL may break anywhere, so it starts beside
+  // its mark instead of leaving the mark alone on the line above.
+  const link = href === undefined ? null : describeLink(href);
+  const textIsUrl = href !== undefined && linkTextIsUrl(reactText(children), href);
+  const named = textIsUrl && link?.label != null;
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      title={href}
+      className="group/link text-link"
+      onClick={(event) => {
+        if (href !== undefined) interceptLinkClick(event, href, linkActions);
+      }}
+      onContextMenu={(event) => {
+        if (href === undefined || !linkActions) return;
+        event.preventDefault();
+        linkActions.openMenu({ x: event.clientX, y: event.clientY }, href);
+      }}
+    >
+      {link ? <LinkBadge key={link.host} link={link} /> : null}
+      <span
+        className={`underline decoration-transparent underline-offset-2 transition-colors group-hover/link:decoration-current ${textIsUrl && !named ? 'break-all' : ''}`}
+      >
+        {/* A path used as a link label stays plain inline code: the link is
+            the control, and a button cannot nest inside an anchor. */}
+        {named ? link.label : <ProseFileLinks>{children}</ProseFileLinks>}
+      </span>
+    </a>
+  );
+}
+
 function createMarkdownComponents(specMode: boolean): Components {
   return {
     // Headings read as structure, not as bold text: the type ladder from
@@ -240,43 +302,7 @@ function createMarkdownComponents(specMode: boolean): Components {
     del: ({ children }) => (
       <del className="line-through decoration-muted/80 text-secondary">{children}</del>
     ),
-    a: ({ children, href, node }) => {
-      // A linked markdown image would otherwise produce invalid nested
-      // interactive HTML (<a><button>), so the image viewer wins and the
-      // redundant outer link is omitted. Inspect the parsed markdown node
-      // rather than React element identity, which react-markdown wraps.
-      const linkedImage = node?.children.some(
-        (child) => child.type === 'element' && child.tagName === 'img',
-      );
-      if (linkedImage) return <>{children}</>;
-      // The site's mark leads the link so a list of sources can be scanned by
-      // where they point. A bare URL that names its own page — a pull request,
-      // an issue — shows that name instead, with the full address on hover; a
-      // link the author titled keeps their title. Links read by colour and
-      // underline on hover; a bare URL may break anywhere, so it starts beside
-      // its mark instead of leaving the mark alone on the line above.
-      const link = href === undefined ? null : describeLink(href);
-      const textIsUrl = href !== undefined && linkTextIsUrl(reactText(children), href);
-      const named = textIsUrl && link?.label != null;
-      return (
-        <a
-          href={href}
-          target="_blank"
-          rel="noreferrer"
-          title={href}
-          className="group/link text-link"
-        >
-          {link ? <LinkBadge key={link.host} link={link} /> : null}
-          <span
-            className={`underline decoration-transparent underline-offset-2 transition-colors group-hover/link:decoration-current ${textIsUrl && !named ? 'break-all' : ''}`}
-          >
-            {/* A path used as a link label stays plain inline code: the link is
-                the control, and a button cannot nest inside an anchor. */}
-            {named ? link.label : <ProseFileLinks>{children}</ProseFileLinks>}
-          </span>
-        </a>
-      );
-    },
+    a: MarkdownAnchor,
     blockquote: ({ children }) => (
       <blockquote
         className={`rounded-lg bg-surface text-secondary ${specMode ? 'px-4 py-3 my-4' : 'px-3.5 py-2 my-2.5'}`}
