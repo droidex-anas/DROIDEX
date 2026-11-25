@@ -39,7 +39,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // The commands that carry a prompt, and so may carry the rows staged with it.
-const MENTION_COMMANDS = new Set(['session.send', 'session.create']);
+const MENTION_COMMANDS = new Set(['session.send', 'session.create', 'browser.design.sendPrompt']);
 
 export function assertValidMentions(command: object & { mentions?: unknown }): void {
   if (
@@ -47,7 +47,7 @@ export function assertValidMentions(command: object & { mentions?: unknown }): v
     !MENTION_COMMANDS.has(String(command.type)) ||
     !Array.isArray(command.mentions)
   )
-    throw new Error('Mentions are only valid on a prompt: a session send or a new session.');
+    throw new Error('Mentions are only valid on a session or design prompt.');
   for (const mention of command.mentions) {
     if (
       !isRecord(mention) ||
