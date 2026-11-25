@@ -234,9 +234,10 @@ export class Tunnel {
     const data = encodeBase64(await deflate(packet));
     // Compressed bytes need base64 inside the plaintext frame, while raw JSON
     // only pays its own string escaping. Random or already-compressed payloads
-    // can be smaller uncompressed.
-    const rawChars = JSON.stringify(packet).length - 2;
-    if (data.length < rawChars) {
+    // can be smaller uncompressed. Compare in wire units: base64url is ASCII,
+    // but raw JSON text costs UTF-8 bytes, up to three per non-ASCII character.
+    const rawBytes = utf8Bytes(JSON.stringify(packet)) - 2;
+    if (data.length < rawBytes) {
       this.pushChunks(data, true);
       return;
     }
@@ -263,9 +264,17 @@ export class Tunnel {
 }
 
 function frameBytes(frame: TunnelFrame): number {
-  // Ciphertext is base64 of the JSON plaintext plus the relay envelope.
-  const plaintext = frame.type === 'ack' ? 40 : JSON.stringify(frame.data).length + 80;
+  // Ciphertext is base64 of the JSON plaintext plus the relay envelope. The
+  // plaintext costs UTF-8 bytes on the wire, not UTF-16 code units: non-ASCII
+  // text can cost three times its string length.
+  const plaintext = frame.type === 'ack' ? 40 : utf8Bytes(JSON.stringify(frame.data)) + 80;
   return Math.ceil((plaintext * 4) / 3 + 200);
+}
+
+const textEncoder = new TextEncoder();
+
+function utf8Bytes(value: string): number {
+  return textEncoder.encode(value).length;
 }
 
 function parseFrame(value: unknown): TunnelFrame {
