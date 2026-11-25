@@ -278,6 +278,9 @@ export interface PrComment {
   path?: string | null;
   line?: number | null;
   diffHunk?: string | null;
+  // Which side of the diff an inline comment is on; LEFT lines are numbered
+  // in the old file. Absent on threads from before the field existed.
+  side?: 'LEFT' | 'RIGHT' | null;
   // Review-thread verdict; only inline comments belong to a thread.
   resolved?: boolean;
   outdated?: boolean;

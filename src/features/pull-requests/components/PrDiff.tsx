@@ -25,6 +25,12 @@ interface EditingState {
   annotationId: string | null;
 }
 
+// The API numbers LEFT-side comments in the old file and everything else in
+// the new one; threads predating the side field default to the new side.
+function commentSide(comment: PrComment): DiffLineSide {
+  return comment.side === 'LEFT' ? 'old' : 'new';
+}
+
 function FileRow({
   file,
   selected,
@@ -121,11 +127,9 @@ function AnchoredContent({
   onCancelEditor: (state: EditingState) => void;
 }) {
   const pieces: ReactNode[] = [];
-  if (side === 'new') {
-    for (const comment of comments) {
-      if (comment.line !== line) continue;
-      pieces.push(<PrInlineComment key={`c-${comment.id}`} comment={comment} />);
-    }
+  for (const comment of comments) {
+    if (comment.line !== line || commentSide(comment) !== side) continue;
+    pieces.push(<PrInlineComment key={`c-${comment.id}`} comment={comment} />);
   }
   for (const note of annotations) {
     if (diffLineAnchorKey(note.side, note.line) !== diffLineAnchorKey(side, line)) continue;
@@ -282,11 +286,12 @@ export function PrDiff({
       );
       const fileNotes = draft.annotations.filter((note) => note.path === path);
       const editingHere = editing?.path === path ? editing : null;
-      if (fileComments.length === 0 && fileNotes.length === 0 && !editingHere) continue;
 
       const anchors = new Set<string>();
       for (const comment of fileComments) {
-        if (comment.line != null) anchors.add(diffLineAnchorKey('new', comment.line));
+        if (comment.line != null) {
+          anchors.add(diffLineAnchorKey(commentSide(comment), comment.line));
+        }
       }
       for (const note of fileNotes) anchors.add(diffLineAnchorKey(note.side, note.line));
       if (editingHere) {
@@ -296,7 +301,14 @@ export function PrDiff({
       map.set(path, {
         anchors,
         onAnnotate: (target) => {
-          setEditing({ path, target, annotationId: null });
+          // A line that already carries a note opens that note for editing
+          // instead of a blank editor that would silently replace it.
+          const existing = fileNotes.find(
+            (note) =>
+              diffLineAnchorKey(note.side, note.line) ===
+              diffLineAnchorKey(target.side, target.line),
+          );
+          setEditing({ path, target, annotationId: existing?.id ?? null });
         },
         renderBelow: (side, line) => (
           <AnchoredContent

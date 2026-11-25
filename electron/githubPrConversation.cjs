@@ -277,6 +277,7 @@ function normalizePrComments(data, inlineRows = [], threadStatus = new Map()) {
         path: comment.path || null,
         line: comment.line ?? comment.original_line ?? null,
         diffHunk: comment.diff_hunk || null,
+        side: comment.side === 'LEFT' ? 'LEFT' : comment.side === 'RIGHT' ? 'RIGHT' : null,
         resolved: status?.resolved === true,
         outdated: status?.outdated === true,
         resolvedBy: status?.resolvedBy ?? null,
