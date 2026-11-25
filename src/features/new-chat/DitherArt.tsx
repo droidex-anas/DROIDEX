@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MARK_PATHS } from '../../components/ModelIcon';
 import { useStoreSelector } from '../../hooks/useStore';
 import { HARNESS_ART_COLORS, isDarkCanvas } from '../../lib/themeTokens';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
 import {
   artField,
