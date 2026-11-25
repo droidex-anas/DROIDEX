@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSessionLineEvents } from './sessionTranscriptParser.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from '@droidex/protocol';
 import { parseStoredNotice, storedNoticeLine } from './sessionNotices.js';
 import { formatBranchPrompt } from './branchPrompt.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';

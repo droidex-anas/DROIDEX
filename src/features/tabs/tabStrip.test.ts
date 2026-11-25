@@ -7,7 +7,7 @@ import { gridTiles } from './tileGrid';
 import { withLocalStorageMap } from '../../test/localStorage';
 import { isDesignChat } from '../../lib/chatMetadata';
 import { sessionIsUnread } from '../../lib/sessions';
-import type { SessionSummary } from '../../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 
 function session(appSessionId: string, cwd = '/workspace'): SessionSummary {
   return {

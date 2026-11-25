@@ -1,6 +1,6 @@
 import { useId, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import type { ChildSessionSummary, ModelInfo, ProviderKind } from '../../types/bridge';
+import type { ChildSessionSummary, ModelInfo, ProviderKind } from '@droidex/protocol';
 import type { ChildSessionActivity, ChildSessionTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import { AgentSummaryLine } from './AgentSummaryLine';

@@ -8,9 +8,9 @@ import {
   applyCachedSummary,
   type FactoryDefaults,
   type HistoricalSession,
-  type HistoricalSummaryFilter,
   type PersistedChildSession,
 } from './history.js';
+import type { HistoricalSummaryFilter } from './historySummaryFilter.js';
 import { HistoryDurabilityPolicy } from './HistoryDurabilityPolicy.js';
 import { HistoryPersistenceQueue } from './HistoryPersistenceQueue.js';
 import {
@@ -36,7 +36,7 @@ import type {
   SessionSearchResult,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { SessionFileChange, SessionFileReconciliation } from './sessionFileCache.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
@@ -206,7 +206,7 @@ export class HistoryPersistence {
   }
 
   async setIndexingIdle(isIdle: boolean): Promise<void> {
-    this.indexingIdle = isIdle && !this.hasActiveIndexingWork();
+    this.indexingIdle = isIdle && !this.durability.hasActiveWork();
     if (!this.searchClient || this.searchUnavailable) return;
     try {
       await this.searchClient.setIndexingIdle(this.indexingIdle);
@@ -426,10 +426,6 @@ export class HistoryPersistence {
         console.error(`Could not pause history search indexing: ${asError(error).message}`);
       });
     }
-  }
-
-  private hasActiveIndexingWork(): boolean {
-    return this.durability.hasActiveWork();
   }
 
   private async runBoundary(): Promise<void> {

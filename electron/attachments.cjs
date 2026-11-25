@@ -11,12 +11,17 @@
  * must never be redirected and discard()'s path boundary must stay real.
  *
  * Kept free of `require('electron')` so it can be unit-tested under plain Node;
- * main.cjs injects the attachments directory.
+ * IPC handlers share the attachmentDirectory resolver below.
  */
 
 const fsp = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
+
+function attachmentDirectory() {
+  return path.join(os.tmpdir(), 'droidex-attachments');
+}
 
 // Pasted retina screenshots can be large; 40 MiB of decoded bytes is generous
 // headroom without letting a runaway renderer fill the disk.
@@ -331,6 +336,7 @@ async function discard(dir, target) {
 }
 
 module.exports = {
+  attachmentDirectory,
   save,
   saveFile,
   discard,

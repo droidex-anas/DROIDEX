@@ -34,6 +34,8 @@ test('A/B probes emit labelled metrics without requiring a GUI', async () => {
       'feed.eventsRebuiltPerDelta',
       'feed.rowVisitsPerTailDeltaAt10k',
       'terminal.deliveriesPerFlood',
+      'childPreview.unchangedProjectionMs',
+      'childPreview.unchangedOneLineProjectionMs',
       'markdown.perDeltaRenderMs',
       'sidecar.readyMs',
       'sidecar.firstSessionsListMs',

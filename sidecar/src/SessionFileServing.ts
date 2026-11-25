@@ -34,6 +34,7 @@ export class SessionFileServing {
   // transcripts DROIDEX writes for the other providers).
   private watchers: SessionFileWatcher[] = [];
   private lastListOptions?: SessionListFilterOptions;
+  private lastEmittedListKey?: string;
 
   constructor(private readonly dependencies: SessionFileServingDependencies) {}
 
@@ -113,7 +114,18 @@ export class SessionFileServing {
   }
 
   private emit(options?: SessionListFilterOptions): void {
-    this.dependencies.emitList(this.dependencies.listSummaries(options));
+    const page = this.dependencies.listSummaries(options);
+    const key = JSON.stringify(page);
+    this.dependencies.emitList(page);
+    this.lastEmittedListKey = key;
+  }
+
+  private emitChangedList(options?: SessionListFilterOptions): void {
+    const page = this.dependencies.listSummaries(options);
+    const key = JSON.stringify(page);
+    if (key === this.lastEmittedListKey) return;
+    this.dependencies.emitList(page);
+    this.lastEmittedListKey = key;
   }
 
   private bootstrap(): void {
@@ -204,6 +216,6 @@ export class SessionFileServing {
       changes?.map(({ providerSessionId }) => providerSessionId),
     );
     this.dependencies.onFilesReconciled?.(changes);
-    this.emit(this.lastListOptions);
+    this.emitChangedList(this.lastListOptions);
   }
 }

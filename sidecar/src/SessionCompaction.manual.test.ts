@@ -3,7 +3,7 @@ import test from 'node:test';
 import { CanvasScopes } from './canvas/canvasScopes.js';
 import { CanvasTurns } from './canvas/canvasTurnContext.js';
 import { DESIGN_SESSION_GUIDANCE } from './canvas/designSessionGuidance.js';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import { SessionCompaction } from './SessionCompaction.js';
 import type { LiveSession } from './SessionLifecycle.js';
@@ -351,7 +351,7 @@ test('provider load completing after close cannot replace a reopened session', a
   const gate = h.runtime.deferNextLoad();
   const compacting = h.compaction.compact('app-1');
   await h.runtime.waitForLoad('provider-2');
-  live.closeMode = 'discard-pending';
+  live.turn.beginClose('discard-pending');
   const { live: reopened } = addLive(h, 'app-1', 'reopened');
   gate.resolve();
   await compacting;
@@ -383,7 +383,7 @@ test('provider adoption completing after close leaves cleanup to lifecycle', asy
   h.runtime.loadQueue.set('provider-2', [new FakeFactorySession('provider-2', {}, h.calls)]);
   const compacting = h.compaction.compact('app-1');
   await started;
-  live.closeMode = 'discard-pending';
+  live.turn.beginClose('discard-pending');
   finishAdoption(false);
   await compacting;
 

@@ -33,10 +33,10 @@ import type {
   CanvasChange,
   CanvasDiagnostic,
   CanvasFrame,
-  CanvasScope,
   SourceElement,
   WriteReceipt,
-} from '../canvas/protocol.js';
+} from '@droidex/protocol';
+import type { CanvasScope } from '../canvas/canvasScopes.js';
 import { deferred, observedFileSystem, writeInput } from './canvasStorageSupport.js';
 
 /** The message a `failed` compile reports, so a suite can assert on it. */

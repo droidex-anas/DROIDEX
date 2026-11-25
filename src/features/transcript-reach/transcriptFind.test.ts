@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { FeedItem } from '../../components/chatFeed';
 import { feedRowId } from '../../hooks/conversationViewportAnchor';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import {
   findTranscriptMatches,
   formatFindCount,

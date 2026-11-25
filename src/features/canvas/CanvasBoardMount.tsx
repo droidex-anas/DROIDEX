@@ -33,9 +33,18 @@ import {
   reduceBoardInteraction,
   type BoardInteraction,
 } from './canvasState';
-import type { AnnotateCanvasInput } from './annotationProtocol';
+import type {
+  AnnotateCanvasInput,
+  EditElementInput,
+  LayerChange,
+  LayerRef,
+  ArrangeFramesInput,
+  CanvasFrame,
+  CanvasSnapshot,
+  SwitchRevisionInput,
+} from '@droidex/protocol';
 import { DesignPreview, type PreviewSelections } from './DesignPreview';
-import type { EditElementInput, LayerChange, LayerRef } from './elementEditProtocol';
+
 import { pickElement, syncElementPins, unpinElements, useElementPins } from './elementPins';
 import { syncFramePins, toggleFramePins, useFramePins } from './framePins';
 import { layerElements } from './layers/layerElements';
@@ -44,12 +53,7 @@ import { SidePanel } from './layers/SidePanel';
 import { ComponentsPanel } from './palette/ComponentsPanel';
 import { useAddToBoard } from './palette/useAddToBoard';
 import { PreviewRuns } from './previewRuns';
-import type {
-  ArrangeFramesInput,
-  CanvasFrame,
-  CanvasSnapshot,
-  SwitchRevisionInput,
-} from './protocol';
+
 import { useCanvasPresence, useLandedWrites } from './useCanvasPresence';
 import { useBoardPaste } from './useBoardPaste';
 import type { DesignPins } from './useDesignPicker';

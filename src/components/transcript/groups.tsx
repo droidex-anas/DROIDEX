@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ToolActivityDensity } from '../../lib/toolActivity';
 import {
   MAX_DIFF_CARDS_PER_COMMIT,

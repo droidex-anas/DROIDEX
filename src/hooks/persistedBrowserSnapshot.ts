@@ -1,4 +1,4 @@
-import type { BrowserState, BrowserViewportMode } from '../types/bridge';
+import type { BrowserState, BrowserViewportMode } from '@droidex/protocol';
 
 const BROWSER_VIEWPORT_MODES = new Set<BrowserViewportMode>([
   'fit',

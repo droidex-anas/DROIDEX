@@ -4,7 +4,7 @@
 // frame's own sheet, so it never hides the design it acts on.
 
 import { canvasToScreen, type PlacedFrame, type Point, type Viewport } from './canvasGeometry';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 /**
  * Screen pixels between the frame's edge and the bar: the label's row above,

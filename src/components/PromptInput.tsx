@@ -19,46 +19,29 @@ import {
   useStoreDispatch,
   useStoreSelector,
   type AppState,
-  type CanvasDraft,
 } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
 import {
-  sendToSession,
-  sendToChild,
-  sendDesignPrompt,
   createSession,
   interruptVisibleSession,
-  compactSession,
   updateSessionSettings,
   newClientRef,
   listSkills,
 } from '../lib/commands';
-import {
-  pickDirectory,
-  pickFiles,
-  listFiles,
-  isDesktop,
-  pathForFile,
-  type FeedbackReportRequest,
-} from '../lib/desktop';
-import {
-  pathsInSequence,
-  useImageAttachments,
-  type AttachedImage,
-} from '../hooks/useImageAttachments';
+import { pickFiles, listFiles, isDesktop, pathForFile } from '../lib/desktop';
+import type { FeedbackReportRequest } from '../lib/desktopContract';
+import { pathsInSequence } from '../hooks/attachmentStaging';
+import { useImageAttachments, type AttachedImage } from '../hooks/useImageAttachments';
 import { useFileAttachments } from '../hooks/useFileAttachments';
 import { useVoiceControls } from '../features/voice/VoiceProvider';
 import { canUseVoice } from '../features/voice/voiceAvailability';
 import { useComposerFileDrop } from '../hooks/useComposerFileDrop';
-import { ImageChip } from './composer/ImageChip';
-import { FileChip } from './composer/FileChip';
+import { ComposerAttachments } from './composer/ComposerAttachments';
 import { ImageLightbox } from './media/ImageLightbox';
 import { imageSrc, partitionImagePaths } from '../lib/localImage';
 import ComposerDock from './composer/ComposerDock';
 import { QueuedPrompts } from './composer/QueuedPrompts';
-import { markGitTurnStart } from '../lib/git';
-import { isAppUpdateInstalling, useAppUpdate } from '../lib/appUpdate';
-import { canRunAgents } from '../lib/runtimeHealth';
+import { useAppUpdate } from '../lib/appUpdate';
 import { activeDraftTileId } from '../features/tabs/tabNavigation';
 import { activeProduct } from '../features/tabs/tabStrip';
 import {
@@ -66,30 +49,8 @@ import {
   prepareChatWorkingDirectory,
   type ChatWorkingDirectoryResult,
 } from '../lib/chatWorkspace';
-import {
-  createLocalDesignTranscriptEvent,
-  newQueueId,
-  type QueuedPrompt,
-} from '../lib/promptQueue';
-import { browserTranscriptReferencesFromDesignReferences } from './browser/browserTranscriptReferences';
-import {
-  designMarks as stagedDesignMarks,
-  removeDesignMark,
-  restartDesignMarkNumbers,
-  setDesignMarks,
-  useDesignMarks,
-  withDesignShots,
-} from './browser/designMarks';
-import { DesignMarkChip } from './composer/DesignMarkChip';
-import {
-  composePrompt,
-  isVisualizeCommand,
-  parseSlashSkillInvocation,
-  promptTextWithVisualize,
-  responseFormatForPrompt,
-  runsAsCompactCommand,
-  VISUALIZE_COMMAND,
-} from '../lib/composePrompt';
+import type { QueuedPrompt } from '../lib/promptQueue';
+import { removeDesignMark, setDesignMarks, useDesignMarks } from './browser/designMarks';
 import { draftEffortFor, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
 import { displayedModelSettings } from '../lib/pendingModelSettings';
 import { FAST_MODE_HINT, offersFastMode } from '../lib/fastMode';
@@ -107,51 +68,39 @@ import {
   type ComposerMenu as ComposerMenuModel,
   type MenuItem,
 } from './composer/menuItems';
-import { catalogRowKey, composerCatalog, mentionsForRows } from './composer/composerCatalog';
+import { catalogRowKey, mentionsForRows } from './composer/composerCatalog';
+import { useComposerCatalog } from './composer/useComposerCatalog';
 import { useDraftSelections } from './composer/useDraftSelections';
 import { useComposerReferences } from './composer/useComposerReferences';
 import { useComponentMentions } from './composer/useComponentMentions';
 import { useFrameMentions } from './composer/useFrameMentions';
 import { useCanvasImageReferences } from './composer/useCanvasImageReferences';
-import { CanvasImageChip } from './composer/CanvasImageChip';
 import { NEW_CANVAS_KEY, oweCreatedCanvasChoice } from '../features/canvas/designSystemChoices';
 import { oweCreatedCanvasSeed } from '../features/canvas/librarySeed';
 import { createComposerTranscriptSelector } from './composer/composerTranscript';
 import {
-  childRuntimeSubmitTarget,
   childSessionLabel,
-  commitChildPromptAfterBaseline,
   orderedChildSessions,
   visibleSessionCanCompact,
   visibleSessionTarget,
   type VisibleSessionTarget,
 } from '../lib/childSessions';
-import { addLocalSteer, dropLocalSteers } from '../lib/localSteers';
-import { commitPrimaryPromptAfterBaseline } from '../lib/promptSend';
 import { SlidersHorizontal } from 'lucide-react';
-import {
-  Bug,
-  FoldVertical,
-  Gauge,
-  ListTodo,
-  MessageBubble,
-  MessageSquareText,
-  Models,
-  Settings,
-  Zap,
-} from '@droidex/icons';
-import { VisualizeIcon } from './icons/VisualizeIcon';
+import { Zap } from '@droidex/icons';
 import { ComposerSendButton } from './composer/ComposerSendButton';
 import { useActiveUsageLimit } from './composer/useActiveUsageLimit';
 import { useQueuedPromptDelivery } from './composer/useQueuedPromptDelivery';
 import AddMenu from './composer/AddMenu';
 import SelectionMenu from './composer/SelectionMenu';
+import { submitComposerPrompt, type SubmitMode } from './composer/submitComposerPrompt';
+import type { DraftMode } from './composer/submitDraftPrompt';
 import { useDraftEditing } from './composer/useDraftEditing';
 import type { ComposerHandle } from './composer/ComposerEditor';
 import { DraftSelections, type DraftSelection } from './composer/DraftSelections';
-import ComposerMenu, { type SlashCommand } from './ComposerMenu';
+import ComposerMenu from './ComposerMenu';
+import { useComposerSlashCommands } from './composer/useComposerSlashCommands';
+import { useComposerPromptSchedule } from './composer/useComposerPromptSchedule';
 import { SideChatRestoreButton } from './sidechats/SideChatRestoreButton';
-import { useAskSideChat } from './sidechats/useAskSideChat';
 import { AccountMark } from '../features/providers/AccountMark';
 import { effectiveProvider } from '../features/providers/providerDraft';
 import {
@@ -178,13 +127,9 @@ import {
   shortModelName,
 } from './ModelIcon';
 import { StartInBar } from './environment/StartInBar';
-import type { Autonomy, SkillInfo, ProviderMention } from '../types/bridge';
-import { feedbackDraftFromCommand } from '../lib/feedbackReport';
-import { sideChatPromptFromCommand } from '../lib/sideChats';
-import { draftChatTitle } from '../lib/chatMetadata';
+import type { Autonomy, SkillInfo, ProviderMention } from '@droidex/protocol';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';
-import useFastMode from '../hooks/useFastMode';
 import { toast } from '../lib/toast';
 import { createProject } from '../features/projects/client';
 
@@ -258,17 +203,10 @@ const FIELD_FALLBACK_STYLE: CSSProperties = {
   minHeight: 'var(--composer-min-height)',
   padding: '16px var(--composer-trail) calc(16px + var(--composer-foot)) var(--composer-lead)',
 };
-// Slash entries that drive Droid's own subsystems, so they leave the menu with
-// the controls they belong to when the chat runs on another provider.
-const DROID_ONLY_COMMANDS = new Set(['/compact']);
-
 /** Whether this is the live Design composer, never a background tile's (spec §4). */
 function isDesignComposer(state: AppState, appSessionId: string | null): boolean {
   return activeProduct(state) === 'design' && appSessionId === state.activeAppSessionId;
 }
-// The app reads the account itself, so this never reaches a harness as a prompt.
-const USAGE_COMMAND = '/usage';
-type SubmitMode = 'queue' | 'steer';
 
 export function shouldStopTurnStarting({
   isLive,
@@ -304,11 +242,6 @@ export function shouldStopTurnStarting({
   );
 }
 
-function basename(p: string): string {
-  const i = p.lastIndexOf('/');
-  return i >= 0 ? p.slice(i + 1) : p;
-}
-
 // A dialog the user asks for, so its code loads when they do. Declared here
 // rather than with the app's other lazy surfaces, which import the composer.
 const LazyFeedbackModal = lazy(async () => {
@@ -340,7 +273,6 @@ export default function PromptInput({
   centered?: boolean;
 }) {
   const dispatch = useStoreDispatch();
-  const askSideChat = useAskSideChat();
   const { downloading: appUpdateInstalling, installResult: appUpdateInstallResult } =
     useAppUpdate();
   const runtimeReady = useRuntimeHealth().canRunAgents;
@@ -404,7 +336,6 @@ export default function PromptInput({
     shallowEqual,
   );
   const store = useStoreApi();
-  const { fastMode, setFastMode } = useFastMode(appSessionId ?? undefined);
   const composerRevisionRef = useRef(0);
   const [input, setInputState] = useState('');
   const setInput = (value: SetStateAction<string>) => {
@@ -429,11 +360,9 @@ export default function PromptInput({
   const modelControlsRef = useRef<HTMLDivElement>(null);
   const [usageOpen, setUsageOpen] = useState(false);
   const [activeRowKey, setActiveRowKey] = useState<string | null>(null);
-  const [scheduleTarget, setScheduleTarget] = useState<{ appSessionId: string } | null>(null);
   // Scheduling lives in the draft's right-click menu; its popover opens from the
   // send button, where the prompt would otherwise go.
   const scheduleAnchorRef = useRef<HTMLDivElement>(null);
-  const scheduleGeneration = useRef(0);
   const [files, setFiles] = useState<string[]>([]);
   const [filesCwd, setFilesCwd] = useState<string | null>(null);
   const [attachedFiles, setAttachedFilesState] = useState<string[]>([]);
@@ -475,6 +404,12 @@ export default function PromptInput({
   const removeImage = (image: AttachedImage) => {
     imageAttachments.remove(image.id);
     canvasImages.remove([image.sequence]);
+  };
+  // No discard: the file was written for an already-composed prompt,
+  // and the attachments store sweeps it.
+  const removeAttachedPath = (path: string) => {
+    attachedFileSeqRef.current.delete(path);
+    setAttachedFiles((prev) => prev.filter((x) => x !== path));
   };
   const fileDrop = useComposerFileDrop(addComposerFiles);
   const [viewerImageId, setViewerImageId] = useState<string | null>(null);
@@ -693,153 +628,27 @@ export default function PromptInput({
     requestedAt: number;
   } | null>(null);
 
-  // Toggle spec mode. When a live chat session exists, switch its interaction
-  // mode for real (not just the compose flag used for brand-new chats).
-  const toggleSpec = () => {
-    if (activeSession && activeSession.sessionPurpose !== 'mission-control') {
-      // Existing live chat: flip the session's real interaction mode and
-      // optimistically update its interaction mode so the toggle reflects immediately.
-      const turningOn = !isSpecMode;
-      dispatch({
-        type: 'SESSION_SET_INTERACTION_MODE',
-        appSessionId: activeSession.appSessionId,
-        interactionMode: turningOn ? 'spec' : 'auto',
-      });
-      updateSessionSettings({
-        appSessionId: activeSession.appSessionId,
-        interactionMode: turningOn ? 'spec' : 'auto',
-      });
-    } else {
-      // Brand-new draft chat with no session yet: just flip the compose flag.
-      dispatch({ type: 'TOGGLE_SPEC_MODE' });
-    }
-  };
-
-  // `/side` with nothing after it opens the session's side chat; with a
-  // question it starts a new one in its place.
-  const openSideChat = (prompt: string): boolean => {
-    if (!activeSession) {
-      toast.info('Open a chat to ask a side question about it.');
-      return false;
-    }
-    if (prompt) return askSideChat(activeSession.appSessionId, prompt);
-    dispatch({
-      type: 'SHOW_SIDE_CHAT',
-      sourceAppSessionId: activeSession.appSessionId,
-      view: { kind: 'current' },
-    });
-    return true;
-  };
-
-  const slashCommands: SlashCommand[] = [
-    {
-      ...VISUALIZE_COMMAND,
-      icon: VisualizeIcon,
-      run: () => {
-        setVisualizeSelected(true);
-      },
+  const { slashCommands, openSideChat, findFastCommand, fastMode } = useComposerSlashCommands({
+    appSessionId,
+    activeSessionId: activeSession?.appSessionId ?? null,
+    canToggleSessionSpec: activeSession?.sessionPurpose !== 'mission-control',
+    composerProvider,
+    isSpecMode,
+    draftingProject,
+    primaryActionsEnabled,
+    selectVisualize: () => {
+      setVisualizeSelected(true);
     },
-    {
-      cmd: '/bug',
-      desc: 'Send a private bug report',
-      icon: Bug,
-      run: () => {
-        setFeedbackReport({ category: 'bug', description: '' });
-      },
+    openFeedbackReport: (category) => {
+      setFeedbackReport({ category, description: '' });
     },
-    {
-      cmd: '/feedback',
-      desc: 'Share private product feedback',
-      icon: MessageSquareText,
-      run: () => {
-        setFeedbackReport({ category: 'other', description: '' });
-      },
+    openModels: () => {
+      showModels(true);
     },
-    ...['/side', '/btw'].map((cmd) => ({
-      cmd,
-      desc: 'Ask a side question without adding to this chat',
-      icon: MessageBubble,
-      run: () => {
-        openSideChat('');
-      },
-    })),
-    {
-      cmd: '/model',
-      desc: 'Open model selector',
-      icon: Models,
-      run: () => {
-        showModels(true);
-      },
+    openUsage: () => {
+      setUsageOpen(true);
     },
-    {
-      cmd: '/compact',
-      desc: 'Compact current session',
-      icon: FoldVertical,
-      run: () => {
-        if (primaryActionsEnabled && activeSession) compactSession(activeSession.appSessionId);
-      },
-    },
-    {
-      cmd: '/spec',
-      desc: 'Toggle spec mode',
-      icon: ListTodo,
-      run: () => {
-        toggleSpec();
-      },
-    },
-    {
-      cmd: '/settings',
-      desc: 'Open settings',
-      icon: Settings,
-      run: () => {
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-      },
-    },
-    {
-      cmd: USAGE_COMMAND,
-      desc: 'Show usage limits',
-      icon: Gauge,
-      supersedesHarnessCommand: true,
-      run: () => {
-        setUsageOpen(true);
-      },
-    },
-    {
-      cmd: '/fast',
-      desc: 'Toggle fast mode',
-      icon: Zap,
-      // The app owns this setting now, so the harness's own /fast stays out of
-      // the menu rather than offering a second, unsynced switch.
-      supersedesHarnessCommand: true,
-      run: () => {
-        setFastMode(!fastMode);
-      },
-    },
-    {
-      cmd: '/fast on',
-      desc: FAST_MODE_HINT,
-      icon: Zap,
-      run: () => {
-        setFastMode(true);
-      },
-    },
-    {
-      cmd: '/fast off',
-      desc: 'Normal speed and usage',
-      icon: Zap,
-      run: () => {
-        setFastMode(false);
-      },
-    },
-  ].filter((command) => {
-    if (command.cmd === '/spec') return specComposer && !draftingProject;
-    if (command.cmd.startsWith('/fast')) return offersFastMode(composerProvider);
-    return droidComposer || !DROID_ONLY_COMMANDS.has(command.cmd);
   });
-
-  // /fast, /fast on or /fast off, when this harness offers fast mode.
-  const appFastCommand = (text: string) =>
-    slashCommands.find((command) => command.cmd.startsWith('/fast') && command.cmd === text);
 
   // Typing, and every edit that behaves like typing, leaves history recall.
   const editDraft = (text: string) => {
@@ -869,15 +678,6 @@ export default function PromptInput({
     references.canvasKey,
     trigger?.kind === 'file',
   );
-
-  // Switching conversations abandons any schedule in progress; the bumped
-  // generation also stops an in-flight save from clearing the new draft.
-  useEffect(() => {
-    setScheduleTarget(null);
-    return () => {
-      scheduleGeneration.current += 1;
-    };
-  }, [visibleTargetKey]);
 
   useEffect(() => {
     if (
@@ -911,34 +711,13 @@ export default function PromptInput({
     [],
   );
 
-  // Everything the bound harness offers, as far as it has landed. Both menus
-  // read it, and neither asks for it: see composerCatalog.
-  const catalog = useMemo(
-    () =>
-      composerCatalog({
-        provider: composerProvider,
-        providerSessionId: skillsProviderSessionId,
-        skills: state.skills,
-        skillsProviderSessionId: state.skillsProviderSessionId,
-        providerStatuses: state.providerStatuses,
-      }),
-    [
-      composerProvider,
-      skillsProviderSessionId,
-      state.providerStatuses,
-      state.skills,
-      state.skillsProviderSessionId,
-    ],
-  );
-  // A `/name` typed out in full invokes the skill it names, so that lookup sees
-  // the same skills the menu offers.
-  const invocableSkills = useMemo(
-    () =>
-      catalog.filter(
-        (row) => row.kind === 'skill' && row.userInvocable !== false && row.enabled !== false,
-      ),
-    [catalog],
-  );
+  const { catalog, invocableSkills } = useComposerCatalog({
+    provider: composerProvider,
+    providerSessionId: skillsProviderSessionId,
+    skills: state.skills,
+    skillsProviderSessionId: state.skillsProviderSessionId,
+    providerStatuses: state.providerStatuses,
+  });
 
   // Droid publishes its skills only when asked. The CLI harnesses publish
   // theirs with their probe status and with their session, so opening a menu on
@@ -1261,6 +1040,12 @@ export default function PromptInput({
     } else addFile(item.path);
   };
 
+  const stagedFilesInIntakeOrder = () =>
+    attachedFiles.map((path, index) => ({
+      path,
+      sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
+    }));
+
   const prepareDraftCwd = async (
     dir: string,
     clientRef: string,
@@ -1285,6 +1070,27 @@ export default function PromptInput({
     setSubmitSettled((count) => count + 1);
   };
 
+  const draftModeForSubmit = (autonomyOverride?: Autonomy): DraftMode => {
+    if (missionPreview) {
+      return {
+        kind: 'mission',
+        agents: state.agentConfig,
+        autonomy: autonomyOverride ?? draftAutonomy,
+        openAutonomyGate: () => {
+          setMissionAutonomyGateOpen(true);
+        },
+      };
+    }
+    if (projectDraft)
+      return {
+        kind: 'project',
+        pendingStart: projectStartRef,
+        releaseStart: releaseProjectStart,
+        start: startProject,
+      };
+    return { kind: 'chat', interactionMode: isSpecMode ? 'spec' : 'auto' };
+  };
+
   // Re-entry guard: submit still awaits in-flight image encodes before the
   // input is cleared, so a second Enter during that window would resend.
   const handleSubmit = async (mode: SubmitMode = 'queue', autonomyOverride?: Autonomy) => {
@@ -1293,7 +1099,91 @@ export default function PromptInput({
     // Only a send without a chat creates one, so only it needs a place held.
     const originHoldId = activeSession ? null : holdComposeOrigin();
     try {
-      await runSubmit(originHoldId, mode, autonomyOverride);
+      await submitComposerPrompt({
+        mode,
+        runtimeReady,
+        hasAppContext,
+        provider: composerProvider,
+        draft: {
+          input,
+          visualizeSelected,
+          activeSkills,
+          invocableSkills,
+          revision: () => composerRevisionRef.current,
+          clearTextAndHistory: () => {
+            setInput('');
+            setHistoryIndex(null);
+          },
+          resetHistory: () => {
+            setHistoryIndex(null);
+          },
+          reset: () => {
+            setInput('');
+            clearDraftSelections();
+            attachedFileSeqRef.current.clear();
+            setAttachedFiles([]);
+          },
+        },
+        attachments: {
+          intakeSequence: () => nextIntakeSeqRef.current,
+          stagedFiles: stagedFilesInIntakeOrder,
+          images: imageAttachments,
+          documents: fileAttachments,
+          canvasImages,
+          closeViewers: () => {
+            setViewerImageId(null);
+            setViewerPath(null);
+          },
+        },
+        references,
+        destination: activeSession
+          ? {
+              appSessionId: activeSession.appSessionId,
+              visibleTarget,
+              readVisibleTarget: () => visibleTargetRef.current,
+              workingDirectory,
+              isLive,
+            }
+          : {
+              appSessionId: null,
+              originHoldId,
+              options: {
+                cwd: state.draftChat?.cwd,
+                mode: draftModeForSubmit(autonomyOverride),
+                compactionModel: state.compactionModel,
+                compactionSettingsInput,
+                draftAutonomy,
+                draftProvider,
+                draftModelSettings,
+                prepareDraftCwd,
+              },
+            },
+        turnStarting: {
+          start: startTurnStarting,
+          stop: stopTurnStarting,
+          armTimeout: armTurnStartingTimeout,
+          isWaitingFor: (clientRef) => turnStartingClientRef.current === clientRef,
+          trackPending: (clientRef) => {
+            if (turnStartingClientRef.current === clientRef)
+              turnStartingPendingRegisteredRef.current = true;
+          },
+        },
+        commands: {
+          openUsage: () => {
+            setUsageOpen(true);
+          },
+          runFastCommand: (text) => {
+            const command = findFastCommand(text);
+            if (!command) return false;
+            command.run();
+            return true;
+          },
+          openFeedback: setFeedbackReport,
+          openSideChat,
+        },
+        dispatch,
+        getState: store.getState,
+      });
     } finally {
       if (originHoldId) dispatch({ type: 'RELEASE_COMPOSE_ORIGIN', holdId: originHoldId });
       settleSubmit();
@@ -1318,614 +1208,57 @@ export default function PromptInput({
     return holdId;
   };
 
-  const schedulePrompt = async (runAt: number, timezone: string) => {
-    if (!activeSession || visibleTarget.kind !== 'primary') {
-      throw new Error('Open the conversation you want to continue.');
-    }
-    if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
-    const scheduledAppSessionId = activeSession.appSessionId;
-    const scheduledTargetKey = visibleTargetKey;
-    const generation = scheduleGeneration.current;
-    const revision = composerRevisionRef.current;
-    const intakeCutoff = nextIntakeSeqRef.current;
-    const text = promptTextWithVisualize(input.trim(), visualizeSelected);
-    const skills = activeSkills.map((skill) => skill.name);
-    const attachedPaths = attachedFiles.map((path, index) => ({
-      path,
-      sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
-    }));
-    // The generation moves in a target switch's passive effects; the key moves
-    // in its commit, before an awaited result can see the old target.
-    const stillTargeted = () =>
-      scheduleGeneration.current === generation &&
-      visibleTargetKeyRef.current === scheduledTargetKey;
-    submittingRef.current = true;
-    try {
-      const [images, documents, client, schedules] = await Promise.all([
-        imageAttachments.whenReady(intakeCutoff),
-        fileAttachments.whenReady(intakeCutoff),
-        import('../features/automations/client'),
-        import('../features/automations/schedule'),
-      ]);
-      if (!stillTargeted()) throw new Error('The conversation changed. Nothing was scheduled.');
-      const paths = pathsInSequence([...attachedPaths, ...documents, ...images]);
-      if (!text && skills.length === 0 && paths.length === 0) {
-        throw new Error('Write a prompt or add an attachment first.');
-      }
-      if (mentionsForRows(composerProvider, activeSkills).length > 0) {
-        throw new Error(
-          'Apps and plugins cannot be scheduled yet. Remove them, or send this prompt now.',
-        );
-      }
-      if (
-        input.trim() === USAGE_COMMAND ||
-        appFastCommand(input.trim()) !== undefined ||
-        runsAsCompactCommand(text, {
+  const primaryScheduleTarget =
+    activeSession && visibleTarget.kind === 'primary'
+      ? { appSessionId: activeSession.appSessionId }
+      : null;
+  const promptSchedule = useComposerPromptSchedule({
+    target: primaryScheduleTarget,
+    visibleTargetKey,
+    visibleTargetKeyRef,
+    beginSave: () => {
+      if (submittingRef.current) throw new Error('A prompt is already being saved or sent.');
+      const revision = composerRevisionRef.current;
+      const intakeCutoff = nextIntakeSeqRef.current;
+      const attachedPaths = stagedFilesInIntakeOrder();
+      submittingRef.current = true;
+      return {
+        draft: {
+          input,
           visualizeSelected,
-          skillCount: skills.length,
-          fileCount: paths.length,
-        }) ||
-        feedbackDraftFromCommand(text) ||
-        sideChatPromptFromCommand(text) !== null
-      ) {
-        throw new Error('App commands cannot be scheduled. Write a prompt for the agent instead.');
-      }
-      await client.createAutomation({
-        ...schedules.defaultAutomationDraft(null, null, null),
-        title: (input.trim() || skills[0] || 'Scheduled prompt').replace(/\s+/g, ' ').slice(0, 80),
-        prompt: composePrompt(text, skills, []),
-        files: paths,
-        target: { kind: 'existing-session', appSessionId: scheduledAppSessionId },
-        schedule: { kind: 'once', runAt },
-        timezone,
-      });
-      if (stillTargeted()) {
-        resetComposerAfterSubmit({
-          draftUntouched: composerRevisionRef.current === revision,
-          clearImages: () => {
-            imageAttachments.clearReady(intakeCutoff);
-            fileAttachments.clearReady(intakeCutoff);
-            setViewerImageId(null);
-            setViewerPath(null);
-          },
-          resetDraft: () => {
-            setInput('');
-            setHistoryIndex(null);
-            clearDraftSelections();
-            attachedFileSeqRef.current.clear();
-            setAttachedFiles([]);
-          },
-        });
-      }
-      toast.success('Prompt scheduled.');
-    } finally {
-      settleSubmit();
-    }
-  };
-
-  const runSubmit = async (
-    originHoldId: string | null,
-    mode: SubmitMode,
-    autonomyOverride?: Autonomy,
-  ) => {
-    const text = input.trim();
-    // The app's own commands run at once, before any attachment settles, and
-    // never reach the harness; anything staged beside them stays for the
-    // next prompt. /usage reads what the app already knows, so it runs even
-    // while the runtime is unavailable.
-    if (text === USAGE_COMMAND) {
-      setUsageOpen(true);
-      setInput('');
-      setHistoryIndex(null);
-      return;
-    }
-    const updateInterruptedSubmit = () => {
-      if (isAppUpdateInstalling()) {
-        toast.info('DROIDEX is installing an update. New turns will resume after restart.');
-        return true;
-      }
-      if (!runtimeReady) {
-        toast.info('The agent runtime is unavailable. History, files, and notes stay usable.');
-        return true;
-      }
-      return false;
-    };
-    if (updateInterruptedSubmit()) return;
-    // The app owns fast mode, so a typed /fast runs here instead of reaching
-    // the harness, whose own switch the app would never see.
-    const fastCommand = appFastCommand(text);
-    if (fastCommand) {
-      fastCommand.run();
-      setInput('');
-      setHistoryIndex(null);
-      return;
-    }
-    // Snapshot the composer revision before the settle wait: text, files, and
-    // skills are render-closure snapshots, so anything typed or staged while
-    // images finish encoding is not part of this prompt — and must survive
-    // the post-submit clear below.
-    const composerRevision = composerRevisionRef.current;
-    // Snapshot intake order before any settle wait: files pasted while earlier
-    // attachments encode belong to the next prompt, not this one.
-    const intakeCutoff = nextIntakeSeqRef.current;
-    const readyImagesPromise = imageAttachments.whenReady(intakeCutoff);
-    const readyFilesPromise = fileAttachments.whenReady(intakeCutoff);
-    // The chat's marks make this a design prompt, taken now as its text is: one
-    // picked while it settles is the next prompt's. Crops still being taken of
-    // them are waited for with the attachments.
-    const marksPromise = withDesignShots(
-      activeSession && !targetChildSessionId ? stagedDesignMarks(activeSession.appSessionId) : [],
-    );
-    const [readyImages, readyFiles, marks] = await Promise.all([
-      readyImagesPromise,
-      readyFilesPromise,
-      marksPromise,
-    ]);
-    const sentImageSequences = readyImages.map((image) => image.sequence);
-    const imageAssetIds = await canvasImages.assetIdsFor(sentImageSequences);
-    if (updateInterruptedSubmit()) return;
-    const allFiles = pathsInSequence([
-      ...attachedFiles.map((path, index) => ({
-        path,
-        sequence: attachedFileSeqRef.current.get(path) ?? 1_000_000 + index,
-      })),
-      ...readyFiles,
-      ...readyImages,
-    ]);
-    const hasPayload =
-      text ||
-      visualizeSelected ||
-      activeSkills.length > 0 ||
-      allFiles.length > 0 ||
-      sideChatReplies.length > 0;
-    if (!hasPayload) return;
-    setHistoryIndex(null);
-
-    const clearAfterSubmit = () => {
-      resetComposerAfterSubmit({
-        draftUntouched: composerRevisionRef.current === composerRevision,
-        clearImages: () => {
-          imageAttachments.clearReady(intakeCutoff);
-          fileAttachments.clearReady(intakeCutoff);
-          canvasImages.remove(sentImageSequences);
-          // Image chips always clear on submit, so a viewer open over one of them
-          // would be showing an attachment the composer no longer holds.
-          setViewerImageId(null);
-          setViewerPath(null);
+          activeSkills,
+          provider: composerProvider,
+          isFastCommand: findFastCommand(input.trim()) !== undefined,
         },
-        resetDraft: () => {
-          setInput('');
-          clearDraftSelections();
-          attachedFileSeqRef.current.clear();
-          setAttachedFiles([]);
+        whenReady: async () => {
+          const [images, documents] = await Promise.all([
+            imageAttachments.whenReady(intakeCutoff),
+            fileAttachments.whenReady(intakeCutoff),
+          ]);
+          return pathsInSequence([...attachedPaths, ...documents, ...images]);
         },
-      });
-    };
-
-    const feedbackDraft = feedbackDraftFromCommand(text);
-    if (feedbackDraft !== null) {
-      setFeedbackReport(feedbackDraft);
-      clearAfterSubmit();
-      return;
-    }
-
-    // Only the words go to the side chat; attachments stay for this chat.
-    const sideChatPrompt = sideChatPromptFromCommand(text);
-    if (sideChatPrompt !== null) {
-      if (openSideChat(sideChatPrompt)) {
-        setInput('');
-        setHistoryIndex(null);
-      }
-      return;
-    }
-
-    const compacts =
-      droidComposer &&
-      runsAsCompactCommand(text, {
-        visualizeSelected,
-        skillCount: activeSkills.length,
-        fileCount: allFiles.length,
-      });
-    if (compacts) {
-      if (!primaryActionsEnabled) return;
-      if (activeSession) compactSession(activeSession.appSessionId);
-      clearAfterSubmit();
-      return;
-    }
-
-    if (!childActionsEnabled) return;
-
-    const promptText = promptTextWithVisualize(text, visualizeSelected);
-    const slashSkill =
-      activeSkills.length === 0 && !isVisualizeCommand(promptText)
-        ? parseSlashSkillInvocation(promptText, invocableSkills)
-        : undefined;
-    const displayText = slashSkill?.prompt ?? promptText;
-    const responseFormat = responseFormatForPrompt(displayText, hasAppContext);
-    const skillNames = slashSkill
-      ? [slashSkill.skillName]
-      : activeSkills.map((skill) => skill.name);
-    // What the harness takes as structured items travels beside the prompt, so
-    // it must not also be written into the prompt's words.
-    const mentions = mentionsForRows(composerProvider, activeSkills);
-    const mentioned = new Set(mentions.map((mention) => mention.name));
-    const composed = references.compose(
-      composePrompt(
-        displayText,
-        skillNames.filter((name) => !mentioned.has(name)),
-        allFiles,
-      ),
-    );
-    const canvasContext = references.canvasContext(imageAssetIds);
-    const registerPending = (ref: string, canvas?: CanvasDraft) => {
-      if (turnStartingClientRef.current === ref) {
-        turnStartingPendingRegisteredRef.current = true;
-      }
-      dispatch({
-        type: 'SET_PENDING_COMPOSE',
-        clientRef: ref,
-        text: displayText,
-        skills: skillNames,
-        files: allFiles,
-        originHoldId,
-        canvas,
-      });
-    };
-
-    // Mission Control preview with no active session: prompt is the objective.
-    if (missionPreview && !activeSession) {
-      const autonomy = autonomyOverride ?? draftAutonomy;
-      // Missions run unattended, so starting one below High is blocked until
-      // the user explicitly chooses High — the app never elevates silently.
-      if (!missionStartAllowed(autonomy)) {
-        setMissionAutonomyGateOpen(true);
-        return;
-      }
-      const selectedDir = state.draftChat?.cwd ?? (await pickDirectory());
-      if (!selectedDir) return;
-      if (updateInterruptedSubmit()) return;
-      const { worker, validator } = state.agentConfig;
-      const clientRef = newClientRef();
-      const title = draftChatTitle(displayText) || skillNames[0] || 'Mission';
-      startTurnStarting(clientRef);
-      const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
-      if (!preparation.ok) {
-        stopTurnStarting();
-        return;
-      }
-      const dir = preparation.path;
-      // Snapshot the tree before the agent's first turn so the Review "Last
-      // turn" scope only attributes changes this session actually makes.
-      await markGitTurnStart(dir, clientRef);
-      if (updateInterruptedSubmit()) {
-        stopTurnStarting();
-        return;
-      }
-      registerPending(clientRef);
-      clearAfterSubmit();
-      try {
-        createSession({
-          clientRef,
-          cwd: dir,
-          title,
-          goal: composed,
-          ...(mentions.length > 0 ? { mentions } : {}),
-          sessionPurpose: 'mission-control',
-          provider: draftProvider,
-          interactionMode: 'agi',
-          autonomy,
-          ...draftModelSettings,
-          compactionModel:
-            state.compactionModel === 'current-model' ? undefined : state.compactionModel,
-          // Only user-configured limits may override the daemon's model default.
-          ...compactionSettingsSnapshot(compactionSettingsInput),
-          workerModel: worker.modelId,
-          workerReasoning: worker.reasoning,
-          validatorModel: validator.modelId,
-          validatorReasoning: validator.reasoning,
-          ...(responseFormat ? { responseFormat } : {}),
-        });
-        armTurnStartingTimeout();
-      } catch (error) {
-        stopTurnStarting();
-        console.error('[PromptInput] createSession failed:', error);
-      }
-      return;
-    }
-
-    // Draft/default chat: first message creates the session. No workspace is required.
-    if (!activeSession) {
-      if (projectDraft && projectStartRef.current) return;
-      const selectedDir = state.draftChat?.cwd ?? '';
-      const clientRef = newClientRef();
-      // Held from before the folder is prepared, so a start still preparing,
-      // typed or spoken, blocks another.
-      if (projectDraft) projectStartRef.current = clientRef;
-      const draftAtSubmit = store.getState().draftChat;
-      const title =
-        draftChatTitle(displayText) || skillNames[0] || (projectDraft ? 'Project' : 'Chat');
-      startTurnStarting(clientRef);
-      const preparation = await prepareDraftCwd(selectedDir, clientRef, title);
-      if (!preparation.ok) {
-        stopTurnStarting();
-        releaseProjectStart(clientRef);
-        return;
-      }
-      const dir = preparation.path;
-      if (dir) await markGitTurnStart(dir, clientRef);
-      if (updateInterruptedSubmit()) {
-        stopTurnStarting();
-        releaseProjectStart(clientRef);
-        return;
-      }
-      registerPending(clientRef, draftAtSubmit?.canvas);
-      // Whether this send empties the composer: an edit made while it was
-      // preparing is kept, and a failure must not replace it.
-      const clearsDraft = composerRevisionRef.current === composerRevision;
-      clearAfterSubmit();
-      if (projectDraft) {
-        const clearedRevision = composerRevisionRef.current;
-        // A project takes its skills as words, since its first prompt also
-        // carries the lead's brief.
-        startProject(
-          clientRef,
-          {
-            title,
-            prompt: composePrompt(displayText, skillNames, allFiles),
-            dir,
-            selectedDir,
-            draft: draftAtSubmit,
-          },
-          () => {
-            // Only what this start set is undone: a user who has moved on, or
-            // typed since, keeps what they have now.
-            if (turnStartingClientRef.current === clientRef) stopTurnStarting();
-            const now = store.getState();
-            if (
-              clearsDraft &&
-              now.activeAppSessionId === null &&
-              now.draftChat?.project === true &&
-              composerRevisionRef.current === clearedRevision
-            )
-              dispatch({ type: 'SEED_COMPOSER', text: displayText, replace: true });
-          },
-        );
-        armTurnStartingTimeout();
-        return;
-      }
-      try {
-        if (references.canvasKey === NEW_CANVAS_KEY) {
-          oweCreatedCanvasChoice(clientRef);
-          oweCreatedCanvasSeed(clientRef);
-        }
-        createSession({
-          clientRef,
-          cwd: dir,
-          title,
-          goal: composed,
-          canvas: canvasIntentForDraft(draftAtSubmit?.canvas ?? null, displayText, clientRef),
-          ...(mentions.length > 0 ? { mentions } : {}),
-          ...(canvasContext ? { canvasContext } : {}),
-          sessionPurpose: 'chat',
-          provider: draftProvider,
-          interactionMode: isSpecMode ? 'spec' : 'auto',
-          autonomy: draftAutonomy,
-          ...draftModelSettings,
-          compactionModel:
-            state.compactionModel === 'current-model' ? undefined : state.compactionModel,
-          ...compactionSettingsSnapshot(compactionSettingsInput),
-          ...(responseFormat ? { responseFormat } : {}),
-        });
-        armTurnStartingTimeout();
-      } catch (error) {
-        stopTurnStarting();
-        console.error('[PromptInput] createSession failed:', error);
-      }
-      return;
-    }
-
-    // A design prompt goes with its marks' reference pack, built by the sidecar
-    // from their own snapshots, so it goes the same way once their browser has
-    // closed. It waits for a running turn like a queued prompt, whichever way
-    // it was sent.
-    const appSessionId = activeSession.appSessionId;
-    if (marks.length > 0) {
-      const design = { browserKey: appSessionId, references: marks };
-      // Only the marks this prompt carries go; one picked while it settles stays.
-      const sent = new Set(marks.map((mark) => mark.id));
-      const clearDesign = () => {
-        clearAfterSubmit();
-        setDesignMarks(
-          appSessionId,
-          stagedDesignMarks(appSessionId).filter((mark) => !sent.has(mark.id)),
-        );
-        dispatch({ type: 'SET_DESIGN_MODE', appSessionId, open: false });
+        resetIfUntouched: () => {
+          resetComposerAfterSubmit({
+            draftUntouched: composerRevisionRef.current === revision,
+            clearImages: () => {
+              imageAttachments.clearReady(intakeCutoff);
+              fileAttachments.clearReady(intakeCutoff);
+              setViewerImageId(null);
+              setViewerPath(null);
+            },
+            resetDraft: () => {
+              setInput('');
+              setHistoryIndex(null);
+              clearDraftSelections();
+              attachedFileSeqRef.current.clear();
+              setAttachedFiles([]);
+            },
+          });
+        },
+        settle: settleSubmit,
       };
-      if (isLive) {
-        dispatch({
-          type: 'QUEUE_PROMPT',
-          appSessionId,
-          prompt: {
-            id: newQueueId(),
-            text: displayText,
-            skills: skillNames,
-            files: allFiles,
-            ...(mentions.length > 0 ? { mentions } : {}),
-            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
-            ...references.queued,
-            ...(canvasContext ? { canvasContext } : {}),
-            design,
-          },
-        });
-        references.detach();
-        clearDesign();
-        return;
-      }
-      startTurnStarting();
-      const committed = await commitPrimaryPromptAfterBaseline({
-        waitForBaseline: () =>
-          workingDirectory ? markGitTurnStart(workingDirectory, appSessionId) : Promise.resolve(),
-        canCommit: () => !updateInterruptedSubmit(),
-        appendTranscript: () => {
-          dispatch({
-            type: 'SESSION_TRANSCRIPT',
-            event: createLocalDesignTranscriptEvent(
-              appSessionId,
-              displayText,
-              browserTranscriptReferencesFromDesignReferences(design.references),
-              { skills: skillNames, files: allFiles, ...references.transcript },
-            ),
-          });
-          references.detach();
-        },
-        resetComposer: () => {
-          const draftKept = composerRevisionRef.current !== composerRevision;
-          clearDesign();
-          // Numbering starts again once nothing can still say @N: no queued
-          // prompt, and no draft the user went on writing while this one settled.
-          if (
-            !draftKept &&
-            !(store.getState().promptQueue[appSessionId] ?? []).some((p) => p.design)
-          )
-            restartDesignMarkNumbers(appSessionId);
-        },
-        sendCommand: () => {
-          try {
-            sendDesignPrompt(appSessionId, composed, design.references, {
-              responseFormat,
-              mentions,
-              canvasContext,
-            });
-            armTurnStartingTimeout();
-          } catch (err) {
-            stopTurnStarting();
-            console.error('[PromptInput] sendDesignPrompt failed:', err);
-          }
-        },
-      });
-      if (!committed) stopTurnStarting();
-      return;
-    }
-
-    // Model is working and the user chose to queue: stage the prompt locally.
-    // It is held client-side and delivered automatically when the turn finishes.
-    if (isLive && mode === 'queue' && !targetChildSessionId) {
-      dispatch({
-        type: 'QUEUE_PROMPT',
-        appSessionId: activeSession.appSessionId,
-        prompt: {
-          id: newQueueId(),
-          text: displayText,
-          skills: skillNames,
-          files: allFiles,
-          ...(mentions.length > 0 ? { mentions } : {}),
-          ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
-          ...references.queued,
-          ...(canvasContext ? { canvasContext } : {}),
-        },
-      });
-      references.detach();
-      clearAfterSubmit();
-      return;
-    }
-
-    // A steer into the chat's own turn is pending under this id until the model
-    // takes it in. A child runs on Droid, which cannot take a steer yet, so its
-    // prompt waits behind the turn like any other send.
-    const steerId =
-      isLive && mode === 'steer' && !targetChildSessionId ? crypto.randomUUID() : undefined;
-    const appendTranscript = () => {
-      // A steer shows as pending at once, until the sidecar's own list of
-      // pending steers takes over.
-      if (steerId)
-        addLocalSteer(
-          activeSession.appSessionId,
-          { id: steerId, text: composed, sentAt: Date.now() },
-          {
-            id: steerId,
-            text: displayText,
-            skills: skillNames,
-            files: allFiles,
-            ...(mentions.length > 0 ? { mentions } : {}),
-            ...(activeSkills.length > 0 ? { rowKeys: activeSkills.map(catalogRowKey) } : {}),
-            ...(sideChatReplies.length > 0 ? { sideChatReplies } : {}),
-          },
-        );
-      else
-        dispatch({
-          type: 'SESSION_TRANSCRIPT',
-          event: {
-            id: `local-${String(Date.now())}`,
-            appSessionId: activeSession.appSessionId,
-            sourceSessionId: targetChildSessionId ?? 'user',
-            role: targetChild?.role ?? 'primary',
-            ts: Date.now(),
-            kind: 'text',
-            text: displayText,
-            author: 'user',
-            skills: skillNames,
-            files: allFiles,
-            ...references.transcript,
-          },
-        });
-      references.detach();
-    };
-    const sendCommand = () => {
-      try {
-        if (targetChildSessionId)
-          sendToChild(activeSession.appSessionId, targetChildSessionId, composed, responseFormat);
-        else
-          sendToSession(activeSession.appSessionId, composed, {
-            responseFormat,
-            mentions,
-            steerId,
-            canvasContext,
-          });
-        armTurnStartingTimeout();
-      } catch (err) {
-        stopTurnStarting();
-        if (steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
-        console.error('[PromptInput] sendToSession failed:', err);
-      }
-    };
-
-    const childRuntimeTarget = childRuntimeSubmitTarget(visibleTarget);
-    if (childRuntimeTarget && workingDirectory) {
-      const showTurnStarting = !isLive;
-      if (showTurnStarting) startTurnStarting();
-      const committed = await commitChildPromptAfterBaseline({
-        capturedTarget: childRuntimeTarget,
-        capturedComposerRevision: composerRevisionRef.current,
-        waitForBaseline: () => markGitTurnStart(workingDirectory, activeSession.appSessionId),
-        currentTarget: () => visibleTargetRef.current,
-        currentComposerRevision: () => composerRevisionRef.current,
-        canCommit: () => !isAppUpdateInstalling() && canRunAgents(),
-        appendTranscript,
-        resetComposer: clearAfterSubmit,
-        sendCommand,
-      });
-      if (!committed && showTurnStarting) stopTurnStarting();
-      return;
-    }
-
-    const showTurnStarting = !isLive;
-    if (showTurnStarting) startTurnStarting();
-
-    const committed = await commitPrimaryPromptAfterBaseline({
-      // A steer the turn cannot take runs as the next turn and needs its own
-      // baseline; its bubble already shows, so the wait no longer delays it.
-      waitForBaseline: () =>
-        workingDirectory
-          ? markGitTurnStart(workingDirectory, activeSession.appSessionId)
-          : Promise.resolve(),
-      canCommit: () => !updateInterruptedSubmit(),
-      appendTranscript,
-      resetComposer: clearAfterSubmit,
-      sendCommand,
-    });
-    if (!committed && steerId) dropLocalSteers(activeSession.appSessionId, new Set([steerId]));
-    if (!committed && showTurnStarting) stopTurnStarting();
-  };
+    },
+  });
 
   const queue: QueuedPrompt[] = state.promptQueue ?? [];
 
@@ -1933,6 +1266,7 @@ export default function PromptInput({
     appSessionId: activeSession?.appSessionId ?? null,
     cwd: primaryWorkingDirectory,
     isLive: primaryIsLive,
+    hasQueuedPrompt: queue.length > 0,
     usageLimited: usageLimit !== undefined,
     appUpdateInstalling,
     appUpdateInstallResult,
@@ -2721,88 +2055,27 @@ export default function PromptInput({
           }`}
         >
           {(hasAttachmentChips || designMarks.length > 0) && (
-            <div className="flex flex-wrap items-center gap-1.5 px-3 pt-3">
-              {designMarks.map((mark) => (
-                <DesignMarkChip
-                  key={mark.id}
-                  mark={mark}
-                  onInsert={() => {
-                    insertMarkReference(mark.anchor.mark);
-                  }}
-                  onRemove={() => {
-                    if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
-                  }}
-                />
-              ))}
-              {imageAttachments.images.map((img) => {
-                const reference = canvasImages.referenceOf(img.sequence);
-                const open = () => {
-                  setViewerImageId(img.id);
-                };
-                const remove = () => {
-                  removeImage(img);
-                };
-                return reference ? (
-                  <CanvasImageChip
-                    key={img.id}
-                    src={img.preview}
-                    reference={reference}
-                    onOpen={open}
-                    onRemove={remove}
-                  />
-                ) : (
-                  <ImageChip
-                    key={img.id}
-                    src={img.preview}
-                    label={basename(img.path)}
-                    onOpen={open}
-                    onRemove={remove}
-                  />
-                );
-              })}
-              {fileAttachments.files.map((file) => (
-                <FileChip
-                  key={file.id}
-                  path={file.path}
-                  name={file.name}
-                  onRemove={() => {
-                    fileAttachments.remove(file.id);
-                  }}
-                />
-              ))}
-              {attachedImagePaths.map((path) => {
-                const src = imageSrc(path);
-                // No discard on removal: the file was written for an
-                // already-composed prompt, and the attachments store sweeps it.
-                const remove = () => {
-                  attachedFileSeqRef.current.delete(path);
-                  setAttachedFiles((prev) => prev.filter((x) => x !== path));
-                };
-                return src === null ? (
-                  <FileChip key={path} path={path} onRemove={remove} />
-                ) : (
-                  <ImageChip
-                    key={path}
-                    src={src}
-                    label={basename(path)}
-                    onOpen={() => {
-                      setViewerPath(path);
-                    }}
-                    onRemove={remove}
-                  />
-                );
-              })}
-              {attachedDocumentPaths.map((f) => (
-                <FileChip
-                  key={f}
-                  path={f}
-                  onRemove={() => {
-                    attachedFileSeqRef.current.delete(f);
-                    setAttachedFiles((prev) => prev.filter((x) => x !== f));
-                  }}
-                />
-              ))}
-            </div>
+            <ComposerAttachments
+              designMarks={designMarks}
+              images={imageAttachments.images}
+              files={fileAttachments.files}
+              attachedImagePaths={attachedImagePaths}
+              attachedDocumentPaths={attachedDocumentPaths}
+              canvasReferenceOf={canvasImages.referenceOf}
+              onInsertMark={(mark) => {
+                insertMarkReference(mark.anchor.mark);
+              }}
+              onRemoveMark={(mark) => {
+                if (activeSession) removeDesignMark(activeSession.appSessionId, mark.anchor.id);
+              }}
+              onOpenImage={(image) => {
+                setViewerImageId(image.id);
+              }}
+              onRemoveImage={removeImage}
+              onRemoveFile={fileAttachments.remove}
+              onOpenPath={setViewerPath}
+              onRemovePath={removeAttachedPath}
+            />
           )}
 
           {missionAutonomyGateOpen && missionPreview && !activeSession && (
@@ -2944,22 +2217,16 @@ export default function PromptInput({
         onEdit={draftEditing.applyEdit}
         onClose={draftEditing.closeMenu}
         canSchedule={hasContent && !appUpdateInstalling}
-        onSchedule={
-          activeSession && visibleTarget.kind === 'primary'
-            ? () => {
-                setScheduleTarget({ appSessionId: activeSession.appSessionId });
-              }
-            : undefined
-        }
+        onSchedule={primaryScheduleTarget ? promptSchedule.open : undefined}
       />
-      {scheduleTarget &&
-        activeSession?.appSessionId === scheduleTarget.appSessionId &&
+      {promptSchedule.scheduleTarget &&
+        activeSession?.appSessionId === promptSchedule.scheduleTarget.appSessionId &&
         visibleTarget.kind === 'primary' && (
           <Suspense fallback={null}>
             <SchedulePromptPopover
               anchorRef={scheduleAnchorRef}
               sessionTitle={activeSession.title}
-              onSave={schedulePrompt}
+              onSave={promptSchedule.save}
               onClose={() => {
                 // Scheduling opens from the draft's menu, so a close from inside
                 // the panel (Escape, Close, Save) hands focus back to the draft;
@@ -2968,7 +2235,7 @@ export default function PromptInput({
                 if (focused instanceof Element && focused.closest('[role="dialog"]')) {
                   editorRef.current?.focus();
                 }
-                setScheduleTarget((current) => (current === scheduleTarget ? null : current));
+                promptSchedule.close();
               }}
             />
           </Suspense>

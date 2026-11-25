@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Annotation, AnnotateCanvasInput } from './annotationProtocol';
+import type { Annotation, AnnotateCanvasInput } from '@droidex/protocol';
 import {
   AnnotationWriteQueue,
   nextExpectedVersion,

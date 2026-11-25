@@ -7,7 +7,7 @@
 
 import type { PreviewNode } from '../previewDocument';
 import type { PreviewTree, PreviewTreeNode } from '../previewDocumentTree';
-import type { OutlineNode, SourceOutline } from '../protocol';
+import type { OutlineNode, SourceOutline } from '@droidex/protocol';
 
 /** Where an element row is drawn, or why its row cannot pick it. */
 export type Drawn =

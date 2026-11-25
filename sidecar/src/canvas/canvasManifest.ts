@@ -8,7 +8,7 @@ import { ANNOTATION_LIMITS, annotationSchema } from './canvasAnnotationSchema.js
 import { canvasError } from './canvasError.js';
 import { hasOrderedRevisions, revisionRecordSchema } from './canvasRevisionMetadata.js';
 import { stackingOrderSchema } from './frameEditSchema.js';
-import type { EditElementInput } from './protocol.js';
+import type { EditElementInput } from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,

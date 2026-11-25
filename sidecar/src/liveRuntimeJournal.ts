@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { uptime } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import type { ChildStatus, SessionPhase } from './protocol.js';
+import type { ChildStatus, SessionPhase } from '@droidex/protocol';
 
 // Renamed from live-runtime.json, which builds without the owner check below
 // still read: a second copy of one of those started on this profile would

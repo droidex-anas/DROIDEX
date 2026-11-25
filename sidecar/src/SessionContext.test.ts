@@ -1,9 +1,10 @@
+import { PrimaryTurnState } from './PrimaryTurnState.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ContextStatsAccuracy, ReasoningEffort } from '@factory/droid-sdk';
 
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 import {
   SessionContext,
   type ChildOperationTarget,
@@ -67,10 +68,8 @@ async function registerLive(
     summary: summary(appSessionId, providerSessionId),
     session: fakeProviderSession(appSessionId, session),
     droid: session,
-    streaming: false,
+    turn: new PrimaryTurnState(),
     autoCompacting: false,
-    pendingSends: [],
-    steers: [],
     mcpServers: [],
     mcpConfigs: [],
   };
@@ -105,7 +104,7 @@ function addChild(
     session,
     role: 'worker',
     isCurrent: () =>
-      !parent.closeMode &&
+      !parent.turn.closeMode &&
       h.registry.getLive(parent.summary.appSessionId) === parent &&
       childRuntimes.get(parent)?.get(childSessionId) === child &&
       child.session === session,
@@ -123,7 +122,7 @@ function primaryTarget(h: Harness, live: LiveSession): LiveOperationTarget {
     sourceSessionId: live.summary.appSessionId,
     session: requireDroidSession(providerSession),
     isCurrent: () =>
-      !live.closeMode &&
+      !live.turn.closeMode &&
       h.registry.getLive(live.summary.appSessionId) === live &&
       live.session === providerSession,
   };
@@ -171,7 +170,7 @@ test('primary refresh normalizes breakdown and persists estimated context', asyn
   assert.deepEqual(h.contextWindowNotes.at(-1), ['model-default', 1_000]);
 });
 
-test('plausible exact primary usage wins while child usage changes totals only', async () => {
+test('plausible exact primary usage wins and child usage leaves totals unchanged', async () => {
   const h = createHarness();
   const { live, session } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
@@ -185,12 +184,16 @@ test('plausible exact primary usage wins while child usage changes totals only',
     tokensOut: 5,
     contextTokens: 900,
   });
-  assert.equal(live.summary.tokensIn, 20);
-  assert.equal(live.summary.tokensOut, 5);
+  assert.equal(live.summary.tokensIn, 10);
+  assert.equal(live.summary.tokensOut, 3);
   assert.equal(live.summary.contextTokens, 800);
   const patches = h.history.summaryPatchesAndHidden().patches;
-  assert.equal(patches.get('app-1')?.tokensIn, 20);
+  assert.equal(patches.get('app-1')?.tokensIn, 10);
   assert.equal(patches.get('app-1')?.contextTokens, 800);
+
+  h.context.recordUsage('app-1', 'app-1', { tokensIn: 11, tokensOut: 4 });
+  assert.equal(live.summary.tokensIn, 11);
+  assert.equal(live.summary.tokensOut, 4);
 
   session.nextContextStats = stats(100, 900, 1_000);
   await h.context.refresh(primaryTarget(h, live));
@@ -694,7 +697,7 @@ test('late refreshes after close or clearAll are inert', async () => {
   const first = await registerLive(h, 'first');
   const firstGate = first.session.deferNextContextStats();
   const afterClose = h.context.refresh(primaryTarget(h, first.live));
-  first.live.closeMode = 'discard-pending';
+  first.live.turn.beginClose('discard-pending');
   firstGate.resolve();
   await afterClose;
   assert.equal(contextEvents(h).length, 0);

@@ -14,7 +14,7 @@ import { holdsToKit, isTextLiteral } from './designSystemAdherence.js';
 import { lengthWords } from './designSystemAdherenceKit.js';
 import type { DesignSystem } from './designSystems.js';
 import { arbitraryUtility, withoutVariants } from './tailwindClasses.js';
-import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from '@droidex/protocol';
 
 const MAX_FINDINGS = 12;
 const MAX_LISTED = 6;

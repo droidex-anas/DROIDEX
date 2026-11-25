@@ -5,7 +5,7 @@ import type { CanvasFiles } from './canvasFiles.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import { requireDesign, type CanvasManifest } from './canvasManifest.js';
 import type { RevisionMetadata } from './canvasRevisionMetadata.js';
-import type { RevisionDiff, RevisionPage, RevisionSummary, SourceFiles } from './protocol.js';
+import type { RevisionDiff, RevisionPage, RevisionSummary, SourceFiles } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** A commit-index entry and its place among the design's revisions, counted from 1. */

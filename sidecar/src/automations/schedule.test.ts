@@ -1,9 +1,48 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {
+  acceptedCronExpressions,
+  rejectedCronExpressions,
+} from '../../../tests/fixtures/cronCases.js';
 import { createAutomationRecord, normalizeAutomationInput } from './automationInput.js';
 import { AutomationScheduler } from './automationScheduler.js';
-import { nextAutomationRun } from './schedule.js';
+import { nextAutomationRun, validateSchedule } from './schedule.js';
 import type { AutomationStore } from './types.js';
+
+test('cron validation accepts the shared grammar and preserves scheduler errors', () => {
+  for (const expression of acceptedCronExpressions) {
+    assert.doesNotThrow(
+      () => validateSchedule({ kind: 'cron', expression }),
+      JSON.stringify(expression),
+    );
+  }
+  for (const [expression, , schedulerIssue] of rejectedCronExpressions) {
+    assert.throws(
+      () => validateSchedule({ kind: 'cron', expression }),
+      { message: schedulerIssue },
+      JSON.stringify(expression),
+    );
+  }
+});
+
+test('cron next runs preserve list ordering, steps, and restricted day matching', () => {
+  const cases = [
+    ['45,10,10 13,12 * * *', Date.UTC(2026, 7, 3, 12), Date.UTC(2026, 7, 3, 12, 10)],
+    ['5/2 12 * * *', Date.UTC(2026, 7, 3, 12, 5), Date.UTC(2026, 7, 4, 12, 5)],
+    ['0 9 * * 5-7/2', Date.UTC(2026, 7, 7, 9), Date.UTC(2026, 7, 9, 9)],
+    ['0 9 * * 7', Date.UTC(2026, 7, 3, 12), Date.UTC(2026, 7, 9, 9)],
+    ['0 9 */1 * 7', Date.UTC(2026, 7, 3, 12), Date.UTC(2026, 7, 4, 9)],
+    ['0 9 5 * *', Date.UTC(2026, 7, 3, 12), Date.UTC(2026, 7, 5, 9)],
+    ['0 9 30 * 0', Date.UTC(2026, 7, 3, 12), Date.UTC(2026, 7, 9, 9)],
+  ] as const;
+  for (const [expression, from, expected] of cases) {
+    assert.equal(
+      nextAutomationRun({ kind: 'cron', expression }, 'UTC', from),
+      expected,
+      expression,
+    );
+  }
+});
 
 test('next runs follow the selected timezone across daylight saving, and a date that never occurs has none', () => {
   const from = Date.UTC(2026, 7, 20, 2, 0, 0);

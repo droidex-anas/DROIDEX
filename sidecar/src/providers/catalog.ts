@@ -1,38 +1,5 @@
+import type { SkillLocation, SkillInfo } from '@droidex/protocol';
 import { isAbsolute } from 'node:path';
-
-import type { ProviderKind } from './providerKind.js';
-
-export type SkillLocation = 'project' | 'personal' | 'builtin';
-type CatalogItemKind = 'skill' | 'command' | 'app' | 'plugin';
-type CatalogExecution = 'client' | 'harness';
-type CatalogIcon = { url: string } | { path: string } | { host: string };
-
-export interface SkillInfo {
-  provider: ProviderKind;
-  kind: CatalogItemKind;
-  name: string;
-  description: string;
-  displayName?: string;
-  scope?: string;
-  argumentHint?: string;
-  aliases?: string[];
-  icon?: CatalogIcon;
-  brandColor?: string;
-  execution: CatalogExecution;
-  // Kept for the current renderer catalog/chip contract.
-  location: SkillLocation;
-  filePath: string;
-  enabled?: boolean;
-  userInvocable?: boolean;
-  version?: string;
-}
-
-type MentionKind = 'skill' | 'app' | 'plugin';
-export interface ProviderMention {
-  kind: MentionKind;
-  name: string;
-  path?: string;
-}
 
 export function droidCatalogItems(values: unknown[]): SkillInfo[] {
   return values.map((value) => {
@@ -72,7 +39,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 // The commands that carry a prompt, and so may carry the rows staged with it.
-const MENTION_COMMANDS = new Set(['session.send', 'session.create']);
+const MENTION_COMMANDS = new Set(['session.send', 'session.create', 'browser.design.sendPrompt']);
 
 export function assertValidMentions(command: object & { mentions?: unknown }): void {
   if (
@@ -80,7 +47,7 @@ export function assertValidMentions(command: object & { mentions?: unknown }): v
     !MENTION_COMMANDS.has(String(command.type)) ||
     !Array.isArray(command.mentions)
   )
-    throw new Error('Mentions are only valid on a prompt: a session send or a new session.');
+    throw new Error('Mentions are only valid on a session or design prompt.');
   for (const mention of command.mentions) {
     if (
       !isRecord(mention) ||

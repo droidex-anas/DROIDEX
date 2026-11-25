@@ -10,7 +10,7 @@ import {
 } from '@droidex/icons';
 import type { QueuedPrompt } from '../../lib/promptQueue';
 import { formatResetTime } from '../../lib/usageLimit';
-import type { UsageLimit } from '../../types/bridge';
+import type { UsageLimit } from '@droidex/protocol';
 import { Button } from '../ui/Button';
 import { PendingPromptPreview } from './PendingPromptPreview';
 

@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SidebarSessionList, type SidebarSessionListProps } from './SidebarSessionList.js';
 import { sidebarPagination } from '../hooks/useSidebarPagination.js';
 import { SIDEBAR_VISIBLE_SESSION_LIMIT } from '../lib/workspaces.js';
-import type { SessionSummary } from '../types/bridge.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 function session(appSessionId: string, updatedAt: number): SessionSummary {
   return {

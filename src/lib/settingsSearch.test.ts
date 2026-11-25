@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { bestTabForQuery, searchSettings, tabMatchesQuery } from './settingsSearch';
+import {
+  bestTabForQuery,
+  searchSettings,
+  tabMatchesQuery,
+  type SettingsTab,
+} from './settingsSearch';
 
 test('tabMatchesQuery keeps tabs whose content keywords match', () => {
   assert.equal(tabMatchesQuery('Notifications', ''), true);
@@ -40,4 +45,21 @@ test('settings search ranks controls under their shipped tabs and jumps to the r
   assert.equal(bestTabForQuery('mcp'), 'MCP servers');
   assert.equal(bestTabForQuery('zzzz-no-match'), null);
   assert.equal(bestTabForQuery(''), null);
+});
+
+// A Remote browser hides laptop-only tabs; ranking them anyway made search
+// auto-open the hidden Profile tab instead of the visible match.
+test('settings search ranks only the tabs that are shown', () => {
+  const remoteHidden = new Set<SettingsTab>(['Profile']);
+
+  assert.equal(bestTabForQuery('tokens'), 'Profile');
+  assert.deepEqual(
+    searchSettings('tokens', remoteHidden).map((hit) => hit.tab),
+    ['General'],
+  );
+  assert.equal(bestTabForQuery('tokens', remoteHidden), 'General');
+
+  assert.equal(bestTabForQuery('username'), 'Profile');
+  assert.deepEqual(searchSettings('username', remoteHidden), []);
+  assert.equal(bestTabForQuery('username', remoteHidden), null);
 });

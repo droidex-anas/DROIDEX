@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { CHAT_METADATA_STORAGE_KEY, loadChatMetadata } from '../lib/chatMetadata';
-import { onSharedStorage, type SharedStorageChange } from '../lib/desktop';
+import { onSharedStorage } from '../lib/desktop';
+import type { SharedStorageChange } from '../lib/desktopContract';
 import { loadWorkspaceCwds } from './persistedUiPreferences';
 import type { Action } from './useStore';
 

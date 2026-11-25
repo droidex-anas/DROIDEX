@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   ackNotificationActivate,
   isDesktop,
   notify,
   onNotificationActivate,
-  takePendingNotificationSession,
+  readPendingNotificationSession,
 } from '../lib/desktop';
 import { isDocumentVisible, subscribeVisibilityChange } from './useDocumentVisible';
 import {
@@ -18,7 +18,8 @@ import { useStoreApi, useStoreDispatch, type AppState } from './useStore';
 import { isChatInView } from '../features/tabs/tabStrip';
 
 // Desktop finish banners: working→idle sessions raise a short OS notification.
-// Clicks open that chat via a main-process pending queue (push + focus pull).
+// Clicks open that chat via a main-process pending queue (push + focus pull);
+// a click for a chat the store has not loaded yet waits for that chat.
 
 export function useFinishNotifications(enabled: boolean): void {
   const dispatch = useStoreDispatch();
@@ -27,14 +28,23 @@ export function useFinishNotifications(enabled: boolean): void {
   const seeded = useRef(false);
   const lastOpenedRef = useRef<{ id: string; at: number } | null>(null);
 
-  const openSessionFromNotification = useCallback(
-    (appSessionId: string) => {
-      if (!appSessionId) return;
+  useEffect(() => {
+    if (!enabled || !isDesktop()) return;
+    // Main owns the pending click, so a push only prompts a read; push and
+    // read replies travel separately, and only the latest read may act.
+    let generation = 0;
+    let readInFlight = false;
+    let heldAppSessionId: string | null = null;
+
+    const openSession = (appSessionId: string) => {
       const state = store.getState();
       if (!(appSessionId in state.sessions)) {
-        void ackNotificationActivate(appSessionId);
+        // A reloaded renderer starts from a partial snapshot. Leave the click
+        // unacked so main keeps it until the chat loads or the click expires.
+        heldAppSessionId = appSessionId;
         return;
       }
+      heldAppSessionId = null;
       const now = Date.now();
       if (lastOpenedRef.current?.id === appSessionId && now - lastOpenedRef.current.at < 1500) {
         void ackNotificationActivate(appSessionId);
@@ -45,39 +55,40 @@ export function useFinishNotifications(enabled: boolean): void {
       dispatch({ type: 'SELECT_CHILD', selection: null });
       if (state.settingsOpen) dispatch({ type: 'TOGGLE_SETTINGS' });
       void ackNotificationActivate(appSessionId);
-    },
-    [dispatch, store],
-  );
+    };
 
-  useEffect(() => {
-    if (!enabled || !isDesktop()) return;
-    return onNotificationActivate(({ appSessionId }) => {
-      if (appSessionId) openSessionFromNotification(appSessionId);
-    });
-  }, [enabled, openSessionFromNotification]);
-
-  useEffect(() => {
-    if (!enabled || !isDesktop()) return;
-
-    const pullPending = () => {
-      void takePendingNotificationSession().then((pending) => {
-        if (pending?.appSessionId) openSessionFromNotification(pending.appSessionId);
+    const readPending = () => {
+      const readGeneration = ++generation;
+      readInFlight = true;
+      void readPendingNotificationSession().then((pending) => {
+        if (readGeneration !== generation) return;
+        readInFlight = false;
+        if (pending) openSession(pending.appSessionId);
+        else heldAppSessionId = null;
       });
     };
 
     const onVisibility = () => {
-      if (isDocumentVisible()) pullPending();
+      if (isDocumentVisible()) readPending();
     };
 
-    window.addEventListener('focus', pullPending);
+    const unsubActivate = onNotificationActivate(readPending);
+    const unsubStore = store.subscribe(() => {
+      if (readInFlight || heldAppSessionId === null) return;
+      if (heldAppSessionId in store.getState().sessions) readPending();
+    });
+    window.addEventListener('focus', readPending);
     const unsubVisibility = subscribeVisibilityChange(onVisibility);
-    pullPending();
+    readPending();
 
     return () => {
-      window.removeEventListener('focus', pullPending);
+      generation += 1;
+      unsubActivate();
+      unsubStore();
+      window.removeEventListener('focus', readPending);
       unsubVisibility();
     };
-  }, [enabled, openSessionFromNotification]);
+  }, [enabled, dispatch, store]);
 
   useEffect(() => {
     if (!enabled || !isDesktop()) return;

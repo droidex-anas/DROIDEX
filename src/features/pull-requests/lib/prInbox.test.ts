@@ -7,6 +7,7 @@ import {
   groupInboxPullRequests,
   inboxGroupIsExpanded,
   orderInboxGroups,
+  prInboxEmptyCopy,
   searchPullRequests,
   selectedInboxPullRequest,
   type InboxPullRequest,
@@ -193,4 +194,11 @@ test('inboxGroupIsExpanded keeps the current repo open and others closed', () =>
   // Selecting a pull request in another workspace, or searching, opens it.
   assert.equal(expanded('/site', '/site'), true);
   assert.equal(expanded('/site', '/app', true), true);
+});
+
+test('a query with no matches uses search-specific empty copy', () => {
+  assert.equal(prInboxEmptyCopy('all', 'missing'), 'No pull requests match your search.');
+  assert.equal(prInboxEmptyCopy('authored', '   '), 'You have not opened any.');
+  assert.equal(prInboxEmptyCopy('backlog', ''), 'Nothing in the backlog.');
+  assert.equal(prInboxEmptyCopy('all', '', true), 'No open pull requests in these workspaces.');
 });

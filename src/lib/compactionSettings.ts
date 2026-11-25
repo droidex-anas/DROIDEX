@@ -1,4 +1,4 @@
-import type { FactoryDefaultSettings } from '../types/bridge';
+import type { FactoryDefaultSettings } from '@droidex/protocol';
 
 // Compaction token limit settings: localStorage persistence, the "did the
 // user actually configure this?" distinction, and the snapshot pushed to the

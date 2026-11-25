@@ -1,6 +1,6 @@
 import { shallowEqual, useStoreSelector } from '../../hooks/useStore';
 import { digestTranscript, type ActivityDigest } from '../../lib/activityDigest';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 /* The last step of the threads a caller names, and only those. The inbox's own
    digest hook walks every transcript the window holds, which is the right cost

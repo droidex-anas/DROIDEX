@@ -3,7 +3,7 @@ import type {
   ReasoningEffort,
   SessionInteractionMode,
   SessionSummary,
-} from './protocol.js';
+} from '@droidex/protocol';
 
 export function defaultsModeForSummary(summary: SessionSummary): SessionInteractionMode {
   if (summary.sessionPurpose === 'mission-control') return 'agi';

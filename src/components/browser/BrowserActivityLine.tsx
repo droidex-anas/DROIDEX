@@ -7,9 +7,9 @@ import { browserStepLabel } from '../../lib/browserTools';
 import { transcriptEventIsVisible } from '../../lib/childSessions';
 import { wrapTabFocus } from '../../lib/focusTrap';
 import { sessionAttention } from '../../lib/sessionAttention';
-import type { SessionActivityStatus } from '../../lib/sidebarActivity';
+import type { SessionActivityStatus, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { formatDuration } from '../../lib/tools';
-import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
+
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { FeedItemView } from '../chat';
 import { buildFeed, startsTurn, type FeedItem } from '../chatFeed';

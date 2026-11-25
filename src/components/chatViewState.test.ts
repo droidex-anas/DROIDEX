@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, type AppState } from '../hooks/useStore';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { equalVisibleChatState, selectChatViewState } from './chatViewState';
 
 function session(appSessionId: string, overrides: Partial<SessionSummary> = {}): SessionSummary {

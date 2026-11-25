@@ -1,5 +1,6 @@
 import { lstat, opendir, realpath } from 'node:fs/promises';
-import { isAbsolute, join, relative, sep } from 'node:path';
+import { join } from 'node:path';
+import { isPathInside } from './isPathInside.js';
 
 const SETTINGS_SUFFIX = '.settings.json';
 
@@ -72,7 +73,7 @@ async function safeDirectory(root: string, relativeDirectory: string): Promise<s
   const before = await lstat(candidate);
   if (!before.isDirectory() || before.isSymbolicLink()) return null;
   const canonical = await realpath(candidate);
-  if (canonical !== root && !inside(root, canonical)) return null;
+  if (canonical !== root && !isPathInside(root, canonical)) return null;
   const after = await lstat(candidate);
   if (
     !after.isDirectory() ||
@@ -115,9 +116,4 @@ function heapDown(heap: string[], start: number): void {
 
 function identity(stats: { dev: number | bigint; ino: number | bigint }): string {
   return `${String(stats.dev)}:${String(stats.ino)}`;
-}
-
-function inside(root: string, candidate: string): boolean {
-  const child = relative(root, candidate);
-  return child !== '' && child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
 }

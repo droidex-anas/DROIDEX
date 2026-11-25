@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readdir, unlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import {
   frameHarness,
   turnScope,

@@ -19,7 +19,7 @@ process.env.HOME = home;
 delete process.env.DROIDEX_ALT_HOME;
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { createHistorySessionFileCache, loadSessionPage, SESSION_INDEX_FILENAME } =
+const { createHistorySessionFileCache, loadSessionTranscriptWindow, SESSION_INDEX_FILENAME } =
   await import('./history.js');
 const { droidexHistoryDir } = await import('./droidexPaths.js');
 
@@ -60,7 +60,7 @@ test('opted-in Alt transcripts restore beside Main with separate profile and rep
       rows.find((row) => row.summary.appSessionId === 'main-transcript')?.summary.droidProfile,
       undefined,
     );
-    const replay = loadSessionPage('alt-transcript', 'alt-thread').events;
+    const replay = loadSessionTranscriptWindow('alt-thread', ['alt-transcript']).events;
     assert.ok(replay.length > 0);
     assert.ok(replay.every((event) => event.appSessionId === 'alt-thread'));
   } finally {
@@ -195,7 +195,7 @@ test('a session file never moves a cached chat to another Droid login', (t) => {
   let altLoggedIn = true;
   const cache = new SessionFileCache(
     db,
-    () => ({ files: scan, isComplete }),
+    () => ({ files: scan, unreadablePaths: new Set(), isComplete }),
     (id, file) => ({
       summary: sessionSummary({
         appSessionId: id,
@@ -238,7 +238,7 @@ test('Alt files never clear a cached chat, and search follows whether its file e
   ]);
   const cache = new SessionFileCache(
     db,
-    () => ({ files: scan, isComplete: true }),
+    () => ({ files: scan, unreadablePaths: new Set(), isComplete: true }),
     (id, file) => {
       if (file.path === mainPath) return { summary: sessionSummary({ appSessionId: id }) };
       return {

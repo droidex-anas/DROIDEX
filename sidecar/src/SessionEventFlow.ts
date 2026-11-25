@@ -1,7 +1,7 @@
 import type { DroidStreamEvent } from '@factory/droid-sdk';
 
 import { normalizeNotification, normalizeStreamEvent, type NormalizedEvent } from './normalize.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { CanvasToolPresentation } from './canvas/canvasToolPresentation.js';
 import { appendCanvasToolBinding } from './canvas/canvasToolBindings.js';

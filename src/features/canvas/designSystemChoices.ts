@@ -5,7 +5,7 @@
 // it is composed, so a later change reaches only requests composed after it.
 
 import { useSyncExternalStore } from 'react';
-import type { DesignSystemRef, DesignSystemSummary } from './protocol';
+import type { DesignSystemRef, DesignSystemSummary } from '@droidex/protocol';
 
 export interface DesignSystemChoice {
   ref: DesignSystemRef;

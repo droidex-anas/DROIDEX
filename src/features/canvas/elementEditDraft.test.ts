@@ -14,7 +14,7 @@ import {
   settleCommit,
   type ElementEditDraft,
 } from './elementEditDraft';
-import type { CanvasBuildOutcome, CanvasFrame, SourceElement } from './protocol';
+import type { CanvasBuildOutcome, CanvasFrame, SourceElement } from '@droidex/protocol';
 
 const element = { designId: 'design', revisionId: 'r1', elementId: 'el_1', instancePath: '0' };
 const site: SourceElement = {
@@ -129,6 +129,19 @@ test('one commit at a time, and only with a previewed whitelisted property', () 
   const reverted = revertStyle(previewStyle(idle, 'gap', '4px', ''), 'gap');
   assert.deepEqual(reverted.values, {});
   assert.equal(commitStyles(reverted, 'm-reverted'), null);
+});
+
+test('repeating a style preview keeps its identity and original drawn value', () => {
+  const idle = editDraft('canvas', element, site);
+  const first = previewStyle(idle, 'fontSize', '24px', '24px');
+  assert.notEqual(first, idle);
+  assert.equal(previewStyle(first, 'fontSize', '24px', '28px'), first);
+  const next = previewStyle(first, 'fontSize', '28px', '24px');
+  assert.equal(next.values.fontSize, '28px');
+  assert.equal(next.drawn.fontSize, '24px');
+  const empty = previewStyle(idle, 'fontSize', '', '24px');
+  assert.notEqual(empty, idle);
+  assert.equal(previewStyle(empty, 'fontSize', '', '28px'), empty);
 });
 
 test('a previewed blur keeps the rest of the filter the element drew, and None takes only the blur', () => {

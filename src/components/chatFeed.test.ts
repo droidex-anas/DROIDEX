@@ -10,7 +10,7 @@ import {
   sameFeedEvents,
   type FeedItem,
 } from './chatFeed';
-import { conversationAnchors, groupTurns } from './chatFeedTurns';
+import { buildGroupedFeed, groupTurns, promptAnchorsFromItems } from './chatFeedTurns';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
   browserPageOf,
@@ -19,8 +19,7 @@ import {
   isWholeUrl,
 } from '../lib/browserTools';
 import { describeToolCall, hasTodoPayload } from '../lib/tools';
-import type { TranscriptEvent } from '../types/bridge';
-import { isRenderedTranscriptEvent } from './MissionControl';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -142,6 +141,10 @@ test('a spoken line stays its own marked row beside the turn it was said in', ()
 });
 
 test('conversation timeline anchors one dot per user prompt', () => {
+  const promptLabels = (events: TranscriptEvent[]) =>
+    promptAnchorsFromItems(buildGroupedFeed(events, false, { childSessionCards: true })).map(
+      (anchor) => anchor.label,
+    );
   const events = [
     userMsg('first question'),
     grep(),
@@ -150,17 +153,10 @@ test('conversation timeline anchors one dot per user prompt', () => {
     todo('1. [in_progress] x'),
     asst('second answer'),
   ];
-  const anchors = conversationAnchors(events, false, { childSessionCards: true });
-  assert.deepEqual(
-    anchors.map((a) => a.label),
-    ['first question', 'second question'],
-  );
+  assert.deepEqual(promptLabels(events), ['first question', 'second question']);
   // A leading model message before any prompt does not add a stray dot.
   const restored = [asst('restored summary'), userMsg('one'), asst('a'), userMsg('two'), asst('b')];
-  assert.deepEqual(
-    conversationAnchors(restored, false, { childSessionCards: true }).map((a) => a.label),
-    ['one', 'two'],
-  );
+  assert.deepEqual(promptLabels(restored), ['one', 'two']);
 });
 
 test('#20 repeated TodoWrite calls are deduped to the latest snapshot', () => {
@@ -666,28 +662,6 @@ test('correlateResults never settles a call by guessing between idless results',
 });
 
 // ── #18: final answer always top-level, even with trailing compaction ──
-
-test('Mission Control still renders a compaction divider after transcript pre-filtering', () => {
-  // Every TranscriptEvent.kind that buildFeed turns into a feed row must survive
-  // the Mission Control pre-filter; a missing kind is a silent dropped divider.
-  const renderedKinds: Record<TranscriptEvent['kind'], true> = {
-    text: true,
-    thinking: true,
-    tool_call: true,
-    tool_result: true,
-    error: true,
-    status: true,
-    compaction: true,
-  };
-  for (const kind of Object.keys(renderedKinds) as TranscriptEvent['kind'][]) {
-    assert.equal(
-      isRenderedTranscriptEvent(ev({ kind })),
-      true,
-      `${kind} must survive the Mission Control transcript filter`,
-    );
-  }
-  assert.equal(isRenderedTranscriptEvent(userMsg('keep user prompts')), true);
-});
 
 test('#18 a final answer followed by compaction stays top-level; a bare compaction keeps its divider', () => {
   const events = [userMsg('q'), grep(), asst('the answer'), compaction()];

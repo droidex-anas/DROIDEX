@@ -5,12 +5,8 @@
 // kit document's size limit. The counts keep every record, listed or not, so a
 // long record never refuses the import it describes.
 
-import {
-  HOST_PATH,
-  KEPT_SKIP_REASONS,
-  MAX_LIBRARY_SKIPS,
-  type LibrarySkip,
-} from './designSystemProvenance.js';
+import type { LibrarySkip } from '@droidex/protocol';
+import { HOST_PATH, KEPT_SKIP_REASONS, MAX_LIBRARY_SKIPS } from './designSystemProvenance.js';
 import { MAX_PROJECT_PATH_LENGTH } from './projectPaths.js';
 
 const MAX_DETAIL_LENGTH = 200;

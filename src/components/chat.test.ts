@@ -25,7 +25,7 @@ import {
   revealNextDiffCards,
 } from '../lib/diff';
 import { parseTruncatedTail } from '../lib/tools';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {

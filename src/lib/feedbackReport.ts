@@ -1,4 +1,4 @@
-import type { FeedbackReportReceipt, FeedbackReportRequest } from './desktop';
+import type { FeedbackReportReceipt, FeedbackReportRequest } from './desktopContract';
 import { getSessionLog, getCurrentAppState } from './rendererDiagnostics';
 
 export function feedbackDraftFromCommand(text: string): FeedbackReportRequest | null {

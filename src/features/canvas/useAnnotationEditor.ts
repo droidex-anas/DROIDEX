@@ -5,7 +5,13 @@
 // never retried, because the board keeps no local undo stack.
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
-import type { AnnotationColor, AnnotationDraft, AnnotateCanvasInput } from './annotationProtocol';
+import type {
+  AnnotationColor,
+  AnnotationDraft,
+  AnnotateCanvasInput,
+  CanvasSnapshot,
+  FrameRect,
+} from '@droidex/protocol';
 import {
   draftBounds,
   draggedDraft,
@@ -28,7 +34,7 @@ import { boardPoint } from './boardCoordinates';
 import type { BoardStage } from './boardStage';
 import { arrowDirection, nudgeStep, screenToCanvas, type Point } from './canvasGeometry';
 import type { BoardInteraction, BoardInteractionEvent } from './canvasState';
-import type { CanvasSnapshot, FrameRect } from './protocol';
+
 import {
   annotationMarkOf,
   annotationShortcut,

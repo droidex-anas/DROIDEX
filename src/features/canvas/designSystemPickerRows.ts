@@ -7,7 +7,7 @@ import { AUTO_DESIGN_SYSTEM, type DesignSystemChoice } from './designSystemChoic
 import { sameKit } from './designSystemsState';
 import { requestDesignSystem, type FramePin } from './framePins';
 import type { PreviewMode } from './PreviewModeToggle';
-import type { DesignSystemRef, DesignSystemSummary } from './protocol';
+import type { DesignSystemRef, DesignSystemSummary } from '@droidex/protocol';
 
 /** A kit listed in one section; a recent kit is listed again in its own, so the key names both. */
 export interface PickerRow {

@@ -13,7 +13,7 @@ import type {
   SessionHistoryEntry,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   SessionTimeline,
   type SessionTimelineLoaders,
@@ -41,7 +41,6 @@ function createHarness(options: HarnessOptions = {}) {
   const liveAppSessionIds = new Set(options.liveAppSessionIds ?? []);
   const loaders: SessionTimelineLoaders = {
     list: () => [],
-    page: () => ({ events: [] }),
     hydrateMission: () => ({ progress: [], transcripts: [] }),
     resolveChain: (_appSessionId, providerSessionId) => [providerSessionId],
     transcriptWindow: () => ({ events: [] }),
@@ -712,43 +711,6 @@ test('recording failure prevents a history page after a partial write', () => {
   ]);
 });
 
-test('legacy provider pages keep their shape, identity, order, limit, and error behavior', () => {
-  const calls: unknown[][] = [];
-  let fail = false;
-  const events = [transcript('page-first'), transcript('page-second')];
-  const harness = createHarness({
-    summaries: [summary('stable-app', 'provider-current')],
-    loaders: {
-      page: (...args) => {
-        calls.push(args);
-        if (fail) throw new Error('page failed');
-        return { events };
-      },
-    },
-  });
-
-  harness.timeline.loadProviderPage('stable-app', '40', 25);
-
-  assert.deepEqual(calls[0], ['provider-current', 'stable-app', '40', 25]);
-  assert.deepEqual(
-    harness.recorded.map((event) => event.id),
-    ['page-first', 'page-second'],
-  );
-  const page = harness.emitted[0];
-  assert.equal(page?.type, 'session.history');
-  if (page?.type !== 'session.history') return;
-  assert.equal('mode' in page, false);
-  assert.equal('loadedCount' in page, false);
-
-  fail = true;
-  harness.timeline.loadProviderPage('provider-current');
-  assert.deepEqual(harness.errors.at(-1), {
-    appSessionId: 'stable-app',
-    providerSessionId: 'provider-current',
-    message: 'page failed',
-  });
-});
-
 test('child history loads a canonical replace batch and reports replay failures for retry', () => {
   let fail = false;
   const events = [transcript('child-first'), transcript('child-second')];
@@ -820,6 +782,51 @@ test('child history loads a canonical replace batch and reports replay failures 
     childSessionId: 'child-logical',
     message: 'not flushed',
   });
+});
+
+test('unchanged child refresh windows do not republish, while explicit loads still answer', () => {
+  const events = [transcript('child-first')];
+  const harness = createHarness({
+    loaders: {
+      resolveChain: () => ['child-provider'],
+      transcriptWindow: () => ({ events }),
+    },
+  });
+  const query = {
+    appSessionId: 'app-1',
+    childSessionId: 'child-logical',
+    childProviderSessionIds: ['child-provider'],
+    role: 'worker' as const,
+  };
+
+  harness.timeline.loadChildHistory(query);
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'the first watched refresh synchronizes its owner even when it matches the explicit load',
+  );
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'an unchanged watched window stays silent',
+  );
+
+  events.push(transcript('child-second'));
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    3,
+    'a changed watched window republishes',
+  );
+
+  harness.timeline.loadChildHistory(query);
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    4,
+    'an explicit history load always answers',
+  );
 });
 
 test('a live child with no flushed provider file returns an empty successful history page', () => {

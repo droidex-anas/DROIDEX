@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { describeToolCall, safeJson, stripAnsi, type ToolCallLabel } from '../../lib/tools';
 import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { compactPath } from '../../lib/pathDisplay';

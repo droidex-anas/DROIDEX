@@ -4,18 +4,26 @@ import type { DiffFile, DiffScope } from '../types/vcs';
 
 const POLL_MS = 8000;
 
+// What a lazy patch load needs from the list snapshot: `signature` changes
+// whenever the patch may have, and `oldPath` pairs a rename with its source.
+export interface ReviewFileVersion {
+  signature: string;
+  oldPath: string | null;
+}
+
 export interface ReviewDiffState {
   files: DiffFile[];
   base: string | null;
   loadingList: boolean;
   signature: string;
+  fileVersions: ReadonlyMap<string, ReviewFileVersion>;
   refresh: () => void;
 }
 
 // Drives the Review tab's file list, kept fresh with light polling so the view
 // tracks the agent's edits. Per-file diffs are loaded lazily by
 // useReviewFileDiffs when a section is expanded, so this hook only owns the
-// list and a content signature consumers use to invalidate cached diffs.
+// list structure and the per-file versions lazy patch loading reads.
 export function useReviewDiff(
   cwd: string,
   scope: DiffScope,
@@ -25,6 +33,9 @@ export function useReviewDiff(
   const [files, setFiles] = useState<DiffFile[]>([]);
   const [base, setBase] = useState<string | null>(null);
   const [loadingList, setLoadingList] = useState(false);
+  const [fileVersions, setFileVersions] = useState<ReadonlyMap<string, ReviewFileVersion>>(
+    new Map(),
+  );
   const listReq = useRef(0);
   // In-flight flag: poll ticks consult this so a tick that fires while the
   // previous load is still pending is skipped (no stacked git subprocesses).
@@ -48,6 +59,7 @@ export function useReviewDiff(
       loadedKey.current = null;
       setFiles([]);
       setBase(null);
+      setFileVersions(new Map());
       setLoadingList(false);
       return;
     }
@@ -62,7 +74,32 @@ export function useReviewDiff(
         // Poll results are freshly deserialized; keep the previous array when
         // nothing changed so downstream memos and effects keyed on `files`
         // stay stable across idle polls.
-        setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(res.files) ? prev : res.files));
+        const nextFiles = res.files.map(({ path, status, additions, deletions, binary }) => ({
+          path,
+          status,
+          additions,
+          deletions,
+          binary,
+        }));
+        setFiles((prev) => (JSON.stringify(prev) === JSON.stringify(nextFiles) ? prev : nextFiles));
+        // Fresh snapshots retry failed patches on idle polls without invalidating loaded ones.
+        setFileVersions(
+          new Map(
+            res.files.map((file) => [
+              file.path,
+              {
+                signature: JSON.stringify([
+                  file.status,
+                  file.additions,
+                  file.deletions,
+                  file.binary,
+                  file.fingerprint,
+                ]),
+                oldPath: file.oldPath,
+              },
+            ]),
+          ),
+        );
         setBase(res.base);
         loadedKey.current = key;
         inFlight.current = false;
@@ -97,12 +134,13 @@ export function useReviewDiff(
     };
   }, [loadList, enabled]);
 
-  // Changes only when a file's identity or line counts change, so an idle poll
-  // that returns the same list never invalidates the open sections' diffs.
   const signature = useMemo(
     () =>
       files
-        .map((f) => `${f.path}:${f.status}:${String(f.additions)}:${String(f.deletions)}`)
+        .map(
+          (file) =>
+            `${file.path}:${file.status}:${String(file.additions)}:${String(file.deletions)}`,
+        )
         .join('\n'),
     [files],
   );
@@ -115,5 +153,12 @@ export function useReviewDiff(
   const listKey = `${cwd}|${scope}|${appSessionId ?? ''}`;
   const listSettled = !enabled || !cwd || loadedKey.current === listKey;
 
-  return { files, base, loadingList: loadingList || !listSettled, signature, refresh: loadList };
+  return {
+    files,
+    base,
+    loadingList: loadingList || !listSettled,
+    signature,
+    fileVersions,
+    refresh: loadList,
+  };
 }

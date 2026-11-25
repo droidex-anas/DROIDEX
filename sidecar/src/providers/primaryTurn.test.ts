@@ -1,3 +1,4 @@
+import { PrimaryTurnState } from '../PrimaryTurnState.js';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -10,7 +11,7 @@ function turnUnderTest() {
   const streamed: string[] = [];
   const liveSession = {
     summary: { appSessionId: 'app' },
-    interrupting: false,
+    turn: new PrimaryTurnState(),
     session: {
       // eslint-disable-next-line require-yield -- the turn under test must never reach a stream
       stream: async function* (prompt: string) {
@@ -50,7 +51,7 @@ test('a Stop that lands while the prompt is being stored keeps the turn from sta
   const { liveSession, dependencies, streamed, storePrompt } = turnUnderTest();
 
   const turn = runPrimaryTurn(dependencies, liveSession, { prompt: 'do the work' });
-  liveSession.interrupting = true;
+  liveSession.turn.requestStop();
   storePrompt();
   await turn;
 

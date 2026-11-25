@@ -3,7 +3,7 @@ import { afterEach, test } from 'node:test';
 import { dismissToast, subscribeToasts, type ToastItem } from '../../lib/toast';
 import { BoardHistory, recordPlacements, revisionEntry } from './boardHistory';
 import { CanvasRequestError } from './client';
-import type { ArrangeFramesInput, CanvasFrame, SwitchRevisionInput } from './protocol';
+import type { ArrangeFramesInput, CanvasFrame, SwitchRevisionInput } from '@droidex/protocol';
 
 const hero = { designId: 'hero', name: 'Hero' };
 const card = { designId: 'card', name: 'Card' };

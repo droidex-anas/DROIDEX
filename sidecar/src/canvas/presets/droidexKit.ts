@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { storageFailure } from '../canvasError.js';
 import { isMissing } from '../designSystemStorage.js';
 import { KIT_CATALOG_FILE } from '../kitCatalog.js';
-import type { DesignSystemRef } from '../protocol.js';
+import type { DesignSystemRef } from '@droidex/protocol';
 import { DROIDEX_CATALOG } from './catalogs.js';
 import kit from './droidex/system.json' with { type: 'json' };
 

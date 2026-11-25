@@ -1,6 +1,6 @@
 import type { ChildIdentity } from './ChildSessionState.js';
 import type { ChildFileHistorySource } from './ChildSessionsTypes.js';
-import type { ClientCommand } from './protocol.js';
+import type { ClientCommand } from '@droidex/protocol';
 import type { SessionFileChange } from './sessionFileCache.js';
 
 type WatchCommand = Extract<ClientCommand, { type: 'child.watchHistory' }>;

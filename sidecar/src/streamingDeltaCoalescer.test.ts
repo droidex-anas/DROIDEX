@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
 
 const WINDOW_MS = 40;

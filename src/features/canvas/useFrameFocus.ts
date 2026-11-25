@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { readingOrder } from './boardKeys';
 import type { PlacedFrame } from './canvasGeometry';
 import type { BoardInteractionEvent } from './canvasState';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect } from '@droidex/protocol';
 
 export function useFrameFocus({
   board,

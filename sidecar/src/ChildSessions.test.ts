@@ -11,7 +11,7 @@ import type {
   AutoCompactionSettlement,
   ChildAutomaticCompactionTarget,
 } from './SessionCompaction.js';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   FakeFactoryRuntime,
@@ -252,6 +252,7 @@ function createHarness(
 
 function parentLease(appSessionId: string, calls: RecordedCall[]): ChildParentLease {
   return {
+    turn: { closeMode: undefined },
     summary: summary(appSessionId),
     droid: new FakeFactorySession(`${appSessionId}-provider`, {}, calls),
     mcpConfigs: [],
@@ -1421,6 +1422,26 @@ test('runtime close invalidates immediately and waits for in-flight settings tea
     1,
   );
   assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'model-default');
+});
+
+test('closing a streaming child settles buffered output before runtime invalidation', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const streamGate = runtime.deferNextStream();
+  const sending = h.owner.send(record, 'stream output');
+  await runtime.waitForPrompts(1);
+  h.sequence.length = 0;
+
+  const closeGate = runtime.deferNextClose();
+  const closing = h.owner.close(record);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(h.sequence, ['timeline.settleStreaming', 'context.stopPolling']);
+
+  closeGate.resolve();
+  streamGate.resolve();
+  await Promise.all([closing, sending]);
 });
 
 test('capacity eviction blocks victim reopen until old provider close settles', async () => {

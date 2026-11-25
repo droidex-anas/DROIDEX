@@ -3,7 +3,7 @@ import type {
   ModelInfo,
   ProviderKind,
   TranscriptEvent,
-} from '../../types/bridge';
+} from '@droidex/protocol';
 import { useReducedMotion } from 'framer-motion';
 import { findChildSessionForTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';

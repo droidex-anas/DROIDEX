@@ -3,7 +3,7 @@ import { syncBuiltinESMExports } from 'node:module';
 import type { TestContext } from 'node:test';
 import type { CompilerRequest, DesignCompileInput } from '../canvas/compiler.js';
 import { AUTO_DESIGN_SYSTEM_REF } from '../canvas/designSystems.js';
-import type { SourceFiles } from '../canvas/protocol.js';
+import type { SourceFiles } from '@droidex/protocol';
 
 /**
  * One design's compile request under Auto, which is authored in code on the

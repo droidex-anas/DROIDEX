@@ -1,7 +1,11 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 
-import type { DroidProxyInstallPhase, DroidProxyProviderKey } from '../protocol.js';
+import type {
+  ClientCommand,
+  DroidProxyInstallPhase,
+  DroidProxyProviderKey,
+} from '@droidex/protocol';
 import {
   droidProxyAppPath,
   loginFlagFor,
@@ -37,6 +41,8 @@ type FactoryApplyOutcome =
   | { ok: true; applied: number; removed: number; backupPath?: string }
   | { ok: false; message: string };
 
+type DroidProxyCommand = Extract<ClientCommand, { type: `droidproxy.${string}` }>;
+
 // Drives the DroidProxy settings page: status snapshots, browser OAuth logins
 // through DroidProxy's bundled cli-proxy-api, launching the app, and merging
 // the proxy model catalog into Factory settings.
@@ -45,9 +51,42 @@ export class DroidProxyController {
   private installAbort: AbortController | undefined;
   private installPhase: DroidProxyInstallPhase | undefined;
 
-  constructor(private readonly emit: (event: DroidProxyEvent) => void) {}
+  constructor(
+    private readonly emit: (event: DroidProxyEvent) => void,
+    private readonly afterFactoryChange: () => void,
+  ) {}
 
-  async report(): Promise<void> {
+  async handle(cmd: DroidProxyCommand): Promise<void> {
+    switch (cmd.type) {
+      case 'droidproxy.status':
+        await this.report();
+        return;
+      case 'droidproxy.launch':
+        await this.launchApp();
+        return;
+      case 'droidproxy.login':
+        await this.login(cmd.provider);
+        return;
+      case 'droidproxy.login.cancel':
+        this.cancelLogin();
+        return;
+      case 'droidproxy.account.setEnabled':
+        await this.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
+        return;
+      case 'droidproxy.install':
+        if (await this.install()) this.afterFactoryChange();
+        return;
+      case 'droidproxy.install.cancel':
+        this.cancelInstall();
+        return;
+      case 'droidproxy.factoryModels.apply':
+        if (await this.applyFactoryModels()) this.afterFactoryChange();
+        return;
+    }
+    cmd satisfies never;
+  }
+
+  private async report(): Promise<void> {
     const status = await readDroidProxyStatus();
     const providerEnabled = this.providerEnabledPredicate(status);
     const options = { contributorMode: status.metaContributorMode };
@@ -65,7 +104,7 @@ export class DroidProxyController {
     });
   }
 
-  async launchApp(): Promise<void> {
+  private async launchApp(): Promise<void> {
     if (process.platform !== 'darwin') {
       throw new Error('DroidProxy is a macOS app.');
     }
@@ -77,7 +116,7 @@ export class DroidProxyController {
     await this.report();
   }
 
-  async login(provider: DroidProxyProviderKey): Promise<void> {
+  private async login(provider: DroidProxyProviderKey): Promise<void> {
     if (this.activeLogin) return;
     const flag = loginFlagFor(provider);
     const backend = resolveCliProxyApi((await runningDroidProxyAppPath()) ?? droidProxyAppPath());
@@ -150,13 +189,13 @@ export class DroidProxyController {
     await this.report();
   }
 
-  cancelLogin(): void {
+  private cancelLogin(): void {
     if (!this.activeLogin) return;
     this.activeLogin.cancelRequested = true;
     this.activeLogin.child.kill('SIGTERM');
   }
 
-  async setAccountEnabled(
+  private async setAccountEnabled(
     provider: DroidProxyProviderKey,
     id: string,
     enabled: boolean,
@@ -179,7 +218,7 @@ export class DroidProxyController {
 
   // One-click setup: download, verify, install, launch, and apply models,
   // all behind progress events. A second call while one runs just re-reports.
-  async install(): Promise<boolean> {
+  private async install(): Promise<boolean> {
     if (this.installPhase || droidProxyAppPath()) {
       await this.report();
       return false;
@@ -255,7 +294,7 @@ export class DroidProxyController {
     }
   }
 
-  cancelInstall(): void {
+  private cancelInstall(): void {
     this.installAbort?.abort();
   }
 
@@ -267,7 +306,7 @@ export class DroidProxyController {
     return false;
   }
 
-  async applyFactoryModels(): Promise<boolean> {
+  private async applyFactoryModels(): Promise<boolean> {
     const result = await this.writeFactoryModels();
     if (!result.ok) {
       this.emit({

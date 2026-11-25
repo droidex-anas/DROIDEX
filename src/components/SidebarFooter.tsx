@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { Suspense, lazy, useEffect, useRef } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { Settings } from '@droidex/icons';
 import { useStoreDispatch } from '../hooks/useStore';
@@ -13,58 +13,13 @@ const RemoteLaunchCard = lazy(async () => {
   return { default: module.RemoteLaunchCard };
 });
 
-// The footer floats over the bottom of the session list so rows can pass
-// underneath it. It publishes its height to the list as
-// `--sidebar-footer-height` (the list reserves that much at its end), and marks
-// itself `data-content-under` while rows sit behind it, which fades in the
-// blur layer (index.css, `.sidebar-footer`). Both are written straight to the
-// elements, so scrolling never re-renders the sidebar.
-function useFloatOver(
-  footerRef: RefObject<HTMLElement | null>,
-  scrollRef: RefObject<HTMLElement | null>,
-  contentRef: RefObject<HTMLElement | null>,
-): void {
-  useLayoutEffect(() => {
-    const footer = footerRef.current;
-    const scroller = scrollRef.current;
-    const content = contentRef.current;
-    if (!footer || !scroller || !content) return;
-    // The list's end padding equals the footer, so any distance still left
-    // to scroll is content sitting under the footer.
-    const markContentUnder = () => {
-      const remaining = scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop;
-      footer.toggleAttribute('data-content-under', remaining > 1);
-    };
-    const reserveFooter = () => {
-      scroller.style.setProperty('--sidebar-footer-height', `${String(footer.offsetHeight)}px`);
-      markContentUnder();
-    };
-    reserveFooter();
-    const footerObserver = new ResizeObserver(reserveFooter);
-    footerObserver.observe(footer);
-    const listObserver = new ResizeObserver(markContentUnder);
-    listObserver.observe(scroller);
-    listObserver.observe(content);
-    scroller.addEventListener('scroll', markContentUnder, { passive: true });
-    return () => {
-      footerObserver.disconnect();
-      listObserver.disconnect();
-      scroller.removeEventListener('scroll', markContentUnder);
-    };
-  }, [footerRef, scrollRef, contentRef]);
-}
-
 export function SidebarFooter({
-  scrollRef,
-  contentRef,
   welcomeVisible,
   onStartChat,
   onDismissWelcome,
   remoteLaunchVisible,
   onRetireRemoteLaunch,
 }: {
-  scrollRef: RefObject<HTMLElement | null>;
-  contentRef: RefObject<HTMLElement | null>;
   welcomeVisible: boolean;
   onStartChat: () => void;
   onDismissWelcome: () => void;
@@ -72,13 +27,11 @@ export function SidebarFooter({
   onRetireRemoteLaunch: () => void;
 }) {
   const dispatch = useStoreDispatch();
-  const footerRef = useRef<HTMLDivElement>(null);
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
-  useFloatOver(footerRef, scrollRef, contentRef);
   useEffect(() => bindLazySurfaceIntent('settings', settingsButtonRef.current), []);
 
   return (
-    <div ref={footerRef} className="sidebar-footer absolute inset-x-0 bottom-0 z-10 px-2 pb-2 pt-4">
+    <div className="shrink-0 px-2 pb-2 pt-4">
       <AnimatePresence>
         {welcomeVisible && (
           <SidebarWelcomeCard

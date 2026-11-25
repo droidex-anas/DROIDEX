@@ -17,12 +17,18 @@ import {
   type PermissionHandler,
 } from '@factory/droid-sdk';
 import { childEnv } from './childEnv.js';
-import { droidHome, type DroidProfile } from './droidProfiles.js';
+import type {
+  DroidProfile,
+  Autonomy,
+  ReasoningEffort,
+  SessionInteractionMode,
+} from '@droidex/protocol';
+import { droidHome } from './droidProfiles.js';
 import { createDroidTransport, type ConnectableDroidTransport } from './DroidTransport.js';
 import { buildDroidInvocation, resolveDroidPath } from './Environment.js';
 import { sessionOrganizationId } from './history.js';
 import { DroidTurn } from './DroidTurn.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from './protocol.js';
+
 import type { SteerOutcome } from './providers/session.js';
 
 const EXEC_ARGS = ['exec', '--input-format', 'stream-jsonrpc', '--output-format', 'stream-jsonrpc'];
@@ -103,9 +109,7 @@ type FactorySessionMethods = Pick<
   | 'getContextStats'
   | 'forkSession'
   | 'renameSession'
-  | 'getRewindInfo'
   | 'executeRewind'
-  | 'listTools'
   | 'listSkills'
   | 'listMcpServers'
   | 'listMcpTools'
@@ -217,7 +221,7 @@ export class DroidRuntime implements FactoryRuntime {
   status(): RuntimeStatus {
     return {
       mode: 'cli_auth',
-      droidPath: this.resolveDroidPath(),
+      droidPath: resolveDroidPath(),
       apiKeyConfigured: this.explicitApiKey.length > 0,
     };
   }
@@ -347,10 +351,6 @@ export class DroidRuntime implements FactoryRuntime {
     else delete env.FACTORY_API_KEY;
 
     return env;
-  }
-
-  private resolveDroidPath(): string {
-    return resolveDroidPath();
   }
 }
 

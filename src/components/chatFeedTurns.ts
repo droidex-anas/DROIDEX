@@ -1,7 +1,7 @@
 import { feedItemTailId } from '../hooks/conversationViewportAnchor';
 import { promptDisplayText } from '../lib/composePrompt';
 import { classifyEvent } from '../lib/transcript';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import {
   buildFeed,
   collectTurnFiles,
@@ -119,15 +119,6 @@ export function buildGroupedFeed(
   { specContent, changes = false, foldLiveTurn = false, ...feedOptions }: GroupedFeedOptions = {},
 ): FeedItem[] {
   return groupTurns(buildFeed(events, feedOptions), pending, specContent, changes, foldLiveTurn);
-}
-
-// Public helper so the chat view can derive the same anchors MessageFeed stamps.
-export function conversationAnchors(
-  events: TranscriptEvent[],
-  pending: boolean,
-  options?: GroupedFeedOptions,
-): ConversationAnchor[] {
-  return promptAnchorsFromItems(buildGroupedFeed(events, pending, options));
 }
 
 // Best-effort end timestamp of a feed item, used to time the live working cue.

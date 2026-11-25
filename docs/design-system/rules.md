@@ -180,7 +180,7 @@ panel edge
 | Icons | `icon-sm` 14 in 12–13px text, `icon-md` 16 in controls, `icon-lg` 20 in empty states |
 | Menus | 200–320 wide, items 30 tall |
 | Tooltips | up to 240 wide |
-| Dialogs | 440 (confirm), 560 (form), 720 (content), `radius-2xl` |
+| Dialogs | 440 (confirm), 560 (form), 720 (content), 768 wide × 82vh tall (expanded), `radius-2xl` |
 | Command palette | 576 (`max-w-palette`), `radius-2xl` |
 | Sidebar | 280 (fixed today) |
 | Reading column | transcript rows 672 (`max-w-2xl`); replies fill the row, edge to edge with cards and the composer |

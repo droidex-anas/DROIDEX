@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { pickedElement, pickedLayer } from './pickedElement';
 import type { PreviewFinding } from './previewDocument';
-import type { CanvasBuildState, OutlineNode } from './protocol';
+import type { CanvasBuildState, OutlineNode } from '@droidex/protocol';
 
 const build: CanvasBuildState = {
   status: 'ready',

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { ProviderUsage } from '../protocol.js';
+import type { ProviderUsage } from '@droidex/protocol';
 import { AccountUsage } from './accountUsage.js';
 import type { ReportedMeter, UsageReading } from './session.js';
 

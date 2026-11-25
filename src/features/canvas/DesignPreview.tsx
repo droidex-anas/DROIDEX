@@ -17,7 +17,12 @@ import type { PreviewElement } from './previewDocument';
 import { createGuestElement } from './previewGuestElement';
 import { startPreview, type PreviewLostReason, type PreviewRun } from './previewRuntime';
 import { useCanvasMotion } from './useCanvasMotion';
-import type { CanvasDiagnostic, CanvasFrame, PreviewArtifact, PreviewReport } from './protocol';
+import type {
+  CanvasDiagnostic,
+  CanvasFrame,
+  PreviewArtifact,
+  PreviewReport,
+} from '@droidex/protocol';
 
 export interface DesignPreviewProps {
   canvasId: string;

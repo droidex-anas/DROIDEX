@@ -13,7 +13,7 @@ import {
   type PreviewVisibility,
 } from './previewRuntime';
 import type { PreviewElement } from './previewDocument';
-import type { CanvasDiagnostic } from './protocol';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 
 /** Timers a test fires itself; nothing here waits on wall-clock time. */
 function createClock() {

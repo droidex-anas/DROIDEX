@@ -8,7 +8,7 @@ import ModelCatalogList from '../../components/ModelCatalogList';
 import { isDroidCoreModel } from '../../components/modelCategories';
 import { ModelIcon, providerOf } from '../../components/ModelIcon';
 import { listModels } from '../../lib/commands';
-import type { ModelInfo, ReasoningEffort } from '../../types/bridge';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 import { reasoningForModel } from './modelSelection';
 
 type ModelCategory = 'core' | 'factory' | 'custom';

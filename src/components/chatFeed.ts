@@ -3,7 +3,7 @@ import { browserToolOf } from '../lib/browserTools';
 import { mergeChildSessionSpawn } from '../lib/childSessions';
 import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { canvasArtifactRows, type CanvasArtifactItem } from './chatFeedArtifacts';
 import type { TurnChangesItem, TurnFile } from './TurnChangesPanel';
 

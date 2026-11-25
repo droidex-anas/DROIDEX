@@ -10,7 +10,8 @@ import { randomUUID } from 'node:crypto';
 import { canvasError, EXPIRED_TURN, UNKNOWN_SCOPE } from './canvasError.js';
 import type { CanvasScopes } from './canvasScopes.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
-import type { CanvasScope, CanvasTurnContext } from './protocol.js';
+import type { CanvasTurnContext } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 import { canvasTurnContextSchema } from './schema.js';
 
 /**

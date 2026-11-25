@@ -16,7 +16,7 @@ import { canvasClient } from './canvasClient';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { ElementPin } from './elementPins';
 import { canvasContextOf, pinOf, promptWithCanvasPins } from './framePins';
-import type { CanvasFrame, CreateFramesInput } from './protocol';
+import type { CanvasFrame, CreateFramesInput } from '@droidex/protocol';
 import {
   elementVariantPrompt,
   variantFrames,

@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { adaptEvent, initialState, reducer, type AppState } from './useStore';
+import { initialState, reducer, type AppState } from './useStore';
+import { adaptEvent } from './storeEvents';
 import { visibleSessionTarget } from '../lib/childSessions';
-import type { ChildSessionSummary, ServerEvent } from '../types/bridge';
+import type { ChildSessionSummary, ServerEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 import { childSummary } from '../test/childSummary';
 

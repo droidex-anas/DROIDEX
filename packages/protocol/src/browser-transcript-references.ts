@@ -1,0 +1,58 @@
+import type { DesignAnchor, DesignReference } from './browser.js';
+import type { BrowserTranscriptReference } from './transcript.js';
+
+export function browserTranscriptReferenceFromDesignReference(
+  reference: Partial<DesignReference>,
+): BrowserTranscriptReference | null {
+  const anchor = reference.anchor;
+  const id = reference.id ?? anchor?.id;
+  if (!id || !anchor) return null;
+
+  return {
+    id,
+    kind: anchor.kind,
+    label: browserReferenceLabel(anchor, reference.detail?.attributes),
+    url: reference.url,
+    selector: reference.detail?.selector,
+    imageDataUrl: reference.screenshot?.base64
+      ? `data:image/png;base64,${reference.screenshot.base64}`
+      : undefined,
+  };
+}
+
+export function browserTranscriptReferencesFromDesignReferences(
+  references: readonly Partial<DesignReference>[],
+): BrowserTranscriptReference[] {
+  return references
+    .map(browserTranscriptReferenceFromDesignReference)
+    .filter((reference): reference is BrowserTranscriptReference => Boolean(reference));
+}
+
+function browserReferenceLabel(anchor: DesignAnchor, attributes?: Record<string, string>): string {
+  return normalizeBrowserReferenceLabel(
+    anchor.name ??
+      attributes?.['data-testid'] ??
+      attributes?.id ??
+      anchor.text ??
+      anchor.role ??
+      anchor.tag,
+    anchor.kind === 'element' ? (anchor.tag ?? 'element') : anchor.kind,
+  );
+}
+
+export function normalizeBrowserReferenceLabel(
+  value: string | undefined,
+  fallback: string,
+): string {
+  const cleaned = (value ?? fallback).replace(/^@+/, '').replace(/\s+/g, ' ').trim();
+  const readable = cleaned || fallback;
+  const compact = readable
+    .replace(/^@+/, '')
+    .replace(/[^a-zA-Z0-9._ -]+/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 36)
+    .replace(/[._-]+$/g, '');
+  return compact || fallback.replace(/^@+/, '') || 'reference';
+}

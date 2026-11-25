@@ -7,7 +7,7 @@ import { buildFeed } from '../../components/chatFeed';
 import { MessageFeed } from '../../components/MessageFeed';
 import { loadSessionHistory } from '../../lib/commands';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { AccountMark } from '../providers/AccountMark';
 import type { ThreadRow } from './threadBoard';
 

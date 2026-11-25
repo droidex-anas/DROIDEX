@@ -1,4 +1,4 @@
-import type { ChildStatus, ProgressEntry, TranscriptEvent } from '../types/bridge';
+import type { ChildStatus, ProgressEntry, TranscriptEvent } from '@droidex/protocol';
 import type { ChildAccess, ChildSessionInfo } from '../hooks/storeChildSession';
 import { toolMeta, CAT_LABEL } from './tools';
 import { childSessionInfo } from './childSessionEvents';
@@ -6,6 +6,7 @@ import {
   childSpawnTranscriptEvents,
   latestTranscriptActivityForSource,
 } from './transcriptIngestion';
+import { lastLines } from './textTail';
 
 // A single Task spawn streams many tool_call/tool_call_delta events sharing one
 // toolUseId; the subagent_type (label) and description can arrive in separate
@@ -429,7 +430,7 @@ export function childSessionActivityForTarget(
 // Last non-empty line, capped, so a long thinking block stays a one-line cue.
 function previewLine(text?: string): string | undefined {
   if (!text) return undefined;
-  const line = text.trim().split('\n').filter(Boolean).pop() ?? '';
+  const [line = ''] = lastLines(text.trim(), 1);
   return line.length > 160 ? `${line.slice(0, 159)}…` : line || undefined;
 }
 

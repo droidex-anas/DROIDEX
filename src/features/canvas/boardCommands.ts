@@ -17,7 +17,7 @@ import {
   type BoardMode,
 } from './canvasState';
 import type { FrameSize } from './FrameSizeMenu';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect } from '@droidex/protocol';
 import type { ZoomCommand } from './ZoomControl';
 
 interface CommandInputs {

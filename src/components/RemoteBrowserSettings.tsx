@@ -1,7 +1,8 @@
 import { AnimatePresence } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import { ShieldCheck } from '@droidex/icons';
-import { remoteBrowser, type RemoteNotificationState } from '../lib/desktop';
+import { remoteBrowser } from '../lib/desktop';
+import type { RemoteNotificationState } from '../lib/desktopContract';
 import { SettingRow } from './settingsKit';
 import { Switch } from './Switch';
 import { Button } from './ui/Button';

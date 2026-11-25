@@ -11,6 +11,17 @@ function assertRejected(event: unknown): void {
   assert.equal(isServerEvent(event), false, JSON.stringify(event));
 }
 
+test('catalog updates accept supported catalogs and reject unknown catalogs', () => {
+  for (const catalog of ['models', 'skills']) {
+    assertAccepted({ type: 'catalog.updated', catalog, items: [] });
+    assertRejected({ type: 'catalog.updated', catalog, items: [{}] });
+    assertRejected({ type: 'catalog.updated', catalog, items: null });
+  }
+  for (const catalog of ['tools', 'unknown', undefined]) {
+    assertRejected({ type: 'catalog.updated', catalog, items: [] });
+  }
+});
+
 test('canvas asset replies accept owned images and reject malformed metadata', () => {
   const asset = {
     assetId: 'a'.repeat(64),

@@ -14,6 +14,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { promisify } from 'node:util';
 
 import { childEnv } from './childEnv.js';
+import { isPathInside } from './usage/isPathInside.js';
 
 /* The git plumbing DROIDEX uses whenever it runs work in its own worktree:
    automation runs and project threads. Both keep the same shape,
@@ -88,10 +89,10 @@ export async function requireRealDirectoryPath(
   target: string,
   outsideMessage: string,
 ): Promise<void> {
-  const relativePath = relative(root, target);
-  if (!relativePath || relativePath.startsWith('..') || isAbsolute(relativePath)) {
+  if (!isPathInside(root, target)) {
     throw new Error(outsideMessage);
   }
+  const relativePath = relative(root, target);
   let current = root;
   for (const segment of relativePath.split(sep)) {
     current = join(current, segment);
@@ -139,9 +140,9 @@ export async function addWorktree(
   await git(root, args, 90_000);
 }
 
-function parseWorktreePaths(output: string): string[] {
+function parseWorktreePaths(output: string, separator: string): string[] {
   return output
-    .split('\n')
+    .split(separator)
     .filter((line) => line.startsWith('worktree '))
     .map((line) => line.slice('worktree '.length));
 }
@@ -189,7 +190,18 @@ export async function removeManagedWorktree(target: string): Promise<void> {
     await unlink(target).catch(() => undefined);
     return;
   }
-  const worktrees = parseWorktreePaths(await git(target, ['worktree', 'list', '--porcelain']));
+  let worktrees: string[];
+  try {
+    worktrees = parseWorktreePaths(
+      await git(target, ['worktree', 'list', '--porcelain', '-z']),
+      '\0',
+    );
+  } catch (error) {
+    const failure = error as Error & { code?: number };
+    if (failure.code !== 129) throw error;
+    // Git < 2.36 lacks NUL-framed worktree listings; drop this fallback once DROIDEX requires Git 2.36+.
+    worktrees = parseWorktreePaths(await git(target, ['worktree', 'list', '--porcelain']), '\n');
+  }
   const main = worktrees[0];
   const canonicalTarget = await registeredWorktreePath(worktrees, target);
   if (!main || !canonicalTarget || !(await isManagedWorktreePath(worktrees, canonicalTarget))) {

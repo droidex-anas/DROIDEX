@@ -5,7 +5,7 @@ import {
   TICK_MS,
   type AgentProcessMonitorDependencies,
 } from './AgentProcessMonitor.js';
-import { commandLineContains } from './commandLineMatch.js';
+import { commandLineContains } from '@droidex/protocol';
 import type { ProcessRecord } from './processTree.js';
 
 function harness(

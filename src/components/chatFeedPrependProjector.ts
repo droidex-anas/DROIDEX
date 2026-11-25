@@ -1,7 +1,7 @@
 import { transcriptEventIsVisible } from '../lib/childSessions';
 import { insertChunkedSequence, replaceChunkedSequencePrefix } from '../lib/chunkedSequence';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { FeedItem } from './chatFeed';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';
 

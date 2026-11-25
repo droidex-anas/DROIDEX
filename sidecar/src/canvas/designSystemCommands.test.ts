@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import fs from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -7,14 +9,18 @@ import { startBridgeServer } from '../bridgeServer.js';
 import { errorOf, harness, okReply, type Harness } from '../testing/canvasBridgeSupport.js';
 import { pinScratchProfile } from '../testing/canvasStorageSupport.js';
 import { CompilerWorker } from './compiler.js';
-import type { DesignSystemDocumentView } from './designSystemCommands.js';
+import type {
+  DesignSystemDocumentView,
+  DesignSystemSource,
+  CanvasDiagnostic,
+  DesignSystemVersionRef,
+} from '@droidex/protocol';
 import { kitGuidance, kitModes } from './designSystemDocument.js';
 import { exportDesignSystem } from './designSystemExport.js';
 import { proposeDesignSystem } from './designSystemProposals.js';
-import { readDesignSystem, saveDesignSystem, type DesignSystemSource } from './designSystems.js';
+import { readDesignSystem, saveDesignSystem } from './designSystems.js';
 import { STARTER_TOKENS } from './presets/starter.js';
 import { PRICING_TSX, SAMPLE_KIT } from '../testing/sampleKit.js';
-import type { CanvasDiagnostic, DesignSystemVersionRef } from './protocol.js';
 
 pinScratchProfile();
 
@@ -86,6 +92,54 @@ async function readKit(
   assert.ok(reply.kind === 'designSystem');
   return { ...reply.system, modes: kitModes(reply.system.sections) };
 }
+
+test('version content reads only the pinned file, without history or proposal metadata', async (t) => {
+  const canvas = await harness(t);
+  const kit = await readDesignSystem({ id: 'droidex', version: 1 });
+  for (let version = 1; version <= 4; version++) {
+    await saveDesignSystem(
+      { ...kit, id: 'content-only', name: `Kit ${String(version)}` },
+      {
+        mutationId: `content-${String(version)}`,
+        baseVersion: version === 1 ? null : version - 1,
+        savedBy: { actor: 'user' },
+      },
+    );
+  }
+  const open = t.mock.method(fs, 'open');
+  syncBuiltinESMExports();
+  t.after(() => {
+    open.mock.restore();
+    syncBuiltinESMExports();
+  });
+  for (let version = 4; version >= 1; version--) {
+    await canvas.handle({
+      type: 'canvas.readDesignSystemVersionContent',
+      requestId: `content-${String(version)}`,
+      ref: { id: 'content-only', version },
+    });
+    assert.deepEqual(okReply(canvas, `content-${String(version)}`), {
+      kind: 'designSystemVersionContent',
+      content: { name: `Kit ${String(version)}`, cover: kit.cover, sections: kit.sections },
+    });
+  }
+  assert.equal(open.mock.callCount(), 4);
+  await canvas.handle({
+    type: 'canvas.readDesignSystemVersionContent',
+    requestId: 'missing-content',
+    ref: { id: 'content-only', version: 5 },
+  });
+  assert.equal(errorOf(canvas, 'missing-content').code, 'version_mismatch');
+  await canvas.handle({
+    type: 'canvas.readDesignSystemVersionContent',
+    requestId: 'preset-content',
+    ref: { id: 'droidex', version: 1 },
+  });
+  assert.deepEqual(okReply(canvas, 'preset-content'), {
+    kind: 'designSystemVersionContent',
+    content: { name: kit.name, cover: kit.cover, sections: kit.sections },
+  });
+});
 
 // The answers that build are kitPreviews.test.ts's; these are refused before any compile.
 test('a kit preview names a preview by id or a saved catalog entry by name, and nothing else', async (t) => {

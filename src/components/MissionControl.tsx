@@ -1,46 +1,26 @@
-import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { useRef, useLayoutEffect, useMemo, useState, useCallback } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { ChildAccess, ChildRuntimeState } from '../hooks/storeChildSession';
-import { useRepoStatus } from '../hooks/useRepoStatus';
-import { interruptVisibleSession, newClientRef, updateSessionSettings } from '../lib/commands';
+import { useFollowLatest } from '../hooks/useFollowLatest';
+import { interruptVisibleSession } from '../lib/commands';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  FileDiff,
-  Monitor,
-  GitBranch,
-  GitCommitHorizontal,
-  ChevronDown,
-  Maximize2,
-  X,
-  Boxes,
-  Globe,
-  ArrowLeft,
-  CheckCircle2,
-  Check,
-} from 'lucide-react';
-import { PanelLeft, Spinner } from '@droidex/icons';
+import { Maximize2, X, Check } from 'lucide-react';
+import { PanelLeft } from '@droidex/icons';
 
 import type {
   TranscriptEvent,
   BridgeFeature,
   ChildSessionSummary,
-  SessionSummary,
   ProgressEntry,
-  ModelInfo,
-} from '../types/bridge';
-import { extractFileChange, type FileChange } from '../lib/diff';
+} from '@droidex/protocol';
+import type { FileChange } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
-import { environmentLabels } from '../lib/repoEnvironment';
 import { DiffFull } from './DiffView';
-import { ModelIcon, providerOf } from './ModelIcon';
-import { CAT_LABEL, toolMeta } from '../lib/tools';
 import {
   childSessionActivityForTarget,
   childSessionIdForFeature,
-  childSessionIsLive,
   childSessionLabel,
-  childSessionMeta,
   childSelectionForFeature,
   findChildSessionForTarget,
   orderedChildSessions,
@@ -51,10 +31,12 @@ import {
 } from '../lib/childSessions';
 import { sessionIsLive } from '../lib/sessions';
 import { MessageFeed } from './MessageFeed';
-import EditorOpenMenu, { openCodebase, openCurrentDiff } from './EditorOpenMenu';
+import ContextColumn from './MissionControlContextPanel';
+import FeatureFocus from './MissionControlFeatureDetail';
 import PromptInput from './PromptInput';
-import AutonomySelector from './AutonomySelector';
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
+import { Dialog, DialogTitle } from './ui/Dialog';
+import { Button } from './ui/Button';
 
 const ACCENT = 'var(--accent)';
 const accentMix = (pct: number) => `color-mix(in srgb, var(--accent) ${String(pct)}%, transparent)`;
@@ -78,7 +60,7 @@ const RENDERED_TRANSCRIPT_KINDS = new Set(
 );
 
 /** The event kinds the mission transcript renders as feed rows. */
-export const isRenderedTranscriptEvent = (t: TranscriptEvent) =>
+const isRenderedTranscriptEvent = (t: TranscriptEvent) =>
   t.author === 'user' || RENDERED_TRANSCRIPT_KINDS.has(t.kind) || Boolean(t.isError);
 
 /* ════════════════════════ chat ════════════════════════ */
@@ -106,12 +88,10 @@ function ChatArea({
   big?: boolean;
 }) {
   const toolActivity = useStoreSelector((state) => state.toolActivity);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const { scrollRef, followLatest } = useFollowLatest();
   const renderEvents = events.length > 900 ? events.slice(-900) : events;
   const hidden = events.length - renderEvents.length;
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [events.length, pending]);
+  useLayoutEffect(followLatest, [events.length, pending, followLatest]);
 
   return (
     <div
@@ -120,7 +100,7 @@ function ChatArea({
     >
       <div className={`mx-auto min-w-0 ${big ? 'max-w-3xl' : 'max-w-2xl'}`}>
         {hidden > 0 && (
-          <div className="mb-4 text-center text-[12px] text-muted">
+          <div className="mb-4 text-center text-caption text-muted">
             Showing latest {renderEvents.length.toLocaleString()} of{' '}
             {events.length.toLocaleString()} events.
           </div>
@@ -136,10 +116,11 @@ function ChatArea({
           inlineDiffs={toolActivity.inlineDiffs}
           childSessionActivity={childSessionActivity}
           scrollElementRef={scrollRef}
+          onListResize={followLatest}
         />
 
         {events.length === 0 && !pending && (
-          <div className="py-24 text-center text-[13px] text-muted">
+          <div className="py-24 text-center text-body text-muted">
             {live ? 'Waiting for the agent…' : 'Direct the orchestrator to begin.'}
           </div>
         )}
@@ -149,10 +130,6 @@ function ChatArea({
 }
 
 /* ════════════════════════ left: features ════════════════════════ */
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <span className="text-[12px] font-medium text-muted">{children}</span>;
-}
 
 function FeaturesColumn({
   features,
@@ -185,7 +162,9 @@ function FeaturesColumn({
   }, [features]);
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-2.5 pb-4 pt-2 space-y-4">
+    <div
+      className={`flex-1 min-h-0 overflow-y-auto pb-4 space-y-4 ${big ? '-mx-6 -mb-6 px-4' : 'px-2.5 pt-2'}`}
+    >
       {milestones.map(([milestone, feats]) => (
         <div key={milestone}>
           <span className="block px-2 mb-1 text-[11px] font-medium text-muted/70 uppercase tracking-wider">
@@ -243,416 +222,18 @@ function FeaturesColumn({
   );
 }
 
-/* ════════════════════════ right: environment / child sessions / sources ════════════════════════ */
+/* ════════════════════════ panel header ════════════════════════ */
 
-function EnvRow({
-  icon,
-  label,
-  chevron,
-  onClick,
-  title,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  chevron?: boolean;
-  onClick?: () => void;
-  title?: string;
-}) {
+function ExpansionHeader({ title, onClose }: { title: string; onClose: () => void }) {
   return (
-    <button
-      onClick={onClick}
-      title={title}
-      className="w-full flex items-center gap-3 px-2 py-2 rounded-md text-secondary hover:text-primary hover:bg-elevated/60 transition-colors"
-    >
-      <span className="text-muted shrink-0">{icon}</span>
-      <span className="text-[13px] leading-none">{label}</span>
-      {chevron && <ChevronDown className="w-3.5 h-3.5 ml-1 text-muted/60" />}
-    </button>
-  );
-}
-
-function ContextColumn({
-  mission,
-  childSessions,
-  progress,
-  selectedChildSessionId,
-  primaryIsLive,
-  models,
-  pendingAutonomy,
-  childRuntime,
-  onSelectChild,
-  big,
-}: {
-  mission: SessionSummary;
-  childSessions: ChildSessionSummary[];
-  progress: ProgressEntry[];
-  selectedChildSessionId: string | null;
-  primaryIsLive: boolean;
-  models: ModelInfo[];
-  pendingAutonomy: boolean;
-  childRuntime: Record<string, ChildRuntimeState>;
-  onSelectChild: (childSessionId: string | null) => void;
-  big?: boolean;
-}) {
-  const skills = Array.from(new Set(mission.features.map((f) => f.skillName).filter(Boolean)));
-  const repoStatus = useRepoStatus(mission.cwd);
-  const env = environmentLabels(mission.cwd, repoStatus);
-
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-5">
-      {/* Environment */}
-      <section>
-        <div className="flex items-center justify-between px-2 mb-1">
-          <SectionLabel>Environment</SectionLabel>
-          <EditorOpenMenu cwd={mission.cwd} hasRepo={!!repoStatus} />
-        </div>
-        <EnvRow
-          icon={<FileDiff className="w-4 h-4" />}
-          label={env.changes}
-          title={
-            repoStatus
-              ? 'Open a diff of uncommitted changes in your editor'
-              : 'No git repository here'
-          }
-          onClick={() => {
-            openCurrentDiff(mission.cwd);
-          }}
-        />
-        <EnvRow
-          icon={<Monitor className="w-4 h-4" />}
-          label={env.location}
-          title={repoStatus?.repoRoot ?? mission.cwd}
-          chevron
-          onClick={() => {
-            openCodebase(mission.cwd);
-          }}
-        />
-        <EnvRow
-          icon={<GitBranch className="w-4 h-4" />}
-          label={env.branch}
-          title={repoStatus?.repoRoot ? `${env.branch} · ${repoStatus.repoRoot}` : env.branch}
-          chevron
-        />
-        <EnvRow icon={<GitCommitHorizontal className="w-4 h-4" />} label="Commit or push" />
-      </section>
-
-      {/* Agents (model + live status merged) */}
-      <AgentsSection
-        mission={mission}
-        childSessions={childSessions}
-        selectedChildSessionId={selectedChildSessionId}
-        primaryIsLive={primaryIsLive}
-        models={models}
-        pendingAutonomy={pendingAutonomy}
-        childRuntime={childRuntime}
-        onSelectChild={onSelectChild}
-      />
-
-      {/* Progress log */}
-      <ProgressSection
-        progress={progress}
-        onSelectChild={(childSessionId) => {
-          if (childSessions.some((child) => child.childSessionId === childSessionId)) {
-            onSelectChild(childSessionId);
-          }
-        }}
-        big={big}
-      />
-
-      {/* Sources */}
-      <section>
-        <div className="px-2 mb-2">
-          <SectionLabel>Sources</SectionLabel>
-        </div>
-        <div className="flex items-center gap-1 px-1">
-          <button
-            title={`${String(skills.length)} skills`}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
-          >
-            <Boxes className="w-4 h-4" />
-            {skills.length > 0 && <span className="text-[11px] tabular-nums">{skills.length}</span>}
-          </button>
-          <button
-            title="Web"
-            className="p-1.5 rounded-md text-muted hover:text-primary hover:bg-elevated/60 transition-colors"
-          >
-            <Globe className="w-4 h-4" />
-          </button>
-        </div>
-        {big && skills.length > 0 && (
-          <div className="flex flex-wrap gap-1 px-1 mt-2">
-            {skills.map((s) => (
-              <span key={s} className="px-1.5 py-0.5 rounded-xs text-[11px] text-muted bg-elevated">
-                {s}
-              </span>
-            ))}
-          </div>
-        )}
-      </section>
+    <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
+      <DialogTitle className="min-w-0">
+        <span className="block truncate">{title}</span>
+      </DialogTitle>
+      <Button variant="ghost" size="sm" icon={X} aria-label={`Close ${title}`} onClick={onClose} />
     </div>
   );
 }
-
-function modelLabel(models: ModelInfo[], id?: string): string {
-  if (!id) return 'Factory default';
-  return models.find((m) => m.id === id)?.displayName ?? id;
-}
-
-function AgentsSection({
-  mission,
-  childSessions,
-  selectedChildSessionId,
-  primaryIsLive,
-  models,
-  pendingAutonomy,
-  childRuntime,
-  onSelectChild,
-}: {
-  mission: SessionSummary;
-  childSessions: ChildSessionSummary[];
-  selectedChildSessionId: string | null;
-  primaryIsLive: boolean;
-  models: ModelInfo[];
-  pendingAutonomy: boolean;
-  childRuntime: Record<string, ChildRuntimeState>;
-  onSelectChild: (childSessionId: string | null) => void;
-}) {
-  const dispatch = useStoreDispatch();
-
-  return (
-    <section>
-      <div className="flex items-center justify-between px-2 mb-1.5">
-        <SectionLabel>Agents</SectionLabel>
-        {/* Confirmed autonomy only — the pill never moves ahead of the provider. */}
-        <AutonomySelector
-          scope="session"
-          provider={mission.provider}
-          value={mission.autonomy}
-          pending={pendingAutonomy}
-          placement="bottom-end"
-          onSelect={(level) => {
-            const requestId = newClientRef();
-            dispatch({
-              type: 'AUTONOMY_UPDATE_REQUESTED',
-              appSessionId: mission.appSessionId,
-              requestId,
-              autonomy: level,
-            });
-            updateSessionSettings({
-              appSessionId: mission.appSessionId,
-              requestId,
-              autonomy: level,
-            });
-          }}
-        />
-      </div>
-
-      <div className="space-y-0.5">
-        <AgentRow
-          title="Orchestrator"
-          id={mission.modelId}
-          meta={[modelLabel(models, mission.modelId), mission.reasoningEffort, mission.phase]
-            .filter(Boolean)
-            .join(' · ')}
-          models={models}
-          selected={selectedChildSessionId === null}
-          working={primaryIsLive}
-          onClick={() => {
-            onSelectChild(null);
-          }}
-        />
-        {childSessions.map((childSession, index) => {
-          const displayedModel = modelLabel(models, childSession.modelId);
-          return (
-            <AgentRow
-              key={childSession.childSessionId}
-              title={childSessionLabel(childSession, index)}
-              id={childSession.modelId}
-              meta={childSessionMeta(childSession, displayedModel)}
-              models={models}
-              selected={selectedChildSessionId === childSession.childSessionId}
-              working={childSessionIsLive(childSession, childRuntime[childSession.childSessionId])}
-              onClick={() => {
-                onSelectChild(childSession.childSessionId);
-              }}
-            />
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function AgentRow({
-  title,
-  id,
-  meta,
-  models,
-  selected,
-  working,
-  onClick,
-}: {
-  title: string;
-  id?: string;
-  meta: string;
-  models: ModelInfo[];
-  selected: boolean;
-  working: boolean;
-  onClick: () => void;
-}) {
-  const provider = providerOf(
-    models.find((m) => m.id === id),
-    id,
-  );
-  return (
-    <button
-      onClick={onClick}
-      className="group w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md transition-colors text-left hover:bg-elevated/50"
-      style={selected ? { background: accentMix(7) } : undefined}
-    >
-      <span className="relative shrink-0">
-        <ModelIcon provider={provider} size={20} />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          <span
-            className={`text-[13px] leading-none truncate ${selected ? 'text-primary' : 'text-secondary'}`}
-          >
-            {title}
-          </span>
-          {working && (
-            <span className="shimmer-text text-[11px] leading-none font-medium">working</span>
-          )}
-        </span>
-        <span className="mt-1 block text-[11px] text-muted truncate">{meta}</span>
-      </span>
-    </button>
-  );
-}
-
-function ProgressSection({
-  progress,
-  onSelectChild,
-  big,
-}: {
-  progress: ProgressEntry[];
-  onSelectChild: (childSessionId: string) => void;
-  big?: boolean;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const COLLAPSED = 4;
-  const ordered = [...progress].reverse();
-  const shown = big || showAll ? ordered : ordered.slice(0, COLLAPSED);
-  const hidden = ordered.length - shown.length;
-
-  return (
-    <section>
-      <div className="flex items-center justify-between px-2 mb-1.5">
-        <SectionLabel>Progress</SectionLabel>
-        {progress.length > 0 && (
-          <span className="tabular-nums text-[11px] text-muted">{progress.length}</span>
-        )}
-      </div>
-      <div className="space-y-0.5">
-        {shown.map((entry, index) => (
-          <button
-            type="button"
-            key={`${entry.timestamp}-${entry.type}-${String(index)}`}
-            disabled={!entry.workerChildSessionId}
-            title={entry.workerChildSessionId ? 'Open exact child transcript' : undefined}
-            onClick={() => {
-              if (entry.workerChildSessionId) onSelectChild(entry.workerChildSessionId);
-            }}
-            className={`w-full flex items-center gap-2 px-2 py-1 rounded-md text-left transition-colors ${
-              entry.workerChildSessionId ? 'hover:bg-elevated/35' : 'cursor-default'
-            }`}
-          >
-            <span className="tabular-nums text-[11px] text-muted/70 shrink-0">
-              {formatTime(entry.timestamp)}
-            </span>
-            <span className="min-w-0 truncate text-[12px] text-secondary">
-              {entry.title ?? entry.message ?? entry.type.replace(/_/g, ' ')}
-            </span>
-          </button>
-        ))}
-        {shown.length === 0 && (
-          <div className="px-2 py-4 text-[12px] text-muted">No progress log yet.</div>
-        )}
-        {!big && hidden > 0 && (
-          <button
-            onClick={() => {
-              setShowAll(true);
-            }}
-            className="w-full text-left px-2 py-1 text-[12px] text-muted hover:text-primary transition-colors"
-          >
-            Show {hidden} more
-          </button>
-        )}
-        {!big && showAll && ordered.length > COLLAPSED && (
-          <button
-            onClick={() => {
-              setShowAll(false);
-            }}
-            className="w-full text-left px-2 py-1 text-[12px] text-muted hover:text-primary transition-colors"
-          >
-            Show less
-          </button>
-        )}
-      </div>
-    </section>
-  );
-}
-
-/* ════════════════════════ expand modal ════════════════════════ */
-
-function ExpandModal({
-  title,
-  onClose,
-  children,
-  headerExtra,
-}: {
-  title: string;
-  onClose: () => void;
-  children: React.ReactNode;
-  headerExtra?: React.ReactNode;
-}) {
-  return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-6"
-      onClick={onClose}
-    >
-      <motion.div
-        initial={{ scale: 0.97, opacity: 0, y: 8 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.97, opacity: 0, y: 8 }}
-        transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-3xl h-[82vh] flex flex-col rounded-xl border border-divider bg-surface shadow-lg overflow-hidden"
-        onClick={(e) => {
-          e.stopPropagation();
-        }}
-      >
-        <div className="flex items-center justify-between px-5 h-12 border-b border-divider shrink-0">
-          <span className="text-[13px] font-medium text-primary">{title}</span>
-          <div className="flex items-center gap-1">
-            {headerExtra}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-sm text-muted hover:text-primary hover:bg-elevated transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-        <div className="flex-1 min-h-0 flex flex-col">{children}</div>
-      </motion.div>
-    </motion.div>
-  );
-}
-
-/* ════════════════════════ panel header ════════════════════════ */
 
 function PanelHeader({
   title,
@@ -693,179 +274,6 @@ function PanelHeader({
             <PanelLeft className="w-3.5 h-3.5" />
           </button>
         )}
-      </div>
-    </div>
-  );
-}
-
-/* ════════════════════════ feature focus ════════════════════════ */
-
-function formatTime(timestamp: string): string {
-  const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
-
-function StatusDot({ status }: { status: string }) {
-  if (status === 'completed')
-    return <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" style={{ color: ACCENT }} />;
-  if (status === 'in_progress')
-    return (
-      <Spinner
-        className="w-4 h-4 mt-0.5 shrink-0 motion-safe:animate-spin-slow"
-        style={{ color: ACCENT }}
-      />
-    );
-  return <span className="mt-1.5 w-2.5 h-2.5 rounded-full border border-divider shrink-0" />;
-}
-
-function ActionRow({
-  event,
-  cwd,
-  onOpenDiff,
-}: {
-  event: TranscriptEvent;
-  cwd?: string;
-  onOpenDiff?: (c: FileChange) => void;
-}) {
-  const { cat, detail } = toolMeta(event.toolName, event.toolArgs);
-  const change = extractFileChange(event.toolName, event.toolArgs);
-  const clickable = !!change && !!onOpenDiff;
-  const displayDetail =
-    change || cat === 'read' ? displayPath(change?.path ?? detail, cwd) : detail;
-  return (
-    <button
-      disabled={!clickable}
-      onClick={() => change && onOpenDiff?.(change)}
-      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-left ${clickable ? 'hover:bg-elevated/60 cursor-pointer' : 'cursor-default'}`}
-      title={detail || undefined}
-    >
-      <span className="text-label text-secondary shrink-0">{CAT_LABEL[cat]}</span>
-      <span className="text-caption text-muted truncate">{displayDetail || event.toolName}</span>
-      {clickable && <FileDiff className="w-3 h-3 ml-auto shrink-0 text-muted/60" />}
-    </button>
-  );
-}
-
-function SpecList({ title, items }: { title: string; items: string[] }) {
-  if (items.length === 0) return null;
-  return (
-    <div>
-      <div className="text-[11px] font-medium uppercase tracking-wider text-muted mb-1.5">
-        {title}
-      </div>
-      <ul className="space-y-1">
-        {items.map((it, i) => (
-          <li key={i} className="flex gap-2 text-[13px] text-secondary leading-relaxed">
-            <span className="mt-[7px] w-1 h-1 rounded-full bg-muted shrink-0" />
-            <span className="break-words">{it}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function FeatureFocus({
-  feature,
-  events,
-  cwd,
-  onBack,
-  onOpenDiff,
-}: {
-  feature: BridgeFeature;
-  events: TranscriptEvent[];
-  cwd?: string;
-  onBack: () => void;
-  onOpenDiff?: (c: FileChange) => void;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const toolCalls = events.filter(
-    (event) =>
-      event.kind === 'tool_call' && (event.role === 'worker' || event.role === 'validator'),
-  );
-  const curated = toolCalls.filter((e) => toolMeta(e.toolName, e.toolArgs).cat !== 'other');
-  const shown = showAll ? toolCalls : curated;
-  const noSpec =
-    feature.preconditions.length === 0 &&
-    feature.expectedBehavior.length === 0 &&
-    feature.verificationSteps.length === 0;
-
-  return (
-    <div className="flex-1 min-h-0 overflow-y-auto">
-      <div className="max-w-3xl mx-auto px-8 py-6">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-[12px] text-muted hover:text-primary transition-colors mb-4"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" /> Back to chat
-        </button>
-
-        <div className="flex items-start gap-3 mb-5">
-          <StatusDot status={feature.status} />
-          <div className="min-w-0">
-            <h2 className="text-[16px] font-semibold text-primary leading-snug break-words">
-              {feature.description}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {feature.skillName && (
-                <span
-                  className="px-1.5 py-0.5 rounded-xs text-[11px] font-medium"
-                  style={{ color: ACCENT, background: accentMix(10) }}
-                >
-                  [{feature.skillName}]
-                </span>
-              )}
-              {feature.milestone && (
-                <span className="text-[11px] text-muted">{feature.milestone}</span>
-              )}
-              <span className="text-[11px] text-muted capitalize">
-                {feature.status.replace(/_/g, ' ')}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-4 rounded-lg bg-elevated/25 p-4 mb-6">
-          {noSpec ? (
-            <div className="text-[13px] text-muted">No spec details provided for this feature.</div>
-          ) : (
-            <>
-              <SpecList title="Preconditions" items={feature.preconditions} />
-              <SpecList title="Expected behavior" items={feature.expectedBehavior} />
-              <SpecList title="Verification" items={feature.verificationSteps} />
-            </>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium uppercase tracking-wider text-secondary">
-              Worker actions
-            </span>
-            <span className="tabular-nums text-[11px] text-muted">{shown.length}</span>
-          </div>
-          {toolCalls.length > curated.length && (
-            <button
-              onClick={() => {
-                setShowAll((v) => !v);
-              }}
-              className="text-[11px] text-muted hover:text-primary transition-colors"
-            >
-              {showAll ? 'Show key actions' : `Reveal all (${String(toolCalls.length)})`}
-            </button>
-          )}
-        </div>
-        <div className="space-y-1">
-          {shown.map((e) => (
-            <ActionRow key={e.id} event={e} cwd={cwd} onOpenDiff={onOpenDiff} />
-          ))}
-          {shown.length === 0 && (
-            <div className="py-8 text-center text-[13px] text-muted">
-              No worker activity recorded yet.
-            </div>
-          )}
-        </div>
       </div>
     </div>
   );
@@ -922,6 +330,12 @@ export default function MissionControl() {
   const [railCollapsed, setRailCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<'features' | 'context' | null>(null);
   const [openDiff, setOpenDiff] = useState<FileChange | null>(null);
+  const closeExpanded = () => {
+    setExpanded(null);
+  };
+  const closeDiff = () => {
+    setOpenDiff(null);
+  };
   const visibleEventsProjectorRef = useRef<ReturnType<
     typeof createIncrementalTranscriptFilter
   > | null>(null);
@@ -1108,7 +522,7 @@ export default function MissionControl() {
                   </button>
                 </>
               ) : (
-                <span className="text-[11px] text-muted capitalize">{phaseLabel}</span>
+                <span className="text-caption text-muted capitalize">{phaseLabel}</span>
               )}
             </div>
           </div>
@@ -1124,6 +538,7 @@ export default function MissionControl() {
             />
           ) : (
             <ChatArea
+              key={`${mission.appSessionId}:${visibleChildSessionId ?? 'primary'}`}
               events={events}
               live={visibleIsLive}
               pending={visibleSessionIsPending(visibleTarget, isLive, isLive ? 'primary' : null)}
@@ -1174,12 +589,8 @@ export default function MissionControl() {
       {/* ─── Expand overlays ─── */}
       <AnimatePresence>
         {expanded === 'features' && (
-          <ExpandModal
-            title="Features"
-            onClose={() => {
-              setExpanded(null);
-            }}
-          >
+          <Dialog key="features" size="expanded" onClose={closeExpanded}>
+            <ExpansionHeader title="Features" onClose={closeExpanded} />
             <FeaturesColumn
               features={features}
               selectedId={selectedFeatureId}
@@ -1190,15 +601,11 @@ export default function MissionControl() {
               big
               paused={mission.phase === 'paused'}
             />
-          </ExpandModal>
+          </Dialog>
         )}
         {expanded === 'context' && (
-          <ExpandModal
-            title="Context"
-            onClose={() => {
-              setExpanded(null);
-            }}
-          >
+          <Dialog key="context" size="expanded" onClose={closeExpanded}>
+            <ExpansionHeader title="Context" onClose={closeExpanded} />
             <ContextColumn
               mission={mission}
               childSessions={childSessions}
@@ -1214,17 +621,13 @@ export default function MissionControl() {
               }}
               big
             />
-          </ExpandModal>
+          </Dialog>
         )}
         {openDiff && (
-          <ExpandModal
-            title={displayPath(openDiff.path, mission.cwd)}
-            onClose={() => {
-              setOpenDiff(null);
-            }}
-          >
+          <Dialog key="diff" size="expanded" onClose={closeDiff}>
+            <ExpansionHeader title={displayPath(openDiff.path, mission.cwd)} onClose={closeDiff} />
             <DiffFull change={openDiff} cwd={mission.cwd} />
-          </ExpandModal>
+          </Dialog>
         )}
       </AnimatePresence>
     </div>

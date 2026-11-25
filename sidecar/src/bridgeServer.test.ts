@@ -11,7 +11,7 @@ import {
   type ClientCommand,
   type ServerEvent,
   type ServerEventBatch,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 interface Harness {
@@ -239,6 +239,25 @@ test('voice ownership moves only on a successful start, and only the owner can s
   first.send(JSON.stringify({ type: 'voice.stop', appSessionId: 'chat-one' }));
   await send(second, { type: 'voice.stop', appSessionId: 'chat-one' }, 'stop');
   assert.deepEqual(commands, ['start:first', 'start:failed', 'start:second', 'stop']);
+});
+
+test('a browser design prompt may carry provider mentions across the bridge', async (t) => {
+  const commands: ClientCommand[] = [];
+  const harness = await bridgeServer(t, async (command) => {
+    commands.push(command);
+  });
+  const { socket } = await connect(t, harness);
+  const command: ClientCommand = {
+    type: 'browser.design.sendPrompt',
+    appSessionId: 'app-one',
+    instruction: 'restyle the panel',
+    references: [],
+    mentions: [{ kind: 'skill', name: 'review', path: '/skills/review' }],
+  };
+
+  socket.send(JSON.stringify(command));
+  await waitFor(() => commands.length === 1);
+  assert.deepEqual(commands, [command]);
 });
 
 test('orphan voice cleanup publishes a closed state', async (t) => {

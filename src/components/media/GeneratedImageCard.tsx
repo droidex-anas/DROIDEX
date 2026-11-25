@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { imageSrc } from '../../lib/localImage';
 import { toolArgString } from '../../lib/tools';
 import { ImageLightbox } from './ImageLightbox';

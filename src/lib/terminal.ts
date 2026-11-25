@@ -1,4 +1,5 @@
-import { createTerminal, killTerminal, listTerminals, type TerminalSessionInfo } from './desktop';
+import { createTerminal, killTerminal, listTerminals } from './desktop';
+import type { TerminalSessionInfo } from './desktopContract';
 
 const terminalsByTab = new Map<string, Promise<TerminalSessionInfo>>();
 

@@ -34,6 +34,7 @@ interface BrowserToolbarProps {
   pencilMode: boolean;
   expanded?: boolean;
   onUrlInputChange: (value: string) => void;
+  onUrlInputReset: () => void;
   onOpen: () => void;
   onGoBack: () => void;
   onGoForward: () => void;
@@ -57,6 +58,7 @@ export function BrowserToolbar({
   pencilMode,
   expanded,
   onUrlInputChange,
+  onUrlInputReset,
   onOpen,
   onGoBack,
   onGoForward,
@@ -94,6 +96,7 @@ export function BrowserToolbar({
         value={urlInput}
         pageUrl={pageUrl}
         onChange={onUrlInputChange}
+        onReset={onUrlInputReset}
         onOpen={onOpen}
       />
 
@@ -157,12 +160,14 @@ function AddressBar({
   value,
   pageUrl,
   onChange,
+  onReset,
   onOpen,
 }: {
   inputRef: RefObject<HTMLInputElement | null>;
   value: string;
   pageUrl: string;
   onChange: (value: string) => void;
+  onReset: () => void;
   onOpen: () => void;
 }) {
   const link = useMemo(() => describeLink(pageUrl), [pageUrl]);
@@ -209,7 +214,7 @@ function AddressBar({
             // An input method still composing keeps its own Escape.
             if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
             event.preventDefault();
-            onChange(browserAddressValue(pageUrl));
+            onReset();
             event.currentTarget.blur();
           }}
           spellCheck={false}

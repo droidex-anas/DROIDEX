@@ -1,10 +1,19 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
+import fs, {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
-import type { ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+import type { ServerEvent, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { SessionTimeline } from './SessionTimeline.js';
 import type { ProviderSession, ProviderVoiceEvent } from './providers/session.js';
@@ -20,10 +29,13 @@ process.env.HOME = home;
 // developer's environment would aim this suite at their real session files.
 delete process.env.DROIDEX_USER_DATA_DIR;
 
-const { HistoryIndex, SESSION_INDEX_FILENAME, createHistorySessionFileCache } =
-  await import('./history.js');
-const { parseFullSessionTranscript, SessionTranscriptReader } =
-  await import('./sessionTranscript.js');
+const {
+  HistoryIndex,
+  SESSION_INDEX_FILENAME,
+  createHistorySessionFileCache,
+  loadSessionTranscriptWindow,
+} = await import('./history.js');
+const { SessionTranscriptReader } = await import('./sessionTranscript.js');
 const { writeProviderSessionSettings } = await import('./providers/providerSessionSettings.js');
 const { ProviderTranscriptFile, forkedTranscript, writeForkedTranscript } =
   await import('./providers/ProviderTranscriptFile.js');
@@ -73,6 +85,116 @@ test('files created, rewritten, given settings, or deleted between scans show in
 
   unlinkSync(join(home, '.factory', 'sessions', `${id}.jsonl`));
   assert.equal(scanned(), undefined);
+});
+
+function sessionScanCache(t: TestContext) {
+  const index = new HistoryIndex();
+  const db = new DatabaseSync(':memory:');
+  const canonical = new DatabaseSync(join(home, '.factory', 'droidex', SESSION_INDEX_FILENAME), {
+    readOnly: true,
+  });
+  t.after(() => {
+    canonical.close();
+    db.close();
+    index.close();
+  });
+  return createHistorySessionFileCache(db, canonical);
+}
+
+function denySessionStat(t: TestContext, path: string) {
+  const stat = fs.statSync;
+  const mocked = t.mock.method(fs, 'statSync', (...args: Parameters<typeof fs.statSync>) => {
+    if (args[0] === path) throw Object.assign(new Error('stat failed'), { code: 'EACCES' });
+    return stat(...args);
+  });
+  syncBuiltinESMExports();
+  const restore = () => {
+    mocked.mock.restore();
+    syncBuiltinESMExports();
+  };
+  t.after(restore);
+  return { mocked, restore };
+}
+
+test('a full scan keeps an unreadable file but removes a different deleted file', (t) => {
+  writeSession('scan-unreadable', 'cached summary');
+  writeSession('scan-deleted', 'deleted summary');
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
+    'cached summary',
+  );
+  const path = join(home, '.factory', 'sessions', 'scan-unreadable.jsonl');
+  const { mocked } = denySessionStat(t, path);
+  unlinkSync(join(home, '.factory', 'sessions', 'scan-deleted.jsonl'));
+
+  const result = cache.reconcileChanges();
+  assert.ok(mocked.mock.calls.some((call) => call.arguments[0] === path));
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === 'scan-unreadable')?.title,
+    'cached summary',
+  );
+  assert.equal(cache.unavailableProviderSessionIds.includes('scan-unreadable'), false);
+  assert.deepEqual(result.removedProviderSessionIds, ['scan-deleted']);
+});
+
+test('a deleted Alt copy is removed even when its Main copy cannot be inspected', (t) => {
+  const id = 'deleted-alt-unreadable-main';
+  const previousAltHome = process.env.DROIDEX_ALT_HOME;
+  const altHome = join(home, 'deleted-alt-home');
+  const altSessions = join(altHome, '.factory', 'sessions');
+  mkdirSync(altSessions, { recursive: true });
+  const altPath = join(altSessions, `${id}.jsonl`);
+  writeFileSync(
+    altPath,
+    providerSessionJsonl({ type: 'session_start', cwd: '', sessionTitle: 'Alt copy' }),
+  );
+  process.env.DROIDEX_ALT_HOME = altHome;
+  t.after(() => {
+    if (previousAltHome === undefined) delete process.env.DROIDEX_ALT_HOME;
+    else process.env.DROIDEX_ALT_HOME = previousAltHome;
+  });
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.droidProfile, 'alt');
+  writeSession(id, 'Main copy');
+  const { restore } = denySessionStat(t, join(home, '.factory', 'sessions', `${id}.jsonl`));
+  unlinkSync(altPath);
+  assert.deepEqual(cache.reconcileChanges().removedProviderSessionIds, [id]);
+  restore();
+  cache.reconcileChanges();
+  assert.equal(cache.summaries().find((row) => row.appSessionId === id)?.title, 'Main copy');
+});
+
+test('a watcher keeps an unreadable file and removes it after real deletion', (t) => {
+  const providerSessionId = 'watcher-unreadable';
+  writeSession(providerSessionId, 'cached summary');
+  const path = join(home, '.factory', 'sessions', `${providerSessionId}.jsonl`);
+  const cache = sessionScanCache(t);
+  cache.reconcileChanges();
+  const { restore } = denySessionStat(t, path);
+
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [],
+  );
+  assert.equal(
+    cache.summaries().find((row) => row.appSessionId === providerSessionId)?.title,
+    'cached summary',
+  );
+  assert.equal(cache.unavailableProviderSessionIds.includes(providerSessionId), false);
+
+  restore();
+  unlinkSync(path);
+  assert.deepEqual(
+    cache.reconcilePathChanges([{ providerSessionId, path }]).removedProviderSessionIds,
+    [providerSessionId],
+  );
+  assert.equal(
+    cache.summaries().some((row) => row.appSessionId === providerSessionId),
+    false,
+  );
 });
 
 // The one cross-provider contract in this path: what ProviderTranscriptFile
@@ -155,12 +277,9 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
   assert.equal(restored?.summary.fastMode, false);
   assert.equal(restored?.summary.contextWindowTokens, 200000);
 
-  const events = parseFullSessionTranscript(
-    appSessionId,
-    appSessionId,
-    join(providerSessionsDir(), `${appSessionId}.jsonl`),
-    'primary',
-  );
+  const events = loadSessionTranscriptWindow(appSessionId, [appSessionId], {
+    fullText: true,
+  }).events;
   const paged = new SessionTranscriptReader(
     appSessionId,
     appSessionId,
@@ -274,12 +393,7 @@ test('a transcript DROIDEX writes for a non-Droid session is enumerated and repl
       !reconciledHistorySessions().some((row) => row.summary.appSessionId.startsWith('child-')),
     );
     assert.deepEqual(
-      parseFullSessionTranscript(
-        appSessionId,
-        appSessionId,
-        join(providerSessionsDir(), `${appSessionId}.jsonl`),
-        'primary',
-      ),
+      loadSessionTranscriptWindow(appSessionId, [appSessionId], { fullText: true }).events,
       events,
     );
   } finally {
@@ -343,8 +457,8 @@ test('native message chunks replay once with complete item pages and distinct co
     assert.ok(latest.older);
     const earlier = reader.windowBackward(2, 0, latest.older);
     assert.equal(earlier.older, undefined);
-    const eager = parseFullSessionTranscript(appSessionId, sourceSessionId, path, role);
-    for (const events of [eager, [...earlier.events, ...latest.events]]) {
+    const fullWindow = readFullTranscript(appSessionId, sourceSessionId, path, role);
+    for (const events of [fullWindow, [...earlier.events, ...latest.events]]) {
       assert.deepEqual(
         events.map(({ kind, text, textUpdate }) => ({ kind, text, textUpdate })),
         [
@@ -405,7 +519,7 @@ test('native message chunks replay once with complete item pages and distinct co
       );
       assert.deepEqual(
         events.map((event) => event.id),
-        parseFullSessionTranscript(forkId, forkId, forkPath, 'primary')
+        readFullTranscript(forkId, forkId, forkPath, 'primary')
           .slice(-events.length)
           .map((event) => event.id),
       );
@@ -436,7 +550,7 @@ test('a failed transcript write reaches its caller and does not stop the lines a
   transcript.append(transcriptEvent(appSessionId, 'text', { text: 'Answer.' }));
   await transcript.flush();
 
-  const events = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const events = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   assert.deepEqual(
     events.map((event) => event.text),
     ['kept', 'Answer.'],
@@ -471,14 +585,14 @@ test('spoken rows replay with their mark, speaker, and latest corrected text', a
   );
 
   const path = join(providerSessionsDir(), `${appSessionId}.jsonl`);
-  const eager = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const fullWindow = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const lazy = new SessionTranscriptReader(
     appSessionId,
     appSessionId,
     path,
     'primary',
   ).windowBackward(20, 0).events;
-  for (const events of [eager, lazy]) {
+  for (const events of [fullWindow, lazy]) {
     assert.deepEqual(
       events.map(({ id, sourceSessionId, text, author, spoken }) => ({
         id,
@@ -615,7 +729,7 @@ test('a fork reads behind the queued lines and copies the transcript through its
     },
   );
 
-  const events = parseFullSessionTranscript(
+  const events = readFullTranscript(
     'provider-transcript-fork-copy',
     'provider-transcript-fork-copy',
     path,

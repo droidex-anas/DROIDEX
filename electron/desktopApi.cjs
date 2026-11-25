@@ -20,7 +20,7 @@ function createDesktopApi({ invoke, on }) {
         appSessionId: typeof options?.appSessionId === 'string' ? options.appSessionId : undefined,
       }),
     onNotificationActivate: (handler) => on('notification-activate', handler),
-    takePendingNotificationSession: () => invoke('notification-take-pending'),
+    readPendingNotificationSession: () => invoke('notification-read-pending'),
     ackNotificationActivate: (appSessionId) =>
       invoke('notification-activate-ack', { appSessionId }),
     getApiKey: () => invoke('get-api-key'),

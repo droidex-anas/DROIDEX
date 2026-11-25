@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
@@ -8,6 +8,7 @@ import type { PullRequest } from '../../../types/vcs';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
 import { isCubicRemembered, rememberCubic } from '../lib/cubicMemory';
 import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib/prReview';
+import { arrowKeyTab } from '../lib/prTabs';
 import { PrDiff } from './PrDiff';
 import { PrMergeButton } from './PrMergeButton';
 import { PrReviewButton } from './PrReviewButton';
@@ -157,6 +158,14 @@ export function PrDetail({
     });
   };
 
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: PrDetailTab) => {
+    const next = arrowKeyTab(TABS, current, event.key);
+    if (!next) return;
+    event.preventDefault();
+    setTab(next);
+    document.getElementById(tabId(next))?.focus();
+  };
+
   const composer = {
     viewerLogin,
     draft,
@@ -188,6 +197,10 @@ export function PrDetail({
               id={tabId(item.id)}
               aria-controls={tabPanelId(item.id)}
               aria-selected={tab === item.id}
+              tabIndex={tab === item.id ? 0 : -1}
+              onKeyDown={(event) => {
+                onTabKeyDown(event, item.id);
+              }}
               onClick={() => {
                 setTab(item.id);
               }}

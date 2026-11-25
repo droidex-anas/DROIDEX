@@ -2,8 +2,11 @@
 import { createHash } from 'node:crypto';
 import { lstat, opendir, realpath } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { objectValue } from '../values.js';
+import { isPathInside } from './isPathInside.js';
+import { normalizeOpenCodeRow, readOpenCodeText, type OpenCodeMessageRow } from './OpenCodeRow.js';
 import type { OpaqueUsageCursor, OpaqueUsageSourceStore } from './UsageSourceContract.js';
 import type { UsageEvent } from './types.js';
 const ADAPTER_NAME = 'opencode-sqlite';
@@ -19,9 +22,6 @@ const MAX_DATABASES_PER_ROOT = 64;
 const MAX_UNFINISHED_ROWS = 1_024;
 const DATABASE_NAME = /^opencode(?:-[a-zA-Z0-9_-]+)?\.db$/;
 const TABLES = ['message', 'session_message'] as const;
-const MAX_TEXT_BYTES = 1_024;
-const MAX_MODEL_LENGTH = 160;
-const MAX_DATE_MS = 8_640_000_000_000_000;
 type OpenCodeTable = (typeof TABLES)[number];
 // prettier-ignore
 export interface OpenCodeIngestOptions { store: OpaqueUsageSourceStore; roots?: readonly string[]; env?: Readonly<Record<string, string | undefined>>; homeDir?: string; pageSize?: number; maxPagesPerReconcile?: number; maxRowsPerReconcile?: number; maxBytesPerReconcile?: number }
@@ -33,17 +33,15 @@ interface TableState { after: number; unfinished: number[] }
 interface CursorState { fileIdentity: string; tables: Partial<Record<OpenCodeTable, TableState>> }
 // prettier-ignore
 interface TableInfo { name: OpenCodeTable; columns: ReadonlySet<string>; maxRowId: number }
-// prettier-ignore
-interface OpenCodeRow { rowId: number; id: string | null; sessionId: string | null; data: unknown; dataBytes: number; created: number | null }
+interface OpenCodeRow extends OpenCodeMessageRow {
+  dataBytes: number;
+}
 // prettier-ignore
 interface Progress { cursor: OpaqueUsageCursor | null; state: CursorState; reset: boolean; inserted: number; malformed: number }
 // prettier-ignore
 interface SourceContext { sourcePath: string; sourceId: string }
 // prettier-ignore
 interface Budget { pages: number; rows: number; bytes: number }
-type ParsedRow =
-  | { kind: 'event'; event: UsageEvent }
-  | { kind: 'unfinished' | 'skip' | 'malformed' };
 
 export class OpenCodeIngest {
   private readonly roots: string[];
@@ -111,7 +109,8 @@ export class OpenCodeIngest {
     const stats = await lstat(candidate);
     if (!stats.isFile() || stats.isSymbolicLink()) return null;
     const sourcePath = await realpath(candidate);
-    if (!inside(await realpath(root), sourcePath)) return null;
+    const canonicalRoot = await realpath(root);
+    if (sourcePath !== canonicalRoot && !isPathInside(canonicalRoot, sourcePath)) return null;
     const source = { sourcePath, sourceId: `opencode:${hash(sourcePath)}` };
     const cursor = this.options.store.usageSourceCursor(sourcePath, ADAPTER_NAME);
     const prior = cursor ? restoreState(cursor, source) : null;
@@ -192,7 +191,7 @@ export class OpenCodeIngest {
       for (const id of ids) {
         const row = byId.get(id);
         if (!row) continue;
-        const parsed = parseRow(row, source.sourceId);
+        const parsed = normalizeOpenCodeRow(row, source.sourceId);
         if (parsed.kind === 'unfinished') stillUnfinished.push(id);
         else if (parsed.kind === 'event') events.push(parsed.event);
         else if (parsed.kind === 'malformed') progress.malformed += 1;
@@ -208,7 +207,7 @@ export class OpenCodeIngest {
       spend(budget, rows.length, rowBytes(rows));
       const events: UsageEvent[] = [];
       for (const row of rows) {
-        const parsed = parseRow(row, source.sourceId);
+        const parsed = normalizeOpenCodeRow(row, source.sourceId);
         if (parsed.kind === 'unfinished') {
           if (state.unfinished.length >= MAX_UNFINISHED_ROWS) {
             const oldest = Math.min(...state.unfinished);
@@ -326,89 +325,12 @@ function readRows(
     .all(...parameters, limit);
   return rows.map((row) => ({
     rowId: requiredInteger(field(row, 'row_id'), 'rowid'),
-    id: text(field(row, 'id')),
-    sessionId: text(field(row, 'session_id')),
+    id: readOpenCodeText(field(row, 'id')),
+    sessionId: readOpenCodeText(field(row, 'session_id')),
     data: field(row, 'data'),
     dataBytes: requiredInteger(field(row, 'data_bytes'), 'data bytes'),
     created: optionalInteger(field(row, 'created')),
   }));
-}
-function parseRow(row: OpenCodeRow, sourceId: string): ParsedRow {
-  if (typeof row.data !== 'string') return { kind: 'malformed' };
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(row.data);
-  } catch {
-    return { kind: 'malformed' };
-  }
-  const message = object(parsed);
-  if (!message) return { kind: 'malformed' };
-  const role = field(message, 'role');
-  if (role !== undefined && role !== 'assistant') return { kind: 'skip' };
-  const time = object(field(message, 'time'));
-  const completed = field(time, 'completed');
-  if (completed === undefined || completed === null) return { kind: 'unfinished' };
-  if (count(completed) === null) return { kind: 'malformed' };
-  const tokens = object(field(message, 'tokens'));
-  const cache = object(field(tokens, 'cache'));
-  const cacheReadTokens = count(field(cache, 'read'));
-  const cacheWriteTokens = count(field(cache, 'write'));
-  const reasoningTokens = count(field(tokens, 'reasoning'));
-  const inputTokens = completeSum(count(field(tokens, 'input')), cacheReadTokens, cacheWriteTokens);
-  const outputTokens = completeSum(count(field(tokens, 'output')), reasoningTokens);
-  const providerCostMicrousd = costMicrousd(field(message, 'cost'));
-  if (!hasUsage(inputTokens, outputTokens, providerCostMicrousd)) return { kind: 'skip' };
-  const modelReference = object(field(message, 'model'));
-  const model =
-    modelText(field(modelReference, 'id')) ??
-    modelText(field(modelReference, 'modelID')) ??
-    modelText(field(message, 'modelID'));
-  const tsMs = count(field(time, 'created')) ?? row.created;
-  if (!model || tsMs === null || tsMs > MAX_DATE_MS) return { kind: 'malformed' };
-  const sessionId = row.sessionId ?? text(field(message, 'sessionID'));
-  const messageId = row.id ?? text(field(message, 'id'));
-  const identity =
-    messageId ??
-    hash(
-      [
-        sourceId,
-        row.rowId,
-        sessionId,
-        tsMs,
-        model,
-        inputTokens,
-        outputTokens,
-        cacheWriteTokens,
-        cacheReadTokens,
-        reasoningTokens,
-        providerCostMicrousd,
-      ].join('\0'),
-    );
-  return {
-    kind: 'event',
-    event: {
-      dedupeKey: `opencode:${identity.length <= 900 ? identity : hash(identity)}`,
-      harnessId: 'opencode',
-      harnessDisplayName: 'OpenCode',
-      provider:
-        modelText(field(modelReference, 'providerID')) ?? modelText(field(message, 'providerID')),
-      sourceId,
-      sessionId,
-      project: null,
-      sessionStartedAtMs: null,
-      tsMs,
-      model,
-      serviceTier: null,
-      inputTokens,
-      outputTokens,
-      cacheWriteTokens,
-      cacheReadTokens,
-      reasoningTokens,
-      providerCostMicrousd,
-      estimatedCostMicrousd: null,
-      pricingVersion: null,
-    },
-  };
 }
 function restoreState(cursor: OpaqueUsageCursor, source: SourceContext): CursorState {
   if (
@@ -425,15 +347,15 @@ function restoreState(cursor: OpaqueUsageCursor, source: SourceContext): CursorS
   } catch {
     throw resetError(source.sourcePath);
   }
-  const value = object(parsed);
-  const tables = object(field(value, 'tables'));
-  const fileIdentity = text(field(value, 'fileIdentity'));
+  const value = objectValue(parsed);
+  const tables = objectValue(field(value, 'tables'));
+  const fileIdentity = readOpenCodeText(field(value, 'fileIdentity'));
   if (!fileIdentity || !tables) throw resetError(source.sourcePath);
   const result: CursorState = { fileIdentity, tables: {} };
   for (const name of TABLES) {
     const stored = field(tables, name);
     if (stored === undefined) continue;
-    const table = object(stored);
+    const table = objectValue(stored);
     const unfinished = field(table, 'unfinished');
     const after = requiredInteger(field(table, 'after'), 'cursor');
     if (!Array.isArray(unfinished) || unfinished.length > MAX_UNFINISHED_ROWS) {
@@ -485,43 +407,8 @@ function expandHome(path: string, homeDir: string): string {
 function envValue(env: Readonly<Record<string, string | undefined>>, name: string) { return env[name] }
 // prettier-ignore
 function compareDatabaseNames(left: string, right: string): number { if (left === 'opencode.db') return -1; if (right === 'opencode.db') return 1; return left.localeCompare(right) }
-function inside(root: string, candidate: string): boolean {
-  const path = relative(resolve(root), candidate);
-  return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
-}
-function object(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : null;
-}
 function field(record: Record<string, unknown> | null | undefined, name: string): unknown {
   return record?.[name];
-}
-function text(value: unknown): string | null {
-  return typeof value === 'string' &&
-    value.length > 0 &&
-    Buffer.byteLength(value) <= MAX_TEXT_BYTES &&
-    !value.includes('\0')
-    ? value
-    : null;
-}
-// prettier-ignore
-function modelText(value: unknown): string | null { const model = text(value); return model && model.length <= MAX_MODEL_LENGTH ? model : null }
-function count(value: unknown): number | null {
-  return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : null;
-}
-function completeSum(...values: (number | null)[]): number | null {
-  if (values.some((value) => value === null)) return null;
-  const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-  return Number.isSafeInteger(total) ? total : null;
-}
-function costMicrousd(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null;
-  const result = Math.round(value * 1_000_000);
-  return Number.isSafeInteger(result) ? result : null;
-}
-function hasUsage(...values: (number | null)[]): boolean {
-  return values.some((value) => value !== null && value > 0);
 }
 function requiredString(value: unknown, name: string): string {
   if (typeof value !== 'string') throw new Error(`OpenCode ${name} is invalid.`);
@@ -550,6 +437,6 @@ function optionalInteger(value: unknown): number | null {
 function resetError(path: string): Error { return new Error(`OpenCode usage cursor is incompatible for ${path}. Rebuild the local ledger.`) }
 const hash = (value: string): string => createHash('sha256').update(value).digest('hex');
 function isUnavailable(error: unknown): boolean {
-  const code = field(object(error), 'code');
+  const code = objectValue(error)?.code;
   return ['ENOENT', 'EACCES', 'EPERM', 'SQLITE_BUSY', 'SQLITE_CANTOPEN'].includes(String(code));
 }

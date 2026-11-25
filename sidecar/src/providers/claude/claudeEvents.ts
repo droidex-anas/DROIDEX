@@ -10,7 +10,7 @@
 import type { ModelInfo, SDKMessage, SDKRateLimitInfo } from '@anthropic-ai/claude-agent-sdk';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { ModelSwitch, TranscriptEvent } from '../../protocol.js';
+import type { ModelSwitch, TranscriptEvent } from '@droidex/protocol';
 import { slimChildSessionArgs } from '../../subagentSignals.js';
 import { toolResultParts } from '../../toolResultImages.js';
 import { ClaudeSubagents, isSpawnToolName } from './claudeSubagents.js';

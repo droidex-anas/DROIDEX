@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 export const MAX_BUILD_DIAGNOSTICS = 64;

@@ -5,7 +5,7 @@ import type {
   ProviderKind,
   ProviderReadiness,
   ProviderStatus,
-} from '../../types/bridge';
+} from '@droidex/protocol';
 
 export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',

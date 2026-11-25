@@ -1,5 +1,5 @@
 import { reasoningValue } from '../../modelCatalog.js';
-import type { ReasoningEffort } from '../../protocol.js';
+import type { ReasoningEffort } from '@droidex/protocol';
 import { objectValue } from '../../values.js';
 
 export function droidErrorDetails(message: string): {

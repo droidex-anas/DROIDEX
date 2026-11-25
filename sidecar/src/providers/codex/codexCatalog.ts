@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 
-import type { SkillInfo, SkillLocation } from '../catalog.js';
+import type { SkillInfo, SkillLocation } from '@droidex/protocol';
 import type { AppServerClient } from './appServer.js';
 
 type CatalogSource = 'skills' | 'plugins' | 'apps';

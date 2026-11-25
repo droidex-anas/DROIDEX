@@ -7,7 +7,13 @@ import { toast } from '../../lib/toast';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Field';
-import type { ModelInfo, ReasoningEffort, SessionSummary } from '../../types/bridge';
+import type {
+  ModelInfo,
+  ReasoningEffort,
+  SessionSummary,
+  Automation,
+  AutomationSnapshot,
+} from '@droidex/protocol';
 import { AutomationEditor } from './AutomationEditor';
 import { AutomationList } from './AutomationList';
 import type { AutomationEditorRequest } from '../../hooks/useStore';
@@ -29,12 +35,7 @@ import {
   resolveAutomationModelDefaults,
   validateAutomationDraft,
 } from './schedule';
-import type {
-  Automation,
-  AutomationDraft,
-  AutomationEditorState,
-  AutomationSnapshot,
-} from './types';
+import type { AutomationDraft, AutomationEditorState } from './types';
 
 interface AutomationsViewProps {
   workspaceScopes: readonly WorkspaceScope[];

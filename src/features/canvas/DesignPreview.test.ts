@@ -10,7 +10,7 @@ import ts from 'typescript';
 import * as desktop from '../../lib/desktop';
 import * as imageCapture from './captureCanvasImage';
 import { DesignPreview, PreviewGuestFrame, type DesignPreviewProps } from './DesignPreview';
-import type { CanvasBuildState, CanvasFrame } from './protocol';
+import type { CanvasBuildState, CanvasFrame } from '@droidex/protocol';
 
 const CANVAS = 'cv_01';
 

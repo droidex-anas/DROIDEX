@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { appendTranscriptEvents } from '../lib/transcriptStoreMemory';
 import {
   aggregateTranscriptMutationBatch,

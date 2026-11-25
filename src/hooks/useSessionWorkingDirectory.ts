@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import {
   sessionWorkingDirectoryForSource,
   worktreeDiscoveryRevision,
@@ -9,7 +9,7 @@ import { getGitWorktrees } from '../lib/git';
 import type { GitWorktree } from '../types/vcs';
 import { useDocumentVisible } from './useDocumentVisible';
 import { useStoreSelector, type AppState } from './useStore';
-import type { TranscriptEvent } from '../types/bridge';
+
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
 
 interface WorktreeSnapshot {

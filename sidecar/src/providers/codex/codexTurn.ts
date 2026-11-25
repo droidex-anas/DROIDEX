@@ -1,8 +1,8 @@
 import { isAbsolute } from 'node:path';
 
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy } from '../../protocol.js';
-import type { ProviderMention } from '../catalog.js';
+import type { Autonomy, ProviderMention } from '@droidex/protocol';
+
 import type { ProviderModelSettings, SteerOutcome } from '../session.js';
 import { codexAutonomy, codexSandboxPolicy } from './codexApprovals.js';
 

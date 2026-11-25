@@ -3,7 +3,7 @@ import test from 'node:test';
 import { compileInput } from '../testing/canvasCompilerSupport.js';
 import { sanitiseSvg } from './canvasSvg.js';
 import { CompilerWorker } from './compiler.js';
-import type { OwnedAsset } from './protocol.js';
+import type { OwnedAsset } from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 import { svgFrameSource } from './svgJsx.js';
 

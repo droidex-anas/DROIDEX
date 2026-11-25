@@ -13,6 +13,9 @@ import { type McpServerConfig } from '@factory/droid-sdk';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import type {
+  AutomationBridgeCommand,
+  CanvasCommand,
+  ProjectCommand,
   Autonomy,
   BridgeRuntimeSnapshot,
   ClientCommand,
@@ -30,7 +33,8 @@ import type {
   SessionInteractionMode,
   SessionPurpose,
   TranscriptEvent,
-} from './protocol.js';
+  ProviderKind,
+} from '@droidex/protocol';
 import { errMsg } from './errors.js';
 import { reasoningValue } from './modelCatalog.js';
 import { defaultsModeForSummary, modelDefaultForMode } from './modeDefaults.js';
@@ -43,12 +47,8 @@ import {
 } from './DroidRuntime.js';
 import { detectEnvironment } from './Environment.js';
 import { buildInstallCommand, buildUpdateCommand, runStreaming } from './CliInstaller.js';
-import {
-  type HistoryIndex,
-  type PersistedChildSession,
-  loadMissionControlSessions,
-  readFactoryDefaults,
-} from './history.js';
+import { type HistoryIndex, type PersistedChildSession, readFactoryDefaults } from './history.js';
+import { loadMissionControlSessions } from './historyMissions.js';
 import { HistoryPersistence } from './HistoryPersistence.js';
 import { serverEventForHistoryStatus } from './historyStatusEvents.js';
 import { LiveRuntimeJournal, liveRuntimeJournalPath } from './liveRuntimeJournal.js';
@@ -115,7 +115,11 @@ import {
 } from './sessionRuntimeRetirement.js';
 import { SessionRuntimeWarmUp } from './sessionRuntimeWarmUp.js';
 import { MissionControlPolicy } from './MissionControlPolicy.js';
-import { normalizeCompactionTokenLimit } from './compaction.js';
+import {
+  startupFactoryDefaults,
+  validateFactoryDefaults,
+  validReasoning,
+} from './factoryDefaults.js';
 import type { HotPathResourceCounts } from './telemetry/hotPathMetrics.js';
 import { DroidMcpConfiguration, type McpConfiguration } from './DroidMcpConfiguration.js';
 import { McpSettings } from './McpSettings.js';
@@ -127,11 +131,7 @@ import { droidCatalogItems } from './providers/catalog.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { runPrimaryTurn, type PrimaryTurnRequest } from './providers/primaryTurn.js';
 import { agentWakePrompt, AGENT_WAKE_NOTICE } from './childWaveWake.js';
-import {
-  assertProviderUnchanged,
-  DEFAULT_PROVIDER,
-  type ProviderKind,
-} from './providers/providerKind.js';
+import { assertProviderUnchanged, DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { HarnessCliInstaller } from './providers/harnessCli.js';
 import { DroidProxyController } from './droidproxy/droidProxyController.js';
 import { LazyProvider } from './providers/lazyProvider.js';
@@ -395,9 +395,14 @@ export class SessionManager {
     },
     () => this.providerProbes.refresh(),
   );
-  private readonly droidProxy = new DroidProxyController((event) => {
-    this.emit(event);
-  });
+  private readonly droidProxy = new DroidProxyController(
+    (event) => {
+      this.emit(event);
+    },
+    () => {
+      void this.refreshModelsAfterFactoryChange();
+    },
+  );
 
   constructor(
     private readonly emit: Emit,
@@ -1046,7 +1051,7 @@ export class SessionManager {
       .liveSessionsSnapshot()
       .filter(
         (live) =>
-          live.streaming ||
+          live.turn.streaming ||
           live.summary.streaming === true ||
           live.compacting === true ||
           live.autoCompacting,
@@ -1113,7 +1118,7 @@ export class SessionManager {
     };
   }
 
-  // eslint-disable-next-line complexity -- Public command dispatch is intentionally unchanged in PR 3.
+  // eslint-disable-next-line complexity -- Routes command families while retaining session-owned dispatch.
   async handle(cmd: ClientCommand): Promise<void> {
     if (this.shutdownPromise) throw new Error('Session manager is shutting down.');
     switch (cmd.type) {
@@ -1121,7 +1126,6 @@ export class SessionManager {
         this.connect(cmd.apiKey);
         return;
       case 'runtime.status':
-      case 'auth.status':
         this.emit({ type: 'runtime.updated', status: this.runtime.status() });
         return;
       case 'env.detect':
@@ -1134,37 +1138,19 @@ export class SessionManager {
         await this.runCliUpdate(cmd.channel);
         return;
       case 'harness.cli.check':
-        await this.harnessClis.report();
-        return;
       case 'harness.cli.install':
-        await this.harnessClis.install(cmd.provider, cmd.channel);
-        return;
       case 'harness.cli.update':
-        await this.harnessClis.update(cmd.provider);
+        await this.harnessClis.handle(cmd);
         return;
       case 'droidproxy.status':
-        await this.droidProxy.report();
-        return;
       case 'droidproxy.launch':
-        await this.droidProxy.launchApp();
-        return;
       case 'droidproxy.login':
-        await this.droidProxy.login(cmd.provider);
-        return;
       case 'droidproxy.login.cancel':
-        this.droidProxy.cancelLogin();
-        return;
       case 'droidproxy.account.setEnabled':
-        await this.droidProxy.setAccountEnabled(cmd.provider, cmd.id, cmd.enabled);
-        return;
       case 'droidproxy.install':
-        if (await this.droidProxy.install()) void this.refreshModelsAfterFactoryChange();
-        return;
       case 'droidproxy.install.cancel':
-        this.droidProxy.cancelInstall();
-        return;
       case 'droidproxy.factoryModels.apply':
-        if (await this.droidProxy.applyFactoryModels()) void this.refreshModelsAfterFactoryChange();
+        await this.droidProxy.handle(cmd);
         return;
       case 'catalog.models': {
         const models = await this.getModels();
@@ -1179,9 +1165,6 @@ export class SessionManager {
         return;
       case 'usage.refresh':
         await this.accountUsage.refresh(cmd.provider, cmd);
-        return;
-      case 'catalog.tools':
-        await this.emitToolCatalog(cmd.providerSessionId);
         return;
       case 'catalog.skills':
         await this.emitSkillCatalog(cmd.providerSessionId);
@@ -1232,15 +1215,8 @@ export class SessionManager {
         return;
       }
       case 'approval.respond':
-        await this.interactions.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
-        return;
       case 'question.respond':
-        this.interactions.respondToQuestion(
-          cmd.appSessionId,
-          cmd.requestId,
-          cmd.cancelled,
-          cmd.answers,
-        );
+        await this.interactions.handle(cmd);
         return;
       case 'session.interrupt':
         await this.lifecycle.interrupt(cmd.appSessionId);
@@ -1321,14 +1297,6 @@ export class SessionManager {
           });
         }
         return;
-      case 'session.rewindInfo':
-        await this.withSession(cmd.appSessionId, (session) => session.getRewindInfo({} as never));
-        return;
-      case 'session.rewind':
-        await this.withSession(cmd.appSessionId, (session) =>
-          session.executeRewind({ rewindId: cmd.rewindId } as never),
-        );
-        return;
       case 'session.resume':
         await this.lifecycle.resume(cmd.appSessionId);
         return;
@@ -1347,9 +1315,6 @@ export class SessionManager {
         return;
       case 'history.list':
         this.timeline.list();
-        return;
-      case 'history.page':
-        this.timeline.loadProviderPage(cmd.providerSessionId, cmd.cursor, cmd.limit);
         return;
       case 'session.loadHistory':
         await this.sessionFiles.whenBootReconciled();
@@ -1381,54 +1346,47 @@ export class SessionManager {
         await this.compaction.updateLimits(cmd, this.compactionRetuneTargets());
         return;
       case 'browser.open':
-        await this.sessionBrowser.open(cmd);
+      case 'browser.restore':
+      case 'browser.reload':
+      case 'browser.resizeViewport':
+      case 'browser.design.addReference':
+      case 'browser.design.removeReferences':
+      case 'browser.design.sendPrompt':
+        await this.sessionBrowser.handle(cmd);
         return;
       case 'browser.close':
         await this.sessionBrowser.close(cmd);
         // Closing the last resource a session was holding can make it retirable.
         this.runtimeRetirement.arm();
         return;
-      case 'browser.restore':
-        await this.sessionBrowser.restore(cmd);
-        return;
-      case 'browser.reload':
-        await this.sessionBrowser.reload(cmd);
-        return;
-      case 'browser.resizeViewport':
-        await this.sessionBrowser.resizeViewport(cmd);
-        return;
-      case 'browser.design.addReference':
-        await this.sessionBrowser.addReference(cmd);
-        return;
-      case 'browser.design.removeReferences':
-        this.browsers.removeReferences(cmd.appSessionId, cmd.ids);
-        return;
-      case 'browser.design.sendPrompt':
-        await this.sessionBrowser.sendDesignPrompt(cmd);
-        return;
       case 'sidebar.result':
         this.sidebarRequests.answer(cmd.result);
         return;
-      default: {
-        // Wire commands are JSON-parsed without runtime validation, so a
-        // renderer running newer code than this sidecar (e.g. a dev app that
-        // kept running across a sidecar rebuild) can send a command this
-        // build does not know. Fail visibly instead of falling through
-        // silently while the caller waits out its timeout.
-        const unknown = cmd as { type?: unknown; requestId?: unknown };
-        const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
-        // Echo the command's requestId so a waiter rejects only for its own
-        // unsupported command, not a foreign one failing concurrently.
-        const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
-        this.emit({
-          type: 'error',
-          code: 'bridge.unsupported_command',
-          ...(requestId !== undefined ? { requestId } : {}),
-          message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
-        });
+      default:
+        // These command families are dispatched upstream of the session manager.
+        cmd satisfies
+          | CanvasCommand
+          | ProjectCommand
+          | AutomationBridgeCommand
+          | Extract<ClientCommand, { type: 'child.watchHistory' }>;
+        this.handleUnknownCommand(cmd);
         return;
-      }
     }
+  }
+
+  private handleUnknownCommand(cmd: ClientCommand): void {
+    // The bridge does not reject unknown command types, so reply explicitly to newer renderers.
+    const unknown = cmd as { type?: unknown; requestId?: unknown };
+    const commandType = typeof unknown.type === 'string' ? unknown.type : 'unknown';
+    // Echo the command's requestId so a waiter rejects only for its own
+    // unsupported command, not a foreign one failing concurrently.
+    const requestId = typeof unknown.requestId === 'string' ? unknown.requestId : undefined;
+    this.emit({
+      type: 'error',
+      code: 'bridge.unsupported_command',
+      ...(requestId !== undefined ? { requestId } : {}),
+      message: `This DROIDEX build does not support the "${commandType}" command. Restart the app to pick up the current sidecar.`,
+    });
   }
 
   automaticRuntimeLoad(): { live: number; limit: number } {
@@ -1503,7 +1461,7 @@ export class SessionManager {
     if (this.shutdownPromise) return null;
     // A closed chat keeps its summary, and its exports were already ended.
     const liveSession = this.registry.getLive(appSessionId);
-    if (!liveSession || liveSession.closeMode === 'discard-pending') return null;
+    if (!liveSession || liveSession.turn.closeMode === 'discard-pending') return null;
     const folder = this.projectFolder(appSessionId);
     return folder === null ? null : this.projectExports.admit(appSessionId, folder);
   }
@@ -2066,7 +2024,7 @@ export class SessionManager {
       return;
     }
     if (
-      previousLiveSession?.streaming ||
+      previousLiveSession?.turn.streaming ||
       previousLiveSession?.compacting ||
       previousLiveSession?.autoCompacting
     ) {
@@ -2373,30 +2331,6 @@ export class SessionManager {
     return { session, close: () => session.close() };
   }
 
-  // Tool discovery remains Droid-only. Skill-style catalogs belong to the
-  // provider session named by the request, while an unbound draft keeps Droid's
-  // existing discovery path.
-  private isDroidCatalogTarget(providerSessionId?: string): boolean {
-    return (
-      providerSessionId === undefined ||
-      this.sessionProvider(providerSessionId) === DEFAULT_PROVIDER
-    );
-  }
-
-  private async emitToolCatalog(providerSessionId?: string): Promise<void> {
-    if (!this.isDroidCatalogTarget(providerSessionId)) {
-      this.emit({ type: 'catalog.updated', catalog: 'tools', items: [] });
-      return;
-    }
-    const { session, close } = await this.catalogSession(providerSessionId);
-    try {
-      const result = await session.listTools();
-      this.emit({ type: 'catalog.updated', catalog: 'tools', items: arrayItems(result, 'tools') });
-    } finally {
-      await close();
-    }
-  }
-
   private async emitSkillCatalog(providerSessionId?: string): Promise<void> {
     const liveSession = providerSessionId ? this.registry.getLive(providerSessionId) : undefined;
     const provider = providerSessionId ? this.sessionProvider(providerSessionId) : DEFAULT_PROVIDER;
@@ -2518,7 +2452,7 @@ function requireUniqueMcpNames(names: readonly string[]): void {
 }
 
 function hasSessionCloseStarted(liveSession: LiveSession): boolean {
-  return liveSession.closeMode !== undefined;
+  return liveSession.turn.closeMode !== undefined;
 }
 
 function childSessionSettingsFromInit(init: SessionInitResult): ChildSettings {
@@ -2555,133 +2489,15 @@ function assertAutomationSelectionSupported(
   }
 }
 
-export function startupFactoryDefaults(
-  defaults: FactoryDefaultSettings,
-  models: ModelInfo[],
-): FactoryDefaultSettings {
-  if (models.length > 0) return validateFactoryDefaults(defaults, models);
-  const safe: FactoryDefaultSettings = {
-    autonomy: defaults.autonomy,
-    interactionMode: defaults.interactionMode,
-    compactionTokenLimit: normalizeCompactionTokenLimit(defaults.compactionTokenLimit),
-    compactionTokenLimitPerModel: validCompactionTokenLimitRecord(
-      defaults.compactionTokenLimitPerModel,
-    ),
-  };
-  if (defaults.compactionModel === 'current-model') safe.compactionModel = 'current-model';
-  return safe;
-}
-
-export function validateFactoryDefaults(
-  defaults: FactoryDefaultSettings,
-  models: ModelInfo[],
-): FactoryDefaultSettings {
-  if (models.length === 0) return runtimeFactoryDefaultsWithoutCatalog(defaults);
-  const firstModel = models.at(0);
-  if (!firstModel) return runtimeFactoryDefaultsWithoutCatalog(defaults);
-  const cliDefault =
-    models.find((model) => model.isDefault && !model.isCustom) ??
-    models.find((model) => !model.isCustom) ??
-    firstModel;
-  return {
-    ...defaults,
-    modelId: validModelId(defaults.modelId, models) ?? cliDefault.id,
-    reasoningEffort:
-      validReasoning(defaults.modelId, defaults.reasoningEffort, models) ??
-      cliDefault.defaultReasoningEffort,
-    compactionModel: validCompactionModel(defaults.compactionModel, models),
-    compactionTokenLimit: normalizeCompactionTokenLimit(defaults.compactionTokenLimit),
-    compactionTokenLimitPerModel: validCompactionTokenLimitPerModel(
-      defaults.compactionTokenLimitPerModel,
-      models,
-    ),
-    specModelId:
-      validModelId(defaults.specModelId, models) ??
-      validModelId(defaults.modelId, models) ??
-      cliDefault.id,
-    specReasoningEffort: validReasoning(defaults.specModelId, defaults.specReasoningEffort, models),
-    workerModelId: validModelId(defaults.workerModelId, models) ?? cliDefault.id,
-    workerReasoningEffort: validReasoning(
-      defaults.workerModelId,
-      defaults.workerReasoningEffort,
-      models,
-    ),
-    validatorModelId: validModelId(defaults.validatorModelId, models) ?? cliDefault.id,
-    validatorReasoningEffort: validReasoning(
-      defaults.validatorModelId,
-      defaults.validatorReasoningEffort,
-      models,
-    ),
-  };
-}
-
-function runtimeFactoryDefaultsWithoutCatalog(
-  defaults: FactoryDefaultSettings,
-): FactoryDefaultSettings {
-  return {
-    ...defaults,
-    compactionTokenLimit: normalizeCompactionTokenLimit(defaults.compactionTokenLimit),
-    compactionTokenLimitPerModel: validCompactionTokenLimitRecord(
-      defaults.compactionTokenLimitPerModel,
-    ),
-  };
-}
-
-function validModelId(modelId: string | undefined, models: ModelInfo[]): string | undefined {
-  return modelId && models.some((model) => model.id === modelId) ? modelId : undefined;
-}
-
 function resolveAutomationReasoningEffort(
   summary: SessionSummary,
   modelId: string | null,
   defaultReasoning: ReasoningEffort | undefined,
   models: ModelInfo[],
 ): ReasoningEffort | null {
-  if (summary.reasoningEffort) return summary.reasoningEffort;
-  const model = modelId ? models.find((candidate) => candidate.id === modelId) : undefined;
   return (
+    summary.reasoningEffort ??
     validReasoning(modelId ?? undefined, defaultReasoning, models) ??
-    model?.defaultReasoningEffort ??
-    model?.supportedReasoningEfforts?.at(0) ??
     null
   );
-}
-
-function validReasoning(
-  modelId: string | undefined,
-  reasoning: ReasoningEffort | undefined,
-  models: ModelInfo[],
-): ReasoningEffort | undefined {
-  const model = modelId ? models.find((item) => item.id === modelId) : undefined;
-  if (!model) return undefined;
-  const supported = model.supportedReasoningEfforts;
-  if (reasoning && (!supported || supported.includes(reasoning))) return reasoning;
-  return model.defaultReasoningEffort ?? supported?.[0];
-}
-
-function validCompactionModel(modelId: string | undefined, models: ModelInfo[]): string {
-  if (!modelId || modelId === 'current-model') return 'current-model';
-  return validModelId(modelId, models) ?? 'current-model';
-}
-
-function validCompactionTokenLimitRecord(
-  limits: Record<string, number> | undefined,
-): Record<string, number> | undefined {
-  if (!limits) return undefined;
-  const entries = Object.entries(limits)
-    .map(([modelId, limit]) => [modelId, normalizeCompactionTokenLimit(limit)] as const)
-    .filter((entry): entry is [string, number] => Boolean(entry[0]) && entry[1] !== undefined);
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
-function validCompactionTokenLimitPerModel(
-  limits: Record<string, number> | undefined,
-  models: ModelInfo[],
-): Record<string, number> | undefined {
-  if (!limits) return undefined;
-  const modelIds = new Set(models.map((model) => model.id));
-  const entries = Object.entries(limits)
-    .map(([modelId, limit]) => [modelId, normalizeCompactionTokenLimit(limit)] as const)
-    .filter((entry): entry is [string, number] => modelIds.has(entry[0]) && entry[1] !== undefined);
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }

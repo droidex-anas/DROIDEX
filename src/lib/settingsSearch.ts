@@ -8,25 +8,37 @@ import {
 } from './finishNotificationControls';
 import { SHORTCUT_DEFINITIONS } from './shortcuts';
 
+export type SettingsTab =
+  | 'General'
+  | 'Setup & updates'
+  | 'Profile'
+  | 'Remote'
+  | 'Appearance'
+  | 'Notifications'
+  | 'Configuration'
+  | 'Keyboard shortcuts'
+  | 'Privacy & diagnostics'
+  | 'MCP servers'
+  | 'DroidProxy'
+  | 'Worktrees'
+  | 'Archived chats';
+
 interface SettingsSearchEntry {
   /** Settings nav tab to open. */
-  tab: string;
+  tab: SettingsTab;
   /** Human label shown in search hits (usually the control name). */
   label: string;
   /** Extra tokens matched case-insensitively. */
   keywords?: string[];
 }
 
-function e(tab: string, label: string, keywords: string[] = []): SettingsSearchEntry {
+function e(tab: SettingsTab, label: string, keywords: string[] = []): SettingsSearchEntry {
   return { tab, label, keywords };
 }
 
-/**
- * Indexed settings content for every shipped tab. Placeholder tabs are indexed
- * by name/aliases so search still navigates even before those screens exist.
- */
 const SHORTCUT_KEYWORDS = ['hotkeys', 'keymap', 'bindings', 'shortcuts', 'cmd'];
 
+/** Indexed settings content for every tab, plus each tab's name and common aliases. */
 const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
   e('Profile', 'Profile and usage', [
     'username',
@@ -240,19 +252,9 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     e('Keyboard shortcuts', definition.label, SHORTCUT_KEYWORDS),
   ),
 
-  // ── Placeholder tabs (name + common aliases until those screens ship) ────
+  // ── Tab names and common aliases ─────────────────────────────────────────
   e('Profile', 'Profile', ['account', 'user', 'avatar', 'identity']),
-  e('Personalization', 'Personalization', [
-    'persona',
-    'instructions',
-    'custom instructions',
-    'memory',
-    'preferences',
-  ]),
-  e('Usage & billing', 'Usage & billing', ['billing', 'usage', 'quota', 'invoice', 'plan', 'cost']),
-  e('Snapshots', 'Snapshots', ['snapshot', 'checkpoint', 'restore']),
   e('MCP servers', 'MCP servers', ['mcp', 'tools server', 'model context protocol']),
-  e('Browser', 'Browser', ['native browser', 'web browser', 'browser pane']),
   e('DroidProxy', 'DroidProxy', ['droidproxy', 'proxy', 'localhost:8317']),
   e('DroidProxy', 'Subscriptions', [
     'oauth',
@@ -269,15 +271,11 @@ const SETTINGS_SEARCH_ENTRIES: readonly SettingsSearchEntry[] = [
     'factory settings',
     'droidproxy models',
   ]),
-  e('Hooks', 'Hooks', ['lifecycle hooks', 'script hooks']),
-  e('Connections', 'Connections', ['integrations', 'connected apps']),
-  e('Git', 'Git', ['github', 'vcs', 'version control', 'commit', 'branch']),
-  e('Environments', 'Environments', ['env', 'environment variables', 'runtime']),
   e('Archived chats', 'Archived chats', ['archive', 'archived', 'hidden chats']),
 ];
 
 export interface SettingsSearchHit {
-  tab: string;
+  tab: SettingsTab;
   label: string;
   score: number;
 }
@@ -291,7 +289,7 @@ function entryHaystack(entry: SettingsSearchEntry): string {
 }
 
 /** True if this tab should stay visible for the current query. */
-export function tabMatchesQuery(tab: string, query: string): boolean {
+export function tabMatchesQuery(tab: SettingsTab, query: string): boolean {
   const q = normalizeQuery(query);
   if (!q) return true;
   if (tab.toLowerCase().includes(q)) return true;
@@ -314,16 +312,24 @@ function scoreEntry(entry: SettingsSearchEntry, q: string): number {
   return 0;
 }
 
+export const NO_HIDDEN_TABS: ReadonlySet<SettingsTab> = new Set();
+
 /**
- * Ranked setting hits for the query. Empty query → no hits (caller shows normal
- * browsing). Scores prefer label prefix/containment over keyword-only matches.
+ * Ranked setting hits for the query, leaving out `hiddenTabs`. Empty query → no
+ * hits (caller shows normal browsing). Scores prefer label prefix/containment
+ * over keyword-only matches.
  */
-export function searchSettings(query: string, limit = 16): SettingsSearchHit[] {
+export function searchSettings(
+  query: string,
+  hiddenTabs: ReadonlySet<SettingsTab> = NO_HIDDEN_TABS,
+  limit = 16,
+): SettingsSearchHit[] {
   const q = normalizeQuery(query);
   if (!q) return [];
 
   const hits: SettingsSearchHit[] = [];
   for (const entry of SETTINGS_SEARCH_ENTRIES) {
+    if (hiddenTabs.has(entry.tab)) continue;
     const score = scoreEntry(entry, q);
     if (score > 0) hits.push({ tab: entry.tab, label: entry.label, score });
   }
@@ -341,8 +347,11 @@ export function searchSettings(query: string, limit = 16): SettingsSearchHit[] {
   return unique;
 }
 
-/** Best tab to open for a query, or null when nothing matches. */
-export function bestTabForQuery(query: string): string | null {
-  const hits = searchSettings(query, 1);
+/** Best tab to open for a query, or null when no visible tab matches. */
+export function bestTabForQuery(
+  query: string,
+  hiddenTabs: ReadonlySet<SettingsTab> = NO_HIDDEN_TABS,
+): SettingsTab | null {
+  const hits = searchSettings(query, hiddenTabs, 1);
   return hits[0]?.tab ?? null;
 }

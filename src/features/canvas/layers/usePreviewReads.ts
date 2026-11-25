@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PreviewTree } from '../previewDocumentTree';
 import type { AttachedRun, PreviewRuns } from '../previewRuns';
-import type { CanvasFrame } from '../protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 /** The most marked elements read from one preview, a page at a time, once something past the first page is wanted. */
 const MAX_READ_ELEMENTS = 8192;

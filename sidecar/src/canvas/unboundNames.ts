@@ -11,7 +11,7 @@
 // every one, so a broken module the entry never imports fails too.
 
 import ts from 'typescript';
-import type { CanvasDiagnostic, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 
 const SCRIPT_FILE = /\.(tsx|ts|jsx|js)$/;
 const HOOK_NAME = /^use[A-Z0-9]/;

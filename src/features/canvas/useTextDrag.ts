@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react';
 import type { PreviewTextRange } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 export interface DraggedText {
   designId: string;

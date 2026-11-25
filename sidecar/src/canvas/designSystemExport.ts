@@ -21,7 +21,7 @@ import {
   kitImageFiles,
   referencedKitAssetIds,
 } from './kitAssets.js';
-import type { DesignSystemVersionRef } from './protocol.js';
+import type { DesignSystemVersionRef } from '@droidex/protocol';
 import { designSystemVersionRefSchema } from './schema.js';
 
 const exportRequestSchema = z

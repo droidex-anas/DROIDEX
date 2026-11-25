@@ -13,7 +13,7 @@ import { LibraryPicker } from './LibraryPicker';
 import { armLibrarySeed, useArmedLibrarySeed } from './librarySeed';
 import { useCanvases } from './useCanvases';
 import { useOpenCanvas } from './useOpenCanvas';
-import type { CanvasSummary } from './protocol';
+import type { CanvasSummary } from '@droidex/protocol';
 
 // The search field earns its place once the grid is longer than a glance.
 const SEARCH_THRESHOLD = 6;

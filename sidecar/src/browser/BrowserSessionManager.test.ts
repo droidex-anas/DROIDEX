@@ -8,14 +8,8 @@ import {
   type BrowserRuntime,
   type BrowserSessionManagerOptions,
 } from './BrowserSessionManager.js';
-import type {
-  BrowserScreenshotOptions,
-  BrowserState,
-  BrowserTarget,
-  BrowserViewport,
-  DesignAnchor,
-  DesignAnchorDetail,
-} from './types.js';
+import type { BrowserViewport, DesignAnchor, DesignAnchorDetail } from '@droidex/protocol';
+import type { BrowserScreenshotOptions, BrowserState, BrowserTarget } from './types.js';
 
 const dataDir = mkdtempSync(join(tmpdir(), 'droid-browser-test-'));
 

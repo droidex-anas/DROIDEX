@@ -14,7 +14,7 @@ import type {
   CreateFramesResult,
   DesignSystemRef,
   OwnedAsset,
-} from './protocol';
+} from '@droidex/protocol';
 
 const SVG_ROOT =
   /^\s*(?:<\?xml[^>]*\?>\s*)?(?:<!--[\s\S]*?-->\s*)*(?:<!DOCTYPE[^>]*>\s*)?<svg[\s/>]/i;

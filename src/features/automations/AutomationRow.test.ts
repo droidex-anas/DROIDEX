@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AutomationRow } from './AutomationRow';
 import { defaultAutomationDraft } from './schedule';
-import type { Automation } from './types';
+import type { Automation } from '@droidex/protocol';
 
 function renderStatus(
   status: Automation['lastRunStatus'],

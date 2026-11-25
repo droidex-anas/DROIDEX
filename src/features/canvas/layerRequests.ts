@@ -7,7 +7,7 @@ import type {
   CanvasCommand,
   ReorderFramesInput,
   SetFrameHiddenInput,
-} from './protocol';
+} from '@droidex/protocol';
 
 export class LayerRequests {
   constructor(private readonly send: (command: CanvasCommand) => Promise<ReplyEvent>) {}

@@ -1,7 +1,4 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 
 import {
@@ -12,16 +9,6 @@ import {
   publishedStreamFidelity,
 } from './childStreamFidelity.js';
 import { childSummary, newChildState } from './ChildSessionState.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-
-function protocolRegion(source: string, marker: string, end: string): string {
-  const start = source.indexOf(marker);
-  const stop = source.indexOf(end, start);
-  assert.ok(start >= 0, `missing ${marker}`);
-  assert.ok(stop > start, `missing ${end}`);
-  return source.slice(start, stop);
-}
 
 test('the fidelity vocabulary is closed and a token stream declaration is coupled to includePartialMessages', () => {
   const stream = childTokenStream();
@@ -47,14 +34,4 @@ test('observed children publish state fidelity until a token stream is declared'
   assert.equal(childSummary(child).streamFidelity, 'state');
   child.streamFidelity = 'token';
   assert.equal(childSummary(child).streamFidelity, 'token');
-});
-
-test('protocol stream fidelity types stay mirrored with the renderer', () => {
-  const sidecar = readFileSync(join(here, 'protocol.ts'), 'utf8');
-  const renderer = readFileSync(join(here, '../../src/types/bridge.ts'), 'utf8');
-  const marker = 'export type StreamFidelity =';
-  const end = 'export interface ChildSpawnLink {';
-  assert.equal(protocolRegion(sidecar, marker, end), protocolRegion(renderer, marker, end));
-  assert.match(sidecar, /streamFidelity: StreamFidelity;/);
-  assert.match(renderer, /streamFidelity: StreamFidelity;/);
 });

@@ -1,15 +1,9 @@
-import { useRef, useEffect, useMemo, useState, useCallback, Suspense, type ReactNode } from 'react';
-import { ChevronRight } from 'lucide-react';
-import { Square } from '@droidex/icons';
+import { useRef, useEffect, useMemo, useCallback, Suspense, type ReactNode } from 'react';
 import { Button } from './ui/Button';
-import { TitleSweep } from './ui/TitleSweep';
+import { ChatHeader } from './ChatHeader';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { threadOrigin, type ThreadOrigin } from '../lib/projectThreads';
-import {
-  LazyAttachedChatsMenu,
-  LazyCanvasColumnTabs,
-  LazyDesignColumnHeader,
-} from '../lib/lazySurfaces';
+import { LazyCanvasColumnTabs, LazyDesignColumnHeader } from '../lib/lazySurfaces';
 import { utilityPanelForSession } from '../lib/utilityPanel';
 import { openReviewAt, type OpenReviewFileHandler } from '../lib/reviewFocus';
 import type { FileChange } from '../lib/diff';
@@ -20,11 +14,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { MessageFeed } from './MessageFeed';
 import { AppBlockRepairSessionContext } from './appBlockRepairContext';
 import { LiveProcessesContext } from './transcript/liveProcessesContext';
-import type { AgentProcess, ChildSessionSummary } from '../types/bridge';
+import type { AgentProcess, ChildSessionSummary } from '@droidex/protocol';
 import { WorkingIndicator, UserBubble, ChatSkeleton, TranscriptSkeleton } from './chat';
 import { PendingSteers } from './transcript/PendingSteers';
 import { JumpToLatest } from './transcript/JumpToLatest';
-import { readFile } from '../lib/desktop';
 import { interruptChild, loadChildHistory, loadSessionHistory } from '../lib/commands';
 import { chatDisplayTitle } from '../lib/chatMetadata';
 import {
@@ -64,12 +57,11 @@ import {
 import { createChatFeedProjector } from './chatFeedProjector';
 import { setMountedFeedRows } from '../lib/rendererPerf';
 import { firstUserTranscriptEvent } from '../lib/transcriptIngestion';
-import { createTranscriptSpecPathProjector } from '../lib/transcriptSpecPath';
+import { useChatSpec } from './useChatSpec';
 import type { ConversationListHandle } from './ConversationList';
 import { TranscriptReachHost } from '../features/transcript-reach/TranscriptReachHost';
 import { activeProduct, showsTabStrip, viewRowLeadPx } from '../features/tabs/tabStrip';
-import { CloseTileButton, type TileChrome } from '../features/tabs/TileChrome';
-import { tileHandleProps } from '../features/tabs/tileDrag';
+import type { TileChrome } from '../features/tabs/TileChrome';
 import { SESSION_CONTROLS_TRAIL_PX } from '../lib/windowChrome';
 
 const NO_LIVE_PROCESSES: readonly AgentProcess[] = [];
@@ -185,127 +177,6 @@ function canvasOnBoard(state: AppState, appSessionId: string | null): string | n
   return tab.canvasId ?? state.canvasAttachments[appSessionId] ?? null;
 }
 
-interface ChatHeaderSub {
-  label: string;
-  meta?: string;
-  running: boolean;
-  backTitle?: string;
-  onBack: () => void;
-  onStop?: () => void;
-}
-
-function ChatTitleText({ title, live }: { title: string; live: boolean }) {
-  return (
-    <TitleSweep
-      title={title}
-      className={`block truncate text-body-strong ${live ? 'shimmer-text' : 'text-primary'}`}
-    />
-  );
-}
-
-/**
- * The chat's name in its header: a crumb back to the chat that owns a child
- * session, the attached-chats menu once this chat has a canvas on screen, or
- * plain text.
- */
-function HeaderTitle({
-  title,
-  live,
-  sub,
-  canvas,
-}: {
-  title: string;
-  live: boolean;
-  sub: ChatHeaderSub | undefined;
-  canvas: { appSessionId: string; canvasId: string } | undefined;
-}) {
-  if (sub)
-    return (
-      <button
-        type="button"
-        onClick={sub.onBack}
-        title={sub.backTitle ?? 'Back to primary session'}
-        className="truncate text-body-strong text-muted transition-colors hover:text-primary max-w-48"
-      >
-        {title}
-      </button>
-    );
-  if (canvas)
-    return (
-      <Suspense fallback={<ChatTitleText title={title} live={live} />}>
-        <LazyAttachedChatsMenu
-          appSessionId={canvas.appSessionId}
-          canvasId={canvas.canvasId}
-          title={title}
-          live={live}
-        />
-      </Suspense>
-    );
-  return <ChatTitleText title={title} live={live} />;
-}
-
-function ChatHeader({
-  title,
-  live,
-  sub,
-  leadPx,
-  trailPx,
-  canvas,
-  tile,
-}: {
-  title: string;
-  live: boolean;
-  sub?: ChatHeaderSub;
-  // Room left at the row's start for the window controls and the sidebar
-  // toggle while the sidebar is collapsed.
-  leadPx: number;
-  // Room left at the row's end for the session controls floating over it.
-  trailPx: number;
-  // The chat's own canvas, which turns the title into its attached-chats menu.
-  canvas?: { appSessionId: string; canvasId: string };
-  // In a split tab the title is the tile's drag handle and close button.
-  tile: TileChrome | undefined;
-}) {
-  return (
-    <div
-      // Only the top row of tiles is the window's drag row.
-      data-electron-drag-region={tile && !tile.atTop ? undefined : true}
-      className="shrink-0 flex items-center gap-2 h-9"
-      style={{ paddingLeft: leadPx, paddingRight: trailPx }}
-    >
-      {/* The title's text starts on the content edge and its padding hangs into
-          the gutter, where a tile's drag handle lights up on hover. */}
-      <div
-        {...(tile ? tileHandleProps(tile.id) : {})}
-        className={`-ml-1 flex h-control-sm min-w-0 items-center gap-1.5 rounded-md px-2 ${
-          tile
-            ? 'no-drag cursor-grab transition-colors hover:bg-elevated active:cursor-grabbing'
-            : ''
-        } ${tile && !tile.focused ? 'opacity-60' : ''}`}
-      >
-        <HeaderTitle title={title} live={live} sub={sub} canvas={canvas} />
-        {sub && (
-          <>
-            <ChevronRight className="w-3.5 h-3.5 shrink-0 text-muted/50" />
-            <span
-              className={`truncate text-body-strong max-w-48 ${sub.running ? 'shimmer-text' : 'text-primary'}`}
-            >
-              {sub.label}
-            </span>
-            {sub.meta && <span className="shrink-0 text-caption text-muted">{sub.meta}</span>}
-          </>
-        )}
-        {tile && <CloseTileButton tileId={tile.id} title={title} />}
-      </div>
-      {sub?.onStop && (
-        <Button size="sm" icon={Square} onClick={sub.onStop} title="Stop child session">
-          Stop
-        </Button>
-      )}
-    </div>
-  );
-}
-
 export default function ChatView({
   appSessionId,
   rightInset = false,
@@ -349,10 +220,6 @@ export default function ChatView({
   const viewportLayoutRef = useRef<ConversationViewportLayout | null>(null);
   const activeSession = state.activeSession;
   const allTranscript = state.allTranscript;
-  const specPathProjectorRef = useRef<ReturnType<typeof createTranscriptSpecPathProjector> | null>(
-    null,
-  );
-  specPathProjectorRef.current ??= createTranscriptSpecPathProjector();
 
   const visibleTarget = visibleSessionTarget(
     activeSession?.appSessionId,
@@ -481,9 +348,7 @@ export default function ChatView({
   // though live child events share the parent's in-memory event array.
   const historyAppSessionId = activeSession?.appSessionId;
   const historyChildSessionId = selectedChildSessionId;
-  // These keyed renderer maps are intentionally sparse at runtime despite
-  // their long-standing Record types.
-  /* eslint-disable @typescript-eslint/no-unnecessary-condition */
+  /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
   const childHistory =
     historyAppSessionId && historyChildSessionId
       ? state.childHistory[historyAppSessionId]?.[historyChildSessionId]
@@ -552,70 +417,17 @@ export default function ChatView({
   // the real feed (which seeds the same message) takes over once it exists.
   const { startingCompose } = state;
 
-  const isSpec = activeSession?.interactionMode === 'spec';
-  const capturedPlan = activeSession ? state.specPlans[activeSession.appSessionId] : undefined;
-  const storedSpec = activeSession ? state.sessionSpecs[activeSession.appSessionId] : undefined;
-  // The spec stays available after exiting spec mode: keep detecting/loading it
-  // whenever this session ever produced one (live mode, captured plan, or a
-  // previously stored spec).
-  const hadSpec = isSpec || !!capturedPlan || !!storedSpec;
-
-  // The real deliverable in spec mode is a markdown file written to disk
-  // (e.g. ~/.factory/specs/<date>-<slug>.md). Detect that path anywhere in the
-  // transcript (assistant prose or the write tool's args) and load the file.
-  const specPath = specPathProjectorRef.current({
-    conversationKey: activeAppSessionId ?? 'none',
-    source: allTranscript,
-    mutation: state.transcriptMutation,
-    enabled: hadSpec,
+  const specContent = useChatSpec({
+    activeAppSessionId,
+    isSpecMode: activeSession?.interactionMode === 'spec',
+    allTranscript,
+    transcriptMutation: state.transcriptMutation,
+    capturedPlan:
+      activeAppSessionId !== undefined ? state.specPlans[activeAppSessionId] : undefined,
+    storedSpec:
+      activeAppSessionId !== undefined ? state.sessionSpecs[activeAppSessionId] : undefined,
+    dispatch,
   });
-
-  const [fileSpec, setFileSpec] = useState<{ path: string; content: string } | null>(null);
-  // Re-read on `capturedPlan` changes too: a revised spec rewrites the same file
-  // path, so the path alone wouldn't trigger a reload and the card would go stale.
-  useEffect(() => {
-    if (!specPath) return;
-    let cancelled = false;
-    void readFile(specPath).then((content) => {
-      if (!cancelled && content) setFileSpec({ path: specPath, content });
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [specPath, capturedPlan]);
-
-  const hasFileSpec = !!fileSpec && fileSpec.path === specPath;
-
-  // Spec content is ONLY content explicitly produced/stored as spec (#14): the
-  // saved spec file or the plan submitted via ExitSpecMode. Normal assistant
-  // prose is never reclassified as spec, so pressing Spec can't capture chat.
-  const specContent = useMemo(() => {
-    if (!hadSpec) return '';
-    // 1) The saved spec file (full doc with diagrams/tables) is the best source.
-    if (hasFileSpec) return fileSpec.content;
-    // 2) The plan the agent submitted via ExitSpecMode.
-    if (capturedPlan) return capturedPlan;
-    // 3) Previously persisted spec (e.g. after switching sessions and back).
-    if (storedSpec?.content) return storedSpec.content;
-    return '';
-  }, [hadSpec, hasFileSpec, fileSpec, capturedPlan, storedSpec]);
-
-  // Persist the best spec we have so the card, wiki reader, and right-panel
-  // button survive exiting spec mode and switching between sessions.
-  useEffect(() => {
-    if (!activeAppSessionId || !specContent) return;
-    const title = /^#{1,3}\s+(.+)$/m.exec(specContent)?.[1]?.trim() ?? 'Specification';
-    // Preserve the existing file path when the current source is not file-backed
-    // (e.g. a captured plan), so the store never loses a known path on refresh.
-    const path = hasFileSpec ? fileSpec.path : storedSpec?.path;
-    dispatch({
-      type: 'SPEC_SET',
-      appSessionId: activeAppSessionId,
-      ...(path !== undefined ? { path } : {}),
-      title,
-      content: specContent,
-    });
-  }, [activeAppSessionId, specContent, hasFileSpec, fileSpec, storedSpec?.path, dispatch]);
 
   const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
   feedProjectorRef.current ??= createChatFeedProjector();

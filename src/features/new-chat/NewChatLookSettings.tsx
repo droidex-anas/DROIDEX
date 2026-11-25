@@ -17,7 +17,7 @@ import {
   type SavedBackground,
 } from './newChatLook';
 import { useDraftHarness } from './useDraftHarness';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 
 const PRESET_LABELS: Record<ArtPreset, string> = {
   glow: 'Glow',

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import type { BridgeFeature, SessionSummary, TranscriptEvent } from '../types/bridge';
+import type { BridgeFeature, SessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 import {
   createSnapshotScheduler,

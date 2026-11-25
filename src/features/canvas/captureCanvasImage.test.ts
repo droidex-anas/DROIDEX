@@ -4,7 +4,7 @@ import type {
   CanvasImageSaveResult,
   CanvasPreviewCaptureResult,
   CanvasPreviewCaptureRequest,
-} from '../../lib/desktop';
+} from '../../lib/desktopContract';
 import type { PreviewVector } from './previewDocument';
 import {
   answerCaptureRequest,

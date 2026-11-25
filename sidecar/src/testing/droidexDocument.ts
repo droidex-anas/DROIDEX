@@ -1,7 +1,7 @@
 // A small design system document on the starter's token values, shared by the
 // sidecar's and the renderer's tests of the document contract.
 
-import type { DocumentSection } from '../canvas/designSystemDocument.js';
+import type { DocumentSection } from '@droidex/protocol';
 
 export const DROIDEX_DOCUMENT_SECTIONS: DocumentSection[] = [
   {

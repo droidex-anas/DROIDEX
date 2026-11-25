@@ -11,7 +11,11 @@ import {
   X,
   type IconComponent,
 } from '@droidex/icons';
-import type { FeedbackAttachments, FeedbackCategory, FeedbackReportRequest } from '../lib/desktop';
+import type {
+  FeedbackAttachments,
+  FeedbackCategory,
+  FeedbackReportRequest,
+} from '../lib/desktopContract';
 import { submitFeedbackReport } from '../lib/feedbackReport';
 import { Button } from './ui/Button';
 import { Dialog, DialogActions, DialogBody, DialogTitle } from './ui/Dialog';

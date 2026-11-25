@@ -5,7 +5,7 @@ import { formatDuration, limitName } from '../../features/usage/usageCopy';
 import type { PaceWarning } from '../../features/usage/usagePace';
 import { openExternal } from '../../lib/onboarding';
 import { formatResetTime, limitLabel, resetLabel } from '../../lib/usageLimit';
-import type { ProviderKind, UsageLimit } from '../../types/bridge';
+import type { ProviderKind, UsageLimit } from '@droidex/protocol';
 import { ComposerTab } from './ComposerTab';
 
 // StartInBar's pill. Each action adds its color: the one that can unblock the

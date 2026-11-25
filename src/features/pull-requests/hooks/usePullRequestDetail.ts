@@ -28,7 +28,7 @@ import {
 const POLL_MS = 12000;
 
 export function prActionError(message: string | undefined, fallback: string): string {
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty bridge message gets the fallback too
   return message || fallback;
 }
 
@@ -40,10 +40,7 @@ function sectionError(
   previous: string | null,
 ): string | null {
   if (!failed) return null;
-  // Empty bridge messages are not actionable; the product fallback must be
-  // shown for both undefined and empty strings.
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-  return showErrors ? message || fallback : previous;
+  return showErrors ? prActionError(message, fallback) : previous;
 }
 
 function commentsSectionError(
@@ -52,8 +49,9 @@ function commentsSectionError(
   previous: string | null,
 ): string | null {
   if (result.ok) {
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    return result.partial ? result.message || 'Some PR comments could not be loaded' : null;
+    return result.partial
+      ? prActionError(result.message, 'Some PR comments could not be loaded')
+      : null;
   }
   return sectionError(true, result.message, 'Could not load PR comments', showErrors, previous);
 }

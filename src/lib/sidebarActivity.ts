@@ -1,5 +1,6 @@
 import type { AppState } from '../hooks/useStore';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary, SessionActivityStatus } from '@droidex/protocol';
+
 import {
   chatDisplayTitle,
   isChatHidden,
@@ -8,19 +9,6 @@ import {
 } from './chatMetadata';
 import { sessionAttention, type SessionAttentionKind } from './sessionAttention';
 import { sessionIsLive, sessionIsUnread } from './sessions';
-
-export type SessionActivityStatus =
-  | 'working'
-  | 'approval'
-  | 'input'
-  | 'plan'
-  | 'failed'
-  | 'interrupted'
-  | 'reply'
-  | 'review'
-  | 'ship'
-  | 'ready'
-  | 'settled';
 
 export const ACTIVITY_LABELS: Record<SessionActivityStatus, string> = {
   working: 'Working',

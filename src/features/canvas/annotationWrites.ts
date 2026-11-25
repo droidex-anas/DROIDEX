@@ -10,7 +10,7 @@ import type {
   AnnotationAuthor,
   AnnotationDraft,
   AnnotateCanvasInput,
-} from './annotationProtocol';
+} from '@droidex/protocol';
 import { draftOf } from './annotationGeometry';
 
 /** One mark as the board draws it, with who drew it. */

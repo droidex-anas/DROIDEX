@@ -1,7 +1,7 @@
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent, AutomationRun } from '@droidex/protocol';
 import { automationExecutionPrompt, type AutomationAttachments } from './automationAttachments.js';
 import { projectActiveRun, projectSettledRun } from './automationRunRecord.js';
-import type { AutomationDeliveryReceipt, AutomationRun, AutomationStore } from './types.js';
+import type { AutomationDeliveryReceipt, AutomationStore } from './types.js';
 
 export type DeliverAutomationMessage = (
   appSessionId: string,

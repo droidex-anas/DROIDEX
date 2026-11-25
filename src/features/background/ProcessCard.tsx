@@ -1,7 +1,7 @@
 import { ExternalLink, Globe, Square } from '@droidex/icons';
 import { Button } from '../../components/ui/Button';
 import { formatDuration } from '../../lib/tools';
-import type { AgentProcess } from '../../types/bridge';
+import type { AgentProcess } from '@droidex/protocol';
 import { commandTypedByAgent } from './backgroundActivity';
 
 /* One process a command left running: the command the agent typed, what it

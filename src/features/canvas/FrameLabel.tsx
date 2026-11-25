@@ -14,7 +14,7 @@ import { Badge } from '../../components/ui/Badge';
 import { Tooltip } from '../../components/ui/Tooltip';
 import { TAG_KEY_LABEL } from './boardKeys';
 import { kitNotes, kitNotesLabel, kitNotesSummary } from './designSystemRule';
-import type { CanvasDiagnostic, CanvasFrame } from './protocol';
+import type { CanvasDiagnostic, CanvasFrame } from '@droidex/protocol';
 import { splitVariantName } from './variantRequests';
 
 const KEYS_HINT = 'Arrows move between frames; ⌥ and an arrow nudge it, ⇧ for ten';

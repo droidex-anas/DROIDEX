@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildDiagnostics, issuesByLine, placeIssues } from './canvasSourceIssues';
-import type { CanvasBuildState, CanvasDiagnostic } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic } from '@droidex/protocol';
 
 const ENTRY = 'App.tsx';
 const STYLES = 'styles.css';

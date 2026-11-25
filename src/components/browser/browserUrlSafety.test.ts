@@ -3,9 +3,37 @@ import assert from 'node:assert/strict';
 import {
   browserAddressValue,
   DEFAULT_BROWSER_URL,
+  isLocalBrowserUrl,
   isSelfBrowserUrl,
   safeBrowserUrl,
 } from './browserUrlSafety';
+
+test('isLocalBrowserUrl accepts HTTP dev servers on exact local hosts', () => {
+  for (const url of [
+    'http://localhost:3000/',
+    'https://127.0.0.1:8443/path',
+    'http://0.0.0.0:5173/',
+    'http://[::1]:3000/',
+  ]) {
+    assert.equal(isLocalBrowserUrl(url), true, url);
+  }
+});
+
+test('isLocalBrowserUrl rejects external hosts, unsupported protocols and invalid URLs', () => {
+  for (const url of [
+    'https://example.com/',
+    'http://localhost.example.invalid/',
+    'http://127.0.0.1.example.invalid/',
+    'http://0.0.0.0.example.invalid/',
+    'http://localhost@example.com/',
+    'ftp://localhost:3000/',
+    '',
+    'not a URL',
+    'http://localhost:invalid/',
+  ]) {
+    assert.equal(isLocalBrowserUrl(url), false, url);
+  }
+});
 
 test('safeBrowserUrl keeps the host app out of the browser pane', () => {
   assert.equal(

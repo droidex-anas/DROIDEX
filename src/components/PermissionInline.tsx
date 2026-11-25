@@ -1,7 +1,7 @@
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { shallowEqual, useStoreDispatch, useStoreSelector, type AppState } from '../hooks/useStore';
 import { respondPermission } from '../lib/commands';
-import type { PermissionKind, PermissionOutcome } from '../types/bridge';
+import type { PermissionKind, PermissionOutcome } from '@droidex/protocol';
 import { PROVIDER_LABELS } from '../features/providers/providerIdentity';
 import { extractFileChange } from '../lib/diff';
 import { inlineCardMotion } from './inlineCardMotion';
