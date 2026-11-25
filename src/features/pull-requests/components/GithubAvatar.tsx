@@ -5,15 +5,7 @@ import { authorInitials, displayLogin, githubAvatarUrl } from '../lib/prIdentity
 // Real GitHub faces, with initials only as an offline/404 fallback. The failed
 // login is tracked (instead of a boolean) so a new author re-tries the image
 // without needing a `key` at every call site.
-export function GithubAvatar({
-  login,
-  size = 24,
-  className = '',
-}: {
-  login: string | null;
-  size?: number;
-  className?: string;
-}) {
+export function GithubAvatar({ login, size = 24 }: { login: string | null; size?: number }) {
   const [failedLogin, setFailedLogin] = useState<string | null>(null);
   const src = githubAvatarUrl(login, size);
   const name = displayLogin(login);
@@ -24,7 +16,7 @@ export function GithubAvatar({
     <span
       title={name}
       style={box}
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-elevated ${className}`}
+      className="inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-elevated"
     >
       {showImage ? (
         <img

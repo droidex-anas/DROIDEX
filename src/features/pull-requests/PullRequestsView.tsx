@@ -131,12 +131,7 @@ export function PullRequestsView() {
   if (!canList) {
     return (
       <PrWorkspace>
-        <PrWorkspaceEmpty
-          cwd={inbox.listingCwds[0] ?? null}
-          gitLoaded={true}
-          isGitHub={true}
-          setup={setup}
-        />
+        <PrWorkspaceEmpty cwd={inbox.listingCwds[0] ?? null} setup={setup} />
       </PrWorkspace>
     );
   }

@@ -46,7 +46,7 @@ function timestamp(value: string | null): number {
 // Tier first, then the most recently updated inside the tier. Drafts sink
 // within their tier: a draft is its author's work in progress, never the
 // most urgent thing on someone else's desk.
-export function compareInboxPriority(
+function compareInboxPriority(
   left: InboxPullRequest,
   right: InboxPullRequest,
   viewerLogin: string | null,

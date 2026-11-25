@@ -2,9 +2,8 @@ import type { ReactNode } from 'react';
 
 import { PrComposer } from './PrComposer';
 
-// The scrolling half of the workspace: whatever the tab wants to show, with the
-// comment composer pinned below it. Content ownership stays with the caller so
-// the summary tab can fold its sections and the chat tab can stay plain.
+// The scrolling half of the workspace: content scrolls while the comment
+// composer stays pinned below it. Content ownership stays with the caller.
 export function PrConversation({
   children,
   viewerLogin,

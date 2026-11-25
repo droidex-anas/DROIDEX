@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { PrComment } from '../../../types/vcs';
-import { commentPreview, commentStartsFolded, isLongComment, threadStatus } from './prCommentFold';
+import { commentPreview, commentStartsFolded, threadStatus } from './prCommentFold';
 
 const comment = (overrides: Partial<PrComment> = {}): PrComment => ({
   id: '1',
@@ -16,12 +16,12 @@ const comment = (overrides: Partial<PrComment> = {}): PrComment => ({
   ...overrides,
 });
 
-test('a comment counts as long past ten lines or seven hundred characters', () => {
-  assert.equal(isLongComment('one line'), false);
-  assert.equal(isLongComment('line\n'.repeat(10).trimEnd()), false);
-  assert.equal(isLongComment('line\n'.repeat(11).trimEnd()), true);
-  assert.equal(isLongComment('x'.repeat(700)), false);
-  assert.equal(isLongComment('x'.repeat(701)), true);
+test('an unresolved comment starts folded past ten lines or seven hundred characters', () => {
+  assert.equal(commentStartsFolded(comment(), 'one line'), false);
+  assert.equal(commentStartsFolded(comment(), 'line\n'.repeat(10).trimEnd()), false);
+  assert.equal(commentStartsFolded(comment(), 'line\n'.repeat(11).trimEnd()), true);
+  assert.equal(commentStartsFolded(comment(), 'x'.repeat(700)), false);
+  assert.equal(commentStartsFolded(comment(), 'x'.repeat(701)), true);
 });
 
 test('the preview is the first prose line without its markdown markers', () => {

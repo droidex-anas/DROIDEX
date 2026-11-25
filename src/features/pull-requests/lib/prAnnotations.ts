@@ -1,3 +1,4 @@
+import { diffLineAnchorKey, type DiffLineSide } from '../../../lib/unifiedDiff';
 import type { PullRequest } from '../../../types/vcs';
 
 // Review annotations are the reader's own line-anchored notes on a pull
@@ -5,12 +6,10 @@ import type { PullRequest } from '../../../types/vcs';
 // diff lines they point at, and the whole set is what "Send to Droid" turns
 // into a seeded chat prompt.
 
-export type PrAnnotationSide = 'old' | 'new';
-
 export interface PrLineAnnotation {
   id: string;
   path: string;
-  side: PrAnnotationSide;
+  side: DiffLineSide;
   line: number;
   // The annotated diff line's text without its +/- marker, captured at
   // annotation time so the note still reads when the diff moves on.
@@ -26,17 +25,7 @@ export interface PrReviewDraft {
 export const emptyPrReviewDraft: PrReviewDraft = { annotations: [], viewedFiles: [] };
 
 export const ANNOTATION_LIMIT = 100;
-export const ANNOTATION_BODY_MAX = 4000;
-
-// The diff anchors content below a line by side and line number; this key is
-// the one format both the injection pass and the anchor set speak.
-export function annotationAnchorKey(side: PrAnnotationSide, line: number): string {
-  return `${side}:${String(line)}`;
-}
-
-export function annotationAnchor(annotation: PrLineAnnotation): string {
-  return annotationAnchorKey(annotation.side, annotation.line);
-}
+const ANNOTATION_BODY_MAX = 4000;
 
 export function addAnnotation(
   draft: PrReviewDraft,
@@ -50,7 +39,7 @@ export function addAnnotation(
   const existing = draft.annotations.find(
     (item) =>
       item.path === input.path &&
-      annotationAnchor(item) === annotationAnchorKey(input.side, input.line),
+      diffLineAnchorKey(item.side, item.line) === diffLineAnchorKey(input.side, input.line),
   );
   if (existing) {
     return {

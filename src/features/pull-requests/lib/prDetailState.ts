@@ -80,7 +80,7 @@ function shallowSameItems<T extends object>(prev: readonly T[], next: readonly T
   return true;
 }
 
-export function sharedIfUnchanged<T extends object>(prev: readonly T[], next: readonly T[]): T[] {
+function sharedIfUnchanged<T extends object>(prev: readonly T[], next: readonly T[]): T[] {
   // Both arrays are treated as immutable everywhere, so the unchanged case
   // keeps the previous reference itself — identity is the whole point.
   return shallowSameItems(prev, next) ? (prev as T[]) : (next as T[]);
