@@ -37,7 +37,7 @@ export default function AskUserInline({
   // interaction settles instead of wedging the composer.
   useEffect(() => {
     if (question?.questions.length === 0) {
-      respondQuestion(question.appSessionId, question.requestId, true, []);
+      if (!respondQuestion(question.appSessionId, question.requestId, true, [])) return;
       dispatch({
         type: 'CLEAR_QUESTION',
         appSessionId: question.appSessionId,
@@ -49,7 +49,7 @@ export default function AskUserInline({
   if (!question || question.questions.length === 0) return null;
 
   const settle = (cancelled: boolean, answers: QuestionAnswer[]) => {
-    respondQuestion(question.appSessionId, question.requestId, cancelled, answers);
+    if (!respondQuestion(question.appSessionId, question.requestId, cancelled, answers)) return;
     dispatch({
       type: 'CLEAR_QUESTION',
       appSessionId: question.appSessionId,

@@ -161,11 +161,18 @@ export default function BrowserWorkspace({
     if (last.ts <= lastEditTsRef.current) return;
     lastEditTsRef.current = last.ts;
     if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    const browserSessionId = browser?.browserSessionId;
     reloadTimerRef.current = setTimeout(() => {
       reloadTimerRef.current = null;
-      reloadBrowser(browserKey);
+      const current = browserIdentityRef.current;
+      if (
+        browserSessionId &&
+        current.browserKey === browserKey &&
+        current.browserSessionId === browserSessionId
+      )
+        reloadBrowser(browserKey);
     }, 600);
-  }, [activeUrl, browserKey, lastTranscriptEvent]);
+  }, [activeUrl, browser?.browserSessionId, browserKey, lastTranscriptEvent]);
 
   // Cancel any pending auto-reload when the browser session switches or the
   // component unmounts, so a stale timer doesn't reload the wrong session.
@@ -176,7 +183,7 @@ export default function BrowserWorkspace({
         reloadTimerRef.current = null;
       }
     };
-  }, [browserKey]);
+  }, [browser?.browserSessionId, browserKey]);
 
   useEffect(() => {
     if (!browser?.url) return;

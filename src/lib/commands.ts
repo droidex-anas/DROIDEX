@@ -245,9 +245,7 @@ export const respondQuestion = (
   requestId: string,
   cancelled: boolean,
   answers: QuestionAnswer[],
-) => {
-  bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
-};
+) => bridge.send({ type: 'question.respond', appSessionId, requestId, cancelled, answers });
 
 export const interruptSession = (appSessionId: string) => {
   bridge.send({ type: 'session.interrupt', appSessionId });
