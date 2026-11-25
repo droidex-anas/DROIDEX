@@ -89,11 +89,22 @@ test('accepts provider statuses and rejects unknown providers or readiness', () 
   assertAccepted(providerStatus([status]));
   assertAccepted(providerStatus([{ ...status, provider: 'devin' }]));
   assertAccepted(providerStatus([{ ...status, defaultModelId: 'droid-core' }]));
+  assertAccepted(
+    providerStatus([
+      {
+        ...status,
+        models: [{ ...model, costTier: 'premium', costSummary: 'Billed at the highest tier.' }],
+      },
+    ]),
+  );
   for (const malformed of [
     { ...status, provider: 'aider' },
     { ...status, readiness: 'busy' },
     { ...status, models: [{ ...model, id: '' }] },
     { ...status, models: [{ ...model, supportedReasoningEfforts: [7] }] },
+    { ...status, models: [{ ...model, costTier: '' }] },
+    { ...status, models: [{ ...model, costTier: 7 }] },
+    { ...status, models: [{ ...model, costSummary: 7 }] },
     { ...status, message: 7 },
     { ...status, defaultModelId: 7 },
   ]) {

@@ -16,6 +16,23 @@ const { createInterface } = require('node:readline');
 const { join } = require('node:path');
 const root = __dirname;
 if (process.argv[2] === '--version') { console.log('devin 3000.14.30821 (fake)'); process.exit(0); }
+const variant = (model_uid, tier, context) => ({ model_uid,
+  label: model_uid, description: 'Fake ' + model_uid + ' coding model',
+  max_context_tokens: context, max_output_tokens: 64000,
+  cost_tier: tier,
+  cost_summary: tier === 'Free' ? 'Included in every plan' : 'Billed at the ' + tier + ' rate',
+  is_new: false, is_beta: false });
+const modelCatalog = { families: [
+  { family_label: 'SWE Fast', family_uid: 'swe-fast', slug: 'swe-fast', aliases: ['swe-1-6-fast'],
+    variants: [variant('swe-fast-low', 'Free', 200000), variant('swe-fast-medium', 'Free', 200000),
+      variant('swe-fast-high', 'Free', 200000)] },
+  { family_label: 'SWE', family_uid: 'swe', slug: 'swe', aliases: ['swe-1-6'],
+    variants: [variant('swe-medium', 'Standard', 1000000), variant('swe-high', 'Premium', 1000000),
+      variant('swe-xhigh', 'Premium', 1000000)] } ] };
+if (process.argv[2] === 'models') {
+  console.log(JSON.stringify(modelCatalog));
+  process.exit(0);
+}
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 const result = (id, result) => send({ id, result });
 const failure = (id, code, message) => send({ id, error: { code, message } });
@@ -31,9 +48,23 @@ const childCompleted = (agentId, success = true) => update({ sessionUpdate: 'too
     agentId, success, summary: 'Summary ' + agentId } } });
 const childText = (agentId, text) => childUpdate(agentId, { sessionUpdate: 'agent_message_chunk',
   content: { type: 'text', text }, _meta: { 'cognition.ai/streamingMessageId': 'answer' } });
-const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
-  options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
-if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
+// The selectable models carry their default effort in the id suffix, like the
+// real CLI. Each model supports a different set of thought levels, and picking
+// a model resets the level to that model's default.
+const MODELS = {
+  'swe-fast-medium': { name: 'SWE Fast', efforts: ['low', 'medium', 'high'], defaultEffort: 'medium' },
+  'swe-high': { name: 'SWE', efforts: ['medium', 'high', 'xhigh'], defaultEffort: 'high' },
+};
+let currentModel = 'swe-fast-medium';
+let currentEffort = MODELS[currentModel].defaultEffort;
+const currentConfigOptions = () => [
+  { id: 'model', name: 'Model', type: 'select', currentValue: currentModel,
+    options: existsSync(join(root, 'empty-models')) ? []
+      : Object.keys(MODELS).map((value) => ({ value, name: MODELS[value].name })) },
+  { id: 'thought_level', name: 'Thought level', type: 'select', currentValue: currentEffort,
+    options: MODELS[currentModel].efforts.map((value) => ({ value,
+      name: value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1) })) },
+];
 let authenticated = false, pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
 let terminalSequence = 0, terminalDone = Promise.resolve(), terminalFinished;
 const terminalRequests = new Map();
@@ -86,7 +117,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     }
     if (method === 'session/load') sessionId = params.sessionId;
     servers = params.mcpServers;
-    update({ sessionUpdate: 'config_option_update', configOptions });
+    update({ sessionUpdate: 'config_option_update', configOptions: currentConfigOptions() });
     if (method === 'session/load') {
       update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
       if (existsSync(join(root, 'usage.json')))
@@ -103,8 +134,17 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       childText('background', 'Background answer');
       childCompleted('background');
     }
-    if (params.value === 'blocked') pendingConfig = id;
-    else result(id, { configOptions });
+    if (params.configId === 'thought_level' && !MODELS[currentModel].efforts.includes(params.value)) {
+      failure(id, -32602, 'Invalid params');
+    } else if (params.value === 'blocked') pendingConfig = id;
+    else {
+      if (params.configId === 'model' && MODELS[params.value]) {
+        currentModel = params.value;
+        currentEffort = MODELS[params.value].defaultEffort;
+      }
+      if (params.configId === 'thought_level') currentEffort = params.value;
+      result(id, { configOptions: currentConfigOptions() });
+    }
   }
   else if (method === 'session/close') {
     childStarted('late'); childText('background', 'Late output'); childCompleted('approval-child');
@@ -113,7 +153,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   }
   else if (method === 'session/delete') result(id, {});
   else if (method === 'session/cancel') {
-    if (pendingConfig !== undefined) { result(pendingConfig, { configOptions }); pendingConfig = undefined; }
+    if (pendingConfig !== undefined) { result(pendingConfig, { configOptions: currentConfigOptions() }); pendingConfig = undefined; }
     if (pending !== undefined) { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
   }
   else if (method === 'session/prompt') {

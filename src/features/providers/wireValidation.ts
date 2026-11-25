@@ -127,9 +127,10 @@ function isWholeNumber(value: unknown): boolean {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
-// The fields the sidecar's catalog merge always fills, plus the one optional
-// field consumers iterate. The remaining optional hints are read defensively
-// wherever they are used, so they are tolerated rather than policed here.
+// The fields the sidecar's catalog merge always fills, plus the optional
+// fields consumers iterate or render as text. The remaining optional hints
+// are read defensively wherever they are used, so they are tolerated rather
+// than policed here.
 export function isModelInfo(value: unknown): boolean {
   return (
     isRecord(value) &&
@@ -138,7 +139,9 @@ export function isModelInfo(value: unknown): boolean {
     typeof value.isCustom === 'boolean' &&
     (value.supportedReasoningEfforts === undefined ||
       isStringArray(value.supportedReasoningEfforts)) &&
-    (value.supportsFastMode === undefined || typeof value.supportsFastMode === 'boolean')
+    (value.supportsFastMode === undefined || typeof value.supportsFastMode === 'boolean') &&
+    (value.costTier === undefined || nonEmptyString(value.costTier)) &&
+    (value.costSummary === undefined || nonEmptyString(value.costSummary))
   );
 }
 

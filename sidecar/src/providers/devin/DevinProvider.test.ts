@@ -1,88 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { createSdkMcpServer } from '@factory/droid-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
 import { SessionInteractions, type InteractionLiveSession } from '../../SessionInteractions.js';
-import type { ProviderApprovalRequest, ProviderInteractions } from '../interactions.js';
+import type { ProviderApprovalRequest } from '../interactions.js';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 import { tolerantCommandRunner } from '../../processes/processTree.js';
 import { DevinProvider } from './DevinProvider.js';
-import type { DevinSession } from './devinSession.js';
-import { devinAcpCli, writeDevinTestCredentials } from '../../testing/devinAcpCli.js';
-
-async function fixture(t: TestContext) {
-  const cwd = await mkdtemp(join(tmpdir(), 'devin-provider-'));
-  const executable = join(cwd, 'devin.cjs');
-  await writeFile(executable, devinAcpCli, { mode: 0o755 });
-  const credentials = await writeDevinTestCredentials();
-  const previous = process.env.DEVIN_PATH;
-  const previousUserData = process.env.DROIDEX_USER_DATA_DIR;
-  const sessions: DevinSession[] = [];
-  process.env.DEVIN_PATH = executable;
-  process.env.DROIDEX_USER_DATA_DIR = cwd;
-  t.after(async () => {
-    await Promise.all(sessions.map((session) => session.close()));
-    if (previous === undefined) delete process.env.DEVIN_PATH;
-    else process.env.DEVIN_PATH = previous;
-    if (previousUserData === undefined) delete process.env.DROIDEX_USER_DATA_DIR;
-    else process.env.DROIDEX_USER_DATA_DIR = previousUserData;
-    await rm(cwd, { recursive: true, force: true });
-  });
-  const approvals: ProviderApprovalRequest[] = [];
-  let outcome: PermissionOutcome = 'proceed_once';
-  const interactions: ProviderInteractions = {
-    requestApproval: async (request) => {
-      approvals.push(request);
-      return outcome;
-    },
-    requestQuestion: async () => ({ cancelled: true, answers: [] }),
-    isActive: () => true,
-    cancelPending: () => undefined,
-  };
-  const input = {
-    cwd,
-    appSessionId: 'app-one',
-    autonomy: 'low' as const,
-    interactionMode: 'auto' as const,
-    mcpServers: [],
-    interactions,
-  };
-  const provider = new DevinProvider();
-  const create = async () => {
-    const session = await provider.create(input);
-    sessions.push(session);
-    return session;
-  };
-  const requests = async (): Promise<{ method?: string; params?: Record<string, unknown> }[]> =>
-    (await readFile(join(cwd, 'requests.jsonl'), 'utf8'))
-      .trim()
-      .split('\n')
-      .map((line) => JSON.parse(line));
-  return {
-    cwd,
-    credentials,
-    input,
-    provider,
-    create,
-    requests,
-    approvals,
-    sessions,
-    answer: (value: PermissionOutcome) => {
-      outcome = value;
-    },
-  };
-}
-
-async function collect(stream: AsyncIterable<NormalizedEvent>): Promise<NormalizedEvent[]> {
-  const events: NormalizedEvent[] = [];
-  for await (const event of stream) events.push(event);
-  return events;
-}
+import { collect, fixture } from '../../testing/devinProviderFixture.js';
 
 test('Devin accumulates reported inference usage without adding cache subsets or replayed usage', async (t) => {
   const h = await fixture(t);
@@ -349,7 +278,7 @@ test('Devin maps streamed text, reasoning, tools and context without leaking chi
 
 test('Devin resumes without replaying load history and applies live mode and model selections', async (t) => {
   const h = await fixture(t);
-  const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe' });
+  const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe-high' });
   h.sessions.push(session);
   const raised = session.setAutonomy('high');
   assert.equal(session.autonomy, 'low');
@@ -369,8 +298,34 @@ test('Devin resumes without replaying load history and applies live mode and mod
   );
   assert.deepEqual(
     settings.map((request) => request.params?.value),
-    ['accept-edits', 'swe', 'bypass', 'plan', 'plan', 'smart'],
+    ['accept-edits', 'swe-high', 'bypass', 'plan', 'plan', 'smart'],
   );
+});
+
+test('Devin configures the model before its reasoning effort and rejects a level the model does not support', async (t) => {
+  const h = await fixture(t);
+  const session = await h.provider.create({
+    ...h.input,
+    modelId: 'swe-high',
+    reasoningEffort: 'xhigh',
+  });
+  h.sessions.push(session);
+  // Devin resets thought_level to the new model's default, so the level must be
+  // applied after the model or the reset would drop it.
+  await session.setModel({ modelId: 'swe-fast-medium' });
+  await session.setModel({ modelId: 'swe-high' });
+  const settings = (await h.requests())
+    .filter((request) => request.method === 'session/set_config_option')
+    .map((request) => [request.params?.configId, request.params?.value]);
+  assert.deepEqual(settings, [
+    ['mode', 'accept-edits'],
+    ['model', 'swe-high'],
+    ['thought_level', 'xhigh'],
+    ['model', 'swe-fast-medium'],
+    ['model', 'swe-high'],
+    ['thought_level', 'xhigh'],
+  ]);
+  await assert.rejects(session.setModel({ reasoningEffort: 'low' }), /Invalid params/);
 });
 
 test('Devin approval choices honor user outcomes and never select plan_bypass', async (t) => {
@@ -656,13 +611,37 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   const ready = await h.provider.probe(new AbortController().signal);
   assert.equal(ready.readiness, 'ready');
   assert.equal(ready.version, '3000.14.30821');
-  assert.equal(ready.defaultModelId, 'swe-fast');
+  assert.equal(ready.defaultModelId, 'swe-fast-medium');
   assert.ok(ready.models.every((model) => model.supportsFastMode === false));
   assert.deepEqual(
-    ready.models.map((model) => [model.id, model.isDefault]),
+    ready.models.map((model) => [
+      model.id,
+      model.isDefault,
+      model.supportedReasoningEfforts,
+      model.defaultReasoningEffort,
+      model.maxContextTokens,
+      model.costTier,
+      model.costSummary,
+    ]),
     [
-      ['swe-fast', true],
-      ['swe', false],
+      [
+        'swe-fast-medium',
+        true,
+        ['low', 'medium', 'high'],
+        'medium',
+        200000,
+        'Free',
+        'Included in every plan',
+      ],
+      [
+        'swe-high',
+        false,
+        ['medium', 'high', 'xhigh'],
+        'high',
+        1000000,
+        'Premium',
+        'Billed at the Premium rate',
+      ],
     ],
   );
   assert.ok((await h.requests()).some((request) => request.method === 'session/delete'));
@@ -670,7 +649,7 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   const empty = await h.provider.probe(new AbortController().signal);
   assert.equal(empty.readiness, 'ready');
   assert.deepEqual(empty.models, []);
-  assert.equal(empty.defaultModelId, 'swe-fast');
+  assert.equal(empty.defaultModelId, 'swe-fast-medium');
   const aborted = AbortSignal.abort();
   assert.equal((await h.provider.probe(aborted)).readiness, 'error');
   assert.equal((await h.provider.readUsage()).unavailable, 'no_plan_limits');

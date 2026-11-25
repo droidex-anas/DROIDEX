@@ -159,7 +159,7 @@ const ModelRow = memo(function ModelRow({
   reasoningLocked: boolean;
   showReasoning: boolean;
 }) {
-  const { id, displayName: label } = model;
+  const { id, displayName: label, costTier, costSummary } = model;
   // A model whose harness offers no effort for it gets no stepper, the way the
   // composer badge and the context panel already drop the pill for it.
   const offersReasoning = showReasoning && offersReasoningEffort(model);
@@ -235,6 +235,15 @@ const ModelRow = memo(function ModelRow({
       <span className="min-w-0 flex-1 truncate text-body-strong text-primary">
         {shortModelName(label)}
       </span>
+      {/* Ahead of the reasoning cluster so the effort word stays flush right. */}
+      {costTier && (
+        <span
+          title={costSummary}
+          className="max-w-24 shrink-0 truncate rounded-full bg-text/10 px-1.5 py-px text-caption text-muted"
+        >
+          {costTier}
+        </span>
+      )}
       {offersReasoning && (
         <>
           {arrow(-1)}

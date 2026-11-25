@@ -7,7 +7,7 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, SessionInteractionMode } from '../../protocol.js';
+import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
 import type { ProviderMention } from '../catalog.js';
 import type {
   ProviderModelSettings,
@@ -25,6 +25,7 @@ import { devinPermission } from './devinPermissions.js';
 import { devinChildId, DevinSubagents } from './devinSubagents.js';
 import { DevinTerminals } from './devinTerminals.js';
 import { consumeDevinForkSeed, readDevinForkSeed } from './devinForkSeed.js';
+import { selectValues } from './devinModels.js';
 
 const MODES: Record<Autonomy, string> = {
   off: 'accept-edits',
@@ -55,6 +56,7 @@ export class DevinSession implements ProviderSession {
   private selectedAutonomy: Autonomy;
   private latestAutonomy: Autonomy;
   private interactionMode: SessionInteractionMode;
+  private selectedReasoningEffort?: ReasoningEffort;
   private changes: Promise<void> = Promise.resolve();
   configOptions: SessionConfigOption[] = [];
 
@@ -186,7 +188,10 @@ export class DevinSession implements ProviderSession {
       );
       await this.setInteractionMode(this.interactionMode);
       this.requireOpen();
-      await this.setModel({ modelId: this.input.modelId });
+      await this.setModel({
+        modelId: this.input.modelId,
+        reasoningEffort: this.input.reasoningEffort,
+      });
       this.requireOpen();
     } catch (error) {
       const failure = await this.client.diagnostic(error);
@@ -304,9 +309,50 @@ export class DevinSession implements ProviderSession {
   }
 
   setModel(settings: ProviderModelSettings): Promise<void> {
-    if (!settings.modelId) return Promise.resolve();
-    const model = settings.modelId;
-    return this.change(() => this.configure('model', model));
+    if (!settings.modelId && !settings.reasoningEffort) return Promise.resolve();
+    return this.change(async () => {
+      const currentModel = this.configOptions.find((option) => option.id === 'model')?.currentValue;
+      const currentThought = this.configOptions.find(
+        (option) => option.id === 'thought_level',
+      )?.currentValue;
+      const previousModel = typeof currentModel === 'string' ? currentModel : undefined;
+      const previousThought = typeof currentThought === 'string' ? currentThought : undefined;
+      let modelChanged = false;
+      try {
+        // Devin resets thought_level to the newly selected model's default.
+        if (settings.modelId) {
+          await this.configure('model', settings.modelId);
+          modelChanged = true;
+        }
+        if (settings.reasoningEffort) {
+          await this.configure('thought_level', settings.reasoningEffort);
+          this.selectedReasoningEffort = settings.reasoningEffort;
+          return;
+        }
+        if (settings.reasoningEffort === null) {
+          this.selectedReasoningEffort = undefined;
+          return;
+        }
+        const effort = this.selectedReasoningEffort;
+        if (!settings.modelId || !effort) return;
+        const thought = this.configOptions.find((option) => option.id === 'thought_level');
+        // An explicit level follows the user across models when the new model
+        // offers it; otherwise the model keeps its own default.
+        if (selectValues(thought).includes(effort)) await this.configure('thought_level', effort);
+      } catch (error) {
+        if (modelChanged && previousModel && previousModel !== settings.modelId) {
+          try {
+            await this.configure('model', previousModel);
+            const thought = this.configOptions.find((option) => option.id === 'thought_level');
+            if (previousThought && selectValues(thought).includes(previousThought))
+              await this.configure('thought_level', previousThought);
+          } catch {
+            await this.close().catch(() => undefined);
+          }
+        }
+        throw error;
+      }
+    });
   }
 
   async interrupt(): Promise<void> {
