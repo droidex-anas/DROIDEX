@@ -7,9 +7,9 @@ const CHUNK_CHARS = 40_000;
 // Three UTF-8 bytes per UTF-16 unit is its worst frame cost; these chunks stay
 // safely below the plaintext cap even for non-ASCII text.
 const RAW_CHUNK_CHARS = 15_000;
-// Remote packets are mostly repetitive JSON/text; even KiB-sized payloads
-// usually deflate enough to beat the tunnel's base64 framing cost.
-const COMPRESS_ABOVE_CHARS = 1_024;
+// Remote envelopes are repetitive enough that even small payloads often
+// deflate enough to beat the tunnel's base64 framing cost.
+const COMPRESS_ABOVE_CHARS = 256;
 const PACKET_CHARS = 4 * 1024 * 1024;
 // The relay closes a receiver holding 16 frames or 256 KiB it has not yet
 // acknowledged; four full chunks stay under both.

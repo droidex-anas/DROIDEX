@@ -95,7 +95,7 @@ test('large compressible packets reassemble across compressed chunks in order', 
 
 test('compressible medium packets cross the tunnel compressed without changing order', async () => {
   const { sender, received, delivered, stats } = tunnelPair(2);
-  const text = 'compressible transcript text '.repeat(50);
+  const text = 'compressible transcript text '.repeat(20);
   sender.send({ n: 1 });
   sender.send({ n: 2, text });
 
