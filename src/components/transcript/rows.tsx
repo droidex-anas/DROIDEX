@@ -23,6 +23,7 @@ import { TranscriptImage } from '../media/TranscriptImage';
 import { ToolLine } from './toolLine';
 import { ToolFilesCard, type ExplorationCall } from './toolFilesCard';
 import { SkillCard } from './skillCard';
+import { isQuestionTool, QuestionLine } from './questionLine';
 import { WebFetchCard, WebSearchCard } from './webCards';
 
 /* ── Thinking / Thought ── */
@@ -381,7 +382,18 @@ export function renderToolEvents(
       const { cat, detail } = toolMeta(e.toolName, e.toolArgs);
       // WebSearch's name matches the generic /search/ category, so route it by
       // name (not cat) to the readable result-card renderer.
-      if (isWebSearchTool(e.toolName)) {
+      if (isQuestionTool(e.toolName)) {
+        nodes.push(
+          <QuestionLine
+            key={e.id}
+            event={e}
+            output={result?.text}
+            error={isError}
+            interrupted={interrupted}
+            running={running}
+          />,
+        );
+      } else if (isWebSearchTool(e.toolName)) {
         nodes.push(
           <WebSearchCard
             key={e.id}

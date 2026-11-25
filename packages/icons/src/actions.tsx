@@ -9,7 +9,8 @@ export const X = createIcon(
   </>,
 );
 
-export const Check = createIcon('check', <path d="m5 12.5 4.5 4.5L19 7" />);
+// Two short strokes read as a hairline at 14px, so the check carries 2 like the spinner.
+export const Check = createIcon('check', <path d="M6 12.5 10 16.5 18 7.75" />, 2);
 
 export const Plus = createIcon(
   'plus',

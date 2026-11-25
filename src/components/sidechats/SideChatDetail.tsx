@@ -169,7 +169,7 @@ export function SideChatDetail({
       <div className="shrink-0 px-3 empty:hidden">
         <PlanApprovalInline appSessionId={appSessionId} />
         <PermissionInline appSessionId={appSessionId} />
-        <AskUserInline appSessionId={appSessionId} />
+        <AskUserInline appSessionId={appSessionId} className="mb-2.5" />
       </div>
 
       <SideChatComposer
