@@ -1078,16 +1078,7 @@ export class ChildSessions {
       // Cleanup remains authoritative even when cancellation cannot resolve its target.
     }
     this.d.compaction.forgetChild(child.identity);
-    if (child.turn.phase === 'streaming') {
-      try {
-        await this.d.timeline.settleStreaming(
-          parent.parentAppSessionId,
-          child.identity.childSessionId,
-        );
-      } catch (error) {
-        this.reportStreamingPersistenceFailure(child.identity, error);
-      }
-    }
+    const wasStreaming = child.turn.phase === 'streaming';
     child.runtime = undefined;
     // The confirmed autonomy belonged to the closed runtime; a later open
     // re-reads it from the new provider session's init result.
@@ -1102,9 +1093,21 @@ export class ChildSessions {
     const cleanupTarget = this.contextTarget(parent, child, runtime);
     void runCleanup(this.d.context.forgetChild.bind(this.d.context, child.identity));
     void runCleanup(this.d.context.stopPolling.bind(this.d.context, cleanupTarget));
-    const detached = (child.mutationTail ?? Promise.resolve())
-      .catch(ignoreError)
-      .then(() => runCleanup(runtime.unsubscribe ?? ignoreError));
+    const previousTail = child.mutationTail ?? Promise.resolve();
+    const detached = (async () => {
+      if (wasStreaming) {
+        try {
+          await this.d.timeline.settleStreaming(
+            parent.parentAppSessionId,
+            child.identity.childSessionId,
+          );
+        } catch (error) {
+          this.reportStreamingPersistenceFailure(child.identity, error);
+        }
+      }
+      await previousTail.catch(ignoreError);
+      await runCleanup(runtime.unsubscribe ?? ignoreError);
+    })();
     const cleanup = this.providerCleanup.release(parent, runtime.session, detached);
     child.mutationTail = cleanup;
     await cleanup;

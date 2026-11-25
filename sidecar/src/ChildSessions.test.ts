@@ -18,6 +18,7 @@ import {
   FakeFactorySession,
   type RecordedCall,
   type StreamGate,
+  assistantTextDelta,
 } from './testing/fakeFactoryRuntime.js';
 import { FakeHistoryIndex } from './testing/historyCharacterizationSupport.js';
 
@@ -30,6 +31,7 @@ interface Harness {
   owner: ChildSessions;
   parentId: string;
   advanceClock(ms: number): void;
+  settleStreamingGate?: StreamGate;
   replaceParent(): void;
   open(record: PersistedChildSession, session?: FakeFactorySession): Promise<FakeFactorySession>;
   target(childSessionId: string): ChildAutomaticCompactionTarget;
@@ -47,6 +49,7 @@ function createHarness(
     failDriveSetup?: 'beginTurn' | 'commit' | 'startPolling';
     failFlushStreamingOnce?: boolean;
     failSettleStreamingOnce?: boolean;
+    deferSettleStreamingOnce?: boolean;
     failResolveLimitOnce?: boolean;
     missReplayChildOnce?: boolean;
     deferDurabilityForStatus?: PersistedChildSession['status'];
@@ -65,6 +68,16 @@ function createHarness(
   let failDriveSetup = options.failDriveSetup;
   let failFlushStreaming = options.failFlushStreamingOnce;
   let failSettleStreaming = options.failSettleStreamingOnce;
+  let heldSettleStreaming: { promise: Promise<void>; resolve(): void } | undefined;
+  let settleStreamingGate: StreamGate | undefined;
+  if (options.deferSettleStreamingOnce) {
+    let resolve = (): void => undefined;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    heldSettleStreaming = { promise, resolve };
+    settleStreamingGate = { resolve };
+  }
   let failResolveLimit = options.failResolveLimitOnce;
   let deferDurabilityForStatus = options.deferDurabilityForStatus;
   let clock = 100;
@@ -119,6 +132,9 @@ function createHarness(
       },
       settleStreaming: async () => {
         sequence.push('timeline.settleStreaming');
+        const held = heldSettleStreaming;
+        heldSettleStreaming = undefined;
+        await held?.promise;
         if (!failSettleStreaming) return;
         failSettleStreaming = false;
         throw new Error('settle failed');
@@ -137,7 +153,7 @@ function createHarness(
         record('protocol', 'turn.begin', ...args);
       },
       applyNotification: (...args) => record('protocol', 'notification.apply', ...args),
-      applyStreamEvent: () => undefined,
+      applyStreamEvent: (...args) => record('protocol', 'stream.apply', ...args),
     },
     interactions: {
       interactionsFor: () => ({
@@ -220,6 +236,7 @@ function createHarness(
     advanceClock: (ms) => {
       clock += ms;
     },
+    ...(settleStreamingGate ? { settleStreamingGate } : {}),
     replaceParent: () => {
       parent = parentLease(parentId, calls);
       owner.attachParent(parentId);
@@ -1424,7 +1441,34 @@ test('runtime close invalidates immediately and waits for in-flight settings tea
   assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'model-default');
 });
 
-test('closing a streaming child settles buffered output before runtime invalidation', async () => {
+test('closing a streaming child invalidates the turn before settlement finishes', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record], { deferSettleStreamingOnce: true });
+  const runtime = await h.open(record);
+  runtime.queueStreamEvents([assistantTextDelta('late output')]);
+  const streamGate = runtime.deferNextStream();
+  const sending = h.owner.send(record, 'stream output');
+  await runtime.waitForPrompts(1);
+  const appliedBeforeClose = h.calls.filter(
+    (call) => call.target === 'protocol' && call.method === 'stream.apply',
+  ).length;
+
+  const closing = h.owner.close(record);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  streamGate.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(
+    h.calls.filter((call) => call.target === 'protocol' && call.method === 'stream.apply').length,
+    appliedBeforeClose,
+    'a provider event behind the settlement wait must not apply to the closing runtime',
+  );
+
+  h.settleStreamingGate?.resolve();
+  await Promise.all([closing, sending]);
+});
+
+test('closing a streaming child settles buffered output during runtime cleanup', async () => {
   const record = childRecord('child', 'provider');
   const h = createHarness([record]);
   const runtime = await h.open(record);
