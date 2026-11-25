@@ -258,8 +258,10 @@ export class SessionTimeline {
           .update(JSON.stringify({ transcripts, olderCursor: window.olderCursor }))
           .digest('hex');
         const key = `${appSessionId}\u0000${childSessionId}`;
-        if (mode === 'refresh' && this.childWindowFingerprints.get(key) === fingerprint) return;
-        fingerprintedWindow = { key, fingerprint };
+        if (mode === 'refresh') {
+          if (this.childWindowFingerprints.get(key) === fingerprint) return;
+          fingerprintedWindow = { key, fingerprint };
+        }
       }
       this.emitHistory({
         appSessionId,
