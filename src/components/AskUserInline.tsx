@@ -54,7 +54,9 @@ export default function AskUserInline({
     const retry = setInterval(() => {
       if (cancel()) clearInterval(retry);
     }, 1000);
-    return () => { clearInterval(retry); };
+    return () => {
+      clearInterval(retry);
+    };
   }, [question, dispatch]);
 
   if (!question || question.questions.length === 0) return null;
