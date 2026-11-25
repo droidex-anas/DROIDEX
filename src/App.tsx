@@ -109,6 +109,7 @@ import {
   LazyFilesWorkspace,
   LazyMissionControl,
   LazyPullRequestsView,
+  LazyPullRequestPane,
   LazyReviewPanel,
   LazySideChatsWorkspace,
   LazySideChatWindow,
@@ -1044,6 +1045,14 @@ export default function App() {
                                   );
                                 }}
                               />
+                            </Suspense>
+                          );
+                        }
+                        if (tab.tool === 'pull-request') {
+                          if (!tab.cwd || tab.prNumber === undefined) return null;
+                          return (
+                            <Suspense fallback={utilityToolFallback('pull-request')}>
+                              <LazyPullRequestPane cwd={tab.cwd} number={tab.prNumber} />
                             </Suspense>
                           );
                         }

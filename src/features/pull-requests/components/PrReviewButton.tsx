@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '@droidex/icons';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
@@ -54,7 +54,7 @@ export function PrReviewButton({
         }}
       >
         <span className="inline-flex items-center gap-1.5">
-          <Octicon name="check" size={13} />
+          <Octicon name="check" size={14} />
           {requesting ? 'Requesting…' : 'Review'}
           <ChevronDown className="size-icon-sm text-muted" />
         </span>

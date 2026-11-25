@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { ExternalLink, RefreshCw } from '@droidex/icons';
 
 import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { prKind } from '../../../lib/github';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrComment, PullRequest } from '../../../types/vcs';
@@ -89,6 +91,7 @@ export function PrDetail({
   number,
   pr,
   viewerLogin,
+  compact = false,
   onOpenChat,
   onReviewWithDroid,
   onSendReview,
@@ -97,6 +100,9 @@ export function PrDetail({
   number: number;
   pr: PullRequest | null;
   viewerLogin: string | null;
+  // The utility-pane layout: panel padding instead of page padding, a smaller
+  // title, and the header strip wraps its actions onto a second row.
+  compact?: boolean;
   onOpenChat: (pr: PullRequest) => void;
   onReviewWithDroid: (pr: PullRequest) => void;
   onSendReview: (pr: PullRequest, annotations: PrLineAnnotation[]) => void;
@@ -201,8 +207,14 @@ export function PrDetail({
   return (
     <div data-pr-detail-pane className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {/* This strip sits where the window's title bar would be, so it carries
-          the drag region the session view gets from its floating controls. */}
-      <div data-electron-drag-region className="flex items-center gap-2 px-8 pt-4 pb-2">
+          the drag region the session view gets from its floating controls. In
+          the narrow pane the action group wraps onto its own row. */}
+      <div
+        data-electron-drag-region
+        className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 pb-2 ${
+          compact ? 'px-3 pt-3' : 'px-8 pt-4'
+        }`}
+      >
         {headerPr ? (
           <span className="shrink-0">
             <PrStateIcon kind={prKind(headerPr)} size={16} checks={headerPr.checks} />
@@ -211,7 +223,7 @@ export function PrDetail({
         <div
           role="tablist"
           aria-label="Pull request views"
-          className="flex items-center gap-0.5 rounded-md bg-elevated/50 p-0.5"
+          className="flex items-center gap-0.5 rounded-md bg-elevated p-0.5"
         >
           {TABS.map((item) => (
             <button
@@ -228,8 +240,8 @@ export function PrDetail({
               onClick={() => {
                 setTab(item.id);
               }}
-              className={`rounded-sm px-2.5 py-1 text-body-strong transition-colors ${
-                tab === item.id ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
+              className={`h-control-sm select-none rounded-sm px-2.5 text-label transition-colors ${
+                tab === item.id ? 'bg-active text-primary' : 'text-muted hover:text-secondary'
               }`}
             >
               {item.label}
@@ -237,40 +249,39 @@ export function PrDetail({
           ))}
         </div>
         <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={
-              <Octicon name="sync" size={14} className={detail.loading ? 'animate-spin' : ''} />
-            }
-            title="Refresh"
-            aria-label="Refresh"
-            onClick={detail.refresh}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Octicon name="link-external" size={14} />}
-            title="Open on GitHub"
-            aria-label="Open on GitHub"
-            disabled={!headerPr?.url}
-            onClick={() => {
-              if (headerPr?.url) void openExternal(headerPr.url);
-            }}
-          />
+          <Tooltip label="Refresh" placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={RefreshCw}
+              loading={detail.loading}
+              aria-label="Refresh"
+              onClick={detail.refresh}
+            />
+          </Tooltip>
+          <Tooltip label="Open on GitHub" placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ExternalLink}
+              aria-label="Open on GitHub"
+              disabled={!headerPr?.url}
+              onClick={() => {
+                if (headerPr?.url) void openExternal(headerPr.url);
+              }}
+            />
+          </Tooltip>
           <Button
             variant="secondary"
             size="sm"
+            icon={<Octicon name="comment-discussion" size={14} />}
             title="Start a chat about this pull request"
             disabled={!headerPr}
             onClick={() => {
               if (headerPr) onOpenChat(headerPr);
             }}
           >
-            <span className="inline-flex items-center gap-1.5">
-              <Octicon name="comment-discussion" size={13} />
-              Chat
-            </span>
+            Chat
           </Button>
           <PrReviewButton
             pr={headerPr}
@@ -312,6 +323,7 @@ export function PrDetail({
               comments={detail.comments}
               commentsError={detail.commentsError}
               commits={detail.commits}
+              compact={compact}
               {...composer}
             />
           ) : (

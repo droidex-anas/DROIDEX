@@ -9,16 +9,24 @@ import {
   type ReactNode,
 } from 'react';
 
+import { useGitEnvironment } from '../hooks/useGitEnvironment';
 import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { openBrowser } from '../lib/commands';
 import { isDesktop } from '../lib/desktop';
 import { describeLink } from '../lib/linkPresentation';
 import { openExternal } from '../lib/onboarding';
+import {
+  parsePullRequestLink,
+  resolvePullRequestPaneTarget,
+} from '../features/pull-requests/lib/prLinkTarget';
 
 // What a link in a chat transcript can do beyond following itself. GitHub
 // links open in the in-app browser by default — a pull request belongs next
 // to the conversation about it — and right-click always offers both targets.
 export interface LinkActions {
+  // The default click target: a pull request link opens in the pane when it
+  // names the chat's own repository, everything else in the in-app browser.
+  openLink: (url: string) => void;
   openInAppBrowser: (url: string) => void;
   openMenu: (position: { x: number; y: number }, url: string) => void;
 }
@@ -43,12 +51,18 @@ interface MenuState {
 function LinkMenu({
   menu,
   inApp,
+  inPullRequestPane,
   onOpenInApp,
+  onOpenInPullRequestPane,
   onClose,
 }: {
   menu: MenuState;
   inApp: boolean;
+  // The link names the pull request of the chat's own repository, so the pane
+  // can show it; the menu offers that target next to the browser.
+  inPullRequestPane: boolean;
   onOpenInApp: (url: string) => void;
+  onOpenInPullRequestPane: (url: string) => void;
   onClose: () => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -69,10 +83,20 @@ function LinkMenu({
   }, [onClose]);
 
   const items: { label: string; run: () => void }[] = [
+    ...(inPullRequestPane
+      ? [
+          {
+            label: 'Open in pull requests',
+            run: () => {
+              onOpenInPullRequestPane(menu.url);
+            },
+          },
+        ]
+      : []),
     ...(inApp
       ? [
           {
-            label: 'Open in app browser',
+            label: parsePullRequestLink(menu.url) ? 'Open in browser' : 'Open in app browser',
             run: () => {
               onOpenInApp(menu.url);
             },
@@ -147,6 +171,14 @@ function LinkMenu({
 export function LinkActionsProvider({ children }: { children: ReactNode }) {
   const dispatch = useStoreDispatch();
   const activeAppSessionId = useStoreSelector((state) => state.activeAppSessionId);
+  const activeCwd = useStoreSelector((state) => {
+    if (!state.activeAppSessionId) return null;
+    const sessions: Partial<typeof state.sessions> = state.sessions;
+    return sessions[state.activeAppSessionId]?.cwd ?? null;
+  });
+  // The session view subscribes this same poller for its own surfaces, so the
+  // remote lookup a pull request link needs is already cached and fresh.
+  const { env } = useGitEnvironment(activeCwd ?? '', 'worktree');
   const [menu, setMenu] = useState<MenuState | null>(null);
 
   const openInAppBrowser = useCallback(
@@ -161,14 +193,48 @@ export function LinkActionsProvider({ children }: { children: ReactNode }) {
     [dispatch, activeAppSessionId],
   );
 
+  const openInPullRequestPane = useCallback(
+    (url: string) => {
+      const target = resolvePullRequestPaneTarget(url, activeCwd, env?.remoteUrl ?? null);
+      if (!target || !activeAppSessionId || !isDesktop()) {
+        openInAppBrowser(url);
+        return;
+      }
+      // The id names the pull request, so a second click on the same link
+      // reactivates the open tab instead of piling up duplicates.
+      dispatch({
+        type: 'OPEN_UTILITY_TOOL',
+        tool: 'pull-request',
+        appSessionId: activeAppSessionId,
+        tabId: `pr:${target.cwd}:${String(target.number)}`,
+        cwd: target.cwd,
+        prNumber: target.number,
+        label: `PR #${String(target.number)}`,
+      });
+    },
+    [dispatch, activeAppSessionId, activeCwd, env, openInAppBrowser],
+  );
+
+  const openLink = useCallback(
+    (url: string) => {
+      if (parsePullRequestLink(url)) {
+        openInPullRequestPane(url);
+        return;
+      }
+      openInAppBrowser(url);
+    },
+    [openInPullRequestPane, openInAppBrowser],
+  );
+
   const actions = useMemo<LinkActions>(
     () => ({
+      openLink,
       openInAppBrowser,
       openMenu: (position, url) => {
         setMenu({ x: position.x, y: position.y, url });
       },
     }),
-    [openInAppBrowser],
+    [openLink, openInAppBrowser],
   );
 
   return (
@@ -178,7 +244,11 @@ export function LinkActionsProvider({ children }: { children: ReactNode }) {
         <LinkMenu
           menu={menu}
           inApp={linkOpensInApp(menu.url)}
+          inPullRequestPane={
+            resolvePullRequestPaneTarget(menu.url, activeCwd, env?.remoteUrl ?? null) !== null
+          }
           onOpenInApp={openInAppBrowser}
+          onOpenInPullRequestPane={openInPullRequestPane}
           onClose={() => {
             setMenu(null);
           }}
@@ -198,6 +268,6 @@ export function interceptLinkClick(
   if (!actions || !linkOpensInApp(href)) return false;
   if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
   event.preventDefault();
-  actions.openInAppBrowser(href);
+  actions.openLink(href);
   return true;
 }

@@ -6,6 +6,7 @@ import { PrComposer } from './PrComposer';
 // composer stays pinned below it. Content ownership stays with the caller.
 export function PrConversation({
   children,
+  compact = false,
   viewerLogin,
   draft,
   posting,
@@ -13,6 +14,8 @@ export function PrConversation({
   onSubmit,
 }: {
   children: ReactNode;
+  // Panel padding instead of the workspace's page padding.
+  compact?: boolean;
   viewerLogin: string | null;
   draft: string;
   posting: boolean;
@@ -21,10 +24,14 @@ export function PrConversation({
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="pr-workspace-scroll min-h-0 flex-1 overflow-y-auto px-8 pt-5 pb-6">
+      <div
+        className={`pr-workspace-scroll min-h-0 flex-1 overflow-y-auto ${
+          compact ? 'px-3 pt-4 pb-4' : 'px-8 pt-5 pb-6'
+        }`}
+      >
         {children}
       </div>
-      <div className="px-8 pb-5">
+      <div className={compact ? 'px-3 pb-3' : 'px-8 pb-5'}>
         <PrComposer
           viewerLogin={viewerLogin}
           draft={draft}

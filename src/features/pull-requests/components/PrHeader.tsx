@@ -96,6 +96,7 @@ export function PrHeader({
   checks,
   checksLoading,
   checksError,
+  compact = false,
 }: {
   pr: PullRequest | null;
   number: number;
@@ -103,6 +104,8 @@ export function PrHeader({
   checks: PrCheck[];
   checksLoading: boolean;
   checksError: string | null;
+  // The utility pane reads as a sheet, so its title steps down a scale.
+  compact?: boolean;
 }) {
   const kind = pr ? prKind(pr) : null;
   const updated = prRelativeTime(pr?.updatedAt ?? pr?.createdAt ?? null);
@@ -111,7 +114,7 @@ export function PrHeader({
 
   return (
     <header>
-      <h1 className="text-title text-primary">
+      <h1 className={`${compact ? 'text-heading' : 'text-title'} text-primary`}>
         {pr ? (
           <>
             {pr.title}

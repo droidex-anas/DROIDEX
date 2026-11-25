@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { initialState, reducer, type AppState } from './useStore';
+import { persistUtilityPanels, sanitizeUtilityPanels } from '../lib/utilityPanel';
 import { sessionSummary } from '../test/sessionSummary';
 
 const chat = (appSessionId: string) =>
@@ -269,4 +270,74 @@ test('closing Review clears a pending captured change even without a focus path'
   state = { ...state, reviewOpenAppSessionId: null, utilityPanels: {} };
   state = reducer(state, { type: 'SET_REVIEW_OPEN', open: false });
   assert.equal(state.reviewFocusChange, null);
+});
+
+test('a pull request tab carries its target and reopens instead of duplicating', () => {
+  let state = reducer(activeState('session-a'), {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'pull-request',
+    tabId: 'pr:/workspace/app:42',
+    cwd: '/workspace/app',
+    prNumber: 42,
+    label: 'PR #42',
+  });
+  const panel = state.utilityPanels['session-a'];
+  assert.equal(panel.open, true);
+  assert.equal(panel.tabs.length, 1);
+  assert.equal(panel.tabs[0].tool, 'pull-request');
+  assert.equal(panel.tabs[0].cwd, '/workspace/app');
+  assert.equal(panel.tabs[0].prNumber, 42);
+  assert.equal(panel.tabs[0].label, 'PR #42');
+
+  // The same link clicked again reactivates the tab it opened.
+  state = reducer(state, { type: 'ACTIVATE_UTILITY_TAB', tabId: 'pr:/workspace/app:42' });
+  state = reducer(state, {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'pull-request',
+    tabId: 'pr:/workspace/app:42',
+    cwd: '/workspace/app',
+    prNumber: 42,
+    label: 'PR #42',
+  });
+  assert.equal(state.utilityPanels['session-a'].tabs.length, 1);
+
+  // A different pull request is its own tab.
+  state = reducer(state, {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'pull-request',
+    tabId: 'pr:/workspace/app:43',
+    cwd: '/workspace/app',
+    prNumber: 43,
+    label: 'PR #43',
+  });
+  assert.equal(state.utilityPanels['session-a'].tabs.length, 2);
+  assert.equal(state.utilityPanels['session-a'].activeTabId, 'pr:/workspace/app:43');
+});
+
+test('pull request tabs survive the persistence round trip with their target', () => {
+  const state = reducer(activeState('session-a'), {
+    type: 'OPEN_UTILITY_TOOL',
+    tool: 'pull-request',
+    tabId: 'pr:/workspace/app:42',
+    cwd: '/workspace/app',
+    prNumber: 42,
+    label: 'PR #42',
+  });
+  const persisted = persistUtilityPanels(state.utilityPanels);
+  assert.equal(persisted['session-a'].tabs[0].cwd, '/workspace/app');
+  assert.equal(persisted['session-a'].tabs[0].prNumber, 42);
+  const restored = sanitizeUtilityPanels(JSON.parse(JSON.stringify(persisted)));
+  assert.equal(restored['session-a'].tabs[0].tool, 'pull-request');
+  assert.equal(restored['session-a'].tabs[0].prNumber, 42);
+
+  // A tab that lost its number or repository restores nothing rather than a
+  // broken pane.
+  const broken = sanitizeUtilityPanels({
+    'session-a': {
+      open: true,
+      activeTabId: 't1',
+      tabs: [{ id: 't1', tool: 'pull-request', label: 'PR #42', cwd: '/workspace/app' }],
+    },
+  });
+  assert.equal(broken['session-a'].tabs.length, 0);
 });

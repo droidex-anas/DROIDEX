@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
+import { Button } from '../../../components/ui/Button';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrComment } from '../../../types/vcs';
 import { prCommentBlocks, prCommentProse } from '../lib/prCommentBody';
@@ -118,17 +119,16 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
             </Badge>
           ) : null}
           {comment.url ? (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={<Octicon name="link-external" size={14} />}
               title="Open on GitHub"
+              aria-label="Open on GitHub"
               onClick={() => {
                 if (comment.url) void openExternal(comment.url);
               }}
-              aria-label="Open on GitHub"
-              className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-active hover:text-primary"
-            >
-              <Octicon name="link-external" size={12} />
-            </button>
+            />
           ) : null}
         </span>
       </header>

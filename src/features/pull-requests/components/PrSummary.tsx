@@ -36,7 +36,7 @@ function CheckRow({ check }: { check: PrCheck }) {
       </span>
       {finished ? <span className="shrink-0 text-caption text-muted">{finished}</span> : null}
       {check.link ? (
-        <Octicon name="link-external" size={12} className="shrink-0 text-muted" />
+        <Octicon name="link-external" size={14} className="shrink-0 text-muted" />
       ) : null}
     </button>
   );
@@ -110,14 +110,12 @@ function MergeConflicts({ pr }: { pr: PullRequest }) {
         variant="secondary"
         size="sm"
         className="mt-2"
+        icon={<Octicon name="link-external" size={14} />}
         onClick={() => {
           void openExternal(pr.url);
         }}
       >
-        <span className="inline-flex items-center gap-1.5">
-          <Octicon name="link-external" size={12} />
-          View conflicts on GitHub
-        </span>
+        View conflicts on GitHub
       </Button>
     </div>
   );
@@ -135,6 +133,7 @@ export function PrSummary({
   comments,
   commentsError,
   commits,
+  compact = false,
   viewerLogin,
   draft,
   posting,
@@ -152,6 +151,7 @@ export function PrSummary({
   comments: PrComment[];
   commentsError: string | null;
   commits: PrCommit[];
+  compact?: boolean;
   viewerLogin: string | null;
   draft: string;
   posting: boolean;
@@ -164,6 +164,7 @@ export function PrSummary({
 
   return (
     <PrConversation
+      compact={compact}
       viewerLogin={viewerLogin}
       draft={draft}
       posting={posting}
@@ -177,6 +178,7 @@ export function PrSummary({
         checks={checks}
         checksLoading={pending}
         checksError={checksError}
+        compact={compact}
       />
 
       <PrSection key="description" title="Description">
