@@ -340,11 +340,12 @@ export function MessageFeed({
   );
   // A dock tail whose children are still running already speaks for the wave
   // with its own pills, timers and total, so the poll cue would only repeat it.
-  // A running fold counts the turn up itself.
+  // A running fold counts the turn up itself and is its one live cue.
   const showWorking =
     pending &&
     !tailTyping &&
-    (subagentPoll ? !lastDockRunning : !tailSelfIndicates && !hasRunningFold(items));
+    !hasRunningFold(items) &&
+    (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
 

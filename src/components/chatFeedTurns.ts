@@ -6,6 +6,7 @@ import {
   buildFeed,
   collectTurnFiles,
   isCancellationArtifact,
+  isCompactingStatus,
   isCompactionDivider,
   isSteeredPrompt,
   startsTurn,
@@ -268,6 +269,16 @@ function lastAnswerCandidate(run: FeedItem[], specContent: string | undefined): 
 // is a part of it the user has already steered past.
 type TurnPhase = 'settled' | 'steered' | 'running';
 
+// A compaction in progress at the running turn's tail is the feed's centered
+// "Compacting…" cue, so it stays out of the fold.
+function foldLiveRun(run: FeedItem[], specContent: string | undefined, phase: TurnPhase) {
+  const tail = run.at(-1);
+  if (phase === 'running' && tail?.type === 'status' && isCompactingStatus(tail.event.text)) {
+    return [...collapseRun(run.slice(0, -1), specContent, phase), tail];
+  }
+  return collapseRun(run, specContent, phase);
+}
+
 // Collapse an assistant turn: everything the turn did — thinking,
 // tool/file activity, statuses, compaction dividers, child-session lines, and
 // the assistant's mid-turn notes — folds into ONE "Worked for …" group between
@@ -454,7 +465,7 @@ export function groupTurns(
     if (pending && runStart >= liveFrom) {
       if (foldLiveTurn) {
         const phase = i === items.length ? 'running' : 'steered';
-        out.push(...collapseRun(run, specContent, phase));
+        out.push(...foldLiveRun(run, specContent, phase));
       } else {
         out.push(...run);
       }

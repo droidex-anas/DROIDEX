@@ -72,3 +72,45 @@ test('compact shows a running turn as one Working fold and no second cue', () =>
   assert.doesNotMatch(render('balanced', true), /Working|Worked/);
   assert.match(render('compact', false), /Worked/);
 });
+
+test('compact keeps a compaction in progress out of the running fold', () => {
+  const compacting = ev({ kind: 'status', text: 'Compacting conversation…' });
+  const events = [userMsg('go'), grep(), asst('Looking into it.'), grep(), compacting];
+  assert.deepEqual(
+    compactFeed(events, true).map((it) => it.type),
+    ['message', 'worked', 'message', 'status'],
+  );
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, { events, pending: true, density: 'compact' }),
+  );
+  assert.match(html, /Compacting…/);
+});
+
+test('compact lets the running fold speak for a subagent poll', () => {
+  const events = [
+    userMsg('go'),
+    ev({ kind: 'tool_call', toolName: 'Task', toolUseId: 't1', toolArgs: { subagent_type: 'x' } }),
+    grep(),
+    ev({
+      kind: 'tool_call',
+      toolName: 'TaskOutput',
+      toolUseId: 'p1',
+      toolArgs: { task_id: 'abc' },
+      pollsChildSessionId: 'abc',
+    }),
+  ];
+  const render = (density: 'compact' | 'balanced') =>
+    renderToStaticMarkup(
+      createElement(MessageFeed, {
+        events,
+        pending: true,
+        density,
+        onOpenChildSession: () => {},
+        agentMonitor: { sessions: [], models: [] },
+      }),
+    );
+  assert.match(render('balanced'), /Checking subagents/);
+  const compact = render('compact');
+  assert.match(compact, /Working/);
+  assert.doesNotMatch(compact, /Checking subagents/);
+});
