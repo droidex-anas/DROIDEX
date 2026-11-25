@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
@@ -124,6 +126,7 @@ export class SessionTimeline {
   private readonly loaders: SessionTimelineLoaders;
   private readonly streaming: StreamingDeltaCoalescer;
   private readonly streamingFlushFailures = new Map<string, StreamingTranscriptPersistenceError>();
+  private readonly childWindowFingerprints = new Map<string, string>();
   private readonly transcripts = new TimelineTranscripts((id) =>
     this.dependencies.registry.resolveSummary(id),
   );
@@ -249,6 +252,15 @@ export class SessionTimeline {
         sourceSessionId: childSessionId,
         role,
       }));
+      let fingerprintedWindow: { key: string; fingerprint: string } | undefined;
+      if (!cursor) {
+        const fingerprint = createHash('sha256')
+          .update(JSON.stringify({ transcripts, olderCursor: window.olderCursor }))
+          .digest('hex');
+        const key = `${appSessionId}\u0000${childSessionId}`;
+        if (mode === 'refresh' && this.childWindowFingerprints.get(key) === fingerprint) return;
+        fingerprintedWindow = { key, fingerprint };
+      }
       this.emitHistory({
         appSessionId,
         childSessionId,
@@ -257,6 +269,9 @@ export class SessionTimeline {
         mode: mode ?? (cursor ? 'prepend' : 'replace'),
         ...(window.olderCursor ? { olderCursor: window.olderCursor } : {}),
       });
+      if (fingerprintedWindow) {
+        this.childWindowFingerprints.set(fingerprintedWindow.key, fingerprintedWindow.fingerprint);
+      }
     } catch (error) {
       const providerSessionId = childProviderSessionIds.at(-1) ?? childSessionId;
       const message = errMsg(error);
