@@ -30,7 +30,7 @@ import { SessionEventFlow } from './SessionEventFlow.js';
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
 import { DevinProvider } from './providers/devin/DevinProvider.js';
-import { devinAcpCli } from './testing/devinAcpCli.js';
+import { devinAcpCli, writeDevinTestCredentials } from './testing/devinAcpCli.js';
 import { SessionContext } from './SessionContext.js';
 import { providerIdentityCli } from './testing/providerIdentityCli.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
@@ -2012,6 +2012,7 @@ test('Devin resume preserves saved spend through context-only and inference upda
   const cwd = await mkdtemp(join(tmpdir(), 'devin-resume-usage-'));
   const executable = join(cwd, 'devin.cjs');
   await writeFile(executable, devinAcpCli, { mode: 0o755 });
+  await writeDevinTestCredentials();
   const previous = process.env.DEVIN_PATH;
   process.env.DEVIN_PATH = executable;
   t.after(async () => {

@@ -16,6 +16,7 @@ import { resolveDevinPath } from './devinExecutable.js';
 import { DevinSession } from './devinSession.js';
 import { DevinClient } from './devinClient.js';
 import { DevinTerminals } from './devinTerminals.js';
+import { readDevinApiKey } from './devinCredentials.js';
 import { saveDevinForkSeed } from './devinForkSeed.js';
 
 const exec = promisify(execFile);
@@ -62,6 +63,7 @@ export class DevinProvider implements ProbedProvider {
       )
         throw new Error('This Devin CLI cannot persist an idle copy. Update Devin and try again.');
       const options = { cancellationSignal: signal, stopWaitingOnCancel: true };
+      await client.authenticate(initialized.authMethods, signal);
       const copy = native
         ? await client.connection.agent.request(
             'session/fork',
@@ -108,22 +110,7 @@ export class DevinProvider implements ProbedProvider {
       const options = { env: childEnv(), signal: abort, timeout: 15_000 };
       const reported = await exec(executable, ['--version'], options);
       version = /devin\s+(\S+)/i.exec(reported.stdout)?.[1];
-      let auth: string;
-      try {
-        const result = await exec(executable, ['auth', 'status'], options);
-        auth = result.stdout + result.stderr;
-      } catch (error) {
-        if (
-          error &&
-          typeof error === 'object' &&
-          'stdout' in error &&
-          typeof error.stdout === 'string' &&
-          /not logged in/i.test(error.stdout)
-        )
-          return unavailable('unauthenticated', 'Run devin auth login to sign in.', version);
-        throw error;
-      }
-      if (/not logged in/i.test(auth))
+      if (!(await readDevinApiKey()))
         return unavailable('unauthenticated', 'Run devin auth login to sign in.', version);
       abort.throwIfAborted();
       session = new DevinSession(executable, {

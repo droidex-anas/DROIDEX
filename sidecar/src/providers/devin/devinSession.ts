@@ -146,6 +146,8 @@ export class DevinSession implements ProviderSession {
       const initialized = await this.client.initialize();
       this.requireOpen();
       this.capabilities = initialized.agentCapabilities;
+      await this.client.authenticate(initialized.authMethods, abort);
+      this.requireOpen();
       this.mcpStart = startDevinMcp(this.input.mcpServers ?? [], this.input.inAppMcpServers ?? []);
       const mcpServers = await this.mcpStart;
       this.requireOpen();

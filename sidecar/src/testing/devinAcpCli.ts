@@ -1,14 +1,24 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+
+export async function writeDevinTestCredentials(): Promise<string> {
+  const directory = join(homedir(), '.local', 'share', 'devin');
+  const credentials = join(directory, 'credentials.toml');
+  await mkdir(directory, { recursive: true });
+  await writeFile(credentials, 'windsurf_api_key = "test-key"\n');
+  return credentials;
+}
+
 export const devinAcpCli = String.raw`#!/usr/bin/env node
 const { appendFileSync, existsSync, readFileSync, watch } = require('node:fs');
 const { createInterface } = require('node:readline');
 const { join } = require('node:path');
 const root = __dirname;
 if (process.argv[2] === '--version') { console.log('devin 3000.14.30821 (fake)'); process.exit(0); }
-if (process.argv[2] === 'auth') {
-  console.log(existsSync(join(root, 'signed-out')) ? 'Not logged in.' : 'Logged in.'); process.exit(0);
-}
 const send = (message) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
 const result = (id, result) => send({ id, result });
+const failure = (id, code, message) => send({ id, error: { code, message } });
 let sessionId = 'devin-one';
 const update = (update) => send({ method: 'session/update', params: { sessionId, update } });
 const childUpdate = (id, event) => update({ ...event, _meta: { ...event._meta,
@@ -24,7 +34,7 @@ const childText = (agentId, text) => childUpdate(agentId, { sessionUpdate: 'agen
 const configOptions = [{ id: 'model', name: 'Model', type: 'select', currentValue: 'swe-fast',
   options: [{ value: 'swe-fast', name: 'SWE Fast' }, { value: 'swe', name: 'SWE' }] }];
 if (existsSync(join(root, 'empty-models'))) configOptions[0].options = [];
-let pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
+let authenticated = false, pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
 let terminalSequence = 0, terminalDone = Promise.resolve(), terminalFinished;
 const terminalRequests = new Map();
 const terminalCall = (method, params) => new Promise((resolve, reject) => {
@@ -54,13 +64,26 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   if (method === 'session/set_config_option' && params.value === 'terminal-sync') await terminalDone;
   if (method === 'initialize') {
     if (existsSync(join(root, 'hang'))) return;
-    result(id, { protocolVersion: 1, agentCapabilities: { loadSession: true,
+    result(id, { protocolVersion: 1, authMethods: [{ id: 'devin-browser', name: 'Log in with browser' }],
+      agentCapabilities: { loadSession: true,
       _meta: { 'cognition.ai/persistOnCreate': true },
       sessionCapabilities: { close: {}, delete: {}, ...(existsSync(join(root, 'native-fork')) ? { fork: {} } : {}) } } });
+  } else if (method === 'authenticate') {
+    if (params.methodId === 'devin-browser' && params._meta?.api_key === 'test-key') {
+      authenticated = true;
+      result(id, {});
+    } else failure(id, -32602, 'Invalid params');
   } else if (method === 'session/fork') {
-    sessionId = 'devin-native-copy';
-    result(id, { sessionId });
+    if (!authenticated) failure(id, -32000, 'ACP host has not authenticated.');
+    else {
+      sessionId = 'devin-native-copy';
+      result(id, { sessionId });
+    }
   } else if (method === 'session/new' || method === 'session/load') {
+    if (!authenticated) {
+      failure(id, -32000, 'ACP host has not authenticated.');
+      return;
+    }
     if (method === 'session/load') sessionId = params.sessionId;
     servers = params.mcpServers;
     update({ sessionUpdate: 'config_option_update', configOptions });

@@ -3,6 +3,7 @@ import { Writable } from 'node:stream';
 import {
   ClientApp,
   ndJsonStream,
+  type AuthMethod,
   type ClientConnection,
   type InitializeResponse,
   type RequestPermissionRequest,
@@ -10,6 +11,7 @@ import {
   type SessionNotification,
 } from '@agentclientprotocol/sdk/unstable';
 import { childEnv } from '../../childEnv.js';
+import { readDevinApiKey } from './devinCredentials.js';
 import type { DevinTerminals } from './devinTerminals.js';
 
 export class DevinClient {
@@ -93,6 +95,26 @@ export class DevinClient {
           terminal: true,
           _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
         },
+      },
+      signal ? { cancellationSignal: signal, stopWaitingOnCancel: true } : undefined,
+    );
+  }
+
+  async authenticate(
+    authMethods: readonly AuthMethod[] | undefined,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const method = authMethods?.find((method) => !('type' in method));
+    if (!method)
+      throw new Error(
+        'Devin requires interactive terminal authentication. Run devin auth login, then retry.',
+      );
+    const apiKey = await readDevinApiKey();
+    await this.connection.agent.request(
+      'authenticate',
+      {
+        methodId: method.id,
+        ...(apiKey ? { _meta: { api_key: apiKey } } : {}),
       },
       signal ? { cancellationSignal: signal, stopWaitingOnCancel: true } : undefined,
     );

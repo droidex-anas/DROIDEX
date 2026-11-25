@@ -13,12 +13,13 @@ import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
 import { tolerantCommandRunner } from '../../processes/processTree.js';
 import { DevinProvider } from './DevinProvider.js';
 import type { DevinSession } from './devinSession.js';
-import { devinAcpCli } from '../../testing/devinAcpCli.js';
+import { devinAcpCli, writeDevinTestCredentials } from '../../testing/devinAcpCli.js';
 
 async function fixture(t: TestContext) {
   const cwd = await mkdtemp(join(tmpdir(), 'devin-provider-'));
   const executable = join(cwd, 'devin.cjs');
   await writeFile(executable, devinAcpCli, { mode: 0o755 });
+  const credentials = await writeDevinTestCredentials();
   const previous = process.env.DEVIN_PATH;
   const previousUserData = process.env.DROIDEX_USER_DATA_DIR;
   const sessions: DevinSession[] = [];
@@ -64,6 +65,7 @@ async function fixture(t: TestContext) {
       .map((line) => JSON.parse(line));
   return {
     cwd,
+    credentials,
     input,
     provider,
     create,
@@ -646,11 +648,11 @@ test('Devin refuses a turn explicitly and surfaces stderr on process exit', asyn
 
 test('Devin probe reports auth, models and defaults and deletes its provisional session', async (t) => {
   const h = await fixture(t);
-  await writeFile(join(h.cwd, 'signed-out'), '');
+  await rm(h.credentials);
   const signedOut = await h.provider.probe(new AbortController().signal);
   assert.equal(signedOut.readiness, 'unauthenticated');
   assert.match(signedOut.message ?? '', /devin auth login/);
-  await rm(join(h.cwd, 'signed-out'));
+  await writeFile(h.credentials, 'windsurf_api_key = "test-key"\n');
   const ready = await h.provider.probe(new AbortController().signal);
   assert.equal(ready.readiness, 'ready');
   assert.equal(ready.version, '3000.14.30821');
