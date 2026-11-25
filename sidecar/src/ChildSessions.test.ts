@@ -2094,6 +2094,40 @@ test('a child whose result has not reached history is not retired until it does'
   assert.equal(h.owner.counts().live, 0);
 });
 
+test('child usage accumulates cumulative provider series across reopen and replacement', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const usage = (tokensIn: number, tokensOut: number) => ({ tokensIn, tokensOut });
+  const tokensUsed = () => h.owner.list(h.parentId)[0]?.tokensUsed;
+  await h.open(record);
+
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(40, 30)), true);
+  assert.equal(tokensUsed(), 70);
+  await h.owner.close(record);
+
+  await h.open(record, new FakeFactorySession('provider', {}, h.calls));
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(50, 35)), true);
+  assert.equal(tokensUsed(), 85);
+
+  observe(h, {
+    providerSessionId: 'provider-new',
+    role: 'worker',
+    spawnLink: record.spawnLink,
+    modelId: 'model-default',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await h.open(
+    { ...record, providerSessionId: 'provider-new' },
+    new FakeFactorySession('provider-new', {}, h.calls),
+  );
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider-new', usage(10, 5)), true);
+  assert.equal(tokensUsed(), 100);
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider-new', usage(10, 5)), true);
+  assert.equal(tokensUsed(), 100);
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(500, 500)), true);
+  assert.equal(tokensUsed(), 100);
+});
+
 test('a retired child reopens with its transcript and a fresh runtime', async () => {
   const record = childRecord('child', 'provider');
   const h = createHarness([record], { childRuntimeIdleMs: 0 });

@@ -7,6 +7,7 @@ import type {
   ClientCommand,
 } from '@droidex/protocol';
 import type { ChildOperationTarget } from './SessionContext.js';
+import type { NormalizedTokenUsage } from './SessionEventFlow.js';
 import {
   matchesChildGenerationSnapshot,
   type AutoCompactionSettlement,
@@ -228,6 +229,41 @@ export class ChildSessions {
     if (!parent || !this.isCurrentParent(parent)) return undefined;
     const child = findChildByProvider(parent, providerSessionId);
     return child ? { childSessionId: child.identity.childSessionId, role: child.role } : undefined;
+  }
+
+  // Consume a usage reading owned by a child. Droid reports a cumulative
+  // series per replaceable provider session; the logical child total survives
+  // close/reopen and accumulates across provider replacement.
+  recordUsage(
+    parentAppSessionId: string,
+    providerSessionId: string,
+    usage: NormalizedTokenUsage,
+  ): boolean {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return false;
+    const child =
+      findChildByProvider(parent, providerSessionId) ??
+      [...parent.children.values()].find((candidate) =>
+        candidate.retiredProviderSessionIds.has(providerSessionId),
+      );
+    if (!child) return false;
+    if (child.runtime?.session.sessionId !== providerSessionId) return true;
+
+    const reading = usage.tokensIn + usage.tokensOut;
+    const series = child.tokenUsageSeries;
+    let tokensUsed: number;
+    if (series?.providerSessionId !== providerSessionId) {
+      tokensUsed = (child.tokensUsed ?? 0) + reading;
+    } else {
+      const delta = reading - series.tokensUsed;
+      if (delta <= 0) return true;
+      tokensUsed = (child.tokensUsed ?? 0) + delta;
+    }
+    child.tokensUsed = tokensUsed;
+    child.tokenUsageSeries = { providerSessionId, tokensUsed: reading };
+    if (!this.childrenAwaitingDurability.has(childDurabilityKey(child.identity)))
+      this.publish(child);
+    return true;
   }
 
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {

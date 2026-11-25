@@ -98,6 +98,9 @@ export interface ChildSessionState {
   activity?: ChildActivity;
   // This child's own spend, live-only for the same reason.
   tokensUsed?: number;
+  // Latest cumulative reading for the current provider series. Droid counters
+  // restart when the provider session is replaced; the logical total must not.
+  tokenUsageSeries?: { providerSessionId: string; tokensUsed: number };
   // Live-only. Absent until a token/tool stream is opened; summaries publish `state`.
   streamFidelity?: StreamFidelity;
   runtimeGeneration: number;
