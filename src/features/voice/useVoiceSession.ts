@@ -241,8 +241,9 @@ export function useVoiceSession(
       const offer = pc.localDescription?.sdp;
       if (!offer) throw new Error('The browser produced no voice offer.');
       negotiation.offerSent = true;
+      const answer = waitForAnswer(answerRef);
       startVoice({ appSessionId, sdp: offer, attempt: negotiation.name, voice, narration });
-      const sdp = await waitForAnswer(answerRef);
+      const sdp = await answer;
       if (!current()) {
         closeNegotiation(negotiation);
         return;

@@ -22,6 +22,14 @@ async function mockBridge(
   };
   await page.addInitScript(() => {
     window.localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+    const audioContexts: AudioContext[] = [];
+    Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+      value: async () => {
+        const context = new AudioContext();
+        audioContexts.push(context);
+        return context.createMediaStreamDestination().stream;
+      },
+    });
   });
   await page.routeWebSocket(
     (url) => url.searchParams.has('bridgeProtocol'),
