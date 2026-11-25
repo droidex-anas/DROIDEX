@@ -9,7 +9,7 @@ import {
   type BoardInteraction,
   type BoardInteractionEvent,
 } from './canvasState';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 export function useInteractionDispatch(
   interaction: BoardInteraction,

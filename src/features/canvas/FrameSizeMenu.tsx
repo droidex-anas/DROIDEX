@@ -10,7 +10,7 @@ import { Popover } from '../../components/ui/Popover';
 import { MAX_FRAME_PX, MIN_FRAME_PX } from './canvasGeometry';
 import { FRAME_PRESETS, PRESET_GROUPS } from './framePresets';
 import { MenuHeading, MenuNote, MenuRow } from './menuRows';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 export interface FrameSize {
   width: number;

@@ -6,7 +6,7 @@ import type {
   ServerEvent,
   SessionRole,
   SessionSummary,
-} from '../protocol.js';
+} from '@droidex/protocol';
 import { FakeFactorySession } from './fakeFactoryRuntime.js';
 import type { SessionManagerTestContext } from './sessionManagerTestContext.js';
 

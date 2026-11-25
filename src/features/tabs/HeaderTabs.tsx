@@ -13,7 +13,7 @@ import { Tooltip } from '../../components/ui/Tooltip';
 import { GitPullRequestIcon } from '../../components/environment/GithubIcons';
 import { ModelIcon } from '../../components/ModelIcon';
 import { PROVIDER_MARKS } from '../providers/providerIdentity';
-import type { ProviderKind, SessionSummary } from '../../types/bridge';
+import type { ProviderKind, SessionSummary } from '@droidex/protocol';
 import {
   activeProduct,
   livePage,

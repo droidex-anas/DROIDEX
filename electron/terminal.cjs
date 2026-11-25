@@ -1,5 +1,5 @@
 // Isolated PTY host for the utility-pane terminal. Owns every node-pty instance
-// for the app and exposes a small manager API that `electron/main.cjs` wires to
+// for the app and exposes a small manager API that `electron/terminalIpc.cjs` wires to
 // IPC channels. The module deliberately never imports Electron or renderer
 // concerns: events are delivered to caller-provided subscriber callbacks, so
 // the host can be unit-tested with mock PTYs and reused outside Electron.
@@ -21,6 +21,7 @@ const fsp = require('node:fs/promises');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { childEnv } = require('./childEnv.cjs');
+const { ReplayBuffer } = require('./replayBuffer.cjs');
 
 const MAX_TERMINALS_PER_SESSION = 4;
 const MAX_GLOBAL_TERMINALS = 8;
@@ -32,6 +33,14 @@ const MAX_COLS = 1000;
 const MAX_ROWS = 500;
 const TERM = 'xterm-256color';
 const COLORTERM = 'truecolor';
+
+function trimUtf8Front(buffer, bytes = 0) {
+  while (bytes < buffer.length && (buffer.byteAt(bytes) & 0xc0) === 0x80) {
+    bytes += 1;
+  }
+  buffer.trimFront(bytes);
+  return bytes;
+}
 
 // Resolve the default shell portably. $SHELL wins on POSIX (falling back to
 // zsh on macOS, bash on Linux, both as login shells); on Windows we honour a
@@ -165,7 +174,7 @@ function createTerminalManager(opts) {
       cols: dims.cols,
       rows: dims.rows,
       pty: null,
-      buffer: Buffer.alloc(0), // rolling replay buffer (capped at MAX_REPLAY_BYTES)
+      buffer: new ReplayBuffer(MAX_REPLAY_BYTES),
       totalEmittedBytes: 0, // monotonic byte counter (never reset)
       droppedBytes: 0, // bytes trimmed from the front of the buffer
       sequence: 0, // monotonic event counter
@@ -239,16 +248,10 @@ function createTerminalManager(opts) {
     ptyInstance.onData((data) => {
       const buf = Buffer.from(data, 'utf8');
       entry.lastActivityAt = Date.now();
-      entry.buffer = Buffer.concat([entry.buffer, buf]);
+      const droppedBytes = entry.buffer.append(buf);
+      entry.droppedBytes += droppedBytes;
       entry.totalEmittedBytes += buf.length;
-      if (entry.buffer.length > MAX_REPLAY_BYTES) {
-        let droppedBytes = entry.buffer.length - MAX_REPLAY_BYTES;
-        while (droppedBytes < entry.buffer.length && (entry.buffer[droppedBytes] & 0xc0) === 0x80) {
-          droppedBytes += 1;
-        }
-        entry.buffer = entry.buffer.subarray(droppedBytes);
-        entry.droppedBytes += droppedBytes;
-      }
+      if (droppedBytes > 0) entry.droppedBytes += trimUtf8Front(entry.buffer);
       entry.sequence += 1;
       const payload = {
         kind: 'data',
@@ -362,7 +365,7 @@ function createTerminalManager(opts) {
       start = Math.min(e.buffer.length, from - bufferStart);
     }
     return {
-      data: e.buffer.subarray(start).toString('utf8'),
+      data: e.buffer.slice(start).toString('utf8'),
       sequence: e.sequence,
       byteOffset: emitted,
       droppedBytes,
@@ -540,12 +543,8 @@ function createTerminalManager(opts) {
     let trimmed = 0;
     for (const e of terminals.values()) {
       if (e.buffer.length <= cap) continue;
-      let droppedBytes = e.buffer.length - cap;
-      while (droppedBytes < e.buffer.length && (e.buffer[droppedBytes] & 0xc0) === 0x80) {
-        droppedBytes += 1;
-      }
-      e.buffer = e.buffer.subarray(droppedBytes);
-      e.droppedBytes += droppedBytes;
+      e.droppedBytes += trimUtf8Front(e.buffer, e.buffer.length - cap);
+      e.buffer.compact();
       trimmed += 1;
     }
     return trimmed;

@@ -15,7 +15,7 @@ import type {
   McpStatusSummary,
   McpToolInfo,
   ServerEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { errMsg } from './errors.js';
 
 type McpCommand = Extract<ClientCommand, { type: `mcp.${string}` }>;

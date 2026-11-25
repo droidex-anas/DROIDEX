@@ -1,4 +1,4 @@
-import type { SourceFiles } from '../schema.js';
+import type { SourceFiles } from '@droidex/protocol';
 
 export const CHART_DESIGN: SourceFiles = {
   'main.tsx': `import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';

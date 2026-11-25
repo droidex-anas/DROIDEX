@@ -14,7 +14,7 @@ import {
 } from '../testing/canvasBridgeSupport.js';
 import { CANVAS_PNG, CANVAS_PNG_ASSET_ID, writeInput } from '../testing/canvasStorageSupport.js';
 import { readLibraryCopy } from './canvasLibrary.js';
-import type { LibraryItem, RevisionRef } from './protocol.js';
+import type { LibraryItem, RevisionRef } from '@droidex/protocol';
 
 const SOURCE = `export default function Hero(){return <img src="canvas-asset:${CANVAS_PNG_ASSET_ID}" alt="Hero"/>}`;
 const THUMBNAIL = CANVAS_PNG.toString('base64');

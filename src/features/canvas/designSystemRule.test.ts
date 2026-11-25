@@ -11,7 +11,7 @@ import {
   kitNotesLabel,
   kitNotesSummary,
 } from './designSystemRule';
-import type { CanvasBuildState, CanvasDiagnostic } from './protocol';
+import type { CanvasBuildState, CanvasDiagnostic } from '@droidex/protocol';
 
 function note(index: number): CanvasDiagnostic {
   return {

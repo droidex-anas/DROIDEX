@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 import { AutomationManager } from './AutomationManager.js';
 import { parseAutomationStore } from './automationStoreParsing.js';
-import type { AutomationInput, AutomationSnapshot } from './types.js';
+import type { AutomationInput, AutomationSnapshot } from '@droidex/protocol';
 
 type Options = ConstructorParameters<typeof AutomationManager>[0];
 

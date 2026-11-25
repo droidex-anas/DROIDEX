@@ -13,7 +13,7 @@ import {
   type ThreadRow,
   type ThreadSignals,
 } from './threadBoard';
-import type { ProjectView } from './types';
+import type { ProjectView } from '@droidex/protocol';
 
 export interface ProjectBoardEntry {
   project: ProjectView;

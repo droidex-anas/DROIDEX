@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { composeOrigin } from '../features/tabs/tabNavigation';
 import { initialState, reducer, type AppState } from './useStore';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 import { textEvent } from '../test/textEvent';
 

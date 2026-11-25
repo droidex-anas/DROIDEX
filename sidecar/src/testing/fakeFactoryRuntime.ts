@@ -15,7 +15,7 @@ import {
   type UpdateSessionSettingsRequestParams,
 } from '@factory/droid-sdk';
 
-import type { Autonomy, ReasoningEffort } from '../protocol.js';
+import type { Autonomy, ReasoningEffort } from '@droidex/protocol';
 import { mapAutonomy } from '../DroidRuntime.js';
 import type {
   CreateRuntimeSessionOptions,
@@ -305,13 +305,8 @@ export class FakeFactorySession implements FactorySession {
   readonly renameSession: FactorySession['renameSession'] = () =>
     unsupportedSessionMethod('renameSession');
 
-  readonly getRewindInfo: FactorySession['getRewindInfo'] = () =>
-    unsupportedSessionMethod('getRewindInfo');
-
   readonly executeRewind: FactorySession['executeRewind'] = () =>
     unsupportedSessionMethod('executeRewind');
-
-  readonly listTools: FactorySession['listTools'] = () => unsupportedSessionMethod('listTools');
 
   readonly listSkills: FactorySession['listSkills'] = () => unsupportedSessionMethod('listSkills');
 

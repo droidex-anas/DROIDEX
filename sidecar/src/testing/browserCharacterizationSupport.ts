@@ -7,7 +7,7 @@ import type {
   BrowserViewport,
   BrowserViewportMode,
   ServerEvent,
-} from '../protocol.js';
+} from '@droidex/protocol';
 
 export interface BrowserRecordedCall {
   target: 'browser' | 'cleanup';

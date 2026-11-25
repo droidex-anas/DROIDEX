@@ -1,4 +1,4 @@
-import type { ModelInfo, ProviderKind, ReasoningEffort } from '../types/bridge';
+import type { ModelInfo, ProviderKind, ReasoningEffort } from '@droidex/protocol';
 
 const REASONING_EFFORTS: Readonly<Record<ReasoningEffort, true>> = {
   off: true,

@@ -1,7 +1,7 @@
 import { ArrowRight, FileText } from '@droidex/icons';
 import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import { editorLabel, type EditorId } from '../../lib/editorOpen';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { ActivityStatusGlyph } from '../ActivityStatusGlyph';
 import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';

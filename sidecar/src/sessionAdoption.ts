@@ -5,7 +5,7 @@ import {
   type LiveRuntimeJournal,
   type LiveSessionIdentity,
 } from './liveRuntimeJournal.js';
-import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from './protocol.js';
+import type { InterruptedSessionRecord, SessionPhase, SessionSummary } from '@droidex/protocol';
 import { errMsg } from './errors.js';
 import { isProcessAlive } from './processes/isProcessAlive.js';
 import type { RegisteredSession } from './SessionRegistry.js';

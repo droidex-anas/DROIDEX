@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { AgentProcess, TranscriptEvent } from '../../types/bridge';
+import type { AgentProcess, TranscriptEvent } from '@droidex/protocol';
 import { commandTypedByAgent, finishedCommands } from './backgroundActivity';
 
 function event(id: string, fields: Partial<TranscriptEvent>): TranscriptEvent {

@@ -4,7 +4,7 @@ import type {
   ChildSessionStore,
   SessionRestore,
 } from '../hooks/storeChildSession';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { sessionIsLive } from './sessions';
 import { ingestTranscriptEvents, normalizeTranscriptUpdate } from './transcriptIngestion';
 import { nextTranscriptMutation, type TranscriptMutationChange } from './transcriptMutation';
@@ -177,9 +177,7 @@ export function releaseSessionChildTranscriptWindow<S extends TranscriptMemorySt
   childSessionId: string,
   policy: TranscriptWindowPolicy,
 ): S {
-  // These keyed renderer maps are intentionally sparse at runtime despite
-  // their long-standing Record types.
-  /* eslint-disable @typescript-eslint/no-unnecessary-condition */
+  /* eslint-disable @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer maps */
   const transcript = state.transcripts[parentAppSessionId] ?? [];
   if (transcript.length === 0) return state;
   const estimatedCost =
@@ -228,8 +226,7 @@ export function withUpdatedTranscript<S extends TranscriptMemoryState>(
     mutation?: TranscriptMutationChange;
   } = {},
 ): S {
-  // This keyed renderer map is intentionally sparse despite its Record type.
-  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- sparse keyed renderer map
   const previousLength = state.transcripts[appSessionId]?.length ?? 0;
   let next = replaceTranscript(
     state,

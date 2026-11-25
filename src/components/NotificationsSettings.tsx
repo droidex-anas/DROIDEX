@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { notify, type NotifyResult } from '../lib/desktop';
+import { notify } from '../lib/desktop';
+import type { NotifyResult } from '../lib/desktopContract';
 import {
   requestNotificationPermission,
   type NotificationPermissionResult,

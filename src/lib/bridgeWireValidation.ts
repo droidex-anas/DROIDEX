@@ -10,7 +10,7 @@ import type {
   ServerEventBatch,
   ServerWireMessage,
   StreamFidelity,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { isAutomationSnapshot } from '../features/automations/wireValidation';
 import {
   isDroidProfile,
@@ -137,9 +137,7 @@ function interruptedRecord(value: unknown): value is InterruptedSessionRecord {
   );
 }
 
-// The exhaustive discriminant stays centralized so every inbound event takes
-// the same validation path before renderer code can observe it.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity -- one exhaustive switch validates every inbound event
 export function isServerEvent(value: unknown): value is ServerEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false;
   // Runtime `type` is a string; narrowing to the union makes a missing variant fail this switch.
@@ -303,7 +301,7 @@ export function isServerEvent(value: unknown): value is ServerEvent {
       if (!Array.isArray(value.items)) return false;
       if (value.catalog === 'models') return value.items.every(isModelInfo);
       if (value.catalog === 'skills') return value.items.every(isSkillInfo);
-      return value.catalog === 'tools';
+      return false;
     case 'provider.status':
       return Array.isArray(value.statuses) && value.statuses.every(isProviderStatus);
     case 'usage.updated':
@@ -328,8 +326,6 @@ export function isServerEvent(value: unknown): value is ServerEvent {
         typeof value.runtimeAvailable === 'boolean' &&
         nonNegativeSafeInteger(value.runtimeGeneration)
       );
-    case 'spec.content':
-      return hasStrings(value, ['appSessionId', 'path', 'content']);
     case 'sessions.list':
       return (
         Array.isArray(value.sessions) &&

@@ -1,4 +1,4 @@
-// Shared VCS types mirrored from electron/git.cjs and electron/github.cjs.
+// Shared VCS types for the Electron Git and GitHub modules.
 // No imports here (only a const tuple + type declarations) so both the desktop
 // bridge typing and the frontend helpers can depend on it without a cycle.
 
@@ -6,7 +6,7 @@ export type DiffStatMode = 'worktree' | 'branch' | 'uncommitted';
 
 // Canonical list of review scopes the Review tab can request. `DiffScope` is
 // derived from it and the store validates persisted values against it, so this
-// tuple is the single source of truth. electron/git.cjs keeps a hand-synced
+// tuple is the single source of truth. electron/gitDiff.cjs keeps a hand-synced
 // mirror (REVIEW_SCOPES) because it can't import this module across the process
 // boundary.
 export const DIFF_SCOPES = [
@@ -41,13 +41,23 @@ export interface DiffFile {
 export interface DiffFileList {
   mode: DiffScope;
   base: string | null;
-  files: DiffFile[];
+  // `oldPath` is the rename or copy source; a per-file patch request passes it back.
+  files: (DiffFile & { oldPath: string | null; fingerprint: string })[];
+}
+
+export interface FileDiffOptions {
+  mode: DiffScope;
+  path: string;
+  oldPath: string | null;
+  ignoreWhitespace?: boolean;
+  appSessionId?: string;
 }
 
 export interface FileDiffResult {
   path: string | null;
   diff: string;
   binary: boolean;
+  failed?: true;
 }
 
 export interface GitEnvironment {

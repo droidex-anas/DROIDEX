@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { motion } from 'framer-motion';
-import type { ChildSessionSummary, ProviderKind, ReasoningEffort } from '../../types/bridge';
+import type { ChildSessionSummary, ProviderKind, ReasoningEffort } from '@droidex/protocol';
 import { isPendingChildPlaceholder } from '../../lib/childSessions';
 import { reasoningEffortLabel } from '../../lib/reasoningEffort';
 import { formatDuration } from '../../lib/tools';

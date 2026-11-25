@@ -42,7 +42,7 @@ import {
   type FramePin,
 } from '../../features/canvas/framePins';
 import { useKitCatalog } from '../../features/canvas/palette/useKitCatalog';
-import type { DesignSystemRef } from '../../features/canvas/protocol';
+import type { DesignSystemRef } from '@droidex/protocol';
 import { useStoreDispatch, useStoreSelector, type AppState } from '../../hooks/useStore';
 import { promptChips, type QueuedPrompt } from '../../lib/promptQueue';
 import { promptWithSideChatReplies, sideChatPanel } from '../../lib/sideChats';

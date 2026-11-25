@@ -1,4 +1,4 @@
-import type { AgentProcess } from '../protocol.js';
+import type { AgentProcess } from '@droidex/protocol';
 import { descendantsOf, sameProcess, type ProcessRecord } from './processTree.js';
 import { killProcessTree } from './processTermination.js';
 import { sameProcessList, visibleProcesses } from './processPresentation.js';

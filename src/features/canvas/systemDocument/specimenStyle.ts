@@ -5,7 +5,7 @@
 // the app load a URL.
 
 import type { CSSProperties } from 'react';
-import type { DocumentSection, DocumentToken, TokenKind } from '../designSystemDocumentProtocol';
+import type { DocumentSection, DocumentToken, TokenKind } from '@droidex/protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { tokenShape, type TokenShape } from './tokenShape';
 

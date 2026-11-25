@@ -13,7 +13,7 @@ import { isSideChat } from '../lib/sideChats';
 import { sidebarSearchNotice } from '../lib/sidebarSearchStatus';
 import { projectsAnswered, projectThreadIds } from '../lib/projectThreads';
 import { formatRelativeTime } from '../lib/time';
-import type { SessionSearchMatch, SessionSummary } from '../types/bridge';
+import type { SessionSearchMatch, SessionSummary } from '@droidex/protocol';
 import PaletteShell from './PaletteShell';
 import SidebarSearchNotice from './SidebarSearchNotice';
 import { usePaletteNavigation } from './usePaletteNavigation';
@@ -91,12 +91,8 @@ export default function SidebarSearch({
     onClose();
   };
 
-  const { selected, setSelected, handleKeyDown } = usePaletteNavigation(
-    query,
-    entries,
-    open,
-    onClose,
-  );
+  const { selected, selectedRowRef, setSelected, handleKeyDown, handleWheel } =
+    usePaletteNavigation(query, entries, open, onClose);
 
   const now = Date.now();
   const trimmed = query.trim();
@@ -114,6 +110,7 @@ export default function SidebarSearch({
       query={query}
       onQueryChange={setQuery}
       onKeyDown={handleKeyDown}
+      onResultsWheel={handleWheel}
       placeholder="Search chats, messages, or PRs…"
       inputAriaLabel="Search chats, messages, and PRs"
       enterHint="Open session"
@@ -123,8 +120,9 @@ export default function SidebarSearch({
       {entries.map((entry, i) => (
         <button
           key={entry.session.appSessionId}
+          ref={i === selected ? selectedRowRef : undefined}
           data-testid="sidebar-search-result"
-          onMouseEnter={() => {
+          onMouseMove={() => {
             setSelected(i);
           }}
           onClick={() => {

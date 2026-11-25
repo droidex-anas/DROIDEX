@@ -1,5 +1,14 @@
 import { createHash } from 'node:crypto';
 import {
+  COUNT_KEYS,
+  codexCounts,
+  codexUsageCounts,
+  completeSum,
+  count,
+  mergeKnownCounts,
+  sameKnownCounts,
+} from './tokenCounts.js';
+import {
   CLAUDE_USAGE_PARSER_VERSION,
   CODEX_USAGE_PARSER_VERSION,
   type ClaudeUsageParserState,
@@ -17,25 +26,9 @@ export * from './types.js';
 type JsonObject = Record<string, unknown>;
 const MAX_TEXT_LENGTH = 4_096;
 const MAX_ID_LENGTH = 512;
-const MAX_TOKEN_COUNT = 1_000_000_000_000_000;
 const MAX_MICROUSD = 9_000_000_000_000_000;
 const MAX_TIMESTAMP = 8_640_000_000_000_000;
 const MAX_SESSIONS_PER_SOURCE = 64;
-const COUNT_KEYS = [
-  'inputTokens',
-  'outputTokens',
-  'cacheWriteTokens',
-  'cacheReadTokens',
-  'reasoningTokens',
-] as const satisfies readonly (keyof UsageTokenCounts)[];
-
-const EMPTY_COUNTS: UsageTokenCounts = {
-  inputTokens: null,
-  outputTokens: null,
-  cacheWriteTokens: null,
-  cacheReadTokens: null,
-  reasoningTokens: null,
-};
 
 export function parseClaudeUsageRecord(
   value: unknown,
@@ -303,12 +296,6 @@ function text(value: unknown, maxLength: number): string | null {
   return typeof value === 'string' && value.length > 0 && value.length <= maxLength ? value : null;
 }
 
-function count(value: unknown): number | null {
-  return Number.isSafeInteger(value) && Number(value) >= 0 && Number(value) <= MAX_TOKEN_COUNT
-    ? Number(value)
-    : null;
-}
-
 function timestamp(value: unknown): number | null {
   if (typeof value === 'string' && value.length <= 64) {
     const parsed = Date.parse(value);
@@ -317,80 +304,6 @@ function timestamp(value: unknown): number | null {
   if (!Number.isFinite(value) || Number(value) < 0) return null;
   const milliseconds = Number(value) < 10_000_000_000 ? Number(value) * 1_000 : Number(value);
   return Number.isSafeInteger(milliseconds) && milliseconds <= MAX_TIMESTAMP ? milliseconds : null;
-}
-
-function completeSum(...values: (number | null)[]): number | null {
-  if (values.some((value) => value === null)) return null;
-  const total = values.reduce<number>((sum, value) => sum + (value ?? 0), 0);
-  return Number.isSafeInteger(total) && total <= MAX_TOKEN_COUNT ? total : null;
-}
-
-function codexCounts(value: JsonObject): UsageTokenCounts {
-  return {
-    inputTokens: count(value.input_tokens ?? value.inputTokens),
-    outputTokens: count(value.output_tokens ?? value.outputTokens),
-    cacheWriteTokens: count(
-      value.cache_creation_input_tokens ??
-        value.cacheCreationInputTokens ??
-        value.cache_write_tokens ??
-        value.cache_write_input_tokens,
-    ),
-    cacheReadTokens: count(
-      value.cached_input_tokens ?? value.cachedInputTokens ?? value.cache_read_input_tokens,
-    ),
-    reasoningTokens: count(value.reasoning_output_tokens ?? value.reasoningOutputTokens),
-  };
-}
-
-function codexUsageCounts(
-  usage: JsonObject | null,
-  total: UsageTokenCounts | null,
-  previous: UsageTokenCounts | null,
-): UsageTokenCounts | null {
-  if (sameKnownCounts(total, previous)) return null;
-  if (usage) return codexCounts(usage);
-  return cumulativeDelta(total, previous);
-}
-
-function cumulativeDelta(
-  current: UsageTokenCounts | null,
-  previous: UsageTokenCounts | null,
-): UsageTokenCounts | null {
-  if (!current) return null;
-  if (!previous) return current;
-  const delta = { ...EMPTY_COUNTS };
-  for (const key of COUNT_KEYS) {
-    const next = current[key];
-    const before = previous[key];
-    if (next === null) delta[key] = null;
-    else if (before === null) delta[key] = next;
-    else delta[key] = Math.max(0, next - before);
-  }
-  return COUNT_KEYS.every((key) => delta[key] === null || delta[key] === 0) ? null : delta;
-}
-
-function mergeKnownCounts(
-  previous: UsageTokenCounts | null,
-  current: UsageTokenCounts | null,
-): UsageTokenCounts | null {
-  if (!current) return previous;
-  const merged = { ...EMPTY_COUNTS };
-  for (const key of COUNT_KEYS) merged[key] = current[key] ?? previous?.[key] ?? null;
-  return merged;
-}
-
-function sameKnownCounts(
-  current: UsageTokenCounts | null,
-  previous: UsageTokenCounts | null,
-): boolean {
-  if (!current || !previous) return false;
-  let compared = false;
-  for (const key of COUNT_KEYS) {
-    if (current[key] === null || previous[key] === null) continue;
-    compared = true;
-    if (current[key] !== previous[key]) return false;
-  }
-  return compared;
 }
 
 function emptySession(): UsageReducerSession {

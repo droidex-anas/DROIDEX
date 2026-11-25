@@ -5,7 +5,8 @@ import type { CanvasBuilds } from './CanvasBuilds.js';
 import type { CanvasWorkspace } from './CanvasWorkspace.js';
 import { canvasError, CanvasCommandError } from './canvasError.js';
 import { CompileCancelledError, CompilerWorker, type EditedSource } from './compiler.js';
-import type { CanvasScope, EditElementInput, WriteReceipt } from './protocol.js';
+import type { EditElementInput, WriteReceipt } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** The edit's revision, and the nodeId of the row a layer edit lands on in it; null for other edits and replays. */

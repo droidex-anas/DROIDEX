@@ -10,7 +10,7 @@ import {
   unpinElements,
 } from './elementPins';
 import type { PickedElement } from './pickedElement';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 function frame(designId: string, name = `Design ${designId}`): CanvasFrame {
   return {

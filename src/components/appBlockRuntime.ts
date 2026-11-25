@@ -5,7 +5,7 @@ export { hasAppBlock, hasCompleteAppBlock, hasIncompleteAppBlock } from '../lib/
 // the build surface forever.
 export const APP_BUILD_TIMEOUT_MS = 2_000;
 
-export interface AppHeightScheduler {
+interface AppHeightScheduler {
   schedule: (height: number) => void;
   cancel: () => void;
 }

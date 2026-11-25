@@ -17,7 +17,7 @@ import {
   type PresenceAgent,
 } from './canvasPresence';
 import type { PreviewRuns } from './previewRuns';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect } from '@droidex/protocol';
 import {
   TOUR_REST_MS,
   TOUR_TRAVEL_MS,

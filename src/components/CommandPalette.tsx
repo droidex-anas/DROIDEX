@@ -1,37 +1,27 @@
-import { useState } from 'react';
-import { ArrowRight, Folder, Settings, SquarePen, SquareTerminal } from '@droidex/icons';
-import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
+import { useState, type ComponentType } from 'react';
+import { ArrowRight, Settings, SquarePen, SquareTerminal } from '@droidex/icons';
+import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { resolvePrWorkspaceCwd } from '../features/pull-requests/lib/prWorkspaceCwd';
+import { activeProduct } from '../features/tabs/tabStrip';
+import { isEmbedded } from '../lib/embed';
+import { formatChord } from '../lib/shortcuts';
+import type { UtilityTool } from '../lib/utilityPanel';
 import { GitPullRequestIcon } from './environment/GithubIcons';
 import PaletteShell from './PaletteShell';
 import { usePaletteNavigation } from './usePaletteNavigation';
 
-const commands = [
-  { id: 'new-thread', label: 'New Thread', shortcut: 'Ctrl+T', icon: SquarePen, action: 'thread' },
-  {
-    id: 'switch-project',
-    label: 'Switch Project',
-    shortcut: 'Ctrl+P',
-    icon: Folder,
-    action: 'project',
-  },
-  {
-    id: 'toggle-terminal',
-    label: 'Toggle Terminal',
-    shortcut: 'Ctrl+`',
-    icon: SquareTerminal,
-    action: 'terminal',
-  },
-  {
-    id: 'pull-requests',
-    label: 'Pull Requests',
-    icon: GitPullRequestIcon,
-    action: 'pull-requests',
-  },
-  { id: 'settings', label: 'Settings', shortcut: 'Ctrl+,', icon: Settings, action: 'settings' },
-];
+interface Command {
+  id: 'new-tab' | 'new-terminal' | 'pull-requests' | 'settings';
+  label: string;
+  icon: ComponentType<{ size?: number }>;
+  shortcut?: string;
+}
 
-export default function CommandPalette() {
+interface CommandPaletteProps {
+  onOpenTool: (tool: UtilityTool) => void;
+}
+
+export default function CommandPalette({ onOpenTool }: CommandPaletteProps) {
   const dispatch = useStoreDispatch();
   const prWorkspace = useStoreSelector((current) => {
     const activeSession = current.activeAppSessionId
@@ -44,7 +34,38 @@ export default function CommandPalette() {
       workspaceCwds: current.workspaceCwds,
     };
   }, shallowEqual);
+  const hasActiveSession = useStoreSelector((current) => current.activeAppSessionId !== null);
+  const shortcutBindings = useStoreSelector((current) => current.shortcutBindings);
+  const store = useStoreApi();
   const [query, setQuery] = useState('');
+
+  // An embedded app has no tabs, and a terminal needs a session.
+  const commands: Command[] = [];
+  if (!isEmbedded()) {
+    commands.push({
+      id: 'new-tab',
+      label: 'New Tab',
+      icon: SquarePen,
+      shortcut: formatChord(shortcutBindings.newTab),
+    });
+  }
+  if (hasActiveSession) {
+    commands.push({
+      id: 'new-terminal',
+      label: 'New Terminal',
+      icon: SquareTerminal,
+      shortcut: formatChord('Ctrl+`'),
+    });
+  }
+  commands.push(
+    { id: 'pull-requests', label: 'Pull Requests', icon: GitPullRequestIcon },
+    {
+      id: 'settings',
+      label: 'Settings',
+      icon: Settings,
+      shortcut: formatChord(shortcutBindings.openSettings),
+    },
+  );
 
   const close = () => {
     dispatch({ type: 'CLOSE_COMMAND_PALETTE' });
@@ -55,25 +76,28 @@ export default function CommandPalette() {
       c.label.toLowerCase().includes(query.toLowerCase()) || c.id.includes(query.toLowerCase()),
   );
 
-  const runCommand = (cmd: (typeof commands)[0]) => {
-    dispatch({ type: 'CLOSE_COMMAND_PALETTE' });
-    switch (cmd.action) {
-      case 'settings':
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-        break;
-      case 'pull-requests':
-        dispatch({ type: 'OPEN_PULL_REQUESTS', cwd: resolvePrWorkspaceCwd(prWorkspace) });
-        break;
-      // other actions can be wired here
-    }
+  const commandActions: Record<Command['id'], () => void> = {
+    'new-tab': () => {
+      dispatch({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) });
+    },
+    'new-terminal': () => {
+      onOpenTool('terminal');
+    },
+    'pull-requests': () => {
+      dispatch({ type: 'OPEN_PULL_REQUESTS', cwd: resolvePrWorkspaceCwd(prWorkspace) });
+    },
+    settings: () => {
+      dispatch({ type: 'TOGGLE_SETTINGS' });
+    },
   };
 
-  const { selected, setSelected, handleKeyDown } = usePaletteNavigation(
-    query,
-    filtered,
-    runCommand,
-    close,
-  );
+  const runCommand = (cmd: Command) => {
+    dispatch({ type: 'CLOSE_COMMAND_PALETTE' });
+    commandActions[cmd.id]();
+  };
+
+  const { selected, selectedRowRef, setSelected, handleKeyDown, handleWheel } =
+    usePaletteNavigation(query, filtered, runCommand, close);
 
   return (
     <PaletteShell
@@ -81,6 +105,7 @@ export default function CommandPalette() {
       query={query}
       onQueryChange={setQuery}
       onKeyDown={handleKeyDown}
+      onResultsWheel={handleWheel}
       placeholder="Type a command or search..."
       inputAriaLabel="Command palette"
       enterHint="Select"
@@ -93,7 +118,8 @@ export default function CommandPalette() {
         return (
           <button
             key={cmd.id}
-            onMouseEnter={() => {
+            ref={i === selected ? selectedRowRef : undefined}
+            onMouseMove={() => {
               setSelected(i);
             }}
             onClick={() => {

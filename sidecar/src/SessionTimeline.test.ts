@@ -13,7 +13,7 @@ import type {
   SessionHistoryEntry,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   SessionTimeline,
   type SessionTimelineLoaders,
@@ -41,7 +41,6 @@ function createHarness(options: HarnessOptions = {}) {
   const liveAppSessionIds = new Set(options.liveAppSessionIds ?? []);
   const loaders: SessionTimelineLoaders = {
     list: () => [],
-    page: () => ({ events: [] }),
     hydrateMission: () => ({ progress: [], transcripts: [] }),
     resolveChain: (_appSessionId, providerSessionId) => [providerSessionId],
     transcriptWindow: () => ({ events: [] }),
@@ -710,43 +709,6 @@ test('recording failure prevents a history page after a partial write', () => {
       recoverable: true,
     },
   ]);
-});
-
-test('legacy provider pages keep their shape, identity, order, limit, and error behavior', () => {
-  const calls: unknown[][] = [];
-  let fail = false;
-  const events = [transcript('page-first'), transcript('page-second')];
-  const harness = createHarness({
-    summaries: [summary('stable-app', 'provider-current')],
-    loaders: {
-      page: (...args) => {
-        calls.push(args);
-        if (fail) throw new Error('page failed');
-        return { events };
-      },
-    },
-  });
-
-  harness.timeline.loadProviderPage('stable-app', '40', 25);
-
-  assert.deepEqual(calls[0], ['provider-current', 'stable-app', '40', 25]);
-  assert.deepEqual(
-    harness.recorded.map((event) => event.id),
-    ['page-first', 'page-second'],
-  );
-  const page = harness.emitted[0];
-  assert.equal(page?.type, 'session.history');
-  if (page?.type !== 'session.history') return;
-  assert.equal('mode' in page, false);
-  assert.equal('loadedCount' in page, false);
-
-  fail = true;
-  harness.timeline.loadProviderPage('provider-current');
-  assert.deepEqual(harness.errors.at(-1), {
-    appSessionId: 'stable-app',
-    providerSessionId: 'provider-current',
-    message: 'page failed',
-  });
 });
 
 test('child history loads a canonical replace batch and reports replay failures for retry', () => {

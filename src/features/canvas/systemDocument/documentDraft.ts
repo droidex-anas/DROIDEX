@@ -10,7 +10,9 @@ import type {
   DocumentSection,
   DocumentToken,
   TokenGroup,
-} from '../designSystemDocumentProtocol';
+  DesignSystemCover,
+  DesignSystemDocumentView,
+} from '@droidex/protocol';
 import { MAX_ASSETS } from '../designSystemDocumentValidation';
 import {
   draftDiff,
@@ -21,7 +23,6 @@ import {
   type DocumentItem,
   type SectionKind,
 } from './documentSections';
-import type { DesignSystemCover, DesignSystemDocumentView } from '../protocol';
 
 export const MAX_ASSET_NAME_LENGTH = 120;
 export const FULL_KIT_MESSAGE = `A design system holds at most ${String(MAX_ASSETS)} images.`;

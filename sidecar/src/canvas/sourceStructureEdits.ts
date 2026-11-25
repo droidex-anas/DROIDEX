@@ -4,7 +4,7 @@
 
 import ts from 'typescript';
 import type { ComponentUses } from './componentUses.js';
-import type { ElementEdit, OutlineNode, SourceFiles } from './protocol.js';
+import type { ElementEdit, OutlineNode, SourceFiles } from '@droidex/protocol';
 import { SourceElementError } from './sourceElementError.js';
 import { sourceLayers, type ElementNode } from './sourceElements.js';
 import { hiddenClassEdit } from './sourceHiddenClass.js';

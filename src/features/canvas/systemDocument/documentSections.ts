@@ -2,10 +2,15 @@
 // against another, and what was removed put back in place to show struck
 // through. A draft is compared with its base; slice 2b compares a proposal.
 
-import type { DocumentSection, DocumentToken } from '../designSystemDocumentProtocol';
+import type {
+  DocumentSection,
+  DocumentToken,
+  DesignSystemCover,
+  DesignSystemVersionContent,
+} from '@droidex/protocol';
 import { isTokenName, isTokenValue } from '../designSystemDocumentValidation';
 import type { PreviewMode } from '../PreviewModeToggle';
-import type { DesignSystemCover } from '../protocol';
+
 import { modeValue } from './specimenStyle';
 
 export type DocumentItem = DocumentSection['items'][number];
@@ -307,18 +312,15 @@ const ITEM_NOUNS: Record<DocumentItem['kind'], (typeof COUNTED_NOUNS)[number]> =
   group: 'group',
 };
 
-interface SummarizedVersion {
-  name: string;
-  cover: DesignSystemCover;
-  sections: DocumentSection[];
-}
-
 /**
  * One line for what `next` changes against `base`, as the version history
  * lists it: the name and cover, then what was added, changed or removed,
  * counted by kind ("Cover replaced, 3 tokens changed, note added").
  */
-export function changeSummary(base: SummarizedVersion, next: SummarizedVersion): string {
+export function changeSummary(
+  base: DesignSystemVersionContent,
+  next: DesignSystemVersionContent,
+): string {
   const items = new Map([...itemsById(base.sections), ...itemsById(next.sections)]);
   const counts = new Map<string, number>();
   const nounOf = (key: string) => {

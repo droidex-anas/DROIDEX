@@ -42,6 +42,7 @@ export type VoiceSessions = Record<string, VoiceSessionState>;
 
 export interface VoiceSlice {
   voiceSessions: VoiceSessions;
+  knownVoices: string[];
 }
 
 export type VoiceAction =
@@ -94,6 +95,17 @@ export function withoutVoiceSession(sessions: VoiceSessions, appSessionId: strin
 }
 
 export function reduceVoice<S extends VoiceSlice>(state: S, action: VoiceAction): S {
+  const next = reduceVoiceSession(state, action);
+  if (action.type !== 'VOICE_VOICES' || sameVoices(next.knownVoices, action.voices)) return next;
+  return { ...next, knownVoices: action.voices };
+}
+
+// Two lists of the same voices in the same order are the same answer.
+function sameVoices(current: string[], next: string[]): boolean {
+  return current.length === next.length && current.every((voice, at) => voice === next[at]);
+}
+
+function reduceVoiceSession<S extends VoiceSlice>(state: S, action: VoiceAction): S {
   const current = state.voiceSessions[action.appSessionId] ?? IDLE;
   const next = nextSession(current, action);
   if (next === current) return state;

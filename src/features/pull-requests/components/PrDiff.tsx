@@ -122,8 +122,8 @@ export function PrDiff({ diff }: { diff: string }) {
             active={activePath === item.file.path}
             entry={{
               diff: item.diff,
+              status: 'loaded',
               loading: false,
-              loaded: true,
               binary: item.file.binary,
             }}
             view={diffView}

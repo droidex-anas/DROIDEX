@@ -10,20 +10,15 @@ import {
   X,
   type IconComponent,
 } from '@droidex/icons';
-import {
-  authorizeFilesRoot,
-  listDirectory,
-  openFileDefault,
-  revealFile,
-  type FilesEntry,
-  type FilesListing,
-} from '../../lib/desktop';
+import { authorizeFilesRoot, listDirectory, openFileDefault, revealFile } from '../../lib/desktop';
+import type { FilesEntry, FilesListing } from '../../lib/desktopContract';
 import { pathFileName } from '../../lib/pathDisplay';
 import { toast } from '../../lib/toast';
 import { FileTypeIcon } from '../FileTypeIcon';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { FilePreviewPane } from './FilePreviewPane';
+import { navigateTree } from './treeNavigation';
 
 const FILE_TREE_ID = 'files-workspace-tree';
 
@@ -60,7 +55,13 @@ export function FilesWorkspace({
   const [loading, setLoading] = useState<Set<string>>(() => new Set());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [authorization, setAuthorization] = useState({ root: '', accessToken: '' });
+  const [authorizationAttempt, setAuthorizationAttempt] = useState(0);
+  const [previewRefresh, setPreviewRefresh] = useState(0);
   const [treeCollapsed, setTreeCollapsed] = useState(false);
+  const [focusedPath, setFocusedPath] = useState<string>();
+  const treeRef = useRef<HTMLDivElement>(null);
+  const treeToggleRef = useRef<HTMLButtonElement>(null);
+  const focusedRowRef = useRef<HTMLElement | null>(null);
   const rootVersionRef = useRef(0);
   const accessToken = authorization.root === root ? authorization.accessToken : '';
 
@@ -111,13 +112,14 @@ export function FilesWorkspace({
       setErrors({ '': 'This session has no workspace folder.' });
       return;
     }
+    // The token is kept even when the first listing fails, so Refresh can retry it.
     void authorizeFilesRoot(root)
-      .then(async (token) => ({ token, listing: await listDirectory(token, '') }))
-      .then(({ token, listing }) => {
-        if (!cancelled) {
-          setAuthorization({ root, accessToken: token });
-          setListings({ '': listing });
-        }
+      .then((token) => {
+        if (cancelled) return;
+        setAuthorization({ root, accessToken: token });
+        return listDirectory(token, '').then((listing) => {
+          if (!cancelled) setListings({ '': listing });
+        });
       })
       .catch((reason: unknown) => {
         if (!cancelled) {
@@ -127,7 +129,21 @@ export function FilesWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [root]);
+  }, [root, authorizationAttempt]);
+
+  // Reloads every open folder in place and drops the cached listings of
+  // closed ones, so they load fresh when opened again.
+  const refresh = () => {
+    setPreviewRefresh((generation) => generation + 1);
+    if (!accessToken) {
+      setAuthorizationAttempt((attempt) => attempt + 1);
+      return;
+    }
+    setListings((current) =>
+      Object.fromEntries(Object.entries(current).filter(([key]) => expanded.has(key))),
+    );
+    for (const key of expanded) void load(key, true);
+  };
 
   const visible = useMemo(() => {
     const rows: VisibleEntry[] = [];
@@ -144,6 +160,44 @@ export function FilesWorkspace({
     return rows;
   }, [expanded, listings]);
 
+  const tabbablePath =
+    visible.find((entry) => entry.relative === focusedPath)?.relative ??
+    visible.find((entry) => entry.relative === selectedPath)?.relative ??
+    visible[0]?.relative;
+
+  const focusRow = (path: string) => {
+    const row = Array.from(
+      treeRef.current?.querySelectorAll<HTMLElement>('[role="treeitem"]') ?? [],
+    ).find((element) => element.dataset.path === path);
+    row?.focus();
+  };
+
+  const focusNearestVisibleRow = (path: string) => {
+    while (path) {
+      if (visible.some((entry) => entry.relative === path)) {
+        focusRow(path);
+        return true;
+      }
+      path = path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
+    }
+    if (!tabbablePath) return false;
+    focusRow(tabbablePath);
+    return true;
+  };
+
+  useLayoutEffect(() => {
+    const previous = focusedRowRef.current;
+    if (
+      treeCollapsed ||
+      !previous ||
+      previous.isConnected ||
+      document.activeElement !== document.body
+    )
+      return;
+    focusedRowRef.current = null;
+    focusNearestVisibleRow(previous.dataset.path ?? '');
+  });
+
   const toggleDirectory = (relative: string) => {
     const willExpand = !expanded.has(relative);
     setExpanded((current) => {
@@ -156,6 +210,14 @@ export function FilesWorkspace({
   };
 
   const relative = selectedPath ?? '';
+  const focusTreeAfterPreviewClose = () => {
+    if (treeCollapsed) {
+      treeToggleRef.current?.focus();
+      return;
+    }
+    if (!focusNearestVisibleRow(relative)) treeRef.current?.focus();
+  };
+
   const fileName = relative ? pathFileName(relative) : '';
   // A bare `/` or drive-letter root has no file name; show the root itself.
   const rootName = pathFileName(root) || root;
@@ -200,16 +262,39 @@ export function FilesWorkspace({
           <span className="min-w-0 flex-1 truncate text-label text-secondary" title={root}>
             {rootName}
           </span>
-          <HeaderButton
-            label="Refresh files"
-            icon={RefreshCw}
-            onClick={() => void load('', true)}
-          />
+          <HeaderButton label="Refresh files" icon={RefreshCw} onClick={refresh} />
         </header>
         <div
+          ref={treeRef}
+          tabIndex={-1}
           className="min-h-0 flex-1 overflow-auto px-1 pb-1"
           role="tree"
           aria-label="Session files"
+          onFocus={(event) => {
+            const row = event.target.closest<HTMLElement>('[role="treeitem"]');
+            if (row) {
+              focusedRowRef.current = row;
+              setFocusedPath(row.dataset.path);
+            }
+          }}
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget)) {
+              focusedRowRef.current = null;
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+            const path =
+              event.target instanceof HTMLElement
+                ? event.target.closest<HTMLElement>('[role="treeitem"]')?.dataset.path
+                : undefined;
+            if (!path) return;
+            const action = navigateTree(visible, path, expanded, event.key);
+            if (!action) return;
+            event.preventDefault();
+            if (action.type === 'toggle') toggleDirectory(action.path);
+            else focusRow(action.path);
+          }}
         >
           {!rootListing && !errors[''] && (
             <div className="flex items-center gap-2 px-2 py-3 text-body text-muted">
@@ -226,7 +311,9 @@ export function FilesWorkspace({
               expanded={expanded.has(entry.relative)}
               loading={loading.has(entry.relative)}
               error={errors[entry.relative]}
+              tabIndex={entry.relative === tabbablePath ? 0 : -1}
               onClick={() => {
+                setFocusedPath(entry.relative);
                 if (entry.kind === 'directory') toggleDirectory(entry.relative);
                 else onSelectPath(entry.relative);
               }}
@@ -251,6 +338,7 @@ export function FilesWorkspace({
                 aria-label="Close file"
                 title="Close file"
                 onClick={() => {
+                  focusTreeAfterPreviewClose();
                   onSelectPath('');
                 }}
                 className="flex size-5 shrink-0 items-center justify-center rounded-sm text-muted transition-colors hover:bg-active hover:text-primary"
@@ -298,6 +386,7 @@ export function FilesWorkspace({
           </nav>
           <Tooltip label={treeCollapsed ? 'Show file tree' : 'Hide file tree'} placement="bottom">
             <Button
+              ref={treeToggleRef}
               variant="ghost"
               size="sm"
               icon={PanelLeft}
@@ -313,6 +402,7 @@ export function FilesWorkspace({
         <FilePreviewPane
           accessToken={accessToken}
           relative={relative}
+          refreshGeneration={previewRefresh}
           onOpenExternal={handleOpenExternal}
           onReveal={handleReveal}
         />
@@ -343,6 +433,7 @@ function FileTreeRow({
   expanded,
   loading,
   error,
+  tabIndex,
   onClick,
 }: {
   entry: VisibleEntry;
@@ -350,6 +441,7 @@ function FileTreeRow({
   expanded: boolean;
   loading: boolean;
   error?: string;
+  tabIndex: number;
   onClick: () => void;
 }) {
   const chevron =
@@ -365,6 +457,9 @@ function FileTreeRow({
       <button
         type="button"
         role="treeitem"
+        data-path={entry.relative}
+        tabIndex={tabIndex}
+        aria-level={entry.depth + 1}
         aria-selected={selected}
         aria-expanded={entry.kind === 'directory' ? expanded : undefined}
         onClick={onClick}

@@ -6,12 +6,7 @@ import { useContext, useRef, type CSSProperties, type ReactNode, type RefObject 
 import { ArrowDown, ArrowUp, Pencil, Trash, Upload } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
-import type {
-  DocumentAsset,
-  DocumentSection,
-  DocumentToken,
-  TokenKind,
-} from '../designSystemDocumentProtocol';
+import type { DocumentAsset, DocumentSection, DocumentToken, TokenKind } from '@droidex/protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import { AddRow } from './AddRow';

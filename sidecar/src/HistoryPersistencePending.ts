@@ -12,7 +12,7 @@ import {
   MAX_PERSISTENCE_BATCH_ROWS,
   persistenceChildKey,
 } from './historyPersistenceQueueValues.js';
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 interface PendingValue<T> {
   value: T;

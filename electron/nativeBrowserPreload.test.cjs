@@ -45,6 +45,12 @@ class FakeElement {
   get innerText() {
     return this.textContent;
   }
+  get childNodes() {
+    return [{ nodeType: 3, textContent: this.text }, ...this.children];
+  }
+  getBoundingClientRect() {
+    return { x: 0, y: 0, width: 100, height: 20 };
+  }
   get isContentEditable() {
     return this.getAttribute('contenteditable') !== null;
   }
@@ -62,38 +68,55 @@ class FakeElement {
 const el = (tagName, attributes, children, text) =>
   new FakeElement(tagName, attributes, children, text);
 
-// Top-level function declarations become properties of the vm context.
-function loadPreload() {
+function loadPage(target) {
   const inert = new Proxy(function () {}, {
     get: (_target, prop) => (prop === Symbol.toPrimitive ? undefined : inert),
     set: () => true,
     apply: () => inert,
   });
-  class HTMLSelectElement {}
-  const context = {
-    document: { createElement: () => inert, createElementNS: () => inert, addEventListener() {} },
+  const context = vm.createContext({
+    document: {
+      addEventListener() {},
+      querySelector: (selector) => (selector === '#target' ? target : null),
+    },
     window: inert,
     location: { href: 'https://example.test/page' },
-    HTMLSelectElement,
-    Event: class Event {},
-    require: (name) =>
-      name === 'electron'
-        ? { contextBridge: inert, ipcRenderer: inert }
-        : require(path.join(__dirname, name)),
+    Node: { TEXT_NODE: 3 },
+    HTMLIFrameElement: class HTMLIFrameElement {},
+    getComputedStyle: () => ({ fontFamily: 'Arial', fontSize: '14px' }),
+  });
+  const loadInPage = (name, requireModule) => {
+    const module = { exports: {} };
+    vm.compileFunction(readFileSync(path.join(__dirname, name), 'utf8'), ['require', 'module'], {
+      parsingContext: context,
+      filename: name,
+    })(requireModule, module);
+    return module.exports;
   };
-  vm.runInNewContext(
-    readFileSync(path.join(__dirname, 'nativeBrowserPreload.cjs'), 'utf8'),
-    context,
-  );
-  return context;
+  const inspection = loadInPage('browserElementInspection.cjs', require);
+  loadInPage('nativeBrowserPreload.cjs', (name) => {
+    if (name === 'electron') return { ipcRenderer: inert };
+    if (name === './browserElementInspection.cjs') return inspection;
+    return require(name);
+  });
+  return { inspect: context.__droidexInspect, hoverInfo: inspection.hoverInfo };
 }
 
-const preload = loadPreload();
-
 test('inspected element text never includes script, style, or noscript bodies', () => {
-  assert.equal(preload.safeElementText(el('script', {}, [], 'steal()')), '[redacted]');
-  const card = el('div', {}, [el('style', {}, [], '.x{}'), el('p', {}, [], 'Hello')], 'Card ');
-  assert.equal(preload.safeElementText(card), 'Card Hello');
+  const script = el('script', {}, [], 'steal()');
+  assert.equal(loadPage(script).inspect('#target').text, '[redacted]');
+  const card = el(
+    'div',
+    {},
+    [
+      script,
+      el('style', {}, [], '.x{}'),
+      el('noscript', {}, [], 'Hidden'),
+      el('p', {}, [], 'Hello'),
+    ],
+    'Card ',
+  );
+  assert.equal(loadPage(card).inspect('#target').text, 'Card Hello');
 });
 
 test('inspected element HTML redacts secrets, executable attributes, and URL credentials', () => {
@@ -108,7 +131,7 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
   ]);
 
   assert.equal(
-    preload.sanitizedOuterHtml(form),
+    loadPage(form).inspect('#target').html,
     '<form action="https://example.test/login?token=%5Bredacted%5D">' +
       '<button formaction="https://example.test/submit?api_key=%5Bredacted%5D" onclick="[redacted]"></button>' +
       '<a href="https://example.test/next" ping="[redacted]" style="[redacted]"></a>' +
@@ -121,6 +144,9 @@ test('inspected element HTML redacts secrets, executable attributes, and URL cre
 });
 
 test('the hover label never shows what an editable element holds', () => {
-  assert.equal(preload.hoverName(el('h1', { contenteditable: '' }, [], 'sk-live-secret')), 'h1');
-  assert.equal(preload.hoverName(el('h1', {}, [], 'Pricing')), 'Pricing');
+  const { hoverInfo } = loadPage();
+  const editable = el('h1', { contenteditable: '' }, [], 'sk-live-secret');
+  const heading = el('h1', {}, [], 'Pricing');
+  assert.equal(hoverInfo(editable, editable.getBoundingClientRect()).name, 'h1');
+  assert.equal(hoverInfo(heading, heading.getBoundingClientRect()).name, 'Pricing');
 });

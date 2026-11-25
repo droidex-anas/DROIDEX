@@ -4,7 +4,7 @@ import { AnimatePresence, MotionConfig, motion } from 'framer-motion';
 import { ArrowUp, Search, Spinner, X } from '@droidex/icons';
 import { Button } from '../../src/components/ui/Button';
 import { loadWorkspaceCwds } from '../../src/hooks/persistedUiPreferences';
-import type { DirectoryListing } from '../../src/lib/desktop';
+import type { DirectoryListing } from '../../src/lib/desktopContract';
 import { wrapTabFocus } from '../../src/lib/focusTrap';
 import { baseName, breadcrumb, describeListingError, joinPath } from './folderPaths';
 import {

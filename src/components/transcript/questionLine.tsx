@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { stripAnsi } from '../../lib/tools';
 import { Caret, ErrorTag, Expand, InterruptedTag, ToolPanel } from './primitives';
 import { ToolCallCard } from './commandCard';

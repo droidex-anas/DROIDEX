@@ -2,9 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { AutomationDeliveryReceipt } from '../automations/types.js';
-import type { ProjectView } from '../projects/types.js';
-import type { SessionSummary } from '../protocol.js';
-import type { SidebarRow } from './protocol.js';
+import type { ProjectView, SessionSummary, SidebarRow } from '@droidex/protocol';
+
 import { SidebarSessions, type SidebarHost } from './SidebarSessions.js';
 import { SIDEBAR_REQUEST_TIMEOUT_MS, SidebarRequests } from './sidebarRequests.js';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';

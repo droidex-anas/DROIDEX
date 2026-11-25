@@ -14,7 +14,7 @@ import {
 } from '../../lib/tools';
 import { createIncrementalTranscriptFilter } from '../../lib/incrementalTranscriptFilter';
 import { visibleSessionTarget } from '../../lib/childSessions';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 const EMPTY_TRANSCRIPT: TranscriptEvent[] = [];

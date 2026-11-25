@@ -1,7 +1,7 @@
 // Provider runtimes cost hundreds of MiB each; keep at most three settled
 // off-screen runtimes live, releasing the longest idle first. History survives.
 import type { LiveSession } from './SessionLifecycle.js';
-import type { SessionPhase } from './protocol.js';
+import type { SessionPhase } from '@droidex/protocol';
 import { RuntimeRetirementTimer } from './runtimeRetirementTimer.js';
 
 // The three most recently idle runtimes retain the 30-minute budget; selecting
@@ -294,11 +294,11 @@ export class SessionRuntimeRetirement {
       appSessionId,
       idleSince: Math.max(live.summary.updatedAt, this.leftScreenAt.get(appSessionId) ?? 0),
       phase: live.summary.phase,
-      streaming: live.streaming || live.summary.streaming === true,
+      streaming: live.turn.streaming || live.summary.streaming === true,
       compacting: live.compacting === true || live.autoCompacting,
-      queuedSends: live.pendingSends.length,
-      interrupting: live.interrupting === true || live.interruptingToSend === true,
-      closing: live.closeMode !== undefined,
+      queuedSends: live.turn.pendingSends.length,
+      interrupting: live.turn.interrupting || live.turn.interruptingToSend,
+      closing: live.turn.closeMode !== undefined,
       coolingDown: (this.releaseRetryAt.get(appSessionId) ?? 0) > now,
       onScreen: onScreen.has(appSessionId),
       hasUnsettledChildren: d.hasUnsettledChildren(appSessionId),

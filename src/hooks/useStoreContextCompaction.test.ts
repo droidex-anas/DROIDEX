@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { initialState, reducer, type AppState } from './useStore';
-import type { ContextStatsSnapshot, TranscriptEvent } from '../types/bridge';
+import type { ContextStatsSnapshot, TranscriptEvent } from '@droidex/protocol';
 import { sessionSummary } from '../test/sessionSummary';
 import { textEvent } from '../test/textEvent';
 import { childSummary } from '../test/childSummary';

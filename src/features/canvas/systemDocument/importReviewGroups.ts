@@ -3,7 +3,7 @@
 // exports the kit entry does not all take or whose catalog demo it left out,
 // grouped by reason in plain words.
 
-import type { LibraryProvenance, LibrarySkipReason } from '../protocol';
+import type { LibraryProvenance, LibrarySkipReason } from '@droidex/protocol';
 
 export interface ImportReview {
   /** The disclosure's label, such as "11 left out" or "11 left out · 2 notes". */

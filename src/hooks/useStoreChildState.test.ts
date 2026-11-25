@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ChildSessionSummary } from '../types/bridge';
+import type { ChildSessionSummary } from '@droidex/protocol';
 import { initialState, reducer, type Action } from './useStore';
 import { sessionSummary } from '../test/sessionSummary';
 import { childSummary } from '../test/childSummary';

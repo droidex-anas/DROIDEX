@@ -23,7 +23,7 @@ import type {
   CanvasFrame,
   PreviewReport,
   SourceFiles,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** The build deadline plus room for a build queued behind the other slots. */

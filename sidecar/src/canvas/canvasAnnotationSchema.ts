@@ -132,15 +132,6 @@ export type AnnotationDraft = z.infer<typeof annotationDraftSchema>;
 export type Annotation = z.infer<typeof annotationSchema>;
 export type AnnotateCanvasInput = z.infer<typeof annotateCanvasInputSchema>;
 
-/** One commit's effect on the annotation layer, carried by the change it belongs to. */
-export interface AnnotationChange {
-  /** The layer's version after this change, the next annotate's expected version. */
-  version: number;
-  /** Added or redrawn annotations; a new one is drawn above every earlier one. */
-  upserted: Annotation[];
-  removedIds: string[];
-}
-
 /** The annotation a draft saves as, keeping its first author and creation time. */
 export function savedAnnotation(
   draft: AnnotationDraft,

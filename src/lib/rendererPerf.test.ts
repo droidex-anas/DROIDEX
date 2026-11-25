@@ -14,7 +14,7 @@ import {
   noteComposerInteractive,
   noteComposerNotApplicable,
 } from './rendererPerf';
-import type { ServerEvent } from '../types/bridge';
+import type { ServerEvent } from '@droidex/protocol';
 
 interface FakeFrame {
   callback: () => void;

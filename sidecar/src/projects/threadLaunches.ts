@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { SessionSummary } from '../protocol.js';
+import type { SessionSummary, ThreadInput } from '@droidex/protocol';
 import type { ProjectPort } from './sessions.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
-import type { Project, ProjectThread, ThreadInput } from './types.js';
+import type { Project, ProjectThreadRecord } from './types.js';
 import {
   checkWithinAutonomy,
   THREAD_BRIEF,
@@ -15,6 +15,7 @@ import { LEDGER_LIMITS } from './store.js';
 
 interface ThreadLaunchInput extends ThreadInput {
   workspace?: ThreadCheckout;
+  requestedTitle?: string;
 }
 
 /** Owns queued launch order and binding before the first task reaches a provider. */
@@ -28,14 +29,14 @@ export class ThreadLaunches {
     private readonly commit: (source: string, project: Project) => void,
     private readonly reportFailure: (
       project: Project,
-      thread: ProjectThread,
+      thread: ProjectThreadRecord,
       text: string,
       replyId?: string,
       leadAlert?: boolean,
     ) => void,
   ) {}
 
-  loaded(thread: ProjectThread): void {
+  loaded(thread: ProjectThreadRecord): void {
     if (thread.queuedSpawn?.phase === 'opening') thread.queuedSpawn.phase = 'queued';
     this.spawnOrder = Math.max(this.spawnOrder, thread.queuedSpawn?.order ?? 0);
   }
@@ -48,17 +49,18 @@ export class ThreadLaunches {
 
   async enqueue(
     project: Project,
-    { workspace, ...input }: ThreadLaunchInput,
+    { workspace, requestedTitle, ...input }: ThreadLaunchInput,
     ownerAppSessionId: string,
     isCurrent: () => boolean,
-  ): Promise<ProjectThread> {
+  ): Promise<ProjectThreadRecord> {
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
     const load = this.sessions.runtimeLoad();
     const phase = load.live >= load.limit || this.wakes.hasWaitingStarts() ? 'queued' : 'opening';
-    const thread: ProjectThread = {
+    const thread: ProjectThreadRecord = {
       appSessionId: randomUUID(),
       ownerAppSessionId,
       title: input.title,
+      ...(requestedTitle !== undefined ? { requestedTitle } : {}),
       reply: '',
       waiting: false,
       queuedSpawn: { phase, input, order: ++this.spawnOrder, workspace },
@@ -79,7 +81,11 @@ export class ThreadLaunches {
     }
   }
 
-  async open(project: Project, thread: ProjectThread, isCurrent: () => boolean): Promise<boolean> {
+  async open(
+    project: Project,
+    thread: ProjectThreadRecord,
+    isCurrent: () => boolean,
+  ): Promise<boolean> {
     const projectCurrent = isCurrent;
     const targetCurrent = this.wakes.guard(project, thread.appSessionId);
     isCurrent = () => projectCurrent() && targetCurrent();
@@ -165,7 +171,7 @@ export class ThreadLaunches {
     }
   }
 
-  async bind(project: Project, thread: ProjectThread, isCurrent: () => boolean) {
+  async bind(project: Project, thread: ProjectThreadRecord, isCurrent: () => boolean) {
     if (!isCurrent()) throw new Error('Project launch was cancelled.');
     if (!project.threads.includes(thread)) project.threads.push(thread);
     this.membership.set(thread.appSessionId, project);

@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { INLINE_CARD_EASE } from '../inlineCardMotion';
-import type { ChildSessionSummary, ProviderKind } from '../../types/bridge';
+import type { ChildSessionSummary, ProviderKind } from '@droidex/protocol';
 import { AgentRow } from './AgentRow';
 import { agentPhaseSections, type AgentRow as AgentRowModel } from './agentMonitorModel';
 

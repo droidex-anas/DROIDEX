@@ -22,8 +22,8 @@ import { hostKitFonts } from './canvasFontAssets.js';
 import { kitModes } from './designSystemDocument.js';
 import { KIT_THEME_FILE, kitTailwindTheme, readProjectTheme } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import type { SourceFiles } from './schema.js';
+import type { CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
+
 import { KIT_SPECIFIER } from './designBundle.js';
 
 export type DesignStylesheetResult =

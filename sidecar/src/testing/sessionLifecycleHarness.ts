@@ -9,7 +9,7 @@ import type {
   PermissionOutcome,
   ServerEvent,
   SessionSummary,
-} from '../protocol.js';
+} from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from '../providers/interactions.js';
 import type { Provider } from '../providers/session.js';
 import { DroidProvider } from '../providers/droid/DroidProvider.js';

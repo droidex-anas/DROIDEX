@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { wrapDroidInvocation } from './Environment.js';
 import { reasoningValue } from './modelCatalog.js';
-import type { ModelInfo, ReasoningEffort } from './protocol.js';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 import { childEnv } from './childEnv.js';
 
 const execFileAsync = promisify(execFile);

@@ -4,7 +4,7 @@
 // typed as {name}.
 
 import { cn } from '../../../components/ui/cn';
-import type { TokenKind } from '../designSystemDocumentProtocol';
+import type { TokenKind } from '@droidex/protocol';
 import { cssTokenValue, displayTokenValue, selfReferenceProblem } from './documentSections';
 import { InlineField } from './InlineField';
 import { tokenValueProblem } from './specimenStyle';

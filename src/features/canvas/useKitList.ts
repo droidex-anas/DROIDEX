@@ -1,56 +1,102 @@
-// The kits as the sidecar lists them, for the picker and the transcript's kit
-// chips: read once connected, and again on request and on every kit change.
-// A new reader starts from the last list, so a chip that scrolls back into
-// view shows its kit at once instead of loading it again.
+// One shared kit list for the picker and transcript chips. Changes during a
+// read coalesce into one follow-up; socket health also invalidates the list
+// when a reconnect only replays events and emits no connection event.
 
-import { useCallback, useEffect, useState } from 'react';
-import { useStoreSelector } from '../../hooks/useStore';
+import { useSyncExternalStore } from 'react';
+import { getRuntimeHealth, subscribeRuntimeHealth } from '../../lib/runtimeHealth';
 import { canvasClient } from './canvasClient';
 import { canvasMessage } from './client';
 import { followLatest } from './designSystemChoices';
 import type { KitList } from './designSystemsState';
-import type { DesignSystemSummary } from './protocol';
 
-let lastListed: DesignSystemSummary[] | null = null;
+let list: KitList = { status: 'loading' };
+let stale = true;
+let activeRead: symbol | null = null;
+let generation = 0;
+const listeners = new Set<() => void>();
 
-/**
- * The kits, to name a pinned frame's kit and notice a deleted one. Each read
- * moves the canvases' choices to their kits' latest versions.
- */
-export function useKitList(): { list: KitList; reread: () => void; retry: () => void } {
-  const [list, setList] = useState<KitList>(() =>
-    lastListed ? { status: 'listed', systems: lastListed } : { status: 'loading' },
-  );
-  const [reads, setReads] = useState(0);
-  const isConnected = useStoreSelector((state) => state.connection === 'connected');
+function publish(next: KitList): void {
+  list = next;
+  for (const listener of listeners) listener();
+}
 
-  useEffect(() => {
-    if (!isConnected) return;
-    let active = true;
-    canvasClient.designSystems.list().then(
-      (systems) => {
-        if (!active) return;
+function read(): void {
+  if (activeRead || !stale || listeners.size === 0 || getRuntimeHealth().transport !== 'connected')
+    return;
+  const token = Symbol();
+  activeRead = token;
+  stale = false;
+  const started = generation;
+  void canvasClient.designSystems.list().then(
+    (systems) => {
+      if (activeRead !== token) return;
+      activeRead = null;
+      if (started === generation) {
         followLatest(systems);
-        lastListed = systems;
-        setList({ status: 'listed', systems });
-      },
-      (error: unknown) => {
-        if (active) setList({ status: 'failed', message: canvasMessage(error) });
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [reads, isConnected]);
+        publish({ status: 'listed', systems });
+      }
+      read();
+    },
+    (error: unknown) => {
+      if (activeRead !== token) return;
+      activeRead = null;
+      if (started === generation) {
+        stale = true;
+        publish({ status: 'failed', message: canvasMessage(error) });
+        return;
+      }
+      read();
+    },
+  );
+}
 
-  const reread = useCallback(() => {
-    setReads((count) => count + 1);
-  }, []);
-  useEffect(() => canvasClient.subscribeDesignSystems(reread), [reread]);
-  // A reread keeps the last list on screen; a retry shows the read again.
-  const retry = () => {
-    setList({ status: 'loading' });
-    reread();
+function reread(): void {
+  generation += 1;
+  stale = true;
+  read();
+}
+
+function retry(): void {
+  publish({ status: 'loading' });
+  reread();
+}
+
+let stopWatching: (() => void) | undefined;
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  if (listeners.size === 1) {
+    const stopChanges = canvasClient.subscribeDesignSystems(reread);
+    let transport = getRuntimeHealth().transport;
+    const stopHealth = subscribeRuntimeHealth(() => {
+      const next = getRuntimeHealth().transport;
+      if (next === transport) return;
+      transport = next;
+      activeRead = null;
+      reread();
+    });
+    stopWatching = () => {
+      stopChanges();
+      stopHealth();
+    };
+  }
+  read();
+  return () => {
+    listeners.delete(listener);
+    if (listeners.size !== 0) return;
+    stopWatching?.();
+    stopWatching = undefined;
+    // Kit changes are unobserved while there are no readers.
+    activeRead = null;
+    stale = true;
   };
-  return { list, reread, retry };
+}
+
+function snapshot(): KitList {
+  return list;
+}
+
+/** The kits, with a quiet reread or an explicit loading retry. */
+export function useKitList(): { list: KitList; reread: () => void; retry: () => void } {
+  return { list: useSyncExternalStore(subscribe, snapshot, snapshot), reread, retry };
 }

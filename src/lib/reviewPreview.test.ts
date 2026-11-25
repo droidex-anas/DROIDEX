@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createReviewPreviewRequest } from './reviewPreview';
-import type { FilePreviewPayload } from './desktop';
+import type { FilePreviewPayload } from './desktopContract';
 
 function deferred<T>() {
   let resolve: ((value: T) => void) | undefined;
@@ -27,6 +27,7 @@ function textPreview(text: string): FilePreviewPayload {
   return {
     category: 'text',
     totalSize: text.length,
+    ctimeMs: 0,
     sizeCapBytes: 100,
     previewable: true,
     text,

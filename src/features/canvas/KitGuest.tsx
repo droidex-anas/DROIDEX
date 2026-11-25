@@ -16,7 +16,7 @@ import { canvasMessage } from './client';
 import { keepKitCapture } from './kitCaptures';
 import { createGuestElement } from './previewGuestElement';
 import { startPreview, type PreviewRun } from './previewRuntime';
-import type { DesignSystemRef, KitCaptureItem, KitPreviewTarget } from './protocol';
+import type { DesignSystemRef, KitCaptureItem, KitPreviewTarget } from '@droidex/protocol';
 import { usePickedColor } from './systemDocument/pickedColor';
 import './kitGuest.css';
 

@@ -6,6 +6,7 @@ import type {
   DiffFileList,
   DiffScope,
   DiffStatMode,
+  FileDiffOptions,
   FileDiffResult,
   GitActionResult,
   GitBranchList,
@@ -79,21 +80,14 @@ export async function getGitDiffFiles(
 
 export async function getGitFileDiff(
   dir: string,
-  mode: DiffScope,
-  path: string,
-  ignoreWhitespace = false,
-  appSessionId?: string,
+  options: FileDiffOptions,
 ): Promise<FileDiffResult> {
+  const { path } = options;
   if (!isDesktop() || !dir) return { path, diff: '', binary: false };
   try {
-    return await bridge().gitFileDiff(dir, {
-      mode,
-      path,
-      ignoreWhitespace,
-      appSessionId,
-    });
+    return await bridge().gitFileDiff(dir, options);
   } catch {
-    return { path, diff: '', binary: false };
+    return { path, diff: '', binary: false, failed: true };
   }
 }
 

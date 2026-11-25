@@ -46,7 +46,7 @@ import {
   strictRuleNote,
   type SheetState,
 } from './previewLabels';
-import type { CanvasFrame, FrameRect } from './protocol';
+import type { CanvasFrame, FrameRect } from '@droidex/protocol';
 import type { ToolbarRoom } from './toolbarPlacement';
 import type { DesignPress } from './useDesignPicker';
 

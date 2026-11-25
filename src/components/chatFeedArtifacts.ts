@@ -6,7 +6,7 @@
 // proposed or applied is one too, shown as its chip once per turn for each kit
 // and outcome (design system documents spec §9).
 
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 type Activity = NonNullable<TranscriptEvent['canvasActivity']>;
 

@@ -1,5 +1,5 @@
 import { decodeBase64 } from '../../packages/remote/src/index';
-import type { RemoteNotificationState } from '../../src/lib/desktop';
+import type { RemoteNotificationState } from '../../src/lib/desktopContract';
 import type { RemoteConnection } from './remoteConnection';
 
 const supported = () =>

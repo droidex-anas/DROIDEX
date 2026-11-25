@@ -4,19 +4,24 @@ import { useMemo } from 'react';
 import { FileChip } from '../../components/composer/FileChip';
 import { Button } from '../../components/ui/Button';
 import type { WorkspaceScope } from '../../lib/workspaces';
-import type { ModelInfo } from '../../types/bridge';
+import type { ModelInfo, AutomationSchedule } from '@droidex/protocol';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import { SelectMenu } from './SelectMenu';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
   automationWorkspaceIssue,
-  convertOnceRunAt,
+  changeOnceTimezone,
   supportedTimeZones,
   validateAutomationDraft,
   workspaceLabel,
 } from './schedule';
-import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
-import type { AutomationDraft, AutomationEditorState, AutomationSchedule } from './types';
+import {
+  EditorRow,
+  ScheduleControls,
+  scheduleForKind,
+  useInvalidScheduleInput,
+} from './ScheduleControls';
+import type { AutomationDraft, AutomationEditorState } from './types';
 
 interface AutomationEditorProps {
   editor: AutomationEditorState;
@@ -46,6 +51,11 @@ export function AutomationEditor({
   onClose,
 }: AutomationEditorProps) {
   const { draft } = editor;
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(
+    draft.schedule,
+    draft.timezone,
+    editor.mode === 'edit' ? editor.automation.id : 'create',
+  );
   const isDelivery = draft.target.kind === 'existing-session';
   const validation = useMemo(
     () =>
@@ -77,16 +87,9 @@ export function AutomationEditor({
       update('timezone', timezone);
       return;
     }
-    const runAt = convertOnceRunAt(draft.schedule.runAt, draft.timezone, timezone);
-    if (runAt === null) return;
-    onChange({
-      ...draft,
-      timezone,
-      schedule: {
-        kind: 'once',
-        runAt,
-      },
-    });
+    const result = changeOnceTimezone(draft.schedule, draft.timezone, timezone, invalidInput);
+    setInvalidInput(result.invalidInput, timezone);
+    onChange({ ...draft, timezone, schedule: result.schedule });
   };
 
   return (
@@ -254,6 +257,7 @@ export function AutomationEditor({
                   value={draft.schedule.kind}
                   ariaLabel="Automation frequency"
                   onChange={(value) => {
+                    setInvalidInput(null);
                     updateSchedule(scheduleForKind(value, draft.schedule));
                   }}
                   options={[
@@ -269,6 +273,8 @@ export function AutomationEditor({
             )}
             <ScheduleControls
               schedule={draft.schedule}
+              invalidInput={invalidInput}
+              onInvalidInputChange={setInvalidInput}
               timezone={draft.timezone}
               onChange={updateSchedule}
             />
@@ -316,8 +322,10 @@ export function AutomationEditor({
             variant="primary"
             size="md"
             className="ml-auto"
-            onClick={onSave}
-            disabled={saving || Boolean(validation)}
+            onClick={() => {
+              if (!saving && !validation && !invalidInput) onSave();
+            }}
+            disabled={saving || Boolean(validation) || Boolean(invalidInput)}
           >
             {saving ? 'Saving…' : editor.mode === 'create' ? 'Create automation' : 'Save changes'}
           </Button>

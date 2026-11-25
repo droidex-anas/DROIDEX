@@ -2,7 +2,6 @@ import {
   hydrateHistoricalSession,
   loadSessionHistory,
   loadOpenTranscriptTail,
-  loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
 } from './history.js';
@@ -13,7 +12,7 @@ import type {
   SessionRole,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { CompactType } from './compaction.js';
 import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
@@ -29,7 +28,6 @@ type TimelineError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionTimelineLoaders {
   list: typeof loadSessionHistory;
-  page: typeof loadSessionPage;
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
@@ -133,7 +131,6 @@ export class SessionTimeline {
   constructor(private readonly dependencies: SessionTimelineDependencies) {
     this.loaders = dependencies.loaders ?? {
       list: loadSessionHistory,
-      page: loadSessionPage,
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
@@ -212,28 +209,6 @@ export class SessionTimeline {
         providerSessionId,
         message,
         recoverable: true,
-      });
-    }
-  }
-
-  loadProviderPage(providerSessionId: string, cursor?: string, limit?: number): void {
-    const summary = this.dependencies.registry.resolveSummary(providerSessionId);
-    const appSessionId = summary?.appSessionId ?? providerSessionId;
-    const resolvedProviderSessionId = summary?.providerSessionId ?? providerSessionId;
-    try {
-      const page = this.loaders.page(resolvedProviderSessionId, appSessionId, cursor, limit);
-      this.record(page.events);
-      this.dependencies.emit({
-        type: 'session.history',
-        appSessionId,
-        progress: [],
-        transcripts: page.events,
-      });
-    } catch (error) {
-      this.dependencies.emitError({
-        appSessionId,
-        providerSessionId: resolvedProviderSessionId,
-        message: errMsg(error),
       });
     }
   }

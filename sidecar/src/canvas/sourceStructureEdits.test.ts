@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { SourceFiles } from './protocol.js';
+import type { SourceFiles } from '@droidex/protocol';
 import { instrumentSource } from './sourceElements.js';
 import { editLayer, moveLayer, type LayerMove } from './sourceStructureEdits.js';
 

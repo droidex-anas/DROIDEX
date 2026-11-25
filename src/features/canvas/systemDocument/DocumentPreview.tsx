@@ -5,7 +5,7 @@ import { useRef, useState } from 'react';
 import { Notebook } from '@droidex/icons';
 import { Button } from '../../../components/ui/Button';
 import { cn } from '../../../components/ui/cn';
-import type { DocumentPreview } from '../designSystemDocumentProtocol';
+import type { DocumentPreview } from '@droidex/protocol';
 import { ActionMenu, type MenuAction } from './ActionMenu';
 import type { DraftChange } from './documentDraft';
 import type { DraftMark } from './documentSections';

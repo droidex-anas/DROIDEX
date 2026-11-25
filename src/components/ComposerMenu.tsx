@@ -14,7 +14,7 @@ import { CatalogRowIcon } from './composer/CatalogRowIcon';
 import { frameSizeLabel } from '../features/canvas/canvasGeometry';
 import { catalogLabel, rowScope, type MenuEntry, type MenuItem } from './composer/menuItems';
 import { inlineCardMotion } from './inlineCardMotion';
-import type { SkillInfo } from '../types/bridge';
+import type { SkillInfo } from '@droidex/protocol';
 
 /** One of DROIDEX's own commands, run on the client instead of sent to the agent. */
 export interface SlashCommand {

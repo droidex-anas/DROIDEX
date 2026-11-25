@@ -2,6 +2,16 @@ import { normalizeUrl } from './browserViewport';
 
 export const DEFAULT_BROWSER_URL = 'about:blank';
 
+export function isLocalBrowserUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    return isLoopbackHost(url.hostname) || url.hostname === '0.0.0.0';
+  } catch {
+    return false;
+  }
+}
+
 export function safeBrowserUrl(value: string | undefined, appOrigin: string | undefined): string {
   if (isInternalBrowserUrl(value)) return DEFAULT_BROWSER_URL;
   const normalized = value ? normalizeUrl(value) : DEFAULT_BROWSER_URL;

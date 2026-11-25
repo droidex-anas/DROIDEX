@@ -6,7 +6,8 @@ import type {
   SessionLineage,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+  ProviderKind,
+} from '@droidex/protocol';
 import type { LiveSession, SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './errors.js';
@@ -15,7 +16,7 @@ import { formatSideChatPrompt } from './sideChatPrompt.js';
 import { conversationMarkdown } from './sessionMarkdown.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import { forkedTranscript, writeForkedTranscript } from './providers/ProviderTranscriptFile.js';
-import type { ProviderKind } from './providers/providerKind.js';
+
 import type { Provider, ProviderForkHandle, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;

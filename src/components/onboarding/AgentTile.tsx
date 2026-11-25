@@ -1,5 +1,5 @@
 import { PROVIDER_MARKS } from '../../features/providers/providerIdentity';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { ModelIcon } from '../ModelIcon';
 
 export function AgentTile({ agent, small = false }: { agent: ProviderKind; small?: boolean }) {

@@ -15,10 +15,11 @@ import {
   isKitSummary,
   isKitVersion,
   isKitVersionEntry,
+  isKitVersionContent,
   isTokenName,
   isTokenValue,
 } from './designSystemDocumentValidation';
-import type { CanvasEvent } from './protocol';
+import type { CanvasEvent } from '@droidex/protocol';
 import {
   boundedList,
   boundedText,
@@ -75,6 +76,7 @@ const REPLY_KINDS = new Set([
   'revisionDiff',
   'designSystems',
   'designSystem',
+  'designSystemVersionContent',
   'editTokens',
   'designSystemVersions',
   'designSystemSaved',
@@ -211,6 +213,8 @@ function isReply(value: unknown): boolean {
       return list(value.systems, isKitSummary);
     case 'designSystem':
       return isKitDocument(value.system);
+    case 'designSystemVersionContent':
+      return isKitVersionContent(value.content);
     case 'editTokens':
       return isEditTokens(value.tokens);
     case 'designSystemVersions':

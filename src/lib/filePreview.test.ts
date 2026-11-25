@@ -1,59 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert';
-import {
-  DOCX_PREVIEW_OPTIONS,
-  classifyByName,
-  sanitizeDocxCssText,
-  sanitizeDocxPreview,
-} from './filePreview';
-
-test('classifyByName groups text, markdown, json, csv, config, and well-known files as text', () => {
-  for (const name of [
-    'notes.txt',
-    'README.md',
-    'config.json',
-    'data.csv',
-    'app.yml',
-    'schema.graphql',
-    'Dockerfile',
-    '.gitignore',
-    'main.ts',
-    'patch.diff',
-    // Dotfiles and well-known filenames, regardless of case.
-    '.npmrc',
-    'MAKEFILE',
-    'path/To/Dockerfile',
-  ]) {
-    assert.equal(classifyByName(name), 'text', `expected ${name} to be text`);
-  }
-});
-
-test('classifyByName routes raster images, pdf, docx, and xlsx to their own buckets', () => {
-  assert.equal(classifyByName('logo.png'), 'image');
-  assert.equal(classifyByName('photo.JPEG'), 'image');
-  assert.equal(classifyByName('icon.svg'), 'image');
-  assert.equal(classifyByName('paper.pdf'), 'pdf');
-  assert.equal(classifyByName('report.docx'), 'docx');
-  assert.equal(classifyByName('budget.xlsx'), 'xlsx');
-});
-
-test('classifyByName falls back to external for macro, legacy, archive, and unknown types', () => {
-  // legacy / macro office payloads that the renderer cannot render safely
-  for (const name of [
-    'old.doc',
-    'macro.docm',
-    'legacy.xls',
-    'macro.xlsm',
-    'slides.ppt',
-    'macro.pptm',
-  ]) {
-    assert.equal(classifyByName(name), 'external', `expected ${name} to be external`);
-  }
-  // archives / executables / unknown
-  for (const name of ['bundle.zip', 'installer.exe', 'library.dylib', 'thing.bin', 'noext']) {
-    assert.equal(classifyByName(name), 'external', `expected ${name} to be external`);
-  }
-});
+import { DOCX_PREVIEW_OPTIONS, sanitizeDocxCssText, sanitizeDocxPreview } from './filePreview';
 
 test('DOCX previews disable HTML alt chunks', () => {
   assert.equal(DOCX_PREVIEW_OPTIONS.renderAltChunks, false);

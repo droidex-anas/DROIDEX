@@ -2,8 +2,9 @@ import assert from 'node:assert/strict';
 import test, { afterEach, beforeEach } from 'node:test';
 
 import { Bridge } from './bridge';
-import { adaptEvent, initialState, reducer } from '../hooks/useStore';
-import type { ServerEvent, ServerEventBatch } from '../types/bridge';
+import { initialState, reducer } from '../hooks/useStore';
+import { adaptEvent } from '../hooks/storeEvents';
+import type { ServerEvent, ServerEventBatch } from '@droidex/protocol';
 
 class FakeWebSocket {
   static readonly OPEN = 1;

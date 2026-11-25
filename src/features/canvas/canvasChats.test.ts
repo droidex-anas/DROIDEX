@@ -4,7 +4,7 @@ import { CanvasClient } from './client';
 import { canvasIntentForDraft } from './canvasChatIntent';
 import { bridge as sessionBridge } from '../../lib/bridge';
 import { createSession } from '../../lib/commands';
-import type { ClientCommand } from '../../types/bridge';
+import type { ClientCommand, CanvasSummary } from '@droidex/protocol';
 import {
   acknowledgeAttachment,
   attachCanvasToChat,
@@ -14,7 +14,6 @@ import {
   searchCanvases,
 } from './canvasChats';
 import { fakeCanvasBridge, flush } from '../../test/canvasTransport';
-import type { CanvasSummary } from './protocol';
 
 type Bridge = ReturnType<typeof fakeCanvasBridge>;
 

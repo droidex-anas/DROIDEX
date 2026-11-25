@@ -6,7 +6,7 @@
 import { useRef, useState } from 'react';
 import { ChevronRight, Plus } from '@droidex/icons';
 import { Menu } from '../../components/ui/Menu';
-import type { DesignSystemSource } from './protocol';
+import type { DesignSystemSource } from '@droidex/protocol';
 
 /** The chat's project folder, by name, and asking its agent for a kit from it. */
 export interface FromProject {

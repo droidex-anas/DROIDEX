@@ -4,13 +4,13 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { readFullTranscript } from '../testing/sessionTranscriptSupport.js';
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { TranscriptEvent } from '../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { SessionEventFlow } from '../SessionEventFlow.js';
 import { SessionTimeline } from '../SessionTimeline.js';
 import { ProviderTranscriptFile } from '../providers/ProviderTranscriptFile.js';
 import { ClaudeEventMapper } from '../providers/claude/claudeEvents.js';
-import { parseFullSessionTranscript } from '../sessionTranscript.js';
 import { sessionSummary } from '../testing/sessionSummaryFixture.js';
 import { appendCanvasToolBinding, readCanvasToolBindings } from './canvasToolBindings.js';
 import { CanvasToolPresentation, canvasToolProvenance } from './canvasToolPresentation.js';
@@ -385,7 +385,7 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
   }
   await timeline.settleStreaming('app-1', 'app-1');
   const childPath = join(directory, 'provider-sessions', 'child-1.jsonl');
-  const replay = parseFullSessionTranscript('app-1', 'child-1', childPath, 'worker');
+  const replay = readFullTranscript('app-1', 'child-1', childPath, 'worker');
   for (const rows of [recorded, emitted.filter((row) => row.author !== 'user'), replay]) {
     assert.ok(!JSON.stringify(rows).includes(canary));
     const result = rows.find((row) => row.kind === 'tool_result');
@@ -480,7 +480,7 @@ test('a streaming Canvas write shows its frame live before its input ends, and s
   ]);
   const stored = await file.read();
   assert.equal(stored.split('"tool_use"').length - 1, 1);
-  const replay = parseFullSessionTranscript(
+  const replay = readFullTranscript(
     'app-1',
     'app-1',
     join(directory, 'provider-sessions', 'app-1.jsonl'),

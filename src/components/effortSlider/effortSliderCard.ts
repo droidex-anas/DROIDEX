@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import { reasoningEffortLabel } from '../../lib/reasoningEffort';
-import type { ProviderKind, ReasoningEffort } from '../../types/bridge';
+import type { ProviderKind, ReasoningEffort } from '@droidex/protocol';
 import type { EffortSliderLevel } from './effortSliderElement';
 
 // The card is already the surface, so the slider's own panel stays flat and

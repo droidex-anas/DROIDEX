@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { text } from 'node:stream/consumers';
 import test from 'node:test';
 import { createElement, type ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { prerenderToNodeStream } from 'react-dom/static';
 import { Markdown, MarkdownTree, markdownFenceOptions } from './Markdown';
 import { SpecRenderer } from './SpecRenderer';
 
@@ -241,15 +243,10 @@ test('small JSON fences keep token highlighting and large ones stay plain', asyn
 });
 
 test('fences in a language the highlighter knows render as tokens', async () => {
-  const render = () =>
-    renderToStaticMarkup(
-      createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
-    );
-
-  // The highlighter loads lazily: the first render starts the load.
-  render();
-  await import('./PrismCode');
-  const html = render();
+  const { prelude } = await prerenderToNodeStream(
+    createElement(Markdown, null, '```ts\nconst answer = "droid";\n\nexport { answer };\n```'),
+  );
+  const html = await text(prelude);
 
   assert.match(html, /--code-keyword\)">const</);
   assert.match(html, /--code-string\)">&quot;droid&quot;/);

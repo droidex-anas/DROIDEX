@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { isBuild } from '../../../src/features/canvas/buildValidation.js';
-import type { SourceFiles } from './protocol.js';
+import type { SourceFiles } from '@droidex/protocol';
 import { sourceOutlineSchema } from './schema.js';
 import { instrumentSource } from './sourceElements.js';
 import { OUTLINE_BUDGET } from './sourceOutline.js';

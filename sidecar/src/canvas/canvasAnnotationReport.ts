@@ -3,12 +3,8 @@
 // relations are computed here, so "make the header look like this sketch" reaches
 // the model as a sketch over a named frame, not as geometry it has to solve.
 
-import {
-  simplifiedStroke,
-  type Annotation,
-  type AnnotationPoint,
-} from './canvasAnnotationSchema.js';
-import type { CanvasFrame, FrameRect } from './protocol.js';
+import type { Annotation, AnnotationPoint, CanvasFrame, FrameRect } from '@droidex/protocol';
+import { simplifiedStroke } from './canvasAnnotationSchema.js';
 
 /** A frame within this gap of a mark that touches none is the frame it is about. */
 const NEAR_PX = 240;

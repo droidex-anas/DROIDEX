@@ -1,4 +1,4 @@
-import { DROID_PROFILES, type DroidProfile } from '../../types/bridge';
+import { DROID_PROFILES, type DroidProfile } from '@droidex/protocol';
 import { parseToolResultObject } from '../automations/toolNames';
 
 /* The thread tools arrive namespaced by the harness that ran them

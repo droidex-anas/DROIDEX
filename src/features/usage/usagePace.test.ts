@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { UsageMeter } from '../../types/bridge';
+import type { UsageMeter } from '@droidex/protocol';
 import { paceWarning, usagePace } from './usagePace';
 
 const HOUR = 60 * 60_000;

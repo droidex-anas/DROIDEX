@@ -59,7 +59,7 @@ export async function deliverScheduledMessage(
     available() &&
     d.registry.getLive(appSessionId) === captured &&
     captured.session === provider &&
-    !captured.closeMode;
+    !captured.turn.closeMode;
   if (isBusy(live, d)) return { status: 'busy', retryOn: 'target' };
   const settingsApplied = await d.applyPendingSessionSettings(appSessionId);
   if (!current()) return refusal();
@@ -69,8 +69,8 @@ export async function deliverScheduledMessage(
   return await dispatch(context, appSessionId, prompt, isCurrent, {
     isCurrent: () =>
       current() &&
-      !captured.interrupting &&
-      !captured.interruptingToSend &&
+      !captured.turn.interrupting &&
+      !captured.turn.interruptingToSend &&
       !d.hasActiveSettingsChanges(appSessionId),
   });
 }
@@ -124,13 +124,13 @@ async function dispatch(
 
 function isBusy(live: LiveSession, d: SessionLifecycleDependencies): boolean {
   return (
-    live.streaming ||
+    live.turn.streaming ||
     live.compacting === true ||
     live.autoCompacting ||
-    live.closeMode !== undefined ||
-    live.interrupting === true ||
-    live.interruptingToSend === true ||
-    live.pendingSends.length > 0 ||
+    live.turn.closeMode !== undefined ||
+    live.turn.interrupting ||
+    live.turn.interruptingToSend ||
+    live.turn.pendingSends.length > 0 ||
     d.hasPendingInteractions(live.summary.appSessionId) ||
     d.hasActiveSettingsChanges(live.summary.appSessionId) ||
     live.summary.phase === 'initializing' ||

@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import { transcriptToMarkdown } from './sessionMarkdown.js';
-import { parseFullSessionTranscript } from './sessionTranscript.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { CodexEventMapper } from './providers/codex/codexEvents.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function ev(overrides: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'kind'>): TranscriptEvent {
   return {
@@ -193,7 +193,7 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
   );
   const path = join(directory, `${appSessionId}.jsonl`);
   writeFileSync(path, `${lines.join('\n')}\n`);
-  const replayed = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const replayed = readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const md = transcriptToMarkdown(replayed, META);
   assert.match(md, /\*\*Canvas:\*\* Updated design · rev-1/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
@@ -273,7 +273,7 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
     );
   }
   await file.flush();
-  const replayed = parseFullSessionTranscript(
+  const replayed = readFullTranscript(
     summary.appSessionId,
     summary.appSessionId,
     file.path,

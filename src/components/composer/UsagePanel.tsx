@@ -13,7 +13,7 @@ import {
 import { usagePace } from '../../features/usage/usagePace';
 import { refreshUsage } from '../../features/usage/useProviderUsage';
 import { formatResetTime } from '../../lib/usageLimit';
-import type { DroidProfile, ProviderKind, ProviderUsage, UsageMeter } from '../../types/bridge';
+import type { DroidProfile, ProviderKind, ProviderUsage, UsageMeter } from '@droidex/protocol';
 import { ComposerTab } from './ComposerTab';
 import { ACTION_CLASS, ManageUsageButton } from './UsageLimitTab';
 

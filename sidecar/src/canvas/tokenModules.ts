@@ -13,7 +13,7 @@ import {
   type TextOrigin,
 } from './designSystemSources.js';
 import { scopeValue } from './designSystemTokens.js';
-import type { CanvasDiagnostic } from './protocol.js';
+import type { CanvasDiagnostic } from '@droidex/protocol';
 
 // Keys a token module carries beside its values; they never name a token.
 const MODULE_METADATA = new Set([

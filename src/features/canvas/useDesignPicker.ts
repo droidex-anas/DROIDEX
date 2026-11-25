@@ -13,7 +13,7 @@ import { elementPinKey, type ElementPin } from './elementPins';
 import { elementSite, pickedElement, type PickedElement } from './pickedElement';
 import type { PreviewFinding, PreviewProbe, PreviewTextRange } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import type { HoveredElement } from './useElementHover';
 import { useTextDrag, type DraggedText } from './useTextDrag';
 

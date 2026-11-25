@@ -27,7 +27,7 @@ import type {
   DesignSystemRef,
   PreviewArtifact,
   SourceFiles,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { CANVAS_LIMITS } from './schema.js';
 
 /** Starts one build's deadline and returns the call that cancels it. */

@@ -1,7 +1,7 @@
-import type { Project, ProjectThread, ThreadMessage } from './types.js';
+import type { Project, ProjectThreadRecord, ThreadMessage } from './types.js';
 import { LEDGER_LIMITS } from './store.js';
 
-export function questionText(ask: NonNullable<ProjectThread['ask']>): string {
+export function questionText(ask: NonNullable<ProjectThreadRecord['ask']>): string {
   return ask.questions
     .map((item) =>
       item.options.length

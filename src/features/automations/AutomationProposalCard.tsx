@@ -4,8 +4,13 @@ import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { AUTONOMY_LABELS } from '../../lib/autonomy';
 import { toast } from '../../lib/toast';
 import { Button } from '../../components/ui/Button';
-import type { TranscriptEvent } from '../../types/bridge';
-import { EditorRow, ScheduleControls, scheduleForKind } from './ScheduleControls';
+import type { TranscriptEvent, AutomationSchedule } from '@droidex/protocol';
+import {
+  EditorRow,
+  ScheduleControls,
+  scheduleForKind,
+  useInvalidScheduleInput,
+} from './ScheduleControls';
 import { AutomationModelPicker } from './AutomationModelPicker';
 import {
   confirmAutomationProposal,
@@ -24,13 +29,13 @@ import {
 } from './proposalCardState';
 import {
   AUTOMATION_AUTONOMY_OPTIONS,
-  convertOnceRunAt,
+  changeOnceTimezone,
   formatSchedule,
   supportedTimeZones,
   validateAutomationDraft,
   workspaceLabel,
 } from './schedule';
-import type { AutomationDraft, AutomationSchedule } from './types';
+import type { AutomationDraft } from './types';
 
 const EASE: [number, number, number, number] = [0.16, 1, 0.3, 1];
 
@@ -60,6 +65,11 @@ export function AutomationProposalCard({
   );
   const draft = proposal?.draft ?? fallback;
   const workingDraft = overrides ?? draft;
+  const [invalidInput, setInvalidInput] = useInvalidScheduleInput(
+    workingDraft?.schedule,
+    workingDraft?.timezone,
+    call.id,
+  );
   const selectedModel = workingDraft?.modelId
     ? models.find((candidate) => candidate.id === workingDraft.modelId)
     : undefined;
@@ -116,19 +126,18 @@ export function AutomationProposalCard({
       updateDraft({ timezone });
       return;
     }
-    const runAt = convertOnceRunAt(workingDraft.schedule.runAt, workingDraft.timezone, timezone);
-    if (runAt === null) return;
-    updateDraft({
+    const result = changeOnceTimezone(
+      workingDraft.schedule,
+      workingDraft.timezone,
       timezone,
-      schedule: {
-        kind: 'once',
-        runAt,
-      },
-    });
+      invalidInput,
+    );
+    setInvalidInput(result.invalidInput, timezone);
+    updateDraft({ timezone, schedule: result.schedule });
   };
 
   const confirm = async () => {
-    if (!proposal || confirming || strictModelIssue || validation) return;
+    if (!proposal || confirming || strictModelIssue || validation || invalidInput) return;
     setConfirming(true);
     try {
       await confirmAutomationProposal(proposal.id, overrides ?? undefined);
@@ -141,7 +150,12 @@ export function AutomationProposalCard({
     }
   };
 
-  const confirmDisabled = !proposal || confirming || state.kind === 'failed' || Boolean(validation);
+  const confirmDisabled =
+    !proposal ||
+    confirming ||
+    state.kind === 'failed' ||
+    Boolean(validation) ||
+    Boolean(invalidInput);
   const helper = validation ?? state.helper;
 
   return (
@@ -213,6 +227,7 @@ export function AutomationProposalCard({
                 value={workingDraft.schedule.kind}
                 ariaLabel="Automation frequency"
                 onChange={(value) => {
+                  setInvalidInput(null);
                   updateSchedule(scheduleForKind(value, workingDraft.schedule));
                 }}
                 options={[
@@ -227,6 +242,8 @@ export function AutomationProposalCard({
             </EditorRow>
             <ScheduleControls
               schedule={workingDraft.schedule}
+              invalidInput={invalidInput}
+              onInvalidInputChange={setInvalidInput}
               timezone={workingDraft.timezone}
               onChange={updateSchedule}
             />

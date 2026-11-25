@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { CanvasRequestError, canvasMessage } from './client';
-import type { CanvasFrame, RevisionSummary, SwitchRevisionInput } from './protocol';
+import type { CanvasFrame, RevisionSummary, SwitchRevisionInput } from '@droidex/protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 export interface HistoryClient {

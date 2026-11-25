@@ -3,20 +3,24 @@
 // annotation; an agent only those its own chat drew, so a user's sketch is
 // read-only to every agent.
 
-import {
-  ANNOTATION_LIMITS,
-  savedAnnotation,
-  type AnnotateCanvasInput,
-  type Annotation,
-  type AnnotationAuthor,
-} from './canvasAnnotationSchema.js';
+import type {
+  AnnotateCanvasInput,
+  Annotation,
+  AnnotationAuthor,
+  AnnotationChange,
+  CanvasChange,
+} from '@droidex/protocol';
+import { ANNOTATION_LIMITS, savedAnnotation } from './canvasAnnotationSchema.js';
 import type { CanvasCommits } from './canvasCommits.js';
 import { canvasError } from './canvasError.js';
 import type { CanvasHeads } from './canvasHeads.js';
 import type { CanvasLeases } from './canvasLeases.js';
 import { mutationFingerprint, recordMutation } from './canvasManifest.js';
 import { recordedAnnotate } from './canvasReceipts.js';
-import type { AnnotatedChange, CanvasScope } from './protocol.js';
+import type { CanvasScope } from './canvasScopes.js';
+
+/** What an annotate answers: a change that always carries its annotation delta. */
+export type AnnotatedChange = CanvasChange & { annotations: AnnotationChange };
 
 /** How many identifiers one refusal names before it only counts the rest. */
 const NAMED_IDS = 8;

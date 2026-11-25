@@ -8,7 +8,7 @@
 
 import { useState } from 'react';
 import type { ElementEditDraft } from './elementEditDraft';
-import type { ElementRef } from './protocol';
+import type { ElementRef } from '@droidex/protocol';
 
 /** The property a list is previewing an option of, and what it had before. */
 export interface PickerHover {

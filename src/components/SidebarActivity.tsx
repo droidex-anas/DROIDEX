@@ -1,8 +1,8 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
 import { useState, type ReactNode } from 'react';
 import { LayoutGroup, MotionConfig } from 'framer-motion';
-import type { SessionSummary } from '../types/bridge';
-import { ACTIVITY_GROUPS, type SessionActivityStatus } from '../lib/sidebarActivity';
+import type { SessionSummary, SessionActivityStatus } from '@droidex/protocol';
+import { ACTIVITY_GROUPS } from '../lib/sidebarActivity';
 import { SidebarSectionHeading } from './SidebarSectionHeading';
 import { SidebarMovingRow, SidebarSessionList, sidebarOrder } from './SidebarSessionList';
 

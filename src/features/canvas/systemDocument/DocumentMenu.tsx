@@ -10,7 +10,7 @@ import { canvasClient } from '../canvasClient';
 import { canvasMessage, CanvasRequestError } from '../client';
 import { forgetDesignSystem } from '../designSystemChoices';
 import { MAX_KIT_NAME_LENGTH } from '../designSystemDocumentValidation';
-import type { DesignSystemDocumentView } from '../protocol';
+import type { DesignSystemDocumentView } from '@droidex/protocol';
 import { ActionMenu } from './ActionMenu';
 import { useIsMounted } from './useIsMounted';
 

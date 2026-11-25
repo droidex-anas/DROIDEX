@@ -17,7 +17,7 @@ import type { ModuleElement } from './compilerModules.js';
 import { readConfigBindings, type ConfigValue } from './configLiterals.js';
 import { DESIGN_PACKAGE_ENTRIES } from './designPackages.js';
 import { importDesignSystem, type ImportDesignSystemResult } from './designSystemImport.js';
-import type { LibrarySkip } from './designSystemProvenance.js';
+import type { LibrarySkip, CanvasDiagnostic, SourceFiles } from '@droidex/protocol';
 import { designSystemSchema, KIT_ENTRY } from './designSystems.js';
 import { KIT_THEME_FILE } from './kitTailwindTheme.js';
 import { LIBRARY_DEMOS, libraryCatalogFiles } from './libraryCatalog.js';
@@ -37,8 +37,6 @@ import {
   projectRelativePath,
   readProjectText,
 } from './projectPaths.js';
-import type { CanvasDiagnostic } from './protocol.js';
-import type { SourceFiles } from './schema.js';
 
 /**
  * Of a kit's files, these many are the library's components, and the rest its

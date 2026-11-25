@@ -1,4 +1,4 @@
-import type { UsageLimit } from '../protocol.js';
+import type { UsageLimit } from '@droidex/protocol';
 import type { ReportedMeter } from './session.js';
 
 export class UsageLimitError extends Error {

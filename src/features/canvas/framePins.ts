@@ -4,13 +4,18 @@
 // sends and clears them. Neither owns the other, so they live here, by chat.
 // The elements Design picks live beside them, in elementPins.ts.
 
-import { useSyncExternalStore } from 'react';
+import { createChatPinStore } from './chatPinStore';
 import { toast } from '../../lib/toast';
 import { frameSizeLabel } from './canvasGeometry';
 import { AUTO_DESIGN_SYSTEM } from './designSystemChoices';
 import type { ComponentPin } from './componentPins';
 import type { ElementPin } from './elementPins';
-import type { CanvasFrame, CanvasSnapshot, CanvasTurnContext, DesignSystemRef } from './protocol';
+import type {
+  CanvasFrame,
+  CanvasSnapshot,
+  CanvasTurnContext,
+  DesignSystemRef,
+} from '@droidex/protocol';
 
 /** The sidecar's limit on the designs one request may pin. */
 const MAX_PINNED = 32;
@@ -25,34 +30,13 @@ export interface FramePin {
   designSystem: CanvasFrame['designSystem'];
 }
 
+const { get: framePins, usePins: useFramePins, publish } = createChatPinStore<FramePin>();
+export { framePins, useFramePins };
+
 const NONE: readonly FramePin[] = [];
-// Only chats holding pins have an entry, and only boards on screen are kept, so
-// neither grows with the chats a session has visited.
-let pinsByChat: Readonly<Record<string, readonly FramePin[]>> = {};
+// Only boards on screen are kept, so this never grows with the chats visited.
 /** The attached board each chat's pane is showing, which decides what a pin can name. */
 const boards = new Map<string, CanvasSnapshot>();
-const listeners = new Set<() => void>();
-
-function publish(appSessionId: string, pins: readonly FramePin[]) {
-  const others = Object.entries(pinsByChat).filter(([id]) => id !== appSessionId);
-  pinsByChat = Object.fromEntries(pins.length > 0 ? [...others, [appSessionId, pins]] : others);
-  for (const listener of listeners) listener();
-}
-
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-export function framePins(appSessionId: string): readonly FramePin[] {
-  return pinsByChat[appSessionId] ?? NONE;
-}
-
-export function useFramePins(appSessionId: string | null): readonly FramePin[] {
-  return useSyncExternalStore(subscribe, () => (appSessionId ? framePins(appSessionId) : NONE));
-}
 
 export function pinOf(canvasId: string, frame: CanvasFrame): FramePin {
   return {

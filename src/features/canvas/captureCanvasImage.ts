@@ -1,10 +1,10 @@
 import {
-  type CanvasImageSaveResult,
   cancelCanvasPreviewCapture,
   captureCanvasPreview,
   saveCanvasImage,
   saveCanvasSvg,
 } from '../../lib/desktop';
+import type { CanvasImageSaveResult } from '../../lib/desktopContract';
 import type { PreviewVector } from './previewDocument';
 import type {
   CanvasCommand,
@@ -13,7 +13,7 @@ import type {
   CanvasEvent,
   CaptureReport,
   RevisionRef,
-} from './protocol';
+} from '@droidex/protocol';
 
 const CAPTURE_DEADLINE_MS = 6_000;
 const UNAVAILABLE = 'This design could not be captured. Keep its preview open and try again.';

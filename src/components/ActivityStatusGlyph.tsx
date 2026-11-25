@@ -1,4 +1,5 @@
-import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
+import type { SessionActivityStatus } from '@droidex/protocol';
+import { ACTIVITY_LABELS } from '../lib/sidebarActivity';
 
 // The inbox marks each chat with the kind of state it is in, the way a
 // ticket queue does: a dashed ring for nothing pending, a half ring for a

@@ -2,8 +2,14 @@
 // pushes, a read after every turn, a light read every few minutes and the
 // renderer's asks. Reads go through a live session's own connection; only an
 // open /usage with no live session may start a short-lived harness process.
-import type { ProviderUsage, ServerEvent, UsageMeter } from '../protocol.js';
-import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
+import {
+  type ProviderUsage,
+  type ServerEvent,
+  type UsageMeter,
+  PROVIDER_KINDS,
+  type ProviderKind,
+} from '@droidex/protocol';
+
 import type { ProviderSession, ReportedMeter, UsageReading } from './session.js';
 
 const REFRESH_INTERVAL_MS = 5 * 60_000;

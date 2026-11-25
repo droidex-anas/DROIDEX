@@ -20,7 +20,7 @@ import {
   type ServerEvent,
   type ServerEventBatch,
   type ServerWireMessage,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { emptyRuntimeSnapshot } from './runtimeSnapshot.js';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { VoiceConnectionOwners } from './voiceConnectionOwners.js';

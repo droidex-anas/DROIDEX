@@ -12,7 +12,7 @@ import { X } from '@droidex/icons';
 import { isDesignModeOpen } from '../../hooks/designModeState';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
 import { openBrowser, reloadBrowser, resizeBrowserViewport } from '../../lib/commands';
-import type { BrowserViewportMode } from '../../types/bridge';
+import type { BrowserViewportMode } from '@droidex/protocol';
 import {
   normalizeUrl,
   pageLayout,
@@ -35,7 +35,12 @@ import { DesignQuickPrompt, useDesignQuickPrompt } from './DesignQuickPrompt';
 import { useDesignMarks } from './designMarks';
 import { browserKeyForSession } from '../../lib/browserSessionIdentity';
 import { setBrowserPageCrashed, useBrowserPageCrashed } from '../../lib/browserHost';
-import { browserAddressValue, isSelfBrowserUrl, safeBrowserUrl } from './browserUrlSafety';
+import {
+  browserAddressValue,
+  isLocalBrowserUrl,
+  isSelfBrowserUrl,
+  safeBrowserUrl,
+} from './browserUrlSafety';
 import { shouldResetBrowserLoading } from './browserLoading';
 import { useElementSize } from './useElementSize';
 import { isEditTool } from '../../lib/diff';
@@ -88,8 +93,9 @@ export default function BrowserWorkspace({
   const frameReady = frameSize.width > 8 && frameSize.height > 8;
   const fitViewport = useMemo(() => viewportFromFrame(frameSize), [frameSize]);
   const initialUrl = safeBrowserUrl(browser?.url, appOrigin);
-  const [urlInput, setUrlInput] = useState(browserAddressValue(initialUrl));
+  const [urlDraft, setUrlDraft] = useState<string | null>(null);
   const [activeUrl, setActiveUrl] = useState(initialUrl);
+  const urlInput = urlDraft ?? browserAddressValue(activeUrl);
   // The size the page has; a pick shows once the sidecar has taken it, so the
   // menu never disagrees with the page.
   const viewportMode: BrowserViewportMode = browser?.viewportMode ?? 'fit';
@@ -142,7 +148,7 @@ export default function BrowserWorkspace({
     // Eligibility is checked first so navigating away from a local dev server
     // cancels any reload that was scheduled while the URL was still eligible;
     // otherwise a stale edit reload could fire against an unrelated page.
-    if (!/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])/.test(activeUrl)) {
+    if (!isLocalBrowserUrl(activeUrl)) {
       if (reloadTimerRef.current) {
         clearTimeout(reloadTimerRef.current);
         reloadTimerRef.current = null;
@@ -155,11 +161,18 @@ export default function BrowserWorkspace({
     if (last.ts <= lastEditTsRef.current) return;
     lastEditTsRef.current = last.ts;
     if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    const browserSessionId = browser?.browserSessionId;
     reloadTimerRef.current = setTimeout(() => {
       reloadTimerRef.current = null;
-      reloadBrowser(browserKey);
+      const current = browserIdentityRef.current;
+      if (
+        browserSessionId &&
+        current.browserKey === browserKey &&
+        current.browserSessionId === browserSessionId
+      )
+        reloadBrowser(browserKey);
     }, 600);
-  }, [activeUrl, browserKey, lastTranscriptEvent]);
+  }, [activeUrl, browser?.browserSessionId, browserKey, lastTranscriptEvent]);
 
   // Cancel any pending auto-reload when the browser session switches or the
   // component unmounts, so a stale timer doesn't reload the wrong session.
@@ -170,15 +183,13 @@ export default function BrowserWorkspace({
         reloadTimerRef.current = null;
       }
     };
-  }, [browserKey]);
+  }, [browser?.browserSessionId, browserKey]);
 
   useEffect(() => {
     if (!browser?.url) return;
     const nextUrl = safeBrowserUrl(browser.url, appOrigin);
-    if (document.activeElement !== urlInputRef.current) {
-      setUrlInput(browserAddressValue(nextUrl));
-    }
     if (nextUrl !== activeUrl) {
+      if (document.activeElement !== urlInputRef.current) setUrlDraft(null);
       setActiveUrl(nextUrl);
     }
   }, [activeUrl, appOrigin, browser?.url]);
@@ -208,9 +219,7 @@ export default function BrowserWorkspace({
     setCanGoForward(browser?.canGoForward ?? false);
     const nextUrl = safeBrowserUrl(browser?.url, appOrigin);
     setActiveUrl(nextUrl);
-    if (document.activeElement !== urlInputRef.current) {
-      setUrlInput(browserAddressValue(nextUrl));
-    }
+    setUrlDraft(null);
   }, [
     appOrigin,
     browser?.canGoBack,
@@ -278,7 +287,7 @@ export default function BrowserWorkspace({
   const openCurrentUrl = () => {
     const normalizedUrl = normalizeUrl(urlInput);
     if (browserKey && isSelfBrowserUrl(normalizedUrl, appOrigin)) {
-      setUrlInput(normalizedUrl);
+      setUrlDraft(normalizedUrl);
       dispatch({
         type: 'BROWSER_ERROR',
         appSessionId: browserKey,
@@ -290,7 +299,7 @@ export default function BrowserWorkspace({
     const url = safeBrowserUrl(normalizedUrl, appOrigin);
     setLoadFailure(null);
     startLoading();
-    setUrlInput(browserAddressValue(url));
+    setUrlDraft(null);
     setActiveUrl(url);
     if (browserKey) {
       openBrowser({
@@ -304,6 +313,7 @@ export default function BrowserWorkspace({
 
   const navigateHistory = useCallback(
     async (direction: 'back' | 'forward') => {
+      setUrlDraft(null);
       if (!browser?.browserSessionId) return;
       setLoadFailure(null);
       startLoading();
@@ -382,11 +392,15 @@ export default function BrowserWorkspace({
         designModeDisabled={!browserKey}
         pencilMode={pencilMode}
         expanded={expanded}
-        onUrlInputChange={setUrlInput}
+        onUrlInputChange={setUrlDraft}
+        onUrlInputReset={() => {
+          setUrlDraft(null);
+        }}
         onOpen={openCurrentUrl}
         onGoBack={() => void navigateHistory('back')}
         onGoForward={() => void navigateHistory('forward')}
         onReload={() => {
+          setUrlDraft(null);
           startLoading();
           if (browserKey && browser) reloadBrowser(browserKey);
           else openCurrentUrl();
@@ -465,9 +479,8 @@ export default function BrowserWorkspace({
               setCanGoBack(event.canGoBack ?? canGoBack);
               setCanGoForward(event.canGoForward ?? canGoForward);
               const nextUrl = safeBrowserUrl(event.url, appOrigin);
+              if (document.activeElement !== urlInputRef.current) setUrlDraft(null);
               setActiveUrl(nextUrl);
-              if (document.activeElement !== urlInputRef.current)
-                setUrlInput(browserAddressValue(nextUrl));
               // In the desktop app the Browser host records navigations.
               if (!nativeBrowser && browserKey && event.browserSessionId) {
                 dispatch({

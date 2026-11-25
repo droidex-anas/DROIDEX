@@ -7,6 +7,11 @@
 
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type {
+  DesignSystemProposal,
+  DesignSystemProposalRef,
+  DesignSystemRef,
+} from '@droidex/protocol';
 import { canvasError } from './canvasError.js';
 import { announceDesignSystemChange } from './designSystemChanges.js';
 import { withNoteAuthors } from './designSystemDocument.js';
@@ -30,7 +35,7 @@ import {
   replaceFile,
   setMarker,
 } from './designSystemStorage.js';
-import type { DesignSystemProposalRef, DesignSystemRef } from './protocol.js';
+
 import { canvasIdentifierSchema } from './schema.js';
 
 const storedProposalSchema = z
@@ -43,19 +48,6 @@ const storedProposalSchema = z
   })
   .strict();
 type StoredProposal = z.infer<typeof storedProposalSchema>;
-
-/** A pending proposal as the document reviews it: everything but its source. */
-export interface DesignSystemProposal {
-  /** A proposal is never changed, only replaced by one with another ID. */
-  proposalId: string;
-  baseVersion: number;
-  proposedAt: string;
-  /** The chat whose agent proposed it, never a provider session. */
-  appSessionId: string;
-  name: string;
-  cover: DesignSystem['cover'];
-  sections: DesignSystem['sections'];
-}
 
 const PRESET_MESSAGE = 'Presets are read-only. Save a copy of it as a new design system.';
 const GONE = 'That proposal is no longer waiting for review.';

@@ -10,7 +10,7 @@ import {
 } from './autoCompactionWatchdog.js';
 import { extractCompactionNotification } from './normalize.js';
 import { requireDroidSession } from './providers/droid/DroidProviderSession.js';
-import type { FactoryDefaultSettings, SessionInteractionMode } from './protocol.js';
+import type { FactoryDefaultSettings, SessionInteractionMode } from '@droidex/protocol';
 import type {
   ChildOperationTarget,
   LiveOperationTarget,
@@ -378,7 +378,7 @@ export class SessionCompaction {
     if (active || !wasActive) return;
 
     if (target.kind === 'primary') {
-      if (target.liveSession.streaming || target.liveSession.compacting) return;
+      if (target.liveSession.turn.streaming || target.liveSession.compacting) return;
       this.dependencies.settleAutomatic({
         kind: 'primary',
         appSessionId: target.appSessionId,
@@ -429,7 +429,7 @@ export class SessionCompaction {
       isCurrent: () =>
         !this.dependencies.isShutdownStarted() &&
         this.dependencies.registry.getLive(appSessionId) === liveSession &&
-        !liveSession.closeMode &&
+        !liveSession.turn.closeMode &&
         liveSession.session === session,
     };
   }

@@ -15,13 +15,9 @@ import { sideChatPromptDisplayFromText } from './sideChatPrompt.js';
 import { canvasPinsFromPrompt } from './canvas/canvasPinsPrompt.js';
 import { sideChatRepliesFromPrompt } from './sideChatReplies.js';
 import { parseSkillActivation } from './skillSignals.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent, CanvasActivity } from '@droidex/protocol';
 import { parseStoredNotice } from './sessionNotices.js';
-import {
-  CanvasToolPresentation,
-  canvasToolProvenance,
-  type CanvasActivity,
-} from './canvas/canvasToolPresentation.js';
+import { CanvasToolPresentation, canvasToolProvenance } from './canvas/canvasToolPresentation.js';
 import { readCanvasToolBindings } from './canvas/canvasToolBindings.js';
 
 // Replayed text is capped so one enormous message cannot dominate a history
@@ -85,17 +81,13 @@ interface EventBase {
   ts: number;
 }
 
-// The first defined, non-empty string: what the `a || b || ''` chains in the
-// original eager parser computed, kept exact (empty strings fall through).
+// The first defined, non-empty string (empty strings fall through).
 function nonEmpty(...values: (string | undefined)[]): string {
   for (const value of values) if (value) return value;
   return '';
 }
 
-// Builds one TranscriptEvent from the shared per-line context. Exported so
-// the eager full parse can synthesize the oversized-trim status head event
-// with the same canonical id / sourceSessionId rules.
-export function event(
+function event(
   base: EventBase,
   index: number,
   kind: TranscriptEvent['kind'],

@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { ServerEvent, SessionSummary } from '../../src/types/bridge';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 
 const appUrl = process.env.DROIDEX_TEST_URL || '/';
 
@@ -66,6 +66,35 @@ test('loads the DROIDEX shell', async ({ page }) => {
   await expect(page.locator('#root')).toBeVisible();
 });
 
+test.describe('app keyboard shortcuts', () => {
+  test('opens, selects, closes and restores tabs over the mocked bridge', async ({ page }) => {
+    await sessionBridge(page, []);
+    await page.goto(appUrl);
+    const primary = await page.evaluate(() =>
+      navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+    );
+    const tabs = page.getByRole('tablist', { name: 'Tabs', exact: true }).getByRole('tab');
+    await expect(page.getByRole('textbox', { name: 'Prompt' })).toBeVisible();
+    await expect(tabs).toHaveCount(0);
+
+    await page.keyboard.press(`${primary}+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+1`);
+    await expect(tabs.nth(0)).toHaveAttribute('aria-selected', 'true');
+    await page.keyboard.press(`${primary}+Shift+]`);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Projects', exact: true }).click();
+    await expect(tabs.nth(1)).toContainText('Projects');
+    await page.keyboard.press(`${primary}+w`);
+    await expect(tabs).toHaveCount(0);
+    await page.keyboard.press(`${primary}+Shift+t`);
+    await expect(tabs).toHaveCount(2);
+    await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+    await expect(tabs.nth(1)).toContainText('Projects');
+  });
+});
+
 // The palette is a centred dialog on the z-dialog layer: its backdrop darkens
 // the window without a blur, focus starts in the search field and stays inside,
 // and Escape closes it through the shared layer stack.
@@ -99,10 +128,87 @@ test('the command palette is a centred dialog that keeps focus inside', async ({
 
   await search.fill('settings');
   await expect(palette.getByText('Settings', { exact: true })).toBeVisible();
-  await expect(palette.getByText('New Thread', { exact: true })).toHaveCount(0);
+  await expect(palette.getByText('New Tab', { exact: true })).toHaveCount(0);
 
   await page.keyboard.press('Escape');
   await expect(palette).toHaveCount(0);
+});
+
+// Each row runs what it names: a palette row that only closes the palette
+// reads as a broken command.
+test('each command palette row runs its command', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+  });
+  await sessionBridge(page, [session]);
+  await page.setViewportSize({ width: 1200, height: 800 });
+  await page.goto(appUrl);
+  const primary = await page.evaluate(() =>
+    navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+  );
+  const palette = page.getByRole('dialog', { name: 'Command palette' });
+  const runCommand = async (label: string) => {
+    await page.keyboard.press(`${primary}+k`);
+    await palette.getByText(label, { exact: true }).click();
+    await expect(palette).toHaveCount(0);
+  };
+  await page.getByTestId('session-row').click();
+
+  await page.keyboard.press(`${primary}+k`);
+  await expect(palette.getByRole('button').filter({ hasText: /./ })).toHaveText([
+    /^New Tab/,
+    /^New Terminal/,
+    /^Pull Requests/,
+    /^Settings/,
+  ]);
+  await page.keyboard.press('Escape');
+
+  const tabs = page.getByRole('tablist', { name: 'Tabs', exact: true }).getByRole('tab');
+  await runCommand('New Tab');
+  await expect(tabs).toHaveCount(2);
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(tabs.nth(1)).toContainText('New chat');
+  await page.keyboard.press(`${primary}+k`);
+  await expect(palette.getByText('New Tab', { exact: true })).toBeVisible();
+  await expect(palette.getByText('New Terminal', { exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  await page.keyboard.press(`${primary}+1`);
+  const utilityTabs = page.getByRole('tablist', { name: 'Open utility tools' }).getByRole('tab');
+  await runCommand('New Terminal');
+  await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(1);
+  await runCommand('New Terminal');
+  await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(2);
+});
+
+test('Enter runs the palette command without reopening chat search', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem('droid-workspaces', JSON.stringify(['/repo']));
+  });
+  await sessionBridge(page, [session]);
+  await page.goto(appUrl);
+
+  const searchLabel = 'Search chats, messages, and PRs';
+  const chatSearch = page.getByRole('dialog', { name: searchLabel });
+  await page.getByRole('button', { name: searchLabel, exact: true }).click();
+  await chatSearch.getByRole('button', { name: new RegExp(session.title) }).click();
+  await expect(chatSearch).toHaveCount(0);
+  await expect(page.getByTestId('session-row')).toHaveAttribute('aria-current', 'true');
+
+  const primary = await page.evaluate(() =>
+    navigator.userAgent.includes('Mac OS X') ? 'Meta' : 'Control',
+  );
+  await page.keyboard.press(`${primary}+k`);
+  const commandInput = page.getByRole('textbox', { name: 'Command palette' });
+  await expect(commandInput).toBeFocused();
+  await commandInput.fill('Settings');
+  await page.keyboard.press('Enter');
+
+  const settingsSearch = page.getByRole('textbox', { name: 'Search settings' });
+  await expect(settingsSearch).toBeVisible();
+  await expect(chatSearch).toHaveCount(0);
+  await settingsSearch.click();
+  await expect(settingsSearch).toBeFocused();
 });
 
 // The sidebar's right-click menus are ui/Menu: a right-click anchors them at
@@ -187,6 +293,24 @@ test('the sidebar context menus open at the pointer and from the row button', as
 
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
+});
+
+// The footer (welcome card and Settings) sits below the chat list rather than
+// over it, so the first rows stay visible even at the minimum window size.
+test('the sidebar welcome card never covers the first chat rows', async ({ page }) => {
+  await sessionBridge(page, []);
+  await page.setViewportSize({ width: 1000, height: 600 });
+  await page.goto(appUrl);
+
+  await expect(page.getByText('Welcome to DROIDEX', { exact: true })).toBeVisible();
+  const emptyRow = page.getByText('No chats yet.', { exact: true });
+  await expect(emptyRow).toBeVisible();
+  const isOnTop = await emptyRow.evaluate((row) => {
+    const box = row.getBoundingClientRect();
+    const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+    return hit !== null && row.contains(hit);
+  });
+  expect(isOnTop).toBe(true);
 });
 
 test('slash feedback returns a durable copyable report receipt', async ({ page, context }) => {

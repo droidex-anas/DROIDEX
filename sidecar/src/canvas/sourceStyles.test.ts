@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { KIT_THEME_FILE, kitTailwindTheme } from './kitTailwindTheme.js';
-import type { SourceElement, SourceFiles } from './protocol.js';
+import type { SourceElement, SourceFiles } from '@droidex/protocol';
 import { applyElementEdit } from './sourceElementEdits.js';
 import { SourceElementError } from './sourceElementError.js';
 import { instrumentSource } from './sourceElements.js';

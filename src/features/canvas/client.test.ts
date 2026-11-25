@@ -20,7 +20,7 @@ import { initialCanvasPaneState, reduceCanvasPane, watchedCanvasId } from './can
 import { isCanvasEvent } from './wireValidation';
 import { CanvasClient } from './client';
 import { fakeCanvasBridge, flush } from '../../test/canvasTransport';
-import type { CanvasChange, CanvasFrame, CanvasSnapshot, ChangedFrame } from './protocol';
+import type { CanvasChange, CanvasFrame, CanvasSnapshot, ChangedFrame } from '@droidex/protocol';
 
 const designSystem = { id: 'droidex', version: 1, mode: 'light' } as const;
 const CANVAS = 'cv_01';
