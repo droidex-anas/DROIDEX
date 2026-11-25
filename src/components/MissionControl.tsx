@@ -60,7 +60,7 @@ const RENDERED_TRANSCRIPT_KINDS = new Set(
 );
 
 /** The event kinds the mission transcript renders as feed rows. */
-export const isRenderedTranscriptEvent = (t: TranscriptEvent) =>
+const isRenderedTranscriptEvent = (t: TranscriptEvent) =>
   t.author === 'user' || RENDERED_TRANSCRIPT_KINDS.has(t.kind) || Boolean(t.isError);
 
 /* ════════════════════════ chat ════════════════════════ */

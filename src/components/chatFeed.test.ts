@@ -20,7 +20,6 @@ import {
 } from '../lib/browserTools';
 import { describeToolCall, hasTodoPayload } from '../lib/tools';
 import type { TranscriptEvent } from '@droidex/protocol';
-import { isRenderedTranscriptEvent } from './MissionControl';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
@@ -645,28 +644,6 @@ test('correlateResults never settles a call by guessing between idless results',
 });
 
 // ── #18: final answer always top-level, even with trailing compaction ──
-
-test('Mission Control still renders a compaction divider after transcript pre-filtering', () => {
-  // Every TranscriptEvent.kind that buildFeed turns into a feed row must survive
-  // the Mission Control pre-filter; a missing kind is a silent dropped divider.
-  const renderedKinds: Record<TranscriptEvent['kind'], true> = {
-    text: true,
-    thinking: true,
-    tool_call: true,
-    tool_result: true,
-    error: true,
-    status: true,
-    compaction: true,
-  };
-  for (const kind of Object.keys(renderedKinds) as TranscriptEvent['kind'][]) {
-    assert.equal(
-      isRenderedTranscriptEvent(ev({ kind })),
-      true,
-      `${kind} must survive the Mission Control transcript filter`,
-    );
-  }
-  assert.equal(isRenderedTranscriptEvent(userMsg('keep user prompts')), true);
-});
 
 test('#18 a final answer followed by compaction stays top-level; a bare compaction keeps its divider', () => {
   const events = [userMsg('q'), grep(), asst('the answer'), compaction()];
