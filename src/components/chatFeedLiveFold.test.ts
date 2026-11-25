@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { MessageFeed } from './MessageFeed';
 import { sameFeedEvents, type FeedItem } from './chatFeed';
 import { buildGroupedFeed } from './chatFeedTurns';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 let seq = 0;
 function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
