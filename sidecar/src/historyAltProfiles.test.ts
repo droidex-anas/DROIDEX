@@ -41,7 +41,7 @@ function writeSession(profileHome: string, id: string, title: string): void {
   );
 }
 
-test('opted-in Alt transcripts restore beside Main with separate profile and replay identities', () => {
+test('opted-in Alt transcripts restore beside Main with separate profile and replay identities', async () => {
   writeSession(home, 'main-transcript', 'Main conversation');
   writeSession(altHome, 'alt-transcript', 'Alt conversation');
   assert.equal(
@@ -60,7 +60,7 @@ test('opted-in Alt transcripts restore beside Main with separate profile and rep
       rows.find((row) => row.summary.appSessionId === 'main-transcript')?.summary.droidProfile,
       undefined,
     );
-    const replay = loadSessionTranscriptWindow('alt-thread', ['alt-transcript']).events;
+    const replay = (await loadSessionTranscriptWindow('alt-thread', ['alt-transcript'])).events;
     assert.ok(replay.length > 0);
     assert.ok(replay.every((event) => event.appSessionId === 'alt-thread'));
   } finally {

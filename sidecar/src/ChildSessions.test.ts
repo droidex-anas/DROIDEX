@@ -123,7 +123,7 @@ function createHarness(
         failSettleStreaming = false;
         throw new Error('settle failed');
       },
-      loadChildHistory: (...args) => {
+      loadChildHistory: async (...args) => {
         if (missReplayChildOnce) {
           missReplayChildOnce = false;
           return;

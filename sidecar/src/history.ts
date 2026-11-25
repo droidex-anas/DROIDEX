@@ -453,10 +453,10 @@ function definedPatch(patch: Partial<SessionSummary>): Partial<SessionSummary> {
   return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
 }
 
-export function hydrateHistoricalSession(
+export async function hydrateHistoricalSession(
   missionId: string,
   opts: { cursor?: string; limit?: number } = {},
-): HydratedSessionHistory {
+): Promise<HydratedSessionHistory> {
   const dir = resolveMissionDir(missionId);
   const state = readJson(join(dir, 'state.json')) as StoredMissionState;
   const appSessionId = missionSessionId(state, dir);
@@ -466,7 +466,7 @@ export function hydrateHistoricalSession(
   // chain (oldest -> newest) from the persisted app-session row; replaying only
   // the latest segment is what made compacted chats lose their scrollback.
   const chain = resolveSessionChain(appSessionId, appSessionId);
-  const window = loadSessionTranscriptWindow(appSessionId, chain, opts);
+  const window = await loadSessionTranscriptWindow(appSessionId, chain, opts);
 
   // Older pages only extend the orchestrator scrollback; progress was already delivered with the newest page.
   if (opts.cursor) {
@@ -512,7 +512,7 @@ export function loadSessionTranscriptWindow(
   appSessionId: string,
   chainProviderSessionIds: string[],
   opts: { cursor?: string; limit?: number; role?: SessionRole; fullText?: boolean } = {},
-): { events: TranscriptEvent[]; olderCursor?: string } {
+): Promise<{ events: TranscriptEvent[]; olderCursor?: string }> {
   return transcriptWindow.loadWindow(
     sessionPathIndex(),
     appSessionId,
@@ -530,7 +530,7 @@ export function loadOpenTranscriptTail(
   path: string,
   limit: number,
   fullText = false,
-): TranscriptEvent[] {
+): Promise<TranscriptEvent[]> {
   return transcriptWindow.loadOpenTail(appSessionId, path, limit, fullText);
 }
 

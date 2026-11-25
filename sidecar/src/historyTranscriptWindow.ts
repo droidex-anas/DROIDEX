@@ -55,7 +55,8 @@ export class HistoryTranscriptWindow {
   // Parsed-segment readers, LRU-bounded: repeat pages and session reopens hit a
   // warm reader instead of re-reading and re-parsing the file. Freshness is
   // validated by stat (mtime + size) on every window, so a live-appended or
-  // compacted file is re-read exactly once per change.
+  // compacted file is re-read exactly once per change. Entries hold the open
+  // promise so overlapping windows share one in-flight line scan.
   private readonly readers = new Map<
     string,
     {
@@ -63,44 +64,55 @@ export class HistoryTranscriptWindow {
       sizeBytes: number;
       appSessionId: string;
       role: SessionRole;
-      reader: SessionTranscriptReader;
+      reader: Promise<SessionTranscriptReader>;
     }
   >();
 
-  private readerFor(
+  private async readerFor(
     appSessionId: string,
     providerSessionId: string,
     path: string,
     role: SessionRole,
-  ): SessionTranscriptReader {
+  ): Promise<SessionTranscriptReader> {
     const stat = statSync(path);
     const cached = this.readers.get(path);
     if (
       cached?.mtimeMs === stat.mtimeMs &&
       cached.sizeBytes === stat.size &&
       cached.appSessionId === appSessionId &&
-      cached.role === role &&
-      cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId) &&
-      cached.reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
+      cached.role === role
     ) {
-      this.readers.delete(path);
-      this.readers.set(path, cached);
-      return cached.reader;
+      const reader = await cached.reader.catch(() => undefined);
+      if (
+        reader?.noticesRevision === sessionNoticesRevision(providerSessionId) &&
+        reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
+      ) {
+        this.readers.delete(path);
+        this.readers.set(path, cached);
+        return reader;
+      }
     }
-    const reader = new SessionTranscriptReader(appSessionId, providerSessionId, path, role);
-    this.readers.delete(path);
-    this.readers.set(path, {
+    const opened = SessionTranscriptReader.open(appSessionId, providerSessionId, path, role);
+    const entry = {
       mtimeMs: stat.mtimeMs,
       sizeBytes: stat.size,
       appSessionId,
       role,
-      reader,
-    });
+      reader: opened,
+    };
+    this.readers.delete(path);
+    this.readers.set(path, entry);
     if (this.readers.size > MAX_TRANSCRIPT_READERS) {
       const oldest = this.readers.keys().next().value;
       if (oldest) this.readers.delete(oldest);
     }
-    return reader;
+    try {
+      return await opened;
+    } catch (error) {
+      // A failed scan is retried by the next window rather than cached.
+      if (this.readers.get(path) === entry) this.readers.delete(path);
+      throw error;
+    }
   }
 
   invalidate(): void {
@@ -111,12 +123,12 @@ export class HistoryTranscriptWindow {
   // Segments are read newest -> oldest only as far as needed to fill `limit`,
   // and each segment parses its lines lazily from the tail, so a months-long,
   // heavily-compacted chat opens fast and pages older history in on demand.
-  loadWindow(
+  async loadWindow(
     sessionIndex: ReadonlyMap<string, string>,
     appSessionId: string,
     chainProviderSessionIds: string[],
     opts: { cursor?: string; limit?: number; role?: SessionRole; fullText?: boolean } = {},
-  ): { events: TranscriptEvent[]; olderCursor?: string } {
+  ): Promise<{ events: TranscriptEvent[]; olderCursor?: string }> {
     const limit = Math.max(1, opts.limit ?? DEFAULT_HISTORY_WINDOW);
     const role = opts.role ?? 'primary';
     const chain = chainProviderSessionIds.flatMap((providerSessionId) => {
@@ -140,8 +152,8 @@ export class HistoryTranscriptWindow {
     for (const [offset, { providerSessionId, path }] of segments.entries()) {
       const ci = startIdx - offset;
       const reader = opts.fullText
-        ? new SessionTranscriptReader(appSessionId, providerSessionId, path, role, true)
-        : this.readerFor(appSessionId, providerSessionId, path, role);
+        ? await SessionTranscriptReader.open(appSessionId, providerSessionId, path, role, true)
+        : await this.readerFor(appSessionId, providerSessionId, path, role);
       // Chain-derived monotonic order: older segments (lower ci) and earlier
       // in-segment positions sort first, independent of wall-clock ts.
       const window = reader.windowBackward(
@@ -163,16 +175,16 @@ export class HistoryTranscriptWindow {
     return { events: picked, olderCursor };
   }
 
-  loadOpenTail(
+  async loadOpenTail(
     appSessionId: string,
     path: string,
     limit: number,
     fullText = false,
-  ): TranscriptEvent[] {
+  ): Promise<TranscriptEvent[]> {
     if (!existsSync(path)) return [];
     const reader = fullText
-      ? new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true)
-      : this.readerFor(appSessionId, appSessionId, path, 'primary');
+      ? await SessionTranscriptReader.open(appSessionId, appSessionId, path, 'primary', true)
+      : await this.readerFor(appSessionId, appSessionId, path, 'primary');
     return reader.windowBackward(Math.max(1, limit), 0).events;
   }
 }

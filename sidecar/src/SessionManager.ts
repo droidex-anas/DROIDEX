@@ -1276,7 +1276,7 @@ export class SessionManager {
         await this.renameSession(cmd.appSessionId, cmd.title);
         return;
       case 'session.exportMarkdown':
-        this.historyQueries.exportMarkdown(cmd);
+        await this.historyQueries.exportMarkdown(cmd);
         return;
       case 'sessions.reanchorCwd':
         try {
@@ -1318,7 +1318,7 @@ export class SessionManager {
         return;
       case 'session.loadHistory':
         await this.sessionFiles.whenBootReconciled();
-        this.timeline.load(cmd.appSessionId, cmd.cursor, cmd.limit);
+        await this.timeline.load(cmd.appSessionId, cmd.cursor, cmd.limit);
         return;
       case 'sessions.search':
         await this.historyQueries.search(cmd);

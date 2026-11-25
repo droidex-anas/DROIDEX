@@ -166,7 +166,7 @@ export function openChildHistory(
     );
     return;
   }
-  host.loadChildHistory({
+  void host.loadChildHistory({
     appSessionId: record.parentAppSessionId,
     childSessionId: record.childSessionId,
     childProviderSessionIds: childHistoryProviderSessionIds(record),
@@ -218,7 +218,7 @@ export async function installChildRuntime(input: {
     // Paint persisted history immediately. This is deliberately best effort:
     // a live child may not have flushed history yet, but its provider runtime
     // must still open without waiting for that file.
-    host.d.timeline.loadChildHistory({
+    void host.d.timeline.loadChildHistory({
       appSessionId: identity.parentAppSessionId,
       childSessionId,
       childProviderSessionIds: childHistoryProviderSessionIds(child),
