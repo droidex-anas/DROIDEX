@@ -803,7 +803,13 @@ test('unchanged child refresh windows do not republish, while explicit loads sti
   harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
   assert.equal(
     harness.emitted.filter((event) => event.type === 'session.history').length,
-    1,
+    2,
+    'the first watched refresh synchronizes its owner even when it matches the explicit load',
+  );
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
     'an unchanged watched window stays silent',
   );
 
@@ -811,14 +817,14 @@ test('unchanged child refresh windows do not republish, while explicit loads sti
   harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
   assert.equal(
     harness.emitted.filter((event) => event.type === 'session.history').length,
-    2,
+    3,
     'a changed watched window republishes',
   );
 
   harness.timeline.loadChildHistory(query);
   assert.equal(
     harness.emitted.filter((event) => event.type === 'session.history').length,
-    3,
+    4,
     'an explicit history load always answers',
   );
 });
