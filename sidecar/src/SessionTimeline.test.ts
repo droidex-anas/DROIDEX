@@ -784,6 +784,51 @@ test('child history loads a canonical replace batch and reports replay failures 
   });
 });
 
+test('unchanged child refresh windows do not republish, while explicit loads still answer', () => {
+  const events = [transcript('child-first')];
+  const harness = createHarness({
+    loaders: {
+      resolveChain: () => ['child-provider'],
+      transcriptWindow: () => ({ events }),
+    },
+  });
+  const query = {
+    appSessionId: 'app-1',
+    childSessionId: 'child-logical',
+    childProviderSessionIds: ['child-provider'],
+    role: 'worker' as const,
+  };
+
+  harness.timeline.loadChildHistory(query);
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'the first watched refresh synchronizes its owner even when it matches the explicit load',
+  );
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'an unchanged watched window stays silent',
+  );
+
+  events.push(transcript('child-second'));
+  harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    3,
+    'a changed watched window republishes',
+  );
+
+  harness.timeline.loadChildHistory(query);
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    4,
+    'an explicit history load always answers',
+  );
+});
+
 test('a live child with no flushed provider file returns an empty successful history page', () => {
   const harness = createHarness({
     loaders: {

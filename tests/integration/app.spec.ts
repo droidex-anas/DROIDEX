@@ -177,6 +177,9 @@ test('each command palette row runs its command', async ({ page }) => {
   const utilityTabs = page.getByRole('tablist', { name: 'Open utility tools' }).getByRole('tab');
   await runCommand('New Terminal');
   await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(1);
+  // Ctrl+K belongs to the shell while terminal input is focused. Move focus to
+  // the terminal tab before testing the palette command itself.
+  await utilityTabs.filter({ hasText: 'Terminal' }).first().click();
   await runCommand('New Terminal');
   await expect(utilityTabs.filter({ hasText: 'Terminal' })).toHaveCount(2);
 });
