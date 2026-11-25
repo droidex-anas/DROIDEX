@@ -276,16 +276,23 @@ export class ClaudeEventMapper {
       // the CLI says so in this one sentence. Reading it here keeps the renderer
       // free of text matching, and the row quiet instead of red.
       const interrupted = block.is_error === true && INTERRUPTION_NOTICE.test(text);
-      return {
-        ...owner,
-        transcript: this.transcript('tool_result', {
-          text,
-          ...(images ? { images } : {}),
-          isError: block.is_error === true && !interrupted,
-          toolUseId: block.tool_use_id,
-          ...(interrupted ? { interrupted: true } : {}),
-        }),
-      };
+      const spawnEnded = this.subagents.finishSpawn(
+        block.tool_use_id,
+        block.is_error === true && !interrupted,
+      );
+      return [
+        ...spawnEnded,
+        {
+          ...owner,
+          transcript: this.transcript('tool_result', {
+            text,
+            ...(images ? { images } : {}),
+            isError: block.is_error === true && !interrupted,
+            toolUseId: block.tool_use_id,
+            ...(interrupted ? { interrupted: true } : {}),
+          }),
+        },
+      ];
     });
     return message.parent_tool_use_id && events.length
       ? [
@@ -366,7 +373,7 @@ export class ClaudeEventMapper {
     { id, name, input, transient }: Extract<ClaudeContent, { kind: 'tool_call' }>,
     parentToolUseId: string | null,
   ): NormalizedEvent {
-    this.subagents.noteToolUse(name, id, parentToolUseId);
+    this.subagents.noteToolUse(name, id, parentToolUseId, input);
     // A spawn's input is the subagent's whole brief. The subagent's own pane
     // already receives that brief as a prompt row, so the parent's transcript
     // keeps only the fields that label the call.

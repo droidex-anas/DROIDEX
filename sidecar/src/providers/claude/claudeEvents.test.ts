@@ -525,6 +525,53 @@ test('the result reports only the denials that never reached the transcript', ()
   );
 });
 
+test('an errored spawn without task_started settles a providerless failed child', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const children = childrenOf(mapper);
+  children(
+    assistant([
+      {
+        type: 'tool_use',
+        id: 'toolu_spawn',
+        name: 'Task',
+        input: {
+          description: 'survey the code',
+          subagent_type: 'worker',
+          prompt: 'inspect the repository',
+        },
+      },
+    ]),
+  );
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_spawn',
+              content: 'usage limit reached',
+              is_error: true,
+            },
+          ],
+        },
+      }),
+    ),
+    [
+      {
+        toolUseId: 'toolu_spawn',
+        done: true,
+        status: 'failed',
+        label: 'worker',
+        prompt: 'inspect the repository',
+        transcriptAvailable: false,
+      },
+    ],
+  );
+});
+
 test('a task poll is marked only when it names an agent the mapper is tracking', () => {
   const poll = (toolUseId: string, taskId: string): SDKMessage =>
     assistant([

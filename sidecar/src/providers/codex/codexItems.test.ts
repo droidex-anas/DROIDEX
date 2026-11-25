@@ -28,6 +28,29 @@ test('a spawn keeps its brief out of the parent transcript and on the child', ()
   );
 });
 
+test('a failed spawn without a receiver still settles its child placeholder', () => {
+  const item = threadItem({
+    item: {
+      ...spawn,
+      status: 'failed',
+      receiverThreadIds: [],
+    },
+  });
+
+  assert.deepEqual(collabChildSignals(item, {}), [
+    {
+      toolUseId: 'item-1',
+      done: true,
+      status: 'failed',
+      prompt: spawn.prompt,
+      label: spawn.prompt,
+      modelId: spawn.model,
+      reasoningEffort: 'low',
+      transcriptAvailable: false,
+    },
+  ]);
+});
+
 // An app tool that answered Codex with a picture comes back in the finished
 // item the same way; the item is kept and the picture becomes a saved file.
 test('a finished app tool keeps the picture it answered with', () => {

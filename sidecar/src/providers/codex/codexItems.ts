@@ -398,6 +398,18 @@ export function collabChildSignals(
   const reasoningEffort = reasoningValue(
     item.reasoningEffort ?? fallback.reasoningEffort ?? undefined,
   );
+  if (isSpawn && item.status === 'failed' && item.receiverThreadIds.length === 0)
+    return [
+      {
+        toolUseId: item.id,
+        done: true,
+        status: 'failed',
+        ...(item.prompt ? { prompt: item.prompt, label: item.prompt } : {}),
+        ...(modelId ? { modelId } : {}),
+        ...(reasoningEffort ? { reasoningEffort } : {}),
+        transcriptAvailable: false,
+      },
+    ];
   return item.receiverThreadIds.map((threadId): ChildSessionSignal => {
     const state = item.agentsStates[threadId];
     const status = childStatus(state?.status);
