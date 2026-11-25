@@ -1078,6 +1078,16 @@ export class ChildSessions {
       // Cleanup remains authoritative even when cancellation cannot resolve its target.
     }
     this.d.compaction.forgetChild(child.identity);
+    if (child.turn.phase === 'streaming') {
+      try {
+        await this.d.timeline.settleStreaming(
+          parent.parentAppSessionId,
+          child.identity.childSessionId,
+        );
+      } catch (error) {
+        this.reportStreamingPersistenceFailure(child.identity, error);
+      }
+    }
     child.runtime = undefined;
     // The confirmed autonomy belonged to the closed runtime; a later open
     // re-reads it from the new provider session's init result.

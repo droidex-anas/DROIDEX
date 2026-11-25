@@ -1155,6 +1155,26 @@ test('failed process cleanup preserves the provider and allows closing to retry'
   assert.equal(h.calls.filter((call) => call.method === 'session.close').length, 1);
 });
 
+test('close settles streaming output before releasing the transcript writer', async () => {
+  const order: string[] = [];
+  const h = createHarness([], undefined, {
+    settleStreaming: (appSessionId, sourceSessionId) => {
+      order.push(`settle:${appSessionId}:${sourceSessionId}`);
+      return Promise.resolve();
+    },
+    forgetProviderTranscript: (appSessionId) => {
+      order.push(`release:${appSessionId}`);
+    },
+  });
+  const provider = queueCreate(h, 'owner');
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+
+  await h.lifecycle.close('owner');
+
+  assert.deepEqual(order, ['settle:owner:owner', 'release:owner']);
+});
+
 test('close follows ownership order and closeAll closes its initial snapshot', async () => {
   const harness = createHarness();
   const provider = new CallbackCloseSession('owner', harness.calls, () => {

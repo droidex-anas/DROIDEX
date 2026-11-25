@@ -1323,6 +1323,9 @@ export class SessionLifecycle {
       });
     });
     await run(() => d.stopVoiceSession(liveSession.summary.appSessionId));
+    await run(() =>
+      d.settleStreaming(liveSession.summary.appSessionId, liveSession.summary.appSessionId),
+    );
 
     // First, while every provider process of this session is still alive and
     // still the parent of what it spawned: the dev servers are descendants of
