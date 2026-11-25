@@ -842,8 +842,6 @@ test('worker usage and context follow the parent-scoped child identity', async (
     notifyDaemonCompaction(h, 'worker-runtime-id', 'started');
     notifyDaemonCompaction(h, 'worker-runtime-id', 'completed');
     await h.waitForIdle();
-    h.events.length = 0;
-
     worker.queueStreamEvents([usage(50, 20)]);
     await h.handle({
       type: 'child.send',
@@ -852,13 +850,13 @@ test('worker usage and context follow the parent-scoped child identity', async (
       text: 'worker usage',
     });
 
-    // Worker tokens add to the totals without replacing the primary context reading.
+    // Worker usage is reported on the child, never as the parent's root spend.
     const summary = latestSummary(h);
-    assert.equal(summary?.tokensIn, 50);
-    assert.equal(summary?.tokensOut, 20);
+    assert.equal(summary?.tokensIn, 8);
+    assert.equal(summary?.tokensOut, 2);
     assert.equal(summary?.contextTokens, 9);
     assert.equal(summary?.contextAccuracy, 'exact');
-    const childContext = h.events.find(
+    const childContext = h.events.findLast(
       (event) =>
         event.type === 'context.updated' &&
         event.appSessionId === 'provider-1' &&

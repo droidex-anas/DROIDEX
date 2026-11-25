@@ -170,7 +170,7 @@ test('primary refresh normalizes breakdown and persists estimated context', asyn
   assert.deepEqual(h.contextWindowNotes.at(-1), ['model-default', 1_000]);
 });
 
-test('plausible exact primary usage wins while child usage changes totals only', async () => {
+test('plausible exact primary usage wins and child usage leaves totals unchanged', async () => {
   const h = createHarness();
   const { live, session } = await registerLive(h, 'app-1');
   live.summary.maxContextTokens = 1_000;
@@ -184,12 +184,16 @@ test('plausible exact primary usage wins while child usage changes totals only',
     tokensOut: 5,
     contextTokens: 900,
   });
-  assert.equal(live.summary.tokensIn, 20);
-  assert.equal(live.summary.tokensOut, 5);
+  assert.equal(live.summary.tokensIn, 10);
+  assert.equal(live.summary.tokensOut, 3);
   assert.equal(live.summary.contextTokens, 800);
   const patches = h.history.summaryPatchesAndHidden().patches;
-  assert.equal(patches.get('app-1')?.tokensIn, 20);
+  assert.equal(patches.get('app-1')?.tokensIn, 10);
   assert.equal(patches.get('app-1')?.contextTokens, 800);
+
+  h.context.recordUsage('app-1', 'app-1', { tokensIn: 11, tokensOut: 4 });
+  assert.equal(live.summary.tokensIn, 11);
+  assert.equal(live.summary.tokensOut, 4);
 
   session.nextContextStats = stats(100, 900, 1_000);
   await h.context.refresh(primaryTarget(h, live));

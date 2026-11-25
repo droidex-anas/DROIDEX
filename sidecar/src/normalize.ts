@@ -121,10 +121,11 @@ export function normalizeStreamEvent(
   const raw = ev as unknown as Record<string, unknown>;
   if (raw.type === 'token_usage_update' || raw.type === 'session_token_usage_changed') {
     const e = raw as Record<string, Record<string, unknown> | undefined>;
-    const cumulative = e.inclusiveTokenUsage ?? e.tokenUsage ?? e;
-    // `session_token_usage_changed.tokenUsage` is cumulative for the whole
-    // session. It is not the current context window. Some provider versions do
-    // not include `lastCallTokenUsage`; in that shape, publish cumulative totals
+    const cumulative = (raw.type === 'session_token_usage_changed' ? e.tokenUsage : e) ?? {};
+    // `session_token_usage_changed.tokenUsage` is cumulative for the root
+    // session alone; inclusiveTokenUsage adds children and must never become
+    // the parent total. It is not the current context window. Some provider
+    // versions do not include `lastCallTokenUsage`; in that shape, publish cumulative totals
     // only and let getContextStats() remain authoritative for the meter.
     const context = e.lastCallTokenUsage ?? (raw.type === 'token_usage_update' ? e : undefined);
     const tokensIn =

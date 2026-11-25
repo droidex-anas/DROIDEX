@@ -107,6 +107,10 @@ export class SessionContext {
     if (!liveSession || liveSession.turn.closeMode) return;
 
     const stableAppSessionId = liveSession.summary.appSessionId;
+    // Parent totals are the root conversation's own spend. Child provider
+    // sessions report independent cumulative series and publish their spend on
+    // the child summary instead.
+    if (sourceSessionId !== stableAppSessionId) return;
     const offset = this.usageOffsets.get(stableAppSessionId);
     const nextSummary = {
       ...liveSession.summary,
@@ -114,8 +118,8 @@ export class SessionContext {
       tokensOut: usage.tokensOut + (offset?.tokensOut ?? 0),
     };
 
-    // Child turns contribute to cumulative usage, but the primary summary owns
-    // current-context telemetry. Children publish their own refreshes.
+    // The primary summary owns current-context telemetry. Children publish
+    // their own refreshes.
     // While a compaction reset is pending, usage events that were queued before
     // the compaction carry pre-compaction context tokens; applying them would
     // undo the reset, so context fields wait for the next provider refresh.

@@ -130,7 +130,7 @@ test('token usage counts context the way the daemon threshold does, never from c
   // cacheRead (never cacheCreation), so the meter must count the same way.
   const lastCall = stream({
     type: 'session_token_usage_changed',
-    inclusiveTokenUsage: {
+    tokenUsage: {
       inputTokens: 100,
       outputTokens: 40,
       cacheReadTokens: 30,
@@ -160,7 +160,7 @@ test('token usage counts context the way the daemon threshold does, never from c
       cacheCreationTokens: 0,
     },
   });
-  assert.deepEqual(cumulative?.tokens, { tokensIn: 14_099_891, tokensOut: 242_687 });
+  assert.deepEqual(cumulative?.tokens, { tokensIn: 12_925_421, tokensOut: 179_985 });
 });
 
 test('captures Task prompt metadata before the subagent session id exists', () => {
