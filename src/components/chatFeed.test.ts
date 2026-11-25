@@ -102,6 +102,24 @@ test('a steer delivered into a running turn keeps the work before it in view', (
   assert.ok(workedChildren(groupTurns(buildFeed(events), false)).length > 0);
 });
 
+test('an answer followed by reasoning, a plan check-off, and a sign-off stays in view', () => {
+  const events = [
+    userMsg('q'),
+    grep(),
+    asst('Here is the full answer.'),
+    ev({ kind: 'thinking', text: 'mark the plan done' }),
+    todo('1. [completed] done'),
+    asst('Plan completed.'),
+  ];
+  const grouped = groupTurns(buildFeed(events), false);
+  assert.deepEqual(topLevelAnswers(grouped), ['Here is the full answer.\n\nPlan completed.']);
+  // The reasoning folds with the turn's work; the plan bookkeeping is dropped.
+  assert.deepEqual(
+    workedChildren(grouped).map((it) => it.type),
+    ['tools', 'thinking'],
+  );
+});
+
 test('a spoken line stays its own marked row beside the turn it was said in', () => {
   const spokenAsk = ev({ kind: 'text', author: 'user', text: 'what changed?', spoken: true });
   const spokenReply = ev({ kind: 'text', text: 'the composer', spoken: true });
