@@ -1309,6 +1309,9 @@
      with the code, and full-width so the row tone reads as part of the file. */
   .review-diff-review-row {
     padding: 4px 8px 6px 88px;
+    /* Injected rows carry review UI — notes, comments, editors — which is
+       prose, not code; the design system reserves mono for the diff itself. */
+    font-family: var(--ui-font-family);
   }
 
   .review-diff-review-row:empty {
