@@ -93,11 +93,18 @@ async function requestApproval(
 
 // The daemon omits `questions` entirely for an empty questionnaire and omits
 // `options` for free-text answers, neither of which the declared type reflects.
+// Its `topic` is the short label the card shows as the question's header.
 function askedQuestions(params: AskUserRequestParams): SessionQuestion['questions'] {
-  const asked: { questions?: { index: number; question: string; options?: string[] }[] } = params;
-  return (asked.questions ?? []).map((question) => ({
-    index: question.index,
-    question: question.question,
-    options: (question.options ?? []).map((label) => ({ label })),
-  }));
+  const asked: {
+    questions?: { index: number; topic?: string; question: string; options?: string[] }[];
+  } = params;
+  return (asked.questions ?? []).map((question) => {
+    const header = question.topic?.trim();
+    return {
+      index: question.index,
+      question: question.question,
+      ...(header ? { header } : {}),
+      options: (question.options ?? []).map((label) => ({ label })),
+    };
+  });
 }

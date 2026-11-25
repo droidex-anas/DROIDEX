@@ -11,18 +11,20 @@ const AskUserInline = lazy(() => import('./AskUserInline'));
  * pending request rather than with the composer, and stay mounted afterwards so
  * a card that settles still plays its way out.
  *
- * `plans` and `asks` say which of the two places owns which cards: the composer
- * keeps the plan bar, and whichever of the composer and the voice surface is on
- * screen shows the approvals and questions.
+ * The three flags say which cards this place owns: the composer keeps the plan
+ * bar and shows a question in its own field, and whichever of the composer and
+ * the voice surface is on screen shows the approvals.
  */
 export default function InlineInteractions({
   appSessionId,
   plans = false,
-  asks = false,
+  permissions = false,
+  questions = false,
 }: {
   appSessionId: string | null;
   plans?: boolean;
-  asks?: boolean;
+  permissions?: boolean;
+  questions?: boolean;
 }) {
   const pending = useStoreSelector((current) => {
     if (!appSessionId) return false;
@@ -41,12 +43,8 @@ export default function InlineInteractions({
   return (
     <Suspense fallback={null}>
       {plans && <PlanApprovalInline appSessionId={appSessionId} />}
-      {asks && (
-        <>
-          <PermissionInline appSessionId={appSessionId} />
-          <AskUserInline appSessionId={appSessionId} />
-        </>
-      )}
+      {permissions && <PermissionInline appSessionId={appSessionId} />}
+      {questions && <AskUserInline appSessionId={appSessionId} />}
     </Suspense>
   );
 }

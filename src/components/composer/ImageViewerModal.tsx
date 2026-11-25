@@ -2,7 +2,8 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { FOCUSABLE_SELECTOR, wrapTabFocus } from '../../lib/focusTrap';
 import { createPortal } from 'react-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Check, Crop, Download } from 'lucide-react';
+import { Check } from '@droidex/icons';
+import { Crop, Download } from 'lucide-react';
 import { downloadImage } from '../media/downloadImage';
 import { IMAGE_VIEWER_TRANSITION, imageViewerContentMotion } from '../media/imageViewerMotion';
 import {
@@ -160,7 +161,7 @@ function ImageViewerModalContent({
               disabled={!rect || saving}
               onClick={() => void applyCrop()}
             >
-              <Check className="h-3.5 w-3.5" strokeWidth={3} />
+              <Check className="size-icon-sm" />
               <span className="pr-1">{saving ? 'Saving…' : 'Apply crop'}</span>
             </ViewerToolbarButton>
           </>

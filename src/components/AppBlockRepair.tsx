@@ -1,5 +1,6 @@
 import { useContext, useEffect, useRef, useState } from 'react';
-import { Check, Wrench } from 'lucide-react';
+import { Check } from '@droidex/icons';
+import { Wrench } from 'lucide-react';
 import { useStoreApi, useStoreDispatch, type AppState } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
 import { useRuntimeHealth } from '../hooks/useRuntimeHealth';

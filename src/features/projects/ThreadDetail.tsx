@@ -92,7 +92,7 @@ export function ThreadDetail({
       </div>
 
       <div className="shrink-0 px-3 pb-3 empty:hidden">
-        <InlineInteractions appSessionId={row.appSessionId} plans asks />
+        <InlineInteractions appSessionId={row.appSessionId} plans permissions questions />
       </div>
     </div>
   );

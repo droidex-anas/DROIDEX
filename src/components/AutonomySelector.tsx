@@ -175,7 +175,7 @@ function AutonomyRow({
           <span className="mt-1 block text-caption text-secondary">{consequence}</span>
         )}
       </span>
-      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" strokeWidth={2.6} />}
+      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" />}
       <span className="mt-0.5 w-3 shrink-0 text-right text-overline tabular-nums text-muted">
         {number}
       </span>

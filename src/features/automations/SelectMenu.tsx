@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check } from '@droidex/icons';
+import { ChevronDown, Search } from 'lucide-react';
 import {
   type KeyboardEvent,
   useCallback,
@@ -381,7 +382,7 @@ function OptionButton({
           <span className="mt-0.5 block truncate text-caption text-muted">{option.detail}</span>
         )}
       </span>
-      {selected && <Check className="size-icon-sm shrink-0 text-secondary" strokeWidth={2.2} />}
+      {selected && <Check className="size-icon-sm shrink-0 text-secondary" />}
     </button>
   );
 }

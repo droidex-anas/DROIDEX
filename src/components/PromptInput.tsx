@@ -328,6 +328,7 @@ export default function PromptInput({
           ? current.pendingCompose
           : null,
       promptQueue: appSessionId ? current.promptQueue[appSessionId] : undefined,
+      questionPending: Boolean(appSessionId && current.pendingQuestions[appSessionId]?.length),
       skills: current.skills,
       skillsProviderSessionId: current.skillsProviderSessionId,
       specMode: current.specMode,
@@ -1524,6 +1525,7 @@ export default function PromptInput({
   // none is running anywhere; the chat that owns one gets its controls instead.
   const voice = useVoiceControls();
   const voiceHere = voice.view === 'dock';
+  const voiceCoversComposer = voice.view === 'full';
   const canStartVoice = canUseVoice(composerProvider) && !voiceHere;
   // The chat currently being talked to, when it is not this one.
   const voiceRunningOn = useStoreSelector((state) => {
@@ -1703,6 +1705,16 @@ export default function PromptInput({
       voiceAwaiting.current = null;
     }
   }, [activeSession, state.lastCreatedSessionRequest, state.pendingComposeWhileWaiting, voice]);
+
+  // A question covers the field and holds focus; once it settles the card is
+  // gone, so the caret comes back here unless the user has moved elsewhere.
+  const questionCoversField = state.questionPending && !voiceCoversComposer;
+  const questionCoveredField = useRef(questionCoversField);
+  useEffect(() => {
+    const settled = questionCoveredField.current && !questionCoversField;
+    questionCoveredField.current = questionCoversField;
+    if (settled && document.activeElement === document.body) editorRef.current?.focus();
+  }, [questionCoversField]);
 
   const showSendAction = !canStartVoice || hasContent || isLive || turnStarting;
   // The hint's host swaps (send, stop, spinner) as a turn starts and ends; clear
@@ -1955,9 +1967,9 @@ export default function PromptInput({
         {activeSession && !targetChildSessionId && (
           <SideChatRestoreButton sourceAppSessionId={activeSession.appSessionId} />
         )}
-        {/* The full voice surface covers this composer and shows the same two
-            cards itself, so only one of the two places owns an ask at a time. */}
-        <InlineInteractions appSessionId={appSessionId} plans asks={voice.view !== 'full'} />
+        {/* The full voice surface covers this composer and shows the approvals
+            and questions itself, so only one of the two places owns an ask at a time. */}
+        <InlineInteractions appSessionId={appSessionId} plans permissions={!voiceCoversComposer} />
 
         {missionPreview ? (
           <div
@@ -2031,10 +2043,17 @@ export default function PromptInput({
           </Suspense>
         )}
 
+        {/* A question takes the field's place; the draft stays mounted behind it. */}
+        <InlineInteractions appSessionId={appSessionId} questions={!voiceCoversComposer} />
+
         {/* No stroke at rest or in focus. Light keeps its grey while typing;
             dark lifts the fill a touch with a translucent text layer, since its
             raised rung is the elevated one. */}
-        <div className="relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5">
+        <div
+          className={`relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5 ${
+            questionCoversField ? 'hidden' : ''
+          }`}
+        >
           {(hasAttachmentChips || designMarks.length > 0) && (
             <ComposerAttachments
               designMarks={designMarks}

@@ -1,4 +1,5 @@
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
+import type { ProviderKind } from '../types/bridge';
 import { diffPaletteForTheme } from './diffTheme';
 
 // The theme values every colour and shadow token derives from. ThemeSettings
@@ -54,6 +55,15 @@ export const ULTRA_COLORS = {
   dark: '#bba6ff',
   light: '#6d28d9',
 } as const;
+
+// A new chat's artwork is lit in its harness's own hue, so the screen says which
+// harness the chat runs on before anything is typed. Brand art, not chrome: the
+// neutral accent never tints it.
+export const HARNESS_ART_COLORS: Record<ProviderKind, string> = {
+  droid: '#ee6018',
+  claude: '#d97757',
+  codex: '#6e8bff',
+};
 
 // Hyperlinks read by hue, like skills and status do. The neutral accent governs
 // chrome and is near-white in dark themes, which left links looking like plain
@@ -484,7 +494,7 @@ function adjustColor(hex: string, lighten: number): string {
 }
 
 // Blend `hex` toward `target` by t (0..1).
-function mixHex(hex: string, target: string, t: number): string {
+export function mixHex(hex: string, target: string, t: number): string {
   const to = rgbChannels(target);
   return toHex(rgbChannels(hex).map((n, i) => Math.round(n * (1 - t) + to[i] * t)));
 }
