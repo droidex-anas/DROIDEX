@@ -279,22 +279,87 @@ function foldLiveRun(run: FeedItem[], specContent: string | undefined, phase: Tu
   return collapseRun(run, specContent, phase);
 }
 
+interface TurnAnswer {
+  message: Extract<FeedItem, { type: 'message' }>;
+  // Where the merged answer shows: the run index of its first fragment.
+  index: number;
+  // Run indexes of every fragment and of the plan bookkeeping between them.
+  absorbed: Set<number>;
+}
+
+// The turn's final answer: the run's last answer candidate, extended backwards
+// across gaps holding only reasoning and todo/plan reconciliation — the model
+// emitted its answer, checked off the plan, then finished the sentence, so
+// those fragments are one response (#19). The reconciliation items are
+// dropped; the reasoning folds. A live turn's latest note is not merged with
+// earlier fragments because it may still be streaming.
+function findTurnAnswer(
+  run: FeedItem[],
+  specContent: string | undefined,
+  turnIsLive: boolean,
+): TurnAnswer | undefined {
+  const last = lastAnswerCandidate(run, specContent);
+  if (last < 0) return undefined;
+  const fragments = [last];
+  const absorbed = new Set(fragments);
+  let s = last;
+  while (!turnIsLive && s > 0) {
+    let j = s - 1;
+    while (j >= 0 && (isReconciliationItem(run[j]) || run[j].type === 'thinking')) j--;
+    // An empty gap merges too: a harness can re-invoke the model on an
+    // injected system message the transcript never shows, so the nudge reply
+    // lands immediately after the real answer. Without the merge, that
+    // trailing bookkeeping reply becomes "the answer" and the real one
+    // folds into Worked.
+    if (j < 0 || !isAnswerCandidate(run[j], specContent)) break;
+    for (let k = j; k < s; k++) {
+      if (k === j || isReconciliationItem(run[k])) absorbed.add(k);
+    }
+    fragments.unshift(j);
+    s = j;
+  }
+  const message = fragments
+    .map((i) => run[i] as Extract<FeedItem, { type: 'message' }>)
+    .reduce((merged, fragment) => mergeAssistantMessages(merged, fragment));
+  return { message, index: s, absorbed };
+}
+
+// Items no fold may hide. The answer, browser pages and compaction markers are
+// placed by collapseRun itself.
+function staysTopLevel(it: FeedItem, turnIsLive: boolean): boolean {
+  // A failed tool/result must stay visible after the turn completes instead of
+  // being buried in a collapsed "Worked for …" group (classifier intent).
+  if (it.type === 'error') return true;
+  // Proposals are review surfaces, and a spawned thread is work that keeps
+  // running after the turn: neither is hidden execution detail.
+  if (it.type === 'tools') {
+    return it.events.some(isAutomationProposalCall) || it.events.some(isThreadSpawnCall);
+  }
+  // The user heard this. Folding it into "Worked for …" would hide half of the
+  // conversation they just had.
+  if (isSpokenLine(it)) return true;
+  // The image or design is what the turn produced, not a step along the way:
+  // folding it would hide the thing that was asked for.
+  if (it.type === 'generated_image' || it.type === 'canvas_artifact') return true;
+  // A running turn's subagents can still be running behind a later note.
+  if (it.type === 'child_session' || it.type === 'child_sessions') return turnIsLive;
+  // The harness changed the model under the turn, often on a usage limit; the
+  // answer after it ran on the new one.
+  return isHarnessModelSwitch(it);
+}
+
 // Collapse an assistant turn: everything the turn did — thinking,
 // tool/file activity, statuses, compaction dividers, child-session lines, and
 // the assistant's mid-turn notes — folds into ONE "Worked for …" group between
 // the prompt and the answer, so a settled turn reads prompt → Worked → final
 // response and expanding the fold replays the whole turn (compaction divider
-// included) at the configured density. Keep top-level: the turn's final answer
-// (its last assistant message, plus earlier fragments split off only by
-// reasoning and todo/plan reconciliation (#19) or by an invisible harness
-// nudge), errors, so failures remain visible, and any model switch the harness
-// made.
+// included) at the configured density. The answer and the items in
+// `staysTopLevel` remain outside it.
 // Invariant (#18): the final answer itself is never nested inside a Worked
 // group, no matter what trailing work or status follows it.
-// A turn that has not settled folds the same way around its latest note, which
-// is not merged with earlier fragments because it may still be streaming, and
-// keeps its subagents in view because they may still be running. Its fold keeps
-// the key it will have once the turn settles, so an opened fold stays open.
+// A turn that has not settled folds the same way around its latest note. Its
+// fold keeps the key it will have once the turn settles, so an opened fold
+// stays open.
 function collapseRun(
   run: FeedItem[],
   specContent?: string,
@@ -302,41 +367,7 @@ function collapseRun(
 ): FeedItem[] {
   if (run.length === 0) return [];
   const turnIsLive = phase !== 'settled';
-  const out: FeedItem[] = [];
-
-  // Find the final answer: the run's last answer candidate, extended backwards
-  // across gaps holding only reasoning and todo/plan reconciliation — the model
-  // emitted its answer, checked off the plan, then finished the sentence, so
-  // those fragments are one response (#19). The reconciliation items are
-  // dropped; the reasoning folds.
-  const lastMsg = lastAnswerCandidate(run, specContent);
-  const answerIdx: number[] = [];
-  const dropIdx = new Set<number>();
-  if (lastMsg >= 0) answerIdx.push(lastMsg);
-  if (lastMsg >= 0 && !turnIsLive) {
-    let s = lastMsg;
-    while (s > 0) {
-      let j = s - 1;
-      while (j >= 0 && (isReconciliationItem(run[j]) || run[j].type === 'thinking')) j--;
-      // An empty gap merges too: a harness can re-invoke the model on an
-      // injected system message the transcript never shows, so the nudge reply
-      // lands immediately after the real answer. Without the merge, that
-      // trailing bookkeeping reply becomes "the answer" and the real one
-      // folds into Worked.
-      if (j < 0 || !isAnswerCandidate(run[j], specContent)) break;
-      for (let k = j + 1; k < s; k++) {
-        if (isReconciliationItem(run[k])) dropIdx.add(k);
-      }
-      answerIdx.unshift(j);
-      s = j;
-    }
-  }
-  const answerSet = new Set(answerIdx);
-  let answer: Extract<FeedItem, { type: 'message' }> | undefined;
-  for (const i of answerIdx) {
-    const fragment = run[i] as Extract<FeedItem, { type: 'message' }>;
-    answer = answer ? mergeAssistantMessages(answer, fragment) : fragment;
-  }
+  const answer = findTurnAnswer(run, specContent, turnIsLive);
 
   // One fold per turn: every foldable item joins the same Worked group even
   // when work continues past the last assistant text, so a turn never shatters
@@ -348,44 +379,11 @@ function collapseRun(
   const survivors: FeedItem[] = [];
   const browserCards: FeedItem[] = [];
   const markers: { index: number; item: FeedItem }[] = [];
-  let answerPushed = false;
   for (let i = 0; i < run.length; i++) {
-    if (dropIdx.has(i)) continue;
     const it = run[i];
-    if (answerSet.has(i)) {
-      // All fragments collapse into the one answer, emitted where the answer
-      // started; later fragments were already merged into it.
-      if (!answerPushed && answer) {
-        survivors.push(answer);
-        answerPushed = true;
-      }
-      continue;
-    }
-    if (it.type === 'error') {
-      // A failed tool/result must stay visible after the turn completes instead
-      // of being buried in a collapsed "Worked for …" group (classifier intent).
-      survivors.push(it);
-    } else if (
-      it.type === 'tools' &&
-      (it.events.some(isAutomationProposalCall) || it.events.some(isThreadSpawnCall))
-    ) {
-      // Proposals are review surfaces, and a spawned thread is work that keeps
-      // running after the turn: neither is hidden execution detail.
-      survivors.push(it);
-    } else if (isSpokenLine(it)) {
-      // The user heard this. Folding it into "Worked for …" would hide half of
-      // the conversation they just had.
-      survivors.push(it);
-    } else if (it.type === 'generated_image' || it.type === 'canvas_artifact') {
-      // The image or design is what the turn produced, not a step along the
-      // way: folding it would hide the thing that was asked for.
-      survivors.push(it);
-    } else if (turnIsLive && (it.type === 'child_session' || it.type === 'child_sessions')) {
-      // The turn's subagents can still be running behind a later note.
-      survivors.push(it);
-    } else if (isHarnessModelSwitch(it)) {
-      // The harness changed the model under the turn, often on a usage limit;
-      // the answer after it ran on the new one.
+    if (answer?.absorbed.has(i)) {
+      if (i === answer.index) survivors.push(answer.message);
+    } else if (staysTopLevel(it, turnIsLive)) {
       survivors.push(it);
     } else if (it.type === 'browser') {
       // The page the turn worked on stays in reach; its steps fold as usual.
@@ -399,35 +397,61 @@ function collapseRun(
       foldables.push({ index: i, item: it });
     }
   }
-  if (answer && browserCards.length > 0) {
-    survivors.splice(survivors.indexOf(answer) + 1, 0, ...browserCards);
+  if (answer) survivors.splice(survivors.indexOf(answer.message) + 1, 0, ...browserCards);
+  // No work to fold: survivors already hold any markers in transcript order.
+  if (foldables.length === 0) return survivors;
+  // Markers moved into the fold; drop their provisional top-level copies.
+  return [
+    workedFold([...foldables, ...markers], phase),
+    ...survivors.filter((it) => !isCompactionMarker(it)),
+  ];
+}
+
+function workedFold(entries: { index: number; item: FeedItem }[], phase: TurnPhase): FeedItem {
+  const items = entries.sort((a, b) => a.index - b.index).map((entry) => entry.item);
+  const { start, end } = spanOf(items);
+  return {
+    type: 'worked',
+    key: `worked-${items[0].key}`,
+    items,
+    durationMs: Math.max(0, end - start),
+    ...(phase === 'running' ? { runningSince: start } : {}),
+  };
+}
+
+// While the turn runs, everything after the user's last real prompt is live,
+// including the work before a steer they sent into it.
+function liveTurnStart(items: FeedItem[]): number {
+  for (let k = items.length - 1; k >= 0; k -= 1) {
+    const item = items[k];
+    if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
+      return k + 1;
+    }
   }
-  if (foldables.length > 0) {
-    const folded = [...foldables, ...markers]
-      .sort((a, b) => a.index - b.index)
-      .map((entry) => entry.item);
-    const { start, end } = spanOf(folded);
-    out.push({
-      type: 'worked',
-      key: `worked-${folded[0].key}`,
-      items: folded,
-      durationMs: Math.max(0, end - start),
-      ...(phase === 'running' ? { runningSince: start } : {}),
-    });
-    // Markers moved into the fold; drop their provisional top-level copies.
-    out.push(...survivors.filter((it) => !isCompactionMarker(it)));
-  } else {
-    // No work to fold: survivors already hold any markers in transcript order.
-    out.push(...survivors);
-  }
-  return out;
+  return 0;
+}
+
+// A completed turn that edited files gets a top-level "Changes · N files"
+// summary so it survives the Worked-for folding.
+function turnChangesSummary(run: FeedItem[]): FeedItem[] {
+  const files = collectTurnFiles(run);
+  if (files.length === 0) return [];
+  return [
+    {
+      type: 'turnChanges',
+      key: `changes-${run[0].key}`,
+      tailEventId: feedItemTailId(run[run.length - 1]),
+      files,
+      added: files.reduce((s, f) => s + f.added, 0),
+      removed: files.reduce((s, f) => s + f.removed, 0),
+    },
+  ];
 }
 
 // Fold completed assistant turns into "Worked for …" groups. The in-flight turn
 // (while pending) is left expanded so live thinking/tools/status keep streaming,
 // unless `foldLiveTurn` asks for one running fold above its latest note.
-// When `changes` is set, a completed turn that edited files gets a top-level
-// "Changes · N files" summary appended so it survives the Worked-for folding.
+// `changes` adds each completed turn's changes summary.
 export function groupTurns(
   items: FeedItem[],
   pending: boolean,
@@ -436,19 +460,7 @@ export function groupTurns(
   foldLiveTurn = false,
 ): FeedItem[] {
   const out: FeedItem[] = [];
-  // While the turn runs, everything after the user's last real prompt is live,
-  // including the work before a steer they sent into it.
-  let liveFrom = items.length;
-  if (pending) {
-    liveFrom = 0;
-    for (let k = items.length - 1; k >= 0; k -= 1) {
-      const item = items[k];
-      if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
-        liveFrom = k + 1;
-        break;
-      }
-    }
-  }
+  const liveFrom = pending ? liveTurnStart(items) : items.length;
   let i = 0;
   while (i < items.length) {
     if (isTurnBoundary(items[i])) {
@@ -462,28 +474,13 @@ export function groupTurns(
       run.push(items[i]);
       i++;
     }
-    if (pending && runStart >= liveFrom) {
-      if (foldLiveTurn) {
-        const phase = i === items.length ? 'running' : 'steered';
-        out.push(...foldLiveRun(run, specContent, phase));
-      } else {
-        out.push(...run);
-      }
-    } else {
+    if (runStart < liveFrom) {
       out.push(...collapseRun(run, specContent));
-      if (changes) {
-        const files = collectTurnFiles(run);
-        if (files.length > 0) {
-          out.push({
-            type: 'turnChanges',
-            key: `changes-${run[0].key}`,
-            tailEventId: feedItemTailId(run[run.length - 1]),
-            files,
-            added: files.reduce((s, f) => s + f.added, 0),
-            removed: files.reduce((s, f) => s + f.removed, 0),
-          });
-        }
-      }
+      if (changes) out.push(...turnChangesSummary(run));
+    } else if (foldLiveTurn) {
+      out.push(...foldLiveRun(run, specContent, i === items.length ? 'running' : 'steered'));
+    } else {
+      out.push(...run);
     }
   }
   return out;
