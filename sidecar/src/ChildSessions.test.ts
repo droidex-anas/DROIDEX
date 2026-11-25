@@ -553,6 +553,47 @@ test('result-only completion admits the exact pending spawn as historical', () =
   assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, 'provider-child-current');
 });
 
+test('a failed spawn that never received a provider id becomes one canonical failed child', () => {
+  const h = createHarness([]);
+  const spawnLink = { kind: 'tool-use' as const, id: 'tool-failed-spawn' };
+  observe(h, {
+    role: 'worker',
+    spawnLink,
+    label: 'worker',
+    prompt: 'inspect the repository',
+  });
+
+  const identity = observe(h, {
+    role: 'worker',
+    spawnLink,
+    done: true,
+    status: 'failed',
+    transcriptAvailable: false,
+    activity: { preview: 'usage limit reached' },
+  });
+
+  assert.deepEqual(identity, undefined);
+  assert.deepEqual(h.owner.list(h.parentId), [
+    {
+      parentAppSessionId: h.parentId,
+      childSessionId: 'generated-child',
+      role: 'worker',
+      status: 'failed',
+      label: 'worker',
+      prompt: 'inspect the repository',
+      modelId: 'model-default',
+      reasoningEffort: ReasoningEffort.Low,
+      spawnLink,
+      transcriptAvailable: false,
+      startedAt: 100,
+      settledAt: 100,
+      streamFidelity: 'state',
+    },
+  ]);
+  assert.equal(h.history.childSessions(h.parentId).length, 1);
+  assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, undefined);
+});
+
 test('a settled state-only child keeps the moment it stopped', () => {
   const h = createHarness([]);
   const observation = {

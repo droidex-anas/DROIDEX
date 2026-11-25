@@ -236,7 +236,12 @@ export class ChildSessions {
     const pending = findPendingChildObservation(parent, observation);
     const observed = mergeChildObservations(pending, observation);
     const spawnLink = observed.spawnLink;
-    if (!observed.providerSessionId) {
+    const providerlessFailedSpawn =
+      !observed.providerSessionId &&
+      observed.done === true &&
+      observed.status === 'failed' &&
+      spawnLink !== undefined;
+    if (!observed.providerSessionId && !providerlessFailedSpawn) {
       const child = spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
       if (observed.done && child)
         this.complete(
@@ -248,15 +253,19 @@ export class ChildSessions {
       return undefined;
     }
     const providerSessionId = observed.providerSessionId;
-    for (const child of parent.children.values())
-      if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
+    if (providerSessionId)
+      for (const child of parent.children.values())
+        if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
 
     // Harness-owned children may share a spawn; their native identity stays fixed.
     const providerManaged =
-      parent.lease.summary.provider !== 'droid' || observed.transcriptAvailable === false;
+      !providerlessFailedSpawn &&
+      (parent.lease.summary.provider !== 'droid' || observed.transcriptAvailable === false);
     const spawnChild =
       !providerManaged && spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
-    const providerChild = findChildByProvider(parent, providerSessionId);
+    const providerChild = providerSessionId
+      ? findChildByProvider(parent, providerSessionId)
+      : undefined;
     if (spawnChild && providerChild && spawnChild !== providerChild) return undefined;
     if (observed.done && providerChild && !providerManaged) {
       if (spawnLink && spawnChild !== providerChild) return undefined;
@@ -278,7 +287,11 @@ export class ChildSessions {
     if (needsExactSettings && !observed.modelId) {
       const firstProviderObservation = !pending?.providerSessionId;
       const firstTerminalObservation = observed.done === true && pending?.done !== true;
-      if (!providerManaged && (firstProviderObservation || firstTerminalObservation)) {
+      if (
+        providerSessionId &&
+        !providerManaged &&
+        (firstProviderObservation || firstTerminalObservation)
+      ) {
         const launchSettings = this.readLaunchSettings(providerSessionId);
         if (launchSettings) {
           observed.modelId = launchSettings.modelId;
@@ -295,7 +308,19 @@ export class ChildSessions {
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
+      this.createChild(
+        parent,
+        observed.role,
+        spawnLink,
+        providerlessFailedSpawn
+          ? {
+              ...observed,
+              modelId: observed.modelId ?? parent.lease.summary.modelId,
+              reasoningEffort: observed.reasoningEffort ?? parent.lease.summary.reasoningEffort,
+            }
+          : observed,
+        needsExactSettings || providerlessFailedSpawn,
+      );
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -303,14 +328,18 @@ export class ChildSessions {
     // the child away from the transcript event its UI row is anchored to.
     const linkForApply = pending || !child.spawnLink ? spawnLink : child.spawnLink;
     const previousProviderSessionId = child.runtime?.session.sessionId ?? child.providerSessionId;
-    if (previousProviderSessionId && previousProviderSessionId !== providerSessionId) {
+    if (
+      providerSessionId &&
+      previousProviderSessionId &&
+      previousProviderSessionId !== providerSessionId
+    ) {
       child.retiredProviderSessionIds.add(previousProviderSessionId);
       void this.closeRuntime(parent, child, false);
     }
     const apply = () => {
       if (!this.isCurrentChild(parent, child) || (!providerManaged && !childAcceptsWork(child)))
         return;
-      if (child.retiredProviderSessionIds.has(providerSessionId)) return;
+      if (providerSessionId && child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
       const { previousPrompt, previousStatus } = applyObservedChild(

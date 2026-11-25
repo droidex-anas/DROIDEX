@@ -228,10 +228,10 @@ export function applyObservedChild(
   child: ChildSessionState,
   observed: ChildSpawnObservation,
   spawnLink: PersistedChildSpawnLink | undefined,
-  providerSessionId: string,
+  providerSessionId: string | undefined,
   now: number,
 ): { previousPrompt: string | undefined; previousStatus: ChildStatus } {
-  if (child.providerSessionId && child.providerSessionId !== providerSessionId)
+  if (providerSessionId && child.providerSessionId && child.providerSessionId !== providerSessionId)
     child.retiredProviderSessionIds.add(child.providerSessionId);
   const previousPrompt = child.prompt;
   const previousStatus = child.status;
@@ -239,7 +239,7 @@ export function applyObservedChild(
     child.role = observed.role;
     child.configurationGeneration += 1;
   }
-  child.providerSessionId = providerSessionId;
+  if (providerSessionId) child.providerSessionId = providerSessionId;
   if (observed.transcriptAvailable === false && !observed.done) child.closeWhenIdle = false;
   // Terminal observations settle through complete(), after metadata is applied.
   // A state feed can report the same ending more than once; a child that has
@@ -448,7 +448,7 @@ export function forgetPendingChildObservation(
   observation: ChildSpawnObservation | undefined,
 ): void {
   const key = observation ? pendingObservationKey(observation) : undefined;
-  if (key && parent.pendingSpawns.get(key) === observation) parent.pendingSpawns.delete(key);
+  if (key) parent.pendingSpawns.delete(key);
 }
 
 export function childAcceptsWork(child: ChildSessionState): boolean {
