@@ -68,7 +68,7 @@ test('Refresh renders updated PDF bytes on the same path', async ({ page }) => {
   }, pdfFixture(600));
   const tree = await showFiles(page, 'repo-chat');
   await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
-  const canvas = page.locator('canvas');
+  const canvas = page.getByRole('complementary', { name: 'Utility pane' }).locator('canvas');
   await expect(canvas).toHaveAttribute('width', '840');
   await expect(page.getByRole('button', { name: 'Next page', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Next page', exact: true }).click();
@@ -115,7 +115,7 @@ test('PDF edges remain reachable and fitting pages stay centered', async ({ page
   }, pdfFixture());
   const tree = await showFiles(page, 'repo-chat');
   await tree.getByRole('treeitem', { name: 'edges.pdf' }).click();
-  const canvas = page.locator('canvas');
+  const canvas = page.getByRole('complementary', { name: 'Utility pane' }).locator('canvas');
   const next = page.getByRole('button', { name: 'Next page', exact: true });
   await expect(canvas).toHaveAttribute('width', '1400');
   await expect(next).toBeEnabled();
