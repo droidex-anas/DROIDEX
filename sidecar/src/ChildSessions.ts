@@ -317,7 +317,10 @@ export class ChildSessions {
     const existingChild = spawnChild ?? providerChild;
     const existingProviderSessionId =
       existingChild?.runtime?.session.sessionId ?? existingChild?.providerSessionId;
+    // A providerless terminal shell has no launch file to wait for: it never
+    // received a provider session, so exact-settings admission would pend forever.
     const needsExactSettings =
+      !providerlessFailedSpawn &&
       (providerManaged || observed.requiresExactLaunchSettings === true) &&
       (!existingChild || existingProviderSessionId !== providerSessionId);
     if (needsExactSettings && !observed.modelId) {
@@ -355,7 +358,7 @@ export class ChildSessions {
               reasoningEffort: observed.reasoningEffort ?? parent.lease.summary.reasoningEffort,
             }
           : observed,
-        needsExactSettings || providerlessFailedSpawn,
+        needsExactSettings,
       );
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,

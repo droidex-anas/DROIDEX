@@ -569,6 +569,7 @@ test('a failed spawn that never received a provider id becomes one canonical fai
     done: true,
     status: 'failed',
     transcriptAvailable: false,
+    requiresExactLaunchSettings: true,
     activity: { preview: 'usage limit reached' },
   });
 
