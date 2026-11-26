@@ -1,8 +1,5 @@
 import { homedir } from 'node:os';
-import { pathToFileURL } from 'node:url';
 import type {
-  AvailableCommand,
-  ContentBlock,
   InitializeResponse,
   SessionConfigOption,
   SessionNotification,
@@ -19,15 +16,17 @@ import type {
   ProviderProcess,
 } from '../session.js';
 import { MessageQueue } from '../claude/claudeMessages.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
 import { DevinClient } from './devinClient.js';
 import { DevinEvents } from './devinEvents.js';
 import { startDevinMcp } from './devinMcp.js';
-import { devinCatalogItems } from './devinCatalog.js';
+import { DevinCatalog } from './devinCatalog.js';
 import { devinPermission } from './devinPermissions.js';
 import { devinChildId, DevinSubagents } from './devinSubagents.js';
 import { DevinTerminals } from './devinTerminals.js';
 import { consumeDevinForkSeed, readDevinForkSeed } from './devinForkSeed.js';
 import { selectValues } from './devinModels.js';
+import { devinPromptContent } from './devinPrompt.js';
 
 const MODES: Record<Autonomy, string> = {
   off: 'accept-edits',
@@ -55,22 +54,35 @@ export class DevinSession implements ProviderSession {
   private mcpRelease?: Promise<void>;
   private mcpStart?: ReturnType<typeof startDevinMcp>;
   readonly closed: Promise<Error | undefined>;
-  private selectedAutonomy: Autonomy;
-  private latestAutonomy: Autonomy;
+  private readonly permissions: SessionAutonomy;
   private interactionMode: SessionInteractionMode;
   private selectedReasoningEffort?: ReasoningEffort;
   private changes: Promise<void> = Promise.resolve();
   configOptions: SessionConfigOption[] = [];
-  private availableCommands: AvailableCommand[] = [];
-  private readonly catalogListeners = new Set<(items: SkillInfo[]) => void>();
+  private readonly catalog = new DevinCatalog();
 
   constructor(
     executable: string,
     private readonly input: SessionInput,
     private readonly persistOnCreate = false,
   ) {
-    this.selectedAutonomy = input.autonomy ?? 'low';
-    this.latestAutonomy = this.selectedAutonomy;
+    this.permissions = new SessionAutonomy(input.autonomy ?? 'low', {
+      write: () =>
+        this.change(async () => {
+          const autonomy = this.permissions.latestAutonomy;
+          await this.configure('mode', this.interactionMode === 'spec' ? 'plan' : MODES[autonomy]);
+          return autonomy;
+        }),
+      isApplied: () => true,
+      isUnsafe: () =>
+        AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
+        AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
+      interrupt: () => this.interrupt(),
+      close: () => this.close(),
+      requireOpen: () => {
+        this.requireOpen();
+      },
+    });
     this.interactionMode = input.interactionMode ?? 'auto';
     this.terminals = new DevinTerminals(
       input.cwd ?? homedir(),
@@ -126,10 +138,7 @@ export class DevinSession implements ProviderSession {
     return this.sessionId;
   }
   get autonomy(): Autonomy {
-    return AUTONOMY_LEVELS.indexOf(this.latestAutonomy) <
-      AUTONOMY_LEVELS.indexOf(this.selectedAutonomy)
-      ? this.latestAutonomy
-      : this.selectedAutonomy;
+    return this.permissions.selection;
   }
   get process() {
     return this.client.process;
@@ -225,6 +234,8 @@ export class DevinSession implements ProviderSession {
     const run = async () => {
       try {
         await this.changes;
+        // A revocation Devin has not confirmed must not reach the next prompt.
+        while (!this.permissions.isApplied) await this.permissions.synchronize();
         this.requireOpen();
         if (signal.aborted) {
           for (const event of this.mapper?.interrupt() ?? []) queue.push(event);
@@ -232,31 +243,14 @@ export class DevinSession implements ProviderSession {
           queue.close();
           return;
         }
-        const content: ContentBlock[] = [
-          ...(this.pendingSeed === undefined
-            ? []
-            : [
-                {
-                  type: 'resource' as const,
-                  resource: {
-                    uri: `droidex://fork-seed/${encodeURIComponent(this.providerSessionId)}`,
-                    mimeType: 'text/markdown',
-                    text: `Conversation so far:
-${this.pendingSeed}`,
-                  },
-                },
-              ]),
-          { type: 'text', text: prompt },
-          ...(mentions ?? []).map((mention) =>
-            mention.path
-              ? {
-                  type: 'resource_link' as const,
-                  name: mention.name,
-                  uri: pathToFileURL(mention.path).href,
-                }
-              : { type: 'text' as const, text: `@${mention.name}` },
-          ),
-        ];
+        const content = devinPromptContent(
+          prompt,
+          mentions,
+          this.pendingSeed === undefined
+            ? undefined
+            : { sessionId: this.providerSessionId, seed: this.pendingSeed },
+          this.capabilities?.promptCapabilities,
+        );
         if (this.pendingSeed !== undefined) {
           consumeDevinForkSeed(this.providerSessionId);
           this.pendingSeed = undefined;
@@ -310,22 +304,15 @@ ${this.pendingSeed}`,
   }
 
   catalogItems(): Promise<SkillInfo[]> {
-    return Promise.resolve(devinCatalogItems(this.availableCommands));
+    return this.catalog.catalogItems();
   }
 
   onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
-    this.catalogListeners.add(listener);
-    return () => {
-      this.catalogListeners.delete(listener);
-    };
+    return this.catalog.onCatalogUpdated(listener);
   }
 
   setAutonomy(autonomy: Autonomy): Promise<void> {
-    this.latestAutonomy = autonomy;
-    return this.change(async () => {
-      await this.configure('mode', this.interactionMode === 'spec' ? 'plan' : MODES[autonomy]);
-      this.selectedAutonomy = autonomy;
-    });
+    return this.permissions.set(autonomy);
   }
 
   setInteractionMode(mode: SessionInteractionMode): Promise<void> {
@@ -336,7 +323,7 @@ ${this.pendingSeed}`,
   }
 
   setModel(settings: ProviderModelSettings): Promise<void> {
-    if (!settings.modelId && !settings.reasoningEffort) return Promise.resolve();
+    if (!settings.modelId && settings.reasoningEffort === undefined) return Promise.resolve();
     return this.change(async () => {
       const currentModel = this.configOptions.find((option) => option.id === 'model')?.currentValue;
       const currentThought = this.configOptions.find(
@@ -412,6 +399,7 @@ ${this.pendingSeed}`,
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closing = true;
+    this.permissions.stop();
     this.permissionAbort.abort();
     this.subagents?.close();
     this.backgroundListeners.clear();
@@ -451,16 +439,13 @@ ${this.pendingSeed}`,
     this.configOptions = result.configOptions;
   }
 
-  private change(apply: () => Promise<void>): Promise<void> {
+  private change<T>(apply: () => Promise<T>): Promise<T> {
     const changed = this.changes.then(apply);
-    this.changes = changed.catch(() => undefined);
+    this.changes = changed.then(
+      () => undefined,
+      () => undefined,
+    );
     return changed;
-  }
-
-  private publishCatalog(commands: readonly AvailableCommand[]): void {
-    this.availableCommands = [...commands];
-    const items = devinCatalogItems(this.availableCommands);
-    for (const listener of this.catalogListeners) listener(items);
   }
 
   private update(notification: SessionNotification): void {
@@ -468,7 +453,7 @@ ${this.pendingSeed}`,
     if (notification.update.sessionUpdate === 'config_option_update')
       this.configOptions = notification.update.configOptions;
     if (notification.update.sessionUpdate === 'available_commands_update')
-      this.publishCatalog(notification.update.availableCommands);
+      this.catalog.update(notification.update.availableCommands);
     if (!this.mapper) {
       this.subagents?.replay(notification);
       return;
@@ -479,8 +464,13 @@ ${this.pendingSeed}`,
       for (const event of childEvents) this.emitBackground(event);
       return;
     }
-    if (!this.queue) return;
-    for (const event of this.mapper.map(notification)) this.queue.push(event);
+    if (this.queue && !this.queue.isEnded) {
+      for (const event of this.mapper.map(notification)) this.queue.push(event);
+      return;
+    }
+    // Devin names a chat after the turn that prompted it may have settled.
+    if (notification.update.sessionUpdate === 'session_info_update')
+      for (const event of this.mapper.map(notification)) this.emitBackground(event);
   }
 
   private emitBackground(event: NormalizedEvent): void {

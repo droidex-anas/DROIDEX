@@ -62,15 +62,19 @@ test('Devin accumulates reported inference usage without adding cache subsets or
   );
 });
 
-test('Devin session info updates name the chat', async (t) => {
+test('Devin session info updates name the chat during and between turns', async (t) => {
   const h = await fixture(t);
   await writeFile(join(h.cwd, 'title-updates'), '');
   const session = await h.create();
+  const background: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => background.push(event));
   const events = await collect(session.stream('hello'));
   assert.deepEqual(
     events.find((event) => event.sessionTitle),
     { sessionTitle: 'Devin generated title' },
   );
+  await session.setModel({ modelId: 'swe-high' });
+  assert.deepEqual(background, [{ sessionTitle: 'Devin refined title' }]);
 });
 
 test('Devin context-only and malformed counters preserve known spend across turns', async (t) => {
@@ -339,6 +343,26 @@ test('Devin configures the model before its reasoning effort and rejects a level
     ['thought_level', 'xhigh'],
   ]);
   await assert.rejects(session.setModel({ reasoningEffort: 'low' }), /Invalid params/);
+  // A cleared level no longer follows the chat to the next model.
+  await session.setModel({ reasoningEffort: null });
+  await session.setModel({ modelId: 'swe-fast-medium' });
+  await session.setModel({ modelId: 'swe-high' });
+  const thought = session.configOptions.find((option) => option.id === 'thought_level');
+  assert.equal(thought?.currentValue, 'high');
+});
+
+test('a Devin permission revocation that Devin refuses retires the runtime', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await session.setAutonomy('high');
+  await writeFile(join(h.cwd, 'reject-mode'), '');
+  await assert.rejects(session.setAutonomy('off'), /Mode change refused/);
+  assert.equal(session.isClosed, true);
+  await assert.rejects(collect(session.stream('empty')), /closed/);
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/prompt'),
+    false,
+  );
 });
 
 test('Devin approval choices honor user outcomes and never select plan_bypass', async (t) => {
@@ -605,6 +629,13 @@ test('Devin Stop during a pending config change does not send the queued prompt'
   assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
 });
 
+test('Devin settles when it exits while a descendant still holds its output pipes', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await assert.rejects(collect(session.stream('exit-orphan')), /Devin exited \(9\)/);
+  assert.ok(await session.closed);
+});
+
 test('Devin refuses a turn explicitly and surfaces stderr on process exit', async (t) => {
   const h = await fixture(t);
   const session = await h.create();
@@ -697,6 +728,20 @@ test('Devin prefers an advertised native whole-session fork without seeding it',
   assert.deepEqual(requests.find(({ method }) => method === 'session/prompt')?.params?.prompt, [
     { type: 'text', text: 'First native request' },
   ]);
+});
+
+test('copying a Devin fork before its first prompt seeds the copy instead of cloning', async (t) => {
+  const h = await fixture(t);
+  const seed = { cwd: h.cwd, title: 'Copy', transcriptSeed: 'Saved context' };
+  const first = await h.provider.fork({ ...seed, providerSessionId: 'source' });
+  await writeFile(join(h.cwd, 'native-fork'), '');
+  await writeFile(join(h.cwd, 'next-session-id'), 'devin-second-copy');
+  const second = await h.provider.fork({ ...seed, providerSessionId: first.providerSessionId });
+  assert.equal(second.providerSessionId, 'devin-second-copy');
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/fork'),
+    false,
+  );
 });
 
 test('Stop before a seeded Devin prompt is dispatched preserves the pending seed', async (t) => {

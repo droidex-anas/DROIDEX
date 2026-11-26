@@ -1,11 +1,10 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname } from 'node:path';
+import { devinCredentialsPath } from '../providers/devin/devinCredentials.js';
 
 export async function writeDevinTestCredentials(): Promise<string> {
-  const directory = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'devin');
-  const credentials = join(directory, 'credentials.toml');
-  await mkdir(directory, { recursive: true });
+  const credentials = devinCredentialsPath();
+  await mkdir(dirname(credentials), { recursive: true });
   await writeFile(credentials, 'windsurf_api_key = "test-key"\n');
   return credentials;
 }
@@ -106,7 +105,7 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
   if (method === 'initialize') {
     if (existsSync(join(root, 'hang'))) return;
     result(id, { protocolVersion: 1, authMethods: [{ id: 'devin-browser', name: 'Log in with browser' }],
-      agentCapabilities: { loadSession: true,
+      agentCapabilities: { loadSession: true, promptCapabilities: { embeddedContext: true },
       _meta: { 'cognition.ai/persistOnCreate': true },
       sessionCapabilities: { close: {}, delete: {}, ...(existsSync(join(root, 'native-fork')) ? { fork: {} } : {}) } } });
   } else if (method === 'authenticate') {
@@ -126,6 +125,8 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       failure(id, -32000, 'ACP host has not authenticated.');
       return;
     }
+    if (method === 'session/new' && existsSync(join(root, 'next-session-id')))
+      sessionId = readFileSync(join(root, 'next-session-id'), 'utf8').trim();
     if (method === 'session/new' && params._meta?.['cognition.ai/persistOnCreate'] === true)
       appendFileSync(persistedFile, sessionId + '\n');
     if (method === 'session/load') {
@@ -151,11 +152,15 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     }
     result(id, { sessionId });
   } else if (method === 'session/set_config_option') {
+    if (existsSync(join(root, 'title-updates')))
+      update({ sessionUpdate: 'session_info_update', title: 'Devin refined title' });
     if (params.value === 'finish-background') {
       childText('background', 'Background answer');
       childCompleted('background');
     }
-    if (params.configId === 'thought_level' && !MODELS[currentModel].efforts.includes(params.value)) {
+    if (params.configId === 'mode' && existsSync(join(root, 'reject-mode'))) {
+      failure(id, -32603, 'Mode change refused');
+    } else if (params.configId === 'thought_level' && !MODELS[currentModel].efforts.includes(params.value)) {
       failure(id, -32602, 'Invalid params');
     } else if (params.value === 'blocked') pendingConfig = id;
     else {
@@ -186,6 +191,13 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       result(id, { stopReason: 'end_turn' }); return;
     }
     if (text === 'exit') { process.stderr.write('backend failed\n'); process.exit(7); }
+    if (text === 'exit-orphan') {
+      // The orphan keeps Devin's pipes open until the test removes its directory.
+      const script = 'const fs = require("fs"); setInterval(() => { if (!fs.existsSync(' + JSON.stringify(root) + ')) process.exit(); }, 50);';
+      require('node:child_process').spawn(process.execPath, ['-e', script],
+        { detached: true, stdio: ['ignore', 'inherit', 'inherit'] }).unref();
+      process.exit(9);
+    }
     if (text === 'refuse') { result(id, { stopReason: 'refusal' }); return; }
     if (text === 'empty') { result(id, { stopReason: 'end_turn' }); return; }
     if (text === 'wait') { pending = id; update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'waiting' } }); return; }

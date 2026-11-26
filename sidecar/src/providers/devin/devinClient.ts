@@ -66,7 +66,7 @@ export class DevinClient {
     this.child.on('error', (error) => {
       this.finish(error);
     });
-    this.child.on('close', (code, signal) => {
+    const exited = (code: number | null, signal: NodeJS.Signals | null) => {
       this.finish(
         this.stopping
           ? undefined
@@ -74,6 +74,19 @@ export class DevinClient {
               `Devin exited (${signal ?? String(code)}).${this.stderr.trim() ? ` ${this.stderr.trim()}` : ''}`,
             ),
       );
+    };
+    // A descendant that inherited stdout or stderr can hold 'close' back for its
+    // whole life; give the pipes a moment to drain, then settle on the exit.
+    let drain: NodeJS.Timeout | undefined;
+    this.child.on('exit', (code, signal) => {
+      drain = setTimeout(() => {
+        exited(code, signal);
+      }, 500);
+      drain.unref();
+    });
+    this.child.on('close', (code, signal) => {
+      clearTimeout(drain);
+      exited(code, signal);
     });
     void this.connection.closed.then(() => {
       if (!this.stopping && !this.isClosed) this.child.kill('SIGKILL');
@@ -109,13 +122,12 @@ export class DevinClient {
       throw new Error(
         'Devin requires interactive terminal authentication. Run devin auth login, then retry.',
       );
+    // Without the stored login this method opens a browser from a background process.
     const apiKey = await readDevinApiKey();
+    if (!apiKey) throw new Error('Devin is signed out. Run devin auth login, then retry.');
     await this.connection.agent.request(
       'authenticate',
-      {
-        methodId: method.id,
-        ...(apiKey ? { _meta: { api_key: apiKey } } : {}),
-      },
+      { methodId: method.id, _meta: { api_key: apiKey } },
       signal ? { cancellationSignal: signal, stopWaitingOnCancel: true } : undefined,
     );
   }

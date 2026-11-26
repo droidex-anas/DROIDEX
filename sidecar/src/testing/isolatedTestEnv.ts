@@ -6,8 +6,9 @@
 // live history database: one run migrated it to an unmerged schema and left the
 // app refusing the profile. No test may reach real data even by accident, so
 // this drops both variables and points HOME at a scratch directory before any
-// test module loads. Tests that pin their own directory still do; they now pin
-// it over a scratch home rather than over the user's.
+// test module loads. Harness credential stores resolve from XDG_DATA_HOME and
+// APPDATA before HOME, so those go too. Tests that pin their own directory
+// still do; they now pin it over a scratch home rather than over the user's.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,6 +20,8 @@ delete process.env.DROIDEX_HISTORY_DIR;
 delete process.env.DROIDEX_ALT_HOME;
 delete process.env.DROIDEX_ALT2_HOME;
 delete process.env.WINDSURF_API_KEY;
+delete process.env.XDG_DATA_HOME;
+delete process.env.APPDATA;
 process.env.HOME = scratchHome;
 
 process.on('exit', () => {

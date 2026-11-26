@@ -16,7 +16,7 @@ import { DevinSession } from './devinSession.js';
 import { DevinClient } from './devinClient.js';
 import { DevinTerminals } from './devinTerminals.js';
 import { readDevinApiKey } from './devinCredentials.js';
-import { saveDevinForkSeed } from './devinForkSeed.js';
+import { readDevinForkSeed, saveDevinForkSeed } from './devinForkSeed.js';
 import {
   configModels,
   parseDevinModelListing,
@@ -76,8 +76,11 @@ export class DevinProvider implements ProbedProvider {
       const signal = AbortSignal.timeout(30_000);
       const initialized = await client.initialize(signal);
       // Transcript turn points are not ACP cursors; never send them as native cursor IDs.
+      // A source still holding an unsent seed has no backend history to clone.
       const native =
-        initialized.agentCapabilities?.sessionCapabilities?.fork != null && !source.forkPointId;
+        initialized.agentCapabilities?.sessionCapabilities?.fork != null &&
+        !source.forkPointId &&
+        (await readDevinForkSeed(source.providerSessionId)) === undefined;
       if (!native && !source.transcriptSeed?.trim())
         throw new Error('Cannot fork Devin: the app-owned transcript is unavailable or empty.');
       if (

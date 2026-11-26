@@ -2013,6 +2013,7 @@ test('Devin resume preserves saved spend through context-only and inference upda
   const executable = join(cwd, 'devin.cjs');
   await writeFile(executable, devinAcpCli, { mode: 0o755 });
   await writeDevinTestCredentials();
+  await writeFile(join(cwd, 'persisted-sessions'), 'devin-one\n');
   const previous = process.env.DEVIN_PATH;
   process.env.DEVIN_PATH = executable;
   t.after(async () => {

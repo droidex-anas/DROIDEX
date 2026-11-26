@@ -37,6 +37,7 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   const signedOut = await h.provider.probe(new AbortController().signal);
   assert.equal(signedOut.readiness, 'unauthenticated');
   assert.match(signedOut.message ?? '', /devin auth login/);
+  await assert.rejects(h.provider.create(h.input), /signed out/);
   await writeFile(h.credentials, 'windsurf_api_key = "wrong-key"\n');
   const rejected = await h.provider.probe(new AbortController().signal);
   assert.equal(rejected.readiness, 'unauthenticated');

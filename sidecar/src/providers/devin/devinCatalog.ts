@@ -15,9 +15,31 @@ const CLIENT_OWNED_COMMANDS = new Set([
   'rename',
 ]);
 
+// Devin pushes its command list on every session load and whenever it changes.
+export class DevinCatalog {
+  private items: SkillInfo[] = [];
+  private readonly listeners = new Set<(items: SkillInfo[]) => void>();
+
+  catalogItems(): Promise<SkillInfo[]> {
+    return Promise.resolve(this.items);
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  update(commands: readonly AvailableCommand[]): void {
+    this.items = devinCatalogItems(commands);
+    for (const listener of this.listeners) listener(this.items);
+  }
+}
+
 // Devin advertises built-in slash commands and user skills in one ACP list;
 // only its category metadata separates them.
-export function devinCatalogItems(commands: readonly AvailableCommand[]): SkillInfo[] {
+function devinCatalogItems(commands: readonly AvailableCommand[]): SkillInfo[] {
   return commands.flatMap((command) => {
     const name = command.name.trim();
     if (!name) return [];

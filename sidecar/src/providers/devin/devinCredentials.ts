@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
-function credentialsPath(): string {
+export function devinCredentialsPath(): string {
   if (process.platform === 'win32')
     return join(
       process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
@@ -21,7 +21,7 @@ export async function readDevinApiKey(): Promise<string | undefined> {
   if (environmentKey) return environmentKey;
   let text: string;
   try {
-    text = await readFile(credentialsPath(), 'utf8');
+    text = await readFile(devinCredentialsPath(), 'utf8');
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT')
       return undefined;
