@@ -22,6 +22,10 @@ export function usePullRequest(
   const { enabled } = opts;
   const [pr, setPr] = useState<PullRequest | null>(null);
   const detectReq = useRef(0);
+  // gh can outlive the cadence on a slow network; consecutive failures back
+  // the poll off exponentially instead of re-paying full-rate failing lookups.
+  const failuresRef = useRef(0);
+  const backoffUntilRef = useRef(0);
 
   const detect = useCallback(() => {
     // Bump first so any in-flight detection from a prior cwd/branch (or before
@@ -32,6 +36,13 @@ export function usePullRequest(
       return;
     }
     void detectPullRequest(cwd, branch ?? undefined).then((res) => {
+      if (res.ok) {
+        failuresRef.current = 0;
+        backoffUntilRef.current = 0;
+      } else {
+        failuresRef.current += 1;
+        backoffUntilRef.current = Date.now() + DETECT_MS * 2 ** Math.min(failuresRef.current, 4);
+      }
       if (id !== detectReq.current) return;
       // A failed lookup (gh hiccup, network) keeps the last-known PR; only an
       // authoritative answer may replace or clear it. Keep the previous object
@@ -56,7 +67,8 @@ export function usePullRequest(
     detect();
     if (!enabled) return;
     const tick = () => {
-      if (!document.hidden) detect();
+      if (document.hidden || Date.now() < backoffUntilRef.current) return;
+      detect();
     };
     const interval = window.setInterval(tick, DETECT_MS);
     document.addEventListener('visibilitychange', tick);
