@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
 import { transcriptForVisibleSession } from '../lib/childSessions';
+import { isSpawnEcho } from '../lib/childSessionEvents';
 import { getRendererPerfSnapshot, resetRendererPerfForTest } from '../lib/rendererPerf';
 import type { TranscriptEvent } from '@droidex/protocol';
 import { isCopyableFinalResponse, projectFinalResponseKeys } from './messageFeedState';
@@ -115,7 +116,7 @@ function assertMatchesFullBuild(
   const visible = transcriptForVisibleSession(
     projectorInput.allTranscript,
     projectorInput.childSessionId,
-  );
+  ).filter((event) => !projectorInput.hideEvent?.(event));
   const feed = buildGroupedFeed(visible, projectorInput.pending, projectorInput.options);
   assert.deepEqual(projection.visibleTranscript, visible);
   assert.deepEqual(projection.feedItems, feed);
@@ -336,6 +337,86 @@ test('invisible child and sibling appends retain exact visible and feed referenc
   assert.equal(nextChild.visibleTranscript, child.visibleTranscript);
   assert.equal(nextChild.feedItems, child.feedItems);
   assertMatchesFullBuild(nextChild, nextChildInput);
+});
+
+test('a hidden spawn echo stays out of an incrementally growing unfolded child feed', () => {
+  const project = createChatFeedProjector();
+  const hideEcho = (entry: TranscriptEvent) => isSpawnEcho(entry, 'the task');
+  const paneInput = (
+    allTranscript: TranscriptEvent[],
+    mutation: TranscriptMutation | undefined,
+    overrides: Partial<ChatFeedProjectorInput> = {},
+  ): ChatFeedProjectorInput =>
+    input(allTranscript, mutation, {
+      conversationKey: 'session-a:child-a',
+      childSessionId: 'child-a',
+      options: { childSessionCards: true, groupChildSessions: false, foldTurns: false },
+      hideEvent: hideEcho,
+      ...overrides,
+    });
+  const inChild = (id: string, overrides: Partial<TranscriptEvent>): TranscriptEvent =>
+    event(id, { sourceSessionId: 'child-a', role: 'worker', ...overrides });
+  const task = inChild('task', { author: 'user', text: 'the task', ts: 1 });
+  // The echo's prompt arrives as the spawn call's args stream in, so the row is
+  // visible until the completion merge makes it an exact echo of the task.
+  const echoStreaming = inChild('echo', {
+    kind: 'tool_call',
+    author: undefined,
+    text: undefined,
+    toolName: 'Task',
+    toolUseId: 'echo-use',
+    toolArgs: {},
+    ts: 2,
+  });
+  const read = inChild('read', {
+    kind: 'tool_call',
+    author: undefined,
+    text: undefined,
+    toolName: 'Read',
+    toolUseId: 'read-use',
+    toolArgs: { path: '/tmp/file' },
+    ts: 3,
+  });
+  const initialEvents = [task, echoStreaming, read];
+  const initialInput = paneInput(initialEvents, undefined);
+  const initial = project(initialInput);
+  assertMatchesFullBuild(initial, initialInput);
+  assert.ok(initial.visibleTranscript.some((entry) => entry.id === 'echo'));
+
+  const echoComplete = {
+    ...echoStreaming,
+    toolArgs: { subagent_type: 'researcher', prompt: 'the task' },
+  };
+  const completedEvents = [task, echoComplete, read];
+  const completedInput = paneInput(completedEvents, appendMutation(1, initialEvents.length, 1));
+  const completed = project(completedInput);
+  assertMatchesFullBuild(completed, completedInput);
+  assert.ok(!completed.visibleTranscript.some((entry) => entry.id === 'echo'));
+
+  // A spawn the agent makes itself carries a different prompt and stays.
+  const nested = inChild('nested', {
+    kind: 'tool_call',
+    author: undefined,
+    text: undefined,
+    toolName: 'Task',
+    toolUseId: 'nested-use',
+    toolArgs: { subagent_type: 'researcher', prompt: 'a different task' },
+    ts: 4,
+  });
+  const appendedEvents = [...completedEvents, nested];
+  const appendedInput = paneInput(appendedEvents, appendMutation(2, completedEvents.length, 3));
+  const appended = project(appendedInput);
+  assert.equal(appended.mode, 'incremental');
+  assertMatchesFullBuild(appended, appendedInput);
+  assert.ok(appended.visibleTranscript.some((entry) => entry.id === 'nested'));
+
+  // Unfolded even once the agent settles: the pane reads every step verbatim.
+  const settledInput = paneInput(appendedEvents, appendMutation(2, completedEvents.length, 3), {
+    pending: false,
+  });
+  const settled = project(settledInput);
+  assertMatchesFullBuild(settled, settledInput);
+  assert.ok(settled.feedItems.every((item) => item.type !== 'worked'));
 });
 
 test('production projection paths report exact rebuild and reuse metrics', () => {
