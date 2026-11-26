@@ -171,6 +171,23 @@ test('settles completion received before exact spawn correlation', () => {
   ]);
 });
 
+test('a nonzero worker exit settles the child as failed', () => {
+  const h = createHarness();
+  h.apply({ progress: [workerStarted('provider-worker', 'spawn-1')] });
+  h.apply({
+    missionChild: { event: 'completed', providerSessionId: 'provider-worker', exitCode: 7 },
+  });
+
+  assert.deepEqual(h.admissions.at(-1), {
+    parentAppSessionId: 'parent-app',
+    providerSessionId: 'provider-worker',
+    role: 'worker',
+    spawnLink: { kind: 'spawn', id: 'spawn-1' },
+    done: true,
+    status: 'failed',
+  });
+});
+
 test('provider replacement preserves child identity and rejects stale provider completion', () => {
   const h = createHarness();
   h.apply({ progress: [workerStarted('provider-old', 'spawn-1')] });

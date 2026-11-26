@@ -643,7 +643,8 @@ export class SessionManager {
           ? this.childSessions.childScopeForProvider(appSessionId, owner.id)
           : this.childSessions.childScopeForSpawn(appSessionId, owner),
       recordUsage: (appSessionId, sourceProviderSessionId, usage) => {
-        this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
+        if (!this.childSessions.recordUsage(appSessionId, sourceProviderSessionId, usage))
+          this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
       },
     });
     this.childSessions = new ChildSessions({

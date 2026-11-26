@@ -857,10 +857,10 @@ test('worker usage and context follow the parent-scoped child identity', async (
 
     // Worker usage is reported on the child, never as the parent's root spend.
     const summary = latestSummary(h);
-    assert.equal(summary?.tokensIn, 8);
-    assert.equal(summary?.tokensOut, 2);
-    assert.equal(summary?.contextTokens, 9);
-    assert.equal(summary?.contextAccuracy, 'exact');
+    assert.deepEqual([summary?.tokensIn, summary?.tokensOut], [8, 2]);
+    assert.deepEqual([summary?.contextTokens, summary?.contextAccuracy], [9, 'exact']);
+    const childUpdate = h.events.findLast((event) => event.type === 'session.child');
+    assert.equal(childUpdate?.type === 'session.child' && childUpdate.child.tokensUsed, 70);
     const childContext = h.events.findLast(
       (event) =>
         event.type === 'context.updated' &&
