@@ -7,6 +7,7 @@ import type {
   ClientCommand,
 } from '@droidex/protocol';
 import type { ChildOperationTarget } from './SessionContext.js';
+import type { NormalizedTokenUsage } from './SessionEventFlow.js';
 import {
   matchesChildGenerationSnapshot,
   type AutoCompactionSettlement,
@@ -230,13 +231,53 @@ export class ChildSessions {
     return child ? { childSessionId: child.identity.childSessionId, role: child.role } : undefined;
   }
 
+  // Consume a usage reading owned by a child. Droid reports a cumulative
+  // series per replaceable provider session; the logical child total survives
+  // close/reopen and accumulates across provider replacement.
+  recordUsage(
+    parentAppSessionId: string,
+    providerSessionId: string,
+    usage: NormalizedTokenUsage,
+  ): boolean {
+    const parent = this.parents.get(parentAppSessionId);
+    if (!parent || !this.isCurrentParent(parent)) return false;
+    const child =
+      findChildByProvider(parent, providerSessionId) ??
+      [...parent.children.values()].find((candidate) =>
+        candidate.retiredProviderSessionIds.has(providerSessionId),
+      );
+    if (!child) return false;
+    if (child.runtime?.session.sessionId !== providerSessionId) return true;
+
+    const reading = usage.tokensIn + usage.tokensOut;
+    const series = child.tokenUsageSeries;
+    let tokensUsed: number;
+    if (series?.providerSessionId !== providerSessionId) {
+      tokensUsed = (child.tokensUsed ?? 0) + reading;
+    } else {
+      const delta = reading - series.tokensUsed;
+      if (delta <= 0) return true;
+      tokensUsed = (child.tokensUsed ?? 0) + delta;
+    }
+    child.tokensUsed = tokensUsed;
+    child.tokenUsageSeries = { providerSessionId, tokensUsed: reading };
+    if (!this.childrenAwaitingDurability.has(childDurabilityKey(child.identity)))
+      this.publish(child);
+    return true;
+  }
+
   admitChildObservation(observation: ChildSpawnObservation): ChildIdentity | undefined {
     const parent = this.parents.get(observation.parentAppSessionId);
     if (!parent || !this.isCurrentParent(parent)) return undefined;
     const pending = findPendingChildObservation(parent, observation);
     const observed = mergeChildObservations(pending, observation);
     const spawnLink = observed.spawnLink;
-    if (!observed.providerSessionId) {
+    const providerlessFailedSpawn =
+      !observed.providerSessionId &&
+      observed.done === true &&
+      observed.status === 'failed' &&
+      spawnLink !== undefined;
+    if (!observed.providerSessionId && !providerlessFailedSpawn) {
       const child = spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
       if (observed.done && child)
         this.complete(
@@ -248,15 +289,19 @@ export class ChildSessions {
       return undefined;
     }
     const providerSessionId = observed.providerSessionId;
-    for (const child of parent.children.values())
-      if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
+    if (providerSessionId)
+      for (const child of parent.children.values())
+        if (child.retiredProviderSessionIds.has(providerSessionId)) return undefined;
 
     // Harness-owned children may share a spawn; their native identity stays fixed.
     const providerManaged =
-      parent.lease.summary.provider !== 'droid' || observed.transcriptAvailable === false;
+      !providerlessFailedSpawn &&
+      (parent.lease.summary.provider !== 'droid' || observed.transcriptAvailable === false);
     const spawnChild =
       !providerManaged && spawnLink ? findChildBySpawn(parent, spawnLink) : undefined;
-    const providerChild = findChildByProvider(parent, providerSessionId);
+    const providerChild = providerSessionId
+      ? findChildByProvider(parent, providerSessionId)
+      : undefined;
     if (spawnChild && providerChild && spawnChild !== providerChild) return undefined;
     if (observed.done && providerChild && !providerManaged) {
       if (spawnLink && spawnChild !== providerChild) return undefined;
@@ -272,13 +317,20 @@ export class ChildSessions {
     const existingChild = spawnChild ?? providerChild;
     const existingProviderSessionId =
       existingChild?.runtime?.session.sessionId ?? existingChild?.providerSessionId;
+    // A providerless terminal shell has no launch file to wait for: it never
+    // received a provider session, so exact-settings admission would pend forever.
     const needsExactSettings =
+      !providerlessFailedSpawn &&
       (providerManaged || observed.requiresExactLaunchSettings === true) &&
       (!existingChild || existingProviderSessionId !== providerSessionId);
     if (needsExactSettings && !observed.modelId) {
       const firstProviderObservation = !pending?.providerSessionId;
       const firstTerminalObservation = observed.done === true && pending?.done !== true;
-      if (!providerManaged && (firstProviderObservation || firstTerminalObservation)) {
+      if (
+        providerSessionId &&
+        !providerManaged &&
+        (firstProviderObservation || firstTerminalObservation)
+      ) {
         const launchSettings = this.readLaunchSettings(providerSessionId);
         if (launchSettings) {
           observed.modelId = launchSettings.modelId;
@@ -295,7 +347,19 @@ export class ChildSessions {
     const child =
       spawnChild ??
       providerChild ??
-      this.createChild(parent, observed.role, spawnLink, observed, needsExactSettings);
+      this.createChild(
+        parent,
+        observed.role,
+        spawnLink,
+        providerlessFailedSpawn
+          ? {
+              ...observed,
+              modelId: observed.modelId ?? parent.lease.summary.modelId,
+              reasoningEffort: observed.reasoningEffort ?? parent.lease.summary.reasoningEffort,
+            }
+          : observed,
+        needsExactSettings,
+      );
     forgetPendingChildObservation(parent, pending);
     // Poll-style observations (TaskOutput) carry their own call's tool_use id,
     // not the spawn's; only a link that matched an observed spawn call (pending)
@@ -303,14 +367,18 @@ export class ChildSessions {
     // the child away from the transcript event its UI row is anchored to.
     const linkForApply = pending || !child.spawnLink ? spawnLink : child.spawnLink;
     const previousProviderSessionId = child.runtime?.session.sessionId ?? child.providerSessionId;
-    if (previousProviderSessionId && previousProviderSessionId !== providerSessionId) {
+    if (
+      providerSessionId &&
+      previousProviderSessionId &&
+      previousProviderSessionId !== providerSessionId
+    ) {
       child.retiredProviderSessionIds.add(previousProviderSessionId);
       void this.closeRuntime(parent, child, false);
     }
     const apply = () => {
       if (!this.isCurrentChild(parent, child) || (!providerManaged && !childAcceptsWork(child)))
         return;
-      if (child.retiredProviderSessionIds.has(providerSessionId)) return;
+      if (providerSessionId && child.retiredProviderSessionIds.has(providerSessionId)) return;
       if (child.role !== observed.role && child.turn.autoCompacting)
         this.d.compaction.cancel(this.automaticTarget(parent, child));
       const { previousPrompt, previousStatus } = applyObservedChild(
@@ -702,7 +770,9 @@ export class ChildSessions {
       addChild(parent, child);
     }
     if (!this.isCurrentParent(parent)) return;
-    if (child.mutationTail) {
+    // Mutations chain by replacing the tail, so one await can finish behind:
+    // drain until no newer mutation has been queued.
+    while (child.mutationTail) {
       await child.mutationTail;
       if (!this.isCurrentParent(parent)) return;
     }
@@ -1078,16 +1148,7 @@ export class ChildSessions {
       // Cleanup remains authoritative even when cancellation cannot resolve its target.
     }
     this.d.compaction.forgetChild(child.identity);
-    if (child.turn.phase === 'streaming') {
-      try {
-        await this.d.timeline.settleStreaming(
-          parent.parentAppSessionId,
-          child.identity.childSessionId,
-        );
-      } catch (error) {
-        this.reportStreamingPersistenceFailure(child.identity, error);
-      }
-    }
+    const wasStreaming = child.turn.phase === 'streaming';
     child.runtime = undefined;
     // The confirmed autonomy belonged to the closed runtime; a later open
     // re-reads it from the new provider session's init result.
@@ -1102,9 +1163,21 @@ export class ChildSessions {
     const cleanupTarget = this.contextTarget(parent, child, runtime);
     void runCleanup(this.d.context.forgetChild.bind(this.d.context, child.identity));
     void runCleanup(this.d.context.stopPolling.bind(this.d.context, cleanupTarget));
-    const detached = (child.mutationTail ?? Promise.resolve())
-      .catch(ignoreError)
-      .then(() => runCleanup(runtime.unsubscribe ?? ignoreError));
+    const previousTail = child.mutationTail ?? Promise.resolve();
+    const detached = (async () => {
+      if (wasStreaming) {
+        try {
+          await this.d.timeline.settleStreaming(
+            parent.parentAppSessionId,
+            child.identity.childSessionId,
+          );
+        } catch (error) {
+          this.reportStreamingPersistenceFailure(child.identity, error);
+        }
+      }
+      await previousTail.catch(ignoreError);
+      await runCleanup(runtime.unsubscribe ?? ignoreError);
+    })();
     const cleanup = this.providerCleanup.release(parent, runtime.session, detached);
     child.mutationTail = cleanup;
     await cleanup;
