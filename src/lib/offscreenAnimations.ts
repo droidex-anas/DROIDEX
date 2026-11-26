@@ -26,6 +26,8 @@ function sharedObserver(): IntersectionObserver {
 // A ref callback: observe the element for as long as it is mounted. With no
 // threshold or margin the observer reports any visible pixel as intersecting,
 // which is the safe direction — worst case a covered sliver keeps animating.
+// Chromium also reports zero-area edge intersections as intersecting, so the
+// failure direction is always "keeps animating", never frozen in view.
 export function pauseAnimationsWhenOffscreen(
   element: HTMLElement | null,
 ): (() => void) | undefined {
@@ -34,5 +36,6 @@ export function pauseAnimationsWhenOffscreen(
   observer.observe(element);
   return () => {
     observer.unobserve(element);
+    element.removeAttribute(PAUSE_ATTRIBUTE);
   };
 }

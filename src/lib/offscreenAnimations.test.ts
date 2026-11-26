@@ -75,21 +75,26 @@ test('an element leaving the viewport carries the pause attribute until it inter
   cleanup?.();
 });
 
-test('the cleanup unobserves the element', () => {
-  const { element } = fakeElement();
+test('the cleanup unobserves the element and clears the pause attribute', () => {
+  const { element, hasPauseAttribute } = fakeElement();
+  const cleanup = pauseAnimationsWhenOffscreen(element);
   const observer = FakeObserver.created.at(-1);
   assert.ok(observer !== undefined);
-
-  const cleanup = pauseAnimationsWhenOffscreen(element);
   assert.ok(observer.observed.has(element));
+
+  observer.fire(element, false);
+  assert.equal(hasPauseAttribute(), true);
 
   cleanup?.();
   assert.equal(observer.observed.has(element), false);
+  assert.equal(hasPauseAttribute(), false);
 });
 
 test('a null element registers nothing and returns no cleanup', () => {
+  const probe = pauseAnimationsWhenOffscreen(fakeElement().element);
   const observer = FakeObserver.created.at(-1);
   assert.ok(observer !== undefined);
+  probe?.();
   const before = observer.observed.size;
 
   const cleanup = pauseAnimationsWhenOffscreen(null);
@@ -100,6 +105,8 @@ test('a null element registers nothing and returns no cleanup', () => {
 test('every element shares one observer for the whole app', () => {
   const first = fakeElement();
   const second = fakeElement();
+  const probe = pauseAnimationsWhenOffscreen(fakeElement().element);
+  probe?.();
   const instanceCount = FakeObserver.created.length;
 
   const cleanupFirst = pauseAnimationsWhenOffscreen(first.element);
