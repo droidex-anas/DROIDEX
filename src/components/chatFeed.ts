@@ -107,7 +107,8 @@ export type FeedItem =
   // its browser calls and their results. The calls stay in their tool rows.
   // `ended` once a later turn has begun: the card's work is over then.
   | { type: 'browser'; key: string; events: TranscriptEvent[]; ended: boolean }
-  | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number }
+  // `runningSince` is set while the fold still belongs to the running turn.
+  | { type: 'worked'; key: string; items: FeedItem[]; durationMs: number; runningSince?: number }
   | CanvasArtifactItem
   | TurnChangesItem;
 
@@ -167,6 +168,7 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'worked' && b.type === 'worked') {
     return (
       a.durationMs === b.durationMs &&
+      a.runningSince === b.runningSince &&
       a.items.length === b.items.length &&
       a.items.every((item, i) => sameFeedEvents(item, b.items[i]))
     );

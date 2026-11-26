@@ -34,6 +34,7 @@ interface NormalizedOptions {
   groupChildSessions: boolean;
   specContent?: string;
   changes: boolean;
+  foldLiveTurn: boolean;
 }
 
 interface ProjectionCache extends ChatFeedProjection {
@@ -452,6 +453,7 @@ function normalizeOptions(options: GroupedFeedOptions): NormalizedOptions {
     groupChildSessions: options.groupChildSessions ?? false,
     ...(options.specContent !== undefined ? { specContent: options.specContent } : {}),
     changes: options.changes ?? false,
+    foldLiveTurn: options.foldLiveTurn ?? false,
   };
 }
 
@@ -460,6 +462,7 @@ function sameOptions(left: NormalizedOptions, right: NormalizedOptions): boolean
     left.childSessionCards === right.childSessionCards &&
     left.groupChildSessions === right.groupChildSessions &&
     left.specContent === right.specContent &&
-    left.changes === right.changes
+    left.changes === right.changes &&
+    left.foldLiveTurn === right.foldLiveTurn
   );
 }
