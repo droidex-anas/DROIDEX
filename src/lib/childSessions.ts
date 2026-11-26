@@ -400,6 +400,16 @@ function pendingChildSession(spawn: ChildSessionSpawnRef): ChildSessionInfo {
   };
 }
 
+// Child entries are immutable — the store replaces them on any change — and a
+// transcript event keeps its identity until the child actually emits more, so
+// an activity object keyed on both is reusable verbatim across the stream
+// commits that change neither. Rows and cards can then compare it by reference
+// instead of re-rendering on every token carried by the parent transcript.
+const activityByChild = new WeakMap<
+  ChildSessionInfo,
+  { latestEvent: TranscriptEvent | undefined; activity: ChildSessionActivity }
+>();
+
 export function childSessionActivityForTarget(
   childSessions: readonly ChildSessionInfo[],
   allTx: readonly TranscriptEvent[],
@@ -407,24 +417,29 @@ export function childSessionActivityForTarget(
 ): ChildSessionActivity | undefined {
   const childSession = findChildSessionForTarget(childSessions, target);
   if (!childSession) return undefined;
-  const latestEvent = latestTranscriptActivityForSource(allTx, childSession.childSessionId);
-  let latest: ChildSessionLatest | undefined;
-  if (latestEvent?.appSessionId === childSession.parentAppSessionId) {
-    latest = {
-      kind: latestEvent.kind,
-      text: latestEvent.text,
-      toolName: latestEvent.toolName,
-      toolArgs: latestEvent.toolArgs,
-      isError: latestEvent.isError,
-    };
-  }
-  return {
+  const scanned = latestTranscriptActivityForSource(allTx, childSession.childSessionId);
+  const latestEvent =
+    scanned?.appSessionId === childSession.parentAppSessionId ? scanned : undefined;
+  const cached = activityByChild.get(childSession);
+  if (cached !== undefined && cached.latestEvent === latestEvent) return cached.activity;
+  const latest: ChildSessionLatest | undefined = latestEvent
+    ? {
+        kind: latestEvent.kind,
+        text: latestEvent.text,
+        toolName: latestEvent.toolName,
+        toolArgs: latestEvent.toolArgs,
+        isError: latestEvent.isError,
+      }
+    : undefined;
+  const activity: ChildSessionActivity = {
     // Autonomous subagents never open a runtime, so runtime availability must
     // not demote a running child to "paused"; the store status is authoritative.
     status: childSession.status,
     startedAt: childSession.startedAt,
     latest,
   };
+  activityByChild.set(childSession, { latestEvent, activity });
+  return activity;
 }
 
 // Last non-empty line, capped, so a long thinking block stays a one-line cue.
