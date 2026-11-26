@@ -34,7 +34,6 @@ function WorkspaceDetail({
   cwd,
   number,
   prs,
-  viewerLogin,
   onOpenChat,
   onReviewWithDroid,
   onSendReview,
@@ -42,7 +41,6 @@ function WorkspaceDetail({
   cwd: string | null;
   number: number | null;
   prs: InboxPullRequest[];
-  viewerLogin: string | null;
   onOpenChat: (pr: InboxPullRequest) => void;
   onReviewWithDroid: (pr: InboxPullRequest) => void;
   onSendReview: (pr: InboxPullRequest, annotations: PrLineAnnotation[]) => void;
@@ -60,7 +58,6 @@ function WorkspaceDetail({
       cwd={cwd}
       number={number}
       pr={selected}
-      viewerLogin={viewerLogin}
       onOpenChat={(item) => {
         onOpenChat({
           ...item,
@@ -166,7 +163,6 @@ export function PullRequestsView() {
         cwd={inbox.boundCwd}
         number={inbox.selectedNumber}
         prs={list.prs}
-        viewerLogin={list.viewerLogin}
         onOpenChat={(pr) => {
           // Start a fresh local draft in this checkout before seeding it. This
           // prevents an active chat from another workspace from owning the PR

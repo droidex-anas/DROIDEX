@@ -204,13 +204,16 @@ export function PrDiff({
   cwd,
   number,
   comments,
+  compact,
   onSendReview,
 }: {
   diff: string;
   cwd: string;
   number: number;
   comments: PrComment[];
-  onSendReview: (annotations: PrLineAnnotation[]) => void;
+  // The narrow pane starts with the file tree hidden, so the diff keeps its width.
+  compact: boolean;
+  onSendReview: ((annotations: PrLineAnnotation[]) => void) | null;
 }) {
   const diffView = useStoreSelector((state) => state.diffView);
   // Entries are built in the same memo as the parse, so the DiffFileSection
@@ -237,10 +240,11 @@ export function PrDiff({
   const [activePath, setActivePath] = useState<string | null>(null);
   const [editing, setEditing] = useState<PrAnnotationEditingState | null>(null);
   const [wrap, setWrap] = useState(false);
-  const [treeVisible, setTreeVisible] = useState(true);
+  const [treeVisible, setTreeVisible] = useState(!compact);
   // The tree's filter and folds live here, not in the tree: hiding the panel
   // unmounts it for the exit animation, and reopening must return the reader
-  // to the tree they had. A new pull request still starts them fresh.
+  // to the tree they had. The caller keys this by pull request, so a new one
+  // starts them fresh, and a poll refresh of the diff keeps them.
   const [treeFilter, setTreeFilter] = useState('');
   const [treeCollapsed, setTreeCollapsed] = useState<Set<string>>(() => new Set());
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -253,15 +257,7 @@ export function PrDiff({
     );
     setActivePath(files[0]?.file.path ?? null);
     setEditing(null);
-  }, [files, cwd, number]);
-
-  // Unlike the diff sections, the tree's filter and folds stay valid when a
-  // poll refresh rewrites the diff: they name paths, not content. Only moving
-  // to another pull request starts them fresh.
-  useEffect(() => {
-    setTreeFilter('');
-    setTreeCollapsed(new Set());
-  }, [cwd, number]);
+  }, [files]);
 
   const registerSection = useCallback((path: string, el: HTMLDivElement | null) => {
     if (el) sectionRefs.current.set(path, el);
@@ -343,7 +339,7 @@ export function PrDiff({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="pr-diff flex h-full min-h-0 flex-col">
       <div className="flex h-9 shrink-0 select-none items-center gap-3 px-4">
         <span className="min-w-0 truncate text-caption text-muted">
           {files.length} {files.length === 1 ? 'file' : 'files'}
@@ -385,7 +381,11 @@ export function PrDiff({
       </div>
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
-          <div className="pr-workspace-scroll h-full overflow-auto pb-24">
+          {/* In the side panel the pane's resize handle covers its first 12px,
+              so the gutter and its note buttons start past it. */}
+          <div
+            className={`pr-workspace-scroll h-full overflow-auto pb-24 ${compact ? 'pl-3' : ''}`}
+          >
             {files.map((item) => (
               <PrDiffFile
                 key={item.file.path}
@@ -409,9 +409,13 @@ export function PrDiff({
           {noteCount > 0 ? (
             <PrReviewBar
               count={noteCount}
-              onSend={() => {
-                onSendReview(draft.annotations);
-              }}
+              onSend={
+                onSendReview
+                  ? () => {
+                      onSendReview(draft.annotations);
+                    }
+                  : null
+              }
               onClear={clearNotes}
             />
           ) : null}

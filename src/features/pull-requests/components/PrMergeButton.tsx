@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ChevronDown } from '@droidex/icons';
 
-import { Octicon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
 import { Menu } from '../../../components/ui/Menu';
 import { prKind } from '../../../lib/github';
@@ -71,17 +69,14 @@ export function PrMergeButton({
         size="sm"
         aria-haspopup="menu"
         aria-expanded={open && !disabled}
+        loading={merging}
         disabled={disabled}
         title={mergeButtonTitle(blocked, merging, merged)}
         onClick={() => {
           setOpen((value) => !value);
         }}
       >
-        <span className="inline-flex items-center gap-1.5">
-          <Octicon name="git-merge" size={14} />
-          {mergeLabel(merging, merged)}
-          <ChevronDown className="size-icon-sm" />
-        </span>
+        {mergeLabel(merging, merged)}
       </Button>
       <Menu
         open={open && !disabled}

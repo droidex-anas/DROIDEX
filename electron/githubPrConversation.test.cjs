@@ -133,6 +133,31 @@ test('PR comments include top-level, review, and inline review threads', () => {
   );
 });
 
+test('an inline comment whose lines left the diff is outdated without thread status', () => {
+  const [moved, fileLevel] = normalizePrComments({ comments: [], reviews: [] }, [
+    {
+      id: 40,
+      user: { login: 'reviewer' },
+      body: 'moved',
+      path: 'a.ts',
+      line: null,
+      original_line: 12,
+    },
+    {
+      id: 41,
+      user: { login: 'reviewer' },
+      body: 'file',
+      path: 'a.ts',
+      line: null,
+      original_line: null,
+    },
+  ]);
+  // The original line still labels it in the timeline, but it must not anchor in the diff.
+  assert.equal(moved.line, 12);
+  assert.equal(moved.outdated, true);
+  assert.equal(fileLevel.outdated, false);
+});
+
 test('PR comments report malformed rows as partial while keeping valid rows', async () => {
   const result = await prComments(
     '/repo',

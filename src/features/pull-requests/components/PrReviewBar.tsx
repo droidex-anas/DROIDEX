@@ -1,5 +1,6 @@
+import { ArrowUp } from '@droidex/icons';
+
 import { Button } from '../../../components/ui/Button';
-import { Octicon } from '../../../components/environment/GithubIcons';
 
 // The review handoff bar: floats above the diff while the reader has notes,
 // and turns the whole set into a seeded Droid chat in one click. Clearing is
@@ -10,28 +11,35 @@ export function PrReviewBar({
   onClear,
 }: {
   count: number;
-  onSend: () => void;
+  // Null until the pull request has loaded; the notes wait for it.
+  onSend: (() => void) | null;
   onClear: () => void;
 }) {
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
-      <div className="pr-note-enter pointer-events-auto flex items-center gap-2 rounded-xl bg-raised px-2 py-1.5 shadow-lg">
-        <span className="px-1 text-body-strong text-primary tabular-nums">
+    <div className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex justify-center px-4">
+      <div className="pr-note-enter pointer-events-auto flex h-10 items-center gap-1.5 rounded-full bg-raised pr-1.5 pl-4 shadow-lg">
+        <span className="mr-1 whitespace-nowrap text-body-strong text-primary tabular-nums">
           {count} {count === 1 ? 'note' : 'notes'}
         </span>
-        <Button variant="ghost" size="sm" onClick={onClear} title="Discard every note">
+        <Button
+          variant="ghost"
+          size="sm"
+          shape="round"
+          onClick={onClear}
+          title="Discard every note"
+        >
           Clear
         </Button>
         <Button
           variant="primary"
           size="sm"
-          onClick={onSend}
-          title="Open a Droid chat with these notes"
+          shape="round"
+          icon={ArrowUp}
+          disabled={!onSend}
+          onClick={() => onSend?.()}
+          title={onSend ? 'Open a Droid chat with these notes' : 'Waiting for the pull request'}
         >
-          <span className="inline-flex items-center gap-1.5">
-            <Octicon name="comment-discussion" size={13} />
-            Send to Droid
-          </span>
+          Send to Droid
         </Button>
       </div>
     </div>

@@ -1,23 +1,14 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { ExternalLink, RefreshCw } from '@droidex/icons';
+import { useEffect, useRef, useState } from 'react';
 
-import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
-import { Button } from '../../../components/ui/Button';
-import { Tooltip } from '../../../components/ui/Tooltip';
-import { prKind } from '../../../lib/github';
-import { openExternal } from '../../../lib/onboarding';
 import type { PrComment, PullRequest } from '../../../types/vcs';
 import type { PrLineAnnotation } from '../lib/prAnnotations';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
 import { isCubicRemembered, rememberCubic } from '../lib/cubicMemory';
 import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib/prReview';
-import { arrowKeyTab } from '../lib/prTabs';
+import { PR_DETAIL_TABS, prDetailTabId, prDetailTabPanelId, type PrDetailTab } from '../lib/prTabs';
 import { PrDiff } from './PrDiff';
-import { PrMergeButton } from './PrMergeButton';
-import { PrReviewButton } from './PrReviewButton';
 import { PrSummary } from './PrSummary';
-
-export type PrDetailTab = 'summary' | 'code';
+import { PrToolbar } from './PrToolbar';
 
 export function applyCommentPostSettlement(
   submitted: { cwd: string; number: number },
@@ -26,19 +17,6 @@ export function applyCommentPostSettlement(
 ): { clearDraft: boolean; posting: false } | null {
   if (submitted.cwd !== current.cwd || submitted.number !== current.number) return null;
   return { clearDraft: resultOk, posting: false };
-}
-
-const TABS: { id: PrDetailTab; label: string; key: string }[] = [
-  { id: 'summary', label: 'Summary', key: '1' },
-  { id: 'code', label: 'Code', key: '2' },
-];
-
-function tabId(tab: PrDetailTab): string {
-  return `pull-request-${tab}-tab`;
-}
-
-function tabPanelId(tab: PrDetailTab): string {
-  return `pull-request-${tab}-tabpanel`;
 }
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -52,6 +30,7 @@ export function CodePane({
   cwd,
   number,
   comments,
+  compact,
   onSendReview,
 }: {
   diff: string | null;
@@ -59,7 +38,9 @@ export function CodePane({
   cwd: string;
   number: number;
   comments: PrComment[];
-  onSendReview: (annotations: PrLineAnnotation[]) => void;
+  compact: boolean;
+  // Null until the pull request loads: notes can be written, not sent yet.
+  onSendReview: ((annotations: PrLineAnnotation[]) => void) | null;
 }) {
   if (diffError) {
     return (
@@ -71,10 +52,14 @@ export function CodePane({
   if (diff !== null) {
     return (
       <PrDiff
+        // Notes being edited, folds and the tree filter all belong to one pull
+        // request; a remount drops them in the same commit as the switch.
+        key={`${cwd}#${String(number)}`}
         diff={diff}
         cwd={cwd}
         number={number}
         comments={comments}
+        compact={compact}
         onSendReview={onSendReview}
       />
     );
@@ -90,7 +75,6 @@ export function PrDetail({
   cwd,
   number,
   pr,
-  viewerLogin,
   compact = false,
   onOpenChat,
   onReviewWithDroid,
@@ -99,9 +83,8 @@ export function PrDetail({
   cwd: string;
   number: number;
   pr: PullRequest | null;
-  viewerLogin: string | null;
   // The utility-pane layout: panel padding instead of page padding, a smaller
-  // title, and the header strip wraps its actions onto a second row.
+  // title, and the link actions fold into one overflow menu.
   compact?: boolean;
   onOpenChat: (pr: PullRequest) => void;
   onReviewWithDroid: (pr: PullRequest) => void;
@@ -115,7 +98,7 @@ export function PrDetail({
   identityRef.current = { cwd, number };
   const detail = usePullRequestDetail(cwd, number, {
     active: true,
-    loadDiff: tab === 'code',
+    loadDiff: tab === 'changes',
   });
   const headerPr = detail.pr ?? pr;
 
@@ -142,7 +125,7 @@ export function PrDetail({
       if (event.target instanceof HTMLElement && !event.target.closest('[data-pr-detail-pane]')) {
         return;
       }
-      const next = TABS.find((item) => item.key === event.key);
+      const next = PR_DETAIL_TABS.find((item) => item.key === event.key);
       if (next) setTab(next.id);
     };
     document.addEventListener('keydown', onKeyDown);
@@ -188,16 +171,7 @@ export function PrDetail({
     });
   };
 
-  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: PrDetailTab) => {
-    const next = arrowKeyTab(TABS, current, event.key);
-    if (!next) return;
-    event.preventDefault();
-    setTab(next);
-    document.getElementById(tabId(next))?.focus();
-  };
-
   const composer = {
-    viewerLogin,
     draft,
     posting,
     onDraftChange: setDraft,
@@ -206,105 +180,27 @@ export function PrDetail({
 
   return (
     <div data-pr-detail-pane className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      {/* This strip sits where the window's title bar would be, so it carries
-          the drag region the session view gets from its floating controls. In
-          the narrow pane the action group wraps onto its own row. */}
-      <div
-        data-electron-drag-region
-        className={`flex flex-wrap items-center gap-x-2 gap-y-1.5 pb-2 ${
-          compact ? 'px-3 pt-3' : 'px-8 pt-4'
-        }`}
-      >
-        {headerPr ? (
-          <span className="shrink-0">
-            <PrStateIcon kind={prKind(headerPr)} size={16} checks={headerPr.checks} />
-          </span>
-        ) : null}
-        <div
-          role="tablist"
-          aria-label="Pull request views"
-          className="flex items-center gap-0.5 rounded-md bg-elevated p-0.5"
-        >
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={tabId(item.id)}
-              aria-controls={tabPanelId(item.id)}
-              aria-selected={tab === item.id}
-              tabIndex={tab === item.id ? 0 : -1}
-              onKeyDown={(event) => {
-                onTabKeyDown(event, item.id);
-              }}
-              onClick={() => {
-                setTab(item.id);
-              }}
-              className={`h-control-sm select-none rounded-sm px-2.5 text-label transition-colors ${
-                tab === item.id ? 'bg-active text-primary' : 'text-muted hover:text-secondary'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <Tooltip label="Refresh" placement="bottom">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={RefreshCw}
-              loading={detail.loading}
-              aria-label="Refresh"
-              onClick={detail.refresh}
-            />
-          </Tooltip>
-          <Tooltip label="Open on GitHub" placement="bottom">
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={ExternalLink}
-              aria-label="Open on GitHub"
-              disabled={!headerPr?.url}
-              onClick={() => {
-                if (headerPr?.url) void openExternal(headerPr.url);
-              }}
-            />
-          </Tooltip>
-          <Button
-            variant="secondary"
-            size="sm"
-            icon={<Octicon name="comment-discussion" size={14} />}
-            title="Start a chat about this pull request"
-            disabled={!headerPr}
-            onClick={() => {
-              if (headerPr) onOpenChat(headerPr);
-            }}
-          >
-            Chat
-          </Button>
-          <PrReviewButton
-            pr={headerPr}
-            cubicInstalled={cubicActive || isCubicRemembered(repoKey)}
-            requesting={requestingReview}
-            onRunCubicReview={runCubicReview}
-            onReviewWithDroid={() => {
-              if (headerPr) onReviewWithDroid(headerPr);
-            }}
-          />
-          <PrMergeButton
-            pr={headerPr}
-            repositoryKey={cwd}
-            merging={detail.merging}
-            onMerge={(method) => detail.merge(method).then((result) => result.ok)}
-          />
-        </div>
-      </div>
+      <PrToolbar
+        tab={tab}
+        pr={headerPr}
+        compact={compact}
+        loading={detail.loading}
+        repositoryKey={cwd}
+        cubicInstalled={cubicActive || isCubicRemembered(repoKey)}
+        requestingReview={requestingReview}
+        merging={detail.merging}
+        onTabChange={setTab}
+        onRefresh={detail.refresh}
+        onOpenChat={onOpenChat}
+        onRunCubicReview={runCubicReview}
+        onReviewWithDroid={onReviewWithDroid}
+        onMerge={(method) => detail.merge(method).then((result) => result.ok)}
+      />
       <div className="min-h-0 flex-1">
         <div
           role="tabpanel"
-          id={tabPanelId(tab)}
-          aria-labelledby={tabId(tab)}
+          id={prDetailTabPanelId(tab)}
+          aria-labelledby={prDetailTabId(tab)}
           className="h-full min-h-0"
         >
           {tab === 'summary' ? (
@@ -333,9 +229,14 @@ export function PrDetail({
               cwd={cwd}
               number={number}
               comments={detail.comments}
-              onSendReview={(annotations) => {
-                if (headerPr) onSendReview(headerPr, annotations);
-              }}
+              compact={compact}
+              onSendReview={
+                headerPr
+                  ? (annotations) => {
+                      onSendReview(headerPr, annotations);
+                    }
+                  : null
+              }
             />
           )}
         </div>

@@ -1,7 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from 'react';
-import { ChevronRight, ListTodo, Search, Undo2 } from 'lucide-react';
+import { ChevronRight, GitBranch, ListTodo, RefreshCw, Search, Undo } from '@droidex/icons';
 
-import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
+import { PrStateIcon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Field';
 import { comparablePath } from '../../../lib/pathComparison';
@@ -105,7 +105,7 @@ function PrInboxRow({
             <span className="shrink-0 tabular-nums">#{pr.number}</span>
             {pr.headRefName ? (
               <>
-                <Octicon name="git-branch" size={11} className="shrink-0" />
+                <GitBranch className="size-3 shrink-0" aria-hidden="true" />
                 <span className="truncate">
                   {pr.baseRefName ? `${pr.baseRefName} ← ` : ''}
                   {pr.headRefName}
@@ -126,9 +126,13 @@ function PrInboxRow({
         onClick={() => {
           onToggleBacklog(pr);
         }}
-        className="mt-1.5 shrink-0 rounded-md p-1.5 text-muted opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-elevated hover:text-primary"
+        className="mt-1.5 flex size-control-sm shrink-0 items-center justify-center rounded-md text-muted opacity-0 transition-opacity duration-quick group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-elevated hover:text-primary"
       >
-        {backlogged ? <Undo2 size={14} /> : <ListTodo size={14} />}
+        {backlogged ? (
+          <Undo className="size-icon-sm" aria-hidden="true" />
+        ) : (
+          <ListTodo className="size-icon-sm" aria-hidden="true" />
+        )}
       </button>
     </div>
   );
@@ -261,8 +265,8 @@ function InboxList({
               className="flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1.5 text-left text-muted transition-colors hover:bg-active hover:text-secondary"
             >
               <ChevronRight
-                size={14}
-                className={`shrink-0 transition-transform ${expanded ? 'rotate-90' : ''}`}
+                aria-hidden="true"
+                className={`size-icon-sm shrink-0 transition-transform duration-fast ease-smooth-out ${expanded ? 'rotate-90' : ''}`}
               />
               <span className="min-w-0 truncate text-label">{group.repoName}</span>
               {group.prs.length > 0 ? (
@@ -394,7 +398,8 @@ export function PrInbox({
           variant="ghost"
           size="sm"
           className="ml-auto"
-          icon={<Octicon name="sync" size={14} className={loading ? 'animate-spin' : ''} />}
+          icon={RefreshCw}
+          loading={loading}
           onClick={onRetry}
           title="Refresh"
           aria-label="Refresh"
@@ -402,7 +407,10 @@ export function PrInbox({
       </div>
 
       <div className="relative mt-3">
-        <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-muted" />
+        <Search
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 left-3 size-icon-sm -translate-y-1/2 text-muted"
+        />
         <Input
           value={query}
           onChange={(event) => {

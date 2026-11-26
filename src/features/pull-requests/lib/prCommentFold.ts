@@ -1,10 +1,9 @@
-import type { OcticonName } from '../../../components/environment/GithubIcons';
 import type { PrComment } from '../../../types/vcs';
 
 // A review thread that is settled, and how it got settled.
 export interface PrThreadStatus {
   label: string;
-  icon: OcticonName;
+  icon: 'check' | 'clock';
   title: string;
 }
 

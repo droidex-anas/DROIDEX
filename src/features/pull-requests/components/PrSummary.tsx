@@ -1,74 +1,17 @@
 import { useMemo } from 'react';
+import { ExternalLink } from '@droidex/icons';
 
-import { CheckStatusIcon, Octicon } from '../../../components/environment/GithubIcons';
 import { Button } from '../../../components/ui/Button';
-import { Badge } from '../../../components/ui/Badge';
-import { bucketToStatus, checksBadge, checksSummary } from '../../../lib/github';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrCheck, PrComment, PrCommit, PullRequest } from '../../../types/vcs';
 import { prCommentBlocks } from '../lib/prCommentBody';
 import { hasMergeConflicts } from '../lib/prMeta';
-import { prRelativeTime } from '../lib/prTime';
 import { PrBody } from './PrBody';
 import { PrConversation } from './PrConversation';
 import { PrHeader } from './PrHeader';
 import { PrSection } from './PrSection';
+import { PrRailChecks, PrRailFacts } from './PrSummaryRail';
 import { PrTimeline } from './PrTimeline';
-
-function CheckRow({ check }: { check: PrCheck }) {
-  const finished = prRelativeTime(check.completedAt ?? check.startedAt);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (check.link) void openExternal(check.link);
-      }}
-      disabled={!check.link}
-      title={check.link ? 'Open run on GitHub' : check.description || check.state}
-      className="flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-active disabled:cursor-default disabled:hover:bg-transparent"
-    >
-      <CheckStatusIcon status={bucketToStatus(check.bucket)} size={14} />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-body text-primary">{check.name}</span>
-        {check.workflow ? (
-          <span className="mt-0.5 block truncate text-caption text-muted">{check.workflow}</span>
-        ) : null}
-      </span>
-      {finished ? <span className="shrink-0 text-caption text-muted">{finished}</span> : null}
-      {check.link ? (
-        <Octicon name="link-external" size={14} className="shrink-0 text-muted" />
-      ) : null}
-    </button>
-  );
-}
-
-function ChecksBody({
-  checks,
-  loading,
-  error,
-}: {
-  checks: PrCheck[];
-  loading: boolean;
-  error: string | null;
-}) {
-  if (checks.length > 0) {
-    return (
-      <div className="-ml-1">
-        {error ? <p className="mb-1 text-body text-muted">{error}</p> : null}
-        {checks.map((check, index) => (
-          <CheckRow
-            // A matrix job or a re-run reports the same name and workflow
-            // twice; the run link is what tells the two runs apart.
-            key={`${check.name}-${check.workflow ?? ''}-${check.link ?? ''}-${String(index)}`}
-            check={check}
-          />
-        ))}
-      </div>
-    );
-  }
-  if (loading) return <div className="h-12 rounded-lg bg-elevated/40" />;
-  return <p className="text-body text-muted">{error ?? 'No checks reported'}</p>;
-}
 
 function Description({
   loaded,
@@ -96,11 +39,11 @@ function Description({
   );
 }
 
-// Conflicts are resolved in a checkout or on github.com, so this section states
-// the fact and links out instead of offering a resolve button it cannot honor.
+// Conflicts are resolved in a checkout or on github.com, so this states the
+// fact and links out instead of offering a resolve button it cannot honor.
 function MergeConflicts({ pr }: { pr: PullRequest }) {
   return (
-    <div className="rounded-lg bg-elevated/30 px-3 py-2.5">
+    <div className="rounded-lg bg-danger-soft px-3 py-2.5">
       <p className="text-body text-secondary">
         <span className="text-primary">{pr.headRefName ?? 'This branch'}</span> cannot be merged
         into <span className="text-primary">{pr.baseRefName ?? 'the base branch'}</span>{' '}
@@ -110,7 +53,7 @@ function MergeConflicts({ pr }: { pr: PullRequest }) {
         variant="secondary"
         size="sm"
         className="mt-2"
-        icon={<Octicon name="link-external" size={14} />}
+        icon={ExternalLink}
         onClick={() => {
           void openExternal(pr.url);
         }}
@@ -134,7 +77,6 @@ export function PrSummary({
   commentsError,
   commits,
   compact = false,
-  viewerLogin,
   draft,
   posting,
   onDraftChange,
@@ -152,79 +94,49 @@ export function PrSummary({
   commentsError: string | null;
   commits: PrCommit[];
   compact?: boolean;
-  viewerLogin: string | null;
   draft: string;
   posting: boolean;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const summary = checksSummary(checks);
-  const badge = checksBadge(summary);
   const pending = loading && !loaded;
 
   return (
     <PrConversation
       compact={compact}
-      viewerLogin={viewerLogin}
       draft={draft}
       posting={posting}
       onDraftChange={onDraftChange}
       onSubmit={onSubmit}
     >
-      <PrHeader
-        pr={pr}
-        number={number}
-        commentCount={comments.length}
-        checks={checks}
-        checksLoading={pending}
-        checksError={checksError}
-        compact={compact}
-      />
-
-      <PrSection key="description" title="Description">
-        <Description loaded={loaded} body={body} metaError={metaError} />
-      </PrSection>
-
-      <PrSection
-        key="checks"
-        title="Checks"
-        count={checks.length > 0 ? checks.length : undefined}
-        meta={badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
-        // Failures, work in progress, and a load error all need to be read
-        // without opening the section first.
-        defaultOpen={
-          summary.status === 'failure' || summary.status === 'pending' || checksError !== null
-        }
-      >
-        <ChecksBody checks={checks} loading={pending} error={checksError} />
-      </PrSection>
-
-      {pr && hasMergeConflicts(pr) ? (
-        <PrSection key="merge-conflicts" title="Merge conflicts">
-          <MergeConflicts pr={pr} />
-        </PrSection>
-      ) : null}
-
-      <PrSection
-        key="conversation"
-        title="Conversation"
-        count={comments.length}
-        meta={
-          commits.length > 0 ? (
-            <span className="text-caption text-muted">
-              {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
-            </span>
-          ) : null
-        }
-      >
-        <PrTimeline
-          pr={pr}
-          comments={comments}
-          commits={commits}
-          loading={pending}
-          error={commentsError}
-        />
-      </PrSection>
+      <div className="pr-summary pr-reading-width">
+        <PrHeader pr={pr} number={number} compact={compact} />
+        <div className="pr-summary-grid">
+          <PrRailChecks checks={checks} loading={pending} error={checksError} />
+          <div className="pr-summary-main min-w-0">
+            {pr && hasMergeConflicts(pr) ? (
+              <PrSection key="merge-conflicts" title="Merge conflicts">
+                <MergeConflicts pr={pr} />
+              </PrSection>
+            ) : null}
+            <PrSection key="description" title="Description">
+              <Description loaded={loaded} body={body} metaError={metaError} />
+            </PrSection>
+            <PrSection key="conversation" title="Conversation" count={comments.length}>
+              <PrTimeline
+                pr={pr}
+                comments={comments}
+                commits={commits}
+                loading={pending}
+                error={commentsError}
+              />
+            </PrSection>
+          </div>
+          {pr ? (
+            <PrRailFacts pr={pr} commentCount={comments.length} commitCount={commits.length} />
+          ) : null}
+        </div>
+      </div>
     </PrConversation>
   );
 }

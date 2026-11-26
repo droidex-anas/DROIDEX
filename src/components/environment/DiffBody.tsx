@@ -3,11 +3,12 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus } from '@droidex/icons';
 import {
   diffLineAnchorKey,
   parseUnifiedDiff,
@@ -98,13 +99,16 @@ function AnnotateButton({
       data-diff-line={diffLineAnchorKey(target.side, target.line)}
       aria-label={`Add note on line ${String(target.line)}`}
       title={`Add note on line ${String(target.line)}`}
+      // One tab stop per diff, moved by `moveAnnotateTabStop`; React never
+      // rewrites this, so the roving stop survives row re-renders.
+      tabIndex={-1}
       onClick={(event) => {
         event.stopPropagation();
         onAnnotate(target);
       }}
       className="review-diff-annotate"
     >
-      <Plus size={12} strokeWidth={2.5} />
+      <Plus className="size-icon-sm" aria-hidden="true" />
     </button>
   );
 }
@@ -331,6 +335,22 @@ const Chunk = memo(
   },
 );
 
+// The annotate buttons are one roving tab stop: Tab enters the diff at the
+// last focused line and leaves it in one step, instead of visiting thousands
+// of lines.
+function moveAnnotateTabStop(root: HTMLElement, button: HTMLElement) {
+  for (const stop of root.querySelectorAll<HTMLElement>('[data-diff-annotate][tabindex="0"]')) {
+    if (stop !== button) stop.tabIndex = -1;
+  }
+  button.tabIndex = 0;
+}
+
+function ensureAnnotateTabStop(root: HTMLElement) {
+  if (root.querySelector('[data-diff-annotate][tabindex="0"]')) return;
+  const first = root.querySelector<HTMLElement>('[data-diff-annotate]');
+  if (first) first.tabIndex = 0;
+}
+
 // Arrow keys move between the per-line annotate buttons imperatively, so the
 // keyboard path through a long file does not cost a React render per step:
 // focus itself is the cursor, and the browser scrolls it into view.
@@ -430,6 +450,12 @@ export function DiffBody({
 
   const pendingRows = chunks.slice(mounted).reduce((total, chunk) => total + chunk.length, 0);
 
+  const rootRef = useRef<HTMLDivElement>(null);
+  const hasLineReview = lineReview !== undefined;
+  useEffect(() => {
+    if (hasLineReview && rootRef.current) ensureAnnotateTabStop(rootRef.current);
+  }, [hasLineReview, mounted, chunks]);
+
   if (binary || parsed.binary) {
     return <div className="p-4 text-body text-muted">Binary file not shown</div>;
   }
@@ -441,7 +467,13 @@ export function DiffBody({
     // Wrapped rows already fit the viewport; only the scrolling mode needs the
     // widest-line width that keeps row backgrounds full-width.
     <div
+      ref={rootRef}
       className={`font-mono text-code ${wrap ? '' : 'review-diff-content'}`}
+      onFocus={(event) => {
+        if (event.target.hasAttribute('data-diff-annotate')) {
+          moveAnnotateTabStop(event.currentTarget, event.target);
+        }
+      }}
       onKeyDown={(event) => {
         if (lineReview && focusSiblingAnnotateButton(event.currentTarget, event.key)) {
           event.preventDefault();

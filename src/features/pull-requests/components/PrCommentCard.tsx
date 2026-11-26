@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
+import { Check, Clock, ExternalLink, FileDiff, X, type IconComponent } from '@droidex/icons';
 
-import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { openExternal } from '../../../lib/onboarding';
+import type { PrTone } from '../../../lib/github';
 import type { PrComment } from '../../../types/vcs';
 import { prCommentBlocks, prCommentProse } from '../lib/prCommentBody';
 import {
@@ -19,14 +21,15 @@ import { PrBody } from './PrBody';
 import { FoldChevron, PrCollapse } from './PrCollapse';
 import { HunkPreview, ReactionChips } from './PrCommentContent';
 
-function ThreadStatusChip({ status }: { status: PrThreadStatus }) {
-  return (
-    <Badge title={status.title}>
-      <Octicon name={status.icon} size={11} />
-      {status.label}
-    </Badge>
-  );
-}
+const THREAD_STATUS_ICON: Record<PrThreadStatus['icon'], IconComponent> = {
+  check: Check,
+  clock: Clock,
+};
+
+const REVIEW_BADGE_ICON: Partial<Record<PrTone, IconComponent>> = {
+  success: Check,
+  danger: X,
+};
 
 // `threadStatus` reports one settled state and prefers "Resolved", but a thread
 // can be resolved on lines that have since changed, and both facts matter. The
@@ -41,7 +44,7 @@ function threadStatuses(comment: PrComment): PrThreadStatus[] {
 function CommentByline({ comment }: { comment: PrComment }) {
   const time = prRelativeTime(comment.createdAt);
   return (
-    <span className="block truncate text-body">
+    <span className="min-w-0 truncate text-body">
       <span className="font-medium text-primary">{displayLogin(comment.author)}</span>
       <span className="text-muted"> {commentActionLabel(comment)}</span>
       {time ? (
@@ -51,6 +54,37 @@ function CommentByline({ comment }: { comment: PrComment }) {
               only an age reads as "ago". */}
           {time === 'now' ? 'now' : `${time} ago`}
         </span>
+      ) : null}
+    </span>
+  );
+}
+
+function CommentMeta({ comment }: { comment: PrComment }) {
+  const badge = reviewBadge(comment);
+  return (
+    <span className="flex shrink-0 items-center gap-1.5">
+      {threadStatuses(comment).map((status) => (
+        <Badge key={status.label} title={status.title} icon={THREAD_STATUS_ICON[status.icon]}>
+          {status.label}
+        </Badge>
+      ))}
+      {badge ? (
+        <Badge tone={badge.tone} icon={REVIEW_BADGE_ICON[badge.tone]}>
+          {badge.label}
+        </Badge>
+      ) : null}
+      {comment.url ? (
+        <Tooltip label="Open on GitHub">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={ExternalLink}
+            aria-label="Open comment on GitHub"
+            onClick={() => {
+              if (comment.url) void openExternal(comment.url);
+            }}
+          />
+        </Tooltip>
       ) : null}
     </span>
   );
@@ -74,14 +108,14 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
     setOpen(!foldable);
   }
   const location = inlineLocation(comment);
-  const badge = reviewBadge(comment);
-  const statuses = threadStatuses(comment);
   const preview = commentPreview(prose);
   const previewLine = location && preview ? `${location.label} · ${preview}` : preview;
 
   return (
-    <article className="overflow-hidden rounded-lg bg-surface">
-      <header className="flex items-start gap-2 bg-elevated/40 px-3 py-2">
+    <article className="rounded-xl bg-surface">
+      {/* The meta sits beside the toggle, not inside it, so its link stays its
+          own control. */}
+      <header className="flex min-h-10 items-center gap-2 py-1.5 pr-1.5 pl-1.5">
         {foldable ? (
           <button
             type="button"
@@ -90,59 +124,34 @@ export function PrCommentCard({ comment }: { comment: PrComment }) {
             onClick={() => {
               setOpen((value) => !value);
             }}
-            className="group -my-1 -ml-1 flex min-w-0 flex-1 items-start gap-1.5 rounded-md px-1 py-1 text-left transition-colors hover:bg-elevated/70"
+            className="group flex min-w-0 flex-1 flex-col justify-center rounded-md px-2.5 py-1 text-left transition-colors duration-quick hover:bg-elevated"
           >
-            <span className="mt-1">
+            <span className="flex min-w-0 items-center gap-1.5">
+              <CommentByline comment={comment} />
               <FoldChevron open={open} />
             </span>
-            <span className="min-w-0 flex-1">
-              <CommentByline comment={comment} />
-              {!open && previewLine ? (
-                <span className="mt-0.5 block truncate text-body text-muted">{previewLine}</span>
-              ) : null}
-            </span>
+            {!open && previewLine ? (
+              <span className="mt-0.5 block truncate text-body text-muted">{previewLine}</span>
+            ) : null}
           </button>
         ) : (
-          <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 flex-1 items-center px-2.5">
             <CommentByline comment={comment} />
           </span>
         )}
-        <span className="flex shrink-0 items-center gap-2 pt-0.5">
-          {statuses.map((status) => (
-            <ThreadStatusChip key={status.label} status={status} />
-          ))}
-          {badge ? (
-            <Badge tone={badge.tone}>
-              {badge.tone === 'success' ? <Octicon name="check" size={11} /> : null}
-              {badge.tone === 'danger' ? <Octicon name="x" size={11} /> : null}
-              {badge.label}
-            </Badge>
-          ) : null}
-          {comment.url ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              icon={<Octicon name="link-external" size={14} />}
-              title="Open on GitHub"
-              aria-label="Open on GitHub"
-              onClick={() => {
-                if (comment.url) void openExternal(comment.url);
-              }}
-            />
-          ) : null}
-        </span>
+        <CommentMeta comment={comment} />
       </header>
       <PrCollapse open={open}>
-        <div className="px-3.5 py-3">
+        <div className="px-4 pt-1 pb-4">
           {location ? (
             <p
               title={location.title}
-              className="mb-2 inline-flex items-center gap-1.5 rounded-md bg-elevated/60 px-2 py-0.5 text-label text-secondary"
+              className="mb-2.5 flex h-6 w-fit max-w-full items-center gap-1.5 rounded-sm bg-elevated px-2 text-label text-secondary"
             >
-              <Octicon name="file-diff" size={12} />
+              <FileDiff className="size-icon-sm shrink-0 text-muted" aria-hidden="true" />
               {/* Open cards have room for the full path: two files with the
                   same basename are otherwise indistinguishable. */}
-              {location.title}
+              <span className="truncate">{location.title}</span>
             </p>
           ) : null}
           {comment.diffHunk ? <HunkPreview diffHunk={comment.diffHunk} /> : null}

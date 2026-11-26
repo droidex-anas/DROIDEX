@@ -197,7 +197,7 @@ function MarkdownAnchor({
       onContextMenu={(event) => {
         if (href === undefined || !linkActions) return;
         event.preventDefault();
-        linkActions.openMenu({ x: event.clientX, y: event.clientY }, href);
+        linkActions.openMenu(event.currentTarget, { x: event.clientX, y: event.clientY }, href);
       }}
     >
       {link ? <LinkBadge key={link.host} link={link} /> : null}

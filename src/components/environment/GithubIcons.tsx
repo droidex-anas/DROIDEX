@@ -1,51 +1,40 @@
+import { useId, type ReactNode } from 'react';
+import {
+  GitPullRequest,
+  GitPullRequestClosed,
+  GitPullRequestDraft,
+  GitPullRequestMerged,
+  type IconComponent,
+} from '@droidex/icons';
+
 import type { PrChecksRollup } from '../../types/vcs';
 import type { CheckStatus, PrKind } from '../../lib/github';
+import { cn } from '../ui/cn';
 
-// Icon geometry copied from @primer/octicons 19.15.5 (MIT), 16px variants, so
-// GitHub surfaces in DROIDEX draw GitHub's own glyphs instead of a lookalike
-// set. Keep the viewBox at 16 and scale with `size`.
+// Icon geometry copied from @primer/octicons 19.15.5 (MIT), 16px variants.
+// Only the glyphs that still have no DROIDEX counterpart live here: GitHub's
+// own mark is a brand, and the git-graph glyphs still serve the branch menus.
 const OCTICON_PATHS = {
-  'git-pull-request':
-    'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z',
-  'git-pull-request-draft':
-    'M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 14a2.25 2.25 0 1 1 0-4.5 2.25 2.25 0 0 1 0 4.5ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM14 7.5a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Zm0-4.25a1.25 1.25 0 1 1-2.5 0 1.25 1.25 0 0 1 2.5 0Z',
-  'git-merge':
-    'M5.45 5.154A4.25 4.25 0 0 0 9.25 7.5h1.378a2.251 2.251 0 1 1 0 1.5H9.25A5.734 5.734 0 0 1 5 7.123v3.505a2.25 2.25 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.95-.218ZM4.25 13.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5Zm8.5-4.5a.75.75 0 1 0 0-1.5.75.75 0 0 0 0 1.5ZM5 3.25a.75.75 0 1 0 0 .005V3.25Z',
-  'git-pull-request-closed':
-    'M3.25 1A2.25 2.25 0 0 1 4 5.372v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.251 2.251 0 0 1 3.25 1Zm9.5 5.5a.75.75 0 0 1 .75.75v3.378a2.251 2.251 0 1 1-1.5 0V7.25a.75.75 0 0 1 .75-.75Zm-2.03-5.273a.75.75 0 0 1 1.06 0l.97.97.97-.97a.748.748 0 0 1 1.265.332.75.75 0 0 1-.205.729l-.97.97.97.97a.751.751 0 0 1-.018 1.042.751.751 0 0 1-1.042.018l-.97-.97-.97.97a.749.749 0 0 1-1.275-.326.749.749 0 0 1 .215-.734l.97-.97-.97-.97a.75.75 0 0 1 0-1.06ZM2.5 3.25a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0ZM3.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm9.5 0a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z',
   'git-commit':
     'M11.93 8.5a4.002 4.002 0 0 1-7.86 0H.75a.75.75 0 0 1 0-1.5h3.32a4.002 4.002 0 0 1 7.86 0h3.32a.75.75 0 0 1 0 1.5Zm-1.43-.75a2.5 2.5 0 1 0-5 0 2.5 2.5 0 0 0 5 0Z',
   'git-branch':
     'M9.5 3.25a2.25 2.25 0 1 1 3 2.122V6A2.5 2.5 0 0 1 10 8.5H6a1 1 0 0 0-1 1v1.128a2.251 2.251 0 1 1-1.5 0V5.372a2.25 2.25 0 1 1 1.5 0v1.836A2.493 2.493 0 0 1 6 7h4a1 1 0 0 0 1-1v-.628A2.25 2.25 0 0 1 9.5 3.25Zm-6 0a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Zm8.25-.75a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5ZM4.25 12a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Z',
+  'git-pull-request':
+    'M1.5 3.25a2.25 2.25 0 1 1 3 2.122v5.256a2.251 2.251 0 1 1-1.5 0V5.372A2.25 2.25 0 0 1 1.5 3.25Zm5.677-.177L9.573.677A.25.25 0 0 1 10 .854V2.5h1A2.5 2.5 0 0 1 13.5 5v5.628a2.251 2.251 0 1 1-1.5 0V5a1 1 0 0 0-1-1h-1v1.646a.25.25 0 0 1-.427.177L7.177 3.427a.25.25 0 0 1 0-.354ZM3.75 2.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm0 9.5a.75.75 0 1 0 0 1.5.75.75 0 0 0 0-1.5Zm8.25.75a.75.75 0 1 0 1.5 0 .75.75 0 0 0-1.5 0Z',
   'mark-github':
     'M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z',
-  'comment-discussion':
-    'M1.75 1h8.5c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 10.25 10H7.061l-2.574 2.573A1.458 1.458 0 0 1 2 11.543V10h-.25A1.75 1.75 0 0 1 0 8.25v-5.5C0 1.784.784 1 1.75 1ZM1.5 2.75v5.5c0 .138.112.25.25.25h1a.75.75 0 0 1 .75.75v2.19l2.72-2.72a.749.749 0 0 1 .53-.22h3.5a.25.25 0 0 0 .25-.25v-5.5a.25.25 0 0 0-.25-.25h-8.5a.25.25 0 0 0-.25.25Zm13 2a.25.25 0 0 0-.25-.25h-.5a.75.75 0 0 1 0-1.5h.5c.966 0 1.75.784 1.75 1.75v5.5A1.75 1.75 0 0 1 14.25 12H14v1.543a1.458 1.458 0 0 1-2.487 1.03L9.22 12.28a.749.749 0 0 1 .326-1.275.749.749 0 0 1 .734.215l2.22 2.22v-2.19a.75.75 0 0 1 .75-.75h1a.25.25 0 0 0 .25-.25Z',
-  'file-diff':
-    'M1 1.75C1 .784 1.784 0 2.75 0h7.586c.464 0 .909.184 1.237.513l2.914 2.914c.329.328.513.773.513 1.237v9.586A1.75 1.75 0 0 1 13.25 16H2.75A1.75 1.75 0 0 1 1 14.25Zm1.75-.25a.25.25 0 0 0-.25.25v12.5c0 .138.112.25.25.25h10.5a.25.25 0 0 0 .25-.25V4.664a.25.25 0 0 0-.073-.177l-2.914-2.914a.25.25 0 0 0-.177-.073ZM8 3.25a.75.75 0 0 1 .75.75v1.5h1.5a.75.75 0 0 1 0 1.5h-1.5v1.5a.75.75 0 0 1-1.5 0V7h-1.5a.75.75 0 0 1 0-1.5h1.5V4A.75.75 0 0 1 8 3.25Zm-3 8a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 0 1.5h-4.5a.75.75 0 0 1-.75-.75Z',
-  'link-external':
-    'M3.75 2h3.5a.75.75 0 0 1 0 1.5h-3.5a.25.25 0 0 0-.25.25v8.5c0 .138.112.25.25.25h8.5a.25.25 0 0 0 .25-.25v-3.5a.75.75 0 0 1 1.5 0v3.5A1.75 1.75 0 0 1 12.25 14h-8.5A1.75 1.75 0 0 1 2 12.25v-8.5C2 2.784 2.784 2 3.75 2Zm6.854-1h4.146a.25.25 0 0 1 .25.25v4.146a.25.25 0 0 1-.427.177L13.03 4.03 9.28 7.78a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042l3.75-3.75-1.543-1.543A.25.25 0 0 1 10.604 1Z',
-  sync: 'M1.705 8.005a.75.75 0 0 1 .834.656 5.5 5.5 0 0 0 9.592 2.97l-1.204-1.204a.25.25 0 0 1 .177-.427h3.646a.25.25 0 0 1 .25.25v3.646a.25.25 0 0 1-.427.177l-1.38-1.38A7.002 7.002 0 0 1 1.05 8.84a.75.75 0 0 1 .656-.834ZM8 2.5a5.487 5.487 0 0 0-4.131 1.869l1.204 1.204A.25.25 0 0 1 4.896 6H1.25A.25.25 0 0 1 1 5.75V2.104a.25.25 0 0 1 .427-.177l1.38 1.38A7.002 7.002 0 0 1 14.95 7.16a.75.75 0 0 1-1.49.178A5.5 5.5 0 0 0 8 2.5Z',
-  clock:
-    'M8 0a8 8 0 1 1 0 16A8 8 0 0 1 8 0ZM1.5 8a6.5 6.5 0 1 0 13 0 6.5 6.5 0 0 0-13 0Zm7-3.25v2.992l2.028.812a.75.75 0 0 1-.557 1.392l-2.5-1A.751.751 0 0 1 7 8.25v-3.5a.75.75 0 0 1 1.5 0Z',
-  check:
-    'M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L2.22 9.28a.751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 10.94l6.72-6.72a.75.75 0 0 1 1.06 0Z',
-  x: 'M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.749.749 0 0 1 1.275.326.749.749 0 0 1-.215.734L9.06 8l3.22 3.22a.749.749 0 0 1-.326 1.275.749.749 0 0 1-.734-.215L8 9.06l-3.22 3.22a.751.751 0 0 1-1.042-.018.751.751 0 0 1-.018-1.042L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z',
-  dash: 'M2 7.75A.75.75 0 0 1 2.75 7h10a.75.75 0 0 1 0 1.5h-10A.75.75 0 0 1 2 7.75Z',
 } as const;
 
-export type OcticonName = keyof typeof OCTICON_PATHS;
+type OcticonName = keyof typeof OCTICON_PATHS;
 
-export function Octicon({
+function Octicon({
   name,
-  size = 16,
+  size,
   className,
-  label,
 }: {
   name: OcticonName;
-  size?: number;
+  size: number;
   className?: string;
-  label?: string;
 }) {
   return (
     <svg
@@ -54,9 +43,7 @@ export function Octicon({
       height={size}
       fill="currentColor"
       className={className}
-      role={label ? 'img' : undefined}
-      aria-label={label}
-      aria-hidden={label ? undefined : true}
+      aria-hidden="true"
     >
       <path d={OCTICON_PATHS[name]} />
     </svg>
@@ -84,22 +71,22 @@ export const GitPullRequestIcon = ({ size = 16, className }: IconProps) => (
   <Octicon name="git-pull-request" size={size} className={className} />
 );
 
-// GitHub's PR-state palette. Open/closed reuse the shared diff green/red so the
-// whole app speaks one color language; merged/draft keep GitHub's purple/gray.
-const PR_STATES: Record<PrKind, { icon: OcticonName; label: string; color: string }> = {
-  open: { icon: 'git-pull-request', label: 'Open', color: 'var(--diff-add-fg)' },
-  draft: { icon: 'git-pull-request-draft', label: 'Draft', color: '#848d97' },
-  merged: { icon: 'git-merge', label: 'Merged', color: '#a371f7' },
-  closed: { icon: 'git-pull-request-closed', label: 'Closed', color: 'var(--diff-del-fg)' },
+// The pull request state in the DROIDEX git family, coloured by status: open
+// and closed share the success/danger signal, merged keeps GitHub's violet.
+const PR_STATES: Record<PrKind, { icon: IconComponent; label: string; tone: string }> = {
+  open: { icon: GitPullRequest, label: 'Open', tone: 'text-success' },
+  draft: { icon: GitPullRequestDraft, label: 'Draft', tone: 'text-muted' },
+  merged: { icon: GitPullRequestMerged, label: 'Merged', tone: 'text-presence-violet' },
+  closed: { icon: GitPullRequestClosed, label: 'Closed', tone: 'text-danger' },
 };
 
 // The check rollup as a dot on the icon's corner, so a list of PRs scans by
 // colour first: red needs attention, amber is still running, green is clear.
 // A ring in the canvas colour keeps the dot separate from the glyph.
-const CHECK_DOTS: Record<PrChecksRollup, { color: string; label: string }> = {
-  fail: { color: 'var(--diff-del-fg)', label: 'checks failing' },
-  pending: { color: 'var(--warning)', label: 'checks running' },
-  pass: { color: 'var(--diff-add-fg)', label: 'checks passing' },
+const CHECK_DOTS: Record<PrChecksRollup, { fill: string; label: string }> = {
+  fail: { fill: 'bg-danger', label: 'checks failing' },
+  pending: { fill: 'bg-warning', label: 'checks running' },
+  pass: { fill: 'bg-success', label: 'checks passing' },
 };
 
 export function PrStateIcon({
@@ -111,68 +98,86 @@ export function PrStateIcon({
   size?: number;
   checks?: PrChecksRollup | null;
 }) {
-  const { icon, label, color } = PR_STATES[kind];
+  const { icon: Icon, label, tone } = PR_STATES[kind];
   // A merged or closed PR's checks no longer matter; only a live one wears
-  // the dot. Small icons (sidebar rows) get a smaller dot so it reads as a
-  // marker on the glyph, not a second icon.
+  // the dot.
   const live = kind === 'open' || kind === 'draft';
   const dot = live && checks ? CHECK_DOTS[checks] : null;
-  const dotSize = size <= 14 ? 5 : Math.round(size * 0.4);
+  const name = dot ? `${label}, ${dot.label}` : label;
   return (
     <span
-      style={{ color }}
       title={dot ? `${label} · ${dot.label}` : label}
-      className="relative inline-flex"
+      className={cn('relative inline-flex', tone)}
     >
-      <Octicon name={icon} size={size} label={dot ? `${label}, ${dot.label}` : label} />
+      <Icon size={size} aria-label={name} />
       {dot && (
         <span
           aria-hidden="true"
-          className="absolute rounded-full ring-[1.5px] ring-bg"
-          style={{
-            width: dotSize,
-            height: dotSize,
-            right: -1,
-            bottom: -1,
-            backgroundColor: dot.color,
-          }}
+          className={cn(
+            'absolute -right-px -bottom-px size-1.5 rounded-full ring-1.5 ring-bg',
+            dot.fill,
+          )}
         />
       )}
     </span>
   );
 }
 
-// GitHub draws check status as a filled status disc with a light glyph punched
-// on top (never a hairline outline), so a wall of checks scans by color first.
-const CHECK_STATES: Record<
-  CheckStatus,
-  { glyph: OcticonName | null; label: string; color: string }
-> = {
-  success: { glyph: 'check', label: 'Passed', color: 'var(--diff-add-fg)' },
-  failure: { glyph: 'x', label: 'Failed', color: 'var(--diff-del-fg)' },
-  pending: { glyph: null, label: 'Pending', color: '#d29922' },
+// A status disc with its mark knocked out, so the mark shows whatever surface
+// the row sits on. Marks are centred on the 24px grid at the set's 2px weight.
+const CHECK_STATES: Record<CheckStatus, { label: string; tone: string; mark: ReactNode }> = {
+  success: {
+    label: 'Passed',
+    tone: 'text-success',
+    mark: <path d="M8.5 12.25 10.75 14.5 15.5 9.5" />,
+  },
+  failure: { label: 'Failed', tone: 'text-danger', mark: <path d="m9.5 9.5 5 5m0-5-5 5" /> },
   // Skipped, cancelled, stale, and action-required runs all land here, so the
   // label states the bucket rather than one of its members.
-  neutral: { glyph: 'dash', label: 'Neutral', color: '#848d97' },
+  neutral: { label: 'Neutral', tone: 'text-muted', mark: <path d="M8.75 12h6.5" /> },
+  pending: { label: 'Pending', tone: 'text-warning', mark: null },
 };
 
 export function CheckStatusIcon({ status, size = 16 }: { status: CheckStatus; size?: number }) {
-  const { glyph, label, color } = CHECK_STATES[status];
+  const maskId = useId();
+  const { label, tone, mark } = CHECK_STATES[status];
   return (
-    <svg viewBox="0 0 16 16" width={size} height={size} role="img" aria-label={label}>
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      role="img"
+      aria-label={label}
+      className={cn('shrink-0', tone)}
+    >
       <title>{label}</title>
-      {glyph ? (
+      {mark ? (
         <>
-          <circle cx="8" cy="8" r="8" fill={color} />
-          {/* 0.62 scale keeps the glyph inside the disc with GitHub's optical padding. */}
-          <g transform="translate(3.04 3.04) scale(0.62)" fill="#ffffff">
-            <path d={OCTICON_PATHS[glyph]} />
-          </g>
+          {/* Mask luminance: the white field keeps the disc, the black mark cuts it. */}
+          <mask id={maskId}>
+            <rect width="24" height="24" fill="white" />
+            <g
+              fill="none"
+              stroke="black"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              {mark}
+            </g>
+          </mask>
+          <circle cx="12" cy="12" r="9.25" fill="currentColor" mask={`url(#${maskId})`} />
         </>
       ) : (
         <>
-          <circle cx="8" cy="8" r="7.25" fill="none" stroke={color} strokeWidth="1.5" />
-          <circle cx="8" cy="8" r="3" fill={color} />
+          <circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" strokeWidth="1.75" />
+          <circle
+            cx="12"
+            cy="12"
+            r="3"
+            fill="currentColor"
+            className="animate-breathe motion-reduce:animate-none"
+          />
         </>
       )}
     </svg>

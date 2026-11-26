@@ -1,7 +1,9 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Pencil, Trash } from '@droidex/icons';
 
+import { CompactComposer } from '../../../components/composer/CompactComposer';
 import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import type { DiffLineTarget } from '../../../components/environment/DiffBody';
 import { diffLineAnchorKey, type DiffLineSide } from '../../../lib/unifiedDiff';
 import type { PrComment } from '../../../types/vcs';
@@ -18,36 +20,18 @@ export interface PrAnnotationEditingState {
   annotationId: string | null;
 }
 
-function CodeContext({ line, code }: { line: number; code: string }) {
-  return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className="shrink-0 text-caption text-muted">Line {line}</span>
-      {code.length > 0 ? (
-        <code
-          title={code}
-          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-pre font-mono text-code-sm text-secondary"
-        >
-          {code}
-        </code>
-      ) : null}
-    </div>
-  );
-}
-
-// The inline note editor, anchored under the diff line it annotates. Escape
-// backs out without saving, Cmd/Ctrl+Enter saves — the same contract as the
-// comment composer.
+// The inline note editor, anchored under the diff line it annotates: the same
+// small composer as design mode's quick prompt. Enter saves, Shift+Enter adds
+// a line, Escape backs out, and focus leaving an empty editor closes it.
 function PrAnnotationEditor({
   initialBody,
   line,
-  code,
   submitLabel,
   onSave,
   onCancel,
 }: {
   initialBody: string;
   line: number;
-  code: string;
   submitLabel: string;
   onSave: (body: string) => void;
   onCancel: () => void;
@@ -62,63 +46,34 @@ function PrAnnotationEditor({
     node.setSelectionRange(node.value.length, node.value.length);
   }, []);
 
-  useLayoutEffect(() => {
-    const node = textareaRef.current;
-    if (!node) return;
-    node.style.height = 'auto';
-    node.style.height = `${String(Math.min(node.scrollHeight, MAX_HEIGHT))}px`;
-  }, [body]);
-
-  const save = () => {
-    if (!body.trim()) return;
-    onSave(body);
-  };
-
   return (
-    <div className="pr-note-enter overflow-hidden rounded-lg bg-raised shadow-sm">
-      <div className="px-3 pt-2">
-        <CodeContext line={line} code={code} />
-      </div>
-      <textarea
-        ref={textareaRef}
+    <div
+      className="pr-note-enter"
+      onBlur={(event) => {
+        if (body.trim() || event.currentTarget.contains(event.relatedTarget)) return;
+        onCancel();
+      }}
+    >
+      <CompactComposer
+        textareaRef={textareaRef}
         value={body}
-        rows={1}
-        aria-label={`Note on line ${String(line)}`}
-        placeholder="Add a note on this line"
-        spellCheck
-        onChange={(event) => {
-          setBody(event.target.value);
+        onChange={setBody}
+        onSend={() => {
+          onSave(body);
         }}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') {
-            event.preventDefault();
-            event.stopPropagation();
-            onCancel();
-          }
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            event.preventDefault();
-            save();
-          }
-        }}
-        className="mt-1 w-full resize-none overflow-y-auto bg-transparent px-3 py-1.5 font-sans text-body text-primary outline-none placeholder:text-muted"
+        onEscape={onCancel}
+        canSend={body.trim().length > 0}
+        placeholder={`Add a note on line ${String(line)}`}
+        label={`Note on line ${String(line)}`}
+        sendLabel={submitLabel}
+        maxHeight={MAX_HEIGHT}
       />
-      <div className="flex items-center gap-2 px-2 pb-2">
-        <span className="min-w-0 flex-1 truncate px-1 text-caption text-muted">
-          ⌘⏎ to save · esc to cancel
-        </span>
-        <Button variant="ghost" size="sm" onClick={onCancel}>
-          Cancel
-        </Button>
-        <Button variant="primary" size="sm" onClick={save} disabled={!body.trim()}>
-          {submitLabel}
-        </Button>
-      </div>
     </div>
   );
 }
 
-// A saved annotation. The note belongs to the reader, not the pull request,
-// so there is no byline: the annotated line, then the prose in the UI font.
+// A saved annotation, right under the line it is on. The note belongs to the
+// reader, not the pull request, so there is no byline: just the prose.
 function PrAnnotationCard({
   annotation,
   onEdit,
@@ -129,28 +84,30 @@ function PrAnnotationCard({
   onRemove: () => void;
 }) {
   return (
-    <div className="group flex items-start gap-2 rounded-lg bg-elevated px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <CodeContext line={annotation.line} code={annotation.code} />
-        <p className="pt-1 text-body whitespace-pre-wrap text-primary">{annotation.body}</p>
-      </div>
-      <span className="flex shrink-0 items-start gap-0.5 opacity-0 transition-opacity duration-quick pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Pencil}
-          aria-label={`Edit note on line ${String(annotation.line)}`}
-          title="Edit note"
-          onClick={onEdit}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={Trash2}
-          aria-label={`Delete note on line ${String(annotation.line)}`}
-          title="Delete note"
-          onClick={onRemove}
-        />
+    <div className="group flex items-start gap-2 rounded-xl bg-elevated py-1.5 pr-1.5 pl-3.5">
+      <p className="min-w-0 flex-1 py-1 text-body whitespace-pre-wrap text-primary">
+        {annotation.body}
+      </p>
+      {/* Hover-revealed, but the space is reserved so the note never reflows. */}
+      <span className="flex shrink-0 items-center gap-1 opacity-0 transition-opacity duration-quick pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+        <Tooltip label="Edit note">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Pencil}
+            aria-label={`Edit note on line ${String(annotation.line)}`}
+            onClick={onEdit}
+          />
+        </Tooltip>
+        <Tooltip label="Delete note">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash}
+            aria-label={`Delete note on line ${String(annotation.line)}`}
+            onClick={onRemove}
+          />
+        </Tooltip>
       </span>
     </div>
   );
@@ -230,7 +187,6 @@ export function PrAnchoredContent({
       <PrAnnotationEditor
         key="editor"
         line={editing.target.line}
-        code={editing.target.text}
         initialBody={existing?.body ?? ''}
         submitLabel={editing.annotationId ? 'Save note' : 'Add note'}
         onSave={(body) => {

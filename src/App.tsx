@@ -1052,7 +1052,11 @@ export default function App() {
                           if (!tab.cwd || tab.prNumber === undefined) return null;
                           return (
                             <Suspense fallback={utilityToolFallback('pull-request')}>
-                              <LazyPullRequestPane cwd={tab.cwd} number={tab.prNumber} />
+                              <LazyPullRequestPane
+                                appSessionId={activeSession.appSessionId}
+                                cwd={tab.cwd}
+                                number={tab.prNumber}
+                              />
                             </Suspense>
                           );
                         }

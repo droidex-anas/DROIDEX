@@ -1,188 +1,106 @@
-import type { ReactNode } from 'react';
+import {
+  ArrowRight,
+  GitBranch,
+  GitPullRequest,
+  GitPullRequestClosed,
+  GitPullRequestDraft,
+  GitPullRequestMerged,
+  type IconComponent,
+} from '@droidex/icons';
 
 import { Badge } from '../../../components/ui/Badge';
 import {
-  CheckStatusIcon,
-  Octicon,
-  type OcticonName,
-} from '../../../components/environment/GithubIcons';
-import {
-  checksBadge,
-  checksSummary,
   prKind,
   prKindLabel,
   reviewDecisionBadge,
   type PrKind,
   type PrTone,
 } from '../../../lib/github';
-import type { PrCheck, PullRequest } from '../../../types/vcs';
+import type { PullRequest } from '../../../types/vcs';
 import { displayLogin } from '../lib/prIdentity';
-import { REVIEWER_STATE_LABEL, mergeStateBadge, reviewerRows } from '../lib/prMeta';
 import { prAbsoluteTime, prRelativeTime } from '../lib/prTime';
 import { GithubAvatar } from './GithubAvatar';
 
-// Plain status text (no badge fill) for a PR fact, such as the checks rollup
-// beside the reviewers. Badges use the same tones in ui/Badge.
-const TONE_TEXT: Record<PrTone, string> = {
-  neutral: 'text-secondary',
-  success: 'text-success',
-  danger: 'text-danger',
-  accent: 'text-accent',
+const STATE_BADGE: Record<PrKind, { tone: PrTone; icon: IconComponent }> = {
+  open: { tone: 'success', icon: GitPullRequest },
+  draft: { tone: 'neutral', icon: GitPullRequestDraft },
+  merged: { tone: 'accent', icon: GitPullRequestMerged },
+  closed: { tone: 'danger', icon: GitPullRequestClosed },
 };
 
-const STATE_PILL: Record<PrKind, { tone: PrTone; icon: OcticonName }> = {
-  open: { tone: 'success', icon: 'git-pull-request' },
-  draft: { tone: 'neutral', icon: 'git-pull-request-draft' },
-  merged: { tone: 'accent', icon: 'git-merge' },
-  closed: { tone: 'danger', icon: 'git-pull-request-closed' },
-};
+// `owner/repo` as GitHub spells it, read from the pull request's own URL.
+function repositoryName(url: string | undefined): string | null {
+  const match = /^https?:\/\/[^/]+\/([^/]+\/[^/]+)\/pull\//.exec(url ?? '');
+  return match ? match[1] : null;
+}
 
-function MetaRow({ label, children }: { label: string; children: ReactNode }) {
+function Byline({ pr }: { pr: PullRequest }) {
+  const updated = prRelativeTime(pr.updatedAt ?? pr.createdAt);
   return (
-    <div className="flex gap-x-4">
-      <dt className="w-20 shrink-0 pt-0.5 text-body text-muted">{label}</dt>
-      <dd className="min-w-0 flex-1 text-body text-secondary">{children}</dd>
+    <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-body text-secondary">
+      <span className="flex shrink-0 items-center gap-1.5">
+        <GithubAvatar login={pr.author} size={20} />
+        <span className="text-primary">{displayLogin(pr.author)}</span>
+        {updated ? (
+          <span title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)} className="text-muted">
+            {/* `prRelativeTime` returns either "now" or an age like "3d",
+                and only an age reads as "ago". */}
+            {updated === 'now' ? 'updated now' : `updated ${updated} ago`}
+          </span>
+        ) : null}
+      </span>
+      <span className="flex min-w-0 items-center gap-1.5">
+        <GitBranch className="size-icon-sm shrink-0 text-muted" aria-hidden="true" />
+        <span title={pr.headRefName ?? undefined} className="truncate text-primary">
+          {pr.headRefName ?? 'unknown'}
+        </span>
+        <ArrowRight className="size-icon-sm shrink-0 text-muted" aria-label="into" />
+        <span title={pr.baseRefName ?? undefined} className="truncate">
+          {pr.baseRefName ?? 'unknown'}
+        </span>
+      </span>
     </div>
   );
 }
 
-function Reviewers({ pr }: { pr: PullRequest }) {
-  const rows = reviewerRows(pr);
-  if (rows.length === 0) return <span className="text-muted">No reviewers</span>;
-  return (
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-      {rows.map((row) => (
-        <span key={row.login} className="flex items-center gap-1.5">
-          <GithubAvatar login={row.login} size={18} />
-          <span className="text-primary">{displayLogin(row.login)}</span>
-          <span className="text-muted">{REVIEWER_STATE_LABEL[row.state]}</span>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-// The rolled-up check state, next to the reviewers and comment count it is read
-// with. The Checks section below owns the individual runs.
-function ChecksMeta({
-  checks,
-  loading,
-  error,
-}: {
-  checks: PrCheck[];
-  loading: boolean;
-  error: string | null;
-}) {
-  const summary = checksSummary(checks);
-  const badge = checksBadge(summary);
-  if (!badge) {
-    // A failed load must not read as "this pull request has no checks"; the
-    // Checks section below states the error itself.
-    if (loading) return <span className="text-muted">Loading…</span>;
-    return <span className="text-muted">{error ? 'Unavailable' : 'No checks reported'}</span>;
-  }
-  return (
-    <span className="flex items-center gap-1.5">
-      <CheckStatusIcon status={summary.status === 'none' ? 'neutral' : summary.status} size={14} />
-      <span className={TONE_TEXT[badge.tone]}>{badge.label}</span>
-    </span>
-  );
-}
-
+// The pull request's identity: state and repository, the title, then who
+// opened it and where it goes. Status details live in the summary rail.
 export function PrHeader({
   pr,
   number,
-  commentCount,
-  checks,
-  checksLoading,
-  checksError,
   compact = false,
 }: {
   pr: PullRequest | null;
   number: number;
-  commentCount: number;
-  checks: PrCheck[];
-  checksLoading: boolean;
-  checksError: string | null;
   // The utility pane reads as a sheet, so its title steps down a scale.
   compact?: boolean;
 }) {
   const kind = pr ? prKind(pr) : null;
-  const updated = prRelativeTime(pr?.updatedAt ?? pr?.createdAt ?? null);
-  const mergeState = mergeStateBadge(pr);
   const decision = reviewDecisionBadge(pr);
+  const repository = repositoryName(pr?.url);
 
   return (
     <header>
-      <h1 className={`${compact ? 'text-heading' : 'text-title'} text-primary`}>
-        {pr ? (
-          <>
-            {pr.title}
-            <span className="ml-2 font-normal tabular-nums text-muted">#{String(number)}</span>
-          </>
-        ) : (
-          `Pull request #${String(number)}`
-        )}
-      </h1>
-      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {kind ? (
-          <Badge tone={STATE_PILL[kind].tone}>
-            <Octicon name={STATE_PILL[kind].icon} size={12} />
+          <Badge tone={STATE_BADGE[kind].tone} icon={STATE_BADGE[kind].icon}>
             {prKindLabel(kind)}
           </Badge>
         ) : (
-          <span className="inline-flex h-5 w-20 rounded-full bg-elevated/60" />
+          <span className="inline-flex h-5 w-16 rounded-full bg-elevated" />
         )}
+        {/* Until the pull request loads, the title already names its number. */}
         {pr ? (
-          <span className="flex items-center gap-1.5 text-body text-secondary">
-            <GithubAvatar login={pr.author} size={20} />
-            <span className="text-primary">{displayLogin(pr.author)}</span>
-            {updated ? (
-              <span title={prAbsoluteTime(pr.updatedAt ?? pr.createdAt)} className="text-muted">
-                {/* `prRelativeTime` returns either "now" or an age like "3d",
-                    and only an age reads as "ago". */}
-                updated {updated === 'now' ? 'now' : `${updated} ago`}
-              </span>
-            ) : null}
+          <span className="min-w-0 truncate text-body text-muted tabular-nums">
+            {repository ? `${repository} ` : ''}#{number}
           </span>
         ) : null}
         {decision ? <Badge tone={decision.tone}>{decision.label}</Badge> : null}
       </div>
-      {pr ? (
-        <dl className="mt-4 flex flex-col gap-y-2">
-          <MetaRow label="Branch">
-            <span className="flex min-w-0 items-center gap-1.5">
-              <Octicon name="git-branch" size={13} className="shrink-0 text-muted" />
-              <span className="truncate text-primary">{pr.headRefName ?? 'unknown'}</span>
-              <span className="shrink-0 text-muted">into</span>
-              <span className="truncate">{pr.baseRefName ?? 'unknown'}</span>
-            </span>
-          </MetaRow>
-          <MetaRow label="Changes">
-            <span className="flex items-center gap-2 tabular-nums">
-              <span>
-                {pr.changedFiles} {pr.changedFiles === 1 ? 'file' : 'files'}
-              </span>
-              <span style={{ color: 'var(--diff-add-fg)' }}>+{pr.additions}</span>
-              <span style={{ color: 'var(--diff-del-fg)' }}>−{pr.deletions}</span>
-            </span>
-          </MetaRow>
-          <MetaRow label="Reviewers">
-            <Reviewers pr={pr} />
-          </MetaRow>
-          <MetaRow label="Comments">
-            <span className="tabular-nums">{commentCount}</span>
-          </MetaRow>
-          <MetaRow label="Checks">
-            <ChecksMeta checks={checks} loading={checksLoading} error={checksError} />
-          </MetaRow>
-          {mergeState ? (
-            <MetaRow label="Status">
-              <span className={TONE_TEXT[mergeState.tone]}>{mergeState.label}</span>
-            </MetaRow>
-          ) : null}
-        </dl>
-      ) : null}
+      <h1 className={`mt-3 text-balance text-primary ${compact ? 'text-heading' : 'text-title'}`}>
+        {pr ? pr.title : `Pull request #${String(number)}`}
+      </h1>
+      {pr ? <Byline pr={pr} /> : null}
     </header>
   );
 }

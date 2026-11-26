@@ -1,7 +1,9 @@
 import { useMemo } from 'react';
+import { Check, ExternalLink } from '@droidex/icons';
 
-import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
+import { Button } from '../../../components/ui/Button';
+import { Tooltip } from '../../../components/ui/Tooltip';
 import { openExternal } from '../../../lib/onboarding';
 import type { PrComment } from '../../../types/vcs';
 import { prCommentBlocks } from '../lib/prCommentBody';
@@ -19,8 +21,8 @@ export function PrInlineComment({ comment }: { comment: PrComment }) {
   const blocks = useMemo(() => prCommentBlocks(comment.body), [comment.body]);
   const time = prRelativeTime(comment.createdAt);
   return (
-    <div className="group rounded-lg bg-raised py-2 shadow-sm">
-      <div className="flex items-center gap-2 px-3">
+    <div className="group rounded-lg bg-raised px-3 pt-1.5 pb-2.5 shadow-sm">
+      <div className="flex h-control-sm items-center gap-2">
         <GithubAvatar login={comment.author} size={16} />
         <span className="min-w-0 flex-1 truncate text-body">
           <span className="font-medium text-primary">{displayLogin(comment.author)}</span>
@@ -32,29 +34,27 @@ export function PrInlineComment({ comment }: { comment: PrComment }) {
           ) : null}
         </span>
         {comment.resolved === true ? (
-          <Badge title="This thread is resolved on GitHub">
-            <Octicon name="check" size={11} />
+          <Badge title="This thread is resolved on GitHub" icon={Check}>
             Resolved
           </Badge>
         ) : null}
         {comment.url ? (
-          <a
-            href={comment.url}
-            target="_blank"
-            rel="noreferrer"
-            title="Open on GitHub"
-            aria-label="Open comment on GitHub"
-            className="flex size-7 items-center justify-center rounded-md text-muted opacity-0 transition-opacity duration-quick pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-elevated hover:text-primary"
-            onClick={(event) => {
-              event.preventDefault();
-              if (comment.url) void openExternal(comment.url);
-            }}
-          >
-            <Octicon name="link-external" size={12} />
-          </a>
+          <Tooltip label="Open on GitHub">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ExternalLink}
+              aria-label="Open comment on GitHub"
+              className="-mr-1.5 opacity-0 transition-opacity duration-quick group-hover:opacity-100 group-focus-within:opacity-100"
+              onClick={() => {
+                if (comment.url) void openExternal(comment.url);
+              }}
+            />
+          </Tooltip>
         ) : null}
       </div>
-      <div className="px-3 pt-1 text-body">
+      {/* The body starts under the name, past the 16px avatar and its gap. */}
+      <div className="pl-6 text-body">
         <PrBody blocks={blocks} />
       </div>
     </div>
