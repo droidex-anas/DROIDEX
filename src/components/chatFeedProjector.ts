@@ -117,6 +117,18 @@ function projectFeed(
   return { cache: fullProjection(input, options, revision), mode: 'full' };
 }
 
+// Pending only shapes folded output (the live-turn fold). Unfolded feeds are
+// a direct buildFeed passthrough with no pending input, so a live→settled flip
+// on the same transcript must not invalidate their cache.
+function pendingMatches(
+  cache: ProjectionCache,
+  input: ChatFeedProjectorInput,
+  options: NormalizedOptions,
+): boolean {
+  if (!options.foldTurns) return true;
+  return cache.pending === input.pending;
+}
+
 function cacheMatches(
   cache: ProjectionCache,
   input: ChatFeedProjectorInput,
@@ -128,7 +140,7 @@ function cacheMatches(
     cache.childSessionId === input.childSessionId &&
     cache.allTranscript === input.allTranscript &&
     cache.revision === revision &&
-    cache.pending === input.pending &&
+    pendingMatches(cache, input, options) &&
     cache.hideEvent === input.hideEvent &&
     sameOptions(cache.options, options)
   );
@@ -189,7 +201,7 @@ function hasIncrementalBase(
     mutation &&
     cache.conversationKey === input.conversationKey &&
     cache.childSessionId === input.childSessionId &&
-    cache.pending === input.pending &&
+    pendingMatches(cache, input, options) &&
     cache.hideEvent === input.hideEvent &&
     sameOptions(cache.options, options) &&
     mutation.baseRevision === cache.revision &&

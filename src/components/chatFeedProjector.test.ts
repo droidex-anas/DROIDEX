@@ -390,6 +390,7 @@ test('a hidden spawn echo stays out of an incrementally growing unfolded child f
   const completedEvents = [task, echoComplete, read];
   const completedInput = paneInput(completedEvents, appendMutation(1, initialEvents.length, 1));
   const completed = project(completedInput);
+  assert.equal(completed.mode, 'incremental');
   assertMatchesFullBuild(completed, completedInput);
   assert.ok(!completed.visibleTranscript.some((entry) => entry.id === 'echo'));
 
@@ -417,6 +418,9 @@ test('a hidden spawn echo stays out of an incrementally growing unfolded child f
   const settled = project(settledInput);
   assertMatchesFullBuild(settled, settledInput);
   assert.ok(settled.feedItems.every((item) => item.type !== 'worked'));
+  // Pending cannot shape an unfolded feed, so settlement reuses the projection
+  // outright instead of rebuilding it.
+  assert.equal(settled.feedItems, appended.feedItems);
 });
 
 test('production projection paths report exact rebuild and reuse metrics', () => {
