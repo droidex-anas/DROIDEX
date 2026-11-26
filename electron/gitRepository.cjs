@@ -53,9 +53,14 @@ async function repoRootOf(dir) {
   if (!key) return null;
   const cached = repoRootCache.get(key);
   if (cached && Date.now() - cached.at < REPO_ROOT_TTL_MS) return cached.root;
-  const root = (await isDirectory(key))
-    ? (await tryRun(key, ['rev-parse', '--show-toplevel'])) || null
-    : null;
+  // Cache the in-flight promise, not just the answer: the poll cycle's IPC
+  // calls start concurrently and would otherwise each pay their own rev-parse
+  // before the first one lands. tryRun and isDirectory answer rather than throw,
+  // so this promise never rejects.
+  const root = (async () =>
+    (await isDirectory(key))
+      ? (await tryRun(key, ['rev-parse', '--show-toplevel'])) || null
+      : null)();
   setRepoCache(repoRootCache, key, { root, at: Date.now() });
   return root;
 }

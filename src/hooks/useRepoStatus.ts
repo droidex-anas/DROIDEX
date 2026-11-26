@@ -16,12 +16,21 @@ export function useRepoStatus(cwd: string): RepoStatus | null | undefined {
 
   useEffect(() => {
     let cancelled = false;
+    let inFlight = false;
     const refresh = () => {
+      // A full untracked-files scan on a large repo can outlive the cadence;
+      // skip the tick rather than stacking another scan behind it.
+      if (inFlight) return;
+      inFlight = true;
       const requestId = ++requestRef.current;
-      void getRepoStatus(cwd).then((next) => {
-        if (!cancelled && isCurrentRepoStatusRequest(requestId, requestRef.current))
-          setStatus((previous) => stable(previous, next));
-      });
+      void getRepoStatus(cwd)
+        .then((next) => {
+          if (!cancelled && isCurrentRepoStatusRequest(requestId, requestRef.current))
+            setStatus((previous) => stable(previous, next));
+        })
+        .finally(() => {
+          inFlight = false;
+        });
     };
 
     if (statusCwdRef.current !== cwd) {

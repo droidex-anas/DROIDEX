@@ -48,6 +48,11 @@ test('an incomplete discovery keeps retrying without depending on snapshot churn
   try {
     await finishPass();
     assert.equal(published.length, 1);
+    // The first retry fires at the base cadence; persistent incompleteness
+    // then backs off exponentially.
+    t.mock.timers.tick(RETRY_MS);
+    await finishPass();
+    assert.equal(published.length, 2);
     t.mock.timers.tick(RETRY_MS);
     await finishPass();
     assert.equal(published.length, 2);
@@ -89,7 +94,7 @@ test('a rejected discovery pass re-arms the retry loop instead of ending it', as
     await finishPass();
     t.mock.timers.tick(RETRY_MS);
     await finishPass();
-    t.mock.timers.tick(RETRY_MS);
+    t.mock.timers.tick(2 * RETRY_MS);
     await finishPass();
   } finally {
     cancel();
