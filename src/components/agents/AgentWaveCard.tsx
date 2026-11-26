@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import type { ChildSessionSummary } from '@droidex/protocol';
 import {
   resolveWaveSessions,
+  spawnRegisteredChildren,
   type ChildSessionActivity,
   type ChildSessionTarget,
 } from '../../lib/childSessions';
@@ -50,8 +51,34 @@ export const AgentWaveCard = memo(
   // monitor's sessions and snapshots. The feed-level comparator above already
   // gates this card on the activity values of its own spawns.
   (prev, next) =>
-    prev.monitor === next.monitor &&
     prev.live === next.live &&
     prev.onOpen === next.onOpen &&
-    sameFeedEvents(prev.item, next.item),
+    sameFeedEvents(prev.item, next.item) &&
+    sameWaveMonitor(prev.monitor, next.monitor, prev.item.events),
 );
+
+// The monitor object is rebuilt whenever any child in the session streams, but
+// a wave only renders its own spawns. Store children are replaced immutably
+// and stream snapshots are structurally shared, so entry identity is semantic
+// for both: a wave whose own spawns did not change skips the commit no matter
+// what sibling waves are doing. Comparison failure only ever re-renders.
+function sameWaveMonitor(
+  prev: AgentMonitorData,
+  next: AgentMonitorData,
+  spawns: readonly { toolUseId?: string; id: string }[],
+): boolean {
+  if (prev === next) return true;
+  if (prev.models !== next.models || prev.provider !== next.provider) return false;
+  if (prev.sessions === next.sessions && prev.snapshots === next.snapshots) return true;
+  return spawns.every((spawn) => {
+    const toolUseId = spawn.toolUseId ?? spawn.id;
+    const before = spawnRegisteredChildren(prev.sessions, toolUseId);
+    const after = spawnRegisteredChildren(next.sessions, toolUseId);
+    if (before.length !== after.length) return false;
+    return before.every(
+      (child, index) =>
+        child === after[index] &&
+        prev.snapshots?.get(child.childSessionId) === next.snapshots?.get(child.childSessionId),
+    );
+  });
+}
