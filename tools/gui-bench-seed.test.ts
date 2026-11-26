@@ -14,7 +14,7 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content chat', () => {
+test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content chat', async () => {
   const manifest = seedGuiBenchHistory(home);
   assert.equal(manifest.sessions.length, 4);
 
@@ -35,13 +35,13 @@ test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content 
   for (const session of [chat3k, chat10k, children]) {
     const size = readFileSync(session.path).byteLength;
     assert.equal(readSessionFileHead(session.path, size).hasCompletedConversation, true);
-    const events = readFullTranscript(session.id, session.id, session.path, 'primary');
+    const events = await readFullTranscript(session.id, session.id, session.path, 'primary');
     assert.ok(events.length >= session.eventCount - 2);
     const kinds = new Set(events.map((event) => event.kind));
     assert.ok(kinds.has('text'));
   }
 
-  const events3k = readFullTranscript(chat3k.id, chat3k.id, chat3k.path, 'primary');
+  const events3k = await readFullTranscript(chat3k.id, chat3k.id, chat3k.path, 'primary');
   const kinds3k = new Set(events3k.map((event) => event.kind));
   assert.ok(kinds3k.has('tool_call'));
   assert.ok(kinds3k.has('tool_result'));
@@ -56,7 +56,7 @@ test('seed writes admitted 3k and 10k chats plus a child-heavy and rich-content 
 
   const heavy = byId.get(GUI_BENCH_SESSION_IDS.chatHeavy);
   assert.ok(heavy);
-  const heavyEvents = readFullTranscript(heavy.id, heavy.id, heavy.path, 'primary');
+  const heavyEvents = await readFullTranscript(heavy.id, heavy.id, heavy.path, 'primary');
   const heavyText = heavyEvents.map((event) => event.text ?? '').join('\n');
   assert.ok(heavyText.includes('```mermaid'));
   assert.ok(heavyText.includes('<json-render>'));

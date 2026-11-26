@@ -14,6 +14,7 @@ import {
   latestSessionList,
   openChild,
   openChildForParent,
+  waitForEvent,
 } from './testing/childSettingsTestSupport.js';
 import { FakeFactorySession } from './testing/fakeFactoryRuntime.js';
 import {
@@ -644,14 +645,14 @@ test('a visible native Droid child refreshes from its own file while the parent 
       JSON.stringify(message('assistant', 'late', 'late child message', 2)) + '\n',
     );
     h.fixture.publishSessionFiles([file]);
+    const beforeRefresh = histories(h).length;
     watchers[0]?.onExternalChange([file]);
-    await h.waitForIdle();
+    await waitForEvent(h.events, () => histories(h).length > beforeRefresh);
     const refreshed = histories(h).at(-1);
-    assert.ok(refreshed);
-    assert.equal(refreshed.mode, 'refresh');
-    assert.equal(refreshed.childSessionId, child.childSessionId);
+    assert.equal(refreshed?.mode, 'refresh');
+    assert.equal(refreshed?.childSessionId, child.childSessionId);
     assert.deepEqual(
-      refreshed.transcripts.map((event) => [
+      refreshed?.transcripts.map((event) => [
         event.text,
         event.appSessionId,
         event.sourceSessionId,
@@ -750,6 +751,13 @@ test('a linked child opens, replays, and keeps its status beside live Task child
     ]);
     await h.handle({ type: 'session.send', appSessionId: 'app-a2', text: 'run child' });
     await h.handle({ type: 'session.loadHistory', appSessionId: 'app-a2' });
+    // Opening the child paints its persisted history without blocking the
+    // open; this load queues behind that paint on the same child's chain.
+    await h.handle({
+      type: 'child.loadHistory',
+      parentAppSessionId: 'app-a2',
+      childSessionId: 'worker-a2',
+    });
 
     assert.equal(h.runtime.loadCalls.at(-1)?.sessionId, 'worker-a2');
     assert.equal(
@@ -761,18 +769,15 @@ test('a linked child opens, replays, and keeps its status beside live Task child
       ),
       true,
     );
-    assert.equal(
-      histories(h).some(
-        (event) =>
-          event.childSessionId === 'worker-a2' &&
-          event.transcripts.some(
-            (transcript) =>
-              transcript.sourceSessionId === 'worker-a2' && transcript.text === 'child replay',
-          ),
-      ),
-      true,
+    assert.deepEqual(
+      histories(h)
+        .at(-1)
+        ?.transcripts.map((event) => [event.sourceSessionId, event.text]),
+      [['worker-a2', 'child replay']],
     );
-    const live = histories(h).at(-1);
+    // Child pages paint independently of the parent's page now, so the
+    // parent's page is the last one without a childSessionId, not at(-1).
+    const live = histories(h).findLast((page) => page.childSessionId === undefined);
     assert.equal(childStatus(live, byId('worker-a2')), 'paused');
     assert.equal(childStatus(live, bySpawn('tool-completed-a2')), 'completed');
     assert.equal(childStatus(live, bySpawn('tool-running-a2')), 'running');

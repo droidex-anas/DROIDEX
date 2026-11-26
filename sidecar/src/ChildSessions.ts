@@ -484,7 +484,7 @@ export class ChildSessions {
       );
       return;
     }
-    this.d.timeline.loadChildHistory({
+    await this.d.timeline.loadChildHistory({
       appSessionId: command.parentAppSessionId,
       childSessionId: command.childSessionId,
       childProviderSessionIds: childHistoryProviderSessionIds(record),
@@ -531,7 +531,7 @@ export class ChildSessions {
   ): Promise<void> {
     if (child.mutationTail) await child.mutationTail;
     if (!this.isCurrentChild(parent, child) || !isSelected()) return;
-    this.d.timeline.loadChildHistory({
+    await this.d.timeline.loadChildHistory({
       appSessionId: command.parentAppSessionId,
       childSessionId: command.childSessionId,
       childProviderSessionIds: childHistoryProviderSessionIds(child),
@@ -758,9 +758,7 @@ export class ChildSessions {
         emit: (event) => {
           this.d.emit(event);
         },
-        loadChildHistory: (query) => {
-          this.d.timeline.loadChildHistory(query);
-        },
+        loadChildHistory: (query) => this.d.timeline.loadChildHistory(query),
       });
       return;
     }

@@ -118,9 +118,9 @@ function seedChain(): string[] {
   return ['s0', 's1', 's2'];
 }
 
-test('loadSessionTranscriptWindow replays the full compaction chain in seq order with dividers', () => {
+test('loadSessionTranscriptWindow replays the full compaction chain in seq order with dividers', async () => {
   const chain = seedChain();
-  const { events, olderCursor } = loadSessionTranscriptWindow('m', chain, { limit: 100 });
+  const { events, olderCursor } = await loadSessionTranscriptWindow('m', chain, { limit: 100 });
 
   assert.deepEqual(
     events.map((e) => (e.kind === 'compaction' ? `divider:${e.removedCount}` : e.text)),
@@ -137,7 +137,7 @@ test('loadSessionTranscriptWindow replays the full compaction chain in seq order
   }
 });
 
-test('cursor pages older history across the chain with no gaps or duplicates', () => {
+test('cursor pages older history across the chain with no gaps or duplicates', async () => {
   const chain = seedChain();
   const collected: string[] = [];
   const seenIds = new Set<string>();
@@ -145,7 +145,7 @@ test('cursor pages older history across the chain with no gaps or duplicates', (
   let pages = 0;
 
   do {
-    const page = loadSessionTranscriptWindow('m', chain, { limit: 3, cursor });
+    const page = await loadSessionTranscriptWindow('m', chain, { limit: 3, cursor });
     // Prepend each older page to rebuild the transcript oldest -> newest.
     collected.unshift(
       ...page.events.map((e) => (e.kind === 'compaction' ? `divider:${e.removedCount}` : e.text!)),
@@ -171,14 +171,14 @@ test('cursor pages older history across the chain with no gaps or duplicates', (
   ]);
 });
 
-test('equal-timestamp events keep chain order via seq, not wall-clock', () => {
+test('equal-timestamp events keep chain order via seq, not wall-clock', async () => {
   // All three share one ts, so only seq disambiguates their order.
   writeSession('eqts', [
     assistantAt('first', 5000),
     assistantAt('second', 5000),
     assistantAt('third', 5000),
   ]);
-  const { events } = loadSessionTranscriptWindow('m', ['eqts'], { limit: 100 });
+  const { events } = await loadSessionTranscriptWindow('m', ['eqts'], { limit: 100 });
   const texts = events.filter((e) => e.kind === 'text');
 
   assert.deepEqual(
@@ -189,7 +189,7 @@ test('equal-timestamp events keep chain order via seq, not wall-clock', () => {
   assert.ok(texts[0].seq! < texts[1].seq! && texts[1].seq! < texts[2].seq!);
 });
 
-test('a single segment replays its dividers in position, whether none, at the head, or mid-file', () => {
+test('a single segment replays its dividers in position, whether none, at the head, or mid-file', async () => {
   // An in-place-compacted file whose earlier files were pruned begins with a
   // compaction_state: position cannot flag it, so the divider is read from the
   // record itself, once. The daemon's auto-compaction appends the marker to the
@@ -205,7 +205,7 @@ test('a single segment replays its dividers in position, whether none, at the he
   ] as const;
   for (const [id, lines, expected] of cases) {
     writeSession(id, [...lines]);
-    const { events, olderCursor } = loadSessionTranscriptWindow('m', [id], { limit: 100 });
+    const { events, olderCursor } = await loadSessionTranscriptWindow('m', [id], { limit: 100 });
     assert.deepEqual(
       events.map((e) => (e.kind === 'compaction' ? `divider:${e.removedCount}` : e.text)),
       expected,
@@ -214,7 +214,7 @@ test('a single segment replays its dividers in position, whether none, at the he
   }
 });
 
-test('export resolves the chain from the persisted app-session row and replays it in one window', () => {
+test('export resolves the chain from the persisted app-session row and replays it in one window', async () => {
   // Regression: "Copy as Markdown" originally parsed only the CURRENT backing
   // file, silently dropping every pre-compaction message. The export path
   // (resolveSessionChain + one big window) must contain all segments.
@@ -236,7 +236,7 @@ test('export resolves the chain from the persisted app-session row and replays i
 
   const chain = resolveSessionChain('app9', 'cur9');
   assert.deepEqual(chain, ['app9', 'mid9', 'cur9']);
-  const { events } = loadSessionTranscriptWindow('app9', chain, { limit: 100_000 });
+  const { events } = await loadSessionTranscriptWindow('app9', chain, { limit: 100_000 });
   assert.deepEqual(
     events.filter((e) => e.kind === 'text').map((e) => e.text),
     ['orig', 'mid', 'latest'],
@@ -249,25 +249,25 @@ function sessionFilePath(id: string): string {
   return join(home, '.factory', 'sessions', '2026', '06', `${id}.jsonl`);
 }
 
-test('a live-appended session file invalidates the memoized reader', () => {
+test('a live-appended session file invalidates the memoized reader', async () => {
   writeSession('live1', [assistant('l1')]);
-  const first = loadSessionTranscriptWindow('app', ['live1'], { limit: 10 });
+  const first = await loadSessionTranscriptWindow('app', ['live1'], { limit: 10 });
   assert.deepEqual(
     first.events.map((e) => e.text),
     ['l1'],
   );
   appendFileSync(sessionFilePath('live1'), `${assistant('l2')}\n`);
-  const second = loadSessionTranscriptWindow('app', ['live1'], { limit: 10 });
+  const second = await loadSessionTranscriptWindow('app', ['live1'], { limit: 10 });
   assert.deepEqual(
     second.events.map((e) => e.text),
     ['l1', 'l2'],
   );
 });
 
-test('pre-v2 cursors end paging cleanly instead of serving a wrong page', () => {
+test('pre-v2 cursors end paging cleanly instead of serving a wrong page', async () => {
   seedChain();
   // The pre-v2 "<ci>:end" form still maps to a segment tail.
-  const legacy = loadSessionTranscriptWindow('app', ['s0', 's1', 's2'], {
+  const legacy = await loadSessionTranscriptWindow('app', ['s0', 's1', 's2'], {
     cursor: '1:end',
     limit: 3,
   });
@@ -276,7 +276,7 @@ test('pre-v2 cursors end paging cleanly instead of serving a wrong page', () => 
     ['a1-1', 'a1-2'],
   );
   // Item-index cursors no longer address anything: empty page, no cursor.
-  const stale = loadSessionTranscriptWindow('app', ['s0', 's1', 's2'], {
+  const stale = await loadSessionTranscriptWindow('app', ['s0', 's1', 's2'], {
     cursor: '2:1',
     limit: 10,
   });

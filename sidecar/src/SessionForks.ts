@@ -263,10 +263,10 @@ export class SessionForks {
     // the stored read below.
     if (source.provider !== 'droid')
       await this.d.readTranscript(source.appSessionId).catch(() => undefined);
-    let events = storedEvents(source);
+    let events = await storedEvents(source);
     if (events.length === 0) {
       await this.d.indexSessionFiles(null);
-      events = storedEvents(source);
+      events = await storedEvents(source);
     }
     if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
     return conversationMarkdown(events);
@@ -328,9 +328,10 @@ function pickedModelSettings(command: SessionForkCommand): SessionSummaryPatch {
   };
 }
 
-function storedEvents(source: SessionSummary): TranscriptEvent[] {
+async function storedEvents(source: SessionSummary): Promise<TranscriptEvent[]> {
   const providerSessionId = source.providerSessionId ?? source.appSessionId;
   const chain = resolveSessionChain(source.appSessionId, providerSessionId);
-  return loadSessionTranscriptWindow(source.appSessionId, chain, { limit: BRANCH_CONTEXT_EVENTS })
-    .events;
+  return (
+    await loadSessionTranscriptWindow(source.appSessionId, chain, { limit: BRANCH_CONTEXT_EVENTS })
+  ).events;
 }

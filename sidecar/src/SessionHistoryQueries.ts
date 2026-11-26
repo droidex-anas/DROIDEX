@@ -58,13 +58,17 @@ export class SessionHistoryQueries {
   // in memory). Compaction rekeys the backing session, so the full chain must
   // be replayed like the chat scrollback — otherwise pre-compaction messages
   // silently vanish from the export.
-  exportMarkdown(cmd: { appSessionId: string; requestId: string; title?: string }): void {
+  async exportMarkdown(cmd: {
+    appSessionId: string;
+    requestId: string;
+    title?: string;
+  }): Promise<void> {
     try {
       const summary = this.d.resolveSummary(cmd.appSessionId);
       const providerSessionId = summary?.providerSessionId ?? cmd.appSessionId;
       const appSessionId = summary?.appSessionId ?? cmd.appSessionId;
       const chain = resolveSessionChain(appSessionId, providerSessionId);
-      const { events, olderCursor } = loadSessionTranscriptWindow(appSessionId, chain, {
+      const { events, olderCursor } = await loadSessionTranscriptWindow(appSessionId, chain, {
         limit: 100_000,
       });
       if (events.length === 0) throw new Error('No stored transcript for this chat.');
