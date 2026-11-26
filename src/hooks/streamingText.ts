@@ -14,6 +14,12 @@ const MAX_CODE_POINTS_PER_FRAME = 64;
 const MAX_FRAME_MS = 50;
 // A stream that pauses this long ramps up again from rest when it resumes.
 const RESTART_AFTER_MS = 250;
+// The pending markdown block re-parses on every published reveal, so publishes
+// are capped at 30 fps in steady state — indistinguishable for typewriter text
+// — halving the streaming parse cost. A large backlog publishes every frame:
+// catch-up text moves too fast for the cap to show, and the drain rate matters.
+const PUBLISH_INTERVAL_MS = 32;
+const CATCH_UP_BACKLOG_CHARS = 256;
 
 export function easedRevealRate(rate: number, backlog: number, elapsedMs: number): number {
   const target = Math.max(MIN_CODE_POINTS_PER_MS, backlog / TARGET_LAG_MS);
@@ -40,7 +46,7 @@ export function useSmoothStreamingText(source: string, live: boolean): string {
   const shownRef = useRef(source);
   const sourceRef = useRef(source);
   const frameRef = useRef(0);
-  const pace = useRef({ rate: 0, budget: 0, lastFrameAt: 0 });
+  const pace = useRef({ rate: 0, budget: 0, lastFrameAt: 0, lastPublishAt: 0 });
 
   useEffect(() => {
     sourceRef.current = source;
@@ -80,12 +86,21 @@ export function useSmoothStreamingText(source: string, live: boolean): string {
       state.lastFrameAt = now;
       state.rate = easedRevealRate(state.rate, latest.length - current.length, elapsed);
       state.budget += state.rate * elapsed;
+      // Hold the publish until the cadence interval unless the backlog says
+      // this is a catch-up burst; the budget keeps accruing either way, so the
+      // reveal rate itself is unchanged — only how often React sees it.
+      const catchingUp = latest.length - current.length >= CATCH_UP_BACKLOG_CHARS;
+      if (!catchingUp && now - state.lastPublishAt < PUBLISH_INTERVAL_MS) {
+        frameRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const take = Math.floor(state.budget);
       if (take > 0) {
         state.budget -= take;
         const next = nextRevealedText(latest, current, take);
         shownRef.current = next;
         setShown(next);
+        state.lastPublishAt = now;
         if (next.length >= latest.length) return;
       }
       frameRef.current = requestAnimationFrame(tick);
