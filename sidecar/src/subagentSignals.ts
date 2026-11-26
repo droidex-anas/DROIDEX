@@ -196,8 +196,14 @@ export function taskResultChildUpdate(
     done: terminal,
     isSpawnResult: false,
     ...(terminal
-      ? // ChildStatus has no cancelled state; every terminal non-completion is a failure.
-        { status: status === 'completed' ? ('completed' as const) : ('failed' as const) }
+      ? {
+          status:
+            status === 'completed'
+              ? ('completed' as const)
+              : status === 'failed'
+                ? ('failed' as const)
+                : ('paused' as const),
+        }
       : {}),
     ...(activity ? { activity } : {}),
   };
@@ -214,8 +220,14 @@ export function backgroundTaskCompletion(
   if (!firstLine || !BACKGROUND_TASK_TERMINAL_RE.test(firstLine)) return undefined;
   const providerSessionId = BACKGROUND_TASK_ID_RE.exec(content)?.[1];
   if (!providerSessionId) return undefined;
+  const line = firstLine.toLowerCase();
   return {
     providerSessionId,
-    status: firstLine.toLowerCase().includes('completed') ? 'completed' : 'failed',
+    // An intentional stop is not a failure; only a real failure wears red.
+    status: line.includes('completed')
+      ? 'completed'
+      : line.includes('failed')
+        ? 'failed'
+        : 'paused',
   };
 }

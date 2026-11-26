@@ -319,6 +319,9 @@ export class SessionTimeline {
         ...(window.olderCursor ? { olderCursor: window.olderCursor } : {}),
       });
       if (fingerprintedWindow) {
+        // The map only deduplicates emissions, so dropping entries is always
+        // safe; bound it rather than growing for the sidecar's lifetime.
+        if (this.childWindowFingerprints.size >= 256) this.childWindowFingerprints.clear();
         this.childWindowFingerprints.set(fingerprintedWindow.key, fingerprintedWindow.fingerprint);
       }
     } catch (error) {

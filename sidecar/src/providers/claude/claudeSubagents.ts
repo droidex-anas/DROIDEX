@@ -88,10 +88,13 @@ export class ClaudeSubagents {
   private readonly workflows = new Map<string, WorkflowRun>();
   private readonly workflowSpawns = new Map<string, boolean>();
   private readonly spawnCalls = new Map<string, { label?: string; prompt?: string }>();
-  private turnSpawnToolUseId?: string;
+  // Spawn calls whose task_started has not arrived yet, in call order. The
+  // CLI may omit the started message's tool_use_id; the oldest unexplained
+  // spawn is the only safe inference.
+  private readonly unexplainedSpawnToolUseIds: string[] = [];
 
   beginTurn(): void {
-    this.turnSpawnToolUseId = undefined;
+    this.unexplainedSpawnToolUseIds.length = 0;
     // A spawn's result arrives inside the turn that made it, so anything still
     // here belonged to a dead turn.
     this.spawnCalls.clear();
@@ -117,7 +120,7 @@ export class ClaudeSubagents {
   noteToolUse(name: string, id: string, parentToolUseId: string | null, input: unknown): void {
     if (name === 'Workflow' && !this.workflowSpawns.has(id)) this.workflowSpawns.set(id, false);
     if (!parentToolUseId && isSpawnToolName(name)) {
-      this.turnSpawnToolUseId = id;
+      this.unexplainedSpawnToolUseIds.push(id);
       const args =
         typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
       this.spawnCalls.set(id, {
@@ -137,6 +140,8 @@ export class ClaudeSubagents {
     const call = this.spawnCalls.get(toolUseId);
     if (!call) return [];
     this.spawnCalls.delete(toolUseId);
+    const unexplained = this.unexplainedSpawnToolUseIds.indexOf(toolUseId);
+    if (unexplained >= 0) this.unexplainedSpawnToolUseIds.splice(unexplained, 1);
     if (!failed) return [];
     const owners = this.spawnOwners.get(toolUseId);
     if (owners?.size === 1) {
@@ -232,14 +237,16 @@ export class ClaudeSubagents {
       if (message.workflow_name)
         this.workflows.set(message.task_id, {
           name: message.workflow_name,
-          toolUseId: message.tool_use_id ?? this.turnSpawnToolUseId,
+          toolUseId: this.claimSpawnToolUseId(message.tool_use_id),
           agentIds: new Set(),
         });
       return [];
     }
     if (message.task_type !== 'local_agent' && !message.subagent_type) return [];
     const workflow = this.workflowFor(message.tool_use_id);
-    const toolUseId = message.tool_use_id ?? workflow?.toolUseId ?? this.turnSpawnToolUseId;
+    const toolUseId = message.tool_use_id
+      ? this.claimSpawnToolUseId(message.tool_use_id)
+      : (workflow?.toolUseId ?? this.claimSpawnToolUseId());
     return this.update(message.task_id, {
       toolUseId,
       label: message.description,
@@ -321,6 +328,17 @@ export class ClaudeSubagents {
         events.push(...this.update(agentId, { status }));
     }
     return events;
+  }
+
+  // An explicit id is certain; without one, only the oldest unexplained spawn
+  // can be inferred, and an empty queue means no inference at all.
+  private claimSpawnToolUseId(explicit?: string): string | undefined {
+    if (explicit) {
+      const index = this.unexplainedSpawnToolUseIds.indexOf(explicit);
+      if (index >= 0) this.unexplainedSpawnToolUseIds.splice(index, 1);
+      return explicit;
+    }
+    return this.unexplainedSpawnToolUseIds.shift();
   }
 
   private workflowFor(toolUseId: string | undefined): WorkflowRun | undefined {

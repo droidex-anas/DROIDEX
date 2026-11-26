@@ -128,9 +128,15 @@ export function normalizeStreamEvent(
     // versions do not include `lastCallTokenUsage`; in that shape, publish cumulative totals
     // only and let getContextStats() remain authoritative for the meter.
     const context = e.lastCallTokenUsage ?? (raw.type === 'token_usage_update' ? e : undefined);
-    // A cumulative frame with no tokenUsage payload carries no information:
+    // A cumulative frame with no usable usage fields carries no information:
     // publishing it would reset the session's accumulated totals to zero.
-    if (raw.type === 'session_token_usage_changed' && e.tokenUsage === undefined) return null;
+    const hasUsageField = [
+      cumulative.inputTokens,
+      cumulative.outputTokens,
+      cumulative.cacheReadTokens,
+      cumulative.cacheCreationTokens,
+    ].some((value) => typeof value === 'number' && Number.isFinite(value));
+    if (!hasUsageField) return null;
     const tokensIn =
       (Number(cumulative.inputTokens ?? 0) || 0) +
       (Number(cumulative.cacheReadTokens ?? 0) || 0) +

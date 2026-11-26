@@ -84,6 +84,9 @@ test('only a terminal background-task notification completes its child', () => {
     background('Background task failed.\ntask_id: child-background-2\nerror: limit'),
     [{ childSession: { providerSessionId: 'child-background-2', done: true, status: 'failed' } }],
   );
+  assert.deepEqual(background('Background task stopped.\ntask_id: child-background-3'), [
+    { childSession: { providerSessionId: 'child-background-3', done: true, status: 'paused' } },
+  ]);
   assert.deepEqual(background('Background task launched.\ntask_id: child-1'), []);
 });
 

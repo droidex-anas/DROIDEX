@@ -2125,8 +2125,12 @@ test('child usage accumulates cumulative provider series across reopen and repla
   assert.equal(tokensUsed(), 100);
   assert.equal(h.owner.recordUsage(h.parentId, 'provider-new', usage(10, 5)), true);
   assert.equal(tokensUsed(), 100);
-  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(500, 500)), true);
-  assert.equal(tokensUsed(), 100);
+  // A late final reading for the retired series still counts what the child
+  // spent; a repeat of an already-counted reading adds nothing.
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(46, 40)), true);
+  assert.equal(tokensUsed(), 101);
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(46, 40)), true);
+  assert.equal(tokensUsed(), 101);
 });
 
 test('a retired child reopens with its transcript and a fresh runtime', async () => {
