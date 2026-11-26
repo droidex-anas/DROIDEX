@@ -105,6 +105,22 @@ test('compressible medium packets cross the tunnel compressed without changing o
   assert.equal(stats().zippedChunks, 1);
 });
 
+test('compressible non-ASCII packets compress when smaller in wire bytes', async () => {
+  const { sender, received, delivered, stats } = tunnelPair(1);
+  const alphabet = Array.from({ length: 300 }, (_, i) => String.fromCodePoint(0x4e00 + i));
+  let seed = 42;
+  const text = Array.from({ length: 1500 }, () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return alphabet[seed % 300];
+  }).join('');
+  sender.send({ n: 1, text });
+
+  await delivered;
+
+  assert.deepEqual(received, [{ n: 1, text }]);
+  assert.equal(stats().zippedChunks, 1);
+});
+
 test('tunnel rejects a frame that skips the sequence', async () => {
   const tunnel = new Tunnel({
     write: () => Promise.resolve(),
