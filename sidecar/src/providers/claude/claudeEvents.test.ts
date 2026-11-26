@@ -525,6 +525,31 @@ test('the result reports only the denials that never reached the transcript', ()
   );
 });
 
+test('parallel spawns claim task_started in spawn order when the id is omitted', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const children = childrenOf(mapper);
+  const spawn = (id: string) =>
+    assistant([
+      { type: 'tool_use', id, name: 'Task', input: { description: id, prompt: `work ${id}` } },
+    ]);
+  const started = (taskId: string, toolUseId?: string) =>
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: taskId,
+      task_type: 'local_agent',
+      description: taskId,
+      ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+    });
+  children(spawn('toolu-a'));
+  children(spawn('toolu-b'));
+
+  assert.equal(children(started('task-a'))[0]?.toolUseId, 'toolu-a');
+  assert.equal(children(started('task-b'))[0]?.toolUseId, 'toolu-b');
+  // A spawn matched by an explicit id leaves the inference queue.
+  assert.equal(children(started('task-c', 'toolu-a'))[0]?.toolUseId, 'toolu-a');
+});
+
 test('an errored spawn without task_started settles a providerless failed child', () => {
   const mapper = new ClaudeEventMapper('app-1');
   const children = childrenOf(mapper);
