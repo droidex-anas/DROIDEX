@@ -372,6 +372,8 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
 
     private _wake(): void {
       if (this._raf || !this.isConnected || document.hidden || !this._onscreen) return;
+      clearTimeout(this._paceTimer);
+      this._paceTimer = 0;
       this._lastTime = performance.now();
       this._raf = requestAnimationFrame(this._frame);
     }
@@ -410,6 +412,7 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
       if (moving || (waiting && !this._motion.matches)) {
         this._raf = requestAnimationFrame(this._frame);
       } else if (shimmering) {
+        clearTimeout(this._paceTimer);
         this._paceTimer = window.setTimeout(() => {
           this._paceTimer = 0;
           if (this.isConnected && !document.hidden && this._onscreen && !this._raf)

@@ -69,21 +69,31 @@ function describeTool(ev: TranscriptEvent): string {
   return `${VERB[cat]} ${detail.split('/').pop() ?? ''}`.trim();
 }
 
-// The digest only ever returns a 90-character tail snippet, so scanning more
-// than the last few KB of a streamed message cannot change the result in any
-// realistic text — and scanning the whole growing message per store commit is
-// quadratic cost for nothing. The one divergence is a single unpunctuated
-// sentence longer than the window, where the clip starts inside it instead of
-// at the message start; that shape is pathological in model prose.
+// The digest only ever returns a 90-character tail snippet, so scanning the
+// whole growing message per store commit is quadratic cost for nothing. But
+// bounding before stripping fences inverts the output for a normal model shape
+// — a question followed by a long generated code block — because the fence
+// eats the window and its contents read as prose. The raw window is therefore
+// wide enough to span realistic trailing fences; fences are stripped first and
+// the sentence scan is then bounded on the remaining prose. A single trailing
+// fence larger than the raw window still hides what came before it; that shape
+// is rare enough for a 90-character preview.
+const LAST_SENTENCE_RAW_WINDOW_CHARS = 49152;
 const LAST_SENTENCE_SCAN_CHARS = 8192;
 
 // The last sentence of a message, preferring its last question, with markdown
 // noise stripped so it reads well on one sidebar line.
 function lastSentence(text: string): string {
+  const rawWindow =
+    text.length > LAST_SENTENCE_RAW_WINDOW_CHARS
+      ? text.slice(-LAST_SENTENCE_RAW_WINDOW_CHARS)
+      : text;
+  const unfenced = rawWindow.replace(/```[\s\S]*?```/g, ' ');
   const scanned =
-    text.length > LAST_SENTENCE_SCAN_CHARS ? text.slice(-LAST_SENTENCE_SCAN_CHARS) : text;
+    unfenced.length > LAST_SENTENCE_SCAN_CHARS
+      ? unfenced.slice(-LAST_SENTENCE_SCAN_CHARS)
+      : unfenced;
   const plain = scanned
-    .replace(/```[\s\S]*?```/g, ' ')
     .replace(/[`*_>#]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();

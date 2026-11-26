@@ -292,7 +292,10 @@ function utf8ByteLength(value: string): number {
     let sampledBytes = 0;
     const stride = value.length / BYTE_SAMPLE_COUNT;
     for (let i = 0; i < BYTE_SAMPLE_COUNT; i++) {
-      const code = value.charCodeAt(Math.floor(i * stride));
+      // The +i offset walks the samples across every residue class of any
+      // small period; uniform spacing can align with periodic content and miss
+      // its multibyte characters entirely.
+      const code = value.charCodeAt(Math.min(Math.floor(i * stride) + i, value.length - 1));
       sampled += 1;
       sampledBytes +=
         code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code >= 0xd800 && code <= 0xdbff ? 2 : 3;
