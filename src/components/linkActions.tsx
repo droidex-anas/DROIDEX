@@ -36,7 +36,7 @@ export const LinkActionsContext = createContext<LinkActions | null>(null);
 // A link opens in the side-panel browser when it names something the app has
 // a real view of: GitHub pull requests, issues, and commits. Everything else
 // keeps the system browser.
-export function linkOpensInApp(href: string): boolean {
+function linkOpensInApp(href: string): boolean {
   if (!isDesktop()) return false;
   const description = describeLink(href);
   return description?.isGitHub === true && description.label != null;

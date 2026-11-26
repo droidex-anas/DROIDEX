@@ -37,7 +37,7 @@ function CodeContext({ line, code }: { line: number; code: string }) {
 // The inline note editor, anchored under the diff line it annotates. Escape
 // backs out without saving, Cmd/Ctrl+Enter saves — the same contract as the
 // comment composer.
-export function PrAnnotationEditor({
+function PrAnnotationEditor({
   initialBody,
   line,
   code,
@@ -119,7 +119,7 @@ export function PrAnnotationEditor({
 
 // A saved annotation. The note belongs to the reader, not the pull request,
 // so there is no byline: the annotated line, then the prose in the UI font.
-export function PrAnnotationCard({
+function PrAnnotationCard({
   annotation,
   onEdit,
   onRemove,

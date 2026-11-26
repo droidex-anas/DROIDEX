@@ -205,8 +205,16 @@ import { join } from 'node:path';
 // browser pane hands the keyboard back after an agent's click. The preview
 // window moved off the entry on the same branch. Main at a026a2b1 measures
 // 1_483_901 and the branch 1_486_133, leaving ~3.9KB.
+//
+// Raised from 1_490_000 to 1_504_000 for pull request links opening in the
+// utility pane. The transcript's anchors intercept clicks at first frame, so
+// the link-actions provider, its menu, the pull-request link routing and the
+// pane's utility-tab validation all sit on the entry (~7.6KB measured against
+// main at e1fe545d4, 1_487_035); the pull request workspace itself stays lazy.
+// Main had also drifted to ~3KB of headroom under the old line, so the raise
+// covers both. The branch measures ~1_495_900, leaving ~8KB.
 const BUDGETS = {
-  initialRendererJsBytes: 1_490_000,
+  initialRendererJsBytes: 1_504_000,
   initialCssBytes: 110_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

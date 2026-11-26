@@ -91,7 +91,7 @@ async function expectSelected(tablist: Locator, name: string): Promise<void> {
   const tab = tablist.getByRole('tab', { name, exact: true });
   await expect(tab).toBeFocused();
   await expect(tab).toHaveAttribute('aria-selected', 'true');
-  await expect(tablist.locator('[role="tab"][tabindex="0"]')).toHaveText(name);
+  await expect(tablist.locator('[role="tab"][tabindex="0"]')).toHaveAccessibleName(name);
 }
 
 test('the inbox filters are one tab stop that the arrows move through and wrap', async ({

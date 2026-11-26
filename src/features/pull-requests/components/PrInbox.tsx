@@ -383,7 +383,7 @@ export function PrInbox({
             >
               {item.label}
               {(tabCounts.get(item.id) ?? 0) > 0 ? (
-                <span className="ml-1 text-caption tabular-nums text-muted">
+                <span aria-hidden="true" className="ml-1 text-caption tabular-nums text-muted">
                   {tabCounts.get(item.id)}
                 </span>
               ) : null}
