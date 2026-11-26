@@ -35,6 +35,7 @@ export function AgentsWorkspace({
       connection: current.connection,
       session,
       transcript: session ? current.transcripts[session.appSessionId] : undefined,
+      transcriptMutation: session ? current.transcriptMutations[session.appSessionId] : undefined,
       childSessions: session ? current.childSessions[session.appSessionId] : undefined,
       childHistory: session ? current.childHistory[session.appSessionId] : undefined,
       models: current.models,
@@ -149,6 +150,7 @@ export function AgentsWorkspace({
         models={state.models}
         snapshots={snapshots}
         transcript={transcript}
+        transcriptMutation={state.transcriptMutation}
         history={history}
         onRetryHistory={retryHistory}
         onLoadEarlier={loadEarlier}
