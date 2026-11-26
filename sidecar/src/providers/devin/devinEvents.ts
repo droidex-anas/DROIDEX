@@ -95,6 +95,10 @@ export class DevinEvents {
         }
         return events;
       }
+      case 'session_info_update':
+        return typeof update.title === 'string' && update.title.trim()
+          ? [{ sessionTitle: update.title }]
+          : [];
       case 'usage_update':
         // Devin's counters describe one inference; cache reads/writes are input subsets.
         this.tokensIn += tokenCount(update._meta?.['cognition.ai/inputTokens']);

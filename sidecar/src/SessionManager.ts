@@ -415,7 +415,11 @@ export class SessionManager {
             (signal, publish) => this.claudeProvider.probe(signal, publish),
           ],
           [this.codexProvider.kind, (signal, publish) => this.codexProvider.probe(signal, publish)],
-          [this.devinProvider.kind, (signal, publish) => this.devinProvider.probe(signal, publish)],
+          [
+            this.devinProvider.kind,
+            (signal, publish, publishModels) =>
+              this.devinProvider.probe(signal, publish, publishModels),
+          ],
         ]),
       () => {
         void this.emitProviderStatus();

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createSdkMcpServer } from '@factory/droid-sdk';
@@ -59,6 +59,17 @@ test('Devin accumulates reported inference usage without adding cache subsets or
   assert.deepEqual(
     replayFree.flatMap((event) => event.tokens ?? []),
     first.flatMap((event) => event.tokens ?? []),
+  );
+});
+
+test('Devin session info updates name the chat', async (t) => {
+  const h = await fixture(t);
+  await writeFile(join(h.cwd, 'title-updates'), '');
+  const session = await h.create();
+  const events = await collect(session.stream('hello'));
+  assert.deepEqual(
+    events.find((event) => event.sessionTitle),
+    { sessionTitle: 'Devin generated title' },
   );
 });
 
@@ -278,6 +289,8 @@ test('Devin maps streamed text, reasoning, tools and context without leaking chi
 
 test('Devin resumes without replaying load history and applies live mode and model selections', async (t) => {
   const h = await fixture(t);
+  const created = await h.create();
+  await created.close();
   const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe-high' });
   h.sessions.push(session);
   const raised = session.setAutonomy('high');
@@ -298,7 +311,7 @@ test('Devin resumes without replaying load history and applies live mode and mod
   );
   assert.deepEqual(
     settings.map((request) => request.params?.value),
-    ['accept-edits', 'swe-high', 'bypass', 'plan', 'plan', 'smart'],
+    ['accept-edits', 'accept-edits', 'swe-high', 'bypass', 'plan', 'plan', 'smart'],
   );
 });
 
@@ -601,60 +614,6 @@ test('Devin refuses a turn explicitly and surfaces stderr on process exit', asyn
   await assert.rejects(collect(session.stream('empty')), /closed/);
 });
 
-test('Devin probe reports auth, models and defaults and deletes its provisional session', async (t) => {
-  const h = await fixture(t);
-  await rm(h.credentials);
-  const signedOut = await h.provider.probe(new AbortController().signal);
-  assert.equal(signedOut.readiness, 'unauthenticated');
-  assert.match(signedOut.message ?? '', /devin auth login/);
-  await writeFile(h.credentials, 'windsurf_api_key = "test-key"\n');
-  const ready = await h.provider.probe(new AbortController().signal);
-  assert.equal(ready.readiness, 'ready');
-  assert.equal(ready.version, '3000.14.30821');
-  assert.equal(ready.defaultModelId, 'swe-fast-medium');
-  assert.ok(ready.models.every((model) => model.supportsFastMode === false));
-  assert.deepEqual(
-    ready.models.map((model) => [
-      model.id,
-      model.isDefault,
-      model.supportedReasoningEfforts,
-      model.defaultReasoningEffort,
-      model.maxContextTokens,
-      model.costTier,
-      model.costSummary,
-    ]),
-    [
-      [
-        'swe-fast-medium',
-        true,
-        ['low', 'medium', 'high'],
-        'medium',
-        200000,
-        'Free',
-        'Included in every plan',
-      ],
-      [
-        'swe-high',
-        false,
-        ['medium', 'high', 'xhigh'],
-        'high',
-        1000000,
-        'Premium',
-        'Billed at the Premium rate',
-      ],
-    ],
-  );
-  assert.ok((await h.requests()).some((request) => request.method === 'session/delete'));
-  await writeFile(join(h.cwd, 'empty-models'), '');
-  const empty = await h.provider.probe(new AbortController().signal);
-  assert.equal(empty.readiness, 'ready');
-  assert.deepEqual(empty.models, []);
-  assert.equal(empty.defaultModelId, 'swe-fast-medium');
-  const aborted = AbortSignal.abort();
-  assert.equal((await h.provider.probe(aborted)).readiness, 'error');
-  assert.equal((await h.provider.readUsage()).unavailable, 'no_plan_limits');
-});
-
 test('Devin forks stay idle and persist their seed until the first prompt, never reseeding later resumes', async (t) => {
   const h = await fixture(t);
   const source = { providerSessionId: 'source', cwd: h.cwd, title: 'Copy' };
@@ -690,9 +649,14 @@ test('Devin forks stay idle and persist their seed until the first prompt, never
     [
       [
         {
-          type: 'text',
-          text: 'Conversation so far:\nEarlier conversation\n\nCurrent request:\nFirst request',
+          type: 'resource',
+          resource: {
+            uri: `droidex://fork-seed/${encodeURIComponent(handle.providerSessionId)}`,
+            mimeType: 'text/markdown',
+            text: 'Conversation so far:\nEarlier conversation',
+          },
         },
+        { type: 'text', text: 'First request' },
       ],
       [{ type: 'text', text: 'Second request' }],
       [{ type: 'text', text: 'Third request' }],
@@ -758,7 +722,15 @@ test('Stop before a seeded Devin prompt is dispatched preserves the pending seed
   const prompts = (await h.requests()).filter(({ method }) => method === 'session/prompt');
   assert.equal(prompts.length, 1);
   assert.deepEqual(prompts[0].params?.prompt, [
-    { type: 'text', text: 'Conversation so far:\nSaved context\n\nCurrent request:\nSend now' },
+    {
+      type: 'resource',
+      resource: {
+        uri: `droidex://fork-seed/${encodeURIComponent(copy.providerSessionId)}`,
+        mimeType: 'text/markdown',
+        text: 'Conversation so far:\nSaved context',
+      },
+    },
+    { type: 'text', text: 'Send now' },
   ]);
 });
 

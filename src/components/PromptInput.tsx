@@ -742,6 +742,7 @@ export default function PromptInput({
       cmd: '/bug',
       desc: 'Send a private bug report',
       icon: Bug,
+      supersedesHarnessCommand: true,
       run: () => {
         setFeedbackReport({ category: 'bug', description: '' });
       },

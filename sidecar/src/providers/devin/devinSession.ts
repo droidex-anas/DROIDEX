@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import type {
+  AvailableCommand,
   ContentBlock,
   InitializeResponse,
   SessionConfigOption,
@@ -8,7 +9,7 @@ import type {
 } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
 import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
-import type { ProviderMention } from '../catalog.js';
+import type { ProviderMention, SkillInfo } from '../catalog.js';
 import type {
   ProviderModelSettings,
   ProviderChildSession,
@@ -21,6 +22,7 @@ import { MessageQueue } from '../claude/claudeMessages.js';
 import { DevinClient } from './devinClient.js';
 import { DevinEvents } from './devinEvents.js';
 import { startDevinMcp } from './devinMcp.js';
+import { devinCatalogItems } from './devinCatalog.js';
 import { devinPermission } from './devinPermissions.js';
 import { devinChildId, DevinSubagents } from './devinSubagents.js';
 import { DevinTerminals } from './devinTerminals.js';
@@ -59,10 +61,13 @@ export class DevinSession implements ProviderSession {
   private selectedReasoningEffort?: ReasoningEffort;
   private changes: Promise<void> = Promise.resolve();
   configOptions: SessionConfigOption[] = [];
+  private availableCommands: AvailableCommand[] = [];
+  private readonly catalogListeners = new Set<(items: SkillInfo[]) => void>();
 
   constructor(
     executable: string,
     private readonly input: SessionInput,
+    private readonly persistOnCreate = false,
   ) {
     this.selectedAutonomy = input.autonomy ?? 'low';
     this.latestAutonomy = this.selectedAutonomy;
@@ -170,6 +175,10 @@ export class DevinSession implements ProviderSession {
         const created = await this.client.connection.agent.request('session/new', {
           cwd,
           mcpServers,
+          ...(this.persistOnCreate &&
+          this.capabilities?._meta?.['cognition.ai/persistOnCreate'] === true
+            ? { _meta: { 'cognition.ai/persistOnCreate': true } }
+            : {}),
         });
         this.requireOpen();
         this.sessionId = created.sessionId;
@@ -224,13 +233,20 @@ export class DevinSession implements ProviderSession {
           return;
         }
         const content: ContentBlock[] = [
-          {
-            type: 'text',
-            text:
-              this.pendingSeed === undefined
-                ? prompt
-                : `Conversation so far:\n${this.pendingSeed}\n\nCurrent request:\n${prompt}`,
-          },
+          ...(this.pendingSeed === undefined
+            ? []
+            : [
+                {
+                  type: 'resource' as const,
+                  resource: {
+                    uri: `droidex://fork-seed/${encodeURIComponent(this.providerSessionId)}`,
+                    mimeType: 'text/markdown',
+                    text: `Conversation so far:
+${this.pendingSeed}`,
+                  },
+                },
+              ]),
+          { type: 'text', text: prompt },
           ...(mentions ?? []).map((mention) =>
             mention.path
               ? {
@@ -291,6 +307,17 @@ export class DevinSession implements ProviderSession {
 
   restoreChildren(children: readonly ProviderChildSession[]): void {
     if (!this.isClosed) this.subagents?.restore(children);
+  }
+
+  catalogItems(): Promise<SkillInfo[]> {
+    return Promise.resolve(devinCatalogItems(this.availableCommands));
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    this.catalogListeners.add(listener);
+    return () => {
+      this.catalogListeners.delete(listener);
+    };
   }
 
   setAutonomy(autonomy: Autonomy): Promise<void> {
@@ -430,10 +457,18 @@ export class DevinSession implements ProviderSession {
     return changed;
   }
 
+  private publishCatalog(commands: readonly AvailableCommand[]): void {
+    this.availableCommands = [...commands];
+    const items = devinCatalogItems(this.availableCommands);
+    for (const listener of this.catalogListeners) listener(items);
+  }
+
   private update(notification: SessionNotification): void {
     if (this.isClosed || (this.sessionId && notification.sessionId !== this.sessionId)) return;
     if (notification.update.sessionUpdate === 'config_option_update')
       this.configOptions = notification.update.configOptions;
+    if (notification.update.sessionUpdate === 'available_commands_update')
+      this.publishCatalog(notification.update.availableCommands);
     if (!this.mapper) {
       this.subagents?.replay(notification);
       return;

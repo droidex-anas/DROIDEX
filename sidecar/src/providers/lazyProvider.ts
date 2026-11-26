@@ -1,5 +1,5 @@
 import type { ProviderKind } from './providerKind.js';
-import type { ProviderStatus, SkillInfo } from '../protocol.js';
+import type { ModelInfo, ProviderStatus, SkillInfo } from '../protocol.js';
 import type {
   ProbedProvider,
   ProviderForkHandle,
@@ -42,8 +42,9 @@ export class LazyProvider implements ProbedProvider {
   async probe(
     signal: AbortSignal,
     publishItems: (items: SkillInfo[]) => void,
+    publishModels?: (models: ModelInfo[]) => void,
   ): Promise<ProviderStatus> {
-    return (await this.provider()).probe(signal, publishItems);
+    return (await this.provider()).probe(signal, publishItems, publishModels);
   }
 
   async readUsage(signal: AbortSignal): Promise<UsageReading> {

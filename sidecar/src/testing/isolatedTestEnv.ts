@@ -18,6 +18,7 @@ delete process.env.DROIDEX_USER_DATA_DIR;
 delete process.env.DROIDEX_HISTORY_DIR;
 delete process.env.DROIDEX_ALT_HOME;
 delete process.env.DROIDEX_ALT2_HOME;
+delete process.env.WINDSURF_API_KEY;
 process.env.HOME = scratchHome;
 
 process.on('exit', () => {

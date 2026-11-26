@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export async function writeDevinTestCredentials(): Promise<string> {
-  const directory = join(homedir(), '.local', 'share', 'devin');
+  const directory = join(process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'), 'devin');
   const credentials = join(directory, 'credentials.toml');
   await mkdir(directory, { recursive: true });
   await writeFile(credentials, 'windsurf_api_key = "test-key"\n');
@@ -15,6 +15,7 @@ const { appendFileSync, existsSync, readFileSync, watch } = require('node:fs');
 const { createInterface } = require('node:readline');
 const { join } = require('node:path');
 const root = __dirname;
+const persistedFile = join(root, 'persisted-sessions');
 if (process.argv[2] === '--version') { console.log('devin 3000.14.30821 (fake)'); process.exit(0); }
 const variant = (model_uid, tier, context) => ({ model_uid,
   label: model_uid, description: 'Fake ' + model_uid + ' coding model',
@@ -27,8 +28,7 @@ const modelCatalog = { families: [
     variants: [variant('swe-fast-low', 'Free', 200000), variant('swe-fast-medium', 'Free', 200000),
       variant('swe-fast-high', 'Free', 200000)] },
   { family_label: 'SWE', family_uid: 'swe', slug: 'swe', aliases: ['swe-1-6'],
-    variants: [variant('swe-medium', 'Standard', 1000000), variant('swe-high', 'Premium', 1000000),
-      variant('swe-xhigh', 'Premium', 1000000)] } ] };
+    variants: [variant('swe-high', 'Premium', 1000000), variant('swe-xhigh', 'Premium', 1000000)] } ] };
 if (process.argv[2] === 'models') {
   console.log(JSON.stringify(modelCatalog));
   process.exit(0);
@@ -64,6 +64,16 @@ const currentConfigOptions = () => [
   { id: 'thought_level', name: 'Thought level', type: 'select', currentValue: currentEffort,
     options: MODELS[currentModel].efforts.map((value) => ({ value,
       name: value === 'xhigh' ? 'Extra high' : value.charAt(0).toUpperCase() + value.slice(1) })) },
+];
+const availableCommands = [
+  { name: 'status', description: 'Check authentication status',
+    _meta: { 'cognition.ai/category': 'Account' } },
+  { name: 'fast', description: 'Run with the fastest model', input: { hint: '[prompt]' },
+    _meta: { 'cognition.ai/category': 'Session' } },
+  { name: 'rename', description: 'Rename this session', input: { hint: '[new title]' },
+    _meta: { 'cognition.ai/category': 'Session' } },
+  { name: 'review-code', description: 'Review the current changes',
+    _meta: { 'cognition.ai/category': 'Skills' } },
 ];
 let authenticated = false, pending, pendingConfig, permission, pendingClose, permissionEndsTurn = true, servers = [];
 let terminalSequence = 0, terminalDone = Promise.resolve(), terminalFinished;
@@ -103,11 +113,12 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (params.methodId === 'devin-browser' && params._meta?.api_key === 'test-key') {
       authenticated = true;
       result(id, {});
-    } else failure(id, -32602, 'Invalid params');
+    } else failure(id, -32602, 'Authentication failed: invalid api key');
   } else if (method === 'session/fork') {
     if (!authenticated) failure(id, -32000, 'ACP host has not authenticated.');
     else {
       sessionId = 'devin-native-copy';
+      appendFileSync(persistedFile, sessionId + '\n');
       result(id, { sessionId });
     }
   } else if (method === 'session/new' || method === 'session/load') {
@@ -115,9 +126,19 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       failure(id, -32000, 'ACP host has not authenticated.');
       return;
     }
-    if (method === 'session/load') sessionId = params.sessionId;
+    if (method === 'session/new' && params._meta?.['cognition.ai/persistOnCreate'] === true)
+      appendFileSync(persistedFile, sessionId + '\n');
+    if (method === 'session/load') {
+      const persisted = existsSync(persistedFile) ? readFileSync(persistedFile, 'utf8').split('\n') : [];
+      if (!persisted.includes(params.sessionId)) {
+        failure(id, -32000, 'Session not found');
+        return;
+      }
+      sessionId = params.sessionId;
+    }
     servers = params.mcpServers;
     update({ sessionUpdate: 'config_option_update', configOptions: currentConfigOptions() });
+    update({ sessionUpdate: 'available_commands_update', availableCommands });
     if (method === 'session/load') {
       update({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'REPLAY' } });
       if (existsSync(join(root, 'usage.json')))
@@ -157,7 +178,9 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
     if (pending !== undefined) { result(pending, { stopReason: 'cancelled' }); pending = undefined; }
   }
   else if (method === 'session/prompt') {
-    const text = params.prompt[0].text;
+    const text = params.prompt.find((block) => block.type === 'text')?.text ?? '';
+    if (existsSync(join(root, 'title-updates')))
+      update({ sessionUpdate: 'session_info_update', title: 'Devin generated title' });
     if (text === 'usage') {
       for (const event of JSON.parse(readFileSync(join(root, 'usage.json'), 'utf8'))) update(event);
       result(id, { stopReason: 'end_turn' }); return;

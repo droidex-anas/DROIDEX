@@ -83,3 +83,34 @@ test('shutdown drops the round a refresh queued', async () => {
   await Promise.all([first, queued]);
   assert.equal(probed, 1);
 });
+
+test('model enrichment published after readiness replaces the announced catalog', async () => {
+  let publishModels: ((models: ProviderStatus['models']) => void) | undefined;
+  const announced: ProviderKind[] = [];
+  const probes = new ProviderProbes(
+    new Map<ProviderKind, ProviderProbe>([
+      [
+        'devin',
+        (_signal, _publishItems, publish) => {
+          publishModels = publish;
+          return Promise.resolve({ provider: 'devin', readiness: 'ready', models: [] });
+        },
+      ],
+    ]),
+    (provider) => announced.push(provider),
+  );
+
+  await probes.refresh();
+  const models = [
+    {
+      id: 'swe-2-1-medium',
+      displayName: 'SWE-2.1',
+      isCustom: false,
+      supportsFastMode: false,
+      isDefault: true,
+    },
+  ];
+  publishModels?.(models);
+  assert.deepEqual(probes.status('devin')?.models, models);
+  assert.deepEqual(announced, ['devin', 'devin']);
+});

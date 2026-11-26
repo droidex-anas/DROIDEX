@@ -5,14 +5,20 @@ import { join } from 'node:path';
 function credentialsPath(): string {
   if (process.platform === 'win32')
     return join(
-      process.env.LOCALAPPDATA ?? join(homedir(), 'AppData', 'Local'),
+      process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming'),
       'devin',
       'credentials.toml',
     );
-  return join(homedir(), '.local', 'share', 'devin', 'credentials.toml');
+  return join(
+    process.env.XDG_DATA_HOME ?? join(homedir(), '.local', 'share'),
+    'devin',
+    'credentials.toml',
+  );
 }
 
 export async function readDevinApiKey(): Promise<string | undefined> {
+  const environmentKey = process.env.WINDSURF_API_KEY?.trim();
+  if (environmentKey) return environmentKey;
   let text: string;
   try {
     text = await readFile(credentialsPath(), 'utf8');

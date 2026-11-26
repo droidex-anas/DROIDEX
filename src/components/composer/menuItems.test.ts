@@ -136,7 +136,7 @@ test('a fully typed name narrows the menu to it, and a space stages a named skil
   assert.equal(chipFor('/roa'), null);
 });
 
-test("a harness's commands follow the app's own, and skills read by scope", () => {
+test("a harness's commands read apart from the app's own, and skills read by scope", () => {
   const catalog = [
     row('security-review', { kind: 'command', provider: 'claude', scope: 'system' }),
     row('deploy', { scope: 'repo' }),
@@ -150,10 +150,11 @@ test("a harness's commands follow the app's own, and skills read by scope", () =
     }),
   ];
   assert.deepEqual(painted(menuFor('/', catalog).entries), [
-    'Commands:',
+    'DROIDEX Commands:',
     '/compact',
     '/model',
     '/review',
+    'Claude Code Commands:',
     'security-review',
     'Skills:',
     'deploy',
