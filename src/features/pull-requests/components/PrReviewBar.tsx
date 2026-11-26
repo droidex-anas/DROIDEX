@@ -15,11 +15,10 @@ export function PrReviewBar({
 }) {
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-4">
-      <div className="pr-note-enter pointer-events-auto flex items-center gap-2 rounded-xl bg-raised px-3 py-2 shadow-lg">
-        <span className="text-body-strong text-primary tabular-nums">
+      <div className="pr-note-enter pointer-events-auto flex items-center gap-2 rounded-xl bg-raised px-2 py-1.5 shadow-lg">
+        <span className="px-1 text-body-strong text-primary tabular-nums">
           {count} {count === 1 ? 'note' : 'notes'}
         </span>
-        <span className="text-caption text-muted">on this diff</span>
         <Button variant="ghost" size="sm" onClick={onClear} title="Discard every note">
           Clear
         </Button>

@@ -1,15 +1,22 @@
-import { memo, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react';
 import { Plus } from 'lucide-react';
 import {
   diffLineAnchorKey,
   parseUnifiedDiff,
-  type ParsedDiff,
-  splitCellAnchor,
   toSplitRows,
-  unifiedLineAnchors,
   type DiffLine,
   type DiffLineSide,
+  type ParsedDiff,
 } from '../../lib/unifiedDiff';
+import { buildDiffChunks, type DiffRenderRow } from '../../lib/diffRows';
 import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
 
 // A line the reader can attach a note to. `text` is the line without its
@@ -17,7 +24,6 @@ import type { DiffViewMode } from '../../hooks/persistedUiPreferences';
 export interface DiffLineTarget {
   side: DiffLineSide;
   line: number;
-  type: DiffLine['type'];
   text: string;
 }
 
@@ -49,7 +55,6 @@ const MAX_RENDERED_LINES = 3000;
 // commit (thousands of rows at 5-9 DOM nodes each would drop frames for
 // hundreds of ms). The intrinsic-size estimate only seeds the scrollbar; once
 // a chunk has rendered, `auto` remembers its real height (wrap included).
-const CHUNK_ROWS = 200;
 const INITIAL_CHUNKS = 3;
 const CHUNKS_PER_FRAME = 2;
 // The `code` type style: 12px font at a 1.5 line-height by default.
@@ -74,13 +79,9 @@ function rowClass(type: DiffLine['type']): string {
 function unifiedAnnotateTarget(line: DiffLine): DiffLineTarget | null {
   if (line.type === 'meta') return null;
   if (line.type === 'del') {
-    return line.oldLine == null
-      ? null
-      : { side: 'old', line: line.oldLine, type: line.type, text: line.text };
+    return line.oldLine == null ? null : { side: 'old', line: line.oldLine, text: line.text };
   }
-  return line.newLine == null
-    ? null
-    : { side: 'new', line: line.newLine, type: line.type, text: line.text };
+  return line.newLine == null ? null : { side: 'new', line: line.newLine, text: line.text };
 }
 
 function AnnotateButton({
@@ -108,104 +109,125 @@ function AnnotateButton({
   );
 }
 
+// Line rows use only the presence of review wiring and its stable annotate
+// callback; anchors and renderBelow belong to separate review rows.
+function sameAnnotateReview(
+  left: DiffLineReview | undefined,
+  right: DiffLineReview | undefined,
+): boolean {
+  if (left === right) return true;
+  if (!left || !right) return false;
+  return left.onAnnotate === right.onAnnotate;
+}
+
 // Memoized: hunk line arrays are stable across parent re-renders (memoized
 // parse), so thousands of line rows can skip reconciliation during polling.
-const UnifiedLine = memo(function UnifiedLine({
-  line,
-  wrap,
-  lineReview,
-}: {
-  line: DiffLine;
-  wrap: boolean;
-  lineReview?: DiffLineReview;
-}) {
-  const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
-  if (line.type === 'meta') {
+const UnifiedLine = memo(
+  function UnifiedLine({
+    line,
+    wrap,
+    lineReview,
+  }: {
+    line: DiffLine;
+    wrap: boolean;
+    lineReview?: DiffLineReview;
+  }) {
+    const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
+    if (line.type === 'meta') {
+      return (
+        <div className="flex text-muted/60">
+          <span className="review-diff-meta-gutter shrink-0" />
+          <span className={`${textClass} px-2 italic`}>{line.text}</span>
+        </div>
+      );
+    }
+    const target = lineReview ? unifiedAnnotateTarget(line) : null;
     return (
-      <div className="flex text-muted/60">
-        <span className="review-diff-meta-gutter shrink-0" />
-        <span className={`${textClass} px-2 italic`}>{line.text}</span>
+      <div className={`review-diff-row flex ${rowClass(line.type)}`}>
+        {target && lineReview ? (
+          <AnnotateButton target={target} onAnnotate={lineReview.onAnnotate} />
+        ) : null}
+        <Gutter value={line.oldLine} />
+        <Gutter value={line.newLine} />
+        <span className="w-4 shrink-0 select-none text-center" style={SIGN_STYLE[line.type]}>
+          {SIGN[line.type]}
+        </span>
+        <span className={`${textClass} min-w-0 flex-1 px-1 text-secondary`}>
+          {line.text || ' '}
+        </span>
       </div>
     );
-  }
-  const target = lineReview ? unifiedAnnotateTarget(line) : null;
-  return (
-    <div className={`review-diff-row flex ${rowClass(line.type)}`}>
-      {target && lineReview ? (
-        <AnnotateButton target={target} onAnnotate={lineReview.onAnnotate} />
-      ) : null}
-      <Gutter value={line.oldLine} />
-      <Gutter value={line.newLine} />
-      <span className="w-4 shrink-0 select-none text-center" style={SIGN_STYLE[line.type]}>
-        {SIGN[line.type]}
-      </span>
-      <span className={`${textClass} min-w-0 flex-1 px-1 text-secondary`}>{line.text || ' '}</span>
-    </div>
-  );
-});
+  },
+  (prev, next) =>
+    prev.line === next.line &&
+    prev.wrap === next.wrap &&
+    sameAnnotateReview(prev.lineReview, next.lineReview),
+);
 
-const SplitCell = memo(function SplitCell({
-  line,
-  side,
-  wrap,
-  lineReview,
-}: {
-  line: DiffLine | null;
-  side: 'left' | 'right';
-  wrap: boolean;
-  lineReview?: DiffLineReview;
-}) {
-  if (!line) return <div className="review-split-cell flex min-w-0 bg-bg/30" />;
-  const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
-  const isMeta = line.type === 'meta';
-  const lineNumber = side === 'left' ? line.oldLine : line.newLine;
-  const target: DiffLineTarget | null =
-    lineReview && !isMeta && lineNumber != null
-      ? {
-          side: side === 'left' ? 'old' : 'new',
-          line: lineNumber,
-          type: line.type,
-          text: line.text,
-        }
-      : null;
-  return (
-    <div
-      className={`review-split-cell flex min-w-0 ${side === 'left' ? 'review-split-left' : ''} ${rowClass(line.type)}`}
-    >
-      {target && lineReview ? (
-        <AnnotateButton target={target} onAnnotate={lineReview.onAnnotate} />
-      ) : null}
-      {/* The left pane is the old file, the right pane the new one; a context
-          row carries both numbers, so pick by side rather than by line type. */}
-      <Gutter value={lineNumber} />
-      <span className="w-4 shrink-0 select-none text-center" style={SIGN_STYLE[line.type]}>
-        {SIGN[line.type]}
-      </span>
-      <span
-        className={`${textClass} min-w-0 flex-1 px-1 ${
-          isMeta ? 'italic text-muted/60' : 'text-secondary'
-        }`}
+const SplitCell = memo(
+  function SplitCell({
+    line,
+    side,
+    wrap,
+    lineReview,
+  }: {
+    line: DiffLine | null;
+    side: 'left' | 'right';
+    wrap: boolean;
+    lineReview?: DiffLineReview;
+  }) {
+    if (!line) return <div className="review-split-cell flex min-w-0 bg-bg/30" />;
+    const textClass = wrap ? 'review-diff-code-wrap' : 'review-diff-code';
+    const isMeta = line.type === 'meta';
+    const lineNumber = side === 'left' ? line.oldLine : line.newLine;
+    const target: DiffLineTarget | null =
+      lineReview && !isMeta && lineNumber != null
+        ? {
+            side: side === 'left' ? 'old' : 'new',
+            line: lineNumber,
+            text: line.text,
+          }
+        : null;
+    return (
+      <div
+        className={`review-split-cell flex min-w-0 ${side === 'left' ? 'review-split-left' : ''} ${rowClass(line.type)}`}
       >
-        {line.text || ' '}
-      </span>
-    </div>
-  );
-});
-
-type Row =
-  | { kind: 'header'; text: string }
-  | { kind: 'line'; line: DiffLine }
-  | { kind: 'split'; left: DiffLine | null; right: DiffLine | null }
-  | { kind: 'review'; side: DiffLineSide; line: number };
+        {target && lineReview ? (
+          <AnnotateButton target={target} onAnnotate={lineReview.onAnnotate} />
+        ) : null}
+        {/* The left pane is the old file, the right pane the new one; a context
+            row carries both numbers, so pick by side rather than by line type. */}
+        <Gutter value={lineNumber} />
+        <span className="w-4 shrink-0 select-none text-center" style={SIGN_STYLE[line.type]}>
+          {SIGN[line.type]}
+        </span>
+        <span
+          className={`${textClass} min-w-0 flex-1 px-1 ${
+            isMeta ? 'italic text-muted/60' : 'text-secondary'
+          }`}
+        >
+          {line.text || ' '}
+        </span>
+      </div>
+    );
+  },
+  (prev, next) =>
+    prev.line === next.line &&
+    prev.side === next.side &&
+    prev.wrap === next.wrap &&
+    sameAnnotateReview(prev.lineReview, next.lineReview),
+);
 
 function RowView({
   row,
   wrap,
   lineReview,
+  onExpandFold,
 }: {
-  row: Row;
+  row: DiffRenderRow;
   wrap: boolean;
   lineReview?: DiffLineReview;
+  onExpandFold: (id: string) => void;
 }) {
   if (row.kind === 'header') {
     return <div className="review-diff-hunk px-2 py-0.5 text-code-sm">{row.text}</div>;
@@ -219,6 +241,21 @@ function RowView({
       </div>
     );
   }
+  if (row.kind === 'fold') {
+    return (
+      <button
+        type="button"
+        title="Show unmodified lines"
+        aria-label={`Show ${String(row.count)} unmodified lines`}
+        onClick={() => {
+          onExpandFold(row.id);
+        }}
+        className="review-diff-fold"
+      >
+        {row.count} unmodified lines
+      </button>
+    );
+  }
   return (
     <div className="review-split-row">
       <SplitCell line={row.left} side="left" wrap={wrap} lineReview={lineReview} />
@@ -228,35 +265,71 @@ function RowView({
   );
 }
 
+function sameRow(left: DiffRenderRow, right: DiffRenderRow): boolean {
+  if (left === right) return true;
+  if (left.id !== right.id || left.kind !== right.kind) return false;
+  if (left.kind === 'header') return right.kind === 'header' && left.text === right.text;
+  if (left.kind === 'line') return right.kind === 'line' && left.line === right.line;
+  if (left.kind === 'split') {
+    return right.kind === 'split' && left.left === right.left && left.right === right.right;
+  }
+  if (left.kind === 'fold') return right.kind === 'fold' && left.count === right.count;
+  return right.kind === 'review' && left.side === right.side && left.line === right.line;
+}
+
+function sameRows(left: DiffRenderRow[], right: DiffRenderRow[]): boolean {
+  return left.length === right.length && left.every((row, index) => sameRow(row, right[index]));
+}
+
 // Memoized so polling-driven parent re-renders skip every already-mounted
-// chunk (its rows slice is referentially stable while the diff is unchanged).
-const Chunk = memo(function Chunk({
-  rows,
-  wrap,
-  lineReview,
-}: {
-  rows: Row[];
-  wrap: boolean;
-  lineReview?: DiffLineReview;
-}) {
-  return (
-    <div
-      style={{
-        contentVisibility: 'auto',
-        // Height only: the body is sized to its widest line
-        // (`review-diff-content`), which asks every chunk for its intrinsic
-        // width, and a skipped chunk would answer with this row-height
-        // estimate. Width stays `none`, so a skipped chunk claims no width
-        // and still stretches to the body like any auto-width block.
-        containIntrinsicHeight: `auto ${String(Math.round(rows.length * EST_ROW_PX))}px`,
-      }}
-    >
-      {rows.map((row, i) => (
-        <RowView key={i} row={row} wrap={wrap} lineReview={lineReview} />
-      ))}
-    </div>
-  );
-});
+// chunk. The comparison is structural because injecting one review row rebuilds
+// the chunk arrays without touching the diff row objects or their identities.
+const Chunk = memo(
+  function Chunk({
+    rows,
+    wrap,
+    lineReview,
+    onExpandFold,
+  }: {
+    rows: DiffRenderRow[];
+    wrap: boolean;
+    lineReview?: DiffLineReview;
+    onExpandFold: (id: string) => void;
+  }) {
+    return (
+      <div
+        style={{
+          contentVisibility: 'auto',
+          // Height only: the body is sized to its widest line
+          // (`review-diff-content`), which asks every chunk for its intrinsic
+          // width, and a skipped chunk would answer with this row-height
+          // estimate. Width stays `none`, so a skipped chunk claims no width
+          // and still stretches to the body like any auto-width block.
+          containIntrinsicHeight: `auto ${String(Math.round(rows.length * EST_ROW_PX))}px`,
+        }}
+      >
+        {rows.map((row) => (
+          <RowView
+            key={row.id}
+            row={row}
+            wrap={wrap}
+            lineReview={lineReview}
+            onExpandFold={onExpandFold}
+          />
+        ))}
+      </div>
+    );
+  },
+  (prev, next) => {
+    if (prev.wrap !== next.wrap || prev.onExpandFold !== next.onExpandFold) return false;
+    if (!sameRows(prev.rows, next.rows)) return false;
+    if (prev.lineReview === next.lineReview) return true;
+    // A chunk carrying review rows must see a new renderBelow closure; chunks
+    // without one use review wiring only for the stable annotate callback.
+    if (prev.rows.some((row) => row.kind === 'review')) return false;
+    return sameAnnotateReview(prev.lineReview, next.lineReview);
+  },
+);
 
 // Arrow keys move between the per-line annotate buttons imperatively, so the
 // keyboard path through a long file does not cost a React render per step:
@@ -272,15 +345,6 @@ function focusSiblingAnnotateButton(root: HTMLElement, key: string): boolean {
   if (!(next instanceof HTMLElement)) return false;
   next.focus();
   return true;
-}
-
-function parseAnchorKey(key: string): { side: DiffLineSide; line: number } | null {
-  const separator = key.indexOf(':');
-  if (separator < 0) return null;
-  const side = key.slice(0, separator);
-  if (side !== 'old' && side !== 'new') return null;
-  const line = Number.parseInt(key.slice(separator + 1), 10);
-  return Number.isFinite(line) ? { side, line } : null;
 }
 
 export function DiffBody({
@@ -333,80 +397,38 @@ export function DiffBody({
     [view, hunks],
   );
 
-  // Flatten headers and lines into one row stream so chunking can cut across
-  // hunk boundaries; a meta row in split view spans both panes. Review rows
-  // inject beneath the line their anchor names; an anchor the diff no longer
-  // carries (force-push, a truncated hunk) settles after the hunks instead of
-  // taking its note with it.
-  const anchors = lineReview?.anchors;
-  const rows = useMemo(() => {
-    const out: Row[] = [];
-    const matched = new Set<string>();
-    const inject = (candidates: ({ side: DiffLineSide; line: number } | null)[]) => {
-      if (!anchors) return;
-      for (const candidate of candidates) {
-        if (!candidate) continue;
-        const key = diffLineAnchorKey(candidate.side, candidate.line);
-        if (!anchors.has(key) || matched.has(key)) continue;
-        matched.add(key);
-        out.push({ kind: 'review', side: candidate.side, line: candidate.line });
-      }
-    };
-    hunks.forEach((hunk, hi) => {
-      out.push({ kind: 'header', text: hunk.header });
-      if (splitRows) {
-        // Meta markers ("\ No newline at end of file") are column-scoped by
-        // toSplitRows, so they render as split cells like any other row.
-        for (const row of splitRows[hi]) {
-          out.push({ kind: 'split', left: row.left, right: row.right });
-          inject([splitCellAnchor(row.left, 'old'), splitCellAnchor(row.right, 'new')]);
-        }
-      } else {
-        for (const line of hunk.lines) {
-          out.push({ kind: 'line', line });
-          inject(unifiedLineAnchors(line));
-        }
-      }
-    });
-    if (anchors) {
-      const orphans = [...anchors]
-        .filter((key) => !matched.has(key))
-        .map(parseAnchorKey)
-        .filter((anchor): anchor is { side: DiffLineSide; line: number } => anchor !== null)
-        .sort((left, right) => left.line - right.line || left.side.localeCompare(right.side));
-      for (const orphan of orphans) {
-        out.push({ kind: 'review', side: orphan.side, line: orphan.line });
-      }
-    }
-    return out;
-  }, [hunks, splitRows, anchors]);
+  const [expandedFolds, setExpandedFolds] = useState<Set<string>>(() => new Set());
+  const expandFold = useCallback((id: string) => {
+    setExpandedFolds((current) => new Set(current).add(id));
+  }, []);
 
-  const chunks = useMemo(() => {
-    const out: Row[][] = [];
-    for (let i = 0; i < rows.length; i += CHUNK_ROWS) out.push(rows.slice(i, i + CHUNK_ROWS));
-    return out;
-  }, [rows]);
+  const anchors = lineReview?.anchors;
+  const chunks = useMemo(
+    () => buildDiffChunks({ hunks, splitRows, anchors, expandedFolds }),
+    [hunks, splitRows, anchors, expandedFolds],
+  );
 
   // Progressive mount: start with a few chunks and add a couple per frame until
-  // the whole diff is in the DOM. Reset during render (the supported pattern
-  // for derived-state resets) whenever the diff content or view changes.
+  // the whole diff is in the DOM. Only diff content or the view restarts it;
+  // review rows and folds never push already-mounted work back to zero.
   const [mounted, setMounted] = useState(INITIAL_CHUNKS);
-  const [prevRows, setPrevRows] = useState(rows);
-  if (prevRows !== rows) {
-    setPrevRows(rows);
+  const [mountSource, setMountSource] = useState({ hunks, view });
+  if (mountSource.hunks !== hunks || mountSource.view !== view) {
+    setMountSource({ hunks, view });
     setMounted(INITIAL_CHUNKS);
+    setExpandedFolds(new Set());
   }
   useEffect(() => {
     if (mounted >= chunks.length) return;
     const raf = requestAnimationFrame(() => {
-      setMounted((v) => v + CHUNKS_PER_FRAME);
+      setMounted((value) => value + CHUNKS_PER_FRAME);
     });
     return () => {
       cancelAnimationFrame(raf);
     };
   }, [mounted, chunks.length]);
 
-  const pendingRows = Math.max(0, rows.length - mounted * CHUNK_ROWS);
+  const pendingRows = chunks.slice(mounted).reduce((total, chunk) => total + chunk.length, 0);
 
   if (binary || parsed.binary) {
     return <div className="p-4 text-body text-muted">Binary file not shown</div>;
@@ -426,8 +448,14 @@ export function DiffBody({
         }
       }}
     >
-      {chunks.slice(0, mounted).map((chunk, ci) => (
-        <Chunk key={ci} rows={chunk} wrap={wrap} lineReview={lineReview} />
+      {chunks.slice(0, mounted).map((chunk, index) => (
+        <Chunk
+          key={index}
+          rows={chunk}
+          wrap={wrap}
+          lineReview={lineReview}
+          onExpandFold={expandFold}
+        />
       ))}
       {/* Placeholder for not-yet-mounted chunks so the scroll height is stable
           while the progressive mount catches up. */}

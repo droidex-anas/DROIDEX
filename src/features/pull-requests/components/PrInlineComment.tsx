@@ -19,7 +19,7 @@ export function PrInlineComment({ comment }: { comment: PrComment }) {
   const blocks = useMemo(() => prCommentBlocks(comment.body), [comment.body]);
   const time = prRelativeTime(comment.createdAt);
   return (
-    <div className="rounded-lg bg-raised py-2 shadow-sm">
+    <div className="group rounded-lg bg-raised py-2 shadow-sm">
       <div className="flex items-center gap-2 px-3">
         <GithubAvatar login={comment.author} size={16} />
         <span className="min-w-0 flex-1 truncate text-body">
@@ -44,7 +44,7 @@ export function PrInlineComment({ comment }: { comment: PrComment }) {
             rel="noreferrer"
             title="Open on GitHub"
             aria-label="Open comment on GitHub"
-            className="flex size-7 items-center justify-center rounded-md text-muted transition-colors hover:bg-elevated hover:text-primary"
+            className="flex size-7 items-center justify-center rounded-md text-muted opacity-0 transition-opacity duration-quick pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-elevated hover:text-primary"
             onClick={(event) => {
               event.preventDefault();
               if (comment.url) void openExternal(comment.url);

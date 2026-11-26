@@ -2,11 +2,7 @@ import { useCallback, useMemo } from 'react';
 
 import { useStoreDispatch, useStoreSelector } from '../../../hooks/useStore';
 import type { DiffLineTarget } from '../../../components/environment/DiffBody';
-import {
-  emptyPrReviewDraft,
-  type PrLineAnnotation,
-  type PrReviewDraft,
-} from '../lib/prAnnotations';
+import { emptyPrReviewDraft, type PrReviewDraft } from '../lib/prAnnotations';
 import { prReviewKey } from '../lib/prReviewState';
 
 // The review draft (line annotations and viewed-file marks) for one pull
@@ -67,7 +63,6 @@ export function usePrReviewDraft(cwd: string, number: number) {
       removeNote: (id: string) => void;
       clearNotes: () => void;
       toggleViewed: (path: string) => void;
-      annotationsForFile: (path: string) => PrLineAnnotation[];
     } => ({
       draft,
       addNote,
@@ -75,7 +70,6 @@ export function usePrReviewDraft(cwd: string, number: number) {
       removeNote,
       clearNotes,
       toggleViewed,
-      annotationsForFile: (path) => draft.annotations.filter((item) => item.path === path),
     }),
     [draft, addNote, updateNote, removeNote, clearNotes, toggleViewed],
   );
