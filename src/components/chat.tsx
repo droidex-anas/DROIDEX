@@ -339,34 +339,54 @@ function itemUsesChildSessions(item: FeedItem): boolean {
   return false;
 }
 
+function childSessionTargetsIn(item: FeedItem): ChildSessionTarget[] {
+  if (item.type === 'child_session') return [childSessionTargetFromEvent(item.event)];
+  if (item.type === 'child_sessions') return item.events.map(childSessionTargetFromEvent);
+  if (item.type === 'worked') return item.items.flatMap(childSessionTargetsIn);
+  return [];
+}
+
+// Activity values are memoized on the child entry and its latest transcript
+// event, so the same reference from both callbacks means nothing about this
+// target changed — even though the two closures scan different transcript
+// versions. The callback identity itself says nothing and is never compared.
+function sameChildActivity(prev: FeedItemViewProps, next: FeedItemViewProps): boolean {
+  if (!itemUsesChildSessions(next.item)) return true;
+  for (const target of childSessionTargetsIn(next.item)) {
+    if (prev.childSessionActivity?.(target) !== next.childSessionActivity?.(target)) return false;
+  }
+  return true;
+}
+
 function sameChildSessionInputs(prev: FeedItemViewProps, next: FeedItemViewProps): boolean {
   return (
     !itemUsesChildSessions(next.item) ||
     (prev.agentMonitor === next.agentMonitor &&
       prev.onOpenAgent === next.onOpenAgent &&
-      prev.childSessionActivity === next.childSessionActivity)
+      sameChildActivity(prev, next))
   );
 }
 
 // Lets memo skip the many static items while a response streams, re-rendering
 // only the growing tail.
 export function feedItemPropsEqual(prev: FeedItemViewProps, next: FeedItemViewProps): boolean {
-  // Live-updating spawn lines still re-render for elapsed timers. A child_sessions
-  // wave skips unless this card's events, dock (including throttled snapshots),
-  // or liveness changed. Settled worked groups compare nested items so a later
-  // streaming turn does not rebuild every historical fold. Only folds that
-  // actually nest a wave watch dock identity; messages and tool rows stay out.
+  // Live-updating spawn lines re-render when their child's activity value
+  // changes — a quiet child's is reference-stable, so its line skips every
+  // commit carried by other streams. A child_sessions wave skips unless this
+  // card's events, dock (including throttled snapshots), or liveness changed.
+  // Settled worked groups compare nested items so a later streaming turn does
+  // not rebuild every historical fold. Only folds that actually nest a wave
+  // watch dock identity; messages and tool rows stay out.
   if (next.item.type === 'child_sessions') {
     return (
       prev.live === next.live &&
       prev.sessionLive === next.sessionLive &&
       prev.agentMonitor === next.agentMonitor &&
       prev.onOpenAgent === next.onOpenAgent &&
-      prev.childSessionActivity === next.childSessionActivity &&
+      sameChildActivity(prev, next) &&
       sameFeedEvents(prev.item, next.item)
     );
   }
-  if (next.item.type === 'child_session') return false;
   return (
     prev.live === next.live &&
     prev.sessionLive === next.sessionLive &&

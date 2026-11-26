@@ -323,6 +323,49 @@ test('running child activity stays running even without an open runtime', () => 
   );
 });
 
+test('child activity keeps its reference across commits the child did not emit in', () => {
+  const running = child({ spawnLink: { kind: 'tool-use', id: 'tool-a' } });
+  const childText = ev({
+    id: 't1',
+    appSessionId: 'parent-a',
+    sourceSessionId: 'child-a',
+    role: 'primary',
+    ts: 1,
+    kind: 'text',
+    text: 'child working',
+  });
+  const parentText = ev({
+    id: 'p1',
+    sourceSessionId: 'orc',
+    role: 'primary',
+    ts: 2,
+    kind: 'text',
+    text: 'parent streaming on',
+  });
+
+  const first = childSessionActivityForTarget([running], [childText], { toolUseId: 'tool-a' });
+  const quiet = childSessionActivityForTarget([running], [childText, parentText], {
+    toolUseId: 'tool-a',
+  });
+  assert.notEqual(first, undefined);
+  assert.equal(quiet, first);
+
+  const childAgain = ev({
+    id: 't2',
+    appSessionId: 'parent-a',
+    sourceSessionId: 'child-a',
+    role: 'primary',
+    ts: 3,
+    kind: 'text',
+    text: 'child emits more',
+  });
+  const active = childSessionActivityForTarget([running], [childText, parentText, childAgain], {
+    toolUseId: 'tool-a',
+  });
+  assert.notEqual(active, first);
+  assert.equal(active?.latest?.text, 'child emits more');
+});
+
 test('visible child actionability is exact and readiness-gated', () => {
   const running = child();
   const children = {

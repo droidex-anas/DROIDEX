@@ -44,10 +44,14 @@ export const AgentWaveCard = memo(
       />
     );
   },
+  // The activity callback reads through a memoized, always-fresh derivation,
+  // so its identity carries no meaning and is not compared: what the rows show
+  // of it is static per child, and everything live reaches the card through the
+  // monitor's sessions and snapshots. The feed-level comparator above already
+  // gates this card on the activity values of its own spawns.
   (prev, next) =>
     prev.monitor === next.monitor &&
     prev.live === next.live &&
     prev.onOpen === next.onOpen &&
-    prev.activity === next.activity &&
     sameFeedEvents(prev.item, next.item),
 );

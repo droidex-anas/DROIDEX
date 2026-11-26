@@ -31,6 +31,19 @@ const VERB: Record<ToolCat, string> = {
   other: 'Working',
 };
 
+// Transcript arrays are immutable per store version and referentially stable
+// for sessions a commit did not touch, so a WeakMap keyed on the array
+// collapses digest recompute to exactly the sessions that received events.
+const digestByTranscript = new WeakMap<readonly TranscriptEvent[], ActivityDigest | null>();
+
+export function digestTranscriptMemo(events: readonly TranscriptEvent[]): ActivityDigest | null {
+  const cached = digestByTranscript.get(events);
+  if (cached !== undefined) return cached;
+  const digest = digestTranscript(events);
+  digestByTranscript.set(events, digest);
+  return digest;
+}
+
 export function digestTranscript(events: readonly TranscriptEvent[]): ActivityDigest | null {
   if (events.length === 0) return null;
   let lastUser = -1;
@@ -56,11 +69,31 @@ function describeTool(ev: TranscriptEvent): string {
   return `${VERB[cat]} ${detail.split('/').pop() ?? ''}`.trim();
 }
 
+// The digest only ever returns a 90-character tail snippet, so scanning the
+// whole growing message per store commit is quadratic cost for nothing. But
+// bounding before stripping fences inverts the output for a normal model shape
+// — a question followed by a long generated code block — because the fence
+// eats the window and its contents read as prose. The raw window is therefore
+// wide enough to span realistic trailing fences; fences are stripped first and
+// the sentence scan is then bounded on the remaining prose. A single trailing
+// fence larger than the raw window still hides what came before it; that shape
+// is rare enough for a 90-character preview.
+const LAST_SENTENCE_RAW_WINDOW_CHARS = 49152;
+const LAST_SENTENCE_SCAN_CHARS = 8192;
+
 // The last sentence of a message, preferring its last question, with markdown
 // noise stripped so it reads well on one sidebar line.
 function lastSentence(text: string): string {
-  const plain = text
-    .replace(/```[\s\S]*?```/g, ' ')
+  const rawWindow =
+    text.length > LAST_SENTENCE_RAW_WINDOW_CHARS
+      ? text.slice(-LAST_SENTENCE_RAW_WINDOW_CHARS)
+      : text;
+  const unfenced = rawWindow.replace(/```[\s\S]*?```/g, ' ');
+  const scanned =
+    unfenced.length > LAST_SENTENCE_SCAN_CHARS
+      ? unfenced.slice(-LAST_SENTENCE_SCAN_CHARS)
+      : unfenced;
+  const plain = scanned
     .replace(/[`*_>#]+/g, '')
     .replace(/\s+/g, ' ')
     .trim();
