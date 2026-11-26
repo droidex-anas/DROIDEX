@@ -24,8 +24,23 @@ export function useThreadAttentionNotifications(): void {
   const notified = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    const review = () => {
+    // The review is a pure function of these inputs plus foreground state, so
+    // a commit that leaves every input untouched (streaming text, telemetry)
+    // can skip the projects × threads walk entirely. Foreground changes are
+    // the one other input, and the listeners below force the review for them.
+    let lastInputs: readonly unknown[] = [];
+    const review = (force = false) => {
       const state = store.getState();
+      const inputs = [
+        state.projects,
+        state.pendingPermissions,
+        state.pendingQuestions,
+        state.tabStrip,
+        state.activeAppSessionId,
+        state.mainView,
+      ];
+      if (!force && inputs.every((input, i) => input === lastInputs[i])) return;
+      lastInputs = inputs;
       for (const project of state.projects) {
         for (const thread of project.threads) {
           if (!thread.ownerAppSessionId) continue;
@@ -58,7 +73,7 @@ export function useThreadAttentionNotifications(): void {
     // screen raises nothing then, and nothing else would run this until the
     // next project change.
     const onAway = () => {
-      review();
+      review(true);
     };
     window.addEventListener('blur', onAway);
     document.addEventListener('visibilitychange', onAway);

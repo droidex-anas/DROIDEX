@@ -20,6 +20,33 @@ export function sessionIsLive(session: Pick<SessionSummary, 'phase' | 'streaming
   return CLEARLY_ACTIVE.includes(session.phase);
 }
 
+// Per-reading token and context telemetry rewrites a session object several
+// times a second across a parallel fleet, and none of it is chrome. Subscribers
+// that need the session for display compare it with this instead of identity:
+// anything not listed here is display-relevant and still compares.
+const SESSION_TELEMETRY_FIELDS: ReadonlySet<string> = new Set([
+  'tokensIn',
+  'tokensOut',
+  'contextTokens',
+  'contextRemainingTokens',
+  'contextAccuracy',
+  'contextUpdatedAt',
+]);
+
+export function sameSessionExceptTelemetry(
+  previous: SessionSummary | null | undefined,
+  next: SessionSummary | null | undefined,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+    if (SESSION_TELEMETRY_FIELDS.has(key)) continue;
+    const field = key as keyof SessionSummary;
+    if (!Object.is(previous[field], next[field])) return false;
+  }
+  return true;
+}
+
 interface SessionActivity {
   sessions: Record<string, Pick<SessionSummary, 'phase' | 'streaming'>>;
   childSessions: Record<string, Record<string, Pick<ChildSessionSummary, 'status'>>>;

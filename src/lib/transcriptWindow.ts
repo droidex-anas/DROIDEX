@@ -279,7 +279,26 @@ export function releaseChildTranscriptWindow(
   };
 }
 
+// Exact counting is a char-by-char JS loop; a streamed file write would rescan
+// its growing content per delta. Long strings are estimated from a bounded
+// sample instead — the estimator documents itself as approximate, and the
+// sample error is small next to the container overheads already ignored.
+const EXACT_BYTE_COUNT_LIMIT = 4096;
+const BYTE_SAMPLE_COUNT = 64;
+
 function utf8ByteLength(value: string): number {
+  if (value.length > EXACT_BYTE_COUNT_LIMIT) {
+    let sampled = 0;
+    let sampledBytes = 0;
+    const stride = value.length / BYTE_SAMPLE_COUNT;
+    for (let i = 0; i < BYTE_SAMPLE_COUNT; i++) {
+      const code = value.charCodeAt(Math.floor(i * stride));
+      sampled += 1;
+      sampledBytes +=
+        code <= 0x7f ? 1 : code <= 0x7ff ? 2 : code >= 0xd800 && code <= 0xdbff ? 2 : 3;
+    }
+    return Math.ceil((sampledBytes / sampled) * value.length);
+  }
   let bytes = 0;
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);

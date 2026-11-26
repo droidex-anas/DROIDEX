@@ -31,6 +31,19 @@ const VERB: Record<ToolCat, string> = {
   other: 'Working',
 };
 
+// Transcript arrays are immutable per store version and referentially stable
+// for sessions a commit did not touch, so a WeakMap keyed on the array
+// collapses digest recompute to exactly the sessions that received events.
+const digestByTranscript = new WeakMap<readonly TranscriptEvent[], ActivityDigest | null>();
+
+export function digestTranscriptMemo(events: readonly TranscriptEvent[]): ActivityDigest | null {
+  const cached = digestByTranscript.get(events);
+  if (cached !== undefined) return cached;
+  const digest = digestTranscript(events);
+  digestByTranscript.set(events, digest);
+  return digest;
+}
+
 export function digestTranscript(events: readonly TranscriptEvent[]): ActivityDigest | null {
   if (events.length === 0) return null;
   let lastUser = -1;
@@ -56,10 +69,20 @@ function describeTool(ev: TranscriptEvent): string {
   return `${VERB[cat]} ${detail.split('/').pop() ?? ''}`.trim();
 }
 
+// The digest only ever returns a 90-character tail snippet, so scanning more
+// than the last few KB of a streamed message cannot change the result in any
+// realistic text — and scanning the whole growing message per store commit is
+// quadratic cost for nothing. The one divergence is a single unpunctuated
+// sentence longer than the window, where the clip starts inside it instead of
+// at the message start; that shape is pathological in model prose.
+const LAST_SENTENCE_SCAN_CHARS = 8192;
+
 // The last sentence of a message, preferring its last question, with markdown
 // noise stripped so it reads well on one sidebar line.
 function lastSentence(text: string): string {
-  const plain = text
+  const scanned =
+    text.length > LAST_SENTENCE_SCAN_CHARS ? text.slice(-LAST_SENTENCE_SCAN_CHARS) : text;
+  const plain = scanned
     .replace(/```[\s\S]*?```/g, ' ')
     .replace(/[`*_>#]+/g, '')
     .replace(/\s+/g, ' ')
