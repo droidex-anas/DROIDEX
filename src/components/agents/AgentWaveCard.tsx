@@ -62,7 +62,7 @@ export const AgentWaveCard = memo(
 // and stream snapshots are structurally shared, so entry identity is semantic
 // for both: a wave whose own spawns did not change skips the commit no matter
 // what sibling waves are doing. Comparison failure only ever re-renders.
-function sameWaveMonitor(
+export function sameWaveMonitor(
   prev: AgentMonitorData,
   next: AgentMonitorData,
   spawns: readonly { toolUseId?: string; id: string }[],
@@ -75,10 +75,14 @@ function sameWaveMonitor(
     const before = spawnRegisteredChildren(prev.sessions, toolUseId);
     const after = spawnRegisteredChildren(next.sessions, toolUseId);
     if (before.length !== after.length) return false;
-    return before.every(
-      (child, index) =>
-        child === after[index] &&
-        prev.snapshots?.get(child.childSessionId) === next.snapshots?.get(child.childSessionId),
-    );
+    return before.every((child, index) => {
+      if (child !== after[index]) return false;
+      const beforeSnapshot = prev.snapshots?.get(child.childSessionId);
+      const afterSnapshot = next.snapshots?.get(child.childSessionId);
+      // A missing entry falls back to live activity derivation, which this
+      // comparison cannot see — re-render rather than risk a stale row.
+      if (beforeSnapshot === undefined || afterSnapshot === undefined) return false;
+      return beforeSnapshot === afterSnapshot;
+    });
   });
 }
