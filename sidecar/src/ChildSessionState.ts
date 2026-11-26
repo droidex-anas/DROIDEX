@@ -100,7 +100,10 @@ export interface ChildSessionState {
   tokensUsed?: number;
   // Latest cumulative reading for the current provider series. Droid counters
   // restart when the provider session is replaced; the logical total must not.
-  tokenUsageSeries?: { providerSessionId: string; tokensUsed: number };
+  // High-water reading per provider series. Keyed by provider id so a late
+  // final reading for a retired series still counts, while repeats cannot
+  // double-count.
+  usageHighWaterByProvider?: Map<string, number>;
   // Live-only. Absent until a token/tool stream is opened; summaries publish `state`.
   streamFidelity?: StreamFidelity;
   runtimeGeneration: number;

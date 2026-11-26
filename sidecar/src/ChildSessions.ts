@@ -247,20 +247,16 @@ export class ChildSessions {
         candidate.retiredProviderSessionIds.has(providerSessionId),
       );
     if (!child) return false;
-    if (child.runtime?.session.sessionId !== providerSessionId) return true;
 
+    // Each provider series is cumulative and monotonic, keyed by its own
+    // provider id: a retired series' final reading still counts what the child
+    // spent, and stale repeats can never double-count.
     const reading = usage.tokensIn + usage.tokensOut;
-    const series = child.tokenUsageSeries;
-    let tokensUsed: number;
-    if (series?.providerSessionId !== providerSessionId) {
-      tokensUsed = (child.tokensUsed ?? 0) + reading;
-    } else {
-      const delta = reading - series.tokensUsed;
-      if (delta <= 0) return true;
-      tokensUsed = (child.tokensUsed ?? 0) + delta;
-    }
-    child.tokensUsed = tokensUsed;
-    child.tokenUsageSeries = { providerSessionId, tokensUsed: reading };
+    const highWater = (child.usageHighWaterByProvider ??= new Map());
+    const delta = reading - (highWater.get(providerSessionId) ?? 0);
+    if (delta <= 0) return true;
+    child.tokensUsed = (child.tokensUsed ?? 0) + delta;
+    highWater.set(providerSessionId, reading);
     if (!this.childrenAwaitingDurability.has(childDurabilityKey(child.identity)))
       this.publish(child);
     return true;
