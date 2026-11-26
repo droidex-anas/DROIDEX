@@ -105,14 +105,14 @@ export async function measureFeedRendersMounted(
   // to the tree's own feedItemPropsEqual, so behavior is unchanged.
   let records: CompareRecord[] | null = null;
   const originalCompare = feedItemView.compare;
-  feedItemView.compare = ((prev: never, next: never) => {
+  feedItemView.compare = (prev: never, next: never) => {
     const equal = originalCompare(prev, next);
     if (records !== null) {
       const itemType = (next as { item?: { type?: string } }).item?.type ?? 'unknown';
       records.push({ itemType, equal });
     }
     return equal;
-  });
+  };
 
   let root: ReturnType<typeof createRoot> | undefined;
   try {
@@ -161,25 +161,28 @@ export async function measureFeedRendersMounted(
         'div',
         null,
         ...projection.feedItems.map((item, index) =>
-          createElement(feedItemView as never, {
-            key: item.key,
-            item,
-            live: index === lastIndex && !poll,
-            sessionLive: true,
-            compacting: false,
-            cwd: 'probe-cwd',
-            onOpenDiff: stableHandler,
-            onOpenReviewFile: stableHandler,
-            onOpenChildSession: stableHandler,
-            onOpenAgent: stableHandler,
-            childSessionActivity: activity,
-            agentMonitor,
-            liveTiming: true,
-            isFinalResponse: false,
-            isLatestReply: false,
-            density: 'balanced',
-            inlineDiffs: true,
-          } as never),
+          createElement(
+            feedItemView as never,
+            {
+              key: item.key,
+              item,
+              live: index === lastIndex && !poll,
+              sessionLive: true,
+              compacting: false,
+              cwd: 'probe-cwd',
+              onOpenDiff: stableHandler,
+              onOpenReviewFile: stableHandler,
+              onOpenChildSession: stableHandler,
+              onOpenAgent: stableHandler,
+              childSessionActivity: activity,
+              agentMonitor,
+              liveTiming: true,
+              isFinalResponse: false,
+              isLatestReply: false,
+              density: 'balanced',
+              inlineDiffs: true,
+            } as never,
+          ),
         ),
       );
     }
@@ -316,7 +319,8 @@ export async function measureFeedRendersMounted(
       commitsMeasured: scenario.commits.length,
       republishTicks: tickCount,
       meanPerCommit: divideCounts(commitTotals, scenario.commits.length),
-      meanPerRepublishTick: tickCount > 0 ? divideCounts(tickTotals, tickCount) : emptyRowRenderCounts(),
+      meanPerRepublishTick:
+        tickCount > 0 ? divideCounts(tickTotals, tickCount) : emptyRowRenderCounts(),
       evaluationsPerCommit: commitEvaluations / scenario.commits.length,
       rendersPerSecond: (commitTotals.total + tickTotals.total) / burstSeconds,
       wallMs,

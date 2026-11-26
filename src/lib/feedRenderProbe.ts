@@ -500,10 +500,7 @@ function divideCounts(counts: RowRenderCounts, divisor: number): RowRenderCounts
 // Nested rows render inside the fold with live forced off and without the
 // top-level-only flags; everything else passes through from the fold's props,
 // exactly as FeedItemView's worked branch constructs them.
-function nestedProps(
-  foldProps: Record<string, unknown>,
-  child: FeedItem,
-): Record<string, unknown> {
+function nestedProps(foldProps: Record<string, unknown>, child: FeedItem): Record<string, unknown> {
   return {
     ...foldProps,
     item: child,
