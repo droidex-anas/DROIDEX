@@ -24,7 +24,6 @@ import {
   childSelectionForFeature,
   findChildSessionForTarget,
   orderedChildSessions,
-  transcriptEventIsVisible,
   visibleSessionIsPending,
   visibleSessionTarget,
   type ChildSessionActivity,
@@ -35,6 +34,8 @@ import ContextColumn from './MissionControlContextPanel';
 import FeatureFocus from './MissionControlFeatureDetail';
 import PromptInput from './PromptInput';
 import { createIncrementalTranscriptFilter } from '../lib/incrementalTranscriptFilter';
+import { createChatFeedProjector } from './chatFeedProjector';
+import type { FeedItem } from './chatFeed';
 import { Dialog, DialogTitle } from './ui/Dialog';
 import { Button } from './ui/Button';
 
@@ -46,27 +47,11 @@ const EMPTY_CHILD_SESSIONS: Record<string, ChildSessionSummary> = {};
 const EMPTY_CHILD_ACCESS: Record<string, ChildAccess> = {};
 const EMPTY_CHILD_RUNTIME: Record<string, ChildRuntimeState> = {};
 
-const RENDERED_TRANSCRIPT_KIND: Record<TranscriptEvent['kind'], true> = {
-  text: true,
-  thinking: true,
-  tool_call: true,
-  tool_result: true,
-  error: true,
-  status: true,
-  compaction: true,
-};
-const RENDERED_TRANSCRIPT_KINDS = new Set(
-  Object.keys(RENDERED_TRANSCRIPT_KIND) as TranscriptEvent['kind'][],
-);
-
-/** The event kinds the mission transcript renders as feed rows. */
-const isRenderedTranscriptEvent = (t: TranscriptEvent) =>
-  t.author === 'user' || RENDERED_TRANSCRIPT_KINDS.has(t.kind) || Boolean(t.isError);
-
 /* ════════════════════════ chat ════════════════════════ */
 
 function ChatArea({
   events,
+  items,
   live,
   pending,
   cwd,
@@ -76,6 +61,9 @@ function ChatArea({
   big,
 }: {
   events: TranscriptEvent[];
+  // The transcript's projected rows; used only while the display cap is off,
+  // since sliced events no longer correspond to them.
+  items: FeedItem[];
   live: boolean;
   pending: boolean;
   cwd?: string;
@@ -89,7 +77,8 @@ function ChatArea({
 }) {
   const toolActivity = useStoreSelector((state) => state.toolActivity);
   const { scrollRef, followLatest } = useFollowLatest();
-  const renderEvents = events.length > 900 ? events.slice(-900) : events;
+  const capped = events.length > 900;
+  const renderEvents = capped ? events.slice(-900) : events;
   const hidden = events.length - renderEvents.length;
   useLayoutEffect(followLatest, [events.length, pending, followLatest]);
 
@@ -108,6 +97,7 @@ function ChatArea({
 
         <MessageFeed
           events={renderEvents}
+          {...(!capped ? { items } : {})}
           pending={pending}
           cwd={cwd}
           onOpenDiff={onOpenDiff}
@@ -292,6 +282,7 @@ export default function MissionControl() {
         ? (state.transcripts[appSessionId] ?? EMPTY_TRANSCRIPT)
         : EMPTY_TRANSCRIPT,
       transcriptMutation: appSessionId ? state.transcriptMutations[appSessionId] : undefined,
+      transcriptRetainedCost: appSessionId ? (state.transcriptRetainedCost[appSessionId] ?? 0) : 0,
       progress: appSessionId ? (state.progress[appSessionId] ?? EMPTY_PROGRESS) : EMPTY_PROGRESS,
       childSessions: appSessionId
         ? (state.childSessions[appSessionId] ?? EMPTY_CHILD_SESSIONS)
@@ -316,6 +307,7 @@ export default function MissionControl() {
     utilityOpen,
     transcript: allTx,
     transcriptMutation,
+    transcriptRetainedCost,
     progress,
     childSessions: childSessionsById,
     childAccess,
@@ -325,6 +317,7 @@ export default function MissionControl() {
     models,
     pendingAutonomy,
   } = missionState;
+  const toolActivity = useStoreSelector((state) => state.toolActivity);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const [focusOpen, setFocusOpen] = useState(false);
   const [railCollapsed, setRailCollapsed] = useState(false);
@@ -336,10 +329,8 @@ export default function MissionControl() {
   const closeDiff = () => {
     setOpenDiff(null);
   };
-  const visibleEventsProjectorRef = useRef<ReturnType<
-    typeof createIncrementalTranscriptFilter
-  > | null>(null);
-  visibleEventsProjectorRef.current ??= createIncrementalTranscriptFilter();
+  const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
+  feedProjectorRef.current ??= createChatFeedProjector();
   const featureEventsProjectorRef = useRef<ReturnType<
     typeof createIncrementalTranscriptFilter
   > | null>(null);
@@ -394,13 +385,8 @@ export default function MissionControl() {
   const selectedFeatureChildSessionId = selectedFeature
     ? childSessionIdForFeature(progress, selectedFeature.id)
     : undefined;
-  // The incremental transcript filters compare predicate identity, so the
-  // includes closures must stay referentially stable across renders.
-  const visibleEventsIncludes = useCallback(
-    (event: TranscriptEvent) =>
-      transcriptEventIsVisible(event, visibleChildSessionId) && isRenderedTranscriptEvent(event),
-    [visibleChildSessionId],
-  );
+  // The incremental transcript filter compares predicate identity, so the
+  // includes closure must stay referentially stable across renders.
   const featureEventsIncludes = useCallback(
     (event: TranscriptEvent) => event.sourceSessionId === selectedFeatureChildSessionId,
     [selectedFeatureChildSessionId],
@@ -432,12 +418,23 @@ export default function MissionControl() {
   const visibleAgentLabel = selectedChildSession
     ? childSessionLabel(selectedChildSession, Math.max(0, selectedChildIndex))
     : 'Orchestrator';
-  const events = visibleEventsProjectorRef.current({
+  const visiblePending = visibleSessionIsPending(visibleTarget, isLive, isLive ? 'primary' : null);
+  // The chat's own projector scopes the interleaved transcript to the visible
+  // session and reuses completed feed rows for a proven append, so a streaming
+  // token no longer rebuilds every row the mission already had.
+  const projection = feedProjectorRef.current({
     conversationKey: `${mission.appSessionId}:${visibleChildSessionId ?? 'primary'}:mission`,
-    source: allTx,
-    mutation: transcriptMutation,
-    includes: visibleEventsIncludes,
+    allTranscript: allTx,
+    transcriptMutation,
+    childSessionId: visibleChildSessionId,
+    pending: visiblePending,
+    retainedCost: transcriptRetainedCost,
+    options: {
+      childSessionCards: onOrchestrator,
+      foldLiveTurn: toolActivity.density === 'compact',
+    },
   });
+  const events = projection.visibleTranscript;
 
   const selectFeature = (f: BridgeFeature) => {
     setSelectedFeatureId(f.id);
@@ -540,8 +537,9 @@ export default function MissionControl() {
             <ChatArea
               key={`${mission.appSessionId}:${visibleChildSessionId ?? 'primary'}`}
               events={events}
+              items={projection.feedItems}
               live={visibleIsLive}
-              pending={visibleSessionIsPending(visibleTarget, isLive, isLive ? 'primary' : null)}
+              pending={visiblePending}
               cwd={mission.cwd}
               onOpenDiff={setOpenDiff}
               onOpenChildSession={onOrchestrator ? openChildSession : undefined}

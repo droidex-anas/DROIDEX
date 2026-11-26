@@ -111,14 +111,26 @@ export type GroupedFeedOptions = BuildFeedOptions & {
   // Compact tool activity: the running turn folds as it goes instead of
   // listing every step.
   foldLiveTurn?: boolean;
+  // Settled turns fold into "Worked for …" groups. Surfaces that read an
+  // agent's steps verbatim (the agent pane) pass false; the grouping-only
+  // options above then have no effect.
+  foldTurns?: boolean;
 };
 
 export function buildGroupedFeed(
   events: TranscriptEvent[],
   pending: boolean,
-  { specContent, changes = false, foldLiveTurn = false, ...feedOptions }: GroupedFeedOptions = {},
+  {
+    specContent,
+    changes = false,
+    foldLiveTurn = false,
+    foldTurns = true,
+    ...feedOptions
+  }: GroupedFeedOptions = {},
 ): FeedItem[] {
-  return groupTurns(buildFeed(events, feedOptions), pending, specContent, changes, foldLiveTurn);
+  const items = buildFeed(events, feedOptions);
+  if (!foldTurns) return items;
+  return groupTurns(items, pending, specContent, changes, foldLiveTurn);
 }
 
 // Best-effort end timestamp of a feed item, used to time the live working cue.

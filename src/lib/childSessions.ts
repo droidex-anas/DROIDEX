@@ -300,15 +300,25 @@ type ChildSessionSpawnRef = Pick<
 // session hasn't reached the store yet gets a placeholder built from the spawn
 // event itself, so the dock card renders the instant the spawn streams in
 // instead of flashing per-spawn lines while the store catches up.
+// The store children a spawn row resolves to, in array order. Identity of the
+// entries is meaningful: the store replaces child objects immutably, so an
+// unchanged child is the same object.
+export function spawnRegisteredChildren(
+  childSessions: readonly ChildSessionInfo[],
+  toolUseId: string,
+): ChildSessionInfo[] {
+  return childSessions.filter(
+    (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === toolUseId,
+  );
+}
+
 export function resolveWaveSessions(
   spawns: readonly ChildSessionSpawnRef[],
   childSessions: readonly ChildSessionInfo[],
 ): ChildSessionInfo[] {
   return spawns.flatMap((spawn) => {
     const toolUseId = spawn.toolUseId ?? spawn.id;
-    const registered = childSessions.filter(
-      (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === toolUseId,
-    );
+    const registered = spawnRegisteredChildren(childSessions, toolUseId);
     if (registered.length === 0) return [pendingChildSession(spawn)];
     return registered.map((child) =>
       child.startedAt != null && child.startedAt > spawn.ts
