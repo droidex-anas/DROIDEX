@@ -193,6 +193,7 @@ const TilePane = memo(function TilePane({
       <NewChatBackdrop visible={home !== null && !underBrowser} />
       <div
         aria-hidden={underBrowser || undefined}
+        data-pause-animations={underBrowser || undefined}
         className={underBrowser ? 'invisible flex min-h-0 flex-1 flex-col' : 'contents'}
       >
         <ChatView
