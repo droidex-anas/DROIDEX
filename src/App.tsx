@@ -779,6 +779,7 @@ export default function App() {
               // a few composer controls turn pointer events back on; inert
               // keeps the whole column out of reach.
               inert={chatObscured && !browserExpanded}
+              data-pause-animations={(chatObscured && !browserExpanded) || undefined}
               style={chatColumnStyle}
               className={`flex min-w-0 flex-col overflow-hidden ${
                 browserExpanded
@@ -825,6 +826,7 @@ export default function App() {
                   {activeSession && state.sideChatPlacement === 'floating' ? (
                     <div
                       aria-hidden={browserExpanded || undefined}
+                      data-pause-animations={browserExpanded || undefined}
                       className={browserExpanded ? 'invisible' : 'contents'}
                     >
                       <Suspense fallback={null}>

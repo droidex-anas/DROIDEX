@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/Button';
 import { AccountMark } from '../providers/AccountMark';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
 import { INLINE_CARD_DURATION_S, INLINE_CARD_EASE } from '../../components/inlineCardMotion';
+import { pauseAnimationsWhenOffscreen } from '../../lib/offscreenAnimations';
 import { formatRelativeTime } from '../../lib/time';
 import type { ThreadRow as ThreadRowModel } from './threadBoard';
 
@@ -32,6 +33,7 @@ export function ThreadRow({
 }) {
   return (
     <motion.button
+      ref={pauseAnimationsWhenOffscreen}
       type="button"
       layout={!reduceMotion}
       layoutId={reduceMotion ? undefined : `thread-row:${row.appSessionId}`}
@@ -81,6 +83,7 @@ export function AttentionThreadRow({
   const verb = ASKS_FOR_DECISION.includes(row.status) ? 'Review' : 'Open';
   return (
     <motion.div
+      ref={pauseAnimationsWhenOffscreen}
       layout={!reduceMotion}
       layoutId={reduceMotion ? undefined : `thread-row:${row.appSessionId}`}
       transition={{ duration: INLINE_CARD_DURATION_S, ease: INLINE_CARD_EASE }}
