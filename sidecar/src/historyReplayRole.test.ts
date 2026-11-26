@@ -65,22 +65,25 @@ function writeTranscript(
   );
 }
 
-test('transcript windows pass through explicit role and source identity and default to primary', () => {
-  const firstText = (providerSessionId: string, appSessionId: string, role?: SessionRole) => {
-    const text = loadSessionTranscriptWindow(appSessionId, [providerSessionId], {
-      role,
-    }).events.find((e) => e.kind === 'text');
+test('transcript windows pass through explicit role and source identity and default to primary', async () => {
+  const firstText = async (providerSessionId: string, appSessionId: string, role?: SessionRole) => {
+    const text = (
+      await loadSessionTranscriptWindow(appSessionId, [providerSessionId], { role })
+    ).events.find((e) => e.kind === 'text');
     assert.ok(text, 'expected a text event');
     return [text.sourceSessionId, text.role];
   };
   writeTranscript('child-session', {});
-  assert.deepEqual(firstText('child-session', 'parent-app', 'worker'), ['child-session', 'worker']);
+  assert.deepEqual(await firstText('child-session', 'parent-app', 'worker'), [
+    'child-session',
+    'worker',
+  ]);
 
   writeTranscript('plain-session', {});
-  assert.deepEqual(firstText('plain-session', 'plain-session'), ['primary', 'primary']);
+  assert.deepEqual(await firstText('plain-session', 'plain-session'), ['primary', 'primary']);
 });
 
-test('transcript windows parse child-only skill messages with the child role', () => {
+test('transcript windows parse child-only skill messages with the child role', async () => {
   writeTranscript(
     'child-skill',
     {
@@ -101,10 +104,12 @@ test('transcript windows parse child-only skill messages with the child role', (
     ],
   );
 
-  const primary = loadSessionTranscriptWindow('parent-app', ['child-skill'], {
+  const primary = await loadSessionTranscriptWindow('parent-app', ['child-skill'], {
     role: 'primary',
   });
-  const child = loadSessionTranscriptWindow('parent-app', ['child-skill'], { role: 'worker' });
+  const child = await loadSessionTranscriptWindow('parent-app', ['child-skill'], {
+    role: 'worker',
+  });
 
   assert.equal(primary.events.length, 2);
   assert.deepEqual(child.events, []);

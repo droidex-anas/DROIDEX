@@ -21,7 +21,7 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test('Mission hydration restores logical child progress beneath the exact parent', () => {
+test('Mission hydration restores logical child progress beneath the exact parent', async () => {
   const missionDir = join(home, '.factory', 'missions', 'mission-1');
   mkdirSync(missionDir, { recursive: true });
   writeFileSync(
@@ -78,7 +78,7 @@ test('Mission hydration restores logical child progress beneath the exact parent
   });
   history.close();
 
-  const hydrated = hydrateHistoricalSession('mission-1');
+  const hydrated = await hydrateHistoricalSession('mission-1');
   assert.deepEqual(
     hydrated.progress.map((entry) => entry.workerChildSessionId),
     ['child-stable', 'child-stable'],
@@ -87,7 +87,7 @@ test('Mission hydration restores logical child progress beneath the exact parent
   assert.equal(JSON.stringify(hydrated.progress).includes('spawn-1'), false);
 });
 
-test('Mission enumeration keeps healthy missions beside an unreadable sibling', (t) => {
+test('Mission enumeration keeps healthy missions beside an unreadable sibling', async (t) => {
   const warnings = t.mock.method(console, 'warn', () => undefined);
   const brokenDir = join(home, '.factory', 'missions', 'a-broken');
   mkdirSync(brokenDir, { recursive: true });
@@ -113,9 +113,9 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
     ),
     ['mission-healthy'],
   );
-  assert.doesNotThrow(() => hydrateHistoricalSession('healthy-app'));
-  assert.throws(
-    () => hydrateHistoricalSession('broken-app'),
+  await hydrateHistoricalSession('healthy-app');
+  await assert.rejects(
+    hydrateHistoricalSession('broken-app'),
     (error: Error) =>
       error.message.includes('Mission history not found for broken-app') &&
       error.message.includes(brokenDir) &&
@@ -128,7 +128,7 @@ test('Mission enumeration keeps healthy missions beside an unreadable sibling', 
   assert.equal(warning.includes('secret-partial'), false);
 });
 
-test('Mission older pages load independently of the progress log', () => {
+test('Mission older pages load independently of the progress log', async () => {
   const appSessionId = 'paged-mission';
   const missionDir = join(home, '.factory', 'missions', 'paged-mission');
   const sessionDir = join(home, '.factory', 'sessions');
@@ -172,9 +172,12 @@ test('Mission older pages load independently of the progress log', () => {
   });
   history.close();
 
-  const latest = hydrateHistoricalSession('paged-mission', { limit: 1 });
+  const latest = await hydrateHistoricalSession('paged-mission', { limit: 1 });
   assert.ok(latest.olderCursor);
-  const older = hydrateHistoricalSession('paged-mission', { cursor: latest.olderCursor, limit: 2 });
+  const older = await hydrateHistoricalSession('paged-mission', {
+    cursor: latest.olderCursor,
+    limit: 2,
+  });
   assert.deepEqual(older.progress, []);
   assert.deepEqual(
     older.transcripts.map((event) => event.text),
@@ -184,13 +187,13 @@ test('Mission older pages load independently of the progress log', () => {
   rmSync(progressPath);
   mkdirSync(progressPath);
   assert.deepEqual(
-    hydrateHistoricalSession('paged-mission', {
+    await hydrateHistoricalSession('paged-mission', {
       cursor: latest.olderCursor,
       limit: 2,
     }),
     older,
   );
-  assert.throws(() => hydrateHistoricalSession('paged-mission', { limit: 1 }), { code: 'EISDIR' });
+  await assert.rejects(hydrateHistoricalSession('paged-mission', { limit: 1 }), { code: 'EISDIR' });
 });
 
 function missionSummary(): SessionSummary {

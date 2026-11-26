@@ -34,16 +34,29 @@ export default function AskUserInline({
   const question = useStoreSelector((current) => current.pendingQuestions[appSessionId]?.[0]);
 
   // A request without questions cannot be answered; cancel it so the pending
-  // interaction settles instead of wedging the composer.
+  // interaction settles instead of wedging the composer. A refused send (full
+  // offline queue) retries, because nothing else ever settles this request.
   useEffect(() => {
-    if (question?.questions.length === 0) {
-      if (!respondQuestion(question.appSessionId, question.requestId, true, [])) return;
+    if (question?.questions.length !== 0) return;
+    let settled = false;
+    const cancel = () => {
+      if (settled) return true;
+      if (!respondQuestion(question.appSessionId, question.requestId, true, [])) return false;
+      settled = true;
       dispatch({
         type: 'CLEAR_QUESTION',
         appSessionId: question.appSessionId,
         requestId: question.requestId,
       });
-    }
+      return true;
+    };
+    if (cancel()) return;
+    const retry = setInterval(() => {
+      if (cancel()) clearInterval(retry);
+    }, 1000);
+    return () => {
+      clearInterval(retry);
+    };
   }, [question, dispatch]);
 
   if (!question || question.questions.length === 0) return null;

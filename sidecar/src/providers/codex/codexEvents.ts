@@ -256,7 +256,9 @@ export class CodexEventMapper {
 
   private updateChild(signal: ChildSessionSignal): NormalizedEvent[] {
     const id = signal.providerSessionId;
-    if (!id) return [];
+    // A spawn that failed before receiving a thread has no provider id; its
+    // terminal signal still has to reach the child-session store.
+    if (!id) return signal.done && signal.status === 'failed' ? [{ childSession: signal }] : [];
     const previous = this.children.get(id);
     const child = { ...previous, ...signal };
     // Thread metadata may precede the spawn, and is more useful than its prompt.

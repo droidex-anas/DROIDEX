@@ -14,6 +14,21 @@ export function latestSessionList(events: ServerEvent[]): SessionSummary[] {
   return events.filter((event) => event.type === 'sessions.list').at(-1)?.sessions ?? [];
 }
 
+// History reads cross worker and threadpool boundaries, so one event-loop
+// turn no longer drains the pipeline that publishes them. Wait for the
+// observable event itself: each iteration yields the loop so the real work
+// completes, and the bound only turns a broken pipeline into a failure.
+export async function waitForEvent(
+  events: ServerEvent[],
+  predicate: (event: ServerEvent) => boolean,
+): Promise<void> {
+  for (let attempts = 0; attempts < 1000; attempts += 1) {
+    if (events.some(predicate)) return;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  assert.fail('expected event never arrived');
+}
+
 export async function createMission(
   h: SessionManagerTestContext,
   options: {
