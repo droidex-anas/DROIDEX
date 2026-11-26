@@ -65,6 +65,7 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
     private _height = 0;
     private _travel = 0;
     private _raf = 0;
+    private _paceTimer = 0;
     private _lastTime = 0;
     private _lastPaint = -Infinity;
     private _ultraStarted: number | null = null;
@@ -377,6 +378,8 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
 
     private _sleep(): void {
       cancelAnimationFrame(this._raf);
+      clearTimeout(this._paceTimer);
+      this._paceTimer = 0;
       this._raf = 0;
       this._lastTime = 0;
     }
@@ -404,8 +407,15 @@ if (typeof customElements !== 'undefined' && !customElements.get('effort-slider'
       }
       this._render(time);
       const shimmering = ultraHere && !this._motion.matches;
-      if (moving || shimmering || (waiting && !this._motion.matches))
+      if (moving || (waiting && !this._motion.matches)) {
         this._raf = requestAnimationFrame(this._frame);
+      } else if (shimmering) {
+        this._paceTimer = window.setTimeout(() => {
+          this._paceTimer = 0;
+          if (this.isConnected && !document.hidden && this._onscreen && !this._raf)
+            this._raf = requestAnimationFrame(this._frame);
+        }, 1000 / 30);
+      }
     }
 
     private _render(time: number): void {

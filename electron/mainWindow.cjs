@@ -66,7 +66,7 @@ function createMainWindowController({
       ),
       backgroundColor: process.platform === 'darwin' ? '#00000000' : '#0a0a0a',
       vibrancy: process.platform === 'darwin' ? 'under-window' : undefined,
-      visualEffectState: 'active',
+      visualEffectState: 'followWindowActiveState',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
       trafficLightPosition: { x: 14, y: 12 },
       webPreferences: {
