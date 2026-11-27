@@ -56,7 +56,7 @@ test('entries past the byte budget evict the least recently used first', () => {
   resetMarkdownOutputCacheForTest();
   // Entries sized so three never fit but two always do: inserting a third
   // evicts exactly one — the least recently used.
-  const size = Math.floor(MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET / 3) + 1;
+  const size = Math.floor((MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET / 3 - 4096) / 8) + 1;
   const source = (marker: string) => marker + 'x'.repeat(size - marker.length);
   const [a, b, c] = [source('a'), source('b'), source('c')];
   const { counts, lookup } = renderCounts();
@@ -72,4 +72,15 @@ test('entries past the byte budget evict the least recently used first', () => {
   assert.equal(counts.get(a), 1, 'the refreshed entry survives on its recency');
   lookup(b);
   assert.equal(counts.get(b), 2, 'the least recently used entry was evicted');
+});
+
+test('a source too large for the budget renders without entering the cache', () => {
+  resetMarkdownOutputCacheForTest();
+  const source = 'x'.repeat(MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET);
+  const { counts, lookup } = renderCounts();
+
+  lookup(source);
+  lookup(source);
+
+  assert.equal(counts.get(source), 2);
 });

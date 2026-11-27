@@ -1,11 +1,14 @@
 import type { ReactElement } from 'react';
 
-// A byte-bounded LRU of rendered markdown output trees, shared across rows,
-// mounts and sessions. The virtualizer mounts about a viewport plus overscan
-// per pass, so scrolling the same rows re-parses them every time unless the
-// trees survive unmounting. Two mebibytes of source text covers many screens
-// of back-scroll; the transcripts themselves are already several times that.
+// A bounded LRU of rendered markdown output trees, shared across rows, mounts
+// and sessions. The virtualizer mounts about a viewport plus overscan per pass,
+// so scrolling the same rows re-parses them every time unless the trees survive
+// unmounting. The byte weight is a heuristic for the retained element graph,
+// not merely the source length; the entry cap keeps many tiny rows bounded too.
 export const MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET = 2 * 1024 * 1024;
+const MARKDOWN_OUTPUT_CACHE_ENTRY_LIMIT = 128;
+const ENTRY_OVERHEAD_BYTES = 4096;
+const OUTPUT_GRAPH_FACTOR = 8;
 
 // Every input that changes the output tree. Fence building state and file
 // handlers are deliberately absent: they reach components through context at
@@ -51,10 +54,16 @@ export function cachedMarkdownOutputTree(
     return hit.element;
   }
   const element = render();
-  const weightBytes = Math.max(source.length, 1);
+  const weightBytes = ENTRY_OVERHEAD_BYTES + Math.max(source.length, 1) * OUTPUT_GRAPH_FACTOR;
+  // A tree too large for the budget would flush every useful small entry and
+  // then violate the budget alone. Large previews still render; they just miss.
+  if (weightBytes > MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET) return element;
   entries.set(key, { weightBytes, element });
   totalBytes += weightBytes;
-  while (totalBytes > MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET && entries.size > 1) {
+  while (
+    totalBytes > MARKDOWN_OUTPUT_CACHE_BYTE_BUDGET ||
+    entries.size > MARKDOWN_OUTPUT_CACHE_ENTRY_LIMIT
+  ) {
     const oldestKey = entries.keys().next().value;
     if (oldestKey === undefined) break;
     totalBytes -= entries.get(oldestKey)?.weightBytes ?? 0;
