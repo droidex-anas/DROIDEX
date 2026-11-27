@@ -424,7 +424,7 @@ function workedFold(entries: { index: number; item: FeedItem }[], phase: TurnPha
 
 // While the turn runs, everything after the user's last real prompt is live,
 // including the work before a steer they sent into it.
-function liveTurnStart(items: FeedItem[]): number {
+export function liveTurnStart(items: FeedItem[]): number {
   for (let k = items.length - 1; k >= 0; k -= 1) {
     const item = items[k];
     if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
