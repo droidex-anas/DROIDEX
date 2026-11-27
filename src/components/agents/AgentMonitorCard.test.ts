@@ -113,6 +113,15 @@ test('a confirmed running child stays live after its spawning turn settles', () 
   assert.ok(!html.includes('0 of 1 agents finished'));
 });
 
+test('a paused child does not keep a settled wave open on its own', () => {
+  const html = cardText({
+    sessions: [childSession('paused', 't1', 'paused')],
+    models: [],
+    live: false,
+  });
+  assert.ok(!html.includes('Working'));
+});
+
 test('the collapsed card counts agents by their own status, with a completion summary', () => {
   // A background Task call returning means the launch was accepted, not that the
   // agent finished; only the child's state-only status may settle a row.

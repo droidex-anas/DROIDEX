@@ -1,17 +1,12 @@
 import { useEffect, useState } from 'react';
 import type { ChildSessionSummary, ModelInfo } from '@droidex/protocol';
-import {
-  isPendingChildPlaceholder,
-  type ChildSessionActivity,
-  type ChildSessionTarget,
-} from '../../lib/childSessions';
+import type { ChildSessionActivity, ChildSessionTarget } from '../../lib/childSessions';
 import type { ChildStreamSnapshot } from '../../lib/childSessionStream';
 import {
   agentWaveProgress,
   agentWaveTimeMs,
   buildAgentRows,
   countAgentStatuses,
-  isSettledAgentStatus,
   type AgentRow,
   type AgentStatusCounts,
 } from './agentMonitorModel';
@@ -43,21 +38,16 @@ export function useAgentWave(input: {
 }): AgentWave {
   const rows = buildAgentRows(input.sessions, input.models, input.activity, input.snapshots);
   const counts = countAgentStatuses(rows);
-  // An agent awaiting approval has run and will again: the wave is still open
-  // and its clock still counts.
-  const hasConfirmedRunning = counts.running + counts.paused > 0;
+  // Paused is ambiguous in the protocol: it can mean awaiting approval, but it
+  // also marks interrupted and restored children that nothing is driving. Only
+  // running children can keep a clock alive on their own.
+  const hasConfirmedRunning = counts.running > 0;
   const now = useNow(hasConfirmedRunning);
-  const elapsedMs = useAgentRowElapsed(rows, now, input.live);
-  // A child can outlive the turn that spawned it, so confirmed work stays live
-  // on its own. Pending and queued rows still need the turn's ownership: an
-  // interrupted spawn must not wait behind a settled fold forever.
-  const hasConfirmedOpen = rows.some(
-    (row) =>
-      row.status === 'running' ||
-      row.status === 'paused' ||
-      (!isPendingChildPlaceholder(row.child) && (row.status === 'pending' || row.queued)),
-  );
-  const inFlight = hasConfirmedOpen || (input.live && counts.pending + counts.queued > 0);
+  const elapsedMs = useAgentRowElapsed(rows, now);
+  // A running child can outlive the turn that spawned it. Pending and queued
+  // rows still need the turn's ownership: an interrupted or restored spawn must
+  // not wait behind a settled fold forever.
+  const inFlight = counts.running > 0 || (input.live && counts.pending + counts.queued > 0);
   const started = rows.map((row) => row.startedAt).filter((at): at is number => at != null);
   const lastSettledAt = rows.reduce<number | undefined>((last, row) => {
     const elapsed = elapsedMs.get(row.key);
@@ -105,11 +95,7 @@ function useNow(active: boolean): number {
 // transcript later shows what the agent took, not how long ago it ran. A row
 // this window never watched can still report the run the sidecar recorded; one
 // with neither has no honest duration to report at all.
-function useAgentRowElapsed(
-  rows: readonly AgentRow[],
-  now: number,
-  live: boolean,
-): ReadonlyMap<string, number> {
+function useAgentRowElapsed(rows: readonly AgentRow[], now: number): ReadonlyMap<string, number> {
   const [observed, setObserved] = useState<ReadonlyMap<string, number | undefined>>(
     () => new Map(),
   );
@@ -117,9 +103,7 @@ function useAgentRowElapsed(
     setObserved((previous) => {
       let next: Map<string, number | undefined> | undefined;
       for (const row of rows) {
-        const rowLive = live || row.status === 'running' || row.status === 'paused';
-        const ticking =
-          rowLive && !row.queued && !isSettledAgentStatus(row.status) && row.status !== 'pending';
+        const ticking = row.status === 'running' && !row.queued;
         if (ticking) {
           if (!previous.has(row.key)) (next ??= new Map(previous)).set(row.key, undefined);
         } else if (
@@ -132,21 +116,19 @@ function useAgentRowElapsed(
       }
       return next ?? previous;
     });
-  }, [rows, live]);
+  }, [rows]);
 
   const elapsed = new Map<string, number>();
   for (const row of rows) {
     if (row.startedAt == null || row.queued || row.status === 'pending') continue;
-    const rowLive = live || row.status === 'running' || row.status === 'paused';
-    if (isSettledAgentStatus(row.status) || !rowLive) {
+    if (row.status !== 'running') {
       const frozen = observed.get(row.key);
       if (observed.has(row.key)) elapsed.set(row.key, frozen ?? Math.max(0, now - row.startedAt));
       else if (row.settledAt != null)
         elapsed.set(row.key, Math.max(0, row.settledAt - row.startedAt));
       continue;
     }
-    if (row.status === 'running' || row.status === 'paused')
-      elapsed.set(row.key, Math.max(0, now - row.startedAt));
+    elapsed.set(row.key, Math.max(0, now - row.startedAt));
   }
   return elapsed;
 }
