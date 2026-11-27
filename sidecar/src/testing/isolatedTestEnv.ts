@@ -5,9 +5,10 @@
 // started from a shell that carries the app's values therefore opens the user's
 // live history database: one run migrated it to an unmerged schema and left the
 // app refusing the profile. No test may reach real data even by accident, so
-// this drops both variables and points HOME at a scratch directory before any
-// test module loads. Harness credential stores resolve from XDG_DATA_HOME and
-// APPDATA before HOME, so those go too. Tests that pin their own directory
+// this drops both variables and points the home directory (HOME, and
+// USERPROFILE on Windows) at a scratch directory before any test module loads.
+// Harness credential stores resolve from XDG_DATA_HOME and APPDATA before the
+// home directory, so those go too. Tests that pin their own directory
 // still do; they now pin it over a scratch home rather than over the user's.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -23,6 +24,7 @@ delete process.env.WINDSURF_API_KEY;
 delete process.env.XDG_DATA_HOME;
 delete process.env.APPDATA;
 process.env.HOME = scratchHome;
+process.env.USERPROFILE = scratchHome;
 
 process.on('exit', () => {
   rmSync(scratchHome, { recursive: true, force: true });

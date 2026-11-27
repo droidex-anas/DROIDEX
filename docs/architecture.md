@@ -278,10 +278,11 @@ Inspected screenshots stay open until the user closes them.
 
 Devin runs `devin acp` over stdio through the official ACP SDK. Resolution uses
 `DEVIN_PATH`, then PATH, then `~/.local/bin/devin`, `/opt/homebrew/bin/devin`
-and `/usr/local/bin/devin`. It uses the CLI's existing
-login (`devin auth login`), never an API key. The probe checks `devin auth status`
-and discovers models from a temporary ACP session's model config options, then
-deletes and closes that session. The ACP session id is `providerSessionId`;
+and `/usr/local/bin/devin`. It uses the CLI's existing login (`devin auth login`):
+the sidecar reads the key that login stored in Devin's `credentials.toml` and passes
+it to ACP `authenticate`; with no stored key the probe and sessions report Devin as
+signed out. The probe discovers models from a temporary ACP session's model config
+options, then deletes and closes that session. The ACP session id is `providerSessionId`;
 resume starts a fresh process and loads it without replaying history into
 DROIDEX's app-owned transcript. In-app MCP servers use the existing per-session
 loopback HTTP endpoints. Filesystem client capabilities are not advertised.

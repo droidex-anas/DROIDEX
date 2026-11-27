@@ -159,6 +159,10 @@ export class DevinClient {
     this.isClosed = true;
     this.failure = error;
     this.connection.close(error);
+    // An orphan that inherited the pipes would otherwise keep them, and the sidecar, alive.
+    this.child.stdin.destroy();
+    this.child.stdout.destroy();
+    this.child.stderr.destroy();
     this.settle(error);
   }
 }

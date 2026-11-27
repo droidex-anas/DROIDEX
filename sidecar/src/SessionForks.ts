@@ -13,7 +13,7 @@ import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './errors.js';
 import type { SessionLineageStore } from './sessionLineage.js';
 import { formatSideChatPrompt } from './sideChatPrompt.js';
-import { parseTranscriptLines } from './sessionTranscript.js';
+import { MAX_SESSION_BYTES, parseTranscriptLines } from './sessionTranscript.js';
 import type { SessionRegistry, SessionSummaryPatch } from './SessionRegistry.js';
 import {
   forkedTranscript,
@@ -225,7 +225,7 @@ export class SessionForks {
     const events = parseTranscriptLines(
       source.appSessionId,
       source.providerSessionId ?? source.appSessionId,
-      transcript.lines,
+      newestLines(transcript.lines, MAX_SESSION_BYTES),
       'primary',
     );
     const seed = branchConversation(events);
@@ -358,6 +358,18 @@ function pickedModelSettings(command: SessionForkCommand): SessionSummaryPatch {
     ...(command.modelId ? { modelId: command.modelId } : {}),
     ...(command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {}),
   };
+}
+
+// The seed keeps only the end of the conversation, so a long chat parses only
+// its newest lines on the event loop. The newest line is kept whatever its size.
+function newestLines(lines: string[], budgetChars: number): string[] {
+  let start = lines.length - 1;
+  let chars = lines.at(-1)?.length ?? 0;
+  while (start > 0 && chars + lines[start - 1].length <= budgetChars) {
+    start -= 1;
+    chars += lines[start].length;
+  }
+  return lines.slice(Math.max(start, 0));
 }
 
 async function storedEvents(source: SessionSummary): Promise<TranscriptEvent[]> {
