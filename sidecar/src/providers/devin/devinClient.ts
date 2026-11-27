@@ -11,7 +11,7 @@ import {
   type SessionNotification,
 } from '@agentclientprotocol/sdk/unstable';
 import { childEnv } from '../../childEnv.js';
-import { readDevinApiKey } from './devinCredentials.js';
+import { readDevinLogin } from './devinCredentials.js';
 import type { DevinTerminals } from './devinTerminals.js';
 
 export class DevinClient {
@@ -123,11 +123,14 @@ export class DevinClient {
         'Devin requires interactive terminal authentication. Run devin auth login, then retry.',
       );
     // Without the stored login this method opens a browser from a background process.
-    const apiKey = await readDevinApiKey();
-    if (!apiKey) throw new Error('Devin is signed out. Run devin auth login, then retry.');
+    const login = await readDevinLogin();
+    if (!login) throw new Error('Devin is signed out. Run devin auth login, then retry.');
+    const meta = login.apiServerUrl
+      ? { api_key: login.apiKey, api_server_url: login.apiServerUrl }
+      : { api_key: login.apiKey };
     await this.connection.agent.request(
       'authenticate',
-      { methodId: method.id, _meta: { api_key: apiKey } },
+      { methodId: method.id, _meta: meta },
       signal ? { cancellationSignal: signal, stopWaitingOnCancel: true } : undefined,
     );
   }

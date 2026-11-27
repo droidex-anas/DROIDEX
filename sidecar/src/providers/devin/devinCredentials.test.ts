@@ -3,10 +3,10 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { readDevinApiKey } from './devinCredentials.js';
+import { readDevinLogin } from './devinCredentials.js';
 
 test(
-  'Devin credentials respect XDG_DATA_HOME',
+  'Devin credentials respect XDG_DATA_HOME and keep the login server',
   { skip: process.platform === 'win32' },
   async (t) => {
     const xdg = await mkdtemp(join(tmpdir(), 'devin-xdg-'));
@@ -18,8 +18,14 @@ test(
       await rm(xdg, { recursive: true, force: true });
     });
     await mkdir(join(xdg, 'devin'), { recursive: true });
-    await writeFile(join(xdg, 'devin', 'credentials.toml'), 'windsurf_api_key = "test-key"\n');
-    assert.equal(await readDevinApiKey(), 'test-key');
+    await writeFile(
+      join(xdg, 'devin', 'credentials.toml'),
+      'windsurf_api_key = "test-key"\napi_server_url = "https://devin.test"\n',
+    );
+    assert.deepEqual(await readDevinLogin(), {
+      apiKey: 'test-key',
+      apiServerUrl: 'https://devin.test',
+    });
   },
 );
 
@@ -41,6 +47,6 @@ test(
     });
     await mkdir(join(xdg, 'devin'), { recursive: true });
     await writeFile(join(xdg, 'devin', 'credentials.toml'), 'windsurf_api_key = "stored-key"\n');
-    assert.equal(await readDevinApiKey(), 'environment-key');
+    assert.deepEqual(await readDevinLogin(), { apiKey: 'environment-key' });
   },
 );
