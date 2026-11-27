@@ -114,3 +114,22 @@ test('compact lets the running fold speak for a subagent poll', () => {
   assert.match(compact, /Working/);
   assert.doesNotMatch(compact, /Checking subagents/);
 });
+
+test('settled turn tool groups never shimmer while the session is live on a newer turn', () => {
+  // A call whose turn was interrupted never receives its result: it stays
+  // unpaired forever. Scoping sessionLive to the live turn keeps that history
+  // still — before the scope, every such group shimmered for the session's life.
+  const events = [
+    userMsg('first'),
+    grep(), // turn one's call, deliberately never answered
+    userMsg('second'),
+    grep(), // the live turn's in-flight call
+  ];
+  const html = renderToStaticMarkup(createElement(MessageFeed, { events, pending: true, density: 'compact' }));
+  const shimmering = html.match(/shimmer-text[^>]*>([^<]+)</g) ?? [];
+  assert.ok(
+    shimmering.some((s) => s.includes('Searching') || s.includes('Grep') || s.includes('Running') || s.includes('Exploring')),
+    `live turn group should shimmer, got: ${shimmering.join(' | ') || 'nothing'}`,
+  );
+  assert.equal(shimmering.length, 1, `only the live turn may shimmer, got: ${shimmering.join(' | ')}`);
+});

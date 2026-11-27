@@ -48,7 +48,7 @@ import {
   isSettingsStatus,
   type FeedItem,
 } from './chatFeed';
-import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
+import { groupTurns, liveTurnStart, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
@@ -229,6 +229,12 @@ export function MessageFeed({
       ),
     [providedItems, events, pending, rich, changes, specContent, dockEnabled, density],
   );
+  // Rows before the live turn sit in settled turns: nothing there can be in
+  // flight, so they must not shimmer even while the session is live on a newer
+  // turn. Interrupted calls never receive results, so without the turn scope
+  // they would shimmer for the rest of the session's life. Shares groupTurns'
+  // definition of where the live turn starts so the two never disagree.
+  const liveTurnFrom = useMemo(() => liveTurnStart(items), [items]);
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
   const previousFeed = renderedFeedRef.current;
@@ -382,7 +388,7 @@ export function MessageFeed({
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
                   live={pending && index === lastIdx && !subagentPoll}
-                  sessionLive={pending}
+                  sessionLive={pending && index >= liveTurnFrom}
                   compacting={compacting && index === lastIdx}
                   cwd={cwd}
                   onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}
