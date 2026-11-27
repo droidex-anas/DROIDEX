@@ -5,6 +5,7 @@ import test from 'node:test';
 import type { ModelInfo } from '@droidex/protocol';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { fixture } from '../../testing/devinProviderFixture.js';
+import { writeDevinTestCredentials } from '../../testing/devinAcpCli.js';
 
 test('Devin probe answers before scanning and publishes enriched models later', async (t) => {
   const h = await fixture(t);
@@ -42,7 +43,7 @@ test('Devin probe reports auth, models and defaults and deletes its provisional 
   const rejected = await h.provider.probe(new AbortController().signal);
   assert.equal(rejected.readiness, 'unauthenticated');
   assert.match(rejected.message ?? '', /sign in again/);
-  await writeFile(h.credentials, 'windsurf_api_key = "test-key"\n');
+  await writeDevinTestCredentials();
   const published: { name: string; kind: string; argumentHint?: string }[][] = [];
   const ready = await h.provider.probe(new AbortController().signal, (items) => {
     published.push(

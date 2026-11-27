@@ -5,7 +5,10 @@ import { devinCredentialsPath } from '../providers/devin/devinCredentials.js';
 export async function writeDevinTestCredentials(): Promise<string> {
   const credentials = devinCredentialsPath();
   await mkdir(dirname(credentials), { recursive: true });
-  await writeFile(credentials, 'windsurf_api_key = "test-key"\n');
+  await writeFile(
+    credentials,
+    'windsurf_api_key = "test-key"\napi_server_url = "https://devin.test"\n',
+  );
   return credentials;
 }
 
@@ -109,10 +112,14 @@ createInterface({ input: process.stdin }).on('line', async (line) => {
       _meta: { 'cognition.ai/persistOnCreate': true },
       sessionCapabilities: { close: {}, delete: {}, ...(existsSync(join(root, 'native-fork')) ? { fork: {} } : {}) } } });
   } else if (method === 'authenticate') {
-    if (params.methodId === 'devin-browser' && params._meta?.api_key === 'test-key') {
+    if (params.methodId !== 'devin-browser' || params._meta?.api_key !== 'test-key')
+      failure(id, -32602, 'Authentication failed: invalid api key');
+    else if (params._meta?.api_server_url !== 'https://devin.test')
+      failure(id, -32603, 'Authentication failed: this login is for another server');
+    else {
       authenticated = true;
       result(id, {});
-    } else failure(id, -32602, 'Authentication failed: invalid api key');
+    }
   } else if (method === 'session/fork') {
     if (!authenticated) failure(id, -32000, 'ACP host has not authenticated.');
     else {
