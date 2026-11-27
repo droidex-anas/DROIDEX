@@ -336,7 +336,7 @@ export class SessionManager {
   private shutdownPromise?: Promise<void>;
   // Providers serialize native writes; this tracks outstanding changes so
   // delivery and retirement cannot outlive them.
-  private readonly autonomyMutationTails = new Map<string, Promise<void>>();
+  private readonly autonomyMutationTails = new Map<string, Promise<boolean>>();
   private readonly onSessionAvailable: SessionManagerOptions['onSessionAvailable'];
   private readonly canvasTurns: CanvasTurns;
   private readonly projectExports = new ProjectExports();
@@ -370,6 +370,10 @@ export class SessionManager {
     return new CodexProvider((meters) => {
       this.accountUsage.pushed('codex', meters);
     });
+  });
+  private readonly devinProvider = new LazyProvider('devin', async () => {
+    const { DevinProvider } = await import('./providers/devin/DevinProvider.js');
+    return new DevinProvider();
   });
   private readonly accountUsage = new AccountUsage({
     // A chat that has begun closing still holds a connection, but not for long.
@@ -416,6 +420,11 @@ export class SessionManager {
             (signal, publish) => this.claudeProvider.probe(signal, publish),
           ],
           [this.codexProvider.kind, (signal, publish) => this.codexProvider.probe(signal, publish)],
+          [
+            this.devinProvider.kind,
+            (signal, publish, publishModels) =>
+              this.devinProvider.probe(signal, publish, publishModels),
+          ],
         ]),
       () => {
         void this.emitProviderStatus();
@@ -594,6 +603,7 @@ export class SessionManager {
         this.emit(event);
       },
       setProviderSpecMode: (appSessionId, spec) => this.setProviderSpecMode(appSessionId, spec),
+      setAutonomy: (appSessionId, autonomy) => this.setAutonomy(appSessionId, autonomy),
       emitError: (error) => {
         this.emitError(error);
       },
@@ -643,7 +653,8 @@ export class SessionManager {
           ? this.childSessions.childScopeForProvider(appSessionId, owner.id)
           : this.childSessions.childScopeForSpawn(appSessionId, owner),
       recordUsage: (appSessionId, sourceProviderSessionId, usage) => {
-        this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
+        if (!this.childSessions.recordUsage(appSessionId, sourceProviderSessionId, usage))
+          this.context.recordUsage(appSessionId, sourceProviderSessionId, usage);
       },
     });
     this.childSessions = new ChildSessions({
@@ -1276,7 +1287,7 @@ export class SessionManager {
         await this.renameSession(cmd.appSessionId, cmd.title);
         return;
       case 'session.exportMarkdown':
-        this.historyQueries.exportMarkdown(cmd);
+        await this.historyQueries.exportMarkdown(cmd);
         return;
       case 'sessions.reanchorCwd':
         try {
@@ -1318,7 +1329,7 @@ export class SessionManager {
         return;
       case 'session.loadHistory':
         await this.sessionFiles.whenBootReconciled();
-        this.timeline.load(cmd.appSessionId, cmd.cursor, cmd.limit);
+        await this.timeline.load(cmd.appSessionId, cmd.cursor, cmd.limit);
         return;
       case 'sessions.search':
         await this.historyQueries.search(cmd);
@@ -2104,10 +2115,14 @@ export class SessionManager {
     });
   }
 
-  private setAutonomy(appSessionId: string, autonomy: Autonomy, requestId?: string): Promise<void> {
+  private setAutonomy(
+    appSessionId: string,
+    autonomy: Autonomy,
+    requestId?: string,
+  ): Promise<boolean> {
     const tail = this.autonomyMutationTails.get(appSessionId);
     const applied = this.applyAutonomy(appSessionId, autonomy, requestId);
-    const next = tail ? Promise.all([tail, applied]).then(() => undefined) : applied;
+    const next = tail ? Promise.all([tail, applied]).then(([, result]) => result) : applied;
     this.autonomyMutationTails.set(appSessionId, next);
     return next.finally(() => {
       if (this.autonomyMutationTails.get(appSessionId) === next) {
@@ -2123,7 +2138,7 @@ export class SessionManager {
     appSessionId: string,
     autonomy: Autonomy,
     requestId: string = randomUUID(),
-  ): Promise<void> {
+  ): Promise<boolean> {
     const liveSession = this.registry.getLive(appSessionId);
     if (!liveSession) {
       this.emitError({
@@ -2133,7 +2148,7 @@ export class SessionManager {
         message: 'Autonomy can only be changed on a live session.',
         recoverable: true,
       });
-      return;
+      return false;
     }
     const nextAutonomy = normalizeAutonomy(autonomy);
     if (!nextAutonomy) {
@@ -2144,7 +2159,7 @@ export class SessionManager {
         message: `Unsupported autonomy level: ${autonomy}`,
         recoverable: true,
       });
-      return;
+      return false;
     }
     const session = liveSession.session;
     const isCurrent = () =>
@@ -2171,6 +2186,7 @@ export class SessionManager {
       }
       publishAutonomy();
       this.emit({ type: 'session.autonomy_update_applied', appSessionId, requestId });
+      return true;
     } catch (err) {
       try {
         if (isCurrent()) publishAutonomy();
@@ -2183,6 +2199,7 @@ export class SessionManager {
           recoverable: true,
         });
       }
+      return false;
     }
   }
 
@@ -2272,6 +2289,8 @@ export class SessionManager {
         return this.claudeProvider;
       case 'codex':
         return this.codexProvider;
+      case 'devin':
+        return this.devinProvider;
     }
   }
 

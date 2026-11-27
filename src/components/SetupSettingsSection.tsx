@@ -107,7 +107,7 @@ export function SetupSettingsSection({ onClose }: { onClose: () => void }) {
         </SettingRow>
       </div>
 
-      <GroupLabel>Claude Code and Codex</GroupLabel>
+      <GroupLabel>Agent CLIs</GroupLabel>
       <HarnessCliSettings
         autoUpdate={onboarding?.harnessCliAutoUpdate ?? true}
         onAutoUpdateChange={(enabled) => void onboard.patch({ harnessCliAutoUpdate: enabled })}

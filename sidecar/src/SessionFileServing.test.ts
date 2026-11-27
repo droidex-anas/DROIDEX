@@ -27,6 +27,7 @@ function createServing() {
     failNextFull: undefined as Error | undefined,
     failNextTargeted: undefined as Error | undefined,
     watchersClosed: 0,
+    listVersion: 0,
   };
   let listedWith: SessionListFilterOptions | undefined;
   const serving = new SessionFileServing({
@@ -64,7 +65,9 @@ function createServing() {
     onFilesReconciled: (changes) => reconciled.push(changes),
     listSummaries: (options) => {
       listedWith = options;
-      return { sessions: [], earlierSessionsByCwd: {} };
+      const earlierSessionsByCwd: Record<string, number> = {};
+      if (state.listVersion !== 0) earlierSessionsByCwd['/tmp'] = state.listVersion;
+      return { sessions: [], earlierSessionsByCwd };
     },
     emitList: () => {
       emitted.push(listedWith);
@@ -149,7 +152,7 @@ test('a watcher change during the boot reconcile is replayed after it, before th
   assert.equal(h.emitted.length, 1, 'only the authoritative boot list is emitted');
 });
 
-test('watcher changes reconcile exactly the reported files, or the whole tree when unexplained', async (t) => {
+test('watcher changes reconcile exactly the reported files and republish only a changed list', async (t) => {
   t.mock.method(console, 'error', () => undefined);
   const h = createServing();
   const filter = { workspaceCwds: ['/tmp/external-workspace'] };
@@ -159,14 +162,22 @@ test('watcher changes reconcile exactly the reported files, or the whole tree wh
   await h.settle();
   assert.deepEqual(h.targeted, [[change('external-1'), change('external-2')]]);
   assert.deepEqual(h.reconciled, [[change('external-1'), change('external-2')]]);
-  assert.deepEqual(h.emitted, [filter, filter], 'a change republishes the last requested list');
+  assert.deepEqual(h.emitted, [filter], 'an unchanged reconcile does not duplicate the list');
+
+  h.state.listVersion = 1;
+  h.fire([change('external-3')]);
+  await h.settle();
+  assert.deepEqual(h.emitted, [filter, filter], 'a visible list change republishes');
 
   h.fire(null);
   await h.settle();
   assert.equal(h.state.fullReconciles, 2);
-  assert.equal(h.targeted.length, 1);
-  assert.equal(h.emitted.length, 3);
+  assert.equal(h.targeted.length, 2);
+  assert.equal(h.emitted.length, 2, 'an unchanged full reconcile stays silent');
   assert.deepEqual(h.reconciled.at(-1), null);
+
+  await h.serving.list(filter);
+  assert.equal(h.emitted.length, 3, 'an explicit list command always answers');
 });
 
 test('a failed watcher reconcile publishes nothing and makes the next list a full retry', async (t) => {

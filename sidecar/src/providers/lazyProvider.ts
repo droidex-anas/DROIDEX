@@ -1,4 +1,4 @@
-import type { ProviderKind, ProviderStatus, SkillInfo } from '@droidex/protocol';
+import type { ModelInfo, ProviderKind, ProviderStatus, SkillInfo } from '@droidex/protocol';
 
 import type {
   ProbedProvider,
@@ -42,8 +42,9 @@ export class LazyProvider implements ProbedProvider {
   async probe(
     signal: AbortSignal,
     publishItems: (items: SkillInfo[]) => void,
+    publishModels?: (models: ModelInfo[]) => void,
   ): Promise<ProviderStatus> {
-    return (await this.provider()).probe(signal, publishItems);
+    return (await this.provider()).probe(signal, publishItems, publishModels);
   }
 
   async readUsage(signal: AbortSignal): Promise<UsageReading> {

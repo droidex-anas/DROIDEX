@@ -35,6 +35,15 @@ export interface WorkspaceDiscoveryLoopOptions {
 export function startWorkspaceDiscovery(options: WorkspaceDiscoveryLoopOptions): () => void {
   let cancelled = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
+  // A workspace that is not a git repository never completes, so an unchanging
+  // incomplete result backs off exponentially instead of re-probing git at the
+  // full cadence forever. Completing resets the cadence.
+  let incompletePasses = 0;
+  const retryDelay = () => {
+    const delay = options.retryDelayMs * 2 ** Math.min(incompletePasses, 5);
+    incompletePasses += 1;
+    return delay;
+  };
 
   const discover = () => {
     retryTimer = undefined;
@@ -50,12 +59,17 @@ export function startWorkspaceDiscovery(options: WorkspaceDiscoveryLoopOptions):
           options.onCanonicalCwds(canonicalCwds);
           return;
         }
-        if (!result.complete) retryTimer = setTimeout(discover, options.retryDelayMs);
+        if (result.complete) {
+          incompletePasses = 0;
+          return;
+        }
+        retryTimer = setTimeout(discover, retryDelay());
       },
       // A rejected pass must re-arm the loop: nothing else reschedules it, so
       // without this one bad `loadWorktrees` would end discovery permanently.
       () => {
-        if (!cancelled) retryTimer = setTimeout(discover, options.retryDelayMs);
+        if (cancelled) return;
+        retryTimer = setTimeout(discover, retryDelay());
       },
     );
   };

@@ -8,6 +8,7 @@ const SHORT_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
   claude: 'Claude',
   codex: 'Codex',
+  devin: 'Devin',
 };
 
 function segmentTone(selected: boolean, unavailable: boolean): string {

@@ -8,10 +8,16 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
+import {
+  shallowEqualExcept,
+  useStoreApi,
+  useStoreDispatch,
+  useStoreSelector,
+  type AppState,
+} from './hooks/useStore';
 import { AnimatePresence, MotionConfig, motion, useTransform } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
-import { hasActiveSessionWork } from './lib/sessions';
+import { hasActiveSessionWork, sameSessionExceptTelemetry } from './lib/sessions';
 import { bridge } from './lib/bridge';
 import {
   connect,
@@ -175,39 +181,48 @@ function childAccessForSelection(
   return childAccess[parentAppSessionId][childSessionId];
 }
 
+function selectShellState(current: AppState) {
+  const activeSession = current.activeAppSessionId
+    ? current.sessions[current.activeAppSessionId]
+    : null;
+  return {
+    activeSession,
+    activeTabSplit: activeGrid(current.tabStrip) !== null,
+    childAccess: current.childAccess,
+    commandPaletteOpen: current.commandPaletteOpen,
+    hasSessionContent: Boolean(
+      activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
+    ),
+    mainView: current.mainView,
+    rightPanelOpen: current.rightPanelOpen,
+    selectedChild: current.selectedChild,
+    settingsOpen: current.settingsOpen,
+    sideChatPlacement: activeSession
+      ? sideChatPanel(current.sideChats, activeSession.appSessionId).placement
+      : 'docked',
+    shortcutBindings: current.shortcutBindings,
+    sidebarCollapsed: current.sidebarCollapsed,
+    productMode: activeProduct(current),
+    // A design draft's canvas lands only once its chat exists.
+    canvasChatRequests: current.canvasChatRequests,
+    tabStripShown: showsTabStrip(current),
+    utilityPanels: current.utilityPanels,
+    workspaceCwds: current.workspaceCwds,
+  };
+}
+
+type ShellState = ReturnType<typeof selectShellState>;
+
+const equalShellState = shallowEqualExcept<ShellState, 'activeSession'>(
+  'activeSession',
+  sameSessionExceptTelemetry,
+);
+
 export default function App() {
   useChatPullRequests();
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
-  const state = useStoreSelector((current) => {
-    const activeSession = current.activeAppSessionId
-      ? current.sessions[current.activeAppSessionId]
-      : null;
-    return {
-      activeSession,
-      activeTabSplit: activeGrid(current.tabStrip) !== null,
-      childAccess: current.childAccess,
-      commandPaletteOpen: current.commandPaletteOpen,
-      hasSessionContent: Boolean(
-        activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
-      ),
-      mainView: current.mainView,
-      rightPanelOpen: current.rightPanelOpen,
-      selectedChild: current.selectedChild,
-      settingsOpen: current.settingsOpen,
-      sideChatPlacement: activeSession
-        ? sideChatPanel(current.sideChats, activeSession.appSessionId).placement
-        : 'docked',
-      shortcutBindings: current.shortcutBindings,
-      sidebarCollapsed: current.sidebarCollapsed,
-      productMode: activeProduct(current),
-      // A design draft's canvas lands only once its chat exists.
-      canvasChatRequests: current.canvasChatRequests,
-      tabStripShown: showsTabStrip(current),
-      utilityPanels: current.utilityPanels,
-      workspaceCwds: current.workspaceCwds,
-    };
-  }, shallowEqual);
+  const state = useStoreSelector(selectShellState, equalShellState);
   const embedded = isEmbedded();
   useEffect(() => {
     if (!embedded) return;
@@ -770,6 +785,7 @@ export default function App() {
                 // a few composer controls turn pointer events back on; inert
                 // keeps the whole column out of reach.
                 inert={chatObscured && !browserExpanded}
+                data-pause-animations={(chatObscured && !browserExpanded) || undefined}
                 style={chatColumnStyle}
                 className={`flex min-w-0 flex-col overflow-hidden ${
                   browserExpanded
@@ -816,6 +832,7 @@ export default function App() {
                     {activeSession && state.sideChatPlacement === 'floating' ? (
                       <div
                         aria-hidden={browserExpanded || undefined}
+                        data-pause-animations={browserExpanded || undefined}
                         className={browserExpanded ? 'invisible' : 'contents'}
                       >
                         <Suspense fallback={null}>
@@ -838,7 +855,6 @@ export default function App() {
                 )}
               </section>
               {/* Holds the chat column's place while it floats, so the pane stays
-                anchored on the right as it widens. */}
               {browserExpanded && <div className="min-w-0 flex-1" />}
               {sideChatClose.dialog}
 

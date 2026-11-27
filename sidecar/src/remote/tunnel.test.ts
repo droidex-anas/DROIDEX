@@ -14,6 +14,7 @@ function tunnelPair(messageCount: number) {
   let unacked = 0;
   let maxUnacked = 0;
   let largestChunk = 0;
+  let zippedChunks = 0;
   // Each side delivers on a later turn, like a socket, so the window matters.
   const deliver = (target: () => Tunnel, frame: TunnelFrame) => {
     setImmediate(() => {
@@ -29,6 +30,7 @@ function tunnelPair(messageCount: number) {
         unacked = frame.seq - acked;
         maxUnacked = Math.max(maxUnacked, unacked);
         largestChunk = Math.max(largestChunk, frame.data.length);
+        if (frame.zip) zippedChunks += 1;
       }
       return deliver(() => receiver, frame);
     },
@@ -55,7 +57,7 @@ function tunnelPair(messageCount: number) {
     sender,
     received,
     delivered,
-    stats: () => ({ maxUnacked, largestChunk }),
+    stats: () => ({ maxUnacked, largestChunk, zippedChunks }),
   };
 }
 
@@ -74,9 +76,50 @@ test(
     assert.deepEqual(received, [{ n: 1 }, { n: 2, large }, { n: 3 }]);
     assert.ok(stats().maxUnacked <= 4, `window exceeded: ${String(stats().maxUnacked)}`);
     assert.ok(stats().largestChunk <= 40_000);
+    assert.equal(stats().zippedChunks, 0);
     assert.equal(sender.queuedChars, 0);
   },
 );
+
+test('large compressible packets reassemble across compressed chunks in order', async () => {
+  const { sender, received, delivered, stats } = tunnelPair(2);
+  const large = randomBytes(40_000).toString('base64') + 'abcdefgh'.repeat(3_333);
+  sender.send({ n: 1 });
+  sender.send({ n: 2, large });
+
+  await delivered;
+
+  assert.deepEqual(received, [{ n: 1 }, { n: 2, large }]);
+  assert.ok(stats().zippedChunks > 1, `compressed chunks: ${String(stats().zippedChunks)}`);
+});
+
+test('compressible medium packets cross the tunnel compressed without changing order', async () => {
+  const { sender, received, delivered, stats } = tunnelPair(2);
+  const text = 'compressible transcript text '.repeat(20);
+  sender.send({ n: 1 });
+  sender.send({ n: 2, text });
+
+  await delivered;
+
+  assert.deepEqual(received, [{ n: 1 }, { n: 2, text }]);
+  assert.equal(stats().zippedChunks, 1);
+});
+
+test('compressible non-ASCII packets compress when smaller in wire bytes', async () => {
+  const { sender, received, delivered, stats } = tunnelPair(1);
+  const alphabet = Array.from({ length: 300 }, (_, i) => String.fromCodePoint(0x4e00 + i));
+  let seed = 42;
+  const text = Array.from({ length: 1500 }, () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return alphabet[seed % 300];
+  }).join('');
+  sender.send({ n: 1, text });
+
+  await delivered;
+
+  assert.deepEqual(received, [{ n: 1, text }]);
+  assert.equal(stats().zippedChunks, 1);
+});
 
 test('tunnel rejects a frame that skips the sequence', async () => {
   const tunnel = new Tunnel({

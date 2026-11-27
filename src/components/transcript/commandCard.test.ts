@@ -4,6 +4,36 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CommandLine } from './commandCard';
 import { LiveProcessesContext } from './liveProcessesContext';
+import { renderToolEvents } from './rows';
+import type { TranscriptEvent } from '@droidex/protocol';
+
+test('running command rows display live call output until the final result arrives', () => {
+  const call: TranscriptEvent = {
+    id: 'call',
+    appSessionId: 's',
+    sourceSessionId: 's',
+    role: 'primary',
+    ts: 0,
+    kind: 'tool_call',
+    toolUseId: 'shell',
+    toolName: 'shell',
+    toolArgs: { command: 'printf hello' },
+    text: 'Live terminal output',
+  };
+  const render = (events: TranscriptEvent[], detailed: boolean) =>
+    renderToStaticMarkup(createElement('div', null, ...renderToolEvents(events, true, detailed)));
+  assert.match(render([call], true), /Live terminal output/);
+  const result: TranscriptEvent = {
+    ...call,
+    id: 'result',
+    kind: 'tool_result',
+    text: 'Final output',
+  };
+  const finished = render([call, result], true);
+  assert.match(finished, /Final output/);
+  assert.doesNotMatch(finished, /Live terminal output/);
+  assert.match(render([call], false), /aria-expanded="false"/);
+});
 
 test('a live descendant keeps its originating command expandable with captured output', () => {
   const render = (command: string) =>

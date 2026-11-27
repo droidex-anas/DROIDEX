@@ -451,6 +451,7 @@ export default function ChatView({
       specContent,
       changes: true,
       groupChildSessions: !viewingChildSession,
+      foldLiveTurn: toolActivity.density === 'compact',
     },
   });
   const tailLen = transcript.at(-1)?.text?.length ?? 0;

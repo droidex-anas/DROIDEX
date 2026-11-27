@@ -16,7 +16,7 @@ import { toolResultParts } from './toolResultImages.js';
 import { trimmedString as str } from './values.js';
 import {
   detectChildSession,
-  backgroundTaskCompletionProviderSessionId,
+  backgroundTaskCompletion,
   isTaskToolName,
   slimChildSessionArgs,
   taskPrompt,
@@ -128,6 +128,15 @@ export function normalizeStreamEvent(
     // versions do not include `lastCallTokenUsage`; in that shape, publish cumulative totals
     // only and let getContextStats() remain authoritative for the meter.
     const context = e.lastCallTokenUsage ?? (raw.type === 'token_usage_update' ? e : undefined);
+    // A cumulative frame with no usable usage fields carries no information:
+    // publishing it would reset the session's accumulated totals to zero.
+    const hasUsageField = [
+      cumulative.inputTokens,
+      cumulative.outputTokens,
+      cumulative.cacheReadTokens,
+      cumulative.cacheCreationTokens,
+    ].some((value) => typeof value === 'number' && Number.isFinite(value));
+    if (!hasUsageField) return null;
     const tokensIn =
       (Number(cumulative.inputTokens ?? 0) || 0) +
       (Number(cumulative.cacheReadTokens ?? 0) || 0) +
@@ -247,6 +256,10 @@ export function normalizeStreamEvent(
             // notification results must never rekey the child's spawn link.
             ...(isTask && taskUpdate?.isSpawnResult !== false && toolUseId ? { toolUseId } : {}),
             done: taskUpdate?.done ?? true,
+            ...(taskUpdate?.status ? { status: taskUpdate.status } : {}),
+            ...(ev.isError && isTask
+              ? { status: 'failed' as const, transcriptAvailable: false }
+              : {}),
             ...(taskUpdate?.activity ? { activity: taskUpdate.activity } : {}),
           },
         };
@@ -340,13 +353,14 @@ export function normalizeNotification(
   const raw = extractNotification(notification);
   const startedChild = childSessionAvailableFrom(raw);
   if (startedChild) return [{ childSession: startedChild }];
-  const backgroundTaskProviderSessionId = backgroundTaskCompletionProviderSessionIdFrom(raw);
-  if (backgroundTaskProviderSessionId)
+  const backgroundTask = backgroundTaskCompletionFrom(raw);
+  if (backgroundTask)
     return [
       {
         childSession: {
-          providerSessionId: backgroundTaskProviderSessionId,
+          providerSessionId: backgroundTask.providerSessionId,
           done: true,
+          status: backgroundTask.status,
         },
       },
     ];
@@ -415,7 +429,7 @@ function childSessionAvailableFrom(raw: unknown): ChildSessionSignal | undefined
   };
 }
 
-function backgroundTaskCompletionProviderSessionIdFrom(raw: unknown): string | undefined {
+function backgroundTaskCompletionFrom(raw: unknown): ReturnType<typeof backgroundTaskCompletion> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const notification = raw as Record<string, unknown>;
   if (notification.type !== 'create_message') return undefined;
@@ -434,7 +448,7 @@ function backgroundTaskCompletionProviderSessionIdFrom(raw: unknown): string | u
     )
     .map((block) => block.text)
     .join('\n');
-  return backgroundTaskCompletionProviderSessionId(text);
+  return backgroundTaskCompletion(text);
 }
 
 export function extractNotification(notification: Record<string, unknown>): unknown {

@@ -289,6 +289,19 @@ function classifyGhListError(stderr) {
   return { reason: 'gh_error', message: text };
 }
 
+// The viewer's login is stable for an authenticated gh installation. Resolve
+// it once per process instead of paying a network round trip on every inbox
+// poll of every repository. Only the real gh is cached: injected test runners
+// must answer independently, and unresolved/transient answers never cache.
+let cachedViewerLogin;
+async function resolveViewerLogin(dir, runGh) {
+  if (runGh === gh && cachedViewerLogin !== undefined) return cachedViewerLogin;
+  const user = await runGh(dir, ['api', 'user', '--jq', '.login']);
+  const login = user.code === 0 ? String(user.stdout || '').trim() || null : null;
+  if (login && runGh === gh) cachedViewerLogin = login;
+  return login;
+}
+
 async function listPrs(dir, { state = 'open', limit = 50 } = {}, runGh = gh) {
   const list = await runGh(dir, [
     'pr',
@@ -323,8 +336,7 @@ async function listPrs(dir, { state = 'open', limit = 50 } = {}, runGh = gh) {
       prs: [],
     };
   }
-  const user = await runGh(dir, ['api', 'user', '--jq', '.login']);
-  const viewerLogin = user.code === 0 ? String(user.stdout || '').trim() || null : null;
+  const viewerLogin = await resolveViewerLogin(dir, runGh);
   return {
     ok: true,
     viewerLogin,

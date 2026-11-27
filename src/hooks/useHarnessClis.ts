@@ -5,9 +5,9 @@ import { checkHarnessClis, updateHarnessCli } from '../lib/commands';
 import { toast } from '../lib/toast';
 import type { HarnessCliProvider, HarnessCliState } from '@droidex/protocol';
 
-const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex'];
+const HARNESS_CLI_PROVIDERS: readonly HarnessCliProvider[] = ['claude', 'codex', 'devin'];
 
-// The detected Claude Code and Codex binaries, re-checked on mount.
+// The detected harness binaries, re-checked on mount.
 export function useHarnessClis(): HarnessCliState[] | null {
   const [clis, setClis] = useState<HarnessCliState[] | null>(null);
 
@@ -22,7 +22,7 @@ export function useHarnessClis(): HarnessCliState[] | null {
   return clis;
 }
 
-// Updates Claude Code and Codex once per launch when enabled, and announces
+// Updates harness CLIs once per launch when enabled, and announces
 // the outcome of any update that changed something, wherever it was started.
 export function useHarnessCliAutoUpdate(enabled: boolean): void {
   const launchHandled = useRef(false);

@@ -21,6 +21,8 @@ import {
   type AppState,
 } from '../hooks/useStore';
 import { useSessionLive } from '../hooks/useSessionLive';
+import { sameSessionExceptTelemetry } from '../lib/sessions';
+import type { SessionSummary } from '@droidex/protocol';
 import {
   createSession,
   interruptVisibleSession,
@@ -253,6 +255,24 @@ const LazyFeedbackModal = lazy(async () => {
 const VOICE_PROJECT_TASK =
   'The user is about to say the goal of this project out loud, in a voice conversation on this chat. Until they do there is nothing to plan: reply with one short question asking what this project should get done.';
 
+type SessionBasket = Record<string, unknown> & {
+  activeSession: SessionSummary | null | undefined;
+};
+
+// The composer reads everything about its session except the per-reading token
+// telemetry, so the session compares telemetry-blind: usage readings alone
+// must not re-render one of the heaviest components in the app.
+function shallowEqualExceptSession(left: SessionBasket, right: SessionBasket): boolean {
+  if (Object.is(left, right)) return true;
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every((name) =>
+    name === 'activeSession'
+      ? sameSessionExceptTelemetry(left.activeSession, right.activeSession)
+      : Object.is(left[name], right[name]),
+  );
+}
+
 export default function PromptInput({
   appSessionId,
   rightInset = false,
@@ -333,7 +353,7 @@ export default function PromptInput({
       skillsProviderSessionId: current.skillsProviderSessionId,
       specMode: current.specMode,
     }),
-    shallowEqual,
+    shallowEqualExceptSession,
   );
   const store = useStoreApi();
   const composerRevisionRef = useRef(0);

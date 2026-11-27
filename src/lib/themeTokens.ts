@@ -63,6 +63,7 @@ export const HARNESS_ART_COLORS: Record<ProviderKind, string> = {
   droid: '#ee6018',
   claude: '#d97757',
   codex: '#6e8bff',
+  devin: '#d8d4cf',
 };
 
 // Hyperlinks read by hue, like skills and status do. The neutral accent governs

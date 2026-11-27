@@ -122,7 +122,7 @@ test('oversized tool output and thinking are truncated with a marker', () => {
   assert.ok(!md.includes('y'.repeat(4_500)));
 });
 
-test('native Canvas replay exports safe activity while preserving ordinary tools and user text', (t) => {
+test('native Canvas replay exports safe activity while preserving ordinary tools and user text', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'canvas-markdown-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const appSessionId = 'droid-canvas-export';
@@ -193,7 +193,7 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
   );
   const path = join(directory, `${appSessionId}.jsonl`);
   writeFileSync(path, `${lines.join('\n')}\n`);
-  const replayed = readFullTranscript(appSessionId, appSessionId, path, 'primary');
+  const replayed = await readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const md = transcriptToMarkdown(replayed, META);
   assert.match(md, /\*\*Canvas:\*\* Updated design · rev-1/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
@@ -273,7 +273,7 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
     );
   }
   await file.flush();
-  const replayed = readFullTranscript(
+  const replayed = await readFullTranscript(
     summary.appSessionId,
     summary.appSessionId,
     file.path,

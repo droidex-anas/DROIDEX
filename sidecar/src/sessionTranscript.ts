@@ -8,6 +8,7 @@
 // pages and reopens cheap. Because offsets are absolute, every message of an
 // arbitrarily large session stays reachable by cursor.
 import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
+import { open } from 'node:fs/promises';
 import {
   parseSessionLineEvents,
   type StoredMessageLine,
@@ -87,6 +88,29 @@ export function readSessionRawWindow(
   }
 }
 
+export function parseTranscriptLines(
+  appSessionId: string,
+  providerSessionId: string,
+  lines: readonly string[],
+  role: SessionRole,
+): TranscriptEvent[] {
+  const events: TranscriptEvent[] = [];
+  const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    try {
+      const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+      events.push(
+        ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
+      );
+    } catch {
+      /* skip partial/corrupt JSONL rows */
+    }
+  }
+  return coalesceMessages(events);
+}
+
 function appendMessageChunk(older: TranscriptEvent, newer: TranscriptEvent): TranscriptEvent {
   return {
     ...older,
@@ -105,40 +129,73 @@ function messageSnapshot(event: TranscriptEvent): TranscriptEvent {
   };
 }
 
+function coalesceMessages(events: TranscriptEvent[]): TranscriptEvent[] {
+  // Corrections append to JSONL; replay exposes only the latest text per row id.
+  const latestSpoken = new Set<string>();
+  const uniqueEvents = events.some((event) => event.spoken)
+    ? events
+        .toReversed()
+        .filter((event) => {
+          if (!event.spoken) return true;
+          if (latestSpoken.has(event.id)) return false;
+          latestSpoken.add(event.id);
+          return true;
+        })
+        .reverse()
+    : events;
+  const messages: TranscriptEvent[] = [];
+  const indexes = new Map<string, number>();
+  for (const event of uniqueEvents) {
+    const index = event.textUpdate ? indexes.get(event.id) : undefined;
+    if (index !== undefined) messages[index] = appendMessageChunk(messages[index], event);
+    else {
+      if (event.textUpdate) indexes.set(event.id, messages.length);
+      messages.push(event);
+    }
+  }
+  return messages.map(messageSnapshot);
+}
+
 // Byte offset of every line start in the file, bounded to `size` so bytes
 // appended after the stat are ignored (the reader cache re-keys on stat).
-// The scan is synchronous and O(file size), and the cache re-keys on every
-// append, so a live session pays it again on the next window request. That is
-// milliseconds for the tens-of-MB sessions this app produces; if sessions ever
-// reach GB scale this must move off the event loop or cap the indexed range.
-function scanLineStarts(path: string, size: number): number[] {
+// The scan is O(file size) and re-runs on every append, so its reads are
+// chunked through the threadpool: a synchronous scan of a tens-of-MB session
+// stalled the sidecar event loop for tens of milliseconds on every cold
+// history load. Each awaited chunk leaves the loop free between slices; the
+// newline indexing that stays on this thread is memchr-speed per chunk.
+async function scanLineStarts(path: string, size: number): Promise<number[]> {
   if (size <= 0) return [];
   const starts = [0];
-  const fd = openSync(path, 'r');
+  const handle = await open(path, 'r');
   try {
     const buffer = Buffer.alloc(Math.min(size, LINE_SCAN_CHUNK_BYTES));
     let position = 0;
     while (position < size) {
-      const bytes = readSync(fd, buffer, 0, Math.min(buffer.length, size - position), position);
-      if (bytes <= 0) break;
-      const chunk = buffer.subarray(0, bytes);
+      const { bytesRead } = await handle.read(
+        buffer,
+        0,
+        Math.min(buffer.length, size - position),
+        position,
+      );
+      if (bytesRead <= 0) break;
+      const chunk = buffer.subarray(0, bytesRead);
       let newline = chunk.indexOf(10 /* \n */);
       while (newline !== -1) {
         const next = position + newline + 1;
         if (next < size) starts.push(next);
         newline = chunk.indexOf(10, newline + 1);
       }
-      position += bytes;
+      position += bytesRead;
     }
   } finally {
-    closeSync(fd);
+    await handle.close();
   }
   return starts;
 }
 
-// One chain segment's transcript, parsed lazily from the tail. Construction
-// scans the file once for line offsets; each window preads and parses only
-// the lines it needs, walking backward from a cursor, so the first page of a
+// One chain segment's transcript, parsed lazily from the tail. Opening scans
+// the file once for line offsets; each window preads and parses only the
+// lines it needs, walking backward from a cursor, so the first page of a
 // huge session parses a few hundred lines instead of the whole file. Line
 // indices are absolute file positions, which keeps cursors stable while the
 // session is appended to.
@@ -152,17 +209,33 @@ export class SessionTranscriptReader {
   private readonly parsedLines = new Map<number, ParsedLine>();
   private readonly canvasBindings: CanvasToolBinding[];
 
-  constructor(
+  static async open(
+    appSessionId: string,
+    providerSessionId: string,
+    path: string,
+    role: SessionRole,
+    fullText = false,
+  ): Promise<SessionTranscriptReader> {
+    const stat = statSync(path);
+    const lineStarts = await scanLineStarts(path, stat.size);
+    return new SessionTranscriptReader(appSessionId, providerSessionId, path, role, fullText, {
+      mtimeMs: stat.mtimeMs,
+      sizeBytes: stat.size,
+      lineStarts,
+    });
+  }
+
+  private constructor(
     private readonly appSessionId: string,
     private readonly providerSessionId: string,
     private readonly path: string,
     private readonly role: SessionRole,
-    private readonly fullText = false,
+    private readonly fullText: boolean,
+    scan: { mtimeMs: number; sizeBytes: number; lineStarts: number[] },
   ) {
-    const stat = statSync(path);
-    this.mtimeMs = stat.mtimeMs;
-    this.sizeBytes = stat.size;
-    this.lineStarts = scanLineStarts(path, stat.size);
+    this.mtimeMs = scan.mtimeMs;
+    this.sizeBytes = scan.sizeBytes;
+    this.lineStarts = scan.lineStarts;
     this.noticesRevision = sessionNoticesRevision(providerSessionId);
     this.canvasBindingsRevision = canvasToolBindingsRevision(appSessionId);
     this.canvasBindings = readCanvasToolBindings(appSessionId);

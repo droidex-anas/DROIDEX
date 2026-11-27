@@ -131,7 +131,7 @@ export class ProviderTranscriptFile {
     const result = toolResultBlock(event);
     if (!result) return;
     // A result belongs after the call that produced it.
-    return this.sealThenWrite(messageLine('user', [result], event.id, event.ts));
+    return this.sealThenWrite(messageLine('user', [result], event.id, event.ts, event.forkPointId));
   }
 
   // Called when a turn settles and when the session closes. Settles once

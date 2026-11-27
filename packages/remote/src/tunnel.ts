@@ -3,7 +3,13 @@ import { decodeBase64, encodeBase64, isRecord } from './crypto';
 // One encrypted message must stay under SecureChannel's 46,000-byte plaintext
 // cap; base64 chunk data needs no JSON escaping, so its length is exact.
 const CHUNK_CHARS = 40_000;
-const COMPRESS_ABOVE_CHARS = 4_096;
+// Raw packet text is already JSON, so it has no literal control characters.
+// Three UTF-8 bytes per UTF-16 unit is its worst frame cost; these chunks stay
+// safely below the plaintext cap even for non-ASCII text.
+const RAW_CHUNK_CHARS = 15_000;
+// Remote envelopes are repetitive enough that even small payloads often
+// deflate enough to beat the tunnel's base64 framing cost.
+const COMPRESS_ABOVE_CHARS = 256;
 const PACKET_CHARS = 4 * 1024 * 1024;
 // The relay closes a receiver holding 16 frames or 256 KiB it has not yet
 // acknowledged; four full chunks stay under both.
@@ -222,17 +228,31 @@ export class Tunnel {
     const packet = `[${this.outbox.splice(0, count).join(',')}]`;
     this.outboxChars -= chars;
     if (packet.length <= COMPRESS_ABOVE_CHARS) {
-      this.pushFrame({ type: 'chunk', seq: 0, end: true, zip: false, data: packet });
+      this.pushChunks(packet, false);
       return;
     }
     const data = encodeBase64(await deflate(packet));
-    for (let start = 0; start < data.length; start += CHUNK_CHARS) {
+    // Compressed bytes need base64 inside the plaintext frame, while raw JSON
+    // only pays its own string escaping. Random or already-compressed payloads
+    // can be smaller uncompressed. Compare in wire units: base64url is ASCII,
+    // but raw JSON text costs UTF-8 bytes, up to three per non-ASCII character.
+    const rawBytes = utf8Bytes(JSON.stringify(packet)) - 2;
+    if (data.length < rawBytes) {
+      this.pushChunks(data, true);
+      return;
+    }
+    this.pushChunks(packet, false);
+  }
+
+  private pushChunks(data: string, zip: boolean): void {
+    const chunkChars = zip ? CHUNK_CHARS : RAW_CHUNK_CHARS;
+    for (let start = 0; start < data.length; start += chunkChars) {
       this.pushFrame({
         type: 'chunk',
         seq: 0,
-        end: start + CHUNK_CHARS >= data.length,
-        zip: true,
-        data: data.slice(start, start + CHUNK_CHARS),
+        end: start + chunkChars >= data.length,
+        zip,
+        data: data.slice(start, start + chunkChars),
       });
     }
   }
@@ -244,9 +264,17 @@ export class Tunnel {
 }
 
 function frameBytes(frame: TunnelFrame): number {
-  // Ciphertext is base64 of the JSON plaintext plus the relay envelope.
-  const plaintext = frame.type === 'ack' ? 40 : frame.data.length * 1.2 + 80;
+  // Ciphertext is base64 of the JSON plaintext plus the relay envelope. The
+  // plaintext costs UTF-8 bytes on the wire, not UTF-16 code units: non-ASCII
+  // text can cost three times its string length.
+  const plaintext = frame.type === 'ack' ? 40 : utf8Bytes(JSON.stringify(frame.data)) + 80;
   return Math.ceil((plaintext * 4) / 3 + 200);
+}
+
+const textEncoder = new TextEncoder();
+
+function utf8Bytes(value: string): number {
+  return textEncoder.encode(value).length;
 }
 
 function parseFrame(value: unknown): TunnelFrame {

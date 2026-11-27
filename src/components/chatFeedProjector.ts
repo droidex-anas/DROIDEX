@@ -1,4 +1,4 @@
-import { transcriptEventIsVisible, transcriptForVisibleSession } from '../lib/childSessions';
+import { transcriptEventIsVisible } from '../lib/childSessions';
 import { asChunkedSequence, replaceChunkedSequenceSuffix } from '../lib/chunkedSequence';
 import { noteFeedProjection } from '../lib/rendererPerf';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
@@ -17,6 +17,10 @@ export interface ChatFeedProjectorInput {
   pending: boolean;
   options: GroupedFeedOptions;
   retainedCost?: number;
+  // Extra visibility narrowing on top of the child-session scope (the agent
+  // pane hides the spawn echo the harness replays into the child's stream).
+  // Compared by identity, so the caller must keep the closure stable.
+  hideEvent?: (event: TranscriptEvent) => boolean;
 }
 
 export interface ChatFeedProjection {
@@ -34,6 +38,8 @@ interface NormalizedOptions {
   groupChildSessions: boolean;
   specContent?: string;
   changes: boolean;
+  foldLiveTurn: boolean;
+  foldTurns: boolean;
 }
 
 interface ProjectionCache extends ChatFeedProjection {
@@ -44,6 +50,7 @@ interface ProjectionCache extends ChatFeedProjection {
   pending: boolean;
   options: NormalizedOptions;
   retainedCost: number | undefined;
+  hideEvent: ((event: TranscriptEvent) => boolean) | undefined;
   earliestToolEvent: Map<string, number>;
 }
 
@@ -110,6 +117,18 @@ function projectFeed(
   return { cache: fullProjection(input, options, revision), mode: 'full' };
 }
 
+// Pending only shapes folded output (the live-turn fold). Unfolded feeds are
+// a direct buildFeed passthrough with no pending input, so a live→settled flip
+// on the same transcript must not invalidate their cache.
+function pendingMatches(
+  cache: ProjectionCache,
+  input: ChatFeedProjectorInput,
+  options: NormalizedOptions,
+): boolean {
+  if (!options.foldTurns) return true;
+  return cache.pending === input.pending;
+}
+
 function cacheMatches(
   cache: ProjectionCache,
   input: ChatFeedProjectorInput,
@@ -121,9 +140,18 @@ function cacheMatches(
     cache.childSessionId === input.childSessionId &&
     cache.allTranscript === input.allTranscript &&
     cache.revision === revision &&
-    cache.pending === input.pending &&
+    pendingMatches(cache, input, options) &&
+    cache.hideEvent === input.hideEvent &&
     sameOptions(cache.options, options)
   );
+}
+
+// Visibility the projection is built from: the child-session scope, narrowed
+// by the caller's extra exclusion when it supplies one.
+function visibilityFor(input: ChatFeedProjectorInput): (event: TranscriptEvent) => boolean {
+  const hide = input.hideEvent;
+  if (!hide) return (event) => transcriptEventIsVisible(event, input.childSessionId);
+  return (event) => transcriptEventIsVisible(event, input.childSessionId) && !hide(event);
 }
 
 function recordProjection(
@@ -173,7 +201,8 @@ function hasIncrementalBase(
     mutation &&
     cache.conversationKey === input.conversationKey &&
     cache.childSessionId === input.childSessionId &&
-    cache.pending === input.pending &&
+    pendingMatches(cache, input, options) &&
+    cache.hideEvent === input.hideEvent &&
     sameOptions(cache.options, options) &&
     mutation.baseRevision === cache.revision &&
     mutation.previousLength === cache.allTranscript.length &&
@@ -186,7 +215,8 @@ function fullProjection(
   options: NormalizedOptions,
   revision: number,
 ): ProjectionCache {
-  const visibleTranscript = transcriptForVisibleSession(input.allTranscript, input.childSessionId);
+  const isVisible = visibilityFor(input);
+  const visibleTranscript = input.allTranscript.filter(isVisible);
   const chunkedVisibleTranscript = asChunkedSequence(visibleTranscript);
   return {
     conversationKey: input.conversationKey,
@@ -196,6 +226,7 @@ function fullProjection(
     pending: input.pending,
     options,
     retainedCost: input.retainedCost,
+    hideEvent: input.hideEvent,
     visibleTranscript: chunkedVisibleTranscript,
     feedItems: asChunkedSequence(
       buildGroupedFeed(chunkedVisibleTranscript, input.pending, options),
@@ -216,10 +247,11 @@ function incrementalProjection(
   revision: number,
   firstSourceChange: number,
 ): ProjectionCache {
+  const isVisible = visibilityFor(input);
   let visiblePrefixLength = previous.visibleTranscript.length;
   for (let index = firstSourceChange; index < previous.allTranscript.length; index += 1) {
     const event = previous.allTranscript.at(index);
-    if (event && transcriptEventIsVisible(event, input.childSessionId)) {
+    if (event && isVisible(event)) {
       visiblePrefixLength -= 1;
     }
   }
@@ -227,7 +259,7 @@ function incrementalProjection(
   const visibleSuffix: TranscriptEvent[] = [];
   for (let index = firstSourceChange; index < input.allTranscript.length; index += 1) {
     const event = input.allTranscript.at(index);
-    if (event && transcriptEventIsVisible(event, input.childSessionId)) visibleSuffix.push(event);
+    if (event && isVisible(event)) visibleSuffix.push(event);
   }
   const previousSuffix = previous.visibleTranscript.slice(visiblePrefixLength);
   if (sameEvents(previousSuffix, visibleSuffix)) {
@@ -297,7 +329,7 @@ function prependProjection(
     previous,
     allTranscript: input.allTranscript,
     mutation,
-    childSessionId: input.childSessionId,
+    isVisible: visibilityFor(input),
     options,
   });
   if (!projection) return undefined;
@@ -452,6 +484,8 @@ function normalizeOptions(options: GroupedFeedOptions): NormalizedOptions {
     groupChildSessions: options.groupChildSessions ?? false,
     ...(options.specContent !== undefined ? { specContent: options.specContent } : {}),
     changes: options.changes ?? false,
+    foldLiveTurn: options.foldLiveTurn ?? false,
+    foldTurns: options.foldTurns ?? true,
   };
 }
 
@@ -460,6 +494,8 @@ function sameOptions(left: NormalizedOptions, right: NormalizedOptions): boolean
     left.childSessionCards === right.childSessionCards &&
     left.groupChildSessions === right.groupChildSessions &&
     left.specContent === right.specContent &&
-    left.changes === right.changes
+    left.changes === right.changes &&
+    left.foldLiveTurn === right.foldLiveTurn &&
+    left.foldTurns === right.foldTurns
   );
 }

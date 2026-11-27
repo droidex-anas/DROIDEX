@@ -1762,3 +1762,19 @@ export function shallowEqual<T extends Record<string, unknown>>(left: T, right: 
   if (leftKeys.length !== Object.keys(right).length) return false;
   return leftKeys.every((key) => Object.is(left[key], right[key]));
 }
+
+// Shallow equal with one key compared by a custom rule: selector baskets that
+// carry a session object compare it telemetry-blind while every other key
+// stays reference-equal.
+export function shallowEqualExcept<T extends Record<string, unknown>, K extends keyof T>(
+  key: K,
+  equalKey: (left: T[K], right: T[K]) => boolean,
+): (left: T, right: T) => boolean {
+  return (left, right) => {
+    if (Object.is(left, right)) return true;
+    const leftKeys = Object.keys(left);
+    if (leftKeys.length !== Object.keys(right).length) return false;
+    if (!equalKey(left[key], right[key])) return false;
+    return leftKeys.every((name) => name === String(key) || Object.is(left[name], right[name]));
+  };
+}

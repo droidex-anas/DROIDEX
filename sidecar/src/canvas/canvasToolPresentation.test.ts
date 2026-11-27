@@ -385,7 +385,7 @@ test('a Canvas assistant error body is a correlated tool result, not assistant p
   }
   await timeline.settleStreaming('app-1', 'app-1');
   const childPath = join(directory, 'provider-sessions', 'child-1.jsonl');
-  const replay = readFullTranscript('app-1', 'child-1', childPath, 'worker');
+  const replay = await readFullTranscript('app-1', 'child-1', childPath, 'worker');
   for (const rows of [recorded, emitted.filter((row) => row.author !== 'user'), replay]) {
     assert.ok(!JSON.stringify(rows).includes(canary));
     const result = rows.find((row) => row.kind === 'tool_result');
@@ -480,7 +480,7 @@ test('a streaming Canvas write shows its frame live before its input ends, and s
   ]);
   const stored = await file.read();
   assert.equal(stored.split('"tool_use"').length - 1, 1);
-  const replay = readFullTranscript(
+  const replay = await readFullTranscript(
     'app-1',
     'app-1',
     join(directory, 'provider-sessions', 'app-1.jsonl'),

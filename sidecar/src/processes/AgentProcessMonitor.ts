@@ -19,12 +19,17 @@ export interface AgentProcessMonitorDependencies {
 }
 
 export const TICK_MS = 2000;
+// A stable provider whose process tree has not changed scans at the idle
+// cadence; registration and new descendants keep the fast cadence for a window,
+// because that is when dev servers and build processes actually appear.
+export const IDLE_TICK_MS = 10000;
+const ACTIVE_WINDOW_MS = 60_000;
 const PORT_SCAN_EVERY = 3;
 
 type TrackedRoot = {
   appSessionId: string;
 } & (
-  | { kind: 'provider' | 'provisional'; isAlive: () => boolean; startedAt?: number }
+  | { kind: 'provider' | 'provisional' | 'work'; isAlive: () => boolean; startedAt?: number }
   | { kind: 'adopted'; startedAt: number }
 );
 
@@ -59,6 +64,7 @@ export class AgentProcessMonitor {
   private readonly startedAtByPid = new Map<number, number>();
   private ports = new Map<number, number[]>();
   private ticks = 0;
+  private lastActivityAt = 0;
   private timer: { cancel(): void } | null = null;
   private scanning: Promise<void> | null = null;
   private lastScanFailed = false;
@@ -80,7 +86,7 @@ export class AgentProcessMonitor {
     appSessionId: string,
     rootPid: number,
     isAlive: () => boolean,
-    kind: 'provider' | 'provisional' = 'provider',
+    kind: 'provider' | 'provisional' | 'work' = 'provider',
   ): void {
     if (this.disposed || this.closing.has(appSessionId) || !isAlive()) return;
     const previous = this.roots.get(rootPid);
@@ -93,6 +99,7 @@ export class AgentProcessMonitor {
       return;
     }
     this.roots.set(rootPid, { appSessionId, kind, isAlive });
+    this.lastActivityAt = this.d.now();
     this.arm();
   }
 
@@ -306,12 +313,16 @@ export class AgentProcessMonitor {
 
   private arm(): void {
     if (this.disposed || this.timer) return;
-    this.timer = this.d.schedule(() => {
-      this.timer = null;
-      void this.scan().finally(() => {
-        if (this.hasWork()) this.arm();
-      });
-    }, TICK_MS);
+    const idle = this.d.now() - this.lastActivityAt > ACTIVE_WINDOW_MS;
+    this.timer = this.d.schedule(
+      () => {
+        this.timer = null;
+        void this.scan().finally(() => {
+          if (this.hasWork()) this.arm();
+        });
+      },
+      idle ? IDLE_TICK_MS : TICK_MS,
+    );
   }
 
   private disarm(): void {
@@ -336,8 +347,9 @@ export class AgentProcessMonitor {
     const byPid = new Map(table.map((row) => [row.pid, row]));
     const computed = new Map<string, ProcessRecord[]>();
     for (const [appSessionId, rootPids] of bySession) {
-      const adopted = rootPids.flatMap((pid) => {
-        const row = this.roots.get(pid)?.kind === 'adopted' ? byPid.get(pid) : undefined;
+      const workRoots = rootPids.flatMap((pid) => {
+        const kind = this.roots.get(pid)?.kind;
+        const row = kind === 'adopted' || kind === 'work' ? byPid.get(pid) : undefined;
         return row ? [row] : [];
       });
       // During the compaction adopt window the retiring provider is still a
@@ -345,7 +357,7 @@ export class AgentProcessMonitor {
       // them from both — first occurrence wins.
       const rows = this.withoutIgnored(
         appSessionId,
-        dedupeByPid([...adopted, ...descendantsOf(table, rootPids)]),
+        dedupeByPid([...workRoots, ...descendantsOf(table, rootPids)]),
         table,
       );
       const known = new Set((this.descendants.get(appSessionId) ?? []).map((row) => row.pid));
@@ -412,6 +424,7 @@ export class AgentProcessMonitor {
       const table = this.stableStartTimes(rawTable);
       now = this.d.now();
       const { sawNew } = this.computeDescendants(table);
+      if (sawNew) this.lastActivityAt = now;
       const nextTick = this.ticks + 1;
       // Fetch ports before committing anything, so a rejection here leaves
       // the previous snapshot (descendants/ports/current) untouched.

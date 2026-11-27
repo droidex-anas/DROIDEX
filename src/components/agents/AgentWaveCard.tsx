@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react';
 import type { ChildSessionSummary } from '@droidex/protocol';
 import {
   resolveWaveSessions,
+  spawnRegisteredChildren,
   type ChildSessionActivity,
   type ChildSessionTarget,
 } from '../../lib/childSessions';
@@ -44,10 +45,44 @@ export const AgentWaveCard = memo(
       />
     );
   },
+  // The activity callback reads through a memoized, always-fresh derivation,
+  // so its identity carries no meaning and is not compared: what the rows show
+  // of it is static per child, and everything live reaches the card through the
+  // monitor's sessions and snapshots. The feed-level comparator above already
+  // gates this card on the activity values of its own spawns.
   (prev, next) =>
-    prev.monitor === next.monitor &&
     prev.live === next.live &&
     prev.onOpen === next.onOpen &&
-    prev.activity === next.activity &&
-    sameFeedEvents(prev.item, next.item),
+    sameFeedEvents(prev.item, next.item) &&
+    sameWaveMonitor(prev.monitor, next.monitor, prev.item.events),
 );
+
+// The monitor object is rebuilt whenever any child in the session streams, but
+// a wave only renders its own spawns. Store children are replaced immutably
+// and stream snapshots are structurally shared, so entry identity is semantic
+// for both: a wave whose own spawns did not change skips the commit no matter
+// what sibling waves are doing. Comparison failure only ever re-renders.
+export function sameWaveMonitor(
+  prev: AgentMonitorData,
+  next: AgentMonitorData,
+  spawns: readonly { toolUseId?: string; id: string }[],
+): boolean {
+  if (prev === next) return true;
+  if (prev.models !== next.models || prev.provider !== next.provider) return false;
+  if (prev.sessions === next.sessions && prev.snapshots === next.snapshots) return true;
+  return spawns.every((spawn) => {
+    const toolUseId = spawn.toolUseId ?? spawn.id;
+    const before = spawnRegisteredChildren(prev.sessions, toolUseId);
+    const after = spawnRegisteredChildren(next.sessions, toolUseId);
+    if (before.length !== after.length) return false;
+    return before.every((child, index) => {
+      if (child !== after[index]) return false;
+      const beforeSnapshot = prev.snapshots?.get(child.childSessionId);
+      const afterSnapshot = next.snapshots?.get(child.childSessionId);
+      // A missing entry falls back to live activity derivation, which this
+      // comparison cannot see — re-render rather than risk a stale row.
+      if (beforeSnapshot === undefined || afterSnapshot === undefined) return false;
+      return beforeSnapshot === afterSnapshot;
+    });
+  });
+}
