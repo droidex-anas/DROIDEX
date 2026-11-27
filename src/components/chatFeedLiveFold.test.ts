@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MessageFeed } from './MessageFeed';
-import { sameFeedEvents, type FeedItem } from './chatFeed';
+import { buildFeed, sameFeedEvents, type FeedItem } from './chatFeed';
 import { buildGroupedFeed } from './chatFeedTurns';
 import type { TranscriptEvent } from '@droidex/protocol';
 
@@ -125,11 +125,16 @@ test('settled turn rows never shimmer while the session is live on a newer turn'
     userMsg('second'),
     grep(), // the live turn's in-flight call
   ];
-  const html = renderToStaticMarkup(createElement(MessageFeed, { events, pending: true, density: 'balanced' }));
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, {
+      events,
+      items: buildFeed(events),
+      pending: true,
+      density: 'balanced',
+    }),
+  );
   // Both rows render (non-vacuous), but only the live turn's may shimmer.
-  const searching = html.match(/Searching/g) ?? [];
-  assert.ok(searching.length >= 1, 'at least the live row renders its live verb');
+  assert.equal((html.match(/>(?:Searching|Searched)</g) ?? []).length, 2, 'both rows render');
   const shimmering = html.match(/shimmer-text[^>]*>Searching</g) ?? [];
   assert.equal(shimmering.length, 1, `exactly one row may shimmer, got: ${shimmering.join(' | ')}`);
 });
-
