@@ -23,6 +23,12 @@ bridge.
 
 ## Ingestion
 
+Devin chats use the app-owned transcript, but the usage ledger does not import
+Devin CLI logs or expose Devin account usage meters. ACP context usage and
+reported inference input/output counters are separate from this ledger. Live
+input totals already include cache reads/writes; separate cache breakdowns and
+monetary costs are not represented by the live session contract.
+
 Each supported harness adapter discovers only its documented local data root.
 Claude Code and Codex JSONL sources are read from the last committed complete
 newline. Their cursor stores the canonical source path, file identity, size,

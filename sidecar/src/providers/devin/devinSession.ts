@@ -1,0 +1,500 @@
+import { homedir } from 'node:os';
+import type {
+  InitializeResponse,
+  SessionConfigOption,
+  SessionNotification,
+} from '@agentclientprotocol/sdk/unstable';
+import type { NormalizedEvent } from '../../normalize.js';
+import type {
+  Autonomy,
+  ProviderMention,
+  ReasoningEffort,
+  SessionInteractionMode,
+  SkillInfo,
+} from '@droidex/protocol';
+import type {
+  ProviderModelSettings,
+  ProviderChildSession,
+  ProviderOpenInput,
+  ProviderResumeInput,
+  ProviderSession,
+  ProviderProcess,
+} from '../session.js';
+import { MessageQueue } from '../claude/claudeMessages.js';
+import { SessionAutonomy } from '../sessionAutonomy.js';
+import { DevinClient } from './devinClient.js';
+import { DevinEvents } from './devinEvents.js';
+import { startDevinMcp } from './devinMcp.js';
+import { DevinCatalog } from './devinCatalog.js';
+import { devinPermission } from './devinPermissions.js';
+import { devinChildId, DevinSubagents } from './devinSubagents.js';
+import { DevinTerminals } from './devinTerminals.js';
+import { consumeDevinForkSeed, readDevinForkSeed } from './devinForkSeed.js';
+import { selectValues } from './devinModels.js';
+import { devinPromptContent } from './devinPrompt.js';
+
+const MODES: Record<Autonomy, string> = {
+  off: 'accept-edits',
+  low: 'accept-edits',
+  medium: 'smart',
+  high: 'bypass',
+};
+const AUTONOMY_LEVELS: readonly Autonomy[] = ['off', 'low', 'medium', 'high'];
+type SessionInput = ProviderOpenInput | ProviderResumeInput;
+
+export class DevinSession implements ProviderSession {
+  readonly provider = 'devin';
+  private readonly client: DevinClient;
+  private readonly terminals: DevinTerminals;
+  private sessionId?: string;
+  private pendingSeed?: string;
+  private mapper?: DevinEvents;
+  private subagents?: DevinSubagents;
+  private readonly backgroundListeners = new Set<(event: NormalizedEvent) => void>();
+  private capabilities?: InitializeResponse['agentCapabilities'];
+  private queue?: MessageQueue<NormalizedEvent>;
+  private permissionAbort = new AbortController();
+  private closing = false;
+  private closePromise?: Promise<void>;
+  private mcpRelease?: Promise<void>;
+  private mcpStart?: ReturnType<typeof startDevinMcp>;
+  readonly closed: Promise<Error | undefined>;
+  private readonly permissions: SessionAutonomy;
+  private interactionMode: SessionInteractionMode;
+  private selectedReasoningEffort?: ReasoningEffort;
+  private changes: Promise<void> = Promise.resolve();
+  configOptions: SessionConfigOption[] = [];
+  private readonly catalog = new DevinCatalog();
+
+  constructor(
+    executable: string,
+    private readonly input: SessionInput,
+    private readonly persistOnCreate = false,
+  ) {
+    this.permissions = new SessionAutonomy(input.autonomy ?? 'low', {
+      write: () =>
+        this.change(async () => {
+          const autonomy = this.permissions.latestAutonomy;
+          await this.configure('mode', this.interactionMode === 'spec' ? 'plan' : MODES[autonomy]);
+          return autonomy;
+        }),
+      isApplied: () => true,
+      isUnsafe: () =>
+        AUTONOMY_LEVELS.indexOf(this.permissions.inForce) >
+        AUTONOMY_LEVELS.indexOf(this.permissions.latestAutonomy),
+      interrupt: () => this.interrupt(),
+      close: () => this.close(),
+      requireOpen: () => {
+        this.requireOpen();
+      },
+    });
+    this.interactionMode = input.interactionMode ?? 'auto';
+    this.terminals = new DevinTerminals(
+      input.cwd ?? homedir(),
+      (sessionId) =>
+        !this.isClosed && sessionId === this.sessionId && input.interactions.isActive(),
+      (notification) => {
+        this.update(notification);
+      },
+    );
+    this.client = new DevinClient(executable, input.cwd ?? homedir(), {
+      terminals: this.terminals,
+      update: (notification) => {
+        this.update(notification);
+      },
+      permission: (request) => {
+        const childId = devinChildId(request.toolCall);
+        let signal: AbortSignal | undefined;
+        if (childId) signal = this.subagents?.permissionSignal(childId);
+        else if (this.queue) signal = this.permissionAbort.signal;
+        if (this.isClosed || !signal || request.sessionId !== this.sessionId)
+          return Promise.resolve({ outcome: { outcome: 'cancelled' } });
+        return devinPermission(
+          input.appSessionId ?? this.providerSessionId,
+          request,
+          input.interactions,
+          signal,
+        );
+      },
+    });
+    this.closed = this.client.closed.then(async (error) => {
+      this.permissionAbort.abort();
+      this.subagents?.close();
+      this.backgroundListeners.clear();
+      input.interactions.cancelPending();
+      this.queue?.close(error);
+      try {
+        try {
+          await this.terminals.close();
+        } finally {
+          await this.releaseMcp();
+        }
+      } catch (cleanupError) {
+        return (
+          error ?? (cleanupError instanceof Error ? cleanupError : new Error(String(cleanupError)))
+        );
+      }
+      return error;
+    });
+  }
+
+  get providerSessionId(): string {
+    if (!this.sessionId) throw new Error('Devin session has not opened.');
+    return this.sessionId;
+  }
+  get autonomy(): Autonomy {
+    return this.permissions.selection;
+  }
+  get process() {
+    return this.client.process;
+  }
+  onProcessRootsChanged(listener: (roots: readonly ProviderProcess[]) => void): () => void {
+    return this.terminals.onProcessRootsChanged(listener);
+  }
+  get isClosed(): boolean {
+    return this.closing || this.client.isClosed;
+  }
+
+  async open(resumeId?: string, signal?: AbortSignal): Promise<void> {
+    const timeout = AbortSignal.timeout(30_000);
+    const abort = signal ? AbortSignal.any([signal, timeout]) : timeout;
+    const stop = () => {
+      void this.close().catch(() => undefined);
+    };
+    abort.addEventListener('abort', stop, { once: true });
+    try {
+      abort.throwIfAborted();
+      const initialized = await this.client.initialize();
+      this.requireOpen();
+      this.capabilities = initialized.agentCapabilities;
+      await this.client.authenticate(initialized.authMethods, abort);
+      this.requireOpen();
+      this.mcpStart = startDevinMcp(this.input.mcpServers ?? [], this.input.inAppMcpServers ?? []);
+      const mcpServers = await this.mcpStart;
+      this.requireOpen();
+      const cwd = this.input.cwd ?? homedir();
+      if (resumeId) {
+        if (!this.capabilities?.loadSession)
+          throw new Error('Devin cannot load saved conversations.');
+        this.sessionId = resumeId;
+        this.subagents = new DevinSubagents(this.input.appSessionId ?? resumeId, resumeId);
+        const loaded = await this.client.connection.agent.request('session/load', {
+          sessionId: resumeId,
+          cwd,
+          mcpServers,
+        });
+        this.requireOpen();
+        if (loaded.configOptions) this.configOptions = loaded.configOptions;
+      } else {
+        const created = await this.client.connection.agent.request('session/new', {
+          cwd,
+          mcpServers,
+          ...(this.persistOnCreate &&
+          this.capabilities?._meta?.['cognition.ai/persistOnCreate'] === true
+            ? { _meta: { 'cognition.ai/persistOnCreate': true } }
+            : {}),
+        });
+        this.requireOpen();
+        this.sessionId = created.sessionId;
+        if (created.configOptions) this.configOptions = created.configOptions;
+      }
+      this.mapper = new DevinEvents(
+        this.input.appSessionId ?? this.providerSessionId,
+        this.providerSessionId,
+      );
+      const pendingSeed = await readDevinForkSeed(this.providerSessionId);
+      this.requireOpen();
+      this.pendingSeed = pendingSeed;
+      this.subagents ??= new DevinSubagents(
+        this.input.appSessionId ?? this.providerSessionId,
+        this.providerSessionId,
+      );
+      await this.setInteractionMode(this.interactionMode);
+      this.requireOpen();
+      await this.setModel({
+        modelId: this.input.modelId,
+        reasoningEffort: this.input.reasoningEffort,
+      });
+      this.requireOpen();
+    } catch (error) {
+      const failure = await this.client.diagnostic(error);
+      await this.close();
+      throw failure;
+    } finally {
+      abort.removeEventListener('abort', stop);
+    }
+  }
+
+  async *stream(
+    prompt: string,
+    mentions?: ProviderMention[],
+  ): AsyncGenerator<NormalizedEvent, void, undefined> {
+    this.requireOpen();
+    if (this.queue) throw new Error('This Devin session is already running a turn.');
+    this.terminals.startTurn();
+    const queue = new MessageQueue<NormalizedEvent>();
+    this.queue = queue;
+    this.permissionAbort = new AbortController();
+    const signal = this.permissionAbort.signal;
+    const run = async () => {
+      try {
+        await this.changes;
+        // A revocation Devin has not confirmed must not reach the next prompt.
+        while (!this.permissions.isApplied) await this.permissions.synchronize();
+        this.requireOpen();
+        if (signal.aborted) {
+          for (const event of this.mapper?.interrupt() ?? []) queue.push(event);
+          queue.push({ done: true });
+          queue.close();
+          return;
+        }
+        const content = devinPromptContent(
+          prompt,
+          mentions,
+          this.pendingSeed === undefined
+            ? undefined
+            : { sessionId: this.providerSessionId, seed: this.pendingSeed },
+          this.capabilities?.promptCapabilities,
+        );
+        if (this.pendingSeed !== undefined) {
+          consumeDevinForkSeed(this.providerSessionId);
+          this.pendingSeed = undefined;
+        }
+        this.mapper?.startTurn();
+        const response = await this.client.connection.agent.request('session/prompt', {
+          sessionId: this.providerSessionId,
+          prompt: content,
+        });
+        if (response.stopReason === 'refusal') throw new Error('Devin refused this request.');
+        if (response.stopReason === 'cancelled')
+          for (const event of this.mapper?.interrupt() ?? []) queue.push(event);
+        queue.push({ done: true });
+        queue.close();
+      } catch (error) {
+        queue.close(await this.client.diagnostic(error));
+      }
+    };
+    const turn = { settled: false };
+    const running = run().finally(() => {
+      turn.settled = true;
+    });
+    try {
+      yield* queue;
+    } finally {
+      if (!turn.settled && !this.isClosed) {
+        await this.interrupt();
+        await running;
+      }
+      this.permissionAbort.abort();
+      if (this.queue === queue) this.queue = undefined;
+    }
+  }
+
+  steer(): Promise<false> {
+    return Promise.resolve(false);
+  }
+
+  onBackgroundEvent(listener: (event: NormalizedEvent) => void): () => void {
+    if (!this.isClosed) {
+      this.backgroundListeners.add(listener);
+      for (const event of this.subagents?.takeReplayedChildren() ?? []) this.emitBackground(event);
+    }
+    return () => {
+      this.backgroundListeners.delete(listener);
+    };
+  }
+
+  restoreChildren(children: readonly ProviderChildSession[]): void {
+    if (!this.isClosed) this.subagents?.restore(children);
+  }
+
+  catalogItems(): Promise<SkillInfo[]> {
+    return this.catalog.catalogItems();
+  }
+
+  onCatalogUpdated(listener: (items: SkillInfo[]) => void): () => void {
+    return this.catalog.onCatalogUpdated(listener);
+  }
+
+  setAutonomy(autonomy: Autonomy): Promise<void> {
+    return this.permissions.set(autonomy);
+  }
+
+  setInteractionMode(mode: SessionInteractionMode): Promise<void> {
+    return this.change(async () => {
+      await this.configure('mode', mode === 'spec' ? 'plan' : MODES[this.autonomy]);
+      this.interactionMode = mode;
+    });
+  }
+
+  setModel(settings: ProviderModelSettings): Promise<void> {
+    if (!settings.modelId && settings.reasoningEffort === undefined) return Promise.resolve();
+    return this.change(async () => {
+      const currentModel = this.configOptions.find((option) => option.id === 'model')?.currentValue;
+      const currentThought = this.configOptions.find(
+        (option) => option.id === 'thought_level',
+      )?.currentValue;
+      const previousModel = typeof currentModel === 'string' ? currentModel : undefined;
+      const previousThought = typeof currentThought === 'string' ? currentThought : undefined;
+      let modelChanged = false;
+      try {
+        // Devin resets thought_level to the newly selected model's default.
+        if (settings.modelId) {
+          await this.configure('model', settings.modelId);
+          modelChanged = true;
+        }
+        if (settings.reasoningEffort) {
+          await this.configure('thought_level', settings.reasoningEffort);
+          this.selectedReasoningEffort = settings.reasoningEffort;
+          return;
+        }
+        if (settings.reasoningEffort === null) {
+          this.selectedReasoningEffort = undefined;
+          return;
+        }
+        const effort = this.selectedReasoningEffort;
+        if (!settings.modelId || !effort) return;
+        const thought = this.configOptions.find((option) => option.id === 'thought_level');
+        // An explicit level follows the user across models when the new model
+        // offers it; otherwise the model keeps its own default.
+        if (selectValues(thought).includes(effort)) await this.configure('thought_level', effort);
+      } catch (error) {
+        if (modelChanged && previousModel && previousModel !== settings.modelId) {
+          try {
+            await this.configure('model', previousModel);
+            const thought = this.configOptions.find((option) => option.id === 'thought_level');
+            if (previousThought && selectValues(thought).includes(previousThought))
+              await this.configure('thought_level', previousThought);
+          } catch {
+            await this.close().catch(() => undefined);
+          }
+        }
+        throw error;
+      }
+    });
+  }
+
+  async interrupt(): Promise<void> {
+    this.permissionAbort.abort();
+    this.subagents?.cancelPermissions();
+    this.input.interactions.cancelPending();
+    const stopped = this.terminals.interrupt();
+    try {
+      if (!this.isClosed && this.queue)
+        await this.client.connection.agent.notify('session/cancel', {
+          sessionId: this.providerSessionId,
+        });
+    } finally {
+      await stopped;
+    }
+  }
+
+  async delete(): Promise<void> {
+    if (this.sessionId && this.capabilities?.sessionCapabilities?.delete)
+      await this.client.connection.agent.request(
+        'session/delete',
+        { sessionId: this.sessionId },
+        {
+          cancellationSignal: AbortSignal.timeout(1000),
+          stopWaitingOnCancel: true,
+        },
+      );
+  }
+
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    this.closing = true;
+    this.permissions.stop();
+    this.permissionAbort.abort();
+    this.subagents?.close();
+    this.backgroundListeners.clear();
+    this.input.interactions.cancelPending();
+    this.closePromise = (async () => {
+      try {
+        await this.terminals.close();
+        if (
+          this.sessionId &&
+          !this.client.isClosed &&
+          this.capabilities?.sessionCapabilities?.close
+        )
+          await this.client.connection.agent.request(
+            'session/close',
+            { sessionId: this.sessionId },
+            {
+              cancellationSignal: AbortSignal.timeout(1000),
+              stopWaitingOnCancel: true,
+            },
+          );
+      } finally {
+        await this.client.stop();
+        await this.releaseMcp();
+      }
+    })();
+    return this.closePromise;
+  }
+
+  private async configure(configId: string, value: string): Promise<void> {
+    this.requireOpen();
+    const result = await this.client.connection.agent.request('session/set_config_option', {
+      sessionId: this.providerSessionId,
+      configId,
+      value,
+    });
+    this.requireOpen();
+    this.configOptions = result.configOptions;
+  }
+
+  private change<T>(apply: () => Promise<T>): Promise<T> {
+    const changed = this.changes.then(apply);
+    this.changes = changed.then(
+      () => undefined,
+      () => undefined,
+    );
+    return changed;
+  }
+
+  private update(notification: SessionNotification): void {
+    if (this.isClosed || (this.sessionId && notification.sessionId !== this.sessionId)) return;
+    if (notification.update.sessionUpdate === 'config_option_update')
+      this.configOptions = notification.update.configOptions;
+    if (notification.update.sessionUpdate === 'available_commands_update')
+      this.catalog.update(notification.update.availableCommands);
+    if (!this.mapper) {
+      this.subagents?.replay(notification);
+      return;
+    }
+    notification = this.terminals.resolve(notification);
+    const childEvents = this.subagents?.map(notification);
+    if (childEvents) {
+      for (const event of childEvents) this.emitBackground(event);
+      return;
+    }
+    if (this.queue && !this.queue.isEnded) {
+      for (const event of this.mapper.map(notification)) this.queue.push(event);
+      return;
+    }
+    // Devin names a chat after the turn that prompted it may have settled.
+    if (notification.update.sessionUpdate === 'session_info_update')
+      for (const event of this.mapper.map(notification)) this.emitBackground(event);
+  }
+
+  private emitBackground(event: NormalizedEvent): void {
+    if (this.isClosed || !this.input.interactions.isActive()) return;
+    for (const listener of this.backgroundListeners) listener(event);
+  }
+
+  private requireOpen(): void {
+    if (this.isClosed) throw new Error('This Devin session is closed.');
+  }
+
+  private releaseMcp(): Promise<void> {
+    this.mcpRelease ??= (async () => {
+      try {
+        await this.mcpStart;
+      } finally {
+        await Promise.all((this.input.inAppMcpServers ?? []).map((server) => server.close()));
+      }
+    })();
+    return this.mcpRelease;
+  }
+}

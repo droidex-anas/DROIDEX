@@ -11,6 +11,10 @@ export class MessageQueue<T> implements AsyncIterable<T> {
   private ended = false;
   private failure?: Error;
 
+  get isEnded(): boolean {
+    return this.ended;
+  }
+
   push(message: T): void {
     if (this.ended) return;
     const waiting = this.waiting;

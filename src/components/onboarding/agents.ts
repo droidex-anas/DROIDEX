@@ -12,12 +12,13 @@ import type {
 } from '@droidex/protocol';
 
 // The agents setup offers, in the order it lists them.
-export const AGENTS: readonly ProviderKind[] = ['droid', 'claude', 'codex'];
+export const AGENTS: readonly ProviderKind[] = ['droid', 'claude', 'codex', 'devin'];
 
 export const AGENT_MAKERS: Record<ProviderKind, string> = {
   droid: 'Factory',
   claude: 'Anthropic',
   codex: 'OpenAI',
+  devin: 'Cognition',
 };
 
 export interface AgentInstall {
@@ -80,6 +81,8 @@ export function harnessStatus(
       return { state: 'signin', install, canRun: false };
     case 'ready':
       if (status.accountLabel) return { state: 'ready', install, account: status.accountLabel };
+      if (status.provider === 'devin')
+        return { state: 'ready', install, account: 'Cognition account' };
       return { state: 'signin', install, canRun: true };
   }
 }
@@ -160,6 +163,14 @@ const INSTALL_OPTIONS: Record<ProviderKind, InstallOption[]> = {
   codex: [
     { channel: 'brew', label: 'Homebrew', command: 'brew install --cask codex' },
     { channel: 'npm', label: 'npm', command: 'npm install -g @openai/codex' },
+  ],
+  devin: [
+    {
+      channel: 'script',
+      label: 'Official installer',
+      command: 'curl -fsSL https://cli.devin.ai/install.sh | bash',
+    },
+    { channel: 'brew', label: 'Homebrew', command: 'brew install --cask devin-cli' },
   ],
 };
 

@@ -1,0 +1,818 @@
+import assert from 'node:assert/strict';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import test from 'node:test';
+import { createSdkMcpServer } from '@factory/droid-sdk';
+import type { NormalizedEvent } from '../../normalize.js';
+import type { PermissionOutcome, ServerEvent } from '@droidex/protocol';
+import { SessionInteractions, type InteractionLiveSession } from '../../SessionInteractions.js';
+import type { ProviderApprovalRequest } from '../interactions.js';
+import { deferred } from '../../testing/projectServiceHarness.js';
+import { sessionSummary } from '../../testing/sessionSummaryFixture.js';
+import { tolerantCommandRunner } from '../../processes/processTree.js';
+import { DevinProvider } from './DevinProvider.js';
+import { collect, fixture } from '../../testing/devinProviderFixture.js';
+
+test('Devin accumulates reported inference usage without adding cache subsets or replayed usage', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const usageFile = join(h.cwd, 'usage.json');
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 26056,
+        size: 1000000,
+        _meta: {
+          'cognition.ai/inputTokens': 25943,
+          'cognition.ai/outputTokens': 113,
+          'cognition.ai/cachedWriteTokens': 25940,
+        },
+      },
+      {
+        sessionUpdate: 'usage_update',
+        used: 26944,
+        size: 1000000,
+        _meta: {
+          'cognition.ai/inputTokens': 26712,
+          'cognition.ai/outputTokens': 232,
+          'cognition.ai/cachedReadTokens': 25940,
+          'cognition.ai/cachedWriteTokens': 769,
+        },
+      },
+    ]),
+  );
+  const first = await collect(session.stream('usage'));
+  assert.deepEqual(
+    first.flatMap((event) => event.tokens ?? []),
+    [
+      { tokensIn: 25943, tokensOut: 113, contextTokens: 26056, maxContextTokens: 1000000 },
+      { tokensIn: 52655, tokensOut: 345, contextTokens: 26944, maxContextTokens: 1000000 },
+    ],
+  );
+  assert.deepEqual(first.at(-1), { done: true });
+  await session.close();
+  const resumed = await h.provider.resume(session.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  const replayFree = await collect(resumed.stream('usage'));
+  assert.deepEqual(
+    replayFree.flatMap((event) => event.tokens ?? []),
+    first.flatMap((event) => event.tokens ?? []),
+  );
+});
+
+test('Devin session info updates name the chat during and between turns', async (t) => {
+  const h = await fixture(t);
+  await writeFile(join(h.cwd, 'title-updates'), '');
+  const session = await h.create();
+  const background: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => background.push(event));
+  const events = await collect(session.stream('hello'));
+  assert.deepEqual(
+    events.find((event) => event.sessionTitle),
+    { sessionTitle: 'Devin generated title' },
+  );
+  await session.setModel({ modelId: 'swe-high' });
+  assert.deepEqual(background, [{ sessionTitle: 'Devin refined title' }]);
+});
+
+test('Devin context-only and malformed counters preserve known spend across turns', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const usageFile = join(h.cwd, 'usage.json');
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 13,
+        size: 100,
+        _meta: { 'cognition.ai/inputTokens': 10, 'cognition.ai/outputTokens': 3 },
+      },
+    ]),
+  );
+  await collect(session.stream('usage'));
+  await writeFile(
+    usageFile,
+    JSON.stringify([
+      ...[null, -1, 0.5, '100', 1e100].map((invalid) => ({
+        sessionUpdate: 'usage_update',
+        used: 5,
+        size: 200,
+        _meta: { 'cognition.ai/inputTokens': invalid, 'cognition.ai/outputTokens': invalid },
+      })),
+      { sessionUpdate: 'usage_update', used: 5, size: 200 },
+    ]),
+  );
+  const updates = (await collect(session.stream('usage'))).flatMap((event) => event.tokens ?? []);
+  assert.equal(updates.length, 6);
+  for (const usage of updates)
+    assert.deepEqual(usage, {
+      tokensIn: 10,
+      tokensOut: 3,
+      contextTokens: 5,
+      maxContextTokens: 200,
+    });
+  const contextOnly = await collect(session.stream('hello'));
+  assert.deepEqual(contextOnly.find((event) => event.tokens)?.tokens, {
+    tokensIn: 10,
+    tokensOut: 3,
+    contextTokens: 20,
+    maxContextTokens: 100,
+  });
+});
+
+test('Devin client terminals stream shell output with cwd and env, then retain the result after release', async (t) => {
+  const h = await fixture(t);
+  // The shell reports the resolved cwd; macOS temp dirs sit behind /var -> /private/var.
+  const shellCwd = await realpath(h.cwd);
+  const session = await h.create();
+  const events: NormalizedEvent[] = [];
+  let continued = false;
+  for await (const event of session.stream('terminal-live')) {
+    events.push(event);
+    if (
+      !continued &&
+      event.transcript?.kind === 'tool_call' &&
+      event.transcript.text?.includes('READY')
+    ) {
+      continued = true;
+      assert.equal(event.transcript.text, `READY|terminal-env|${shellCwd}`);
+      await writeFile(join(h.cwd, 'terminal-go'), 'go');
+    }
+  }
+  assert.equal(continued, true);
+  const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+  assert.equal(response.initial.exitStatus, undefined);
+  assert.equal(response.exit.exitCode, 0);
+  assert.equal(response.output.truncated, false);
+  assert.equal(response.output.output, `READY|terminal-env|${shellCwd}|DONE`);
+  assert.match(response.released.error, /Unknown Devin terminal/);
+  assert.equal(
+    events.find((event) => event.transcript?.kind === 'tool_result')?.transcript?.text,
+    response.output.output,
+  );
+});
+
+test('Devin terminals handle UTF-8 truncation, empty output, errors, explicit kill and idempotent release', async (t) => {
+  for (const mode of ['args', 'truncate', 'empty', 'error', 'kill', 'release', 'background-exit']) {
+    await t.test(mode, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      await collect(session.stream('terminal-' + mode));
+      const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+      if (mode === 'error') {
+        assert.match(response.error, /ENOENT/);
+        return;
+      }
+      assert.match(response.released.error, /Unknown Devin terminal/);
+      if (mode === 'args') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.deepEqual(JSON.parse(response.output.output), [
+          'space value',
+          'paren(value);$(literal)',
+        ]);
+      } else if (mode === 'truncate') {
+        assert.equal(response.output.output, 'éZ');
+        assert.equal(response.output.truncated, true);
+      } else if (mode === 'empty') {
+        assert.equal(response.output.output, '');
+        assert.equal(response.output.truncated, false);
+      } else if (mode === 'kill') {
+        assert.equal(response.exit.signal, 'SIGTERM');
+        assert.deepEqual(response.output.exitStatus, response.exit);
+      } else if (mode === 'background-exit') {
+        assert.equal(response.exit.exitCode, 0);
+        assert.match(response.output.output, /READY:/);
+      } else {
+        assert.match(response.exit.error, /Unknown Devin terminal/);
+        assert.match(response.output.error, /Unknown Devin terminal/);
+      }
+    });
+  }
+});
+
+test('Devin interrupt and close kill running terminal descendants', async (t) => {
+  for (const action of ['interrupt', 'close', 'background'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session
+        .stream(action === 'background' ? 'terminal-background' : 'terminal-wait')
+        [Symbol.asyncIterator]();
+      let pid: number | undefined;
+      while (pid === undefined) {
+        const next = await stream.next();
+        assert.equal(next.done, false);
+        const text = next.value?.transcript?.text;
+        if (text?.startsWith('READY:')) pid = Number(text.slice(6));
+      }
+      process.kill(pid, 0);
+      await session[action === 'background' ? 'interrupt' : action]();
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      if (action !== 'close') {
+        await session.setModel({ modelId: 'terminal-sync' });
+        const response = JSON.parse(await readFile(join(h.cwd, 'terminal-result'), 'utf8'));
+        if (action === 'background') assert.equal(response.exit.exitCode, 0);
+        else assert.equal(response.exit.signal, 'SIGTERM');
+      }
+    });
+  }
+});
+
+test('Devin cleans redirected background jobs after their shell and output pipes close', async (t) => {
+  for (const action of ['release', 'interrupt', 'close'] as const) {
+    await t.test(action, async (t) => {
+      const h = await fixture(t);
+      const session = await h.create();
+      const stream = session.stream('terminal-redirected-' + action)[Symbol.asyncIterator]();
+      if (action !== 'release') {
+        const next = await stream.next();
+        assert.match(next.value?.transcript?.text ?? '', /^REDIRECTED:\d+$/);
+        if (action === 'interrupt') await collect({ [Symbol.asyncIterator]: () => stream });
+        const roots: number[][] = [];
+        const unsubscribe = session.onProcessRootsChanged((live) => {
+          roots.push(live.map((root) => root.pid));
+        });
+        assert.equal(roots[0]?.length, 1);
+        assert.notEqual(roots[0]?.[0], session.process?.pid);
+        await session[action]();
+        assert.deepEqual(roots.at(-1), []);
+        unsubscribe();
+      }
+      await collect({ [Symbol.asyncIterator]: () => stream });
+      const pid = Number(await readFile(join(h.cwd, 'redirected-pid'), 'utf8'));
+      const status = await tolerantCommandRunner('ps', ['-o', 'stat=', '-p', String(pid)]);
+      assert.match(status.trim(), /^(?:Z.*)?$/);
+    });
+  }
+});
+
+test('Devin maps streamed text, reasoning, tools and context without leaking child updates', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  assert.equal(session.providerSessionId, 'devin-one');
+  const events = await collect(
+    session.stream('hello', [{ kind: 'skill', name: 'guide', path: '/guide.md' }]),
+  );
+  const rows = events.flatMap((event) => (event.transcript ? [event.transcript] : []));
+  assert.deepEqual(
+    rows.filter((row) => row.kind === 'text').map((row) => row.text),
+    ['Hello ', 'world'],
+  );
+  assert.equal(rows[0]?.textUpdate?.messageId, 'answer');
+  assert.ok(
+    rows.every((row) => row.appSessionId === 'app-one' && row.sourceSessionId === 'devin-one'),
+  );
+  assert.equal(rows.find((row) => row.kind === 'thinking')?.text, 'Think');
+  assert.equal(rows.find((row) => row.toolUseId === 'tool')?.toolName, 'shell');
+  assert.equal(
+    rows.find((row) => row.kind === 'tool_result' && row.toolUseId === 'tool')?.text,
+    '/workspace',
+  );
+  assert.equal(
+    rows.find((row) => row.kind === 'tool_result' && row.toolUseId === 'failed')?.isError,
+    true,
+  );
+  assert.equal(events.find((event) => event.tokens)?.tokens?.contextTokens, 20);
+  assert.deepEqual(events.at(-1), { done: true });
+  const sent = await h.requests();
+  assert.deepEqual(
+    sent.find((request) => request.method === 'initialize')?.params?.clientCapabilities,
+    {
+      terminal: true,
+      _meta: { 'cognition.ai/messageGrouping': true, 'cognition.ai/subagentSupport': true },
+    },
+  );
+  assert.deepEqual(sent.find((request) => request.method === 'session/prompt')?.params?.prompt, [
+    { type: 'text', text: 'hello' },
+    { type: 'resource_link', name: 'guide', uri: 'file:///guide.md' },
+  ]);
+});
+
+test('Devin resumes without replaying load history and applies live mode and model selections', async (t) => {
+  const h = await fixture(t);
+  const created = await h.create();
+  await created.close();
+  const session = await h.provider.resume('devin-one', { ...h.input, modelId: 'swe-high' });
+  h.sessions.push(session);
+  const raised = session.setAutonomy('high');
+  assert.equal(session.autonomy, 'low');
+  await raised;
+  assert.equal(session.autonomy, 'high');
+  await session.setInteractionMode('spec');
+  const lowered = session.setAutonomy('medium');
+  assert.equal(session.autonomy, 'medium');
+  await lowered;
+  await session.setInteractionMode('auto');
+  await session.setModel({ modelId: null });
+  assert.equal(session.autonomy, 'medium');
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
+  assert.equal(await session.steer(), false);
+  const settings = (await h.requests()).filter(
+    (request) => request.method === 'session/set_config_option',
+  );
+  assert.deepEqual(
+    settings.map((request) => request.params?.value),
+    ['accept-edits', 'accept-edits', 'swe-high', 'bypass', 'plan', 'plan', 'smart'],
+  );
+});
+
+test('Devin configures the model before its reasoning effort and rejects a level the model does not support', async (t) => {
+  const h = await fixture(t);
+  const session = await h.provider.create({
+    ...h.input,
+    modelId: 'swe-high',
+    reasoningEffort: 'xhigh',
+  });
+  h.sessions.push(session);
+  // Devin resets thought_level to the new model's default, so the level must be
+  // applied after the model or the reset would drop it.
+  await session.setModel({ modelId: 'swe-fast-medium' });
+  await session.setModel({ modelId: 'swe-high' });
+  const settings = (await h.requests())
+    .filter((request) => request.method === 'session/set_config_option')
+    .map((request) => [request.params?.configId, request.params?.value]);
+  assert.deepEqual(settings, [
+    ['mode', 'accept-edits'],
+    ['model', 'swe-high'],
+    ['thought_level', 'xhigh'],
+    ['model', 'swe-fast-medium'],
+    ['model', 'swe-high'],
+    ['thought_level', 'xhigh'],
+  ]);
+  await assert.rejects(session.setModel({ reasoningEffort: 'low' }), /Invalid params/);
+  // A cleared level no longer follows the chat to the next model.
+  await session.setModel({ reasoningEffort: null });
+  await session.setModel({ modelId: 'swe-fast-medium' });
+  await session.setModel({ modelId: 'swe-high' });
+  const thought = session.configOptions.find((option) => option.id === 'thought_level');
+  assert.equal(thought?.currentValue, 'high');
+});
+
+test('a Devin permission revocation that Devin refuses retires the runtime', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await session.setAutonomy('high');
+  await writeFile(join(h.cwd, 'reject-mode'), '');
+  await assert.rejects(session.setAutonomy('off'), /Mode change refused/);
+  assert.equal(session.isClosed, true);
+  await assert.rejects(collect(session.stream('empty')), /closed/);
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/prompt'),
+    false,
+  );
+});
+
+test('Devin approval choices honor user outcomes and never select plan_bypass', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  for (const [answer, expected] of [
+    ['proceed_once', 'once'],
+    ['proceed_always', 'always'],
+    ['cancel', undefined],
+    ['refuse', 'no'],
+  ] as const) {
+    h.answer(answer);
+    await collect(session.stream('approve'));
+    const responses = await readFile(join(h.cwd, 'permission.json'), 'utf8');
+    const last = responses.trim().split('\n').at(-1) ?? '';
+    if (expected) assert.match(last, new RegExp(`"optionId":"${expected}"`));
+    else assert.match(last, /"outcome":"cancelled"/);
+  }
+  assert.equal(h.approvals[0]?.request.kind, 'edit');
+  assert.equal(h.approvals[0]?.request.canAlwaysAllow, true);
+});
+
+test('Devin native children keep sibling and parent transcripts isolated through success and failure', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const background: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => {
+    background.push(event);
+  });
+  const primary = await collect(session.stream('children'));
+  assert.deepEqual(
+    primary.flatMap((event) => event.transcript?.text ?? []),
+    ['Parent result', 'Parent answer'],
+  );
+  assert.equal(
+    primary.find((event) => event.transcript?.toolUseId === 'shared')?.transcript?.toolName,
+    'Parent tool',
+  );
+  assert.deepEqual(
+    background.flatMap((event) =>
+      event.childSession ? [[event.childSession.providerSessionId, event.childSession.status]] : [],
+    ),
+    [
+      ['child-a', 'running'],
+      ['child-b', 'running'],
+      ['child-b', 'failed'],
+      ['child-a', 'completed'],
+    ],
+  );
+  for (const id of ['child-a', 'child-b']) {
+    const started = background.find(
+      (event) => event.childSession?.providerSessionId === id,
+    )?.childSession;
+    assert.equal(started?.label, `Review ${id}`);
+    assert.equal(started?.prompt, `Inspect ${id}`);
+    assert.equal(started?.modelId, 'swe-child');
+    assert.equal(started?.transcriptAvailable, true);
+    const rows = background
+      .filter((event) => event.childOwner?.id === id)
+      .map((event) => event.transcript);
+    assert.ok(
+      rows.every(
+        (row) =>
+          row?.appSessionId === 'app-one' && row.sourceSessionId === id && row.role === 'worker',
+      ),
+    );
+    assert.deepEqual(
+      rows.filter((row) => row?.kind === 'text').map((row) => row?.text),
+      [`Answer ${id}`, `Summary ${id}`],
+    );
+    assert.equal(rows.find((row) => row?.kind === 'thinking')?.text, `Think ${id}`);
+    assert.equal(rows.find((row) => row?.kind === 'tool_call')?.toolName, 'shell');
+    assert.deepEqual(rows.find((row) => row?.kind === 'tool_call')?.toolArgs, { command: id });
+    const result = rows.find((row) => row?.kind === 'tool_result');
+    assert.equal(result?.text, `Result ${id}`);
+    assert.equal(result?.isError, id === 'child-b');
+    const completed = background.find(
+      (event) => event.childSession?.providerSessionId === id && event.childSession.done,
+    )?.childSession;
+    assert.equal(completed?.activity?.preview, `Summary ${id}`);
+  }
+  assert.ok(
+    background
+      .filter((event) => event.transcript)
+      .every((event) => event.childOwner?.kind === 'provider-session'),
+  );
+  assert.ok(background.every((event) => !event.tokens));
+});
+
+test('Devin observes fresh and restored children between turns and rejects child output after close', async (t) => {
+  const h = await fixture(t);
+  for (const resume of [false, true]) {
+    if (resume) await writeFile(join(h.cwd, 'replay-children'), '');
+    const session = resume ? await h.provider.resume('devin-one', h.input) : await h.create();
+    if (resume) {
+      h.sessions.push(session);
+      session.restoreChildren([
+        {
+          providerSessionId: 'background',
+          role: 'worker',
+          status: 'paused',
+          modelId: 'old-model',
+          transcriptAvailable: true,
+        },
+      ]);
+    }
+    const background: NormalizedEvent[] = [];
+    session.onBackgroundEvent((event) => {
+      background.push(event);
+    });
+    if (!resume) assert.deepEqual(await collect(session.stream('background')), [{ done: true }]);
+    assert.deepEqual(
+      background.flatMap((event) =>
+        event.childSession
+          ? [
+              [
+                event.childSession.providerSessionId,
+                event.childSession.status,
+                event.childSession.modelId,
+              ],
+            ]
+          : [],
+      ),
+      [
+        ['background', 'running', 'swe-child'],
+        ...(resume ? [['untracked', 'running', 'swe-child']] : []),
+      ],
+    );
+    await session.setModel({ modelId: 'finish-background' });
+    assert.deepEqual(
+      background.flatMap((event) => event.transcript?.text ?? []),
+      ['Background answer', 'Summary background'],
+    );
+    assert.equal(background.at(-2)?.childSession?.status, 'completed');
+    const count = background.length;
+    await session.close();
+    assert.equal(background.length, count);
+    assert.equal(session.isClosed, true);
+  }
+});
+
+test('Devin child approvals retain native context on the parent and reject unknown child permissions', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await collect(session.stream('approve-child'));
+  assert.equal(h.approvals[0]?.request.appSessionId, 'app-one');
+  assert.equal(h.approvals[0]?.request.kind, 'edit');
+  assert.deepEqual(h.approvals[0]?.request.raw, {
+    toolCallId: 'edit',
+    title: 'Edit file',
+    kind: 'edit',
+    rawInput: { path: '/file' },
+    _meta: { 'cognition.ai/subagent_context': { parentAgentId: 'approval-child' } },
+  });
+  await collect(session.stream('approve-orphan'));
+  await collect(session.stream('approve-completed'));
+  assert.equal(h.approvals.length, 1);
+  const responses = (await readFile(join(h.cwd, 'permission.json'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  assert.deepEqual(responses, [
+    { outcome: { outcome: 'selected', optionId: 'once' } },
+    { outcome: { outcome: 'cancelled' } },
+    { outcome: { outcome: 'cancelled' } },
+  ]);
+});
+
+test('closing Devin cancels a pending child approval before a late allow answer can reach the agent', async (t) => {
+  const h = await fixture(t);
+  const requested = deferred<ProviderApprovalRequest>();
+  const answer = deferred<PermissionOutcome>();
+  h.input.interactions.requestApproval = (request) => {
+    requested.resolve(request);
+    return answer.promise;
+  };
+  const session = await h.create();
+  const background: NormalizedEvent[] = [];
+  session.onBackgroundEvent((event) => {
+    background.push(event);
+  });
+  const turn = collect(session.stream('approve-child'));
+  const request = await requested.promise;
+  assert.equal(request.signal?.aborted, false);
+  const count = background.length;
+  const closing = session.close();
+  assert.equal(request.signal?.aborted, true);
+  answer.resolve('proceed_once');
+  await closing;
+  await turn;
+  assert.equal(background.length, count);
+  assert.deepEqual(JSON.parse((await readFile(join(h.cwd, 'permission.json'), 'utf8')).trim()), {
+    outcome: { outcome: 'cancelled' },
+  });
+});
+
+test('a native child approval stays answerable after the Devin parent turn settles', async (t) => {
+  const h = await fixture(t);
+  const events: ServerEvent[] = [];
+  const session = await h.create();
+  const live: InteractionLiveSession = {
+    summary: sessionSummary({ appSessionId: 'app-one', provider: 'devin' }),
+    session,
+  };
+  const interactions = new SessionInteractions({
+    getLiveSession: () => live,
+    updateSummary: () => undefined,
+    setProviderSpecMode: async () => undefined,
+    setAutonomy: async () => true,
+    emit: (event) => {
+      events.push(event);
+    },
+    emitError: (error) => assert.fail(error.message),
+  });
+  h.input.interactions = interactions.interactionsFor({ id: 'app-one' });
+  const finished = deferred();
+  session.onBackgroundEvent((event) => {
+    if (event.childSession?.done) finished.resolve();
+  });
+  await collect(session.stream('approve-background'));
+  const requested = events.find((event) => event.type === 'approval.requested');
+  assert.ok(requested?.type === 'approval.requested');
+  assert.equal(
+    events.some((event) => event.type === 'interaction.cancelled'),
+    false,
+  );
+  await interactions.respondToApproval('app-one', requested.request.requestId, 'proceed_once');
+  await finished.promise;
+  assert.deepEqual(JSON.parse((await readFile(join(h.cwd, 'permission.json'), 'utf8')).trim()), {
+    outcome: { outcome: 'selected', optionId: 'once' },
+  });
+});
+
+test('Devin cancellation settles a turn and the session remains usable', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const stream = session.stream('wait');
+  assert.equal((await stream.next()).value?.transcript?.text, 'waiting');
+  await session.interrupt();
+  const cancelled = await collect(stream);
+  assert.equal(cancelled[0]?.transcript?.kind, 'status');
+  assert.match(cancelled[0]?.transcript?.text ?? '', /interrupted/i);
+  assert.deepEqual(cancelled.at(-1), { done: true });
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
+  await Promise.all([session.close(), session.close()]);
+  assert.equal(session.isClosed, true);
+  assert.equal(session.process?.isAlive(), false);
+  assert.equal(await session.closed, undefined);
+});
+
+test('Devin Stop during a pending config change does not send the queued prompt', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  const change = session.setModel({ modelId: 'blocked' });
+  const result = collect(session.stream('must not run'));
+  await Promise.resolve();
+  await session.interrupt();
+  await change;
+  assert.deepEqual((await result).at(-1), { done: true });
+  assert.equal(
+    (await h.requests()).some((request) => request.method === 'session/prompt'),
+    false,
+  );
+  assert.deepEqual(await collect(session.stream('empty')), [{ done: true }]);
+});
+
+test('Devin settles when it exits while a descendant still holds its output pipes', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await assert.rejects(collect(session.stream('exit-orphan')), /Devin exited \(9\)/);
+  assert.ok(await session.closed);
+});
+
+test('Devin refuses a turn explicitly and surfaces stderr on process exit', async (t) => {
+  const h = await fixture(t);
+  const session = await h.create();
+  await assert.rejects(collect(session.stream('refuse')), /Devin refused/);
+  await assert.rejects(collect(session.stream('exit')), /backend failed/);
+  assert.ok(await session.closed);
+  await assert.rejects(collect(session.stream('empty')), /closed/);
+});
+
+test('Devin forks stay idle and persist their seed until the first prompt, never reseeding later resumes', async (t) => {
+  const h = await fixture(t);
+  const source = { providerSessionId: 'source', cwd: h.cwd, title: 'Copy' };
+  await assert.rejects(h.provider.fork(source), /transcript is unavailable or empty/);
+  const handle = await h.provider.fork({ ...source, transcriptSeed: 'Earlier conversation' });
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/prompt'),
+    false,
+  );
+  const opened = await h.provider.resume(handle.providerSessionId, h.input);
+  h.sessions.push(opened);
+  await opened.close();
+  const resumed = await new DevinProvider().resume(handle.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  const first = await collect(resumed.stream('First request'));
+  const point = first.find((event) => event.transcript?.kind === 'text')?.transcript?.forkPointId;
+  assert.match(point ?? '', /^devin-turn-/);
+  assert.ok(
+    first
+      .filter((event) => event.transcript)
+      .every((event) => event.transcript?.forkPointId === point),
+  );
+  await collect(resumed.stream('Second request'));
+  await resumed.close();
+  const later = await new DevinProvider().resume(handle.providerSessionId, h.input);
+  h.sessions.push(later);
+  await collect(later.stream('Third request'));
+  const requests = await h.requests();
+  assert.deepEqual(
+    requests
+      .filter(({ method }) => method === 'session/prompt')
+      .map(({ params }) => params?.prompt),
+    [
+      [
+        {
+          type: 'resource',
+          resource: {
+            uri: `droidex://fork-seed/${encodeURIComponent(handle.providerSessionId)}`,
+            mimeType: 'text/markdown',
+            text: 'Conversation so far:\nEarlier conversation',
+          },
+        },
+        { type: 'text', text: 'First request' },
+      ],
+      [{ type: 'text', text: 'Second request' }],
+      [{ type: 'text', text: 'Third request' }],
+    ],
+  );
+  assert.deepEqual(requests.find(({ method }) => method === 'session/new')?.params?._meta, {
+    'cognition.ai/persistOnCreate': true,
+  });
+  assert.equal(
+    requests.some(({ method }) => method === 'session/fork'),
+    false,
+  );
+});
+
+test('Devin prefers an advertised native whole-session fork without seeding it', async (t) => {
+  const h = await fixture(t);
+  await writeFile(join(h.cwd, 'native-fork'), '');
+  const copy = await h.provider.fork({
+    providerSessionId: 'source',
+    cwd: h.cwd,
+    title: 'Native copy',
+    transcriptSeed: 'Must not be sent',
+  });
+  assert.equal(copy.providerSessionId, 'devin-native-copy');
+  const session = await h.provider.resume(copy.providerSessionId, h.input);
+  h.sessions.push(session);
+  await collect(session.stream('First native request'));
+  const requests = await h.requests();
+  assert.equal(
+    requests.some(({ method }) => method === 'session/new'),
+    false,
+  );
+  assert.deepEqual(requests.find(({ method }) => method === 'session/fork')?.params, {
+    sessionId: 'source',
+    cwd: h.cwd,
+    mcpServers: [],
+  });
+  assert.deepEqual(requests.find(({ method }) => method === 'session/prompt')?.params?.prompt, [
+    { type: 'text', text: 'First native request' },
+  ]);
+});
+
+test('copying a Devin fork before its first prompt seeds the copy instead of cloning', async (t) => {
+  const h = await fixture(t);
+  const seed = { cwd: h.cwd, title: 'Copy', transcriptSeed: 'Saved context' };
+  const first = await h.provider.fork({ ...seed, providerSessionId: 'source' });
+  await writeFile(join(h.cwd, 'native-fork'), '');
+  await writeFile(join(h.cwd, 'next-session-id'), 'devin-second-copy');
+  const second = await h.provider.fork({ ...seed, providerSessionId: first.providerSessionId });
+  assert.equal(second.providerSessionId, 'devin-second-copy');
+  assert.equal(
+    (await h.requests()).some(({ method }) => method === 'session/fork'),
+    false,
+  );
+});
+
+test('Stop before a seeded Devin prompt is dispatched preserves the pending seed', async (t) => {
+  const h = await fixture(t);
+  const copy = await h.provider.fork({
+    providerSessionId: 'source',
+    cwd: h.cwd,
+    title: 'Copy',
+    transcriptSeed: 'Saved context',
+  });
+  const session = await h.provider.resume(copy.providerSessionId, h.input);
+  h.sessions.push(session);
+  const change = session.setModel({ modelId: 'blocked' });
+  const cancelled = collect(session.stream('Do not send'));
+  await Promise.resolve();
+  await session.interrupt();
+  await change;
+  await cancelled;
+  await session.close();
+  const resumed = await new DevinProvider().resume(copy.providerSessionId, h.input);
+  h.sessions.push(resumed);
+  await collect(resumed.stream('Send now'));
+  const prompts = (await h.requests()).filter(({ method }) => method === 'session/prompt');
+  assert.equal(prompts.length, 1);
+  assert.deepEqual(prompts[0].params?.prompt, [
+    {
+      type: 'resource',
+      resource: {
+        uri: `droidex://fork-seed/${encodeURIComponent(copy.providerSessionId)}`,
+        mimeType: 'text/markdown',
+        text: 'Conversation so far:\nSaved context',
+      },
+    },
+    { type: 'text', text: 'Send now' },
+  ]);
+});
+
+test('Devin forwards configured MCP transports and serves in-app tools for its lifetime', async (t) => {
+  const h = await fixture(t);
+  const app = createSdkMcpServer({
+    name: 'app',
+    tools: [{ name: 'echo', handler: () => 'APP_TOOL_RESULT' }],
+  });
+  const session = await h.provider.create({
+    ...h.input,
+    inAppMcpServers: [app],
+    mcpServers: [
+      {
+        name: 'stdio',
+        command: 'example',
+        args: ['serve'],
+        env: { EXAMPLE: 'yes' },
+      },
+    ],
+  });
+  h.sessions.push(session);
+  await collect(session.stream('mcp'));
+  assert.match(await readFile(join(h.cwd, 'mcp-result'), 'utf8'), /APP_TOOL_RESULT/);
+  const configured = (await h.requests()).find((request) => request.method === 'session/new')
+    ?.params?.mcpServers;
+  assert.ok(Array.isArray(configured));
+  assert.deepEqual(configured[0], {
+    name: 'stdio',
+    command: 'example',
+    args: ['serve'],
+    env: [{ name: 'EXAMPLE', value: 'yes' }],
+  });
+  const url = app.config && 'url' in app.config ? app.config.url : undefined;
+  assert.ok(url);
+  await session.close();
+  await assert.rejects(fetch(url), /fetch failed/);
+});

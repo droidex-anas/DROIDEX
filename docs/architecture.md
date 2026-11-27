@@ -51,7 +51,7 @@ flowchart LR
 - `SessionManager` is the composition root and public command coordinator. It retains public dispatch, cross-module routing, and shutdown ordering.
 - `FactoryRuntime` is the narrow SDK seam; `DroidRuntime` is its production adapter. A Droid steer is `add_user_message` with a caller-minted `messageId`, delivered when the user message carrying that id arrives and dropped on discard, acknowledged Stop or close. Slash-command candidates use ordinary delivery. `DroidTurn` keeps the app turn open across Droid's follow-on loops and an in-flight interrupt, observing an active loop through its terminal idle before emitting one final result. The SDK owns main-loop conversion; only late-loop notifications are buffered and converted here. Child sessions still queue.
 - `SessionRegistry` owns top-level sessions only: the live parent map, stable application identity, provider aliases, canonical parent summary persistence, and projected summary reads. Children never enter `SessionRegistry` or `sessions.list`.
-- Droid chats enter durable `sessions.list` history after a completed user/assistant exchange. App-owned Claude and Codex chats enter after their first durable prompt, including interrupted first turns. Sessions without a durable prompt remain visible only through the live registry. Once admitted, an app-owned primary chat retains its cached summary and DROIDEX title if its transcript becomes unavailable or returns with only a header, including across restarts; file reconciliation never deletes app-owned notices. Missing files are excluded from indexing until they return. Delete/archive tombstones live only in renderer storage, so they survive metadata caps and catalog omissions to keep retained chats hidden.
+- Droid chats enter durable `sessions.list` history after a completed user/assistant exchange. App-owned Claude, Codex and Devin chats enter after their first durable prompt, including interrupted first turns. Sessions without a durable prompt remain visible only through the live registry. Once admitted, an app-owned primary chat retains its cached summary and DROIDEX title if its transcript becomes unavailable or returns with only a header, including across restarts; file reconciliation never deletes app-owned notices. Missing files are excluded from indexing until they return. Delete/archive tombstones live only in renderer storage, so they survive metadata caps and catalog omissions to keep retained chats hidden.
 - If full-text search initialization fails while cached summaries remain readable, catalog listing and loading remain available and search is disabled. History health carries the cause and repair instructions to a banner and toast, including on connect and snapshot recovery. The shared search database is preserved for repair because missing transcripts cannot reconstruct retained summaries.
 - `ChildSessions` is the one stateful generic owner of parent-child membership, canonical child identity, provider replacement, admission, capacity, queues, turns, settings, cleanup, exact context/compaction targets, and child persistence/hydration. Spawn ownership is indexed during hydration, admission, and link changes so child deltas do not scan historical siblings.
 - `MissionControlPolicy` owns only AGI Mission Control policy and projection: features, progress, worker/validator decisions, spawn correlation, Mission phase, and Mission completion. It may call `ChildSessions`; `ChildSessions` does not import Mission Control.
@@ -114,7 +114,7 @@ conversations through the normal chat and composer. A tile targeting an existing
 session shows a composer only after its summary is known; missing summaries show
 a loading or unavailable state. A chat's own tools for
 starting and steering other chats arrive the way the browser's and automations'
-do: the `droidex-sessions` in-app MCP server for Droid and Claude Code, or
+do: the `droidex-sessions` in-app MCP server for Droid, Claude Code and Devin, or
 deferred dynamic tools using the same handlers for Codex. Codex does not start
 local MCP listeners, and unattended automation runs receive neither set. The
 sidebar tools never keep a copy of the sidebar: each call sends the window a
@@ -150,7 +150,7 @@ read of the store, so it works with the sidebar collapsed. See
 - `HistoryPersistenceQueue` retains transcript metadata losslessly, collapses pending summaries and child records by stable identity, and enforces explicit row and byte ceilings.
 - Ordinary writes flush on a short debounce or batch limit with SQLite WAL `synchronous=NORMAL`. Reconciliation drains pending transactions for read consistency without forcing a durability checkpoint. Session creation, turn settlement, provider replacement, compaction, child settlement, unregister, and shutdown additionally force a `synchronous=FULL` WAL checkpoint before the corresponding completed state is published. These boundaries await worker replies without blocking the orchestration event loop; owners revalidate the captured session or turn before applying the result.
 - App-owned provider transcripts serialize appends through an asynchronous file-write queue, one per file. A line that fails is reported to the caller that wrote it and is lost; the lines after it are still written, and the head line is retried until a line lands. Turn settlement and close wait for the queue and for every child file, and reject only when the message they closed could not be written. No transcript file or extra worker is opened at session construction. A fork of an open chat reads the source file through the same queue, so the copy holds every line queued before it and none written half-way.
-- App-owned Codex and Claude transcripts enter history after their first durable prompt, including interrupted turns without a reply. Their stored provider and settings remain authoritative; external Droid files require a completed exchange before admission. Admission semantics version the derived file cache so unchanged files are reconsidered when that rule changes.
+- App-owned Codex, Claude and Devin transcripts enter history after their first durable prompt, including interrupted turns without a reply. Their stored provider and settings remain authoritative; external Droid files require a completed exchange before admission. Admission semantics version the derived file cache so unchanged files are reconsidered when that rule changes.
 - One writer worker thread owns the SQLite connection and executes each batch inside one `BEGIN IMMEDIATE` transaction. A transactional writer-generation lease rejects work from a timed-out worker after its replacement starts, so late termination cannot overwrite recovered state or cross a durability checkpoint. Failed transactions roll back completely, the queue retains the batch, and the supervised client recreates a failed worker with bounded exponential retry. Live output continues while bounded queue capacity remains; durability boundaries fail visibly until recovery.
 - A separate index worker owns provider-file tree reconciliation, targeted watcher reconciliation, search-text extraction, and SQLite FTS5 updates. It returns revisioned cache deltas; a missed delta triggers an authoritative snapshot before the sidecar changes its in-memory historical summaries or provider-path index. The orchestration thread never walks the provider-file tree or rebuilds the derived cache; explicit history page loads still parse only the indexed provider paths needed for that page. The first session list and a post-close list publish only after their reconciliation result is applied.
 - Full-text content indexing is incremental and restartable. Each transaction advances a persisted byte cursor and indexed-tail fingerprint, so appends index only new JSONL records and a restart resumes at the last committed boundary. File replacement, truncation, or a changed indexed tail rebuilds only that provider's derived rows; deletion removes rows through an indexed provider-to-row mapping.
@@ -259,6 +259,7 @@ Inspected screenshots stay open until the user closes them.
 - Every `session.create` carries an explicit autonomy snapshot. The sidecar fails fast when it is missing instead of falling back to provider or factory defaults.
 - The application default (Supervised on first run) is persisted by the renderer and edited only in Settings → Configuration. The composer drafts a per-session override from that default; the draft resets whenever the create target changes.
 - Starting a Mission requires High autonomy. The composer blocks a lower draft behind an explicit choice to raise it; autonomy is never elevated silently.
+- Plan approvals with a selected autonomy use the same persisted autonomy setter as ordinary settings changes, across providers. The level is applied and recorded while still in Spec; only success permits the Spec-to-Auto transition and approval settlement. A failed change declines the plan. Approvals without a selected level retain the current autonomy.
 - Live autonomy changes use `session.updateSettings`, with provider-owned native write ordering independent of turn and model settlement. A combined update starts both changes together, so autonomy does not wait for model settings; Codex serializes all full thread-settings writes to keep a rejected level out of later writes. Downgrades revoke local callback and shared MCP permissions before native acknowledgement and stay at the safer level if the write fails. Each provider session owns the latest autonomy choice and at most one native write. Pending choices coalesce: only the newest choice is dispatched after the current write settles, including after a failure. A refused write retries the current choice once; a finally refused escalation resets the latest choice to the confirmed level so ordinary prompts cannot retry it. A successful obsolete grant interrupts execution before the repair write, closing the runtime if interruption fails. A failed native revocation reapplies the provider’s containment rule; Codex interrupts only turns that may bypass callbacks and keeps voice live. Failed interruption or continued refused revocation closes the provider runtime through ordinary retirement. New turns wait until the native setting matches the latest choice. Escalations grant access only after native acceptance. Shared MCP approvals read the provider’s current local policy and recheck it after checking unattended-session status. Callbacks use the lower of the latest choice and confirmed level, so downgrades revoke access immediately and unconfirmed escalations cannot grant it. Scheduled delivery, Claude turn starts, and runtime retirement account for both changes until they settle. The composer shows the requested level immediately with a pending indicator. Autonomy commands and their `session.autonomy_update_applied` or recoverable `session.autonomy_update_failed` settlements carry a `requestId`; only the latest request settles the indicator. Summary updates and older failures keep newer changes pending. Failures show the safer level after settlement. A settlement that lands after close or provider replacement is discarded. Runtime replacement clears every pending autonomy request that was not resent, including requests for chats absent from the live snapshot. Turn settlement never restores a turn-start autonomy snapshot.
 - A chat's model and effort change through the same command. Each change carries a `requestId`; the renderer shows the choice immediately and keeps it until `session.model_update_applied` or a recoverable `session.model_update_failed` for that request settles it, so rapid follow-up changes are never overwritten by an earlier confirmation.
 - Claude chats may choose `contextWindowTokens` (200000 or 1000000). Omission keeps the provider default. It is distinct from the observed `maxContextTokens`.
@@ -275,10 +276,65 @@ Inspected screenshots stay open until the user closes them.
 
 ### Harness CLI updates
 
-- DROIDEX runs the Claude Code and Codex CLIs but does not ship them. The sidecar's `HarnessCliInstaller` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command. The Codex CLI bundled inside `ChatGPT.app` is found last, after PATH, and is left to the ChatGPT app to update. An updater writes its output to a temporary file and runs in its own process group, so quitting DROIDEX mid-update cannot leave a package manager half-done.
-- `harness.cli.install` installs a missing CLI through one of its documented installers (Claude Code: install script, Homebrew cask or npm; Codex: Homebrew cask or npm), streams `harness.cli.install.progress` lines, ends with `harness.cli.install.done`, and then reports and re-probes providers so onboarding sees the new binary.
+Devin runs `devin acp` over stdio through the official ACP SDK. Resolution uses
+`DEVIN_PATH`, then PATH, then `~/.local/bin/devin`, `/opt/homebrew/bin/devin`
+and `/usr/local/bin/devin`. It uses the CLI's existing login (`devin auth login`):
+the sidecar reads the key that login stored in Devin's `credentials.toml` and passes
+it to ACP `authenticate`; with no stored key the probe and sessions report Devin as
+signed out. The probe discovers models from a temporary ACP session's model config
+options, then deletes and closes that session. The ACP session id is `providerSessionId`;
+resume starts a fresh process and loads it without replaying history into
+DROIDEX's app-owned transcript. In-app MCP servers use the existing per-session
+loopback HTTP endpoints. Filesystem client capabilities are not advertised.
+Devin's `usage_update._meta` reports inference input/output counters under
+`cognition.ai/inputTokens` and `cognition.ai/outputTokens`. The adapter accumulates
+these into runtime totals, retaining them across context-only updates and turns;
+load-time replay is suppressed. Resume seeds the saved usage offset through the
+same lifecycle path as Claude, so a fresh accumulator cannot erase historical spend.
+Cache reads and writes are already included in
+input, not extra spend. The [public Devin ACP trace](https://github.com/zed-industries/zed/issues/61810)
+shows consecutive inference counters and their cache subsets. The live usage
+contract has no separate cache or cost fields. Optional ACP prompt-response
+usage has no verified Devin semantics and is not added to these notifications.
+No CLI or ACP account plan-limit reader is exposed; account meters remain unavailable.
+ACP client terminals run shell commands in session-owned sidecar processes,
+with bounded output, cwd/environment support, separate kill/wait/release, and
+cleanup on interrupt or close. A small live group owner retains each terminal
+until ACP release and signals only its own group, never a cached PGID. Session
+`onProcessRootsChanged` snapshots report these additional work roots to
+`SessionLifecycle`, which tracks them alongside the provider through the shared
+process monitor. Unreleased terminals therefore prevent idle retirement, and
+their owners and observed descendants enter the restart journal's identity-checked
+reaping path. Closing a runtime detaches the subscription before awaiting provider
+closure and releases tracked roots after the processes close. Terminal references stream output
+into existing command transcript rows, not the utility-pane PTYs. Native
+subagents share the parent's ACP connection: their agent ids
+are provider identities resolved to app-owned logical children. Child text,
+thinking, tools and completion summaries use child-owned transcripts, including
+between parent turns; approvals remain parent-scoped and retain the native tool
+context. Model-less child observations await exact model metadata before admission.
+Conversation copies use the same 2,000-event / 60,000-character transcript context
+budget as cross-provider branches. They start idle, without sending a prompt.
+Primary Devin turns stamp a shared fork point on their text, thinking and tool
+records, so a selected answer includes the entire turn and excludes later turns.
+The provider creates a persisted ACP session with `cognition.ai/persistOnCreate`
+and saves pending context under `provider-sessions/devin-fork-seeds/`. Resume loads
+that context; dispatch consumes it synchronously immediately before the first
+prompt, so Stop while configuration is pending does not consume it. Later turns
+and resumes never resend consumed context. This is transcript context, not a
+lossless copy of Devin's hidden native state. `DevinProvider.fork` prefers native
+whole-session forks when `sessionCapabilities.fork` is advertised; transcript
+turn points are not ACP cursors, so cut-point copies remain seeded. Missing or
+empty source transcripts fail before a copy is created. Usage meters are unavailable,
+and steering queues for the next turn. Spec maps to `plan`; Auto maps autonomy off/low to `accept-edits`, medium
+to `smart`, and high to `bypass`. Devin has no mode that asks before edits.
+Always-allow grants are scoped to the tool identity and exact ACP action payload;
+plan exits and requests without raw input cannot create reusable grants.
+
+- DROIDEX runs the Claude Code, Codex and Devin CLIs but does not ship them. The sidecar's `HarnessCliInstaller` (`sidecar/src/providers/harnessCli.ts`) resolves each binary the way its provider does, follows it to the real file, and reads the owning installer from that location: a Homebrew `Caskroom`/`Cellar` path updates with that prefix's `brew upgrade`, a global `lib/node_modules` path with that prefix's `npm install --global <package>@latest`, and anything else with the CLI's own `update` command. Homebrew Devin installs use `brew upgrade --cask devin-cli`; native installs use `devin update`. The Codex CLI bundled inside `ChatGPT.app` is found last, after PATH, and is left to the ChatGPT app to update. An updater writes its output to a temporary file and runs in its own process group, so quitting DROIDEX mid-update cannot leave a package manager half-done.
+- `harness.cli.install` installs a missing CLI through one of its documented installers (Claude Code: install script, Homebrew cask or npm; Codex: Homebrew cask or npm; Devin: install script or Homebrew cask `devin-cli`), streams `harness.cli.install.progress` lines, ends with `harness.cli.install.done`, and then reports and re-probes providers so onboarding sees the new binary. Script installers download successfully to a temporary file before executing it.
 - `harness.cli.check` answers with `harness.cli.report` (path, install source, version, and whether an install or update is running or the last update failed). `harness.cli.update` runs one update per harness at a time, emits `harness.cli.update.done` with the before and after versions, and then re-probes providers so a newer CLI's models appear without a restart.
-- The renderer updates both CLIs once per launch unless Settings → Setup & updates turns that off (`harnessCliAutoUpdate` in onboarding state), and toasts only a changed version or a failure.
+- The renderer updates all three CLIs once per launch unless Settings → Setup & updates turns that off (`harnessCliAutoUpdate` in onboarding state), and toasts only a changed version or a failure.
 
 ## Performance instrumentation
 

@@ -1,4 +1,4 @@
-import type { ProviderStatus, SkillInfo, ProviderKind } from '@droidex/protocol';
+import type { ModelInfo, ProviderStatus, SkillInfo, ProviderKind } from '@droidex/protocol';
 
 // Readiness comes back as soon as the CLI answers. A catalog that takes longer
 // follows through `publishItems` from the same process, each call carrying
@@ -6,6 +6,7 @@ import type { ProviderStatus, SkillInfo, ProviderKind } from '@droidex/protocol'
 export type ProviderProbe = (
   signal: AbortSignal,
   publishItems: (items: SkillInfo[]) => void,
+  publishModels?: (models: ModelInfo[]) => void,
 ) => Promise<ProviderStatus>;
 export type ProviderProbeMap = ReadonlyMap<ProviderKind, ProviderProbe>;
 
@@ -67,6 +68,7 @@ export class ProviderProbes {
       [...this.probes].map(async ([provider, probe]) => {
         let status: ProviderStatus | undefined;
         let items: SkillInfo[] | undefined;
+        let models: ModelInfo[] | undefined;
         const publishItems = (rows: SkillInfo[]): void => {
           if (generation !== this.generation) return;
           items = rows;
@@ -76,8 +78,20 @@ export class ProviderProbes {
           this.latest.set(provider, status);
           this.onStatus(provider);
         };
-        const answered = await probe(abort.signal, publishItems);
-        status = items ? { ...answered, items } : answered;
+        const publishModels = (rows: ModelInfo[]): void => {
+          if (generation !== this.generation) return;
+          models = rows;
+          if (!status) return;
+          status = { ...status, models: rows };
+          this.latest.set(provider, status);
+          this.onStatus(provider);
+        };
+        const answered = await probe(abort.signal, publishItems, publishModels);
+        status = {
+          ...answered,
+          ...(items ? { items } : {}),
+          ...(models ? { models } : {}),
+        };
         this.latest.set(provider, status);
         this.onStatus(provider);
       }),

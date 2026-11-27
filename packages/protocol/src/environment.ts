@@ -19,6 +19,10 @@ export interface ModelInfo {
   // Whether the harness can run this model faster for more usage. Absent while
   // the catalog has not said; only an explicit false disables the toggle.
   supportsFastMode?: boolean;
+  // What the provider says this model costs, as display text: a short tier
+  // label with its one-line summary. Absent when the catalog publishes none.
+  costTier?: string;
+  costSummary?: string;
 }
 
 export interface ProviderStatus {
