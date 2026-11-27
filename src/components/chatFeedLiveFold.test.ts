@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MessageFeed } from './MessageFeed';
 import { buildFeed, sameFeedEvents, type FeedItem } from './chatFeed';
-import { buildGroupedFeed } from './chatFeedTurns';
+import { buildGroupedFeed, liveExecutionTurnStart, liveTurnStart } from './chatFeedTurns';
 import type { TranscriptEvent } from '@droidex/protocol';
 
 let seq = 0;
@@ -23,6 +23,8 @@ function ev(extra: Partial<TranscriptEvent>): TranscriptEvent {
 const userMsg = (text: string) => ev({ kind: 'text', author: 'user', text });
 const asst = (text: string) => ev({ kind: 'text', text });
 const grep = () => ev({ kind: 'tool_call', toolName: 'Grep', toolArgs: { pattern: 'x' } });
+const read = () =>
+  ev({ kind: 'tool_call', toolName: 'Read', toolArgs: { file_path: '/tmp/live.ts' } });
 
 type Fold = Extract<FeedItem, { type: 'worked' }>;
 const folds = (items: FeedItem[]) => items.filter((it): it is Fold => it.type === 'worked');
@@ -123,7 +125,7 @@ test('settled turn rows never shimmer while the session is live on a newer turn'
     userMsg('first'),
     grep(), // turn one's call, deliberately never answered
     userMsg('second'),
-    grep(), // the live turn's in-flight call
+    read(), // the live turn's in-flight call
   ];
   const html = renderToStaticMarkup(
     createElement(MessageFeed, {
@@ -134,7 +136,25 @@ test('settled turn rows never shimmer while the session is live on a newer turn'
     }),
   );
   // Both rows render (non-vacuous), but only the live turn's may shimmer.
-  assert.equal((html.match(/>(?:Searching|Searched)</g) ?? []).length, 2, 'both rows render');
-  const shimmering = html.match(/shimmer-text[^>]*>Searching</g) ?? [];
-  assert.equal(shimmering.length, 1, `exactly one row may shimmer, got: ${shimmering.join(' | ')}`);
+  assert.equal(
+    (html.match(/>(?:Searching|Searched|Reading|Read)</g) ?? []).length,
+    2,
+    'both rows render',
+  );
+  assert.equal(html.match(/shimmer-text[^>]*>Searching</g)?.length ?? 0, 0);
+  assert.equal(html.match(/shimmer-text[^>]*>Reading</g)?.length ?? 0, 1);
+});
+
+test('a user model switch opens a visual turn without settling the generation in flight', () => {
+  const items = buildFeed([
+    userMsg('first'),
+    grep(),
+    ev({
+      kind: 'status',
+      text: 'Model switched: old → new',
+      modelSwitch: { from: 'old', to: 'new' },
+    }),
+  ]);
+  assert.equal(liveTurnStart(items), 3);
+  assert.equal(liveExecutionTurnStart(items), 1);
 });
