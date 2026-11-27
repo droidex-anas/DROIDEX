@@ -11,13 +11,14 @@ import type {
   AutoCompactionSettlement,
   ChildAutomaticCompactionTarget,
 } from './SessionCompaction.js';
-import type { PermissionOutcome, ServerEvent, SessionSummary } from './protocol.js';
+import type { PermissionOutcome, ServerEvent, SessionSummary } from '@droidex/protocol';
 import type { ProviderQuestionAnswers } from './providers/interactions.js';
 import {
   FakeFactoryRuntime,
   FakeFactorySession,
   type RecordedCall,
   type StreamGate,
+  assistantTextDelta,
 } from './testing/fakeFactoryRuntime.js';
 import { FakeHistoryIndex } from './testing/historyCharacterizationSupport.js';
 
@@ -30,6 +31,7 @@ interface Harness {
   owner: ChildSessions;
   parentId: string;
   advanceClock(ms: number): void;
+  settleStreamingGate?: StreamGate;
   replaceParent(): void;
   open(record: PersistedChildSession, session?: FakeFactorySession): Promise<FakeFactorySession>;
   target(childSessionId: string): ChildAutomaticCompactionTarget;
@@ -47,6 +49,7 @@ function createHarness(
     failDriveSetup?: 'beginTurn' | 'commit' | 'startPolling';
     failFlushStreamingOnce?: boolean;
     failSettleStreamingOnce?: boolean;
+    deferSettleStreamingOnce?: boolean;
     failResolveLimitOnce?: boolean;
     missReplayChildOnce?: boolean;
     deferDurabilityForStatus?: PersistedChildSession['status'];
@@ -65,6 +68,16 @@ function createHarness(
   let failDriveSetup = options.failDriveSetup;
   let failFlushStreaming = options.failFlushStreamingOnce;
   let failSettleStreaming = options.failSettleStreamingOnce;
+  let heldSettleStreaming: { promise: Promise<void>; resolve(): void } | undefined;
+  let settleStreamingGate: StreamGate | undefined;
+  if (options.deferSettleStreamingOnce) {
+    let resolve = (): void => undefined;
+    const promise = new Promise<void>((done) => {
+      resolve = done;
+    });
+    heldSettleStreaming = { promise, resolve };
+    settleStreamingGate = { resolve };
+  }
   let failResolveLimit = options.failResolveLimitOnce;
   let deferDurabilityForStatus = options.deferDurabilityForStatus;
   let clock = 100;
@@ -119,11 +132,14 @@ function createHarness(
       },
       settleStreaming: async () => {
         sequence.push('timeline.settleStreaming');
+        const held = heldSettleStreaming;
+        heldSettleStreaming = undefined;
+        await held?.promise;
         if (!failSettleStreaming) return;
         failSettleStreaming = false;
         throw new Error('settle failed');
       },
-      loadChildHistory: (...args) => {
+      loadChildHistory: async (...args) => {
         if (missReplayChildOnce) {
           missReplayChildOnce = false;
           return;
@@ -137,7 +153,7 @@ function createHarness(
         record('protocol', 'turn.begin', ...args);
       },
       applyNotification: (...args) => record('protocol', 'notification.apply', ...args),
-      applyStreamEvent: () => undefined,
+      applyStreamEvent: (...args) => record('protocol', 'stream.apply', ...args),
     },
     interactions: {
       interactionsFor: () => ({
@@ -220,6 +236,7 @@ function createHarness(
     advanceClock: (ms) => {
       clock += ms;
     },
+    ...(settleStreamingGate ? { settleStreamingGate } : {}),
     replaceParent: () => {
       parent = parentLease(parentId, calls);
       owner.attachParent(parentId);
@@ -252,6 +269,7 @@ function createHarness(
 
 function parentLease(appSessionId: string, calls: RecordedCall[]): ChildParentLease {
   return {
+    turn: { closeMode: undefined },
     summary: summary(appSessionId),
     droid: new FakeFactorySession(`${appSessionId}-provider`, {}, calls),
     mcpConfigs: [],
@@ -533,6 +551,48 @@ test('result-only completion admits the exact pending spawn as historical', () =
     },
   ]);
   assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, 'provider-child-current');
+});
+
+test('a failed spawn that never received a provider id becomes one canonical failed child', () => {
+  const h = createHarness([]);
+  const spawnLink = { kind: 'tool-use' as const, id: 'tool-failed-spawn' };
+  observe(h, {
+    role: 'worker',
+    spawnLink,
+    label: 'worker',
+    prompt: 'inspect the repository',
+  });
+
+  const identity = observe(h, {
+    role: 'worker',
+    spawnLink,
+    done: true,
+    status: 'failed',
+    transcriptAvailable: false,
+    requiresExactLaunchSettings: true,
+    activity: { preview: 'usage limit reached' },
+  });
+
+  assert.deepEqual(identity, undefined);
+  assert.deepEqual(h.owner.list(h.parentId), [
+    {
+      parentAppSessionId: h.parentId,
+      childSessionId: 'generated-child',
+      role: 'worker',
+      status: 'failed',
+      label: 'worker',
+      prompt: 'inspect the repository',
+      modelId: 'model-default',
+      reasoningEffort: ReasoningEffort.Low,
+      spawnLink,
+      transcriptAvailable: false,
+      startedAt: 100,
+      settledAt: 100,
+      streamFidelity: 'state',
+    },
+  ]);
+  assert.equal(h.history.childSessions(h.parentId).length, 1);
+  assert.equal(h.history.childSessions(h.parentId)[0]?.providerSessionId, undefined);
 });
 
 test('a settled state-only child keeps the moment it stopped', () => {
@@ -1423,6 +1483,53 @@ test('runtime close invalidates immediately and waits for in-flight settings tea
   assert.equal(h.owner.list(h.parentId)[0]?.modelId, 'model-default');
 });
 
+test('closing a streaming child invalidates the turn before settlement finishes', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record], { deferSettleStreamingOnce: true });
+  const runtime = await h.open(record);
+  runtime.queueStreamEvents([assistantTextDelta('late output')]);
+  const streamGate = runtime.deferNextStream();
+  const sending = h.owner.send(record, 'stream output');
+  await runtime.waitForPrompts(1);
+  const appliedBeforeClose = h.calls.filter(
+    (call) => call.target === 'protocol' && call.method === 'stream.apply',
+  ).length;
+
+  const closing = h.owner.close(record);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  streamGate.resolve();
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(
+    h.calls.filter((call) => call.target === 'protocol' && call.method === 'stream.apply').length,
+    appliedBeforeClose,
+    'a provider event behind the settlement wait must not apply to the closing runtime',
+  );
+
+  h.settleStreamingGate?.resolve();
+  await Promise.all([closing, sending]);
+});
+
+test('closing a streaming child settles buffered output during runtime cleanup', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const runtime = await h.open(record);
+  const streamGate = runtime.deferNextStream();
+  const sending = h.owner.send(record, 'stream output');
+  await runtime.waitForPrompts(1);
+  h.sequence.length = 0;
+
+  const closeGate = runtime.deferNextClose();
+  const closing = h.owner.close(record);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(h.sequence, ['timeline.settleStreaming', 'context.stopPolling']);
+
+  closeGate.resolve();
+  streamGate.resolve();
+  await Promise.all([closing, sending]);
+});
+
 test('capacity eviction blocks victim reopen until old provider close settles', async () => {
   const first = childRecord('first', 'provider-first');
   const second = childRecord('second', 'provider-second');
@@ -1986,6 +2093,44 @@ test('a child whose result has not reached history is not retired until it does'
   h.owner.retryPendingDurability();
   await h.owner.retireIdleRuntimes();
   assert.equal(h.owner.counts().live, 0);
+});
+
+test('child usage accumulates cumulative provider series across reopen and replacement', async () => {
+  const record = childRecord('child', 'provider');
+  const h = createHarness([record]);
+  const usage = (tokensIn: number, tokensOut: number) => ({ tokensIn, tokensOut });
+  const tokensUsed = () => h.owner.list(h.parentId)[0]?.tokensUsed;
+  await h.open(record);
+
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(40, 30)), true);
+  assert.equal(tokensUsed(), 70);
+  await h.owner.close(record);
+
+  await h.open(record, new FakeFactorySession('provider', {}, h.calls));
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(50, 35)), true);
+  assert.equal(tokensUsed(), 85);
+
+  observe(h, {
+    providerSessionId: 'provider-new',
+    role: 'worker',
+    spawnLink: record.spawnLink,
+    modelId: 'model-default',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  await h.open(
+    { ...record, providerSessionId: 'provider-new' },
+    new FakeFactorySession('provider-new', {}, h.calls),
+  );
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider-new', usage(10, 5)), true);
+  assert.equal(tokensUsed(), 100);
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider-new', usage(10, 5)), true);
+  assert.equal(tokensUsed(), 100);
+  // A late final reading for the retired series still counts what the child
+  // spent; a repeat of an already-counted reading adds nothing.
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(46, 40)), true);
+  assert.equal(tokensUsed(), 101);
+  assert.equal(h.owner.recordUsage(h.parentId, 'provider', usage(46, 40)), true);
+  assert.equal(tokensUsed(), 101);
 });
 
 test('a retired child reopens with its transcript and a fresh runtime', async () => {

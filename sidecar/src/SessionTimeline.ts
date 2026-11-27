@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto';
+
 import {
   hydrateHistoricalSession,
   loadSessionHistory,
   loadOpenTranscriptTail,
-  loadSessionPage,
   loadSessionTranscriptWindow,
   resolveSessionChain,
 } from './history.js';
@@ -13,7 +14,7 @@ import type {
   SessionRole,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import type { CompactType } from './compaction.js';
 import { errMsg } from './errors.js';
 import { StreamingDeltaCoalescer, streamingEventOwner } from './streamingDeltaCoalescer.js';
@@ -29,7 +30,6 @@ type TimelineError = Omit<Extract<ServerEvent, { type: 'error' }>, 'type'>;
 
 export interface SessionTimelineLoaders {
   list: typeof loadSessionHistory;
-  page: typeof loadSessionPage;
   hydrateMission: typeof hydrateHistoricalSession;
   resolveChain: typeof resolveSessionChain;
   transcriptWindow: typeof loadSessionTranscriptWindow;
@@ -126,6 +126,7 @@ export class SessionTimeline {
   private readonly loaders: SessionTimelineLoaders;
   private readonly streaming: StreamingDeltaCoalescer;
   private readonly streamingFlushFailures = new Map<string, StreamingTranscriptPersistenceError>();
+  private readonly childWindowFingerprints = new Map<string, string>();
   private readonly transcripts = new TimelineTranscripts((id) =>
     this.dependencies.registry.resolveSummary(id),
   );
@@ -133,7 +134,6 @@ export class SessionTimeline {
   constructor(private readonly dependencies: SessionTimelineDependencies) {
     this.loaders = dependencies.loaders ?? {
       list: loadSessionHistory,
-      page: loadSessionPage,
       hydrateMission: hydrateHistoricalSession,
       resolveChain: resolveSessionChain,
       transcriptWindow: loadSessionTranscriptWindow,
@@ -156,15 +156,48 @@ export class SessionTimeline {
     }
   }
 
-  load(appSessionIdOrProviderSessionId: string, cursor?: string, limit?: number): void {
+  // Transcript reads cross the threadpool now, so loads resolve later than
+  // they are requested. Loads of one conversation stay serialized in request
+  // order — the ordering synchronous loading guaranteed — while independent
+  // conversations load concurrently.
+  private readonly historyLoadChains = new Map<string, Promise<void>>();
+
+  private enqueueHistoryLoad(key: string, work: () => Promise<void>): Promise<void> {
+    const tail = this.historyLoadChains.get(key) ?? Promise.resolve();
+    const run = tail.then(work).catch((error: unknown) => {
+      // Load bodies emit their own failures; an escape is a bug, and it must
+      // not poison the conversation's load chain.
+      console.error('Session history load failed unexpectedly:', error);
+    });
+    this.historyLoadChains.set(key, run);
+    void run.then(() => {
+      if (this.historyLoadChains.get(key) === run) this.historyLoadChains.delete(key);
+    });
+    return run;
+  }
+
+  load(appSessionIdOrProviderSessionId: string, cursor?: string, limit?: number): Promise<void> {
+    const key =
+      this.dependencies.registry.resolveSummary(appSessionIdOrProviderSessionId)?.appSessionId ??
+      appSessionIdOrProviderSessionId;
+    return this.enqueueHistoryLoad(key, () =>
+      this.performLoad(appSessionIdOrProviderSessionId, cursor, limit),
+    );
+  }
+
+  private async performLoad(
+    appSessionIdOrProviderSessionId: string,
+    cursor?: string,
+    limit?: number,
+  ): Promise<void> {
     const summary = this.dependencies.registry.resolveSummary(appSessionIdOrProviderSessionId);
     const appSessionId = summary?.appSessionId ?? appSessionIdOrProviderSessionId;
     const providerSessionId = summary?.providerSessionId ?? appSessionIdOrProviderSessionId;
     try {
       const history =
         summary?.sessionPurpose === 'mission-control'
-          ? this.loaders.hydrateMission(appSessionId, historyWindowOptions(cursor, limit))
-          : this.loadStandard(appSessionId, providerSessionId, cursor, limit);
+          ? await this.loaders.hydrateMission(appSessionId, historyWindowOptions(cursor, limit))
+          : await this.loadStandard(appSessionId, providerSessionId, cursor, limit);
       const transcripts = history.transcripts.map((event) => ({ ...event, appSessionId }));
       this.record(transcripts);
       if (cursor) {
@@ -216,29 +249,21 @@ export class SessionTimeline {
     }
   }
 
-  loadProviderPage(providerSessionId: string, cursor?: string, limit?: number): void {
-    const summary = this.dependencies.registry.resolveSummary(providerSessionId);
-    const appSessionId = summary?.appSessionId ?? providerSessionId;
-    const resolvedProviderSessionId = summary?.providerSessionId ?? providerSessionId;
-    try {
-      const page = this.loaders.page(resolvedProviderSessionId, appSessionId, cursor, limit);
-      this.record(page.events);
-      this.dependencies.emit({
-        type: 'session.history',
-        appSessionId,
-        progress: [],
-        transcripts: page.events,
-      });
-    } catch (error) {
-      this.dependencies.emitError({
-        appSessionId,
-        providerSessionId: resolvedProviderSessionId,
-        message: errMsg(error),
-      });
-    }
+  loadChildHistory(query: {
+    appSessionId: string;
+    childSessionId: string;
+    childProviderSessionIds: readonly string[];
+    role: SessionRole;
+    cursor?: string;
+    limit?: number;
+    mode?: 'refresh';
+  }): Promise<void> {
+    return this.enqueueHistoryLoad(`${query.appSessionId}\u0000${query.childSessionId}`, () =>
+      this.performLoadChildHistory(query),
+    );
   }
 
-  loadChildHistory({
+  private async performLoadChildHistory({
     appSessionId,
     childSessionId,
     childProviderSessionIds,
@@ -254,7 +279,7 @@ export class SessionTimeline {
     cursor?: string;
     limit?: number;
     mode?: 'refresh';
-  }): void {
+  }): Promise<void> {
     try {
       const currentProviderSessionId = childProviderSessionIds.at(-1) ?? childSessionId;
       const discoveredChain = this.loaders.resolveChain(childSessionId, currentProviderSessionId);
@@ -263,7 +288,7 @@ export class SessionTimeline {
         ...discoveredChain.filter((id) => id !== currentProviderSessionId),
         currentProviderSessionId,
       ]);
-      const window = this.loaders.transcriptWindow(
+      const window = await this.loaders.transcriptWindow(
         appSessionId,
         chain,
         historyWindowOptions(cursor, limit, role),
@@ -274,6 +299,17 @@ export class SessionTimeline {
         sourceSessionId: childSessionId,
         role,
       }));
+      let fingerprintedWindow: { key: string; fingerprint: string } | undefined;
+      if (!cursor) {
+        const fingerprint = createHash('sha256')
+          .update(JSON.stringify({ transcripts, olderCursor: window.olderCursor }))
+          .digest('hex');
+        const key = `${appSessionId}\u0000${childSessionId}`;
+        if (mode === 'refresh') {
+          if (this.childWindowFingerprints.get(key) === fingerprint) return;
+          fingerprintedWindow = { key, fingerprint };
+        }
+      }
       this.emitHistory({
         appSessionId,
         childSessionId,
@@ -282,6 +318,12 @@ export class SessionTimeline {
         mode: mode ?? (cursor ? 'prepend' : 'replace'),
         ...(window.olderCursor ? { olderCursor: window.olderCursor } : {}),
       });
+      if (fingerprintedWindow) {
+        // The map only deduplicates emissions, so dropping entries is always
+        // safe; bound it rather than growing for the sidecar's lifetime.
+        if (this.childWindowFingerprints.size >= 256) this.childWindowFingerprints.clear();
+        this.childWindowFingerprints.set(fingerprintedWindow.key, fingerprintedWindow.fingerprint);
+      }
     } catch (error) {
       const providerSessionId = childProviderSessionIds.at(-1) ?? childSessionId;
       const message = errMsg(error);
@@ -317,8 +359,9 @@ export class SessionTimeline {
     await this.transcripts.written(summary.appSessionId);
     if (openFile && !this.loaders.resolveChain(summary.appSessionId, providerSessionId).length)
       return this.loaders.openTranscriptTail(summary.appSessionId, openFile, limit, fullText);
-    return this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit, fullText)
-      .transcripts;
+    return (
+      await this.loadStandard(summary.appSessionId, providerSessionId, undefined, limit, fullText)
+    ).transcripts;
   }
 
   useTranscript(appSessionId: string, transcript: TimelineTranscript): void {
@@ -588,16 +631,20 @@ export class SessionTimeline {
     });
   }
 
-  private loadStandard(
+  private async loadStandard(
     appSessionId: string,
     providerSessionId: string,
     cursor?: string,
     limit?: number,
     fullText = false,
-  ): ReturnType<typeof hydrateHistoricalSession> {
+  ): Promise<{
+    progress: ProgressEntry[];
+    transcripts: TranscriptEvent[];
+    olderCursor?: string;
+  }> {
     const chain = this.loaders.resolveChain(appSessionId, providerSessionId);
     if (chain.length === 0) throw new Error(`Session history not found for ${providerSessionId}`);
-    const window = this.loaders.transcriptWindow(
+    const window = await this.loaders.transcriptWindow(
       appSessionId,
       chain,
       fullText ? { cursor, limit, fullText: true } : historyWindowOptions(cursor, limit),

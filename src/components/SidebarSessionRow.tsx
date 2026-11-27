@@ -2,6 +2,7 @@ import {
   lazy,
   memo,
   Suspense,
+  useCallback,
   useEffect,
   useLayoutEffect,
   useRef,
@@ -10,15 +11,16 @@ import {
 } from 'react';
 import { Ellipsis, GitFork, Sketch, Spinner } from '@droidex/icons';
 import { MAX_CHAT_TITLE_LENGTH } from '../lib/chatMetadata';
+import { pauseAnimationsWhenOffscreen } from '../lib/offscreenAnimations';
 import { formatRelativeTime } from '../lib/time';
 import { opensInNewTab } from '../lib/shortcuts';
 import { isEmbedded } from '../lib/embed';
 import { endPlaceDrag, startPlaceDrag } from '../features/tabs/tileDrag';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import type { RowMenuAnchor } from '../hooks/useSidebarRowActions';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary, SessionActivityStatus } from '@droidex/protocol';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
-import { ACTIVITY_LABELS, type SessionActivityStatus } from '../lib/sidebarActivity';
+import { ACTIVITY_LABELS } from '../lib/sidebarActivity';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { TitleSweep } from './ui/TitleSweep';
 import { PrStateIcon } from './environment/GithubIcons';
@@ -161,6 +163,16 @@ export const SessionRow = memo(function SessionRow({
   const rowButtonRef = useRef<HTMLButtonElement>(null);
   const actionsButtonRef = useRef<HTMLButtonElement>(null);
   const wasRenaming = useRef(false);
+  // One callback keeps the object ref (hover checks) and the offscreen
+  // observer registration in step with the row element's lifetime.
+  const setRowRef = useCallback((row: HTMLDivElement | null) => {
+    rowRef.current = row;
+    const stopObserving = pauseAnimationsWhenOffscreen(row);
+    return () => {
+      rowRef.current = null;
+      stopObserving?.();
+    };
+  }, []);
   const [marqueePx, setMarqueePx] = useState(0);
   const timeLabel = formatRelativeTime(session.updatedAt, now);
   // Every row names the harness in the trailing slot. Inbox rows lead with
@@ -330,7 +342,7 @@ export const SessionRow = memo(function SessionRow({
 
   return (
     <div
-      ref={rowRef}
+      ref={setRowRef}
       className="group relative"
       onMouseEnter={handleMarqueeEnter}
       onMouseLeave={() => {

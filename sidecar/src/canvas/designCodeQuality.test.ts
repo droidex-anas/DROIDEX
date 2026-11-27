@@ -4,7 +4,7 @@ import { checkCodeQuality } from './designCodeQuality.js';
 import { starterKit } from './designSystemImport.js';
 import { AUTO_DESIGN_SYSTEM } from './presets/auto.js';
 import type { DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from './protocol.js';
+import type { CanvasDiagnostic, DesignSystemAdherence, SourceFiles } from '@droidex/protocol';
 
 const KIT: DesignSystem = { id: 'starter', version: 1, name: 'Starter', ...starterKit() };
 

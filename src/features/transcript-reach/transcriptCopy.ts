@@ -3,7 +3,7 @@ import { browserPageOf } from '../../lib/browserTools';
 import type { FileChange } from '../../lib/diff';
 import { childSessionInfo } from '../../lib/childSessionEvents';
 import { parseTruncatedTail, stripAnsi, toolMeta } from '../../lib/tools';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 export function copyTextForMessage(text: string): string {
   return parseTruncatedTail(text).body;

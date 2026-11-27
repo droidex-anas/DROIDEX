@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
-import type { CanvasTurnContext } from './canvas/protocol.js';
+import type {
+  CanvasTurnContext,
+  ProviderMention,
+  ServerEvent,
+  SessionSummary,
+  TranscriptEvent,
+} from '@droidex/protocol';
 import { CanvasWorkspace } from './canvas/CanvasWorkspace.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './canvas/designSystems.js';
 import { canvasRoot, quietBuilds } from './testing/canvasStorageSupport.js';
@@ -8,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ReasoningEffort } from '@factory/droid-sdk';
-import type { ProviderMention, ServerEvent, SessionSummary, TranscriptEvent } from './protocol.js';
+
 import {
   harness as projectHarness,
   drain,
@@ -18,6 +24,7 @@ import {
   queuedThread,
 } from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
+import type { LiveSession } from './SessionLifecycle.js';
 import type {
   DelegatedTurnEnd,
   Provider,
@@ -333,6 +340,40 @@ test('a create or resume that fails at any stage closes what it opened and publi
   );
 });
 
+test('failed registration retains queued sends and steers when process cleanup fails', async (t) => {
+  const harness = createHarness();
+  queueCreate(harness, 'unregistered');
+  const prompt = { text: 'waiting', order: 1, steerId: 'waiting-steer' };
+  let failedOpen: LiveSession | undefined;
+  t.mock.method(harness.registry, 'register', async (live: LiveSession) => {
+    failedOpen = live;
+    live.turn.queueSend(prompt);
+    live.turn.holdSteer(prompt);
+    throw new Error('registration failed');
+  });
+  harness.setProcessKiller(async () => {
+    throw new Error('process discovery unavailable');
+  });
+
+  await harness.lifecycle.create(createCommand());
+
+  assert.ok(failedOpen);
+  assert.equal(failedOpen.turn.closeMode, undefined);
+  assert.deepEqual(failedOpen.turn.pendingSends, [prompt]);
+  assert.deepEqual(failedOpen.turn.steers, [prompt]);
+  assert.equal(harness.registry.getLive('unregistered'), undefined);
+  assert.equal(
+    harness.calls.some((call) => call.method === 'session.close'),
+    false,
+  );
+  assert.equal(
+    harness.events.some(
+      (event) => event.type === 'error' && event.message === 'registration failed',
+    ),
+    true,
+  );
+});
+
 test('post-registration failures retain cleanup ownership through a process outage', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const created = createHarness();
@@ -348,7 +389,7 @@ test('post-registration failures retain cleanup ownership through a process outa
 
   await created.lifecycle.create(createCommand());
   const failedOpen = requireLive(created, 'failed-create-publication');
-  assert.equal(failedOpen.closeMode, 'discard-pending');
+  assert.equal(failedOpen.turn.closeMode, 'discard-pending');
   assert.equal(
     created.calls.some((call) => call.method === 'session.close'),
     false,
@@ -464,7 +505,7 @@ test('failed turn setup clears streaming so the next send can run', async () => 
 
   await assert.rejects(harness.lifecycle.send('setup-recovery', 'failed setup'), /persist failed/);
 
-  assert.equal(requireLive(harness, 'setup-recovery').streaming, false);
+  assert.equal(requireLive(harness, 'setup-recovery').turn.streaming, false);
   await harness.lifecycle.send('setup-recovery', 'recovered');
   assert.deepEqual(provider.prompts, ['first', 'recovered']);
 });
@@ -578,10 +619,10 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     live.compacting = true;
     await h.lifecycle.send(provider, 'queued', undefined, 'queued');
     assert.deepEqual(pending(), [{ id: 'queued', text: 'queued', canWithdraw: true }]);
-    live.closeMode = 'preserve-pending';
+    live.turn.beginClose('preserve-pending');
     assert.equal((await h.lifecycle.withdrawSteer(provider, 'queued'))?.text, 'queued');
     assert.deepEqual(pending(), []);
-    delete live.closeMode;
+    live.turn.reopenAfterFailedClose();
     live.compacting = false;
     assert.equal(await h.lifecycle.withdrawSteer(provider, 'unknown'), undefined);
 
@@ -608,7 +649,7 @@ test('withdrawal requires harness confirmation, including during Send now, and n
     }
     assert.deepEqual(pending(), []);
     turn.resolve();
-    await live.turnPromise;
+    await live.turn.turnPromise;
     assert.deepEqual(backend.prompts, ['first']);
     assert.equal(
       h.calls.some((call) => call.method === 'appendSteer'),
@@ -656,7 +697,7 @@ test('a confirmed withdrawal returns the prompt and records its receipt while cl
     settleDelivery('withdrawn');
     await sending;
     turn.resolve();
-    await live.turnPromise;
+    await live.turn.turnPromise;
     closeGate.resolve();
     await closing;
   }
@@ -706,7 +747,7 @@ test('withdrawal retries replay full queued and harness receipts, never a delive
   assert.equal(await h.lifecycle.withdrawSteer('receipts', 'delivered'), undefined);
   assert.deepEqual(h.registry.getCanonicalSummary('receipts')?.pendingSteers, []);
   turn.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   assert.deepEqual(backend.prompts, ['first']);
 });
 
@@ -777,7 +818,7 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await compacting.lifecycle.send('compacting', 'automatic', undefined, 'automatic');
   await compacting.lifecycle.sendNow('compacting', 'automatic');
   assert.deepEqual(
-    live.pendingSends.map((prompt) => prompt.text),
+    live.turn.pendingSends.map((prompt) => prompt.text),
     ['automatic', 'manual'],
   );
   assert.equal(interruptCount(compacting), 0);
@@ -790,10 +831,10 @@ test('send-now queues without interrupting compaction and reports interrupt reje
   await rejected.lifecycle.send('rejected', 'keep queued', undefined, 'steer');
   await rejected.lifecycle.sendNow('rejected', 'steer');
   assert.deepEqual(
-    requireLive(rejected, 'rejected').pendingSends.map((prompt) => prompt.text),
+    requireLive(rejected, 'rejected').turn.pendingSends.map((prompt) => prompt.text),
     ['keep queued'],
   );
-  assert.equal(requireLive(rejected, 'rejected').interruptingToSend, false);
+  assert.equal(requireLive(rejected, 'rejected').turn.interruptingToSend, false);
   assert.equal(
     rejected.events.some(
       (event) => event.type === 'error' && event.code === 'session.send_now_failed',
@@ -834,13 +875,13 @@ test('a Stop acknowledged after a newer turn started leaves that turn running', 
   const stopping = h.lifecycle.interrupt('late-stop');
   first.resolve();
   const live = requireLive(h, 'late-stop');
-  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  while (live.turn.streaming) await new Promise((resolve) => setImmediate(resolve));
   const second = provider.deferNextStream();
   const sending = h.lifecycle.send('late-stop', 'second');
   await provider.waitForPrompts(2);
   interrupt.resolve();
   await stopping;
-  assert.equal(live.streaming, true);
+  assert.equal(live.turn.streaming, true);
   assert.equal(h.registry.getCanonicalSummary('late-stop')?.streaming, true);
   second.resolve();
   await sending;
@@ -879,7 +920,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   await harnessHas(2);
   const nextGate = provider.deferNextStream();
   gate.resolve();
-  while (live.streaming) await new Promise((resolve) => setImmediate(resolve));
+  while (live.turn.streaming) await new Promise((resolve) => setImmediate(resolve));
   deliveries[1](false);
   await provider.waitForPrompts(2);
   assert.deepEqual(provider.prompts, ['first', 'late']);
@@ -892,7 +933,7 @@ test('a steer is pending until the harness delivers it, and one refused late sti
   await h.lifecycle.sendNow('steer', 'steer-3');
   deliveries[2](true);
   await raced;
-  assert.deepEqual(live.pendingSends, []);
+  assert.deepEqual(live.turn.pendingSends, []);
   assert.equal(interruptCount(h), 1);
   nextGate.resolve();
   await late;
@@ -932,7 +973,7 @@ test('a provider swap during compaction preserves a pending steer outcome', asyn
     );
     live.compacting = false;
     turn.resolve();
-    await live.turnPromise;
+    await live.turn.turnPromise;
     if (outcome === false) await replacement.waitForPrompts(1);
     assert.deepEqual(replacement.prompts, outcome === false ? ['held'] : []);
   }
@@ -986,18 +1027,20 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   const live = requireLive(harness, 'stop');
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 1);
-  assert.equal(live.interrupting, false);
-  live.streaming = true;
+  assert.equal(live.turn.interrupting, false);
+  const simulatedTurn = live.turn.beginTypedTurn();
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
-  assert.equal(live.interrupting, true);
-  live.streaming = false;
-  live.interrupting = false;
+  assert.equal(live.turn.interrupting, true);
+  live.turn.endTypedTurn(simulatedTurn);
+  live.turn.settle();
+  live.turn.clearStop();
   live.compacting = true;
-  live.pendingSends = [{ text: 'drop', order: 0 }];
+  live.turn.clearPending();
+  live.turn.queueSend({ text: 'drop', order: 0 });
   await harness.lifecycle.interrupt('stop');
   assert.equal(interruptCount(harness), 2);
-  assert.deepEqual(live.pendingSends, []);
+  assert.deepEqual(live.turn.pendingSends, []);
   live.compacting = false;
   live.autoCompacting = true;
   await harness.lifecycle.interrupt('stop');
@@ -1017,7 +1060,7 @@ test('interrupt handles idle, streaming, manual compaction, and auto-compaction 
   const rejectedLive = requireLive(rejected, 'rejected-stop');
   rejectedLive.autoCompacting = true;
   await assert.rejects(rejected.lifecycle.interrupt('rejected-stop'), /interrupt rejected/);
-  assert.equal(rejectedLive.interrupting, false);
+  assert.equal(rejectedLive.turn.interrupting, false);
   assert.equal(rejectedLive.autoCompacting, true);
   assert.equal(
     rejected.calls.some(
@@ -1164,7 +1207,7 @@ test('failed process cleanup preserves the provider and allows closing to retry'
 
   await assert.rejects(h.lifecycle.close('owned'), /ps unavailable/);
   assert.equal(h.registry.getLive('owned'), live);
-  assert.equal(live.closeMode, undefined);
+  assert.equal(live.turn.closeMode, undefined);
   assert.equal(live.closePromise, undefined);
   assert.equal(
     h.calls.some((call) => call.method === 'session.close'),
@@ -1178,6 +1221,26 @@ test('failed process cleanup preserves the provider and allows closing to retry'
   await h.lifecycle.close('owned');
   assert.equal(h.registry.getLive('owned'), undefined);
   assert.equal(h.calls.filter((call) => call.method === 'session.close').length, 1);
+});
+
+test('close settles streaming output before releasing the transcript writer', async () => {
+  const order: string[] = [];
+  const h = createHarness([], undefined, {
+    settleStreaming: (appSessionId, sourceSessionId) => {
+      order.push(`settle:${appSessionId}:${sourceSessionId}`);
+      return Promise.resolve();
+    },
+    forgetProviderTranscript: (appSessionId) => {
+      order.push(`release:${appSessionId}`);
+    },
+  });
+  const provider = queueCreate(h, 'owner');
+  await h.lifecycle.create(createCommand());
+  await provider.waitForPrompts(1);
+
+  await h.lifecycle.close('owner');
+
+  assert.deepEqual(order, ['settle:owner:owner', 'release:owner']);
 });
 
 test('close follows ownership order and closeAll closes its initial snapshot', async () => {
@@ -1379,8 +1442,8 @@ test('closeAll marks its full snapshot before sequential cleanup', async () => {
   await new Promise<void>((resolve) => setImmediate(resolve));
   const firstLive = harness.registry.getLive('first-marked');
   const secondLive = harness.registry.getLive('second-marked');
-  assert.equal(firstLive?.closeMode, 'discard-pending');
-  assert.equal(secondLive?.closeMode, 'discard-pending');
+  assert.equal(firstLive?.turn.closeMode, 'discard-pending');
+  assert.equal(secondLive?.turn.closeMode, 'discard-pending');
   assert.ok(secondLive?.closePromise);
 
   let directSecondSettled = false;
@@ -1423,7 +1486,7 @@ test('closeAll records a cleanup failure and still closes later sessions', async
   assert.equal(harness.registry.liveSessionsSnapshot().length, 0);
 });
 
-test('closing an active session discards queued sends without reopening it', async () => {
+test('closing an active session discards queued sends without stopping its draining turn', async (t) => {
   const harness = createHarness();
   const provider = queueCreate(harness, 'closing');
   const gate = provider.deferNextStream();
@@ -1431,13 +1494,21 @@ test('closing an active session discards queued sends without reopening it', asy
   await provider.waitForPrompts(1);
   await harness.lifecycle.send('closing', 'queued');
   const live = requireLive(harness, 'closing');
+  const turn = live.turn.turnPromise;
+  assert.ok(turn);
+  t.mock.method(provider, 'close', async () => {
+    harness.calls.push({ target: 'cleanup', method: 'session.close', args: ['closing'] });
+  });
 
   await harness.lifecycle.close('closing');
+  assert.equal(live.turn.streaming, true);
+  assert.equal(live.turn.summaryFields(false).streaming, true);
   gate.resolve();
-  await new Promise<void>((resolve) => setImmediate(resolve));
+  await turn;
 
+  assert.equal(live.turn.streaming, false);
   assert.deepEqual(provider.prompts, ['active']);
-  assert.deepEqual(live.pendingSends, []);
+  assert.deepEqual(live.turn.pendingSends, []);
   assert.equal(harness.runtime.loadCalls.length, 0);
   assert.equal(harness.registry.getLive('closing'), undefined);
 });
@@ -1458,7 +1529,8 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await provider.waitForPrompts(1);
   await new Promise<void>((resolve) => setImmediate(resolve));
   const live = requireLive(harness, 'concurrent-close');
-  live.pendingSends = [{ text: 'preserve unless user closes', order: 0 }];
+  live.turn.clearPending();
+  live.turn.queueSend({ text: 'preserve unless user closes', order: 0 });
 
   const preserving = harness.lifecycle.close('concurrent-close', 'preserve-pending');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1469,8 +1541,8 @@ test('concurrent close waits for cleanup and discard overrides queue preservatio
   await new Promise<void>((resolve) => setImmediate(resolve));
 
   assert.equal(discardSettled, false);
-  assert.equal(live.closeMode, 'discard-pending');
-  assert.deepEqual(live.pendingSends, []);
+  assert.equal(live.turn.closeMode, 'discard-pending');
+  assert.deepEqual(live.turn.pendingSends, []);
   finishProviderClose();
   await Promise.all([preserving, discarding]);
   assert.equal(harness.registry.getLive('concurrent-close'), undefined);
@@ -1598,12 +1670,12 @@ test('scheduled delivery resumes the exact historical provider and waits for a r
   await provider.waitForPrompts(1);
   assert.deepEqual(provider.prompts, ['scheduled prompt']);
   assert.equal(harness.runtime.loadCalls.length, 1);
-  assert.equal(requireLive(harness, 'scheduled-app').streaming, true);
+  assert.equal(requireLive(harness, 'scheduled-app').turn.streaming, true);
   turn.resolve();
   const receipt = await delivery;
   assert.equal(receipt.status, 'accepted');
   if (receipt.status === 'accepted') await receipt.settled;
-  assert.equal(requireLive(harness, 'scheduled-app').streaming, false);
+  assert.equal(requireLive(harness, 'scheduled-app').turn.streaming, false);
   await harness.lifecycle.closeAll();
 });
 
@@ -1622,9 +1694,10 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
     );
     assert.deepEqual(provider.prompts, []);
   };
-  live.streaming = true;
+  let simulatedTurn = live.turn.beginTypedTurn();
   await busy();
-  live.streaming = false;
+  live.turn.endTypedTurn(simulatedTurn);
+  live.turn.settle();
   live.compacting = true;
   await busy();
   live.compacting = false;
@@ -1634,31 +1707,36 @@ test('scheduled delivery waits outside pendingSends for turns, compaction, inter
   harness.setPendingInteractions(true);
   await busy();
   harness.setPendingInteractions(false);
-  live.pendingSends.push({ text: 'user prompt', order: 0 });
+  live.turn.queueSend({ text: 'user prompt', order: 0 });
   await busy();
   assert.deepEqual(
-    live.pendingSends.map((pending) => pending.text),
+    live.turn.pendingSends.map((pending) => pending.text),
     ['user prompt'],
   );
-  live.pendingSends = [];
+  live.turn.clearPending();
   harness.setSettingsWait(() => {
-    live.streaming = true;
+    simulatedTurn = live.turn.beginTypedTurn();
     return Promise.resolve();
   });
   await busy();
-  assert.deepEqual(live.pendingSends, [], 'a settings race must not detach the delivery receipt');
-  live.streaming = false;
+  assert.deepEqual(
+    live.turn.pendingSends,
+    [],
+    'a settings race must not detach the delivery receipt',
+  );
+  live.turn.endTypedTurn(simulatedTurn);
+  live.turn.settle();
   let current = true;
   harness.setSettingsWait(() => {
     current = false;
-    live.streaming = true;
+    live.turn.beginTypedTurn();
     return Promise.resolve();
   });
   assert.deepEqual(
     await harness.lifecycle.deliverScheduled('scheduled-busy', 'withdrawn', () => current),
     { status: 'cancelled' },
   );
-  assert.deepEqual(live.pendingSends, []);
+  assert.deepEqual(live.turn.pendingSends, []);
   await harness.lifecycle.closeAll();
 });
 
@@ -1709,7 +1787,7 @@ test('an old typed turn cannot close the replacement runtime event source', asyn
     rows.map((row) => row.text),
     ['replacement reply'],
   );
-  assert.equal(requireLive(h, 'replaced').streaming, true);
+  assert.equal(requireLive(h, 'replaced').turn.streaming, true);
   replacementTurn.resolve();
   await newSend;
   await h.lifecycle.closeAll();
@@ -1746,7 +1824,8 @@ test('typed preparation waits for delegated flush without losing its prompt or d
             appendError: () => undefined,
           },
           contextTarget: () => undefined,
-          isCurrent: (current) => h.registry.getLive('overlap') === current && !current.closeMode,
+          isCurrent: (current) =>
+            h.registry.getLive('overlap') === current && !current.turn.closeMode,
           applyDesignToolPolicy: () => Promise.resolve(true),
           updateSummary: (id, patch) => {
             h.registry.updateSummary(id, patch);
@@ -1789,13 +1868,13 @@ test('typed preparation waits for delegated flush without losing its prompt or d
   providerRunning = false;
   delegated(false, { status: 'completed' });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(requireLive(h, 'overlap').streaming, true);
+  assert.equal(requireLive(h, 'overlap').turn.streaming, true);
   assert.deepEqual(fake.prompts, []);
   flushed.resolve();
   await fake.waitForPrompts(1);
   assert.deepEqual(fake.prompts, ['typed']);
   assert.deepEqual(
-    requireLive(h, 'overlap').pendingSends.map((prompt) => prompt.text),
+    requireLive(h, 'overlap').turn.pendingSends.map((prompt) => prompt.text),
     ['queued'],
   );
   await h.lifecycle.send('overlap', 'second');
@@ -1815,10 +1894,10 @@ test('typed preparation waits for delegated flush without losing its prompt or d
   assert.deepEqual(fake.prompts, ['typed', 'queued']);
   next.resolve();
   await fake.waitForPrompts(4);
-  await requireLive(h, 'overlap').turnPromise;
+  await requireLive(h, 'overlap').turn.turnPromise;
   assert.deepEqual(fake.prompts, ['typed', 'queued', 'second', 'third']);
   assert.deepEqual(rows, ['typed', 'queued', 'second', 'third']);
-  assert.equal(requireLive(h, 'overlap').streaming, false);
+  assert.equal(requireLive(h, 'overlap').turn.streaming, false);
   await h.lifecycle.closeAll();
 });
 
@@ -2096,22 +2175,24 @@ test('agent completion cannot start a turn while Stop or Send now is outstanding
   await h.lifecycle.resume('app-1');
   const live = requireLive(h, 'app-1');
   for (const flag of ['interrupting', 'interruptingToSend'] as const) {
-    live[flag] = true;
+    if (flag === 'interrupting') live.turn.requestStop();
+    else live.turn.requestSendNow();
     assert.equal(
       h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'),
       false,
     );
     assert.deepEqual(provider.prompts, []);
-    live[flag] = false;
+    if (flag === 'interrupting') live.turn.clearStop();
+    else live.turn.refuseSendNow();
   }
   assert.equal(h.lifecycle.wakeForSettledAgents('app-1', 'agent result', 'Agents finished'), true);
-  await live.turnPromise;
+  await live.turn.turnPromise;
   assert.deepEqual(provider.prompts, ['agent result']);
   // A wave held back by a Stop is owed once the Stop is over: the lifecycle
   // asks the child sessions to try again as soon as the flag clears.
   const retriesBefore = retryWaveCount(h);
   await h.lifecycle.interrupt('app-1');
-  assert.equal(live.interrupting, false);
+  assert.equal(live.turn.interrupting, false);
   assert.equal(retryWaveCount(h), retriesBefore + 1);
   await h.lifecycle.close('app-1');
 });
@@ -2242,7 +2323,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
   const changed = settings.update('context-switch', 'primary', { contextWindowTokens: 200000 });
   await h.lifecycle.send('context-switch', 'next');
   assert.equal(live.summary.contextWindowTokens, 1000000);
-  assert.equal(live.closeMode, undefined);
+  assert.equal(live.turn.closeMode, undefined);
   gate.resolve();
   assert.equal(await changed, true);
   await replacement.waitForPrompts(1);
@@ -2251,7 +2332,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
   assert.deepEqual(original.prompts, ['first']);
   assert.deepEqual(replacement.prompts, ['next']);
   assert.ok(h.calls.some((call) => call.method === 'close' || call.method === 'session.close'));
-  await requireLive(h, 'context-switch').turnPromise;
+  await requireLive(h, 'context-switch').turn.turnPromise;
   const beforeRejected = h.registry.getCanonicalSummary('context-switch');
   await assert.rejects(
     settings.update('context-switch', 'primary', {
@@ -2289,7 +2370,7 @@ test('a context switch waits for the turn and resumes the same chat before queue
   await Promise.all([sending, ...later]);
   await relaunched.waitForPrompts(2);
   assert.deepEqual(relaunched.prompts, ['second', 'third']);
-  await requireLive(h, 'context-switch').turnPromise;
+  await requireLive(h, 'context-switch').turn.turnPromise;
 
   // A send still being prepared when the relaunch begins joins its queue.
   const window = requireLive(h, 'context-switch').summary.contextWindowTokens;
@@ -2402,7 +2483,7 @@ test('an ordinary chat can create its first canvas during its initial turn', asy
   assert.equal(workspace.attachedCanvasId('ordinary'), created.canvasId);
   assert.equal(h.canvasTurns.requireScope(scope.scopeId).canvasId, created.canvasId);
   gate.resolve();
-  await requireLive(h, 'ordinary').turnPromise;
+  await requireLive(h, 'ordinary').turn.turnPromise;
   assert.throws(() => h.canvasTurns.requireScope(scope.scopeId), { code: 'scope_expired' });
 });
 
@@ -2417,7 +2498,7 @@ test('a first prompt runs under the kit its create pinned', async () => {
   await provider.waitForPrompts(1);
   assert.deepEqual(turnLease(h, 'first-pinned').context.designSystem, kit);
   gate.resolve();
-  await requireLive(h, 'first-pinned').turnPromise;
+  await requireLive(h, 'first-pinned').turn.turnPromise;
 });
 
 test('a queued or reordered prompt runs under the references it was sent with', async () => {
@@ -2448,7 +2529,7 @@ test('a queued or reordered prompt runs under the references it was sent with', 
   assert.deepEqual(turnLease(h, 'pinned').allowedDesignIds, ['dsg_queued']);
 
   gates[2].resolve();
-  await requireLive(h, 'pinned').turnPromise;
+  await requireLive(h, 'pinned').turn.turnPromise;
   assert.equal(h.canvasTurns.activeScope('pinned'), undefined);
 });
 
@@ -2472,7 +2553,7 @@ test('Stop and provider replacement end a turn’s Canvas authority before they 
   interruptGate.resolve();
   await stopping;
   second.resolve();
-  await requireLive(h, 'authority').turnPromise;
+  await requireLive(h, 'authority').turn.turnPromise;
 
   // A turn whose provider session is replaced under it: the lease ends with the
   // old provider, and the prompt redelivered to the replacement leases again.
@@ -2537,7 +2618,7 @@ test('a steer the model takes in leases its own references beside the running tu
   assert.deepEqual(turn.allowedDesignIds, ['dsg_running']);
 
   second.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   assert.equal(h.canvasTurns.activeScope('steering'), undefined);
   assert.throws(() => h.canvasTurns.requireScope(steer.scopeId), { code: 'scope_expired' });
 });
@@ -2583,7 +2664,7 @@ test('a late steer cannot lease the next turn', async () => {
   await steering;
   assert.equal(h.canvasTurns.activeScope('late-steer')?.scopeId, next.scopeId);
   third.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
 });
 
 test('a steer pending across provider adoption cannot lease the replacement turn', async () => {
@@ -2620,7 +2701,7 @@ test('a steer pending across provider adoption cannot lease the replacement turn
   const nextGate = replacement.deferNextStream();
   live.session = new DroidProviderSession('replacement', replacement, h.runtime);
   first.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   const sending = h.lifecycle.send(
     'adopted-steer',
     'new turn',
@@ -2665,11 +2746,11 @@ test("delegated notifications preserve a running typed turn's leases and interru
   await h.lifecycle.interrupt('delegated');
   notify(true);
   notify(false);
-  assert.equal(requireLive(h, 'delegated').interrupting, true);
-  assert.equal(requireLive(h, 'delegated').streaming, true);
+  assert.equal(requireLive(h, 'delegated').turn.interrupting, true);
+  assert.equal(requireLive(h, 'delegated').turn.streaming, true);
 
   second.resolve();
-  await requireLive(h, 'delegated').turnPromise;
+  await requireLive(h, 'delegated').turn.turnPromise;
   assert.equal(h.canvasTurns.activeScope('delegated'), undefined);
   assert.throws(() => h.canvasTurns.requireScope(typed.scopeId), { code: 'scope_expired' });
 });
@@ -2799,13 +2880,13 @@ test('Send now and Stop after report handoff never replay it and leave its reply
   await project.projects.flush();
   assert.equal(project.state.saved[0]?.delivery, undefined);
   assert.equal(project.state.saved[0]?.pending.length, 0);
-  assert.equal(live.steers.length, 0);
+  assert.equal(live.turn.steers.length, 0);
   await h.lifecycle.send(main, 'send-now instruction', undefined, 'send-now');
   await h.lifecycle.sendNow(main, 'send-now');
   await h.lifecycle.interrupt(main);
   await project.projects.userStopped(main);
   turn.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   consumed.resolve();
   await drain();
   project.port.deliver = h.lifecycle.deliverScheduled.bind(h.lifecycle);
@@ -2848,7 +2929,7 @@ test('a late report refusal cannot restart its stopped nested owner', async (t) 
 
   await project.projects.stop(main, owner.appSessionId);
   turn.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   refusal.resolve();
   await drain();
   assert.equal(project.sessions.get(owner.appSessionId)?.streaming, false);
@@ -2932,7 +3013,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   assert.equal(project.state.saved[0]?.delivery, undefined);
   await project.projects.userStopped(main);
   await h.lifecycle.interrupt(main);
-  await requireLive(h, main).turnPromise;
+  await requireLive(h, main).turn.turnPromise;
   await drain();
   assert.equal(project.state.saved[0]?.threads[1]?.unread, true);
   assert.equal(project.projects.listThreads(main).threads[0]?.unread, true);
@@ -3026,11 +3107,11 @@ test('a report arriving while Stop interrupts its owner cannot start another tur
   interruption.resolve();
   await stopping;
   turn.resolve();
-  await requireLive(h, 'owner').turnPromise;
+  await requireLive(h, 'owner').turn.turnPromise;
   assert.equal(admitted, false);
   assert.deepEqual(settlements, ['stale']);
   assert.deepEqual(provider.prompts, ['working']);
-  assert.equal(requireLive(h, 'owner').pendingSends.length, 0);
+  assert.equal(requireLive(h, 'owner').turn.pendingSends.length, 0);
   await h.lifecycle.closeAll();
 });
 
@@ -3060,7 +3141,7 @@ test('a report refused during a context relaunch never joins the typed prompt qu
     accepted: () => settlements.push('accepted'),
     declined: (reason) => settlements.push(reason),
   });
-  assert.equal(live.pendingSends.length, 0);
+  assert.equal(live.turn.pendingSends.length, 0);
   await h.lifecycle.interrupt('owner');
   resuming.resolve();
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -3097,7 +3178,7 @@ test('a report refused after lead Stop restores its ids and delivers once when t
   await h.lifecycle.interrupt(main);
   await project.projects.userStopped(main);
   turn.resolve();
-  await live.turnPromise;
+  await live.turn.turnPromise;
   await project.streaming(main, false);
   refusal.resolve();
   await drain();

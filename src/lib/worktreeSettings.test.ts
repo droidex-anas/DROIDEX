@@ -1,6 +1,6 @@
 import assert from 'node:assert';
 import test from 'node:test';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import type { GitWorktree } from '../types/vcs';
 import {
   linkedSessionsForWorktree,

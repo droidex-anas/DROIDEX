@@ -10,7 +10,7 @@ import {
   resolveCommit,
   sanitizeSegment,
 } from '../gitWorktrees.js';
-import type { AutomationExecutionMode } from './types.js';
+import type { AutomationExecutionMode } from '@droidex/protocol';
 
 export interface PrepareAutomationWorkspaceInput {
   cwd: string | null;

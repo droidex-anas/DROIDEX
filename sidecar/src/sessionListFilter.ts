@@ -1,4 +1,4 @@
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 
 // Opening a folder a Droid CLI has been used in should feel familiar without
 // dragging in years of unrelated conversations: show the handful of most recent

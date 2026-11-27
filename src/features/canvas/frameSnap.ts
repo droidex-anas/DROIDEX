@@ -12,7 +12,7 @@ import {
   type Point,
   type ResizeEdge,
 } from './canvasGeometry';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 /** Screen pixels within which an edge, a centre or a spacing pulls the hand. */
 const SNAP_PX = 6;

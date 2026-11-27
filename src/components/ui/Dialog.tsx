@@ -18,12 +18,13 @@ import { cn } from './cn';
 import { pushEscapeLayer } from './escapeStack';
 import { FloatingLayerRoot } from './floatingLayerRoot';
 
-type DialogSize = 'confirm' | 'form' | 'content';
+type DialogSize = 'confirm' | 'form' | 'content' | 'expanded';
 
-const WIDTH: Record<DialogSize, string> = {
+const SIZE: Record<DialogSize, string> = {
   confirm: 'max-w-dialog-confirm',
   form: 'max-w-dialog-form',
   content: 'max-w-dialog-content',
+  expanded: 'max-w-dialog-expanded h-dialog-expanded',
 };
 
 // feel.md: dialogs enter in 180ms smooth-out and leave in 120ms ease-in.
@@ -130,7 +131,7 @@ export function Dialog({
         onKeyDown={handleKeyDown}
         className={cn(
           'flex max-h-full w-full flex-col rounded-2xl bg-surface p-6 shadow-lg outline-none',
-          WIDTH[size],
+          SIZE[size],
           className,
         )}
       >

@@ -10,7 +10,7 @@ import type {
   CanvasSnapshot,
   CanvasSummary,
   ChangedFrame,
-} from './protocol.js';
+} from '@droidex/protocol';
 
 /** Where a frame's build state comes from: `CanvasBuilds` is its one owner. */
 export interface BuildStates {

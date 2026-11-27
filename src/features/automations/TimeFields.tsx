@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 
 const NUMBER_FIELD =
-  'h-control-md rounded-md bg-field px-2 text-center text-body tabular-nums text-primary outline-none transition-colors';
+  'h-control-md rounded-md px-2 text-center text-body tabular-nums text-primary outline-none transition-colors';
 
 export function AutomationTimeInput({
   value,
   onChange,
+  errorId,
 }: {
   value: string;
   onChange: (value: string) => void;
+  errorId?: string | undefined;
 }) {
   const [valueHour, valueMinute] = parseTime(value);
   const [hour, setHour] = useState(String(valueHour).padStart(2, '0'));
@@ -37,6 +39,8 @@ export function AutomationTimeInput({
         value={hour}
         inputMode="numeric"
         aria-label="Hour"
+        aria-invalid={Boolean(errorId)}
+        aria-describedby={errorId}
         maxLength={2}
         onFocus={(event) => {
           event.currentTarget.select();
@@ -61,7 +65,7 @@ export function AutomationTimeInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-11`}
+        className={`${NUMBER_FIELD} w-11 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
       />
       <span className="text-muted">:</span>
       <input
@@ -69,6 +73,8 @@ export function AutomationTimeInput({
         value={minute}
         inputMode="numeric"
         aria-label="Minute"
+        aria-invalid={Boolean(errorId)}
+        aria-describedby={errorId}
         maxLength={2}
         onFocus={(event) => {
           event.currentTarget.select();
@@ -89,7 +95,7 @@ export function AutomationTimeInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-11`}
+        className={`${NUMBER_FIELD} w-11 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
       />
     </div>
   );
@@ -140,7 +146,7 @@ export function AutomationMinuteInput({
             event.currentTarget.blur();
           }
         }}
-        className={`${NUMBER_FIELD} w-12`}
+        className={`${NUMBER_FIELD} w-12 bg-field`}
       />
     </div>
   );
@@ -150,9 +156,15 @@ export function AutomationDateInput({
   value,
   minimum,
   onChange,
+  errorId,
+  invalidText,
+  onInvalidChange,
 }: {
   value: { year: number; month: number; day: number };
   minimum?: { year: number; month: number; day: number };
+  errorId?: string | undefined;
+  invalidText?: string | undefined;
+  onInvalidChange: (text: string | null) => void;
   onChange: (value: { year: number; month: number; day: number }) => void;
 }) {
   const formatted = formatDate(value);
@@ -160,13 +172,18 @@ export function AutomationDateInput({
   const focused = useRef(false);
 
   useEffect(() => {
-    if (!focused.current) setText(formatDate(value));
-  }, [value]);
+    if (!focused.current) setText(invalidText ?? formatted);
+  }, [formatted, invalidText]);
 
   const commit = () => {
     const parsed = parseDate(text);
+    if (!parsed && text.trim()) {
+      onInvalidChange(text);
+      return;
+    }
     if (!parsed || (minimum && isCalendarDateBefore(parsed, minimum))) {
       setText(formatDate(value));
+      onInvalidChange(null);
       return;
     }
     setText(formatDate(parsed));
@@ -178,6 +195,8 @@ export function AutomationDateInput({
       value={text}
       inputMode="numeric"
       aria-label="Date, year month day"
+      aria-invalid={Boolean(errorId)}
+      aria-describedby={errorId}
       placeholder="YYYY-MM-DD"
       maxLength={10}
       onFocus={(event) => {
@@ -194,7 +213,7 @@ export function AutomationDateInput({
       onKeyDown={(event) => {
         if (event.key === 'Enter') event.currentTarget.blur();
       }}
-      className={`${NUMBER_FIELD} w-28`}
+      className={`${NUMBER_FIELD} w-28 ${errorId ? 'bg-danger-soft' : 'bg-field'}`}
     />
   );
 }

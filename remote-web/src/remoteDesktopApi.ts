@@ -11,7 +11,7 @@ import type {
   RemoteBrowserControls,
   SharedStorageChange,
   SharedStorageKey,
-} from '../../src/lib/desktop';
+} from '../../src/lib/desktopContract';
 import { forgetDevice } from './deviceStore';
 import { pickRemoteDirectory } from './FolderPicker';
 import type { RemoteConnection } from './remoteConnection';
@@ -84,7 +84,7 @@ export function createRemoteDesktopApi(
     // The laptop pushes agent alerts to this browser, so the renderer's own alerts would double them.
     notify: () => Promise.resolve({ shown: false, reason: 'unsupported' }),
     onNotificationActivate: noSubscription,
-    takePendingNotificationSession: () => Promise.resolve(null),
+    readPendingNotificationSession: () => Promise.resolve(null),
     ackNotificationActivate: () => Promise.resolve({ ok: true }),
 
     systemIdleTime: () => Promise.resolve(0),

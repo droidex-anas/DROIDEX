@@ -14,7 +14,7 @@ import { Menu } from './ui/Menu';
 import type { AnchorPoint } from './ui/usePopoverPosition';
 import { toast } from '../lib/toast';
 import { PROVIDER_LABELS, sessionResumeCommand } from '../features/providers/providerIdentity';
-import type { ProviderKind } from '../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 
 const MENU_WIDTH = 220;
 

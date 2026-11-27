@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import { ArchivedChatsSettings } from './ArchivedChatsSettings';
 
 function makeSession(appSessionId: string, title: string): SessionSummary {

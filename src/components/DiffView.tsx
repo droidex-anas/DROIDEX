@@ -167,9 +167,14 @@ export function DiffCard({
 
 export function DiffFull({ change, cwd }: { change: FileChange; cwd?: string }) {
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex min-h-0 flex-1 flex-col">
       <DiffHeader change={change} cwd={cwd} />
-      <div className="flex-1 min-h-0 overflow-auto py-1">
+      <div
+        role="region"
+        aria-label={`Diff for ${displayPath(change.path, cwd)}`}
+        tabIndex={0}
+        className="flex-1 min-h-0 overflow-auto py-1"
+      >
         <DiffLines ops={change.ops} />
       </div>
     </div>

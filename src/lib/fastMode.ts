@@ -1,4 +1,4 @@
-import type { ModelInfo, ProviderKind } from '../types/bridge';
+import type { ModelInfo, ProviderKind } from '@droidex/protocol';
 
 // Fast mode is the speed-for-usage trade a harness offers on a chat. It is the
 // mode the app asked for, never a claim about the speed actually delivered, so

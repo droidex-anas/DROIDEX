@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { TranscriptEvent } from '../../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import { ClaudeEventMapper } from './claudeEvents.js';
 
@@ -521,6 +521,78 @@ test('the result reports only the denials that never reached the transcript', ()
     [
       ['tool_result', 'toolu_1', 'declined', true],
       ['tool_result', 'toolu_2', 'Bash was denied.', true],
+    ],
+  );
+});
+
+test('parallel spawns claim task_started in spawn order when the id is omitted', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const children = childrenOf(mapper);
+  const spawn = (id: string) =>
+    assistant([
+      { type: 'tool_use', id, name: 'Task', input: { description: id, prompt: `work ${id}` } },
+    ]);
+  const started = (taskId: string, toolUseId?: string) =>
+    message({
+      type: 'system',
+      subtype: 'task_started',
+      task_id: taskId,
+      task_type: 'local_agent',
+      description: taskId,
+      ...(toolUseId ? { tool_use_id: toolUseId } : {}),
+    });
+  children(spawn('toolu-a'));
+  children(spawn('toolu-b'));
+
+  assert.equal(children(started('task-a'))[0]?.toolUseId, 'toolu-a');
+  assert.equal(children(started('task-b'))[0]?.toolUseId, 'toolu-b');
+  // A spawn matched by an explicit id leaves the inference queue.
+  assert.equal(children(started('task-c', 'toolu-a'))[0]?.toolUseId, 'toolu-a');
+});
+
+test('an errored spawn without task_started settles a providerless failed child', () => {
+  const mapper = new ClaudeEventMapper('app-1');
+  const children = childrenOf(mapper);
+  children(
+    assistant([
+      {
+        type: 'tool_use',
+        id: 'toolu_spawn',
+        name: 'Task',
+        input: {
+          description: 'survey the code',
+          subagent_type: 'worker',
+          prompt: 'inspect the repository',
+        },
+      },
+    ]),
+  );
+
+  assert.deepEqual(
+    children(
+      message({
+        type: 'user',
+        message: {
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: 'toolu_spawn',
+              content: 'usage limit reached',
+              is_error: true,
+            },
+          ],
+        },
+      }),
+    ),
+    [
+      {
+        toolUseId: 'toolu_spawn',
+        done: true,
+        status: 'failed',
+        label: 'worker',
+        prompt: 'inspect the repository',
+        transcriptAvailable: false,
+      },
     ],
   );
 });

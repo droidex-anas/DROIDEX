@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { PrCheck, PullRequest } from '../../../types/vcs';
 import { checksBadge, checksSummary } from '../../../lib/github';
-import { mergeBlockReason, reviewerRows } from './prMeta';
+import { mergeBlockReason, mergePullRequestKey, reviewerRows } from './prMeta';
 
 const pr = (overrides: Partial<PullRequest> = {}): PullRequest => ({
   number: 7,
@@ -84,4 +84,10 @@ test('pending reviews stay pending and current requests override old reviews', (
       { login: 'rae', state: 'pending' },
     ],
   );
+});
+
+test('URL-less pull requests are keyed by repository and number', () => {
+  const withoutUrl = pr({ number: 1, url: '' });
+  assert.equal(mergePullRequestKey(withoutUrl, '/repo-a'), '/repo-a#1');
+  assert.equal(mergePullRequestKey(withoutUrl, '/repo-b'), '/repo-b#1');
 });

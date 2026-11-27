@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import type { FeedItem } from './chatFeed';
 import { areFeedRowPropsEqual } from './messageFeedRows';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function messageItem(id: string, author: 'user' | 'assistant'): FeedItem {
   const event: TranscriptEvent = {

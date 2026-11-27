@@ -1,9 +1,9 @@
-import type { CanvasFrame, CatalogListing } from '../../features/canvas/protocol';
+import type { CanvasFrame, CatalogListing, SkillInfo } from '@droidex/protocol';
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import { catalogRowKey } from './composerCatalog';
-import type { SkillInfo } from '../../types/bridge';
+
 import type { SlashCommand } from '../ComposerMenu';
 
 const CATALOG_LIMIT = 40;

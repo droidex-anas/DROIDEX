@@ -1,4 +1,4 @@
-import type { Autonomy, PermissionOutcome } from './protocol.js';
+import type { Autonomy, PermissionOutcome } from '@droidex/protocol';
 
 const PERMISSION_OUTCOMES: Record<PermissionOutcome, true> = {
   proceed_once: true,

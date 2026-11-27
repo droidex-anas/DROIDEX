@@ -13,7 +13,7 @@
 // partials collapse onto one event per toolUseId. Keep both sides synchronized
 // in the same change, or live rendering and replay drift apart.
 
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 
 export interface StreamingDeltaCoalescerOptions {

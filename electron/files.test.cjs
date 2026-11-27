@@ -11,9 +11,6 @@ const {
   openDefault,
   revealInFolder,
   classifyByName,
-  createRootAccessRegistry,
-  validateRelative,
-  resolveWithin,
   TEXT_PREVIEW_CAP_BYTES,
 } = require('./files.cjs');
 
@@ -29,6 +26,7 @@ test.before(async () => {
   root = await fsp.mkdtemp(path.join(os.tmpdir(), 'files-root-'));
   rootReal = await fsp.realpath(root);
   outside = await fsp.mkdtemp(path.join(os.tmpdir(), 'files-outside-'));
+  await fsp.symlink(outside, path.join(root, 'escape-link'), 'dir');
   await fsp.mkdir(path.join(root, 'sub'), { recursive: true });
   await fsp.mkdir(path.join(root, 'empty'), { recursive: true });
   await fsp.writeFile(path.join(root, 'alpha.md'), '# Alpha\n');
@@ -80,73 +78,16 @@ async function expectPostOpenIdentityMismatch(operation) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Path safety
-// ---------------------------------------------------------------------------
-
-test('validateRelative rejects non-strings, absolute paths, control chars, and traversal', () => {
-  assert.ok(validateRelative(root, '').target === path.resolve(root));
-  assert.throws(() => validateRelative(123, ''), /rootDir must be a string/);
-  assert.throws(() => validateRelative(root, 42), /must be a string/);
-  assert.throws(() => validateRelative(root, '/etc/passwd'), /absolute path rejected/);
-  assert.throws(() => validateRelative(root, 'a\0b'), /invalid characters/);
-  assert.throws(() => validateRelative(root, '../escape'), /escapes root/);
-  assert.throws(() => validateRelative(root, 'sub/../../escape'), /escapes root/);
-  // A single `..` that lands back inside root is fine.
-  const ok = validateRelative(root, 'sub/../alpha.md');
-  assert.equal(path.relative(path.resolve(root), ok.target), 'alpha.md');
-});
-
-test('paths beginning with two dots remain valid inside the root', async () => {
-  const validated = validateRelative(root, '..notes.txt');
-  assert.equal(validated.relative, '..notes.txt');
-  const resolved = await resolveWithin(root, '..notes.txt');
-  assert.equal(resolved.relative, '..notes.txt');
+test('readPreview supports names beginning with two dots', async () => {
   const preview = await readPreview(root, '..notes.txt');
   assert.equal(preview.text, 'valid dotted name\n');
-});
-
-test('resolveWithin rejects symlinks that escape the root', async () => {
-  const linkPath = path.join(root, 'escape-link');
-  await fsp.symlink(outside, linkPath, 'dir');
-  await assert.rejects(() => resolveWithin(root, 'escape-link'), /escapes root/);
-});
-
-test('resolveWithin allows symlinks whose target stays inside the root', async () => {
-  const innerLink = path.join(root, 'inner-link');
-  await fsp.symlink(path.join(root, 'sub'), innerLink, 'dir');
-  const resolved = await resolveWithin(root, 'inner-link/nested.txt');
-  assert.equal(path.basename(resolved.target), 'nested.txt');
-});
-
-test('resolveWithin rejects chained dangling symlinks that escape the root', async () => {
-  const outerLink = path.join(root, 'outer-link');
-  const innerLink = path.join(root, 'inner-escape-link');
-  await fsp.symlink(path.join(outside, 'missing.txt'), outerLink, 'file');
-  await fsp.symlink(outerLink, innerLink, 'file');
-  await assert.rejects(() => resolveWithin(root, 'inner-escape-link'), /escapes root/);
-});
-
-test('root access registry resolves only opaque tokens for authorized canonical roots', async () => {
-  const registry = createRootAccessRegistry({
-    createToken: () => 'test-files-token-0000000000000001',
-  });
-  const token = await registry.authorize(root);
-
-  assert.equal(registry.resolve(token), rootReal);
-  assert.equal(await registry.tokenFor(root), token);
-  await assert.rejects(() => registry.authorize(''), /rootDir is required/);
-  assert.throws(() => registry.resolve(root), { code: 'EACCES' });
-  assert.throws(() => registry.resolve('/'), { code: 'EACCES' });
-  registry.clear();
-  assert.throws(() => registry.resolve(token), { code: 'EACCES' });
 });
 
 // ---------------------------------------------------------------------------
 // listDirectory
 // ---------------------------------------------------------------------------
 
-test('listDirectory returns folders-first, alphabetical, non-recursive entries with metadata', async () => {
+test('listDirectory returns folders-first, alphabetical, non-recursive entries', async () => {
   const listing = await listDirectory(root);
   assert.equal(listing.capped, false);
   assert.equal(listing.permissionDenied, false);
@@ -162,11 +103,10 @@ test('listDirectory returns folders-first, alphabetical, non-recursive entries w
   assert.ok(!names.includes('nested.txt'));
   // alpha.md, beta.txt, zeta.json live at the top level.
   assert.ok(names.includes('alpha.md'));
-  // Each entry must carry kind, size, and mtimeMs.
+  assert.ok(!names.includes('escape-link'));
   for (const entry of listing.entries) {
     assert.ok(entry.kind === 'directory' || entry.kind === 'file');
-    assert.equal(typeof entry.size, 'number');
-    assert.equal(typeof entry.mtimeMs, 'number');
+    assert.deepEqual(Object.keys(entry).sort(), ['kind', 'name']);
   }
 });
 
@@ -192,7 +132,7 @@ test('listDirectory respects the cap and reports truncation', async () => {
   assert.ok(listing.totalSeen >= 5);
 });
 
-test('listDirectory does not read metadata beyond the listing cap', async () => {
+test('listDirectory does not read child metadata', async () => {
   const capDir = path.join(root, 'metadata-cap-dir');
   await fsp.mkdir(capDir, { recursive: true });
   for (let i = 0; i < 5; i += 1) {
@@ -200,15 +140,21 @@ test('listDirectory does not read metadata beyond the listing cap', async () => 
   }
 
   let childMetadataReads = 0;
-  await listDirectory(root, 'metadata-cap-dir', {
-    cap: 2,
-    lstat: async (target) => {
+  const originalLstat = fsp.lstat;
+  const capDirReal = await fsp.realpath(capDir);
+  const mock = test.mock.method(fsp, 'lstat', async (target) => {
+    if (path.dirname(target) === capDirReal) {
       childMetadataReads += 1;
-      return fsp.lstat(target);
-    },
+    }
+    return originalLstat(target);
   });
-
-  assert.equal(childMetadataReads, 2);
+  try {
+    const listing = await listDirectory(root, 'metadata-cap-dir', { cap: 2 });
+    assert.equal(listing.entries.length, 2);
+    assert.equal(childMetadataReads, 0);
+  } finally {
+    mock.mock.restore();
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -230,9 +176,23 @@ test('readPreview returns a Buffer (not base64) for binary previewable categorie
   const payload = await readPreview(root, 'sub/tiny.png');
   assert.equal(payload.category, 'image');
   assert.equal(payload.encoding, 'binary');
+  assert.equal(payload.ctimeMs, (await fsp.stat(path.join(root, 'sub', 'tiny.png'))).ctimeMs);
   assert.ok(Buffer.isBuffer(payload.data), 'data should be a Buffer');
   assert.deepEqual(Array.from(payload.data.slice(0, 4)), [0x89, 0x05, 0x4e, 0x47]);
   assert.equal(payload.oversize, undefined);
+  const unchanged = await readPreview(root, 'sub/tiny.png');
+  assert.equal(unchanged.ctimeMs, payload.ctimeMs);
+  const target = path.join(root, 'sub', 'tiny.png');
+  const originalStat = await fsp.stat(target);
+  const replacement = Buffer.from(payload.data);
+  replacement[1] = 6;
+  await fsp.writeFile(target, replacement);
+  await fsp.utimes(target, originalStat.atime, originalStat.mtime);
+  const updated = await readPreview(root, 'sub/tiny.png');
+  assert.equal(updated.totalSize, payload.totalSize);
+  assert.deepEqual(updated.data, replacement);
+  assert.ok(Math.abs((await fsp.stat(target)).mtimeMs - originalStat.mtimeMs) < 1);
+  assert.notEqual(updated.ctimeMs, payload.ctimeMs);
 });
 
 test('readPreview short-circuits external categories without reading bytes', async () => {
@@ -351,25 +311,36 @@ test('revealInFolder invokes the injected shell.showItemInFolder for files and d
   await assert.rejects(() => revealInFolder(root, '../outside', shell), /escapes root/);
 });
 
-// ---------------------------------------------------------------------------
-// Classification parity smoke (mirrors src/lib/filePreview.ts)
-// ---------------------------------------------------------------------------
-
-test('classifyByName mirrors the renderer-side categories', () => {
-  assert.equal(classifyByName('readme.md'), 'text');
-  assert.equal(classifyByName('data.csv'), 'text');
-  assert.equal(classifyByName('schema.json'), 'text');
-  assert.equal(classifyByName('Dockerfile'), 'text');
-  assert.equal(classifyByName('.gitignore'), 'text');
+test('classifyByName routes previewable types to their categories and the rest to external', () => {
+  for (const name of [
+    'readme.md',
+    'data.csv',
+    'schema.json',
+    'Dockerfile',
+    'MAKEFILE',
+    '.gitignore',
+    '.npmrc',
+  ]) {
+    assert.equal(classifyByName(name), 'text', `expected ${name} to be text`);
+  }
   assert.equal(classifyByName('logo.png'), 'image');
   assert.equal(classifyByName('photo.JPG'), 'image');
+  assert.equal(classifyByName('icon.svg'), 'image');
   assert.equal(classifyByName('paper.pdf'), 'pdf');
   assert.equal(classifyByName('report.docx'), 'docx');
   assert.equal(classifyByName('sheet.xlsx'), 'xlsx');
-  // External fallbacks
-  assert.equal(classifyByName('old.doc'), 'external');
-  assert.equal(classifyByName('macro.docm'), 'external');
-  assert.equal(classifyByName('archive.zip'), 'external');
-  assert.equal(classifyByName('binary.exe'), 'external');
-  assert.equal(classifyByName('noextension'), 'external');
+  // Legacy and macro-enabled Office formats open externally, like archives and unknown types.
+  for (const name of [
+    'old.doc',
+    'macro.docm',
+    'legacy.xls',
+    'macro.xlsm',
+    'slides.ppt',
+    'macro.pptm',
+    'archive.zip',
+    'binary.exe',
+    'noextension',
+  ]) {
+    assert.equal(classifyByName(name), 'external', `expected ${name} to be external`);
+  }
 });

@@ -9,7 +9,7 @@ import {
 } from '@factory/droid-sdk';
 
 import { claudeCanUseTool } from './providers/claude/claudePermissions.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { writeProviderConversation } from './testing/historyCharacterizationSupport.js';
 import { createSessionManagerTestContext } from './testing/sessionManagerTestContext.js';
 import {
@@ -252,7 +252,9 @@ test('ask-user normalizes omitted values and preserves identities and answers', 
 
   assert.equal(request.appSessionId, 'app-1');
   assert.match(request.requestId, /^req-/);
-  assert.deepEqual(request.questions, [{ index: 7, question: 'What should change?', options: [] }]);
+  assert.deepEqual(request.questions, [
+    { index: 7, question: 'What should change?', header: 'input', options: [] },
+  ]);
   const answers = [
     { index: 7, question: 'What should change?', selected: [], custom: 'The title' },
   ];

@@ -7,7 +7,14 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 're
 import { elementStep, historyStep, isDeleteKey } from './boardKeys';
 import { canvasMessage, CanvasRequestError } from './client';
 import type { PreviewSelections } from './DesignPreview';
-import type { EditElementInput, ElementEdited, LayerChange, LayerRef } from './elementEditProtocol';
+import type {
+  EditElementInput,
+  ElementEdited,
+  LayerChange,
+  LayerRef,
+  CanvasFrame,
+  ElementRef,
+} from '@droidex/protocol';
 import {
   commitPath,
   commitStyles,
@@ -28,7 +35,7 @@ import { elementSite, pickedLayer } from './pickedElement';
 import type { PreviewElement, PreviewPick, PreviewTarget } from './previewDocument';
 import type { PreviewRuns } from './previewRuns';
 import type { PreviewRun } from './previewRuntime';
-import type { CanvasFrame, ElementRef } from './protocol';
+
 import { STYLE_PROPERTIES } from './styleProperties';
 import { useEditTokens } from './useEditTokens';
 import { useElementHover } from './useElementHover';
@@ -220,7 +227,9 @@ export function useElementEditor({
   /** Changes what the selected element previews, from what it draws now. */
   const update = (change: (draft: ElementEditDraft, shown: PreviewElement) => ElementEditDraft) => {
     const current = latest.current.selection;
-    if (current) choose({ ...current, draft: change(current.draft, current.shown) });
+    if (!current) return;
+    const draft = change(current.draft, current.shown);
+    if (draft !== current.draft) choose({ ...current, draft });
   };
 
   /**

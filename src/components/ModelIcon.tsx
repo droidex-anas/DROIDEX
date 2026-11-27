@@ -1,6 +1,6 @@
 import { useId } from 'react';
 
-import type { ModelInfo } from '../types/bridge';
+import type { ModelInfo } from '@droidex/protocol';
 
 const DROIDPROXY_GLYPH_URL = new URL('../assets/droidproxy-glyph.png', import.meta.url).href;
 const DROIDPROXY_ID_PREFIX = 'custom:droidproxy:';

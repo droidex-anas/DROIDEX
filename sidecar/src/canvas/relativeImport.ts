@@ -1,4 +1,4 @@
-import type { SourceFiles } from './schema.js';
+import type { SourceFiles } from '@droidex/protocol';
 
 type RelativeResolution =
   | { kind: 'file'; path: string }

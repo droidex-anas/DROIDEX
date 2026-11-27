@@ -1,4 +1,5 @@
-import { Check, ChevronDown, Search } from 'lucide-react';
+import { Check } from '@droidex/icons';
+import { ChevronDown, Search } from 'lucide-react';
 import {
   type KeyboardEvent,
   useCallback,
@@ -153,6 +154,8 @@ export function SelectMenu<Value extends string>({
   );
 
   const onListKeyDown = (event: KeyboardEvent) => {
+    // Home and End move the caret while the search field has focus.
+    const isEditingQuery = event.target instanceof HTMLInputElement;
     if (event.key === 'ArrowDown') {
       event.preventDefault();
       if (visible.length > 0) {
@@ -161,10 +164,10 @@ export function SelectMenu<Value extends string>({
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
       if (visible.length > 0) setActiveIndex((index) => Math.max(0, index - 1));
-    } else if (event.key === 'Home') {
+    } else if (event.key === 'Home' && !isEditingQuery) {
       event.preventDefault();
       if (visible.length > 0) setActiveIndex(0);
-    } else if (event.key === 'End') {
+    } else if (event.key === 'End' && !isEditingQuery) {
       event.preventDefault();
       if (visible.length > 0) setActiveIndex(visible.length - 1);
     } else if (event.key === 'Enter') {
@@ -379,7 +382,7 @@ function OptionButton({
           <span className="mt-0.5 block truncate text-caption text-muted">{option.detail}</span>
         )}
       </span>
-      {selected && <Check className="size-icon-sm shrink-0 text-secondary" strokeWidth={2.2} />}
+      {selected && <Check className="size-icon-sm shrink-0 text-secondary" />}
     </button>
   );
 }

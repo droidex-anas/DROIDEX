@@ -7,7 +7,7 @@
 // keyboard nudge is here too: it is the same rect arithmetic reached by a key
 // instead of a hand.
 
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 export interface Point {
   x: number;

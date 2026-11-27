@@ -176,7 +176,23 @@ function createUsageAnalytics(options) {
     }
   }
 
-  return { bootstrap, markFirstLaunchReported, notePriorInstall, preference, setEnabled };
+  function registerIpc(desktopIpc) {
+    desktopIpc.handle('usage-analytics-bootstrap', bootstrap);
+    desktopIpc.handle('usage-analytics-first-launch-reported', markFirstLaunchReported);
+    desktopIpc.handle('usage-analytics-preference-get', preference);
+    desktopIpc.handle('usage-analytics-preference-set', async ({ enabled }) => {
+      return setEnabled(enabled);
+    });
+  }
+
+  return {
+    registerIpc,
+    bootstrap,
+    markFirstLaunchReported,
+    notePriorInstall,
+    preference,
+    setEnabled,
+  };
 }
 
 function buildContext(app, config, options) {

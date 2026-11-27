@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { ProjectActivity, transcriptEnding } from './activity.js';
-import type { TranscriptEvent } from '../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 test('only the bounded final primary reply survives a turn, never thinking or tool output', () => {
   const activity = new ProjectActivity();

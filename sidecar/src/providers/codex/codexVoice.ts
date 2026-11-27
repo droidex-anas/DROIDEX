@@ -6,12 +6,8 @@
 // A spoken request becomes an ordinary turn on the same thread, run by the
 // model the chat already uses, so tools, approvals and diffs behave as they do
 // for a typed prompt.
-import type {
-  ProviderVoice,
-  ProviderVoiceEvent,
-  ProviderVoiceStart,
-  VoiceNarration,
-} from '../session.js';
+import type { VoiceNarration } from '@droidex/protocol';
+import type { ProviderVoice, ProviderVoiceEvent, ProviderVoiceStart } from '../session.js';
 import { errMsg } from '../../errors.js';
 import type { AppServerClient } from './appServer.js';
 

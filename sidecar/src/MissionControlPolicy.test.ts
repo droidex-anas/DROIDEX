@@ -9,7 +9,7 @@ import type {
   ChildSpawnObservation,
 } from './ChildSessionState.js';
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
-import type { ServerEvent, SessionSummary } from './protocol.js';
+import type { ServerEvent, SessionSummary } from '@droidex/protocol';
 import { FakeFactorySession, type RecordedCall } from './testing/fakeFactoryRuntime.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
@@ -33,6 +33,7 @@ function createHarness(
   const rejectedProviders = new Set<string>();
   const summary = missionSummary(sessionPurpose, interactionMode);
   const live: ChildParentLease = {
+    turn: { closeMode: undefined },
     summary,
     droid: new FakeFactorySession('parent-provider', {}, calls, {
       settings: {
@@ -168,6 +169,23 @@ test('settles completion received before exact spawn correlation', () => {
       done: true,
     },
   ]);
+});
+
+test('a nonzero worker exit settles the child as failed', () => {
+  const h = createHarness();
+  h.apply({ progress: [workerStarted('provider-worker', 'spawn-1')] });
+  h.apply({
+    missionChild: { event: 'completed', providerSessionId: 'provider-worker', exitCode: 7 },
+  });
+
+  assert.deepEqual(h.admissions.at(-1), {
+    parentAppSessionId: 'parent-app',
+    providerSessionId: 'provider-worker',
+    role: 'worker',
+    spawnLink: { kind: 'spawn', id: 'spawn-1' },
+    done: true,
+    status: 'failed',
+  });
 });
 
 test('provider replacement preserves child identity and rejects stale provider completion', () => {

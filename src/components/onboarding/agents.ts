@@ -9,7 +9,7 @@ import type {
   InstallChannel,
   ProviderKind,
   ProviderStatus,
-} from '../../types/bridge';
+} from '@droidex/protocol';
 
 // The agents setup offers, in the order it lists them.
 export const AGENTS: readonly ProviderKind[] = ['droid', 'claude', 'codex', 'devin'];

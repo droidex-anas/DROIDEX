@@ -23,7 +23,7 @@ import { createDesktopBrowserChannel } from './browser/desktopBrowserChannel.js'
 import { createDesktopImageChannel } from './canvas/desktopImageChannel.js';
 import { canvasDir, droidexUserDataDir } from './droidexPaths.js';
 import { canvasShutdownReply, shutdownCanvas, shutdownSidecar } from './shutdown.js';
-import type { ClientCommand } from './protocol.js';
+import type { ClientCommand } from '@droidex/protocol';
 import { hotPathMetrics } from './telemetry/hotPathMetrics.js';
 import { UsageWorkerClient } from './usage/UsageWorkerClient.js';
 

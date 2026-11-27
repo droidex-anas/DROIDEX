@@ -10,7 +10,7 @@ import { canvasClient } from './canvasClient';
 import { base64 } from './captureCanvasImage';
 import { KitCaptureCache } from './kitCaptureCache';
 import { KitCaptureReads } from './kitCaptureReads';
-import type { DesignSystemRef, KitCaptureItem } from './protocol';
+import type { DesignSystemRef, KitCaptureItem } from '@droidex/protocol';
 import type { PreviewMode } from './PreviewModeToggle';
 import { MAX_KIT_CAPTURE_BASE64_LENGTH } from './wireValidation';
 
@@ -22,6 +22,7 @@ const MODES: readonly PreviewMode[] = ['light', 'dark'];
 // A capture let go is read again from the sidecar when one shows it.
 const captures = new KitCaptureCache(32 * 1024 * 1024);
 const reads = new KitCaptureReads(8);
+const pendingReads = new Map<string, symbol>();
 const listeners = new Set<() => void>();
 
 function captureKey(ref: DesignSystemRef, item: KitCaptureItem): string {
@@ -29,20 +30,31 @@ function captureKey(ref: DesignSystemRef, item: KitCaptureItem): string {
 }
 
 function show(key: string, png: string | null): void {
+  pendingReads.delete(key);
   captures.set(key, png === null ? null : `data:image/png;base64,${png}`);
   for (const listener of listeners) listener();
 }
 
 function readCapture(key: string, ref: DesignSystemRef, item: KitCaptureItem): Promise<void> {
-  return canvasClient.designSystems.readCapture(ref, item).then(
-    (png) => {
-      if (!captures.has(key)) show(key, png);
-    },
-    (error: unknown) => {
-      console.error('A design system preview capture could not be read:', error);
-      if (!captures.has(key)) show(key, null);
-    },
-  );
+  const token = Symbol();
+  pendingReads.set(key, token);
+  return canvasClient.designSystems
+    .readCapture(ref, item)
+    .then(
+      (png) => {
+        if (pendingReads.get(key) === token && captures.needsRead(key)) show(key, png);
+      },
+      (error: unknown) => {
+        console.error('A design system preview capture could not be read:', error);
+        if (pendingReads.get(key) !== token || !captures.needsRead(key)) return;
+        captures.fail(key);
+        for (const listener of listeners) listener();
+      },
+    )
+    .finally(() => {
+      if (pendingReads.get(key) === token) pendingReads.delete(key);
+      else if (captures.isHeld(key) && captures.needsRead(key)) return readCapture(key, ref, item);
+    });
 }
 
 function subscribe(listener: () => void): () => void {
@@ -53,8 +65,8 @@ function subscribe(listener: () => void): () => void {
 }
 
 /**
- * The capture's URL: undefined while it is read, null when that item has not
- * been captured in that mode yet, or when `ref` is null. An entry `item` must
+ * The capture's URL: undefined while unread, null when the read failed, that item
+ * has not been captured in that mode yet, or `ref` is null. An entry `item` must
  * keep its identity across renders.
  */
 export function useKitCapture(
@@ -69,7 +81,8 @@ export function useKitCapture(
   useEffect(() => {
     if (key === null || id === undefined || version === undefined || mode === undefined) return;
     const release = captures.hold(key);
-    if (!captures.has(key)) reads.request(key, () => readCapture(key, { id, version, mode }, item));
+    if (captures.needsRead(key))
+      reads.request(key, () => readCapture(key, { id, version, mode }, item));
     return () => {
       release();
       if (!captures.isHeld(key)) reads.cancel(key);

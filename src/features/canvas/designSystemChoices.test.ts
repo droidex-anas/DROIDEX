@@ -13,7 +13,7 @@ import {
   type DesignSystemChoice,
 } from './designSystemChoices';
 import { canvasContextOf, type FramePin } from './framePins';
-import type { DesignSystemSummary } from './protocol';
+import type { DesignSystemSummary } from '@droidex/protocol';
 
 const stored = new Map<string, string>();
 Object.defineProperty(globalThis, 'localStorage', {

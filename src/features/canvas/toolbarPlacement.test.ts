@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { placeToolbar, type ToolbarRoom } from './toolbarPlacement';
-import type { FrameRect } from './protocol';
+import type { FrameRect } from '@droidex/protocol';
 
 const BOARD = { x: 1000, y: 800 };
 const BAR = { x: 220, y: 42 };

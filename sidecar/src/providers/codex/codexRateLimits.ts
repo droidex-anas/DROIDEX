@@ -2,7 +2,7 @@
 // the server's updates, so a refused turn can say which window ran out and
 // when it resets (Codex's own turn error carries neither), and /usage can
 // show every window of the account's main bucket.
-import type { UsageLimit, UsageWindow } from '../../protocol.js';
+import type { UsageLimit, UsageWindow } from '@droidex/protocol';
 import { numberValue, objectValue } from '../../values.js';
 import type { ReportedMeter, UsageMetersListener, UsageReading } from '../session.js';
 import { futureResetAt, resetAtMillis, UsageLimitError, windowUsage } from '../usageLimit.js';

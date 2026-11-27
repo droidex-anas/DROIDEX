@@ -3,7 +3,7 @@
 // modes has one for each.
 
 import { useState, type CSSProperties, type ReactNode } from 'react';
-import type { DocumentToken, TokenKind } from '../designSystemDocumentProtocol';
+import type { DocumentToken, TokenKind } from '@droidex/protocol';
 import type { PreviewMode } from '../PreviewModeToggle';
 import { CellSwatch } from './ColorSwatchInput';
 import { bareTokenName } from './documentSections';

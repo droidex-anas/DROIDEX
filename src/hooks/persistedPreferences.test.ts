@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { ThemePreset } from '../lib/theme';
 import { loadTheme, persistCustomThemes } from './persistedThemePreferences';
 import { loadAgentConfig, loadHarnessModels, sanitizeAgentConfig } from './persistedUiPreferences';
-import type { ModelInfo } from '../types/bridge';
+import type { ModelInfo } from '@droidex/protocol';
 import { withFailingLocalStorage, withLocalStorageMap } from '../test/localStorage';
 
 const CUSTOM_PRESET: ThemePreset = {

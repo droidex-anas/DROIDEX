@@ -7,7 +7,7 @@ import type {
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { SkillInfo } from '../catalog.js';
+import type { SkillInfo } from '@droidex/protocol';
 
 interface ClaudePlugin {
   name: string;
@@ -63,7 +63,7 @@ export class ClaudeCatalog {
       if (key === this.metadataKey) return;
       this.metadata = metadata;
       this.metadataKey = key;
-      void this.initial.then(
+      void (this.refresh ?? this.initial).then(
         () => {
           if (!this.closed) this.publish(claudeCatalogItemsFromCached(this.items, metadata));
         },
@@ -87,7 +87,8 @@ export class ClaudeCatalog {
 
   private refreshCommands(): void {
     if (this.closed) return;
-    const pending = (this.refresh ?? this.initial)
+    this.refresh = (this.refresh ?? this.initial)
+      .catch(() => undefined)
       .then(async () => {
         if (this.closed) return;
         const items = await this.fetch();
@@ -96,10 +97,6 @@ export class ClaudeCatalog {
       .catch((error: unknown) => {
         if (!this.closed) console.warn('Claude catalog refresh failed:', error);
       });
-    this.refresh = pending;
-    void pending.then(() => {
-      if (this.refresh === pending) this.refresh = undefined;
-    });
   }
 
   private publish(items: SkillInfo[]): void {

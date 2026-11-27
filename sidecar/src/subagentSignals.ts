@@ -11,7 +11,7 @@ import type {
   ChildStatus,
   ReasoningEffort,
   StreamFidelity,
-} from './protocol.js';
+} from '@droidex/protocol';
 import { trimmedString as str } from './values.js';
 
 // What a single event tells us about one child session. Fields are all optional
@@ -112,6 +112,7 @@ export interface TaskResultChildUpdate {
   // results ("Task ID: … Status: …") belong to a *different* tool_use; their id
   // must never become the child's spawn link.
   isSpawnResult: boolean;
+  status?: ChildStatus;
   // What the subagent is doing right now, as reported by a poll. Autonomous
   // children stream no transcript to the parent, so a poll's status line is the
   // only live activity signal the parent ever sees.
@@ -186,13 +187,24 @@ export function taskResultChildUpdate(
   if (!poll) return undefined;
   const status = POLL_STATUS_RE.exec(header)?.[1]?.toLowerCase();
   const activity = pollActivity(text, status);
+  const terminal = status !== undefined && TERMINAL_POLL_STATUS.has(status);
   return {
     providerSessionId: poll[1],
     // Only a reported terminal status settles the child: a poll that reports no
     // status says nothing about completion, and assuming it finished would stop
     // the clock on a subagent that is still working.
-    done: status ? TERMINAL_POLL_STATUS.has(status) : false,
+    done: terminal,
     isSpawnResult: false,
+    ...(terminal
+      ? {
+          status:
+            status === 'completed'
+              ? ('completed' as const)
+              : status === 'failed'
+                ? ('failed' as const)
+                : ('paused' as const),
+        }
+      : {}),
     ...(activity ? { activity } : {}),
   };
 }
@@ -201,8 +213,21 @@ export function taskResultChildUpdate(
 // notification. It is intentionally not part of the stream returned by the
 // SDK, so the primary notification listener uses this parser to settle a child
 // even when the parent never calls TaskOutput after launching it.
-export function backgroundTaskCompletionProviderSessionId(content: string): string | undefined {
+export function backgroundTaskCompletion(
+  content: string,
+): { providerSessionId: string; status: ChildStatus } | undefined {
   const firstLine = content.replace(/\r\n/g, '\n').trimStart().split('\n', 1)[0]?.trim();
   if (!firstLine || !BACKGROUND_TASK_TERMINAL_RE.test(firstLine)) return undefined;
-  return BACKGROUND_TASK_ID_RE.exec(content)?.[1];
+  const providerSessionId = BACKGROUND_TASK_ID_RE.exec(content)?.[1];
+  if (!providerSessionId) return undefined;
+  const line = firstLine.toLowerCase();
+  return {
+    providerSessionId,
+    // An intentional stop is not a failure; only a real failure wears red.
+    status: line.includes('completed')
+      ? 'completed'
+      : line.includes('failed')
+        ? 'failed'
+        : 'paused',
+  };
 }

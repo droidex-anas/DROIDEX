@@ -4,7 +4,7 @@
 // behavior from silently diverging across copies. Catalog parsers
 // (modelCatalog, DroidCliCatalog) intentionally use looser coercion and
 // keep their own variants.
-import type { Autonomy } from './protocol.js';
+import type { Autonomy } from '@droidex/protocol';
 
 export function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' ? value : undefined;
@@ -39,19 +39,6 @@ export function dateMs(value?: string): number {
   if (!value) return 0;
   const ms = +new Date(value);
   return Number.isFinite(ms) ? ms : 0;
-}
-
-export function safeStringify(value: unknown): string {
-  try {
-    // JSON.stringify returns undefined (not a string) for undefined, bare
-    // functions, and symbols; honoring the string contract here keeps a
-    // missing tool-result body from crashing the line parse and dropping the
-    // whole row's events.
-    const text: unknown = JSON.stringify(value, null, 2);
-    return typeof text === 'string' ? text : '';
-  } catch {
-    return String(value);
-  }
 }
 
 export function boundedInt(

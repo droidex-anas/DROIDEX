@@ -2,7 +2,7 @@
 // directly, so this is the only way the pane learns about their work, and a
 // subscriber that throws may cost its own change and nothing else.
 
-import type { CanvasChange } from './protocol.js';
+import type { CanvasChange } from '@droidex/protocol';
 
 export type CanvasChangeListener = (change: CanvasChange) => void;
 

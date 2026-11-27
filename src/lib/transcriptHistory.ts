@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { composePrompt } from './composePrompt';
 import { promptWithSideChatReplies } from './sideChats';
 import { hasCompleteAppBlock, hasIncompleteAppBlock } from './appBlocks';
@@ -70,35 +70,134 @@ function replayTimeDifferenceMs(left: TranscriptEvent, right: TranscriptEvent): 
   return 0;
 }
 
-function fullTextSupersedesTruncatedReplay(
-  live: TranscriptEvent,
+interface ReplayCandidate {
+  event: TranscriptEvent;
+  order: number;
+  start: number;
+  end: number;
+}
+
+interface ReplayCandidateTree {
+  candidate: ReplayCandidate;
+  maxEnd: number;
+  left?: ReplayCandidateTree;
+  right?: ReplayCandidateTree;
+}
+
+function indexReplayCandidates(
+  events: TranscriptEvent[],
+  candidateKey: (event: TranscriptEvent) => string | undefined,
+): Map<string, ReplayCandidateTree> {
+  const buckets = new Map<string, ReplayCandidate[]>();
+  events.forEach((event, order) => {
+    const bucketKey = candidateKey(event);
+    if (bucketKey === undefined) return;
+    const candidates = buckets.get(bucketKey) ?? [];
+    candidates.push({
+      event,
+      order,
+      start: Math.min(event.ts, event.endTs ?? event.ts),
+      end: Math.max(event.ts, event.endTs ?? event.ts),
+    });
+    buckets.set(bucketKey, candidates);
+  });
+  const build = (
+    candidates: ReplayCandidate[],
+    from: number,
+    to: number,
+  ): ReplayCandidateTree | undefined => {
+    if (from >= to) return undefined;
+    const middle = (from + to) >>> 1;
+    const candidate = candidates[middle];
+    const left = build(candidates, from, middle);
+    const right = build(candidates, middle + 1, to);
+    return {
+      candidate,
+      left,
+      right,
+      maxEnd: Math.max(candidate.end, left?.maxEnd ?? -Infinity, right?.maxEnd ?? -Infinity),
+    };
+  };
+  const index = new Map<string, ReplayCandidateTree>();
+  for (const [bucketKey, candidates] of buckets) {
+    candidates.sort((left, right) => left.start - right.start);
+    const tree = build(candidates, 0, candidates.length);
+    if (tree) index.set(bucketKey, tree);
+  }
+  return index;
+}
+
+function nearbyReplayCandidates(
+  index: Map<string, ReplayCandidateTree>,
+  event: TranscriptEvent,
+  key: string,
+  limit = Infinity,
+): ReplayCandidate[] {
+  const start = Math.min(event.ts, event.endTs ?? event.ts);
+  const end = Math.max(event.ts, event.endTs ?? event.ts);
+  const candidates: ReplayCandidate[] = [];
+  const visit = (tree: ReplayCandidateTree | undefined) => {
+    if (!tree || candidates.length >= limit || start - tree.maxEnd > REPLAY_DEDUP_TOLERANCE_MS)
+      return;
+    visit(tree.left);
+    if (candidates.length >= limit || tree.candidate.start - end > REPLAY_DEDUP_TOLERANCE_MS)
+      return;
+    if (replayTimeDifferenceMs(tree.candidate.event, event) <= REPLAY_DEDUP_TOLERANCE_MS)
+      candidates.push(tree.candidate);
+    visit(tree.right);
+  };
+  visit(index.get(key));
+  return candidates;
+}
+
+function closestFullTextForReplay(
+  index: Map<string, ReplayCandidateTree>,
   replayed: TranscriptEvent,
-): boolean {
-  if (replayScope(live) !== replayScope(replayed)) return false;
-  if (typeof live.text !== 'string' || typeof replayed.text !== 'string') return false;
-  return (
-    isFullTextForTruncatedReplay(live.text, replayed.text) &&
-    replayTimeDifferenceMs(live, replayed) <= REPLAY_DEDUP_TOLERANCE_MS
-  );
+  matchedLiveIds: Set<string>,
+): TranscriptEvent | undefined {
+  const truncated = parseTruncatedReplay(replayed.text ?? '');
+  if (!truncated) return undefined;
+  let closest: ReplayCandidate | undefined;
+  let closestDifferenceMs = Infinity;
+  const key = `${replayScope(replayed)}:${String(truncated.fullLength)}`;
+  for (const candidate of nearbyReplayCandidates(index, replayed, key)) {
+    const live = candidate.event;
+    if (matchedLiveIds.has(live.id) || !live.text?.startsWith(truncated.retainedPrefix)) continue;
+    const differenceMs = replayTimeDifferenceMs(live, replayed);
+    if (
+      differenceMs < closestDifferenceMs ||
+      (differenceMs === closestDifferenceMs && candidate.order < (closest?.order ?? Infinity))
+    ) {
+      closest = candidate;
+      closestDifferenceMs = differenceMs;
+    }
+  }
+  return closest?.event;
+}
+
+function parseTruncatedReplay(
+  replayed: string,
+): { retainedPrefix: string; fullLength: number } | undefined {
+  const tail = TRUNCATED_TEXT_TAIL.exec(replayed);
+  if (!tail) return undefined;
+  const removedCount = Number(tail[1]);
+  if (!Number.isSafeInteger(removedCount) || removedCount <= 0) return undefined;
+  return {
+    retainedPrefix: replayed.slice(0, tail.index),
+    fullLength: tail.index + removedCount,
+  };
 }
 
 function isFullTextForTruncatedReplay(full: string, replayed: string): boolean {
-  const tail = TRUNCATED_TEXT_TAIL.exec(replayed);
-  if (tail?.index === undefined) return false;
-  const removedCount = Number(tail[1]);
-  const retainedPrefix = replayed.slice(0, tail.index);
-  return (
-    Number.isSafeInteger(removedCount) &&
-    removedCount > 0 &&
-    full.length === retainedPrefix.length + removedCount &&
-    full.startsWith(retainedPrefix)
-  );
+  const truncated = parseTruncatedReplay(replayed);
+  return full.length === truncated?.fullLength && full.startsWith(truncated.retainedPrefix);
 }
 
 function isUnpersistedTextPrefix(
   candidate: TranscriptEvent,
   full: TranscriptEvent,
-  page: TranscriptEvent[],
+  persistedById: Map<string, ReplayCandidateTree>,
+  persistedByText: Map<string, ReplayCandidateTree>,
 ): boolean {
   if (replayScope(candidate) !== replayScope(full)) return false;
   if (typeof candidate.text !== 'string' || typeof full.text !== 'string') return false;
@@ -110,12 +209,14 @@ function isUnpersistedTextPrefix(
   ) {
     return false;
   }
-  return !page.some(
-    (replayed) =>
-      (replayed.id === candidate.id ||
-        (replayScope(replayed) === replayScope(candidate) && replayed.text === candidate.text)) &&
-      replayTimeDifferenceMs(candidate, replayed) <= REPLAY_DEDUP_TOLERANCE_MS,
+  return (
+    nearbyReplayCandidates(persistedById, candidate, candidate.id, 1).length === 0 &&
+    nearbyReplayCandidates(persistedByText, candidate, replayTextKey(candidate), 1).length === 0
   );
+}
+
+function replayTextKey(event: TranscriptEvent): string {
+  return JSON.stringify([replayScope(event), event.text]);
 }
 
 function replayedTextSupersedesLiveGap(live: TranscriptEvent, replayed: TranscriptEvent): boolean {
@@ -184,6 +285,52 @@ export function reconcilePrependedTranscript(
   return older.length > 0 || kept.length !== existing.length ? [...older, ...kept] : existing;
 }
 
+function truncatedReplayReplacements(
+  unkeyedExisting: TranscriptEvent[],
+  unkeyedPage: TranscriptEvent[],
+  supersededLiveIds: Set<string>,
+): Map<string, TranscriptEvent> {
+  // Persisted history deliberately caps very large text blocks. When a live
+  // event still carries that block in full, keep the lossless event and remove
+  // its replay twin instead of rendering both versions as separate answers.
+  const liveReplacementByPageId = new Map<string, TranscriptEvent>();
+  const matchedLiveIds = new Set<string>();
+  const truncatedPage = unkeyedPage.filter(
+    (event) => typeof event.text === 'string' && TRUNCATED_TEXT_TAIL.test(event.text),
+  );
+  if (truncatedPage.length === 0) return liveReplacementByPageId;
+  let replayCandidates: Map<string, ReplayCandidateTree> | undefined;
+  let persistedById: Map<string, ReplayCandidateTree> | undefined;
+  let persistedByText: Map<string, ReplayCandidateTree> | undefined;
+  const fullTextCandidates = indexReplayCandidates(unkeyedExisting, (event) => {
+    const text = event.text;
+    return typeof text === 'string' ? `${replayScope(event)}:${String(text.length)}` : undefined;
+  });
+  for (const replayed of truncatedPage) {
+    const closestLive = closestFullTextForReplay(fullTextCandidates, replayed, matchedLiveIds);
+    if (!closestLive) continue;
+    liveReplacementByPageId.set(replayed.id, closestLive);
+    matchedLiveIds.add(closestLive.id);
+    replayCandidates ??= indexReplayCandidates(unkeyedExisting, replayScope);
+    persistedById ??= indexReplayCandidates(unkeyedPage, (event) => event.id);
+    persistedByText ??= indexReplayCandidates(unkeyedPage, replayTextKey);
+    for (const { event: candidate } of nearbyReplayCandidates(
+      replayCandidates,
+      closestLive,
+      replayScope(closestLive),
+    )) {
+      if (
+        !supersededLiveIds.has(candidate.id) &&
+        candidate.id !== closestLive.id &&
+        isUnpersistedTextPrefix(candidate, closestLive, persistedById, persistedByText)
+      ) {
+        supersededLiveIds.add(candidate.id);
+      }
+    }
+  }
+  return liveReplacementByPageId;
+}
+
 export function reconcileRestoredTranscript(
   existing: TranscriptEvent[],
   page: TranscriptEvent[],
@@ -196,40 +343,12 @@ export function reconcileRestoredTranscript(
   }
   const unkeyedExisting = existing.filter((event) => !event.textUpdate);
   const unkeyedPage = page.filter((event) => !event.textUpdate);
-  // Persisted history deliberately caps very large text blocks. When a live
-  // event still carries that block in full, keep the lossless event and remove
-  // its replay twin instead of rendering both versions as separate answers.
-  const liveReplacementByPageId = new Map<string, TranscriptEvent>();
-  const matchedLiveIds = new Set<string>();
   const supersededLiveIds = supersededLiveGapIds(unkeyedExisting, unkeyedPage);
-  const truncatedPage = unkeyedPage.filter(
-    (event) => typeof event.text === 'string' && TRUNCATED_TEXT_TAIL.test(event.text),
+  const liveReplacementByPageId = truncatedReplayReplacements(
+    unkeyedExisting,
+    unkeyedPage,
+    supersededLiveIds,
   );
-  for (const replayed of truncatedPage) {
-    let closestLive: TranscriptEvent | undefined;
-    let closestDifferenceMs = Infinity;
-    for (const live of unkeyedExisting) {
-      if (matchedLiveIds.has(live.id) || !fullTextSupersedesTruncatedReplay(live, replayed)) {
-        continue;
-      }
-      const differenceMs = replayTimeDifferenceMs(live, replayed);
-      if (differenceMs < closestDifferenceMs) {
-        closestLive = live;
-        closestDifferenceMs = differenceMs;
-      }
-    }
-    if (!closestLive) continue;
-    liveReplacementByPageId.set(replayed.id, closestLive);
-    matchedLiveIds.add(closestLive.id);
-    for (const candidate of unkeyedExisting) {
-      if (
-        candidate.id !== closestLive.id &&
-        isUnpersistedTextPrefix(candidate, closestLive, unkeyedPage)
-      ) {
-        supersededLiveIds.add(candidate.id);
-      }
-    }
-  }
   const authoritativePage = page.map((event) => {
     const key = textMessageKey(event);
     const live = key ? liveMessages.get(key) : undefined;

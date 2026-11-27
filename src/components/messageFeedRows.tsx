@@ -10,7 +10,7 @@ import { hasAppBlock } from './appBlockRuntime';
 import { FeedItemView, feedItemPropsEqual, type FeedItemViewProps } from './chat';
 import { Button } from './ui/Button';
 
-export interface FeedRowProps extends FeedItemViewProps {
+interface FeedRowProps extends FeedItemViewProps {
   animateOnMount: boolean;
   onEnter?: (key: string) => void;
 }

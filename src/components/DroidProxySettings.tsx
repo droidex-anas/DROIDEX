@@ -17,7 +17,7 @@ import type {
   DroidProxyProviderKey,
   DroidProxyProviderState,
   DroidProxyStatus,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { ModelIcon, type Provider } from './ModelIcon';
 import { GroupLabel, SectionTitle, SettingRow } from './settingsKit';
 import { Badge } from './ui/Badge';

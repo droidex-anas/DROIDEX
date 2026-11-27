@@ -8,10 +8,16 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { shallowEqual, useStoreApi, useStoreDispatch, useStoreSelector } from './hooks/useStore';
+import {
+  shallowEqualExcept,
+  useStoreApi,
+  useStoreDispatch,
+  useStoreSelector,
+  type AppState,
+} from './hooks/useStore';
 import { AnimatePresence, MotionConfig, motion, useTransform } from 'framer-motion';
 import { PanelLeft, PanelRight } from '@droidex/icons';
-import { hasActiveSessionWork } from './lib/sessions';
+import { hasActiveSessionWork, sameSessionExceptTelemetry } from './lib/sessions';
 import { bridge } from './lib/bridge';
 import {
   connect,
@@ -23,8 +29,8 @@ import {
   updateCli,
 } from './lib/commands';
 import { isEmbedded } from './lib/embed';
-import { getApiKey, isRemoteClient, setAppIcon, terminalHasChildren } from './lib/desktop';
-import { forwardNativeBrowserShortcuts, hasNativeBrowser } from './lib/nativeBrowser';
+import { getApiKey, isRemoteClient, terminalHasChildren } from './lib/desktop';
+import { hasNativeBrowser } from './lib/nativeBrowser';
 import { BrowserHost } from './components/browser/BrowserHost';
 import { answerSidebarRequest } from './lib/sidebarRequests';
 import { shouldOpenSelectedChild } from './lib/childSessions';
@@ -38,7 +44,9 @@ import { Tooltip } from './components/ui/Tooltip';
 import { useRepoStatus } from './hooks/useRepoStatus';
 import { useChatPullRequests } from './hooks/useChatPullRequests';
 import { useDocumentVisible } from './hooks/useDocumentVisible';
-import { applyTheme, findPreset, resolveVariant } from './lib/theme';
+import { useUtilityPaneWidth } from './hooks/useUtilityPaneWidth';
+import { useAppKeyboardShortcuts } from './hooks/useAppKeyboardShortcuts';
+import { useThemeSync } from './hooks/useThemeSync';
 import { useOnboarding, shouldShowOnboarding, hasSetupBlocker } from './hooks/useOnboarding';
 import { useHarnessCliAutoUpdate } from './hooks/useHarnessClis';
 import SetupBanner from './components/onboarding/SetupBanner';
@@ -47,16 +55,7 @@ import { TOP_ROW_HEIGHT_PX, WINDOW_CONTROLS_INSET_PX } from './lib/windowChrome'
 import { HeaderTabs } from './features/tabs/HeaderTabs';
 import { ChatTiles } from './features/tabs/ChatTiles';
 import { DesignDropTarget } from './features/tabs/DesignDropTarget';
-import {
-  activeGrid,
-  activeProduct,
-  adjacentTabId,
-  mainRowLeadPx,
-  numberedTabId,
-  showsTabStrip,
-  type TabAction,
-} from './features/tabs/tabStrip';
-import { adjacentTileId, nextSplit, type TileEdge } from './features/tabs/tileGrid';
+import { activeGrid, activeProduct, mainRowLeadPx, showsTabStrip } from './features/tabs/tabStrip';
 import RuntimeStatusBanner from './components/RuntimeStatusBanner';
 import { checkForAppUpdateAutomatically, startAutomaticAppUpdateChecks } from './lib/appUpdate';
 import { toast } from './lib/toast';
@@ -70,19 +69,7 @@ import {
   type UtilityTab,
   type UtilityTool,
 } from './lib/utilityPanel';
-import {
-  isTerminalInputTarget,
-  isTerminalTabShortcut,
-  utilityToolShortcut,
-} from './lib/keyboardShortcuts';
-import {
-  SHORTCUT_DEFINITIONS,
-  formatChord,
-  matchesChord,
-  nativeBrowserChords,
-  tabNumberFromEvent,
-  type ShortcutAction,
-} from './lib/shortcuts';
+import { formatChord } from './lib/shortcuts';
 import { useSessionWorkingDirectory } from './hooks/useSessionWorkingDirectory';
 import { useDiagnosticsContext } from './hooks/useDiagnosticsContext';
 import { listProjects, restoreBrowsersCommand } from './lib/commands';
@@ -166,7 +153,6 @@ function ContextListIcon({ className }: { className?: string }) {
   );
 }
 
-const UTILITY_PANE_MIN = 420;
 // Design's chat column is a side panel a tone off the board; scoping `--bg`
 // carries that tone to everything in it that paints the page background.
 const DESIGN_CHAT_TONE = {
@@ -180,10 +166,6 @@ function expandedPaneWidth(contentRowWidth: number, chatColumnWidth: number | nu
   if (chatColumnWidth === null) return contentRowWidth;
   return Math.max(contentRowWidth - chatColumnWidth, Math.round(contentRowWidth / 2));
 }
-const UTILITY_PANE_MAX = 980;
-const UTILITY_PANE_DEFAULT = 560;
-const UTILITY_PANE_CONTENT_RESERVE = 520;
-const UTILITY_PANE_WIDTH_STORAGE_KEY = 'droid-utility-pane-width';
 
 // selectedChild can outlive its childAccess entry after failed/closed cleanup
 // (withoutChildAccess deletes the parent key). Record indexing types that as
@@ -197,41 +179,48 @@ function childAccessForSelection(
   return childAccess[parentAppSessionId][childSessionId];
 }
 
+function selectShellState(current: AppState) {
+  const activeSession = current.activeAppSessionId
+    ? current.sessions[current.activeAppSessionId]
+    : null;
+  return {
+    activeSession,
+    activeTabSplit: activeGrid(current.tabStrip) !== null,
+    childAccess: current.childAccess,
+    commandPaletteOpen: current.commandPaletteOpen,
+    hasSessionContent: Boolean(
+      activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
+    ),
+    mainView: current.mainView,
+    rightPanelOpen: current.rightPanelOpen,
+    selectedChild: current.selectedChild,
+    settingsOpen: current.settingsOpen,
+    sideChatPlacement: activeSession
+      ? sideChatPanel(current.sideChats, activeSession.appSessionId).placement
+      : 'docked',
+    shortcutBindings: current.shortcutBindings,
+    sidebarCollapsed: current.sidebarCollapsed,
+    productMode: activeProduct(current),
+    // A design draft's canvas lands only once its chat exists.
+    canvasChatRequests: current.canvasChatRequests,
+    tabStripShown: showsTabStrip(current),
+    utilityPanels: current.utilityPanels,
+    workspaceCwds: current.workspaceCwds,
+  };
+}
+
+type ShellState = ReturnType<typeof selectShellState>;
+
+const equalShellState = shallowEqualExcept<ShellState, 'activeSession'>(
+  'activeSession',
+  sameSessionExceptTelemetry,
+);
+
 export default function App() {
   useChatPullRequests();
   const dispatch = useStoreDispatch();
   const store = useStoreApi();
-  const state = useStoreSelector((current) => {
-    const activeSession = current.activeAppSessionId
-      ? current.sessions[current.activeAppSessionId]
-      : null;
-    return {
-      activeSession,
-      activeTabSplit: activeGrid(current.tabStrip) !== null,
-      childAccess: current.childAccess,
-      commandPaletteOpen: current.commandPaletteOpen,
-      customThemes: current.customThemes,
-      hasSessionContent: Boolean(
-        activeSession && (current.transcripts[activeSession.appSessionId] ?? []).length > 0,
-      ),
-      mainView: current.mainView,
-      rightPanelOpen: current.rightPanelOpen,
-      selectedChild: current.selectedChild,
-      settingsOpen: current.settingsOpen,
-      sideChatPlacement: activeSession
-        ? sideChatPanel(current.sideChats, activeSession.appSessionId).placement
-        : 'docked',
-      shortcutBindings: current.shortcutBindings,
-      sidebarCollapsed: current.sidebarCollapsed,
-      productMode: activeProduct(current),
-      // A design draft's canvas lands only once its chat exists.
-      canvasChatRequests: current.canvasChatRequests,
-      tabStripShown: showsTabStrip(current),
-      theme: current.theme,
-      utilityPanels: current.utilityPanels,
-      workspaceCwds: current.workspaceCwds,
-    };
-  }, shallowEqual);
+  const state = useStoreSelector(selectShellState, equalShellState);
   const embedded = isEmbedded();
   useEffect(() => {
     if (!embedded) return;
@@ -368,9 +357,11 @@ export default function App() {
     state.productMode === 'chat' &&
     state.rightPanelOpen &&
     hasSessionContent;
-  const [utilityPaneWidth, setUtilityPaneWidth] = useState(() => initialUtilityPaneWidth());
-  const [utilityPaneMax, setUtilityPaneMax] = useState(() => utilityPaneMaxWidth());
-  const [confirmCloseTabId, setConfirmCloseTabId] = useState<string | null>(null);
+  const closeRequestRef = useRef(0);
+  const [closeConfirmation, setCloseConfirmation] = useState<{
+    tabId: string;
+    request: number;
+  } | null>(null);
   // The side tab leaving the pane must not hand its expansion to the next tab.
   const sideChatClose = useCloseSideChat(() => {
     setExpandedPaneAppSessionId(null);
@@ -378,9 +369,17 @@ export default function App() {
   // A late busy-check must not restore a dialog in a hidden or replaced pane.
   const visibleUtilityPanelRef = useRef(showUtilityPane ? utilityPanel : null);
   visibleUtilityPanelRef.current = showUtilityPane ? utilityPanel : null;
-  const confirmingTab = utilityPanel.tabs.find((tab) => tab.id === confirmCloseTabId) ?? null;
+  const confirmingTab =
+    utilityPanel.tabs.find((tab) => tab.id === closeConfirmation?.tabId) ?? null;
   const contentRowRef = useRef<HTMLDivElement>(null);
-  const [contentRowWidth, setContentRowWidth] = useState(0);
+  const {
+    width: utilityPaneWidth,
+    minWidth: utilityPaneMin,
+    maxWidth: utilityPaneMax,
+    contentRowWidth,
+    setWidth: setUtilityPaneWidth,
+    persistWidth: persistUtilityPaneWidth,
+  } = useUtilityPaneWidth(contentRowRef);
   const boardSideColumns = useSideColumns(activeSession?.appSessionId ?? null);
   const chatBesideBoard = useDesignChatColumn(contentRowWidth, boardSideColumns);
   // Design's board takes the row beside its chat column, and the column keeps
@@ -435,15 +434,22 @@ export default function App() {
   // raised it, in the active session's still-open panel. Switching sessions
   // (utilityPanel now points at a different panel), closing the panel
   // (UtilityPane unmounts), or activating a different tab must not leave a
-  // stale id armed for a tab no longer on screen. `onCloseTab` activates the
-  // confirming tab itself (to bring its TerminalWorkspace on screen before
-  // arming the dialog), so this only clears when the active tab has changed
-  // to something other than the one currently confirming.
+  // stale id armed for a tab no longer on screen. Arming a prompt brings its
+  // TerminalWorkspace on screen, so this only clears when the active tab
+  // changes to something other than the one currently confirming.
   useEffect(() => {
-    setConfirmCloseTabId((current) =>
-      utilityPanel.open && current === utilityPanel.activeTabId ? current : null,
+    setCloseConfirmation((current) =>
+      utilityPanel.open && current?.tabId === utilityPanel.activeTabId ? current : null,
     );
   }, [activeSession?.appSessionId, utilityPanel.open, utilityPanel.activeTabId]);
+
+  useEffect(() => {
+    const panel = visibleUtilityPanelRef.current;
+    if (!closeConfirmation || !panel || closeConfirmation.tabId === panel.activeTabId) return;
+    // Only the active tab's TerminalWorkspace can render its confirmation.
+    setExpandedPaneAppSessionId(null);
+    dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: closeConfirmation.tabId });
+  }, [closeConfirmation, dispatch]);
 
   // A chat that is deleted or archived drops its utility panel from the store
   // (see the useStore reducer — a closing session keeps its panel, because the
@@ -521,7 +527,7 @@ export default function App() {
 
   const closeTerminalTab = useCallback(
     (tab: UtilityTab) => {
-      setConfirmCloseTabId(null);
+      setCloseConfirmation((current) => (current?.tabId === tab.id ? null : current));
       dispatch({
         type: 'CLOSE_UTILITY_TAB',
         tabId: tab.id,
@@ -531,38 +537,7 @@ export default function App() {
     [dispatch, activeSession?.appSessionId],
   );
 
-  useEffect(() => {
-    const onResize = () => {
-      const available = contentRowRef.current?.getBoundingClientRect().width ?? window.innerWidth;
-      setUtilityPaneMax(utilityPaneMaxWidth(available));
-      setUtilityPaneWidth((width) => clampUtilityPane(width, available));
-    };
-    window.addEventListener('resize', onResize);
-    return () => {
-      window.removeEventListener('resize', onResize);
-    };
-  }, []);
-
-  useEffect(() => {
-    const node = contentRowRef.current;
-    if (!node) return;
-    const update = () => {
-      const available = Math.round(node.getBoundingClientRect().width);
-      setContentRowWidth(available);
-      setUtilityPaneMax(utilityPaneMaxWidth(available));
-      setUtilityPaneWidth((width) => clampUtilityPane(width, available));
-    };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
-
-  useEffect(() => {
-    applyTheme(state.theme);
-  }, [state.theme]);
+  useThemeSync(embedded);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -572,28 +547,6 @@ export default function App() {
       root.removeAttribute('data-window-hidden');
     };
   }, [documentVisible]);
-
-  useEffect(() => {
-    if (embedded) return;
-    void setAppIcon(state.theme.appIconMode).catch((error: unknown) => {
-      console.error('Failed to update app icon', error);
-    });
-  }, [embedded, state.theme.appIconMode]);
-
-  useEffect(() => {
-    if (state.theme.mode !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: light)');
-    const onChange = () => {
-      // Follow the OS scheme with the active preset's matching variant.
-      // Hand-edited (custom) colors have no second variant, so they stay put.
-      const preset = findPreset(state.theme.presetId, state.customThemes);
-      if (preset) dispatch({ type: 'SET_THEME', theme: resolveVariant(preset, 'system') });
-    };
-    mq.addEventListener('change', onChange);
-    return () => {
-      mq.removeEventListener('change', onChange);
-    };
-  }, [state.theme.mode, state.theme.presetId, state.customThemes, dispatch]);
 
   useEffect(() => {
     if (embedded) return;
@@ -711,118 +664,12 @@ export default function App() {
     openChild(selection.parentAppSessionId, selection.childSessionId, requestId);
   }, [activeSession, embedded, state.selectedChild, state.childAccess, dispatch]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    // An embedded copy of the app shows no tabs, so it leaves their chords to
-    // whatever hosts it instead of swallowing them.
-    const tabAction = (action: () => TabAction | null) =>
-      embedded
-        ? null
-        : () => {
-            const next = action();
-            if (next) dispatch(next);
-          };
-    const tabStrip = () => store.getState().tabStrip;
-    const splitNewChat = (preferred: TileEdge) =>
-      tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        const split = grid ? nextSplit(grid, preferred) : null;
-        return {
-          type: 'SPLIT_TILE',
-          targetTileId: split?.targetTileId ?? null,
-          edge: split?.edge ?? preferred,
-          appSessionId: null,
-        };
-      });
-    const focusAdjacentTile = (offset: 1 | -1) =>
-      tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        return grid ? { type: 'FOCUS_TILE', tileId: adjacentTileId(grid, offset) } : null;
-      });
-    const run: Record<ShortcutAction, (() => void) | null> = {
-      toggleSidebar: () => {
-        dispatch({ type: 'TOGGLE_SIDEBAR' });
-      },
-      toggleUtilityPane,
-      toggleProduct: isRemoteClient()
-        ? null
-        : () => {
-            const mode = activeProduct(store.getState()) === 'chat' ? 'design' : 'chat';
-            dispatch({ type: 'SET_PRODUCT_MODE', mode });
-          },
-      openCommandPalette: () => {
-        dispatch({ type: 'TOGGLE_COMMAND_PALETTE' });
-      },
-      openSettings: () => {
-        dispatch({ type: 'TOGGLE_SETTINGS' });
-      },
-      newTab: tabAction(() => ({ type: 'OPEN_NEW_TAB', product: activeProduct(store.getState()) })),
-      newDesignTab: isRemoteClient()
-        ? null
-        : tabAction(() => ({ type: 'OPEN_NEW_TAB', product: 'design' })),
-      closeTab: tabAction(() => ({ type: 'CLOSE_TAB', tabId: tabStrip().activeTabId })),
-      reopenClosedTab: tabAction(() => ({ type: 'REOPEN_CLOSED_TAB' })),
-      nextTab: tabAction(() => ({ type: 'ACTIVATE_TAB', tabId: adjacentTabId(tabStrip(), 1) })),
-      previousTab: tabAction(() => ({
-        type: 'ACTIVATE_TAB',
-        tabId: adjacentTabId(tabStrip(), -1),
-      })),
-      splitRight: splitNewChat('right'),
-      splitDown: splitNewChat('bottom'),
-      nextTile: focusAdjacentTile(1),
-      previousTile: focusAdjacentTile(-1),
-      closeTile: tabAction(() => {
-        const grid = activeGrid(tabStrip());
-        return grid ? { type: 'CLOSE_TILE', tileId: grid.focusedTileId } : null;
-      }),
-    };
-    const handler = (e: KeyboardEvent) => {
-      // A saved binding wins over the fixed chords below, so rebinding an
-      // action onto one of them takes effect instead of being swallowed.
-      for (const { action } of SHORTCUT_DEFINITIONS) {
-        const perform = run[action];
-        if (!perform || !matchesChord(e, state.shortcutBindings[action])) continue;
-        // A shell owns its Ctrl chords (Ctrl+\ is SIGQUIT); Cmd chords never
-        // reach it, so on macOS they still toggle from inside the terminal.
-        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
-        e.preventDefault();
-        // A held key auto-repeats and would toggle straight back.
-        if (e.repeat) return;
-        perform();
-        return;
-      }
-      const tabNumber = embedded ? null : tabNumberFromEvent(e);
-      if (tabNumber !== null) {
-        if (isTerminalInputTarget(e.target) && !e.metaKey) return;
-        e.preventDefault();
-        const tabId = numberedTabId(tabStrip(), tabNumber);
-        if (tabId) dispatch({ type: 'ACTIVATE_TAB', tabId });
-        return;
-      }
-      if (isTerminalTabShortcut(e)) {
-        if (isTerminalInputTarget(e.target)) return;
-        e.preventDefault();
-        if (e.repeat) return;
-        openUtilityTool('terminal');
-        return;
-      }
-      const tool = utilityToolShortcut(e);
-      if (tool) {
-        e.preventDefault();
-        openUtilityTool(tool);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    const stopForwarding = embedded
-      ? null
-      : forwardNativeBrowserShortcuts(nativeBrowserChords(state.shortcutBindings), (press) => {
-          handler(new KeyboardEvent('keydown', press));
-        });
-    return () => {
-      window.removeEventListener('keydown', handler);
-      stopForwarding?.();
-    };
-  }, [dispatch, embedded, openUtilityTool, state.shortcutBindings, store, toggleUtilityPane]);
+  useAppKeyboardShortcuts({
+    embedded,
+    shortcutBindings: state.shortcutBindings,
+    openUtilityTool,
+    toggleUtilityPane,
+  });
 
   const setupBlocker =
     !showWizard &&
@@ -932,6 +779,7 @@ export default function App() {
               // a few composer controls turn pointer events back on; inert
               // keeps the whole column out of reach.
               inert={chatObscured && !browserExpanded}
+              data-pause-animations={(chatObscured && !browserExpanded) || undefined}
               style={chatColumnStyle}
               className={`flex min-w-0 flex-col overflow-hidden ${
                 browserExpanded
@@ -978,6 +826,7 @@ export default function App() {
                   {activeSession && state.sideChatPlacement === 'floating' ? (
                     <div
                       aria-hidden={browserExpanded || undefined}
+                      data-pause-animations={browserExpanded || undefined}
                       className={browserExpanded ? 'invisible' : 'contents'}
                     >
                       <Suspense fallback={null}>
@@ -1075,18 +924,10 @@ export default function App() {
                         }
                       : {})}
                     width={utilityPaneWidth}
-                    minWidth={UTILITY_PANE_MIN}
+                    minWidth={utilityPaneMin}
                     maxWidth={utilityPaneMax}
                     onResize={setUtilityPaneWidth}
-                    onResizeEnd={(width) => {
-                      const next = clampUtilityPane(width, contentRowWidth || undefined);
-                      setUtilityPaneWidth(next);
-                      try {
-                        localStorage.setItem(UTILITY_PANE_WIDTH_STORAGE_KEY, String(next));
-                      } catch {
-                        /* ignore */
-                      }
-                    }}
+                    onResizeEnd={persistUtilityPaneWidth}
                     onOpenTool={openUtilityTool}
                     onActivateTab={(tabId) => {
                       const nextTab = utilityPanel.tabs.find((tab) => tab.id === tabId);
@@ -1094,6 +935,7 @@ export default function App() {
                       dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId });
                     }}
                     onCloseTab={(tab) => {
+                      const request = ++closeRequestRef.current;
                       if (tab.tool === 'terminal') {
                         const status = terminalInstances.get(tab.id)?.getState().status;
                         if (!tab.terminalId || status !== 'running') {
@@ -1108,15 +950,11 @@ export default function App() {
                           if (!panel?.tabs.some((current) => current.id === tab.id)) {
                             return;
                           }
-                          // Only the active tab's TerminalWorkspace is
-                          // mounted, so the confirmation has nowhere to
-                          // render unless this tab is brought forward first
-                          // — mirror onActivateTab's browser-expanded reset.
-                          if (tab.id !== panel.activeTabId) {
-                            setExpandedPaneAppSessionId(null);
-                            dispatch({ type: 'ACTIVATE_UTILITY_TAB', tabId: tab.id });
-                          }
-                          setConfirmCloseTabId(tab.id);
+                          setCloseConfirmation((current) =>
+                            current && current.request > request
+                              ? current
+                              : { tabId: tab.id, request },
+                          );
                         };
                         void terminalHasChildren(tab.terminalId)
                           .then((busy) => {
@@ -1231,7 +1069,7 @@ export default function App() {
                               cwd={tab.cwd ?? workingDirectory}
                               confirmClose={tab.id === confirmingTab?.id}
                               onKeepOpen={() => {
-                                setConfirmCloseTabId(null);
+                                setCloseConfirmation(null);
                               }}
                               onStopAndClose={() => {
                                 closeTerminalTab(tab);
@@ -1333,7 +1171,7 @@ export default function App() {
 
       {state.commandPaletteOpen && (
         <Suspense fallback={<CommandPaletteSkeleton />}>
-          <LazyCommandPalette />
+          <LazyCommandPalette onOpenTool={openUtilityTool} />
         </Suspense>
       )}
       <Suspense fallback={null}>
@@ -1387,35 +1225,5 @@ export default function App() {
           the pages anchored to it. */}
       {!embedded && hasNativeBrowser() && <BrowserHost />}
     </div>
-  );
-}
-
-function initialUtilityPaneWidth(): number {
-  if (typeof window === 'undefined') return UTILITY_PANE_DEFAULT;
-  try {
-    const stored = Number(
-      localStorage.getItem(UTILITY_PANE_WIDTH_STORAGE_KEY) ??
-        localStorage.getItem('droid-browser-pane-width'),
-    );
-    if (Number.isFinite(stored) && stored > 0) return clampUtilityPane(stored);
-  } catch {
-    /* ignore */
-  }
-  return clampUtilityPane(Math.min(UTILITY_PANE_DEFAULT, Math.round(window.innerWidth * 0.42)));
-}
-
-function utilityPaneMaxWidth(availableWidth?: number): number {
-  if (typeof window === 'undefined') return UTILITY_PANE_MAX;
-  const available = availableWidth ?? window.innerWidth;
-  return Math.max(
-    UTILITY_PANE_MIN,
-    Math.min(UTILITY_PANE_MAX, Math.round(available - UTILITY_PANE_CONTENT_RESERVE)),
-  );
-}
-
-function clampUtilityPane(width: number, availableWidth?: number): number {
-  return Math.min(
-    utilityPaneMaxWidth(availableWidth),
-    Math.max(UTILITY_PANE_MIN, Math.round(width)),
   );
 }

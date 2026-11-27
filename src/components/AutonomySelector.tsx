@@ -2,7 +2,7 @@ import { useRef, useState, type KeyboardEvent } from 'react';
 import type { Placement } from '@floating-ui/react';
 import { AcceptEdits, AutoApprove, Check, FullAccess, Spinner, Supervised } from '@droidex/icons';
 
-import type { Autonomy, ProviderKind } from '../types/bridge';
+import type { Autonomy, ProviderKind } from '@droidex/protocol';
 import {
   autonomyConsequence,
   AUTONOMY_DESCRIPTIONS,
@@ -175,7 +175,7 @@ function AutonomyRow({
           <span className="mt-1 block text-caption text-secondary">{consequence}</span>
         )}
       </span>
-      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" strokeWidth={2.6} />}
+      {selected && <Check className="mt-0.5 size-icon-sm shrink-0 text-accent" />}
       <span className="mt-0.5 w-3 shrink-0 text-right text-overline tabular-nums text-muted">
         {number}
       </span>

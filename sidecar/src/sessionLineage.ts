@@ -1,7 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { SessionLineage, SessionSummary } from './protocol.js';
+import type { SessionLineage, SessionSummary } from '@droidex/protocol';
 import { errMsg } from './errors.js';
 import { numberValue, objectValue, stringValue } from './values.js';
 

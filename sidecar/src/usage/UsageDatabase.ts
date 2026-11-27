@@ -1,17 +1,8 @@
 import { chmodSync } from 'node:fs';
 import { DatabaseSync, type StatementSync } from 'node:sqlite';
 
-import type {
-  OpaqueUsageCursor,
-  OpaqueUsageCursorAdvance,
-  OpaqueUsageIngestBatch,
-} from './UsageSourceContract.js';
-import {
-  CURSOR_GUARD_BYTES,
-  dailyUpsertSql,
-  initializeUsageSchema,
-  SUM_COLUMNS,
-} from './UsageSchema.js';
+import type { OpaqueUsageCursor, OpaqueUsageIngestBatch } from './UsageSourceContract.js';
+import { dailyUpsertSql, initializeUsageSchema, SUM_COLUMNS } from './UsageSchema.js';
 import {
   canonicalTimeZone,
   createUsageSnapshot,
@@ -22,18 +13,17 @@ import {
 import type { UsageEvent, UsageIngestCursor, UsageTokenCounts } from './types.js';
 import { UsagePricer } from './UsagePricing.js';
 import { ClaudeUsageUpdates } from './ClaudeUsageUpdates.js';
+import { UsageCursorStore } from './UsageCursorStore.js';
+import { nullableRowNumber, nullableRowString, rowNumber, rowString } from './UsageRows.js';
 import {
   assertCursorAdvance,
   assertExpectedCursor,
   assertExpectedOpaqueCursor,
   assertOpaqueCursorAdvance,
-  isUsageParserName,
-  validateOpaqueCursor,
   validateOpaqueSourceKey,
   validateOpaqueUsageBatch,
   validateSourcePath,
   validateUsageBatch,
-  type UsageCursorAdvance,
   type UsageIngestBatch,
 } from './UsageValidation.js';
 
@@ -64,8 +54,6 @@ export class UsageDatabase {
   private readonly now: () => number;
   private readonly followsSystemTimeZone: boolean;
   private timeZone: string;
-  private readonly readCursorStatement: StatementSync;
-  private readonly readSourceCursorStatement: StatementSync;
   private readonly insertEventStatement: StatementSync;
   private readonly insertDroidexSessionStatement: StatementSync;
   private readonly upsertDailyStatement: StatementSync;
@@ -75,10 +63,7 @@ export class UsageDatabase {
   private readonly updateSessionUsageStatement: StatementSync;
   private readonly updateRollupStateStatement: StatementSync;
   private readonly writeRollupStateStatement: StatementSync;
-  private readonly updateCursorStatement: StatementSync;
-  private readonly insertCursorStatement: StatementSync;
-  private readonly updateSourceCursorStatement: StatementSync;
-  private readonly insertSourceCursorStatement: StatementSync;
+  private readonly cursors: UsageCursorStore;
   private readonly pricer: UsagePricer;
   private readonly claudeUpdates: ClaudeUsageUpdates;
   private closed = false;
@@ -94,12 +79,6 @@ export class UsageDatabase {
     try {
       initializeUsageSchema(this.db, options.databasePath);
       secureDatabaseFiles(options.databasePath);
-      this.readCursorStatement = this.db.prepare(
-        'SELECT * FROM ingest_cursor WHERE source_path = ?',
-      );
-      this.readSourceCursorStatement = this.db.prepare(
-        'SELECT * FROM usage_source_cursor WHERE source_path = ? AND adapter_name = ?',
-      );
       this.insertEventStatement = this.db.prepare(`
         INSERT INTO usage_event (
           dedupe_key, harness_id, source_id, session_id, project, session_started_at,
@@ -154,29 +133,7 @@ export class UsageDatabase {
           first_event_at = excluded.first_event_at,
           updated_at = excluded.updated_at
       `);
-      this.updateCursorStatement = this.db.prepare(`
-        UPDATE ingest_cursor SET
-          source_id = ?, file_identity = ?, byte_offset = ?, file_size = ?, mtime_ms = ?,
-          guard = ?, parser_name = ?, parser_version = ?, parser_state = ?,
-          discarding_oversized = ?, revision = ?
-        WHERE source_path = ? AND revision = ?
-      `);
-      this.insertCursorStatement = this.db.prepare(`
-        INSERT INTO ingest_cursor (
-          source_path, source_id, file_identity, byte_offset, file_size, mtime_ms,
-          guard, parser_name, parser_version, parser_state, discarding_oversized, revision
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      this.updateSourceCursorStatement = this.db.prepare(`
-        UPDATE usage_source_cursor SET
-          source_id = ?, adapter_version = ?, state = ?, revision = ?
-        WHERE adapter_name = ? AND source_path = ? AND revision = ?
-      `);
-      this.insertSourceCursorStatement = this.db.prepare(`
-        INSERT INTO usage_source_cursor (
-          source_path, source_id, adapter_name, adapter_version, state, revision
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `);
+      this.cursors = new UsageCursorStore(this.db);
       this.pricer = new UsagePricer(this.db);
       this.claudeUpdates = new ClaudeUsageUpdates(this.db);
       this.ensureRollup();
@@ -190,8 +147,7 @@ export class UsageDatabase {
   cursor(sourcePath: string): UsageIngestCursor | null {
     this.assertOpen();
     validateSourcePath(sourcePath);
-    const row = this.readCursorStatement.get(sourcePath);
-    return row ? cursorFromRow(row) : null;
+    return this.cursors.readCursor(sourcePath);
   }
 
   ingest(batch: UsageIngestBatch): { insertedEvents: number; cursor: UsageIngestCursor } {
@@ -204,7 +160,7 @@ export class UsageDatabase {
       assertExpectedCursor(current, batch.expectedCursor);
       assertCursorAdvance(current, batch.nextCursor, batch.reset);
       const inserted = this.insertEvents(batch.events);
-      const cursor = this.writeCursor(current, batch.nextCursor);
+      const cursor = this.cursors.writeCursor(current, batch.nextCursor);
       this.updateRollupState(inserted.count, inserted.firstEventAt);
       this.db.exec('COMMIT');
       return { insertedEvents: inserted.count, cursor };
@@ -217,11 +173,7 @@ export class UsageDatabase {
   usageSourceCursor(sourcePath: string, adapterName: string): OpaqueUsageCursor | null {
     this.assertOpen();
     validateOpaqueSourceKey(sourcePath, adapterName);
-    const row = this.readSourceCursorStatement.get(sourcePath, adapterName);
-    if (!row) return null;
-    const cursor = opaqueCursorFromRow(row);
-    validateOpaqueCursor(cursor, true);
-    return cursor;
+    return this.cursors.readSourceCursor(sourcePath, adapterName);
   }
 
   ingestUsageSource(batch: OpaqueUsageIngestBatch): {
@@ -240,7 +192,7 @@ export class UsageDatabase {
       assertExpectedOpaqueCursor(current, batch.expectedCursor);
       assertOpaqueCursorAdvance(current, batch.nextCursor, batch.reset);
       const inserted = this.insertEvents(batch.events);
-      const cursor = this.writeSourceCursor(current, batch.nextCursor);
+      const cursor = this.cursors.writeSourceCursor(current, batch.nextCursor);
       this.updateRollupState(inserted.count, inserted.firstEventAt);
       this.db.exec('COMMIT');
       return { insertedEvents: inserted.count, cursor };
@@ -444,66 +396,6 @@ export class UsageDatabase {
       ...values,
     );
   }
-
-  private writeCursor(
-    current: UsageIngestCursor | null,
-    next: UsageCursorAdvance,
-  ): UsageIngestCursor {
-    const revision = (current?.revision ?? 0) + 1;
-    const values = [
-      next.sourceId,
-      next.fileIdentity,
-      next.byteOffset,
-      next.fileSize,
-      next.mtimeMs,
-      next.guard,
-      next.parserName,
-      next.parserVersion,
-      next.parserState,
-      Number(next.discardingOversized),
-      revision,
-    ] as const;
-    if (current) {
-      const changed = this.updateCursorStatement.run(
-        ...values,
-        next.sourcePath,
-        current.revision,
-      ).changes;
-      if (Number(changed) !== 1) throw new Error('Usage ingest cursor is stale.');
-    } else {
-      this.insertCursorStatement.run(next.sourcePath, ...values);
-    }
-    return { ...next, guard: new Uint8Array(next.guard), revision };
-  }
-
-  private writeSourceCursor(
-    current: OpaqueUsageCursor | null,
-    next: OpaqueUsageCursorAdvance,
-  ): OpaqueUsageCursor {
-    const revision = (current?.revision ?? 0) + 1;
-    if (current) {
-      const changed = this.updateSourceCursorStatement.run(
-        next.sourceId,
-        next.adapterVersion,
-        next.state,
-        revision,
-        next.adapterName,
-        next.sourcePath,
-        current.revision,
-      ).changes;
-      if (Number(changed) !== 1) throw new Error('Usage source cursor is stale.');
-    } else {
-      this.insertSourceCursorStatement.run(
-        next.sourcePath,
-        next.sourceId,
-        next.adapterName,
-        next.adapterVersion,
-        next.state,
-        revision,
-      );
-    }
-    return { ...next, revision };
-  }
 }
 
 function validateDroidexSessionIds(ids: readonly string[]): void {
@@ -520,37 +412,6 @@ function validateDroidexSessionIds(ids: readonly string[]): void {
       throw new Error('DROIDEX session ID is invalid.');
     }
   }
-}
-
-function cursorFromRow(row: Record<string, unknown>): UsageIngestCursor {
-  const parserName = rowString(row, 'parser_name');
-  if (!isUsageParserName(parserName)) throw new Error('Usage cursor parser is invalid.');
-  const guard = rowBlob(row, 'guard', CURSOR_GUARD_BYTES);
-  return {
-    sourcePath: rowString(row, 'source_path'),
-    sourceId: rowString(row, 'source_id'),
-    fileIdentity: rowString(row, 'file_identity'),
-    byteOffset: rowNumber(row, 'byte_offset'),
-    fileSize: rowNumber(row, 'file_size'),
-    mtimeMs: rowNumber(row, 'mtime_ms'),
-    guard: new Uint8Array(guard),
-    parserName,
-    parserVersion: rowNumber(row, 'parser_version'),
-    parserState: rowString(row, 'parser_state'),
-    discardingOversized: rowNumber(row, 'discarding_oversized') === 1,
-    revision: rowNumber(row, 'revision'),
-  };
-}
-
-function opaqueCursorFromRow(row: Record<string, unknown>): OpaqueUsageCursor {
-  return {
-    sourcePath: rowString(row, 'source_path'),
-    sourceId: rowString(row, 'source_id'),
-    adapterName: rowString(row, 'adapter_name'),
-    adapterVersion: rowNumber(row, 'adapter_version'),
-    state: rowString(row, 'state'),
-    revision: rowNumber(row, 'revision'),
-  };
 }
 
 function eventFromRow(row: Record<string, unknown>): RollupEvent {
@@ -594,38 +455,6 @@ function providerForHarness(harnessId: string): string | null {
 
 function scalarNumber(db: DatabaseSync, sql: string): number {
   return rowNumber(db.prepare(sql).get(), 'value');
-}
-
-function rowNumber(row: Record<string, unknown> | undefined, key: string): number {
-  const value = row?.[key];
-  if (typeof value !== 'number' || !Number.isSafeInteger(value)) {
-    throw new Error(`Usage database value ${key} is corrupt.`);
-  }
-  return value;
-}
-
-function nullableRowNumber(row: Record<string, unknown> | undefined, key: string): number | null {
-  if (row?.[key] === null) return null;
-  return rowNumber(row, key);
-}
-
-function rowString(row: Record<string, unknown>, key: string): string {
-  const value = row[key];
-  if (typeof value !== 'string') throw new Error(`Usage database value ${key} is corrupt.`);
-  return value;
-}
-
-function nullableRowString(row: Record<string, unknown>, key: string): string | null {
-  if (row[key] === null) return null;
-  return rowString(row, key);
-}
-
-function rowBlob(row: Record<string, unknown>, key: string, bytes: number): Uint8Array {
-  const value = row[key];
-  if (!(value instanceof Uint8Array) || value.byteLength !== bytes) {
-    throw new Error(`Usage database value ${key} is corrupt.`);
-  }
-  return value;
 }
 
 function rollback(db: DatabaseSync): void {

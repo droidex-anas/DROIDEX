@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
-import type { ModelInfo } from '../../protocol.js';
+import type { ModelInfo } from '@droidex/protocol';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { fixture } from '../../testing/devinProviderFixture.js';
 

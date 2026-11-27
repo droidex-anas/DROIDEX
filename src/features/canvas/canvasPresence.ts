@@ -6,8 +6,7 @@
 
 import { chunkedSequenceChunks } from '../../lib/chunkedSequence';
 import { PRESENCE_COLORS, type PresenceColor } from '../../lib/themeTokens';
-import type { TranscriptEvent } from '../../types/bridge';
-import type { CanvasFrame } from './protocol';
+import type { TranscriptEvent, CanvasFrame } from '@droidex/protocol';
 
 export interface PresenceAgent {
   /** The chat's id for its own agent, or `<chat>/<child session>` for a child's. */

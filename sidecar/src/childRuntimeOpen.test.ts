@@ -94,7 +94,7 @@ test('openChildHistory reports unavailable when no transcript exists', () => {
         errors.push(code);
       },
       emit: () => undefined,
-      loadChildHistory: () => undefined,
+      loadChildHistory: async () => undefined,
     },
   );
   assert.deepEqual(errors, ['child.runtime_unavailable']);

@@ -1,10 +1,16 @@
 import { ProjectActivity, type ThreadTurn } from './activity.js';
 import type { ProjectWakeQueue } from './ProjectWakeQueue.js';
 import { failureReport, inboxFull, questionText } from './projectMessages.js';
-import type { ModelSwitch, ServerEvent, SessionQuestion, SessionSummary } from '../protocol.js';
+import type {
+  ModelSwitch,
+  ServerEvent,
+  SessionQuestion,
+  SessionSummary,
+  ThreadWait,
+} from '@droidex/protocol';
 import { randomUUID } from 'node:crypto';
 import { LEDGER_LIMITS } from './store.js';
-import type { Project, ProjectThread, RuntimeLoad, ThreadMessage, ThreadWait } from './types.js';
+import type { Project, ProjectThreadRecord, RuntimeLoad, ThreadMessage } from './types.js';
 
 export type ThreadState =
   | 'working'
@@ -32,7 +38,7 @@ interface ProjectTurnsDependencies {
   /** Queues a thread's report to its owner, or keeps it on the thread while the inbox is full. */
   report: (
     project: Project,
-    thread: ProjectThread,
+    thread: ProjectThreadRecord,
     text: string,
     replyId?: string,
     leadAlert?: boolean,
@@ -143,7 +149,11 @@ export class ProjectTurns {
   /* Only a thread's owner reads its replies back. The lead's go to the user,
      and nothing reads them from the ledger. A turn that says nothing must not
      erase what the thread last said. */
-  private keepReply(project: Project, thread: ProjectThread, text: string): string | undefined {
+  private keepReply(
+    project: Project,
+    thread: ProjectThreadRecord,
+    text: string,
+  ): string | undefined {
     if (!text || !thread.ownerAppSessionId) return;
     if (thread.reply) {
       thread.earlierReplies = [...(thread.earlierReplies ?? []), thread.reply].slice(
@@ -240,13 +250,13 @@ export class ProjectTurns {
   }
 }
 
-export function requireThread(project: Project, appSessionId: string): ProjectThread {
+export function requireThread(project: Project, appSessionId: string): ProjectThreadRecord {
   const thread = project.threads.find((item) => item.appSessionId === appSessionId);
   if (!thread) throw new Error('Thread is outside this project.');
   return thread;
 }
 
-export function scopedThreads(project: Project, source: string): ProjectThread[] {
+export function scopedThreads(project: Project, source: string): ProjectThreadRecord[] {
   const caller = requireThread(project, source);
   return project.threads.filter(
     (thread) =>
@@ -303,7 +313,7 @@ function ordinal(position: number): string {
 }
 
 /** Takes a thread out of its project with every message to or from it, so the ledger never names it. */
-export function removeThread(project: Project, thread: ProjectThread): void {
+export function removeThread(project: Project, thread: ProjectThreadRecord): void {
   const unrelated = (message: ThreadMessage) =>
     message.from !== thread.appSessionId && message.to !== thread.appSessionId;
   project.threads = project.threads.filter((candidate) => candidate !== thread);
@@ -319,7 +329,7 @@ export function removeThread(project: Project, thread: ProjectThread): void {
  * it off the queue: an owner woken to answer a question its thread no longer
  * holds would send the answer to a thread waiting for nothing.
  */
-export function clearAsk(project: Project, thread: ProjectThread): boolean {
+export function clearAsk(project: Project, thread: ProjectThreadRecord): boolean {
   if (!thread.ask && !thread.waiting) return false;
   delete thread.ask;
   thread.waiting = false;
@@ -333,7 +343,7 @@ export function clearAsk(project: Project, thread: ProjectThread): boolean {
    question outlives no turn, so an outstanding one is what it is waiting on,
    even while the turn that asked it is still streaming. */
 export function threadState(
-  thread: ProjectThread,
+  thread: ProjectThreadRecord,
   session: SessionSummary | undefined,
   wait?: ThreadWait,
 ): ThreadState {

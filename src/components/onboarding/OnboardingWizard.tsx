@@ -20,7 +20,7 @@ import {
 } from '../../lib/editorOpen';
 import type { OnboardingState } from '../../lib/onboarding';
 import { toast } from '../../lib/toast';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { Button } from '../ui/Button';
 import { cn } from '../ui/cn';
 import { AgentsStep } from './AgentsStep';

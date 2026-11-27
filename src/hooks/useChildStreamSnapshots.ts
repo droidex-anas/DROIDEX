@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { childSessionActivityForTarget, type ChildSessionActivity } from '../lib/childSessions';
 import {
   childStreamSnapshotsAreLive,

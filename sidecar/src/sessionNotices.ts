@@ -1,7 +1,7 @@
 import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { droidexUserDataDir } from './droidexPaths.js';
-import type { SessionRole, TranscriptEvent } from './protocol.js';
+import type { SessionRole, TranscriptEvent } from '@droidex/protocol';
 import { dateMs, numberValue, objectValue, stringValue } from './values.js';
 
 interface StoredNoticeLine {

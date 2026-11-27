@@ -5,9 +5,9 @@ import fsPromises from 'node:fs/promises';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from '../testing/sessionTranscriptSupport.js';
 import { ProviderTranscriptFile } from './ProviderTranscriptFile.js';
-import { parseFullSessionTranscript } from '../sessionTranscript.js';
-import type { SessionSummary, TranscriptEvent } from '../protocol.js';
+import type { SessionSummary, TranscriptEvent } from '@droidex/protocol';
 
 function reply(messageId: string, text: string): TranscriptEvent {
   return {
@@ -32,10 +32,9 @@ function transcriptFile(t: TestContext): { file: ProviderTranscriptFile; userDat
   return { file: new ProviderTranscriptFile('chat', () => ({}) as SessionSummary), userData };
 }
 
-function savedTexts(file: ProviderTranscriptFile): (string | undefined)[] {
-  return parseFullSessionTranscript('chat', 'codex', file.path, 'primary').map(
-    (event) => event.text,
-  );
+async function savedTexts(file: ProviderTranscriptFile): Promise<(string | undefined)[]> {
+  const events = await readFullTranscript('chat', 'codex', file.path, 'primary');
+  return events.map((event) => event.text);
 }
 
 test('a line a crash left half-written does not swallow the replies after it', async (t) => {
@@ -54,7 +53,7 @@ test('a line a crash left half-written does not swallow the replies after it', a
     await file.flush();
   }
 
-  assert.deepEqual(savedTexts(file), ['one', 'two']);
+  assert.deepEqual(await savedTexts(file), ['one', 'two']);
 });
 
 test('a write that fails halfway does not break the replies after it', async (t) => {
@@ -79,5 +78,5 @@ test('a write that fails halfway does not break the replies after it', async (t)
   reopened.append(reply('third', 'three'));
   await reopened.flush();
 
-  assert.deepEqual(savedTexts(file), ['two', 'three']);
+  assert.deepEqual(await savedTexts(file), ['two', 'three']);
 });

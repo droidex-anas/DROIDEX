@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, type RefObject } from 'react';
 import type { BoardInteraction, BoardInteractionEvent } from './canvasState';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 export function useFrameRemoval({
   board,

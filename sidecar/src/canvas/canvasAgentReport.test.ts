@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { agentFrame, buildReport } from './canvasAgentReport.js';
 import { AUTO_DESIGN_SYSTEM_REF } from './designSystems.js';
-import type { CanvasDiagnostic, CanvasFrame } from './protocol.js';
+import type { CanvasDiagnostic, CanvasFrame } from '@droidex/protocol';
 
 function frame(diagnostics: CanvasDiagnostic[]): CanvasFrame {
   return {

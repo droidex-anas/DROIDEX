@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { shallowEqual, useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import type { AgentKind, HarnessModel } from '../hooks/persistedUiPreferences';
-import type { ProviderKind, ReasoningEffort } from '../types/bridge';
+import type { ProviderKind, ReasoningEffort } from '@droidex/protocol';
 import {
   draftEffortFor,
   reasoningAfterModelSwitch,

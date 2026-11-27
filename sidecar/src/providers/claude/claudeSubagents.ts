@@ -1,7 +1,7 @@
 import type { SDKMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { ChildActivity, ChildStatus } from '../../protocol.js';
-import { taskPollTargetId, type ChildSessionSignal } from '../../subagentSignals.js';
+import type { ChildActivity, ChildStatus } from '@droidex/protocol';
+import { taskPollTargetId, taskPrompt, type ChildSessionSignal } from '../../subagentSignals.js';
 import { trimmedString as str } from '../../values.js';
 import type { ProviderChildSession } from '../session.js';
 
@@ -87,10 +87,17 @@ export class ClaudeSubagents {
   private readonly spawnOwners = new Map<string, Set<string>>();
   private readonly workflows = new Map<string, WorkflowRun>();
   private readonly workflowSpawns = new Map<string, boolean>();
-  private turnSpawnToolUseId?: string;
+  private readonly spawnCalls = new Map<string, { label?: string; prompt?: string }>();
+  // Spawn calls whose task_started has not arrived yet, in call order. The
+  // CLI may omit the started message's tool_use_id; the oldest unexplained
+  // spawn is the only safe inference.
+  private readonly unexplainedSpawnToolUseIds: string[] = [];
 
   beginTurn(): void {
-    this.turnSpawnToolUseId = undefined;
+    this.unexplainedSpawnToolUseIds.length = 0;
+    // A spawn's result arrives inside the turn that made it, so anything still
+    // here belonged to a dead turn.
+    this.spawnCalls.clear();
   }
 
   restore(children: readonly ProviderChildSession[]): void {
@@ -110,9 +117,49 @@ export class ClaudeSubagents {
     }
   }
 
-  noteToolUse(name: string, id: string, parentToolUseId: string | null): void {
+  noteToolUse(name: string, id: string, parentToolUseId: string | null, input: unknown): void {
     if (name === 'Workflow' && !this.workflowSpawns.has(id)) this.workflowSpawns.set(id, false);
-    if (!parentToolUseId && isSpawnToolName(name)) this.turnSpawnToolUseId = id;
+    if (!parentToolUseId && isSpawnToolName(name)) {
+      this.unexplainedSpawnToolUseIds.push(id);
+      const args =
+        typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
+      this.spawnCalls.set(id, {
+        ...(str(args.subagent_type) || str(args.description)
+          ? { label: str(args.subagent_type) ?? str(args.description) }
+          : {}),
+        ...(taskPrompt(args) ? { prompt: taskPrompt(args) } : {}),
+      });
+    }
+  }
+
+  // A spawn's tool result is the turn's own acknowledgment of the call. When it
+  // is an error and no agent ever started, the spawn died before birth: settle a
+  // providerless failed child so the UI placeholder does not work forever. When
+  // exactly one agent did start, the error is that agent's ending.
+  finishSpawn(toolUseId: string, failed: boolean): NormalizedEvent[] {
+    const call = this.spawnCalls.get(toolUseId);
+    if (!call) return [];
+    this.spawnCalls.delete(toolUseId);
+    const unexplained = this.unexplainedSpawnToolUseIds.indexOf(toolUseId);
+    if (unexplained >= 0) this.unexplainedSpawnToolUseIds.splice(unexplained, 1);
+    if (!failed) return [];
+    const owners = this.spawnOwners.get(toolUseId);
+    if (owners?.size === 1) {
+      const taskId = owners.values().next().value;
+      if (taskId) return this.update(taskId, { status: 'failed' });
+    }
+    if (owners && owners.size > 1) return [];
+    return [
+      {
+        childSession: {
+          toolUseId,
+          done: true,
+          status: 'failed',
+          ...call,
+          transcriptAvailable: false,
+        },
+      },
+    ];
   }
 
   dropWorkflowOutput(toolUseId: string | null): boolean {
@@ -190,14 +237,16 @@ export class ClaudeSubagents {
       if (message.workflow_name)
         this.workflows.set(message.task_id, {
           name: message.workflow_name,
-          toolUseId: message.tool_use_id ?? this.turnSpawnToolUseId,
+          toolUseId: this.claimSpawnToolUseId(message.tool_use_id),
           agentIds: new Set(),
         });
       return [];
     }
     if (message.task_type !== 'local_agent' && !message.subagent_type) return [];
     const workflow = this.workflowFor(message.tool_use_id);
-    const toolUseId = message.tool_use_id ?? workflow?.toolUseId ?? this.turnSpawnToolUseId;
+    const toolUseId = message.tool_use_id
+      ? this.claimSpawnToolUseId(message.tool_use_id)
+      : (workflow?.toolUseId ?? this.claimSpawnToolUseId());
     return this.update(message.task_id, {
       toolUseId,
       label: message.description,
@@ -279,6 +328,17 @@ export class ClaudeSubagents {
         events.push(...this.update(agentId, { status }));
     }
     return events;
+  }
+
+  // An explicit id is certain; without one, only the oldest unexplained spawn
+  // can be inferred, and an empty queue means no inference at all.
+  private claimSpawnToolUseId(explicit?: string): string | undefined {
+    if (explicit) {
+      const index = this.unexplainedSpawnToolUseIds.indexOf(explicit);
+      if (index >= 0) this.unexplainedSpawnToolUseIds.splice(index, 1);
+      return explicit;
+    }
+    return this.unexplainedSpawnToolUseIds.shift();
   }
 
   private workflowFor(toolUseId: string | undefined): WorkflowRun | undefined {

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { createSdkMcpServer } from '@factory/droid-sdk';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { PermissionOutcome, ServerEvent } from '../../protocol.js';
+import type { PermissionOutcome, ServerEvent } from '@droidex/protocol';
 import { SessionInteractions, type InteractionLiveSession } from '../../SessionInteractions.js';
 import type { ProviderApprovalRequest } from '../interactions.js';
 import { deferred } from '../../testing/projectServiceHarness.js';

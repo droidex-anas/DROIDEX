@@ -1,4 +1,4 @@
-import type { ProviderKind, ProviderMention, ProviderStatus, SkillInfo } from '../../types/bridge';
+import type { ProviderKind, ProviderMention, ProviderStatus, SkillInfo } from '@droidex/protocol';
 
 const NO_ROWS: SkillInfo[] = [];
 

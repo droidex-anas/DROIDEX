@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { isPendingChildPlaceholder } from '../../lib/childSessions';
+import { pauseAnimationsWhenOffscreen } from '../../lib/offscreenAnimations';
 import { formatRelativeTime } from '../../lib/time';
 import { formatDuration } from '../../lib/tools';
 import { AgentAvatar } from '../AgentAvatar';
@@ -114,6 +115,7 @@ function AgentListRow({
   const running = row.status === 'running' && !row.queued;
   return (
     <motion.button
+      ref={pauseAnimationsWhenOffscreen}
       type="button"
       layout={!reduceMotion}
       layoutId={reduceMotion ? undefined : `agent-list:${row.key}`}

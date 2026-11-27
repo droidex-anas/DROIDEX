@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { describeLink } from './linkPresentation';
 
 // How DROIDEX's own browser tools read in the transcript: what the agent did on

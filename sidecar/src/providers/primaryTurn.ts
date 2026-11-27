@@ -1,9 +1,9 @@
 import { isDesignPrompt } from '../browser/designPromptPacks.js';
-import type { ServerEvent, SessionSummary } from '../protocol.js';
+import type { ServerEvent, SessionSummary, ProviderMention } from '@droidex/protocol';
 import type { LiveOperationTarget, SessionContext } from '../SessionContext.js';
 import type { SessionEventFlow } from '../SessionEventFlow.js';
 import { errMsg, isUserCancellation } from '../errors.js';
-import type { ProviderMention } from './catalog.js';
+
 import type { LiveSession } from '../SessionLifecycle.js';
 import type { ScheduledTurnDelivery } from '../sessionAutomationDelivery.js';
 import { isReportedStreamingTranscriptError, type SessionTimeline } from '../SessionTimeline.js';
@@ -61,8 +61,8 @@ export async function runPrimaryTurn(
   // A Stop that lands before the provider has a turn to interrupt. A Send now
   // in the same window is left alone: its prompt is queued behind this one,
   // and the agent needs this one to make sense of it.
-  const stoppedBeforeStart = () => liveSession.interrupting === true;
-  let delegatedTurns = liveSession.delegatedTurns;
+  const stoppedBeforeStart = () => liveSession.turn.interrupting;
+  let delegatedTurn = liveSession.turn.delegatedTurn;
   const context = turnContext(d, d.contextTarget(liveSession));
   if (!isCurrent()) return;
   // A scheduled delivery that cannot go ahead must leave no trace, and
@@ -77,7 +77,7 @@ export async function runPrimaryTurn(
   }
   // A provider-started turn is running: the delivery goes back to its project
   // and comes again, rather than holding the project's claim while it waits.
-  if (delivery && liveSession.delegatedTurnSettled) {
+  if (delivery && liveSession.turn.delegatedTurnSettled) {
     delivery.declined('stale');
     return;
   }
@@ -110,18 +110,18 @@ export async function runPrimaryTurn(
     // A delivery never waits holding its project's claim, since the turn the
     // provider just started may need the project's answer. It comes again
     // instead; its row, written as that turn began, may then show twice.
-    if (delivery && liveSession.delegatedTurnSettled) {
+    if (delivery && liveSession.turn.delegatedTurnSettled) {
       delivery.declined('stale');
       context.stopPolling();
       return;
     }
     // A typed prompt keeps its row and queue reservation, and waits for that
     // turn's final rows before sending.
-    let reservation = liveSession.delegatedTurnSettled;
+    let reservation = liveSession.turn.delegatedTurnSettled;
     while (isCurrent() && !stoppedBeforeStart() && reservation) {
       await reservation;
       // A newer provider-started turn may have taken the chat meanwhile.
-      const next = liveSession.delegatedTurnSettled;
+      const next = liveSession.turn.delegatedTurnSettled;
       reservation = next === reservation ? undefined : next;
     }
     if (
@@ -133,11 +133,11 @@ export async function runPrimaryTurn(
       context.stopPolling();
       return;
     }
-    if (liveSession.delegatedTurns !== delegatedTurns)
+    if (!liveSession.turn.isCurrentDelegated(delegatedTurn))
       d.updateSummary(appSessionId, {
         phase: liveSession.summary.sessionPurpose === 'mission-control' ? 'planning' : 'running',
       });
-    delegatedTurns = liveSession.delegatedTurns;
+    delegatedTurn = liveSession.turn.delegatedTurn;
     for await (const normalized of providerSession.stream(prompt, mentions)) {
       // The runtime answered, so the prompt is accepted even if this turn stops
       // applying events; acknowledgement must never depend on the turn's outcome.
@@ -146,7 +146,7 @@ export async function runPrimaryTurn(
       // Codex can end this turn and start one of its own in the same batch.
       // Once any turn has begun since this one, this turn's end is stale: the
       // source is that turn's, and whoever finishes last closes it.
-      if (normalized.done && liveSession.delegatedTurns !== delegatedTurns) continue;
+      if (normalized.done && !liveSession.turn.isCurrentDelegated(delegatedTurn)) continue;
       d.eventFlow.apply(appSessionId, appSessionId, 'primary', normalized);
       if (normalized.transcript?.kind === 'error') {
         reportedError = true;
@@ -169,7 +169,7 @@ export async function runPrimaryTurn(
   if (!isCurrent()) return;
   // A newer provider-started turn owns the outcome, but a refusal from either
   // turn must hold the chat, even when their replies overlapped.
-  const superseded = liveSession.delegatedTurns !== delegatedTurns;
+  const superseded = !liveSession.turn.isCurrentDelegated(delegatedTurn);
   if (turnError) {
     if (!superseded || turnError instanceof UsageLimitError)
       settleTurnFailure(d, liveSession, turnError, reportedError, reportedUsageLimit);
@@ -179,8 +179,8 @@ export async function runPrimaryTurn(
   else if (
     !superseded &&
     liveSession.summary.usageLimit &&
-    !liveSession.interrupting &&
-    !liveSession.interruptingToSend
+    !liveSession.turn.interrupting &&
+    !liveSession.turn.interruptingToSend
   )
     d.updateSummary(appSessionId, { usageLimit: undefined });
   // Not awaited: Droid can take long to answer, and the chat would read as
@@ -205,11 +205,11 @@ function settleTurnFailure(
   reportedUsageLimit: boolean,
 ): void {
   const appSessionId = liveSession.summary.appSessionId;
-  if (liveSession.interruptingToSend && isUserCancellation(error)) {
+  if (liveSession.turn.interruptingToSend && isUserCancellation(error)) {
     d.timeline.appendStatus(appSessionId, 'Turn stopped to send now.');
     return;
   }
-  if (liveSession.interrupting && isUserCancellation(error)) {
+  if (liveSession.turn.interrupting && isUserCancellation(error)) {
     // Stop already set the paused phase; its cancellation is not a failure.
     d.updateSummary(appSessionId, { phase: 'paused' });
     return;

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 
 const SAVE_DELAY_MS = 1000;
 import {
-  digestTranscript,
+  digestTranscriptMemo,
   loadActivityDigests,
   saveActivityDigests,
   type ActivityDigest,
@@ -40,7 +40,7 @@ export function useActivityDigests(enabled: boolean): Record<string, ActivityDig
       const digests: Record<string, ActivityDigest> = {};
       if (!enabled) return digests;
       for (const [id, events] of Object.entries(state.transcripts)) {
-        const digest = digestTranscript(events);
+        const digest = digestTranscriptMemo(events);
         if (digest) digests[id] = digest;
       }
       return digests;

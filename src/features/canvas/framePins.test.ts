@@ -14,7 +14,7 @@ import {
   untagsFrames,
 } from './framePins';
 import type { PickedElement } from './pickedElement';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 
 const pickedTitle: PickedElement = {
   designId: 'd1',

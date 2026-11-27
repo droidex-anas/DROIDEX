@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { SessionRole } from '@droidex/protocol';
 
 const originalHome = process.env.HOME;
 const home = mkdtempSync(join(tmpdir(), 'droid-history-role-'));
 process.env.HOME = home;
 
-const { HistoryIndex, loadSessionPage, loadSessionTranscriptWindow } = await import('./history.js');
+const { HistoryIndex, loadSessionTranscriptWindow } = await import('./history.js');
 const index = new HistoryIndex();
 let sessionFileRevision = 0;
 
@@ -64,27 +65,25 @@ function writeTranscript(
   );
 }
 
-test('loadSessionPage replays a Task child as a worker under its provider id, whatever it opens under, and a top-level session as primary', () => {
-  const firstText = (providerSessionId: string, appSessionId: string) => {
-    const text = loadSessionPage(providerSessionId, appSessionId, undefined, 200).events.find(
-      (e) => e.kind === 'text',
-    );
+test('transcript windows pass through explicit role and source identity and default to primary', async () => {
+  const firstText = async (providerSessionId: string, appSessionId: string, role?: SessionRole) => {
+    const text = (
+      await loadSessionTranscriptWindow(appSessionId, [providerSessionId], { role })
+    ).events.find((e) => e.kind === 'text');
     assert.ok(text, 'expected a text event');
     return [text.sourceSessionId, text.role];
   };
-  writeTranscript('child-session', {
-    callingSessionId: 'parent-session',
-    callingToolUseId: 'tool-1',
-  });
-  assert.deepEqual(firstText('child-session', 'parent-app'), ['child-session', 'worker']);
-  // Opened as its own session, it is still never reclassified as top-level.
-  assert.deepEqual(firstText('child-session', 'child-session'), ['child-session', 'worker']);
+  writeTranscript('child-session', {});
+  assert.deepEqual(await firstText('child-session', 'parent-app', 'worker'), [
+    'child-session',
+    'worker',
+  ]);
 
   writeTranscript('plain-session', {});
-  assert.deepEqual(firstText('plain-session', 'plain-session'), ['primary', 'primary']);
+  assert.deepEqual(await firstText('plain-session', 'plain-session'), ['primary', 'primary']);
 });
 
-test('transcript windows parse child-only skill messages with the child role', () => {
+test('transcript windows parse child-only skill messages with the child role', async () => {
   writeTranscript(
     'child-skill',
     {
@@ -105,10 +104,12 @@ test('transcript windows parse child-only skill messages with the child role', (
     ],
   );
 
-  const primary = loadSessionTranscriptWindow('parent-app', ['child-skill'], {
+  const primary = await loadSessionTranscriptWindow('parent-app', ['child-skill'], {
     role: 'primary',
   });
-  const child = loadSessionTranscriptWindow('parent-app', ['child-skill'], { role: 'worker' });
+  const child = await loadSessionTranscriptWindow('parent-app', ['child-skill'], {
+    role: 'worker',
+  });
 
   assert.equal(primary.events.length, 2);
   assert.deepEqual(child.events, []);

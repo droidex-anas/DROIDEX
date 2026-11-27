@@ -6,7 +6,7 @@
 // repeats the whole message, so re-emitting it would double every sentence. The
 // completed item backfills one case, a message that streamed nothing at all.
 import type { NormalizedEvent } from '../../normalize.js';
-import type { TranscriptEvent } from '../../protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionSignal } from '../../subagentSignals.js';
 import type { ProviderModelSettings } from '../session.js';
 import { reasoningValue } from '../../modelCatalog.js';
@@ -256,7 +256,9 @@ export class CodexEventMapper {
 
   private updateChild(signal: ChildSessionSignal): NormalizedEvent[] {
     const id = signal.providerSessionId;
-    if (!id) return [];
+    // A spawn that failed before receiving a thread has no provider id; its
+    // terminal signal still has to reach the child-session store.
+    if (!id) return signal.done && signal.status === 'failed' ? [{ childSession: signal }] : [];
     const previous = this.children.get(id);
     const child = { ...previous, ...signal };
     // Thread metadata may precede the spawn, and is more useful than its prompt.

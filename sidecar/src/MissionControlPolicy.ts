@@ -6,7 +6,7 @@ import {
   type ChildSettings,
 } from './ChildSessionState.js';
 import type { NormalizedSideEffects } from './SessionEventFlow.js';
-import type { ProgressEntry, ServerEvent, SessionPhase } from './protocol.js';
+import type { ProgressEntry, ServerEvent, SessionPhase } from '@droidex/protocol';
 import type { SessionRegistry } from './SessionRegistry.js';
 
 const STATE_TO_PHASE: Record<string, SessionPhase> = {
@@ -28,6 +28,7 @@ interface MissionCorrelation {
   spawnId?: string;
   childSessionId?: string;
   completed: boolean;
+  failed?: boolean;
 }
 
 interface ParentMissionState {
@@ -66,6 +67,7 @@ export class MissionControlPolicy {
         parentAppSessionId,
         effects.missionChild.providerSessionId,
         effects.missionChild.event,
+        effects.missionChild.exitCode,
       );
     if (effects.progress) {
       const entries = effects.progress.map((entry) =>
@@ -113,6 +115,7 @@ export class MissionControlPolicy {
     parentAppSessionId: string,
     providerSessionId: string,
     event: 'started' | 'completed',
+    exitCode?: number,
   ): void {
     const parent = this.parentState(parentAppSessionId);
     if (parent.retiredProviders.has(providerSessionId)) return;
@@ -127,6 +130,7 @@ export class MissionControlPolicy {
     }
     const pending = correlation ?? { providerSessionId, completed: false };
     pending.completed = true;
+    pending.failed ??= exitCode !== undefined && exitCode !== 0;
     parent.byProvider.set(providerSessionId, pending);
     if (!pending.childSessionId) return;
     this.d.childSessions.admitChildObservation({
@@ -135,6 +139,7 @@ export class MissionControlPolicy {
       role: 'worker',
       ...(pending.spawnId ? { spawnLink: { kind: 'spawn' as const, id: pending.spawnId } } : {}),
       done: true,
+      ...(pending.failed ? { status: 'failed' as const } : {}),
     });
   }
 
@@ -170,6 +175,7 @@ export class MissionControlPolicy {
     }
     if (byProvider && byProvider !== correlation) {
       correlation.completed ||= byProvider.completed;
+      correlation.failed ??= byProvider.failed;
     }
     correlation.providerSessionId = providerSessionId;
     correlation.spawnId = spawnId;
@@ -191,6 +197,7 @@ export class MissionControlPolicy {
         role: 'worker',
         spawnLink: { kind: 'spawn', id: spawnId },
         done: true,
+        ...(correlation.failed ? { status: 'failed' as const } : {}),
       });
     return correlation;
   }

@@ -3,7 +3,7 @@
 // and kept for the session: a saved version never changes.
 
 import { useEffect, useState } from 'react';
-import type { CatalogListing, DesignSystemVersionRef } from '../protocol';
+import type { CatalogListing, DesignSystemVersionRef } from '@droidex/protocol';
 
 /** A read this quick shows nothing meanwhile, so a fast one does not flash. */
 const SKELETON_DELAY_MS = 300;

@@ -5,8 +5,13 @@ import type {
   SessionNotification,
 } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { Autonomy, ReasoningEffort, SessionInteractionMode } from '../../protocol.js';
-import type { ProviderMention, SkillInfo } from '../catalog.js';
+import type {
+  Autonomy,
+  ProviderMention,
+  ReasoningEffort,
+  SessionInteractionMode,
+  SkillInfo,
+} from '@droidex/protocol';
 import type {
   ProviderModelSettings,
   ProviderChildSession,

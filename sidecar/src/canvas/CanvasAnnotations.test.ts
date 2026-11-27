@@ -7,8 +7,8 @@ import {
   scopeFor,
   userScopeFor,
 } from '../testing/canvasStorageSupport.js';
-import type { AnnotationDraft } from './canvasAnnotationSchema.js';
-import type { CanvasChange, CanvasScope } from './protocol.js';
+import type { AnnotationDraft, CanvasChange } from '@droidex/protocol';
+import type { CanvasScope } from './canvasScopes.js';
 
 async function canvas(t: Parameters<typeof openWorkspace>[0]) {
   const context = await openWorkspace(t);

@@ -2,7 +2,7 @@ import type { DatabaseSync, StatementSync } from 'node:sqlite';
 
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
 import { matchingHistoryProvidersSql, providerHistoryMatchesSql } from './historySearchSchema.js';
-import type { SessionSearchResult } from './protocol.js';
+import type { SessionSearchResult } from '@droidex/protocol';
 import { buildSessionSearchSnippet } from './sessionSearch.js';
 import { numberValue, stringValue } from './values.js';
 

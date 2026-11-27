@@ -1,5 +1,5 @@
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
-import type { ModelInfo, ReasoningEffort } from '../../protocol.js';
+import type { ModelInfo, ReasoningEffort } from '@droidex/protocol';
 
 const EFFORT_ORDER = ['off', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] as const;
 

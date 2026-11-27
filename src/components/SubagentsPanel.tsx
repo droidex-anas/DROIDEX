@@ -5,12 +5,13 @@
 import { useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import type { ChildSessionInfo } from '../hooks/storeChildSession';
-import type { ChildStatus, ModelInfo } from '../types/bridge';
+import type { ChildStatus, ModelInfo } from '@droidex/protocol';
 import {
   childSessionMeta,
   isPendingChildPlaceholder,
   workingFirstChildSessions,
 } from '../lib/childSessions';
+import { pauseAnimationsWhenOffscreen } from '../lib/offscreenAnimations';
 import { AgentAvatar } from './AgentAvatar';
 import { Popover } from './ui/Popover';
 import { RowCaret, SectionHeader } from './ui/Row';
@@ -67,6 +68,7 @@ export function SubagentPanelRow({
   const meta = childSessionMeta(child, displayedModel);
   return (
     <div
+      ref={pauseAnimationsWhenOffscreen}
       data-testid="subagent-row"
       data-child-session-id={child.childSessionId}
       className={`group flex items-center rounded-md transition-colors ${
@@ -135,7 +137,7 @@ export function SubagentsSection({
   const doneCount = ordered.filter(({ child }) => child.status === 'completed').length;
 
   return (
-    <div>
+    <div ref={pauseAnimationsWhenOffscreen}>
       <SectionHeader label="Subagents" />
       <button
         ref={anchorRef}

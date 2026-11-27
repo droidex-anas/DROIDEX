@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionNotification, ToolCallUpdate } from '@agentclientprotocol/sdk/unstable';
 import type { NormalizedEvent } from '../../normalize.js';
-import type { SessionRole, TranscriptEvent } from '../../protocol.js';
+import type { SessionRole, TranscriptEvent } from '@droidex/protocol';
 
 export function devinToolName(tool: ToolCallUpdate): string {
   const name = tool.name ?? tool._meta?.['cognition.ai/inferenceToolName'];

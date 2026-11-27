@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Bold,
   ClipboardCopy,
@@ -96,19 +97,23 @@ export default function SelectionMenu({
 }) {
   // A point at the pointer for the menu to open against; it grows upward
   // (the draft sits at the bottom of the window) and flips below near the top.
+  // Portaled to the body: the composer frame animates with transforms, which would
+  // make it the containing block and offset these viewport coordinates.
   const pointRef = useRef<HTMLSpanElement>(null);
   const link = menu?.link;
 
   return (
     <>
-      {menu && (
-        <span
-          ref={pointRef}
-          aria-hidden="true"
-          className="pointer-events-none fixed size-0"
-          style={{ left: menu.x, top: menu.y }}
-        />
-      )}
+      {menu &&
+        createPortal(
+          <span
+            ref={pointRef}
+            aria-hidden="true"
+            className="pointer-events-none fixed size-0"
+            style={{ left: menu.x, top: menu.y }}
+          />,
+          document.body,
+        )}
       <Menu
         open={menu !== null}
         onClose={onClose}

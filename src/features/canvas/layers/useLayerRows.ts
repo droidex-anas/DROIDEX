@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { PreviewNode } from '../previewDocument';
 import type { PreviewTree } from '../previewDocumentTree';
 import type { PreviewRuns } from '../previewRuns';
-import type { CanvasBuildState, CanvasFrame, SourceOutline } from '../protocol';
+import type { CanvasBuildState, CanvasFrame, SourceOutline } from '@droidex/protocol';
 import { drawnLayers, type DrawnLayers } from './drawnLayers';
 import {
   ancestorIds,

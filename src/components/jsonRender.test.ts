@@ -2,15 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import {
-  JsonRender,
-  splitJsonRender,
-  hasJsonRender,
-  __resolveColorForTest as resolveColor,
-  __renderBudgetForTest as renderBudget,
-  __MAX_NODES_FOR_TEST as MAX_NODES,
-  __statusColorForTest as statusColor,
-} from './JsonRender';
+import { JsonRender, splitJsonRender, hasJsonRender } from './JsonRender';
+import { resolveColor, statusColor } from './jsonRenderValues';
 
 test('closed json-render blocks interleave with prose; an unclosed one and a bare mention do not', () => {
   assert.equal(hasJsonRender('x <json-render>{}</json-render>'), true);
@@ -58,7 +51,7 @@ test('resolveColor maps themed names, accepts safe literals, and rejects CSS fun
 test('render budget caps an exponential shared-child DAG and leaves small specs whole', () => {
   // Each level points twice at the next distinct id: a -> [b,b], b -> [c,c]...
   // `seen` only blocks per-path cycles, so without a global budget this fans out
-  // to ~2^40 nodes and freezes. The budget must keep it bounded (and finish).
+  // to ~2^40 nodes and freezes. Rendering must finish with bounded markup.
   const levels = 40;
   const elements: Record<string, unknown> = {};
   for (let i = 0; i < levels; i++) {
@@ -66,19 +59,22 @@ test('render budget caps an exponential shared-child DAG and leaves small specs 
     elements[`n${i}`] = { type: 'Box', children: [next, next] };
   }
   elements[`n${levels}`] = { type: 'Text', props: { text: 'leaf' } };
-  const count = renderBudget({ root: 'n0', elements });
-  assert.ok(count <= MAX_NODES, `expanded ${count} nodes, expected <= ${MAX_NODES}`);
+  const source = JSON.stringify({ root: 'n0', elements });
+  const markup = renderToStaticMarkup(createElement(JsonRender, { source }));
+  assert.ok(markup.length < 150_000, `bounded render produced ${markup.length} bytes`);
 
   // Small specs stay fully expanded.
-  const small = renderBudget({
+  const small = JSON.stringify({
     root: 'r',
     elements: {
       r: { type: 'Box', children: ['a', 'b'] },
-      a: { type: 'Text', props: { text: 'a' } },
-      b: { type: 'Text', props: { text: 'b' } },
+      a: { type: 'Text', props: { text: 'small-a' } },
+      b: { type: 'Text', props: { text: 'small-b' } },
     },
   });
-  assert.equal(small, 3);
+  const smallMarkup = renderToStaticMarkup(createElement(JsonRender, { source: small }));
+  assert.match(smallMarkup, /small-a/);
+  assert.match(smallMarkup, /small-b/);
 });
 
 test('statusColor resolves real statuses and falls back for prototype keys', () => {
@@ -89,6 +85,16 @@ test('statusColor resolves real statuses and falls back for prototype keys', () 
   for (const key of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
     assert.equal(statusColor(key), 'var(--text-muted)');
   }
+});
+
+test('a non-string root renders the unparseable spec fallback', () => {
+  const source = JSON.stringify({
+    root: 1,
+    elements: [null, { type: 'Card', title: 'Numeric root', children: ['1'] }],
+  });
+  const markup = renderToStaticMarkup(createElement(JsonRender, { source }));
+
+  assert.match(markup, /Render spec \(unparseable\)/);
 });
 
 test('huge Sparkline and BarChart data arrays render without blowing the call stack', () => {

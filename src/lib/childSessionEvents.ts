@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 export function isChildSessionTool(name?: string, args?: unknown): boolean {
   if (/\b(task|agent|subagent|delegate|workflow)\b/i.test(name ?? '')) return true;
@@ -7,6 +7,18 @@ export function isChildSessionTool(name?: string, args?: unknown): boolean {
     typeof Reflect.get(record, 'subagent_type') === 'string' ||
     typeof Reflect.get(record, 'subagentType') === 'string'
   );
+}
+
+// The harness echoes the spawn into the child's stream: a tool row carrying
+// the prompt the child was started with. Readers of the child's own transcript
+// drop it so the task shows once, as the message the parent sent. A spawn the
+// agent makes itself carries a different prompt and stays.
+export function isSpawnEcho(event: TranscriptEvent, prompt: string | undefined): boolean {
+  if (event.kind !== 'tool_call' && event.kind !== 'tool_result') return false;
+  if (!isChildSessionTool(event.toolName, event.toolArgs)) return false;
+  const args = event.toolArgs;
+  const echoed: unknown = isRecord(args) ? Reflect.get(args, 'prompt') : undefined;
+  return prompt !== undefined && typeof echoed === 'string' && echoed.trim() === prompt.trim();
 }
 
 export function childSessionInfo(args: unknown): { label?: string; description?: string } {

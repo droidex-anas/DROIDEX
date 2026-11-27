@@ -1,55 +1,61 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { homedir } from 'node:os';
-import { basename, join, sep } from 'node:path';
-import { dateMs, normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
+import { join, sep } from 'node:path';
+import { normalizeAutonomy, numberValue, objectValue, stringValue } from './values.js';
 import { reasoningValue } from './modelCatalog.js';
-import type {
-  SessionRole,
-  BridgeFeature,
-  ContextWindowTokens,
-  FactoryDefaultSettings,
-  SessionHistoryEntry,
-  SessionPhase,
-  SessionSummary,
-  ProgressEntry,
-  ReasoningEffort,
-  TranscriptEvent,
-} from './protocol.js';
-import { bridgeFeature } from './missionFeatures.js';
-import { normalizeCompactionTokenLimit } from './compaction.js';
+import {
+  type SessionRole,
+  type ContextWindowTokens,
+  type FactoryDefaultSettings,
+  type SessionHistoryEntry,
+  type SessionSummary,
+  type ProgressEntry,
+  type ReasoningEffort,
+  type TranscriptEvent,
+  DROID_PROFILES,
+} from '@droidex/protocol';
+import {
+  normalizeCompactionTokenLimit,
+  normalizeCompactionTokenLimitPerModel,
+} from './compaction.js';
 import {
   SessionFileCache,
   type SessionFileLaunchSettings,
   type SessionFileReconciliation,
-  type SessionFileScan,
   type SessionFileSnapshot,
   type SessionFileStat,
   type SessionFileSummary,
 } from './sessionFileCache.js';
 import { SessionFileMirror } from './sessionFileMirror.js';
 import {
-  parseFullSessionTranscript,
   readSessionRawWindow,
-  SessionTranscriptReader,
   type StoredMessageLine,
   type StoredSessionStart,
-  type TranscriptWindowCursor,
 } from './sessionTranscript.js';
 import { decodeProviderSessionIdList } from './historyProviderIds.js';
+import { persistedChildSessionFromRow } from './persistedChildSessionRowDecoder.js';
+import { scanSessionFileTree, statSessionFile } from './historyDiscovery.js';
 import {
-  addChatPreferenceColumns,
-  addChildSettledAt,
-  CHILD_SESSIONS_TABLE_SCHEMA,
-  rebuildChildSessionsToV4,
-} from './historySchemaMigrations.js';
+  loadMissionControlSession,
+  missionSessionId,
+  projectMissionProgress,
+  resolveMissionDir,
+  type StoredMissionState,
+} from './historyMissions.js';
+import { shouldIncludeCwd, type HistoricalSummaryFilter } from './historySummaryFilter.js';
+import { parseJsonLines, readJson } from './jsonFiles.js';
+import {
+  assertCanonicalHistorySchema,
+  ensureCanonicalHistorySchema,
+  historySchemaRecovery,
+} from './historySchema.js';
 import { DEFAULT_PROVIDER, providerKind } from './providers/providerKind.js';
 import { migrateHistoryPermissions, migrateTranscriptPermissions } from './permissionSemantics.js';
 import { readSessionFileHead, readSessionStart } from './sessionFileHead.js';
-import { droidexHistoryDir, providerSessionsDir } from './droidexPaths.js';
-import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX, DROID_PROFILES } from './droidProfiles.js';
-import { sessionNoticesRevision } from './sessionNotices.js';
-import { canvasToolBindingsRevision } from './canvas/canvasToolBindings.js';
+import { droidexHistoryDir } from './droidexPaths.js';
+import { altSessionRoots, DROID_PROFILE_SCOPE_PREFIX } from './droidProfiles.js';
+import { HistoryTranscriptWindow } from './historyTranscriptWindow.js';
 
 const SUMMARY_ROWS_SQL = `
   SELECT app_sessions.*, settings.value_json AS droid_profile_json
@@ -57,48 +63,9 @@ const SUMMARY_ROWS_SQL = `
   LEFT JOIN settings ON settings.scope = ? || app_sessions.app_session_id
 `;
 
-interface StoredMissionState {
-  missionId?: string;
-  baseSessionId?: string;
-  state?: string;
-  workingDirectory?: string;
-  cwd?: string;
-  workerSessionIds?: string[];
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-interface StoredFeatureFile {
-  features?: unknown[];
-}
-
-interface StoredModelSettings {
-  model?: string;
-  modelId?: string;
-  reasoningEffort?: string;
-  compactionModel?: string;
-  compactionTokenLimit?: number;
-  compactionTokenLimitPerModel?: Record<string, number>;
-  autonomyLevel?: string;
-  workerModel?: string;
-  workerReasoningEffort?: string;
-  validationWorkerModel?: string;
-  validationWorkerReasoningEffort?: string;
-}
-
 export interface HistoricalSession {
   summary: SessionSummary;
   progress: ProgressEntry[];
-}
-
-interface StoredProgressEntry extends ProgressEntry {
-  workerProviderSessionId?: string;
-  spawnId?: string;
-}
-
-export interface HistoricalSummaryFilter {
-  workspaceCwds?: string[];
-  includePlainChats?: boolean;
 }
 
 interface SummaryPatchesAndHidden {
@@ -115,11 +82,6 @@ export interface HydratedSessionHistory {
 }
 
 export type FactoryDefaults = FactoryDefaultSettings;
-
-export interface HistoryPage {
-  events: TranscriptEvent[];
-  nextCursor?: string;
-}
 
 type PersistedChildRole = 'worker' | 'validator';
 type PersistedChildStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed';
@@ -149,70 +111,22 @@ export interface PersistedChildSession {
   updatedAt: number;
 }
 
-const STATE_TO_PHASE: Record<string, SessionPhase> = {
-  initializing: 'initializing',
-  running: 'running',
-  paused: 'paused',
-  orchestrator_turn: 'orchestrator_turn',
-  completed: 'completed',
-  failed: 'failed',
-  awaiting_input: 'running',
-};
-
-// Safety cap for worker transcript events on the initial page (the orchestrator
-// scrollback is paged via the cursor, so only workers need bounding here).
-// How many orchestrator scrollback events to load per page (initial open and
-// each lazy older-page fetch). Bounds work for very long, multi-compaction chats.
-const DEFAULT_HISTORY_WINDOW = 400;
-// Per-segment span used to derive a global monotonic `seq` from a chain index +
-// in-segment position. Must exceed any single segment's seq band: the reader
-// assigns each line a LINE_EVENT_STRIDE band, so the ceiling is
-// (1<<27)/256 = 524,288 lines per segment — multi-GB at the multi-KB lines
-// real sessions store, far beyond any observed file.
-const SEQ_SEGMENT_STRIDE = 1 << 27;
-const HISTORY_SCHEMA_VERSION = 5;
-type HistorySchemaVersion = 1 | 2 | 3 | 4 | 5;
 export const SESSION_INDEX_FILENAME = 'session-index.sqlite';
 export const SESSION_SEARCH_INDEX_FILENAME = 'session-search.sqlite';
-function historySchemaRecovery(): string {
-  const dir = droidexHistoryDir();
-  const displayDir = dir.startsWith(`${homedir()}/`) ? `~${dir.slice(homedir().length)}` : dir;
-  return (
-    'DROIDEX canonical history uses an incompatible schema. Quit DROIDEX and back up ' +
-    `${displayDir}, including SQLite WAL/SHM files, before repair or restoring a backup. ` +
-    'Do not delete the canonical database; provider transcripts cannot rebuild DROIDEX records.'
-  );
-}
 
-export function loadMissionControlSessions(
-  options: HistoricalSummaryFilter = {},
-): HistoricalSession[] {
-  const workspaceCwds = options.workspaceCwds
-    ? new Set(options.workspaceCwds.filter(Boolean))
-    : null;
-  if (workspaceCwds?.size === 0 && !options.includePlainChats) return [];
-  return missionDirs()
-    .filter((dir) => {
-      if (!workspaceCwds && !options.includePlainChats) return true;
-      const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-      return shouldIncludeCwd(
-        state.workingDirectory || state.cwd || '',
-        workspaceCwds,
-        options.includePlainChats,
-      );
-    })
-    .map((dir) => loadMissionControlSession(dir))
-    .sort((a, b) => b.summary.updatedAt - a.summary.updatedAt);
+function sessionTitle(start: StoredSessionStart, providerSessionId: string): string {
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty titles fall back to the next source.
+  return start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
 }
 
 export function loadSessionHistory(): SessionHistoryEntry[] {
   const rows: SessionHistoryEntry[] = [];
-  for (const [providerSessionId, path] of buildSessionIndex()) {
+  for (const [providerSessionId, path] of sessionPathIndex()) {
     const stat = statSync(path);
     const start = readSessionStart(path, stat.size);
     rows.push({
       providerSessionId,
-      title: start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`,
+      title: sessionTitle(start, providerSessionId),
       cwd: start.cwd,
       modifiedTime: stat.mtimeMs,
       createdTime: stat.birthtimeMs,
@@ -222,31 +136,12 @@ export function loadSessionHistory(): SessionHistoryEntry[] {
   return rows.sort((a, b) => b.modifiedTime - a.modifiedTime);
 }
 
-export function loadSessionPage(
-  providerSessionId: string,
-  appSessionId: string,
-  cursor?: string,
-  limit = 200,
-): HistoryPage {
-  const path = sessionIndex().get(providerSessionId);
-  if (!path) throw new Error(`Session history not found for ${providerSessionId}`);
-  const role = roleFromSessionStart(readSessionStart(path, statSync(path).size));
-  const all = parseFullSessionTranscript(appSessionId, providerSessionId, path, role);
-  const safeLimit = Math.max(1, Math.min(limit, 500));
-  const end = cursor ? Math.max(0, Number(cursor) || 0) : all.length;
-  const start = Math.max(0, end - safeLimit);
-  return {
-    events: all.slice(start, end),
-    nextCursor: start > 0 ? String(start) : undefined,
-  };
-}
-
 export function sessionFilePath(providerSessionId: string): string | undefined {
-  return sessionIndex().get(providerSessionId);
+  return sessionPathIndex().get(providerSessionId);
 }
 
 export function sessionOrganizationId(providerSessionId: string): string | undefined {
-  const path = sessionIndex().get(providerSessionId);
+  const path = sessionPathIndex().get(providerSessionId);
   if (!path) return undefined;
   try {
     return readSessionStart(path, statSync(path).size).organizationId;
@@ -317,113 +212,8 @@ export class HistoryIndex {
   }
 
   static initializeOrValidateHistorySchema(db: DatabaseSync): void {
-    const row = db.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
-    const version = numberValue(row?.user_version) ?? 0;
-    const nonEmpty =
-      db
-        .prepare(
-          "SELECT 1 AS present FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1",
-        )
-        .get() !== undefined;
-    if (!nonEmpty) {
-      HistoryIndex.createSchema(db);
-      migrateHistoryPermissions(db);
-      return;
-    }
-    if (version === 1 || version === 2) {
-      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
-      rebuildChildSessionsToV4(db, version);
-    } else if (version === 3 || version === 4) {
-      if (!hasCanonicalHistorySchema(db, version)) throw new Error(historySchemaRecovery());
-      if (version === 3) addChildSettledAt(db);
-    } else if (version !== HISTORY_SCHEMA_VERSION) {
-      throw new Error(historySchemaRecovery());
-    }
-    if (version < HISTORY_SCHEMA_VERSION) addChatPreferenceColumns(db);
-    if (!hasCanonicalHistorySchema(db)) throw new Error(historySchemaRecovery());
+    ensureCanonicalHistorySchema(db);
     migrateHistoryPermissions(db);
-  }
-
-  private static createSchema(db: DatabaseSync): void {
-    db.exec(`
-      BEGIN;
-      CREATE TABLE IF NOT EXISTS app_sessions (
-        app_session_id TEXT PRIMARY KEY,
-        provider_session_id TEXT NOT NULL,
-        compacted_from_provider_session_ids TEXT NOT NULL DEFAULT '[]',
-        session_purpose TEXT NOT NULL,
-        interaction_mode TEXT NOT NULL,
-        title TEXT NOT NULL,
-        cwd TEXT,
-        workspace_kind TEXT,
-        updated_at INTEGER NOT NULL,
-        model_id TEXT,
-        reasoning_effort TEXT,
-        fast_mode INTEGER,
-        context_window_tokens INTEGER,
-        compaction_model TEXT,
-        worker_model_id TEXT,
-        worker_reasoning_effort TEXT,
-        validator_model_id TEXT,
-        validator_reasoning_effort TEXT,
-        autonomy TEXT,
-        tokens_in INTEGER NOT NULL DEFAULT 0,
-        tokens_out INTEGER NOT NULL DEFAULT 0,
-        context_tokens INTEGER NOT NULL DEFAULT 0,
-        context_remaining_tokens INTEGER,
-        context_accuracy TEXT,
-        context_updated_at TEXT,
-        max_context_tokens INTEGER,
-        auto_compactions INTEGER
-      );
-      CREATE TABLE IF NOT EXISTS child_sessions ${CHILD_SESSIONS_TABLE_SCHEMA};
-      CREATE UNIQUE INDEX child_sessions_provider_identity
-        ON child_sessions (parent_app_session_id, provider_session_id)
-        WHERE provider_session_id IS NOT NULL;
-      CREATE TABLE IF NOT EXISTS events (
-        id TEXT PRIMARY KEY,
-        source_session_id TEXT NOT NULL,
-        app_session_id TEXT,
-        kind TEXT NOT NULL,
-        ts INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS features (
-        mission_id TEXT NOT NULL,
-        feature_id TEXT NOT NULL,
-        status TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (mission_id, feature_id)
-      );
-      CREATE TABLE IF NOT EXISTS progress (
-        mission_id TEXT NOT NULL,
-        key TEXT NOT NULL,
-        ts INTEGER NOT NULL,
-        PRIMARY KEY (mission_id, key)
-      );
-      CREATE TABLE IF NOT EXISTS approvals (
-        request_id TEXT PRIMARY KEY,
-        app_session_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS questions (
-        request_id TEXT PRIMARY KEY,
-        app_session_id TEXT NOT NULL,
-        created_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS settings (
-        scope TEXT PRIMARY KEY,
-        value_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS catalog_cache (
-        catalog TEXT PRIMARY KEY,
-        value_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      PRAGMA user_version = ${String(HISTORY_SCHEMA_VERSION)};
-      COMMIT;
-    `);
   }
 
   summaryPatchesAndHidden(): SummaryPatchesAndHidden {
@@ -505,311 +295,6 @@ export function createHistorySessionFileCache(
       );
     },
   );
-}
-
-const CANONICAL_TABLE_COLUMNS = {
-  app_sessions: [
-    'app_session_id',
-    'provider_session_id',
-    'compacted_from_provider_session_ids',
-    'session_purpose',
-    'interaction_mode',
-    'title',
-    'cwd',
-    'workspace_kind',
-    'updated_at',
-    'model_id',
-    'reasoning_effort',
-    'fast_mode',
-    'context_window_tokens',
-    'compaction_model',
-    'worker_model_id',
-    'worker_reasoning_effort',
-    'validator_model_id',
-    'validator_reasoning_effort',
-    'autonomy',
-    'tokens_in',
-    'tokens_out',
-    'context_tokens',
-    'context_remaining_tokens',
-    'context_accuracy',
-    'context_updated_at',
-    'max_context_tokens',
-    'auto_compactions',
-  ],
-  child_sessions: [
-    'parent_app_session_id',
-    'child_session_id',
-    'provider_session_id',
-    'previous_provider_session_ids',
-    'role',
-    'label',
-    'prompt',
-    'group_name',
-    'phase',
-    'status',
-    'model_id',
-    'reasoning_effort',
-    'spawn_link_kind',
-    'spawn_link_id',
-    'transcript_available',
-    'started_at',
-    'settled_at',
-    'updated_at',
-  ],
-  events: ['id', 'source_session_id', 'app_session_id', 'kind', 'ts'],
-  features: ['mission_id', 'feature_id', 'status', 'updated_at'],
-  progress: ['mission_id', 'key', 'ts'],
-  approvals: ['request_id', 'app_session_id', 'kind', 'created_at'],
-  questions: ['request_id', 'app_session_id', 'created_at'],
-  settings: ['scope', 'value_json', 'updated_at'],
-  catalog_cache: ['catalog', 'value_json', 'updated_at'],
-} as const;
-
-// A stored index is canonical for the version it was written at, not for the
-// one this build writes: each entry is the child shape that version shipped.
-const CHILD_SESSION_COLUMNS_BY_VERSION = {
-  1: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-    (column) =>
-      column !== 'previous_provider_session_ids' &&
-      column !== 'group_name' &&
-      column !== 'phase' &&
-      column !== 'settled_at',
-  ),
-  2: CANONICAL_TABLE_COLUMNS.child_sessions.filter(
-    (column) => column !== 'group_name' && column !== 'phase' && column !== 'settled_at',
-  ),
-  3: CANONICAL_TABLE_COLUMNS.child_sessions.filter((column) => column !== 'settled_at'),
-  4: CANONICAL_TABLE_COLUMNS.child_sessions,
-  5: CANONICAL_TABLE_COLUMNS.child_sessions,
-};
-
-// The two chat preferences arrived in v5; every earlier version stored the same
-// app_sessions table without them.
-const APP_SESSION_COLUMNS_BEFORE_V5 = CANONICAL_TABLE_COLUMNS.app_sessions.filter(
-  (column) => column !== 'fast_mode' && column !== 'context_window_tokens',
-);
-
-const CHILD_SCHEMA_CHECKS = [
-  "check (role in ('worker', 'validator'))",
-  "check (spawn_link_kind in ('tool-use', 'spawn'))",
-  'check (transcript_available in (0, 1))',
-  '(spawn_link_kind is null and spawn_link_id is null)',
-  '(spawn_link_kind is not null and spawn_link_id is not null)',
-] as const;
-
-const CANONICAL_PRIMARY_KEYS = {
-  app_sessions: ['app_session_id'],
-  child_sessions: ['parent_app_session_id', 'child_session_id'],
-  events: ['id'],
-  features: ['mission_id', 'feature_id'],
-  progress: ['mission_id', 'key'],
-  approvals: ['request_id'],
-  questions: ['request_id'],
-  settings: ['scope'],
-  catalog_cache: ['catalog'],
-} as const;
-
-function hasCanonicalHistorySchema(
-  db: DatabaseSync,
-  version: HistorySchemaVersion = HISTORY_SCHEMA_VERSION,
-): boolean {
-  for (const table of Object.keys(CANONICAL_TABLE_COLUMNS)) {
-    if (
-      !hasExactColumns(db, table, canonicalColumns(table, version)) ||
-      !hasPrimaryKey(
-        db,
-        table,
-        CANONICAL_PRIMARY_KEYS[table as keyof typeof CANONICAL_PRIMARY_KEYS],
-      )
-    )
-      return false;
-  }
-  return (
-    hasPartialUniqueIndex(
-      db,
-      'child_sessions_provider_identity',
-      ['parent_app_session_id', 'provider_session_id'],
-      'provider_session_id is not null',
-    ) &&
-    (version >= 3 ||
-      hasPartialUniqueIndex(
-        db,
-        'child_sessions_spawn_identity',
-        ['parent_app_session_id', 'spawn_link_kind', 'spawn_link_id'],
-        'spawn_link_id is not null',
-      )) &&
-    childSchemaHasChecks(db, version)
-  );
-}
-
-function canonicalColumns(table: string, version: HistorySchemaVersion): readonly string[] {
-  if (table === 'child_sessions') return CHILD_SESSION_COLUMNS_BY_VERSION[version];
-  if (table === 'app_sessions')
-    return version === 5 ? CANONICAL_TABLE_COLUMNS.app_sessions : APP_SESSION_COLUMNS_BEFORE_V5;
-  return CANONICAL_TABLE_COLUMNS[table as keyof typeof CANONICAL_TABLE_COLUMNS];
-}
-
-function hasExactColumns(db: DatabaseSync, table: string, expected: readonly string[]): boolean {
-  const columns = tableInfo(db, table)
-    .map((row) => stringValue(row.name))
-    .filter((name) => name !== undefined);
-  return columns.length === expected.length && expected.every((column) => columns.includes(column));
-}
-
-function hasPrimaryKey(
-  db: DatabaseSync,
-  table: string,
-  expectedColumns: readonly string[],
-): boolean {
-  const columns = tableInfo(db, table)
-    .filter((row) => (numberValue(row.pk) ?? 0) > 0)
-    .sort((left, right) => (numberValue(left.pk) ?? 0) - (numberValue(right.pk) ?? 0))
-    .map((row) => stringValue(row.name));
-  return (
-    columns.length === expectedColumns.length &&
-    expectedColumns.every((column, position) => columns[position] === column)
-  );
-}
-
-function tableInfo(db: DatabaseSync, table: string): Record<string, unknown>[] {
-  if (!/^[a-z_]+$/.test(table)) return [];
-  return db.prepare(`PRAGMA table_info(${table})`).all();
-}
-
-function hasPartialUniqueIndex(
-  db: DatabaseSync,
-  indexName: string,
-  expectedColumns: readonly string[],
-  expectedPredicate: string,
-): boolean {
-  const index = (
-    db.prepare('PRAGMA index_list(child_sessions)').all() as Record<string, unknown>[]
-  ).find((row) => stringValue(row.name) === indexName);
-  if (!index || numberValue(index.unique) !== 1 || numberValue(index.partial) !== 1) return false;
-  const columns = (
-    db.prepare(`PRAGMA index_info(${indexName})`).all() as Record<string, unknown>[]
-  ).map((row) => stringValue(row.name));
-  const schema = db
-    .prepare("SELECT sql FROM sqlite_schema WHERE type = 'index' AND name = ?")
-    .get(indexName) as Record<string, unknown> | undefined;
-  const sql = stringValue(schema?.sql)?.toLowerCase().replace(/\s+/g, ' ').trim().replace(/;$/, '');
-  const expectedSql = `create unique index ${indexName} on child_sessions (${expectedColumns.join(', ')}) where ${expectedPredicate}`;
-  return (
-    columns.length === expectedColumns.length &&
-    expectedColumns.every((column, position) => columns[position] === column) &&
-    sql === expectedSql
-  );
-}
-
-function childSchemaHasChecks(db: DatabaseSync, version: HistorySchemaVersion): boolean {
-  const row = db
-    .prepare("SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = 'child_sessions'")
-    .get() as Record<string, unknown> | undefined;
-  const sql = stringValue(row?.sql)?.toLowerCase().replace(/\s+/g, ' ');
-  const statusCheck =
-    version >= 3
-      ? "check (status in ('pending', 'running', 'paused', 'completed', 'failed'))"
-      : "check (status in ('pending', 'running', 'paused', 'completed'))";
-  return Boolean(
-    sql && sql.includes(statusCheck) && CHILD_SCHEMA_CHECKS.every((check) => sql.includes(check)),
-  );
-}
-
-function assertCanonicalHistorySchema(db: DatabaseSync): void {
-  const row = db.prepare('PRAGMA user_version').get() as Record<string, unknown> | undefined;
-  if (
-    (numberValue(row?.user_version) ?? 0) !== HISTORY_SCHEMA_VERSION ||
-    !hasCanonicalHistorySchema(db)
-  )
-    throw new Error(historySchemaRecovery());
-}
-
-function persistedChildSessionFromRow(row: Record<string, unknown>): PersistedChildSession {
-  const parentAppSessionId = stringValue(row.parent_app_session_id);
-  const childSessionId = stringValue(row.child_session_id);
-  const role = persistedChildRole(row.role);
-  const status = persistedChildStatus(row.status);
-  const modelId = stringValue(row.model_id);
-  const updatedAt = numberValue(row.updated_at);
-  if (!parentAppSessionId || !childSessionId || !modelId || updatedAt === undefined)
-    throw new Error(historySchemaRecovery());
-  const spawnLink = persistedChildSpawnLink(row);
-  const previousProviderSessionIds = decodeProviderSessionIdList(
-    row.previous_provider_session_ids,
-    historySchemaRecovery(),
-  );
-  return {
-    parentAppSessionId,
-    childSessionId,
-    ...whenString(row.provider_session_id, (providerSessionId) => ({ providerSessionId })),
-    ...(previousProviderSessionIds.length > 0 ? { previousProviderSessionIds } : {}),
-    role,
-    ...whenString(row.label, (label) => ({ label })),
-    ...whenString(row.prompt, (prompt) => ({ prompt })),
-    ...whenString(row.group_name, (group) => ({ group })),
-    ...whenString(row.phase, (phase) => ({ phase })),
-    status,
-    modelId,
-    ...whenReasoning(row.reasoning_effort),
-    ...(spawnLink ? { spawnLink } : {}),
-    transcriptAvailable: numberValue(row.transcript_available) === 1,
-    ...whenNumber(row.started_at, (startedAt) => ({ startedAt })),
-    ...whenNumber(row.settled_at, (settledAt) => ({ settledAt })),
-    updatedAt,
-  };
-}
-
-function persistedChildRole(value: unknown): PersistedChildRole {
-  const role = stringValue(value);
-  if (role === 'worker' || role === 'validator') return role;
-  throw new Error(historySchemaRecovery());
-}
-
-function persistedChildStatus(value: unknown): PersistedChildStatus {
-  const status = stringValue(value);
-  if (
-    status === 'pending' ||
-    status === 'running' ||
-    status === 'paused' ||
-    status === 'completed' ||
-    status === 'failed'
-  )
-    return status;
-  throw new Error(historySchemaRecovery());
-}
-
-function persistedChildSpawnLink(
-  row: Record<string, unknown>,
-): PersistedChildSpawnLink | undefined {
-  const kind = stringValue(row.spawn_link_kind);
-  const id = stringValue(row.spawn_link_id);
-  if (kind === undefined && id === undefined) return undefined;
-  if ((kind === 'tool-use' || kind === 'spawn') && id) return { kind, id };
-  throw new Error(historySchemaRecovery());
-}
-
-function whenString<T extends object>(
-  value: unknown,
-  create: (value: string) => T,
-): T | Record<string, never> {
-  const resolved = stringValue(value);
-  return resolved === undefined ? {} : create(resolved);
-}
-
-function whenNumber<T extends object>(
-  value: unknown,
-  create: (value: number) => T,
-): T | Record<string, never> {
-  const resolved = numberValue(value);
-  return resolved === undefined ? {} : create(resolved);
-}
-
-function whenReasoning(
-  value: unknown,
-): { reasoningEffort: ReasoningEffort } | Record<string, never> {
-  const reasoningEffort = reasoningValue(value);
-  return reasoningEffort === undefined ? {} : { reasoningEffort };
 }
 
 function readStoredSummaryPatches(): Map<string, Partial<SessionSummary>> {
@@ -968,65 +453,38 @@ function definedPatch(patch: Partial<SessionSummary>): Partial<SessionSummary> {
   return Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
 }
 
-export function hydrateHistoricalSession(
+export async function hydrateHistoricalSession(
   missionId: string,
   opts: { cursor?: string; limit?: number } = {},
-): HydratedSessionHistory {
+): Promise<HydratedSessionHistory> {
   const dir = resolveMissionDir(missionId);
-  if (!dir) throw new Error(`Mission history not found for ${missionId}`);
-
-  const { summary, storedProgress } = loadMissionControlSession(dir);
-  const progress = projectMissionProgress(
-    storedProgress,
-    readStoredChildSessions(summary.appSessionId),
-  );
+  const state = readJson(join(dir, 'state.json')) as StoredMissionState;
+  const appSessionId = missionSessionId(state, dir);
 
   // The orchestrator backing session is rekeyed on every compaction, so the
   // full conversation is spread across a CHAIN of session files. Resolve that
   // chain (oldest -> newest) from the persisted app-session row; replaying only
   // the latest segment is what made compacted chats lose their scrollback.
-  const chain = orchestratorChain(summary);
-  const window = loadSessionTranscriptWindow(summary.appSessionId, chain, opts);
+  const chain = resolveSessionChain(appSessionId, appSessionId);
+  const window = await loadSessionTranscriptWindow(appSessionId, chain, opts);
 
-  // Older pages only extend the orchestrator scrollback upward; workers and
-  // progress were already delivered with the initial (newest) page.
+  // Older pages only extend the orchestrator scrollback; progress was already delivered with the newest page.
   if (opts.cursor) {
     return { progress: [], transcripts: window.events, olderCursor: window.olderCursor };
   }
 
+  const { storedProgress } = loadMissionControlSession(dir);
+  const progress = projectMissionProgress(storedProgress, readStoredChildSessions(appSessionId));
   return { progress, transcripts: window.events, olderCursor: window.olderCursor };
 }
 
-// Resolve the orchestrator's compaction chain (oldest -> newest backing session
-// ids) for a mission. The persisted app-session row keeps the authoritative
-// chain (previous backing ids + current); fall back to the summary when it is
-// already hydrated with one. Filtered to ids that still have a session file.
-function orchestratorChain(summary: SessionSummary): string[] {
-  const patches = readStoredSummaryPatches();
-  const patch =
-    patches.get(summary.appSessionId) ??
-    patches.get(summary.providerSessionId ?? summary.appSessionId);
-  const currentSession =
-    patch?.providerSessionId ?? summary.providerSessionId ?? summary.appSessionId;
-  const sessionFiles = sessionIndex();
-  const compactedFrom =
-    patch?.compactedFromProviderSessionIds ?? summary.compactedFromProviderSessionIds ?? [];
-  return dedupeStrings([summary.appSessionId, ...compactedFrom, currentSession]).filter((id) =>
-    sessionFiles.has(id),
-  );
-}
-
-// Resolve the compaction chain (oldest -> newest backing session ids) for a
-// plain chat / spec session that has no Mission Control directory. Such sessions never
-// reach hydrateHistoricalSession, so without this they would replay only the
-// newest backing file and lose all pre-compaction scrollback. Reads the chain
-// straight from the persisted app-session row (keyed by either id) and filters
-// to ids that still have a session file on disk.
+// Resolve the compaction chain (oldest -> newest backing session ids) from the
+// persisted app-session row, filtered to session files that still exist.
 export function resolveSessionChain(appSessionId: string, providerSessionId: string): string[] {
   const patches = readStoredSummaryPatches();
   const patch = patches.get(appSessionId) ?? patches.get(providerSessionId);
   const currentSession = patch?.providerSessionId ?? providerSessionId;
-  const sessionFiles = sessionIndex();
+  const sessionFiles = sessionPathIndex();
   const compactedFrom = patch?.compactedFromProviderSessionIds ?? [];
   return dedupeStrings([appSessionId, ...compactedFrom, currentSession]).filter((id) =>
     sessionFiles.has(id),
@@ -1044,143 +502,23 @@ function dedupeStrings(values: (string | undefined)[]): string[] {
   return out;
 }
 
-// Parsed-segment readers, LRU-bounded: repeat pages and session reopens hit a
-// warm reader instead of re-reading and re-parsing the file. Freshness is
-// validated by stat (mtime + size) on every window, so a live-appended or
-// compacted file is re-read exactly once per change.
-const MAX_TRANSCRIPT_READERS = 12;
-const transcriptReaders = new Map<
-  string,
-  {
-    mtimeMs: number;
-    sizeBytes: number;
-    appSessionId: string;
-    role: SessionRole;
-    reader: SessionTranscriptReader;
-  }
->();
-
-function transcriptReaderFor(
-  appSessionId: string,
-  providerSessionId: string,
-  path: string,
-  role: SessionRole,
-): SessionTranscriptReader {
-  const stat = statSync(path);
-  const cached = transcriptReaders.get(path);
-  if (
-    cached?.mtimeMs === stat.mtimeMs &&
-    cached.sizeBytes === stat.size &&
-    cached.appSessionId === appSessionId &&
-    cached.role === role &&
-    cached.reader.noticesRevision === sessionNoticesRevision(providerSessionId) &&
-    cached.reader.canvasBindingsRevision === canvasToolBindingsRevision(appSessionId)
-  ) {
-    transcriptReaders.delete(path);
-    transcriptReaders.set(path, cached);
-    return cached.reader;
-  }
-  const reader = new SessionTranscriptReader(appSessionId, providerSessionId, path, role);
-  transcriptReaders.delete(path);
-  transcriptReaders.set(path, {
-    mtimeMs: stat.mtimeMs,
-    sizeBytes: stat.size,
-    appSessionId,
-    role,
-    reader,
-  });
-  if (transcriptReaders.size > MAX_TRANSCRIPT_READERS) {
-    const oldest = transcriptReaders.keys().next().value;
-    if (oldest) transcriptReaders.delete(oldest);
-  }
-  return reader;
-}
+const transcriptWindow = new HistoryTranscriptWindow();
 
 export function invalidateSessionTranscripts(): void {
-  transcriptReaders.clear();
+  transcriptWindow.invalidate();
 }
 
-// Transcript window cursors: "v2:<chainIdx>:<line>:<skip>" addresses a
-// line/event position inside one segment; "v2:<chainIdx>:end" starts at a
-// segment's tail. Pre-v2 cursors addressed item indexes that no longer exist;
-// only their "<chainIdx>:end" form still maps, anything else ends paging
-// cleanly (empty page, no cursor) instead of serving a wrong page.
-function parseTranscriptCursor(
-  cursor: string,
-): { ci: number; from?: TranscriptWindowCursor } | null {
-  const parts = cursor.split(':');
-  if (parts[0] === 'v2') {
-    const ci = Number(parts[1]);
-    if (!Number.isInteger(ci) || ci < 0) return null;
-    if (parts[2] === 'end' && parts.length === 3) return { ci };
-    const line = Number(parts[2]);
-    const skip = Number(parts[3]);
-    const notice = parts.length === 5 ? Number(parts[4]) : undefined;
-    if (
-      (parts.length !== 4 && parts.length !== 5) ||
-      !Number.isInteger(line) ||
-      !Number.isInteger(skip)
-    )
-      return null;
-    if (notice !== undefined && (!Number.isInteger(notice) || notice < -1)) return null;
-    if (line < (notice === undefined ? 0 : -1) || skip < 0) return null;
-    return { ci, from: { line, skip, ...(notice !== undefined ? { notice } : {}) } };
-  }
-  const ci = Number(parts[0]);
-  if (parts.length === 2 && parts[1] === 'end' && Number.isInteger(ci) && ci >= 0) return { ci };
-  return null;
-}
-
-// Window the primary transcript backward across the compaction chain.
-// Segments are read newest -> oldest only as far as needed to fill `limit`,
-// and each segment parses its lines lazily from the tail, so a months-long,
-// heavily-compacted chat opens fast and pages older history in on demand.
 export function loadSessionTranscriptWindow(
   appSessionId: string,
   chainProviderSessionIds: string[],
   opts: { cursor?: string; limit?: number; role?: SessionRole; fullText?: boolean } = {},
-): { events: TranscriptEvent[]; olderCursor?: string } {
-  const limit = Math.max(1, opts.limit ?? DEFAULT_HISTORY_WINDOW);
-  const role = opts.role ?? 'primary';
-  const sessionIndex = buildSessionIndex();
-  const chain = chainProviderSessionIds.filter((id) => sessionIndex.has(id));
-  if (chain.length === 0) return { events: [] };
-
-  let startIdx = chain.length - 1;
-  let from: TranscriptWindowCursor | undefined;
-  if (opts.cursor) {
-    const parsed = parseTranscriptCursor(opts.cursor);
-    if (!parsed || parsed.ci >= chain.length) return { events: [] };
-    startIdx = parsed.ci;
-    from = parsed.from;
-  }
-
-  const picked: TranscriptEvent[] = [];
-  let olderCursor: string | undefined;
-  for (let ci = startIdx; ci >= 0; ci--) {
-    const path = sessionIndex.get(chain[ci])!;
-    const reader = opts.fullText
-      ? new SessionTranscriptReader(appSessionId, chain[ci], path, role, true)
-      : transcriptReaderFor(appSessionId, chain[ci], path, role);
-    // Chain-derived monotonic order: older segments (lower ci) and earlier
-    // in-segment positions sort first, independent of wall-clock ts.
-    const window = reader.windowBackward(
-      limit - picked.length,
-      ci * SEQ_SEGMENT_STRIDE,
-      ci === startIdx ? from : undefined,
-    );
-    picked.unshift(...window.events);
-    if (window.older) {
-      const notice = window.older.notice;
-      olderCursor = `v2:${String(ci)}:${String(window.older.line)}:${String(window.older.skip)}${notice !== undefined ? `:${String(notice)}` : ''}`;
-      break;
-    }
-    if (picked.length >= limit) {
-      if (ci > 0) olderCursor = `v2:${String(ci - 1)}:end`;
-      break;
-    }
-  }
-  return { events: picked, olderCursor };
+): Promise<{ events: TranscriptEvent[]; olderCursor?: string }> {
+  return transcriptWindow.loadWindow(
+    sessionPathIndex(),
+    appSessionId,
+    chainProviderSessionIds,
+    opts,
+  );
 }
 
 /**
@@ -1192,26 +530,26 @@ export function loadOpenTranscriptTail(
   path: string,
   limit: number,
   fullText = false,
-): TranscriptEvent[] {
-  if (!existsSync(path)) return [];
-  const reader = fullText
-    ? new SessionTranscriptReader(appSessionId, appSessionId, path, 'primary', true)
-    : transcriptReaderFor(appSessionId, appSessionId, path, 'primary');
-  return reader.windowBackward(Math.max(1, limit), 0).events;
+): Promise<TranscriptEvent[]> {
+  return transcriptWindow.loadOpenTail(appSessionId, path, limit, fullText);
 }
 
 export function readFactoryDefaults(home = homedir()): FactoryDefaults {
   const path = join(home, '.factory', 'settings.json');
   if (!existsSync(path)) return {};
-  const settings = readJson<Record<string, unknown>>(path);
+  const settings = readJson(path) as Record<string, unknown>;
   const session = objectValue(settings.sessionDefaultSettings) ?? {};
   const missionControlSettings = objectValue(settings.missionModelSettings) ?? {};
   return {
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     modelId: stringValue(session.model) || stringValue(session.modelId),
     reasoningEffort: reasoningValue(session.reasoningEffort),
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source.
     compactionModel: stringValue(settings.compactionModel) || stringValue(session.compactionModel),
-    compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
-    compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
+    compactionTokenLimit: normalizeCompactionTokenLimit(settings.compactionTokenLimit),
+    compactionTokenLimitPerModel: normalizeCompactionTokenLimitPerModel(
+      settings.compactionTokenLimitPerModel,
+    ),
     autonomy: normalizeAutonomy(session.autonomyLevel),
     interactionMode: mapInteractionMode(stringValue(session.interactionMode)),
     specModelId: stringValue(session.specModeModel),
@@ -1230,303 +568,6 @@ export function readFactoryDefaults(home = homedir()): FactoryDefaults {
 function mapInteractionMode(value?: string): FactoryDefaults['interactionMode'] {
   if (value === 'auto' || value === 'spec' || value === 'agi') return value;
   return undefined;
-}
-
-function tokenLimitValue(value: unknown): number | undefined {
-  return normalizeCompactionTokenLimit(value);
-}
-
-function tokenLimitRecordValue(value: unknown): Record<string, number> | undefined {
-  const record = objectValue(value);
-  if (!record) return undefined;
-  const entries = Object.entries(record)
-    .map(([modelId, limit]) => [modelId, tokenLimitValue(limit)] as const)
-    .filter((entry): entry is [string, number] => entry[1] !== undefined);
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
-}
-
-function loadMissionControlSession(dir: string): HistoricalSession & {
-  state: StoredMissionState;
-  features: BridgeFeature[];
-  storedProgress: StoredProgressEntry[];
-} {
-  const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-  const storedProgress = readProgress(join(dir, 'progress_log.jsonl'));
-  const progress = storedProgress.map(publicProgressEntry);
-  const features = readFeatures(join(dir, 'features.json'));
-  const dirId = basename(dir);
-  const providerSessionId = state.baseSessionId || dirId;
-  const firstProgressTitle = progress.find((p) => p.title)?.title;
-  const cwd = state.workingDirectory || state.cwd || '';
-  const title =
-    firstProgressTitle ||
-    state.missionId ||
-    lastPathSegment(cwd) ||
-    `Mission ${providerSessionId.slice(0, 8)}`;
-  const createdAt =
-    dateMs(state.createdAt) || dateMs(progress[0]?.timestamp) || statSync(dir).birthtimeMs;
-  const updatedAt =
-    dateMs(state.updatedAt) ||
-    dateMs(progress[progress.length - 1]?.timestamp) ||
-    statSync(dir).mtimeMs;
-  const modelSettings = readMissionModelSettings(dir);
-
-  return {
-    summary: {
-      appSessionId: providerSessionId,
-      providerSessionId,
-      missionId: state.missionId ?? dirId,
-      provider: DEFAULT_PROVIDER,
-      sessionPurpose: 'mission-control',
-      interactionMode: 'agi',
-      role: 'primary',
-      title,
-      goal: progress[0]?.message || title,
-      cwd,
-      workspaceKind: cwd ? 'folder' : 'none',
-      ...modelSettings,
-      autonomy: modelSettings.autonomy ?? 'medium',
-      phase: STATE_TO_PHASE[String(state.state ?? '')] ?? 'paused',
-      features,
-      tokensIn: 0,
-      tokensOut: 0,
-      contextTokens: 0,
-      createdAt,
-      updatedAt,
-    },
-    progress,
-    storedProgress,
-    state,
-    features,
-  };
-}
-
-function readMissionModelSettings(dir: string): FactoryDefaults {
-  const path = join(dir, 'model-settings.json');
-  if (!existsSync(path)) return {};
-  const settings = readJson<StoredModelSettings>(path);
-  return {
-    modelId: settings.model || settings.modelId,
-    reasoningEffort: reasoningValue(settings.reasoningEffort),
-    compactionModel: settings.compactionModel,
-    compactionTokenLimit: tokenLimitValue(settings.compactionTokenLimit),
-    compactionTokenLimitPerModel: tokenLimitRecordValue(settings.compactionTokenLimitPerModel),
-    workerModelId: settings.workerModel,
-    workerReasoningEffort: reasoningValue(settings.workerReasoningEffort),
-    validatorModelId: settings.validationWorkerModel,
-    validatorReasoningEffort: reasoningValue(settings.validationWorkerReasoningEffort),
-    autonomy: normalizeAutonomy(settings.autonomyLevel),
-  };
-}
-
-function readProgress(path: string): StoredProgressEntry[] {
-  if (!existsSync(path)) return [];
-  return readJsonLines<Record<string, unknown>>(path).map((entry) => {
-    const handoff = objectValue(entry.handoff);
-    const validation = objectValue(entry.validation);
-    return {
-      type: stringValue(entry.type) || 'entry',
-      timestamp: stringValue(entry.timestamp) || new Date().toISOString(),
-      title: stringValue(entry.title) || titleFromProgressType(stringValue(entry.type)),
-      message:
-        stringValue(entry.message) ||
-        stringValue(handoff?.salientSummary) ||
-        stringValue(validation?.summary) ||
-        stringValue(entry.reason),
-      featureId: stringValue(entry.featureId),
-      ...whenString(entry.workerSessionId, (workerProviderSessionId) => ({
-        workerProviderSessionId,
-      })),
-      ...whenString(entry.spawnId, (spawnId) => ({ spawnId })),
-    };
-  });
-}
-
-export function projectMissionProgress(
-  entries: StoredProgressEntry[],
-  children: PersistedChildSession[],
-): ProgressEntry[] {
-  const childrenBySpawn = new Map(
-    children.flatMap((child) =>
-      child.spawnLink?.kind === 'spawn'
-        ? [[child.spawnLink.id, child.childSessionId] as const]
-        : [],
-    ),
-  );
-  const childrenByProvider = new Map<string, string>();
-  const correlatedSpawns = new Map<string, string>();
-  const providerBySpawn = new Map<string, string>();
-  const spawnByProvider = new Map<string, string>();
-  const retiredProviders = new Set<string>();
-  return entries.map((entry) => {
-    if (
-      entry.type === 'worker_started' &&
-      entry.workerProviderSessionId &&
-      entry.spawnId &&
-      !retiredProviders.has(entry.workerProviderSessionId) &&
-      (!spawnByProvider.has(entry.workerProviderSessionId) ||
-        spawnByProvider.get(entry.workerProviderSessionId) === entry.spawnId)
-    ) {
-      const childSessionId = childrenBySpawn.get(entry.spawnId);
-      if (childSessionId) {
-        const previousProviderSessionId = providerBySpawn.get(entry.spawnId);
-        if (
-          previousProviderSessionId &&
-          previousProviderSessionId !== entry.workerProviderSessionId
-        ) {
-          childrenByProvider.delete(previousProviderSessionId);
-          retiredProviders.add(previousProviderSessionId);
-        }
-        childrenByProvider.set(entry.workerProviderSessionId, childSessionId);
-        correlatedSpawns.set(entry.spawnId, childSessionId);
-        providerBySpawn.set(entry.spawnId, entry.workerProviderSessionId);
-        spawnByProvider.set(entry.workerProviderSessionId, entry.spawnId);
-      }
-    }
-    const byProvider =
-      entry.workerProviderSessionId && !retiredProviders.has(entry.workerProviderSessionId)
-        ? childrenByProvider.get(entry.workerProviderSessionId)
-        : undefined;
-    const bySpawn = entry.spawnId ? correlatedSpawns.get(entry.spawnId) : undefined;
-    const childSessionId =
-      entry.workerProviderSessionId && entry.spawnId
-        ? providerBySpawn.get(entry.spawnId) === entry.workerProviderSessionId &&
-          byProvider === bySpawn
-          ? byProvider
-          : undefined
-        : (byProvider ?? bySpawn);
-    const publicEntry = publicProgressEntry(entry);
-    return childSessionId ? { ...publicEntry, workerChildSessionId: childSessionId } : publicEntry;
-  });
-}
-
-function publicProgressEntry(entry: StoredProgressEntry): ProgressEntry {
-  const publicEntry = { ...entry };
-  delete publicEntry.workerProviderSessionId;
-  delete publicEntry.spawnId;
-  return publicEntry;
-}
-
-function readFeatures(path: string): BridgeFeature[] {
-  if (!existsSync(path)) return [];
-  const file = readJson<StoredFeatureFile>(path);
-  return (file.features ?? []).map((feature) => bridgeFeature(feature));
-}
-
-function missionDirs(): string[] {
-  const root = join(homedir(), '.factory', 'missions');
-  if (!existsSync(root)) return [];
-  return readdirSync(root)
-    .map((name) => join(root, name))
-    .filter((path) => {
-      try {
-        return statSync(path).isDirectory() && existsSync(join(path, 'state.json'));
-      } catch {
-        return false;
-      }
-    });
-}
-
-function resolveMissionDir(missionId: string): string | null {
-  for (const dir of missionDirs()) {
-    const state = readJson<StoredMissionState>(join(dir, 'state.json'));
-    if (
-      basename(dir) === missionId ||
-      state.baseSessionId === missionId ||
-      state.missionId === missionId
-    )
-      return dir;
-  }
-  return null;
-}
-
-function shouldIncludeCwd(
-  cwd: string,
-  workspaceCwds: Set<string> | null,
-  includePlainChats?: boolean,
-): boolean {
-  if (!cwd) return Boolean(includePlainChats);
-  if (!workspaceCwds) return false;
-  return workspaceCwds.has(cwd);
-}
-
-// Enumeration, replay and search share these roots, including the optional
-// Alt logins and transcripts DROIDEX writes for other providers.
-function scanSessionFileTree(): SessionFileScan {
-  const files = new Map<string, SessionFileStat>();
-  const settingsMtimes = new Map<string, number>();
-  let isComplete = true;
-  // Alt profiles are private extra logins, so they never replace or break a Main
-  // chat: their roots are walked last, in profile order, and a file whose
-  // identity an earlier root already has is skipped.
-  const walk = (dir: string, depth: number, isAlt: boolean) => {
-    if (depth > 4) return;
-    // A directory can be removed between the root check and this readdir
-    // (a parallel Droid CLI run compacting/deleting sessions). Skip a
-    // vanished subtree instead of letting the throw abort the whole scan,
-    // which would abort the cache reconcile it backs.
-    let names: string[];
-    try {
-      names = readdirSync(dir);
-    } catch {
-      isComplete = false;
-      return;
-    }
-    for (const name of names) {
-      const path = join(dir, name);
-      let stat;
-      try {
-        stat = statSync(path);
-      } catch {
-        continue;
-      }
-      if (stat.isDirectory()) walk(path, depth + 1, isAlt);
-      else if (name.endsWith('.jsonl')) {
-        const id = name.slice(0, -'.jsonl'.length);
-        if (isAlt && files.has(id)) continue;
-        files.set(id, {
-          path,
-          birthtimeMs: stat.birthtimeMs,
-          mtimeMs: stat.mtimeMs,
-          sizeBytes: stat.size,
-          settingsMtimeMs: null,
-        });
-      } else if (name.endsWith('.settings.json')) {
-        settingsMtimes.set(path, stat.mtimeMs);
-      }
-    }
-  };
-  for (const root of [join(homedir(), '.factory', 'sessions'), providerSessionsDir()])
-    if (existsSync(root)) walk(root, 0, false);
-  for (const { root } of altSessionRoots()) if (existsSync(root)) walk(root, 0, true);
-  for (const file of files.values()) {
-    file.settingsMtimeMs =
-      settingsMtimes.get(file.path.replace(/\.jsonl$/, '.settings.json')) ?? null;
-  }
-  return { files, isComplete };
-}
-
-// Stats one session file and its settings sidecar, or returns null when the
-// file is gone (deleted between a watcher event and the reconcile).
-function statSessionFile(path: string): SessionFileStat | null {
-  try {
-    const stat = statSync(path);
-    let settingsMtimeMs: number | null = null;
-    try {
-      settingsMtimeMs = statSync(path.replace(/\.jsonl$/, '.settings.json')).mtimeMs;
-    } catch {
-      settingsMtimeMs = null;
-    }
-    return {
-      path,
-      birthtimeMs: stat.birthtimeMs,
-      mtimeMs: stat.mtimeMs,
-      sizeBytes: stat.size,
-      settingsMtimeMs,
-    };
-  } catch {
-    return null;
-  }
 }
 
 // The worker-maintained file cache is the only owner that populates this path
@@ -1550,13 +591,9 @@ export function invalidateSessionIndex(): void {
   sessionIndexMemo = null;
 }
 
-function buildSessionIndex(): Map<string, string> {
+function sessionPathIndex(): Map<string, string> {
   sessionIndexMemo ??= new Map();
   return sessionIndexMemo;
-}
-
-function sessionIndex(): Map<string, string> {
-  return buildSessionIndex();
 }
 
 // Builds the base summary and launch settings for one on-disk session file
@@ -1583,7 +620,7 @@ function summarizeSessionFile(
   // App-owned transcripts persist the prompt and provider binding before a reply.
   const isDurable = hasCompletedConversation || (provider !== DEFAULT_PROVIDER && hasPrompt);
   if (!classification || !isDurable) return { summary: null, ...cachedLaunch };
-  const title = start.sessionTitle || start.title || `Session ${providerSessionId.slice(0, 8)}`;
+  const title = sessionTitle(start, providerSessionId);
   const droidProfile = altSessionRoots().find(({ root }) =>
     file.path.startsWith(`${root}${sep}`),
   )?.profile;
@@ -1628,14 +665,6 @@ function launchSettings(settings: FactoryDefaults): SessionFileLaunchSettings | 
     modelId: settings.modelId,
     ...(settings.reasoningEffort ? { reasoningEffort: settings.reasoningEffort } : {}),
   };
-}
-
-function readJson<T>(path: string): T {
-  return JSON.parse(readFileSync(path, 'utf8')) as T;
-}
-
-function readJsonLines<T>(path: string): T[] {
-  return parseJsonLines(readFileSync(path, 'utf8'));
 }
 
 function classifyStoredSession(
@@ -1691,6 +720,7 @@ function readSessionModelSettings(
     // Once the sidecar names the model the head line is history, including when
     // it names none: that is the record of a chat reset to its provider's own
     // default, not an absent setting to fall back from.
+    /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty model names and reasoning efforts fall back to the next source. */
     modelId: Object.hasOwn(sidecarSettings, 'modelId')
       ? stringValue(sidecarSettings.modelId)
       : stringValue(sidecarSettings.model) ||
@@ -1703,23 +733,26 @@ function readSessionModelSettings(
         ? stringValue(sidecarSettings.reasoningEffort)
         : stringValue(settings.reasoningEffort) || stringValue(raw.reasoningEffort),
     ),
+    /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
     contextWindowTokens: contextWindowTokensValue(
       sidecarSettings.contextWindowTokens !== undefined
         ? sidecarSettings.contextWindowTokens
         : raw.contextWindowTokens,
     ),
+    /* eslint-disable @typescript-eslint/prefer-nullish-coalescing -- Empty model names fall back to the next source. */
     compactionModel:
       stringValue(sidecarSettings.compactionModel) ||
       stringValue(settings.compactionModel) ||
       stringValue(raw.compactionModel),
+    /* eslint-enable @typescript-eslint/prefer-nullish-coalescing */
     compactionTokenLimit:
-      tokenLimitValue(sidecarSettings.compactionTokenLimit) ??
-      tokenLimitValue(settings.compactionTokenLimit) ??
-      tokenLimitValue(raw.compactionTokenLimit),
+      normalizeCompactionTokenLimit(sidecarSettings.compactionTokenLimit) ??
+      normalizeCompactionTokenLimit(settings.compactionTokenLimit) ??
+      normalizeCompactionTokenLimit(raw.compactionTokenLimit),
     compactionTokenLimitPerModel:
-      tokenLimitRecordValue(sidecarSettings.compactionTokenLimitPerModel) ??
-      tokenLimitRecordValue(settings.compactionTokenLimitPerModel) ??
-      tokenLimitRecordValue(raw.compactionTokenLimitPerModel),
+      normalizeCompactionTokenLimitPerModel(sidecarSettings.compactionTokenLimitPerModel) ??
+      normalizeCompactionTokenLimitPerModel(settings.compactionTokenLimitPerModel) ??
+      normalizeCompactionTokenLimitPerModel(raw.compactionTokenLimitPerModel),
     autonomy: migrateTranscriptPermissions(
       sessionPath,
       providerKind(start?.provider) ?? DEFAULT_PROVIDER,
@@ -1737,7 +770,7 @@ function readAdjacentSessionSettings(sessionPath: string): Record<string, unknow
   const settingsPath = sessionPath.replace(/\.jsonl$/, '.settings.json');
   if (!existsSync(settingsPath)) return {};
   try {
-    return objectValue(readJson<unknown>(settingsPath)) ?? {};
+    return objectValue(readJson(settingsPath)) ?? {};
   } catch {
     return {};
   }
@@ -1747,25 +780,6 @@ function countSessionMessages(path: string): number {
   const window = readSessionRawWindow(path, statSync(path).size);
   return parseJsonLines<StoredMessageLine>(window.text).filter((line) => line.type === 'message')
     .length;
-}
-
-function parseJsonLines<T>(raw: string): T[] {
-  const rows: T[] = [];
-  raw.split(/\r?\n/).forEach((line) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
-    try {
-      rows.push(JSON.parse(trimmed) as T);
-    } catch {
-      /* skip partial/corrupt JSONL rows */
-    }
-  });
-  return rows;
-}
-
-function titleFromProgressType(type?: string): string | undefined {
-  if (!type) return undefined;
-  return type.replace(/_/g, ' ');
 }
 
 function contextAccuracy(value: unknown): SessionSummary['contextAccuracy'] | undefined {
@@ -1788,21 +802,6 @@ function sessionInteractionModeValue(
 function workspaceKind(value?: string): SessionSummary['workspaceKind'] | undefined {
   if (value === 'folder' || value === 'none') return value;
   return undefined;
-}
-
-function roleFromSessionStart(start: StoredSessionStart): SessionRole {
-  if (start.decompSessionType === 'validator') return 'validator';
-  if (start.decompSessionType === 'worker') return 'worker';
-  // Factory Task-tool children carry no decompSessionType but have a parent
-  // session's tool call (callingSessionId/callingToolUseId). Replay them as
-  // workers so their transcript keys to their own session id instead of being
-  // folded into 'primary' (which would leave the opened child blank).
-  if (start.callingSessionId || start.callingToolUseId) return 'worker';
-  return 'primary';
-}
-
-function lastPathSegment(path: string): string {
-  return path.split('/').filter(Boolean).pop() ?? '';
 }
 
 function contextWindowTokensValue(value: unknown): ContextWindowTokens | undefined {

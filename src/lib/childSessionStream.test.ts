@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ChildSessionSummary } from '../types/bridge';
+import type { ChildSessionSummary } from '@droidex/protocol';
 import type { ChildSessionActivity } from './childSessions';
 import {
   boundChildStreamPreview,
@@ -9,8 +9,6 @@ import {
   CHILD_STREAM_PREVIEW_MAX_LINES,
   childStreamPhase,
   childStreamPhaseLabel,
-  childStreamPresentation,
-  childStreamShowsCaret,
   childStreamSnapshot,
   projectChildStreamSnapshots,
   reuseChildStreamSnapshotMap,
@@ -89,13 +87,11 @@ test('childStreamSnapshot prefers live transcript text and stays bounded', () =>
   assert.equal(snapshot.fidelity, 'token');
   assert.equal(snapshot.previewKind, 'markdown');
   assert.equal(snapshot.live, true);
-  assert.equal(childStreamShowsCaret(snapshot), true);
-  assert.equal(childStreamPresentation(snapshot), 'typewriter');
   assert.ok(snapshot.preview.length <= CHILD_STREAM_PREVIEW_MAX_CHARS);
   assert.ok(snapshot.preview.includes('final token burst'));
 });
 
-test('declared fidelity reaches the snapshot; a token child shows the caret and a state child never does', () => {
+test('declared fidelity reaches the snapshot and state and tool previews stay plain', () => {
   const token = childStreamSnapshot(
     child({ childSessionId: 'token', status: 'running', streamFidelity: 'token' }),
     activity({ kind: 'text', text: 'delta' }),
@@ -114,19 +110,13 @@ test('declared fidelity reaches the snapshot; a token child shows the caret and 
     activity({ kind: 'tool_call', toolName: 'ApplyPatch', text: 'editing file' }),
   );
   assert.deepEqual([token.fidelity, state.fidelity, tool.fidelity], ['token', 'state', 'tool']);
-  assert.equal(childStreamPresentation(token), 'typewriter');
-  assert.equal(childStreamShowsCaret(token), true);
-  assert.equal(childStreamPresentation(state), 'working');
-  assert.equal(childStreamShowsCaret(state), false);
   assert.equal(state.previewKind, 'plain');
   assert.equal(state.preview, 'poll lump');
   assert.equal(state.step, 'Running');
-  assert.equal(childStreamPresentation(tool), 'tool');
-  assert.equal(childStreamShowsCaret(tool), false);
   assert.equal(tool.previewKind, 'plain');
 });
 
-test('a polled child cannot reach a typewriter presentation', () => {
+test('a polled child stays plain and its own status controls phase and live state', () => {
   const polled = child({
     childSessionId: 'task',
     status: 'running',
@@ -135,16 +125,13 @@ test('a polled child cannot reach a typewriter presentation', () => {
   });
   const withText = childStreamSnapshot(
     polled,
-    activity({ kind: 'text', text: 'this would have been a caret' }),
+    activity({ kind: 'text', text: 'transcript text between polls' }),
   );
   const withOutputOnly = childStreamSnapshot(polled, { status: 'running', startedAt: 1_000 });
   assert.equal(withText.phase, 'streaming');
   assert.equal(withOutputOnly.phase, 'streaming');
-  assert.equal(childStreamShowsCaret(withText), false);
-  assert.equal(childStreamShowsCaret(withOutputOnly), false);
-  assert.equal(childStreamPresentation(withText), 'working');
-  assert.equal(childStreamPresentation(withOutputOnly), 'working');
-  assert.notEqual(withText.previewKind, 'markdown');
+  assert.equal(withText.previewKind, 'plain');
+  assert.equal(withOutputOnly.previewKind, 'plain');
   assert.equal(childStreamSnapshot(polled, { status: 'completed' }).live, true);
   assert.equal(
     childStreamSnapshot({ ...polled, status: 'failed' }, { status: 'running' }).phase,
@@ -203,5 +190,4 @@ test('interruptReason on a paused child is interrupted, not a fabricated progres
   );
   assert.equal(snapshot.phase, 'interrupted');
   assert.equal(snapshot.live, false);
-  assert.equal(childStreamShowsCaret(snapshot), false);
 });

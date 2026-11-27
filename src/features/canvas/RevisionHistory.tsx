@@ -8,7 +8,7 @@ import { cn } from '../../components/ui/cn';
 import { formatRelativeTime } from '../../lib/time';
 import { toast } from '../../lib/toast';
 import type { FrameHistory, RevisionList } from './frameHistory';
-import type { RevisionSummary } from './protocol';
+import type { RevisionSummary } from '@droidex/protocol';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';
 
 const MENU_WIDTH_PX = 200;

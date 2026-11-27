@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { SessionSummary } from './protocol.js';
+import type { SessionSummary } from '@droidex/protocol';
 import { persistTestChild, persistTestSummaries } from './testing/historyPersistenceFixture.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
 
@@ -13,6 +13,7 @@ const home = mkdtempSync(join(tmpdir(), 'droid-mission-history-'));
 process.env.HOME = home;
 
 const { HistoryIndex, hydrateHistoricalSession } = await import('./history.js');
+const { loadMissionControlSessions } = await import('./historyMissions.js');
 
 test.after(() => {
   if (originalHome === undefined) delete process.env.HOME;
@@ -20,7 +21,7 @@ test.after(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-test('Mission hydration restores logical child progress beneath the exact parent', () => {
+test('Mission hydration restores logical child progress beneath the exact parent', async () => {
   const missionDir = join(home, '.factory', 'missions', 'mission-1');
   mkdirSync(missionDir, { recursive: true });
   writeFileSync(
@@ -77,13 +78,122 @@ test('Mission hydration restores logical child progress beneath the exact parent
   });
   history.close();
 
-  const hydrated = hydrateHistoricalSession('mission-1');
+  const hydrated = await hydrateHistoricalSession('mission-1');
   assert.deepEqual(
     hydrated.progress.map((entry) => entry.workerChildSessionId),
     ['child-stable', 'child-stable'],
   );
   assert.equal(JSON.stringify(hydrated.progress).includes('provider-old'), false);
   assert.equal(JSON.stringify(hydrated.progress).includes('spawn-1'), false);
+});
+
+test('Mission enumeration keeps healthy missions beside an unreadable sibling', async (t) => {
+  const warnings = t.mock.method(console, 'warn', () => undefined);
+  const brokenDir = join(home, '.factory', 'missions', 'a-broken');
+  mkdirSync(brokenDir, { recursive: true });
+  writeFileSync(join(brokenDir, 'state.json'), '{"baseSessionId": "broken-app", "secret-partial');
+  const healthyDir = join(home, '.factory', 'missions', 'mission-healthy');
+  mkdirSync(healthyDir, { recursive: true });
+  writeFileSync(
+    join(healthyDir, 'state.json'),
+    JSON.stringify({
+      missionId: 'mission-healthy',
+      baseSessionId: 'healthy-app',
+      state: 'completed',
+      workingDirectory: '/work/project',
+    }),
+  );
+
+  const listedIds = loadMissionControlSessions().map(({ summary }) => summary.missionId);
+  assert.ok(listedIds.includes('mission-healthy'));
+  assert.equal(listedIds.includes('a-broken'), false);
+  assert.deepEqual(
+    loadMissionControlSessions({ workspaceCwds: ['/work/project'] }).map(
+      ({ summary }) => summary.missionId,
+    ),
+    ['mission-healthy'],
+  );
+  await hydrateHistoricalSession('healthy-app');
+  await assert.rejects(
+    hydrateHistoricalSession('broken-app'),
+    (error: Error) =>
+      error.message.includes('Mission history not found for broken-app') &&
+      error.message.includes(brokenDir) &&
+      !error.message.includes('secret-partial'),
+  );
+
+  assert.equal(warnings.mock.callCount(), 1);
+  const warning = String(warnings.mock.calls[0]?.arguments[0]);
+  assert.ok(warning.includes(brokenDir));
+  assert.equal(warning.includes('secret-partial'), false);
+});
+
+test('Mission older pages load independently of the progress log', async () => {
+  const appSessionId = 'paged-mission';
+  const missionDir = join(home, '.factory', 'missions', 'paged-mission');
+  const sessionDir = join(home, '.factory', 'sessions');
+  mkdirSync(missionDir, { recursive: true });
+  mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(join(missionDir, 'state.json'), JSON.stringify({ baseSessionId: '' }));
+  const progressPath = join(missionDir, 'progress_log.jsonl');
+  const timestamp = '2026-07-29T00:00:00.000Z';
+  writeFileSync(progressPath, JSON.stringify({ type: 'entry', timestamp }));
+  const path = join(sessionDir, `${appSessionId}.jsonl`);
+  writeFileSync(
+    path,
+    [
+      { type: 'session_start', id: appSessionId },
+      ...['older', 'latest'].map((text) => ({
+        type: 'message',
+        id: text,
+        timestamp,
+        message: { role: 'assistant', content: [{ type: 'text', text }] },
+      })),
+    ]
+      .map((line) => JSON.stringify(line))
+      .join('\n') + '\n',
+  );
+  const history = new HistoryIndex();
+  const stat = statSync(path);
+  history.replaceSessionFileSnapshot({
+    revision: 1,
+    changed: 1,
+    entries: [
+      {
+        providerSessionId: appSessionId,
+        path,
+        birthtimeMs: stat.birthtimeMs,
+        mtimeMs: stat.mtimeMs,
+        sizeBytes: stat.size,
+        settingsMtimeMs: null,
+        summary: null,
+      },
+    ],
+  });
+  history.close();
+
+  const latest = await hydrateHistoricalSession('paged-mission', { limit: 1 });
+  assert.ok(latest.olderCursor);
+  const older = await hydrateHistoricalSession('paged-mission', {
+    cursor: latest.olderCursor,
+    limit: 2,
+  });
+  assert.deepEqual(older.progress, []);
+  assert.deepEqual(
+    older.transcripts.map((event) => event.text),
+    ['older'],
+  );
+  assert.equal(older.olderCursor, undefined);
+  rmSync(progressPath);
+  mkdirSync(progressPath);
+  assert.deepEqual(
+    await hydrateHistoricalSession('paged-mission', {
+      cursor: latest.olderCursor,
+      limit: 2,
+    }),
+    older,
+  );
+  await assert.rejects(hydrateHistoricalSession('paged-mission', { limit: 1 }), { code: 'EISDIR' });
 });
 
 function missionSummary(): SessionSummary {

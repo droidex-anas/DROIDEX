@@ -2,7 +2,7 @@ import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import { promisify } from 'node:util';
 import { childEnv } from '../../childEnv.js';
-import type { ModelInfo, ProviderStatus, SkillInfo } from '../../protocol.js';
+import type { ModelInfo, ProviderStatus, SkillInfo } from '@droidex/protocol';
 import type {
   ProviderForkSource,
   ProviderForkHandle,

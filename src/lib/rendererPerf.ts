@@ -1,7 +1,7 @@
 // Safe in node --test: every DOM API is resolved lazily and observers start
 // only where they exist.
 
-import type { ServerEvent } from '../types/bridge';
+import type { ServerEvent } from '@droidex/protocol';
 
 type StartupPhase =
   | 'rendererHtmlLoaded'

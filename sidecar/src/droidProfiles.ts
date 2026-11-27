@@ -1,14 +1,10 @@
 import { existsSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
+import { DROID_PROFILES, type DroidProfile } from '@droidex/protocol';
 import { hasCliLogin } from './Environment.js';
 
 export const DROID_PROFILE_SCOPE_PREFIX = 'session.droid-profile:';
-
-// Each Alt profile is another Factory subscription, signed in through its own
-// wrapper command that runs Droid with HOME set to its directory.
-export const DROID_PROFILES = ['alt', 'alt2'] as const;
-export type DroidProfile = (typeof DROID_PROFILES)[number];
 
 const PROFILE_LOGINS: Record<
   DroidProfile,

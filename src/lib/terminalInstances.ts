@@ -1,13 +1,8 @@
 import { terminalInstances } from './terminalInstanceRegistry';
 import type { Terminal } from '@xterm/xterm';
 import type { FitAddon } from '@xterm/addon-fit';
-import {
-  resizeTerminal,
-  subscribeTerminal,
-  unsubscribeTerminal,
-  type TerminalDataChannel,
-  type TerminalSessionInfo,
-} from './desktop';
+import { resizeTerminal, subscribeTerminal, unsubscribeTerminal } from './desktop';
+import type { TerminalDataChannel, TerminalSessionInfo } from './desktopContract';
 import { closeTerminalForTab, ensureTerminalForTab } from './terminal';
 import { createTerminalOutputPump } from './terminalOutputPump';
 import { isTerminalTabShortcut } from './keyboardShortcuts';

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { TestContext } from 'node:test';
 import type { NormalizedEvent } from '../normalize.js';
-import type { PermissionOutcome } from '../protocol.js';
+import type { PermissionOutcome } from '@droidex/protocol';
 import type { ProviderApprovalRequest, ProviderInteractions } from '../providers/interactions.js';
 import { DevinProvider } from '../providers/devin/DevinProvider.js';
 import type { DevinSession } from '../providers/devin/devinSession.js';

@@ -7,7 +7,7 @@ import { BoardHistory } from './boardHistory';
 import { answerCaptureRequest } from './captureCanvasImage';
 import { CanvasClient } from './client';
 import { FrameRemovals } from './frameRemovals';
-import type { PreviewReport } from './protocol';
+import type { PreviewReport } from '@droidex/protocol';
 import { VariantSets } from './variantSets';
 
 export const canvasClient = new CanvasClient(bridge);

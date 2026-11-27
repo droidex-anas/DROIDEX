@@ -1,4 +1,4 @@
-import { isDesktop, isRemoteClient } from './desktop';
+import { desktopApi, isDesktop, isRemoteClient } from './desktop';
 import type { NativeBrowserChord } from './shortcuts';
 import type {
   BrowserBox,
@@ -7,7 +7,7 @@ import type {
   DesignAnchorDetail,
   DesignSelectionScreenshot,
   DesignStrokePoint,
-} from '../types/bridge';
+} from '@droidex/protocol';
 
 export interface NativeBrowserSelection {
   browserSessionId?: string;
@@ -107,17 +107,23 @@ export interface NativeBrowserWorking {
 /** Browser pages are views in the laptop's own window, so a Remote browser cannot show them. */
 export const hasNativeBrowser = () => isDesktop() && !isRemoteClient();
 
+function requireNativeBrowserApi() {
+  const api = window.droidex;
+  if (!api) throw new TypeError('Native browser requires the desktop bridge.');
+  return api;
+}
+
 // Main issues the one-time token a page's <webview> must carry to attach.
 export async function reserveNativeBrowser(
   browserSessionId: string,
   savedUrl?: string,
   savedMode?: BrowserViewportMode,
 ): Promise<{ src: string; generation: number }> {
-  return window.droidex!.nativeBrowserReserve(browserSessionId, savedUrl, savedMode);
+  return requireNativeBrowserApi().nativeBrowserReserve(browserSessionId, savedUrl, savedMode);
 }
 
 export async function releaseNativeBrowser(browserSessionId: string): Promise<void> {
-  await window.droidex!.nativeBrowserRelease(browserSessionId);
+  await requireNativeBrowserApi().nativeBrowserRelease(browserSessionId);
 }
 
 /** Sessions main has agent work in flight on, for a host that just mounted. */
@@ -129,44 +135,50 @@ export async function setNativeBrowserShown(
   browserSessionId: string,
   shown: boolean,
 ): Promise<void> {
-  await window.droidex!.nativeBrowserShown(browserSessionId, shown);
+  await requireNativeBrowserApi().nativeBrowserShown(browserSessionId, shown);
 }
 
 export async function goBackNativeBrowser(browserSessionId: string): Promise<boolean> {
-  if (!isDesktop()) return false;
-  return window.droidex!.nativeBrowserGoBack(browserSessionId);
+  const api = desktopApi();
+  if (!api) return false;
+  return api.nativeBrowserGoBack(browserSessionId);
 }
 
 export async function goForwardNativeBrowser(browserSessionId: string): Promise<boolean> {
-  if (!isDesktop()) return false;
-  return window.droidex!.nativeBrowserGoForward(browserSessionId);
+  const api = desktopApi();
+  if (!api) return false;
+  return api.nativeBrowserGoForward(browserSessionId);
 }
 
 export async function setNativeBrowserDesignState(
   browserSessionId: string,
   state: NativeBrowserDesignState,
 ): Promise<void> {
-  if (!isDesktop()) return;
-  await window.droidex!.nativeBrowserSetDesignState(browserSessionId, state);
+  const api = desktopApi();
+  if (!api) return;
+  await api.nativeBrowserSetDesignState(browserSessionId, state);
 }
 
 export function onNativeBrowserDesignEvent(
   handler: (event: NativeBrowserDesignEvent) => void,
 ): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidex!.onNativeBrowserDesignEvent(handler);
+  const api = desktopApi();
+  if (!api) return () => undefined;
+  return api.onNativeBrowserDesignEvent(handler);
 }
 
 export function onNativeBrowserLoaded(handler: (event: NativeBrowserLoaded) => void): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidex!.onNativeBrowserLoaded(handler);
+  const api = desktopApi();
+  if (!api) return () => undefined;
+  return api.onNativeBrowserLoaded(handler);
 }
 
 export function onNativeBrowserLoadFailed(
   handler: (event: NativeBrowserLoadFailed) => void,
 ): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidex!.onNativeBrowserLoadFailed(handler);
+  const api = desktopApi();
+  if (!api) return () => undefined;
+  return api.onNativeBrowserLoadFailed(handler);
 }
 
 /**
@@ -194,8 +206,9 @@ export function forwardNativeBrowserShortcuts(
 }
 
 export function onNativeBrowserWorking(handler: (event: NativeBrowserWorking) => void): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidex!.onNativeBrowserWorking(handler);
+  const api = desktopApi();
+  if (!api) return () => undefined;
+  return api.onNativeBrowserWorking(handler);
 }
 
 export function onNativeBrowserAgentPoint(
@@ -245,6 +258,7 @@ export function watchNativeBrowser(
 export function onNativeBrowserClosed(
   handler: (event: { browserSessionId: string }) => void,
 ): () => void {
-  if (!isDesktop()) return () => undefined;
-  return window.droidex!.onNativeBrowserClosed(handler);
+  const api = desktopApi();
+  if (!api) return () => undefined;
+  return api.onNativeBrowserClosed(handler);
 }

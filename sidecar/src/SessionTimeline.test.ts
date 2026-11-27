@@ -13,7 +13,7 @@ import type {
   SessionHistoryEntry,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   SessionTimeline,
   type SessionTimelineLoaders,
@@ -41,11 +41,10 @@ function createHarness(options: HarnessOptions = {}) {
   const liveAppSessionIds = new Set(options.liveAppSessionIds ?? []);
   const loaders: SessionTimelineLoaders = {
     list: () => [],
-    page: () => ({ events: [] }),
-    hydrateMission: () => ({ progress: [], transcripts: [] }),
+    hydrateMission: async () => ({ progress: [], transcripts: [] }),
     resolveChain: (_appSessionId, providerSessionId) => [providerSessionId],
-    transcriptWindow: () => ({ events: [] }),
-    openTranscriptTail: () => [],
+    transcriptWindow: async () => ({ events: [] }),
+    openTranscriptTail: async () => [],
     ...options.loaders,
   };
   const registry: SessionTimelineRegistry = {
@@ -402,7 +401,7 @@ test('tool_call deltas of one toolUseId collapse onto the latest snapshot', () =
   );
 });
 
-test('plain restore resolves aliases, records in order, and emits replace telemetry', () => {
+test('plain restore resolves aliases, records in order, and emits replace telemetry', async () => {
   const restored = [transcript('first'), transcript('second')];
   const childSessions = [child('app-1', 'worker-1', 'running')];
   const calls: unknown[][] = [];
@@ -417,14 +416,14 @@ test('plain restore resolves aliases, records in order, and emits replace teleme
         calls.push(args);
         return ['provider-old', 'provider-current'];
       },
-      transcriptWindow: (...args) => {
+      transcriptWindow: async (...args) => {
         calls.push(args);
         return { events: restored, olderCursor: 'older-1' };
       },
     },
   });
 
-  harness.timeline.load('provider-old');
+  await harness.timeline.load('provider-old');
 
   assert.deepEqual(calls, [
     ['app-1', 'provider-current'],
@@ -455,15 +454,15 @@ test('history page limits tune only the bounded local transcript window', async 
     summaries: [summary('app-1', 'provider-1')],
     loaders: {
       resolveChain: () => ['provider-1'],
-      transcriptWindow: (...args) => {
+      transcriptWindow: async (...args) => {
         calls.push(args);
         return { events: [] };
       },
     },
   });
 
-  harness.timeline.load('app-1', 'cursor-1', 240);
-  harness.timeline.load('app-1', 'cursor-2', 100_000);
+  await harness.timeline.load('app-1', 'cursor-1', 240);
+  await harness.timeline.load('app-1', 'cursor-2', 100_000);
   await harness.timeline.tail('app-1', 100_000, true);
 
   assert.deepEqual(calls, [
@@ -473,7 +472,7 @@ test('history page limits tune only the bounded local transcript window', async 
   ]);
 });
 
-test('Mission Control restore preserves progress, child links, cursor, identity, and order', () => {
+test('Mission Control restore preserves progress, child links, cursor, identity, and order', async () => {
   const progress = [{ type: 'feature', timestamp: '2026-07-28T00:00:00.000Z' }];
   const restored = [transcript('mission-first'), transcript('mission-second')];
   const childSessions = [child('mission-app', 'mission-worker', 'running')];
@@ -482,7 +481,7 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
     summaries: [summary('mission-app', 'mission-provider', { sessionPurpose: 'mission-control' })],
     childSessions,
     loaders: {
-      hydrateMission: (...args) => {
+      hydrateMission: async (...args) => {
         calls.push(args);
         return { progress, transcripts: restored, olderCursor: 'mission-older' };
       },
@@ -492,7 +491,7 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
     },
   });
 
-  harness.timeline.load('mission-provider');
+  await harness.timeline.load('mission-provider');
 
   assert.deepEqual(calls, [['mission-app', { cursor: undefined }]]);
   assert.deepEqual(
@@ -509,21 +508,21 @@ test('Mission Control restore preserves progress, child links, cursor, identity,
   assert.equal(page.mode, 'replace');
 });
 
-test('older restore prepends only transcripts and preserves page telemetry', () => {
+test('older restore prepends only transcripts and preserves page telemetry', async () => {
   const event = transcript('older');
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
     childSessions: [child('app-1', 'worker-1', 'running')],
     loaders: {
       resolveChain: () => ['provider-1'],
-      transcriptWindow: (_appSessionId, _chain, options) => {
+      transcriptWindow: async (_appSessionId, _chain, options) => {
         assert.deepEqual(options, { cursor: 'cursor-1' });
         return { events: [event], olderCursor: 'cursor-2' };
       },
     },
   });
 
-  harness.timeline.load('provider-1', 'cursor-1');
+  await harness.timeline.load('provider-1', 'cursor-1');
 
   const page = harness.emitted[0];
   assert.equal(page?.type, 'session.history');
@@ -536,17 +535,17 @@ test('older restore prepends only transcripts and preserves page telemetry', () 
   assert.equal(page.hasMore, true);
 });
 
-test('older failure emits an empty terminal prepend without an error', () => {
+test('older failure emits an empty terminal prepend without an error', async () => {
   const harness = createHarness({
     summaries: [summary('app-1', 'provider-1')],
     loaders: {
-      transcriptWindow: () => {
+      transcriptWindow: async () => {
         throw new Error('read failed');
       },
     },
   });
 
-  harness.timeline.load('provider-1', 'cursor-1');
+  await harness.timeline.load('provider-1', 'cursor-1');
 
   assert.equal(harness.errors.length, 0);
   assert.equal(harness.emitted.length, 1);
@@ -557,6 +556,65 @@ test('older failure emits an empty terminal prepend without an error', () => {
   assert.deepEqual(page.transcripts, []);
   assert.equal(page.olderCursor, undefined);
   assert.equal(page.hasMore, false);
+});
+
+test('history loads serialize per conversation but never block other conversations', async () => {
+  // Transcript reads resolve across the threadpool, so a slow first page
+  // could overtake the prepend requested after it (reordering one chat's
+  // scrollback) or head-of-line block every other session opening behind it.
+  const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const pending: {
+    key: string;
+    resolve: (window: { events: TranscriptEvent[]; olderCursor?: string }) => void;
+  }[] = [];
+  const harness = createHarness({
+    summaries: [summary('app-x', 'provider-x'), summary('app-y', 'provider-y')],
+    loaders: {
+      resolveChain: (appSessionId) => [appSessionId],
+      transcriptWindow: (appSessionId, _chain, options) =>
+        new Promise((resolve) => {
+          pending.push({ key: `${appSessionId}:${options?.cursor ?? 'replace'}`, resolve });
+        }),
+    },
+  });
+  const answer = (key: string) => {
+    const index = pending.findIndex((entry) => entry.key === key);
+    assert.notEqual(index, -1, `expected a pending window for ${key}`);
+    pending.splice(index, 1)[0].resolve({ events: [transcript(key)] });
+  };
+
+  const replaceX = harness.timeline.load('provider-x');
+  const olderX = harness.timeline.load('provider-x', 'cursor-1');
+  const replaceY = harness.timeline.load('provider-y');
+  await settle();
+
+  // The older page of app-x waits for its own conversation's first load,
+  // while app-y's independent load is already reading.
+  assert.deepEqual(
+    pending.map((entry) => entry.key),
+    ['app-x:replace', 'app-y:replace'],
+  );
+
+  answer('app-y:replace');
+  await replaceY;
+  answer('app-x:replace');
+  await replaceX;
+  // Only once app-x's first page settled does its older page start reading.
+  assert.deepEqual(
+    pending.map((entry) => entry.key),
+    ['app-x:cursor-1'],
+  );
+  answer('app-x:cursor-1');
+  await olderX;
+
+  assert.deepEqual(
+    harness.emitted.map((event) =>
+      event.type === 'session.history'
+        ? `${event.appSessionId}:${event.mode}`
+        : `unexpected:${event.type}`,
+    ),
+    ['app-y:replace', 'app-x:replace', 'app-x:prepend'],
+  );
 });
 
 test('an open session reads its own transcript before the history index knows the file', async (t) => {
@@ -628,7 +686,7 @@ test('an open Droid session reads the file its runtime writes before the index k
   );
 });
 
-test('missing live history emits an authoritative empty replace page', () => {
+test('missing live history emits an authoritative empty replace page', async () => {
   const childSessions = [child('app-live', 'worker-live', 'running')];
   const harness = createHarness({
     summaries: [summary('app-live', 'provider-live')],
@@ -637,7 +695,7 @@ test('missing live history emits an authoritative empty replace page', () => {
     loaders: { resolveChain: () => [] },
   });
 
-  harness.timeline.load('provider-live');
+  await harness.timeline.load('provider-live');
 
   assert.equal(harness.errors.length, 0);
   const page = harness.emitted[0];
@@ -650,19 +708,19 @@ test('missing live history emits an authoritative empty replace page', () => {
   assert.equal(page.hasMore, false);
 });
 
-test('non-live failure emits stable recoverable errors and permits retry', () => {
+test('non-live failure emits stable recoverable errors and permits retry', async () => {
   let fail = true;
   const harness = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
-      transcriptWindow: () => {
+      transcriptWindow: async () => {
         if (fail) throw new Error('temporarily unavailable');
         return { events: [transcript('retry-success')] };
       },
     },
   });
 
-  harness.timeline.load('provider-current');
+  await harness.timeline.load('provider-current');
   assert.equal(harness.emitted[0]?.type, 'session.history.error');
   assert.deepEqual(harness.errors, [
     {
@@ -674,15 +732,15 @@ test('non-live failure emits stable recoverable errors and permits retry', () =>
   ]);
 
   fail = false;
-  harness.timeline.load('provider-current');
+  await harness.timeline.load('provider-current');
   assert.equal(harness.emitted.at(-1)?.type, 'session.history');
 });
 
-test('recording failure prevents a history page after a partial write', () => {
+test('recording failure prevents a history page after a partial write', async () => {
   const harness = createHarness({
     summaries: [summary('stable-app', 'provider-current')],
     loaders: {
-      transcriptWindow: () => ({
+      transcriptWindow: async () => ({
         events: [transcript('recorded-first'), transcript('recording-fails')],
       }),
     },
@@ -691,7 +749,7 @@ test('recording failure prevents a history page after a partial write', () => {
     },
   });
 
-  harness.timeline.load('provider-current');
+  await harness.timeline.load('provider-current');
 
   assert.deepEqual(
     harness.recorded.map((event) => event.id),
@@ -712,44 +770,7 @@ test('recording failure prevents a history page after a partial write', () => {
   ]);
 });
 
-test('legacy provider pages keep their shape, identity, order, limit, and error behavior', () => {
-  const calls: unknown[][] = [];
-  let fail = false;
-  const events = [transcript('page-first'), transcript('page-second')];
-  const harness = createHarness({
-    summaries: [summary('stable-app', 'provider-current')],
-    loaders: {
-      page: (...args) => {
-        calls.push(args);
-        if (fail) throw new Error('page failed');
-        return { events };
-      },
-    },
-  });
-
-  harness.timeline.loadProviderPage('stable-app', '40', 25);
-
-  assert.deepEqual(calls[0], ['provider-current', 'stable-app', '40', 25]);
-  assert.deepEqual(
-    harness.recorded.map((event) => event.id),
-    ['page-first', 'page-second'],
-  );
-  const page = harness.emitted[0];
-  assert.equal(page?.type, 'session.history');
-  if (page?.type !== 'session.history') return;
-  assert.equal('mode' in page, false);
-  assert.equal('loadedCount' in page, false);
-
-  fail = true;
-  harness.timeline.loadProviderPage('provider-current');
-  assert.deepEqual(harness.errors.at(-1), {
-    appSessionId: 'stable-app',
-    providerSessionId: 'provider-current',
-    message: 'page failed',
-  });
-});
-
-test('child history loads a canonical replace batch and reports replay failures for retry', () => {
+test('child history loads a canonical replace batch and reports replay failures for retry', async () => {
   let fail = false;
   const events = [transcript('child-first'), transcript('child-second')];
   const harness = createHarness({
@@ -758,7 +779,7 @@ test('child history loads a canonical replace batch and reports replay failures 
         assert.deepEqual([appSessionId, providerSessionId], ['child-logical', 'child-provider']);
         return ['child-provider'];
       },
-      transcriptWindow: (appSessionId, chain, options) => {
+      transcriptWindow: async (appSessionId, chain, options) => {
         assert.deepEqual(
           [appSessionId, chain, options],
           [
@@ -776,7 +797,7 @@ test('child history loads a canonical replace batch and reports replay failures 
     },
   });
 
-  harness.timeline.loadChildHistory({
+  await harness.timeline.loadChildHistory({
     appSessionId: 'app-1',
     childSessionId: 'child-logical',
     childProviderSessionIds: ['child-old', 'child-provider'],
@@ -802,7 +823,7 @@ test('child history loads a canonical replace batch and reports replay failures 
     ],
   );
   fail = true;
-  harness.timeline.loadChildHistory({
+  await harness.timeline.loadChildHistory({
     appSessionId: 'app-1',
     childSessionId: 'child-logical',
     childProviderSessionIds: ['child-old', 'child-provider'],
@@ -822,18 +843,63 @@ test('child history loads a canonical replace batch and reports replay failures 
   });
 });
 
-test('a live child with no flushed provider file returns an empty successful history page', () => {
+test('unchanged child refresh windows do not republish, while explicit loads still answer', async () => {
+  const events = [transcript('child-first')];
+  const harness = createHarness({
+    loaders: {
+      resolveChain: () => ['child-provider'],
+      transcriptWindow: async () => ({ events }),
+    },
+  });
+  const query = {
+    appSessionId: 'app-1',
+    childSessionId: 'child-logical',
+    childProviderSessionIds: ['child-provider'],
+    role: 'worker' as const,
+  };
+
+  await harness.timeline.loadChildHistory(query);
+  await harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'the first watched refresh synchronizes its owner even when it matches the explicit load',
+  );
+  await harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    2,
+    'an unchanged watched window stays silent',
+  );
+
+  events.push(transcript('child-second'));
+  await harness.timeline.loadChildHistory({ ...query, mode: 'refresh' });
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    3,
+    'a changed watched window republishes',
+  );
+
+  await harness.timeline.loadChildHistory(query);
+  assert.equal(
+    harness.emitted.filter((event) => event.type === 'session.history').length,
+    4,
+    'an explicit history load always answers',
+  );
+});
+
+test('a live child with no flushed provider file returns an empty successful history page', async () => {
   const harness = createHarness({
     loaders: {
       resolveChain: () => [],
-      transcriptWindow: (_appSessionId, chain) => {
+      transcriptWindow: async (_appSessionId, chain) => {
         assert.deepEqual(chain, ['child-provider']);
         return { events: [] };
       },
     },
   });
 
-  harness.timeline.loadChildHistory({
+  await harness.timeline.loadChildHistory({
     appSessionId: 'app-1',
     childSessionId: 'child-logical',
     childProviderSessionIds: ['child-provider'],
@@ -855,16 +921,16 @@ test('a live child with no flushed provider file returns an empty successful his
   ]);
 });
 
-test('child history older page prepends and reports cursor exhaustion', () => {
+test('child history older page prepends and reports cursor exhaustion', async () => {
   const harness = createHarness({
     loaders: {
       resolveChain: () => ['child-provider'],
-      transcriptWindow: (_appSessionId, _chain, options) =>
+      transcriptWindow: async (_appSessionId, _chain, options) =>
         options?.cursor === 'older' ? { events: [transcript('older')] } : { events: [] },
     },
   });
 
-  harness.timeline.loadChildHistory({
+  await harness.timeline.loadChildHistory({
     appSessionId: 'app-1',
     childSessionId: 'child-logical',
     childProviderSessionIds: ['child-provider'],
@@ -872,7 +938,7 @@ test('child history older page prepends and reports cursor exhaustion', () => {
     cursor: 'older',
     limit: 50,
   });
-  harness.timeline.loadChildHistory({
+  await harness.timeline.loadChildHistory({
     appSessionId: 'app-1',
     childSessionId: 'child-logical',
     childProviderSessionIds: ['child-provider'],

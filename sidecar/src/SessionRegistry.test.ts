@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { HistoricalSession } from './history.js';
-import type { BridgeFeature, SessionSummary } from './protocol.js';
+import type { BridgeFeature, SessionSummary } from '@droidex/protocol';
 import {
   SessionRegistry,
   type RegisteredSession,
@@ -316,6 +316,7 @@ test('reanchorHistoricalCwd moves idle sessions and preserves nested directories
   const historical = [
     summary('at-root', { cwd: '/repo/.worktrees/feature', updatedAt: 7 }),
     summary('nested', { cwd: '/repo/.worktrees/feature/packages/app', updatedAt: 8 }),
+    summary('dotdot-child', { cwd: '/repo/.worktrees/feature/..foo/bar', updatedAt: 8 }),
     summary('sibling', { cwd: '/repo/.worktrees/feature-next', updatedAt: 9 }),
   ];
   const { history, published, registry } = createHarness({ ordinary: historical });
@@ -327,6 +328,7 @@ test('reanchorHistoricalCwd moves idle sessions and preserves nested directories
     [
       ['at-root', '/repo', 7],
       ['nested', '/repo/packages/app', 8],
+      ['dotdot-child', '/repo/..foo/bar', 8],
     ],
   );
   assert.equal(registry.resolveSummary('at-root')?.cwd, '/repo');

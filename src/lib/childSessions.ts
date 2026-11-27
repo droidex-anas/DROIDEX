@@ -1,4 +1,4 @@
-import type { ChildStatus, ProgressEntry, TranscriptEvent } from '../types/bridge';
+import type { ChildStatus, ProgressEntry, TranscriptEvent } from '@droidex/protocol';
 import type { ChildAccess, ChildSessionInfo } from '../hooks/storeChildSession';
 import { toolMeta, CAT_LABEL } from './tools';
 import { childSessionInfo } from './childSessionEvents';
@@ -6,6 +6,7 @@ import {
   childSpawnTranscriptEvents,
   latestTranscriptActivityForSource,
 } from './transcriptIngestion';
+import { lastLines } from './textTail';
 
 // A single Task spawn streams many tool_call/tool_call_delta events sharing one
 // toolUseId; the subagent_type (label) and description can arrive in separate
@@ -299,15 +300,25 @@ type ChildSessionSpawnRef = Pick<
 // session hasn't reached the store yet gets a placeholder built from the spawn
 // event itself, so the dock card renders the instant the spawn streams in
 // instead of flashing per-spawn lines while the store catches up.
+// The store children a spawn row resolves to, in array order. Identity of the
+// entries is meaningful: the store replaces child objects immutably, so an
+// unchanged child is the same object.
+export function spawnRegisteredChildren(
+  childSessions: readonly ChildSessionInfo[],
+  toolUseId: string,
+): ChildSessionInfo[] {
+  return childSessions.filter(
+    (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === toolUseId,
+  );
+}
+
 export function resolveWaveSessions(
   spawns: readonly ChildSessionSpawnRef[],
   childSessions: readonly ChildSessionInfo[],
 ): ChildSessionInfo[] {
   return spawns.flatMap((spawn) => {
     const toolUseId = spawn.toolUseId ?? spawn.id;
-    const registered = childSessions.filter(
-      (child) => child.spawnLink?.kind === 'tool-use' && child.spawnLink.id === toolUseId,
-    );
+    const registered = spawnRegisteredChildren(childSessions, toolUseId);
     if (registered.length === 0) return [pendingChildSession(spawn)];
     return registered.map((child) =>
       child.startedAt != null && child.startedAt > spawn.ts
@@ -399,6 +410,16 @@ function pendingChildSession(spawn: ChildSessionSpawnRef): ChildSessionInfo {
   };
 }
 
+// Child entries are immutable — the store replaces them on any change — and a
+// transcript event keeps its identity until the child actually emits more, so
+// an activity object keyed on both is reusable verbatim across the stream
+// commits that change neither. Rows and cards can then compare it by reference
+// instead of re-rendering on every token carried by the parent transcript.
+const activityByChild = new WeakMap<
+  ChildSessionInfo,
+  { latestEvent: TranscriptEvent | undefined; activity: ChildSessionActivity }
+>();
+
 export function childSessionActivityForTarget(
   childSessions: readonly ChildSessionInfo[],
   allTx: readonly TranscriptEvent[],
@@ -406,30 +427,35 @@ export function childSessionActivityForTarget(
 ): ChildSessionActivity | undefined {
   const childSession = findChildSessionForTarget(childSessions, target);
   if (!childSession) return undefined;
-  const latestEvent = latestTranscriptActivityForSource(allTx, childSession.childSessionId);
-  let latest: ChildSessionLatest | undefined;
-  if (latestEvent?.appSessionId === childSession.parentAppSessionId) {
-    latest = {
-      kind: latestEvent.kind,
-      text: latestEvent.text,
-      toolName: latestEvent.toolName,
-      toolArgs: latestEvent.toolArgs,
-      isError: latestEvent.isError,
-    };
-  }
-  return {
+  const scanned = latestTranscriptActivityForSource(allTx, childSession.childSessionId);
+  const latestEvent =
+    scanned?.appSessionId === childSession.parentAppSessionId ? scanned : undefined;
+  const cached = activityByChild.get(childSession);
+  if (cached !== undefined && cached.latestEvent === latestEvent) return cached.activity;
+  const latest: ChildSessionLatest | undefined = latestEvent
+    ? {
+        kind: latestEvent.kind,
+        text: latestEvent.text,
+        toolName: latestEvent.toolName,
+        toolArgs: latestEvent.toolArgs,
+        isError: latestEvent.isError,
+      }
+    : undefined;
+  const activity: ChildSessionActivity = {
     // Autonomous subagents never open a runtime, so runtime availability must
     // not demote a running child to "paused"; the store status is authoritative.
     status: childSession.status,
     startedAt: childSession.startedAt,
     latest,
   };
+  activityByChild.set(childSession, { latestEvent, activity });
+  return activity;
 }
 
 // Last non-empty line, capped, so a long thinking block stays a one-line cue.
 function previewLine(text?: string): string | undefined {
   if (!text) return undefined;
-  const line = text.trim().split('\n').filter(Boolean).pop() ?? '';
+  const [line = ''] = lastLines(text.trim(), 1);
   return line.length > 160 ? `${line.slice(0, 159)}…` : line || undefined;
 }
 

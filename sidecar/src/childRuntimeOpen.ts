@@ -2,7 +2,7 @@ import type { FactorySession } from './DroidRuntime.js';
 import { CANVAS_MCP_SERVER_NAME } from './canvas/canvasMcpNames.js';
 import { normalizeMcpServerName } from './automations/permissionPolicy.js';
 import type { PersistedChildSession } from './history.js';
-import type { ServerEvent } from './protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { droidInteractionHandlers } from './providers/droid/droidInteractions.js';
 import { errMsg } from './errors.js';
 import type { ChildAutomaticCompactionTarget } from './SessionCompaction.js';
@@ -166,7 +166,7 @@ export function openChildHistory(
     );
     return;
   }
-  host.loadChildHistory({
+  void host.loadChildHistory({
     appSessionId: record.parentAppSessionId,
     childSessionId: record.childSessionId,
     childProviderSessionIds: childHistoryProviderSessionIds(record),
@@ -209,7 +209,10 @@ export async function installChildRuntime(input: {
   if (!providerSessionId) return;
   const childSessionId = identity.childSessionId;
   const attempt = beginOpenAttempt(parent, childSessionId);
+  // The load below targets the provider session captured now; a replacement
+  // mid-open makes the loaded runtime stale even when the child itself is current.
   const isCurrentAttempt = () =>
+    child.providerSessionId === providerSessionId &&
     isCurrentOpenAttempt(parent, child, attempt, (candidateParent, candidateChild) =>
       host.isCurrentChild(candidateParent, candidateChild),
     );
@@ -218,7 +221,7 @@ export async function installChildRuntime(input: {
     // Paint persisted history immediately. This is deliberately best effort:
     // a live child may not have flushed history yet, but its provider runtime
     // must still open without waiting for that file.
-    host.d.timeline.loadChildHistory({
+    void host.d.timeline.loadChildHistory({
       appSessionId: identity.parentAppSessionId,
       childSessionId,
       childProviderSessionIds: childHistoryProviderSessionIds(child),

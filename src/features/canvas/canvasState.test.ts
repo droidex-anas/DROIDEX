@@ -18,7 +18,7 @@ import {
   reduceCanvasRemoval,
   REVIEWING_REMOVAL,
 } from './canvasState';
-import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasRemovalPreview, CanvasSnapshot } from '@droidex/protocol';
 import { sessionSummary } from '../../test/sessionSummary';
 
 function frame(designId: string, name: string): CanvasFrame {

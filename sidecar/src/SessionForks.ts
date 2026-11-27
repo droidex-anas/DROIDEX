@@ -6,7 +6,8 @@ import type {
   SessionLineage,
   SessionSummary,
   TranscriptEvent,
-} from './protocol.js';
+  ProviderKind,
+} from '@droidex/protocol';
 import type { LiveSession, SessionBranch, SessionCreateCommand } from './SessionLifecycle.js';
 import type { SessionFileChange } from './sessionFileCache.js';
 import { errMsg } from './errors.js';
@@ -19,7 +20,6 @@ import {
   writeForkedTranscript,
   type ForkedTranscript,
 } from './providers/ProviderTranscriptFile.js';
-import type { ProviderKind } from './providers/providerKind.js';
 import type { Provider, ProviderForkHandle, ProviderModelSettings } from './providers/session.js';
 
 type SessionForkCommand = Extract<ClientCommand, { type: 'session.fork' }>;
@@ -295,10 +295,10 @@ export class SessionForks {
     // the stored read below.
     if (source.provider !== 'droid')
       await this.d.readTranscript(source.appSessionId).catch(() => undefined);
-    let events = storedEvents(source);
+    let events = await storedEvents(source);
     if (events.length === 0) {
       await this.d.indexSessionFiles(null);
-      events = storedEvents(source);
+      events = await storedEvents(source);
     }
     if (events.length === 0) throw new Error('This chat has no stored messages to fork.');
     return branchConversation(events);
@@ -360,9 +360,10 @@ function pickedModelSettings(command: SessionForkCommand): SessionSummaryPatch {
   };
 }
 
-function storedEvents(source: SessionSummary): TranscriptEvent[] {
+async function storedEvents(source: SessionSummary): Promise<TranscriptEvent[]> {
   const providerSessionId = source.providerSessionId ?? source.appSessionId;
   const chain = resolveSessionChain(source.appSessionId, providerSessionId);
-  return loadSessionTranscriptWindow(source.appSessionId, chain, { limit: BRANCH_CONTEXT_EVENTS })
-    .events;
+  return (
+    await loadSessionTranscriptWindow(source.appSessionId, chain, { limit: BRANCH_CONTEXT_EVENTS })
+  ).events;
 }

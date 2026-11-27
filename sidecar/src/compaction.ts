@@ -1,5 +1,6 @@
 import type { DroidSession } from '@factory/droid-sdk';
-import type { FactoryDefaultSettings } from './protocol.js';
+import type { FactoryDefaultSettings } from '@droidex/protocol';
+import { objectValue } from './values.js';
 
 export type CompactType = 'auto' | 'manual';
 
@@ -16,6 +17,17 @@ type CompactionDefaults = Pick<
 export function normalizeCompactionTokenLimit(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return undefined;
   return Math.trunc(value);
+}
+
+export function normalizeCompactionTokenLimitPerModel(
+  value: unknown,
+): Record<string, number> | undefined {
+  const record = objectValue(value);
+  if (!record) return undefined;
+  const entries = Object.entries(record)
+    .map(([modelId, limit]) => [modelId, normalizeCompactionTokenLimit(limit)] as const)
+    .filter((entry): entry is [string, number] => entry[1] !== undefined);
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 export function compactionTokenLimitForModel(

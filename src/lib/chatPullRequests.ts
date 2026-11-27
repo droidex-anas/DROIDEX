@@ -1,6 +1,6 @@
 import { getGitEnvironment } from './git';
 import { detectPullRequest, getGithubAvailability } from './github';
-import type { SessionSummary } from '../types/bridge';
+import type { SessionSummary } from '@droidex/protocol';
 import type { ChatPullRequest } from './chatMetadata';
 
 export type ChatPrTarget = Pick<SessionSummary, 'appSessionId' | 'cwd'>;

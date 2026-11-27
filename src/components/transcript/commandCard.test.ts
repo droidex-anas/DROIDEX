@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CommandLine } from './commandCard';
 import { LiveProcessesContext } from './liveProcessesContext';
 import { renderToolEvents } from './rows';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 test('running command rows display live call output until the final result arrives', () => {
   const call: TranscriptEvent = {

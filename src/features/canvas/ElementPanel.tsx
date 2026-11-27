@@ -42,7 +42,7 @@ import { NumberField } from './NumberField';
 import { firstFamily, sameFontStack } from './panelValues';
 import { isDrawn } from './previewDocument';
 import { MoreSegments, SegmentedControl, type Segment } from './SegmentedControl';
-import type { EditToken, ElementRef, FrameRect, SourceElement } from './protocol';
+import type { EditToken, ElementRef, FrameRect, SourceElement } from '@droidex/protocol';
 import { NoneMode, SizeMode } from './SizeModeMenu';
 import { bareTokenName } from './systemDocument/documentSections';
 import type { ElementSelection } from './useElementEditor';

@@ -11,7 +11,7 @@ import type {
   HarnessCliState,
   HarnessInstallSource,
   ProviderStatus,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { ModelIcon } from './ModelIcon';
 import { SettingRow } from './settingsKit';
 import { Switch } from './Switch';

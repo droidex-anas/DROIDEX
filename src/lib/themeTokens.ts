@@ -1,5 +1,5 @@
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
-import type { ProviderKind } from '../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { diffPaletteForTheme } from './diffTheme';
 
 // The theme values every colour and shadow token derives from. ThemeSettings

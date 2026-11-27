@@ -2,7 +2,7 @@
 // source conversation as Markdown. The receiving model reads the whole thing;
 // transcript replay strips everything but the request back out for display, so
 // the chat shows only what the user asked.
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { conversationMarkdown } from './sessionMarkdown.js';
 
 export const BRANCH_CONTEXT_EVENTS = 2_000;

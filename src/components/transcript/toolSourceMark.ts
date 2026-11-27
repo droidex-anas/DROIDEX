@@ -3,7 +3,7 @@ import { useLayoutEffect, useSyncExternalStore } from 'react';
 import { bridge } from '../../lib/bridge';
 import { listMcpServers } from '../../lib/commands';
 import { describeLink, type LinkPresentation } from '../../lib/linkPresentation';
-import type { McpServerInfo } from '../../types/bridge';
+import type { McpServerInfo } from '@droidex/protocol';
 
 // The mark a tool row wears for the MCP server the tool came from.
 //

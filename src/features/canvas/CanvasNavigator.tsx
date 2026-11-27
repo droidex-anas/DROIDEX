@@ -14,7 +14,7 @@ import { canvasActivity, type CanvasMotion } from './canvasMotion';
 import { FrameThumbnail } from './FrameThumbnail';
 import { PendingBloom } from './PendingBloom';
 import { frameStatus, type FrameStatus } from './previewLabels';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { useCanvasMotion } from './useCanvasMotion';
 
 const ROW_PX = 48;

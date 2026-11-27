@@ -89,7 +89,7 @@ export class ChildProviderCleanup {
         const adopted = await this.d.agentProcesses.adoptDescendantsAsRoots(
           entry.parent.parentAppSessionId,
           entry.pid,
-          () => !entry.parent.closing && !entry.parent.lease.closeMode,
+          () => !entry.parent.closing && !entry.parent.lease.turn.closeMode,
         );
         // Parent closure follows its kill pass; an exited provider cannot adopt.
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- Parent closure can begin during the adoption await.

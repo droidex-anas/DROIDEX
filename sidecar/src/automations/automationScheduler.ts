@@ -1,6 +1,7 @@
 import { hasModelSelection, MODEL_SELECTION_REQUIRED } from './automationInput.js';
 import { nextAutomationRun, retireWhenUnschedulable } from './schedule.js';
-import type { Automation, AutomationStore, NormalizedAutomationInput } from './types.js';
+import type { Automation, NormalizedAutomationInput } from '@droidex/protocol';
+import type { AutomationStore } from './types.js';
 
 // How long the scheduler may sleep in one step. A timer measures elapsed time,
 // not calendar time, so a suspended machine, an NTP correction, or a clock change

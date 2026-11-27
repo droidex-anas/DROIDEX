@@ -3,7 +3,7 @@
 // the renderer negotiates WebRTC with the provider's own service, and a spoken
 // request becomes an ordinary turn on the chat's model.
 import { randomUUID } from 'node:crypto';
-import type { ClientCommand, ServerEvent, TranscriptEvent } from '../protocol.js';
+import type { ClientCommand, ServerEvent, TranscriptEvent } from '@droidex/protocol';
 import { errMsg } from '../errors.js';
 import type { ProviderSession, ProviderVoice, ProviderVoiceEvent } from './session.js';
 import { stopVoiceWithDeadline } from './voiceStop.js';

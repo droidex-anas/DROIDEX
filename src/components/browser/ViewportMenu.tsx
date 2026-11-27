@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Check } from '@droidex/icons';
-import type { BrowserViewport, BrowserViewportMode } from '../../types/bridge';
+import type { BrowserViewport, BrowserViewportMode } from '@droidex/protocol';
 import { VIEWPORT_LABELS, viewportForMode } from './browserViewport';
 import { OVER_PAGE_CHIP } from './overPageChip';
 
@@ -131,7 +131,6 @@ export function ViewportMenu({
                   <span className="text-caption tabular-nums text-muted">{size(choice)}</span>
                   <Check
                     className={`size-icon-sm shrink-0 text-accent ${selected ? '' : 'invisible'}`}
-                    strokeWidth={2.6}
                   />
                 </button>
               );

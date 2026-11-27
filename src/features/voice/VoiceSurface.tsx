@@ -9,7 +9,7 @@ import { MessageBody } from '../../components/MessageBody';
 import InlineInteractions from '../../components/InlineInteractions';
 import { SpokenMark } from '../../components/transcript/primitives';
 import { UserBubble } from '../../components/transcript/UserBubble';
-import { isConversationAtLatest } from '../../components/conversationListState';
+import { useFollowLatest } from '../../hooks/useFollowLatest';
 import { VoiceOrb } from './VoiceOrb';
 import { VoiceSettingsSheet } from './VoiceSettingsSheet';
 import { voiceStatusIsLive, voiceStatusLabel } from './voiceStatus';
@@ -118,7 +118,7 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
           It asks with the app's own cards, in the same place the composer
           would have shown them, rather than behind this surface. */}
       <div className="mx-auto max-h-80 w-full max-w-2xl shrink-0 overflow-y-auto px-6">
-        <InlineInteractions appSessionId={appSessionId} asks />
+        <InlineInteractions appSessionId={appSessionId} permissions questions />
       </div>
 
       <div className="flex shrink-0 flex-col items-center gap-3 pb-6 pt-4">
@@ -217,45 +217,13 @@ function VoiceSurfaceDialog({ voice, appSessionId }: { voice: Voice; appSessionI
  */
 function SpokenFeed({ appSessionId }: { appSessionId: string }) {
   const lines = useVoiceTranscript(appSessionId);
-  const feedRef = useRef<HTMLDivElement>(null);
-  const contentRef = useRef<HTMLDivElement>(null);
-  // Whether the reader is at the newest line, with the same slack the chat
-  // allows. Scrolling up to reread lets the conversation grow below them;
-  // scrolling back down follows it again.
-  const following = useRef(true);
-
-  // The newest line stays in view while it is followed. The feed moves once
-  // its content grows or its own height shrinks (a card below it, a shorter
-  // window), in the browser's own resize pass, so arriving words cost no
-  // layout read of their own.
-  useLayoutEffect(() => {
-    const feed = feedRef.current;
-    const content = contentRef.current;
-    if (!feed || !content) return;
-    const observer = new ResizeObserver(() => {
-      if (following.current) feed.scrollTop = feed.scrollHeight;
-    });
-    observer.observe(content);
-    observer.observe(feed);
-    return () => {
-      observer.disconnect();
-    };
-  }, []);
+  const { scrollRef, followLatest } = useFollowLatest();
+  const oldestLineId = lines[0]?.id;
+  useLayoutEffect(followLatest, [oldestLineId, followLatest]);
 
   return (
-    <div
-      ref={feedRef}
-      onScroll={(event) => {
-        const feed = event.currentTarget;
-        following.current = isConversationAtLatest(
-          feed.scrollHeight,
-          feed.scrollTop,
-          feed.clientHeight,
-        );
-      }}
-      className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4"
-    >
-      <div ref={contentRef} className="mx-auto flex w-full max-w-2xl flex-col gap-6">
+    <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 pb-2 pt-4">
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         {lines.map((line) => (
           <SpokenLine key={line.id} line={line} />
         ))}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import type { TranscriptEvent } from '../../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { ToolActivityDensity } from '../../lib/toolActivity';
 import {
   MAX_DIFF_CARDS_PER_COMMIT,
@@ -15,7 +15,7 @@ import type { OpenReviewFileHandler } from '../../lib/reviewFocus';
 import { formatDuration } from '../../lib/tools';
 import type { FeedChange, FeedItem } from '../chatFeed';
 import { DiffCard } from '../DiffView';
-import { Caret, Expand } from './primitives';
+import { Caret, Expand, useElapsed } from './primitives';
 import { ChangeCount } from './ChangeCount';
 import { Button } from '../ui/Button';
 import { hasPendingCall, renderToolEvents, summarizeTools } from './rows';
@@ -85,7 +85,9 @@ export function ToolGroupItem({
 /* ── Worked-for group: a completed turn's steps folded into one disclosure.
    Pure shell — the parent renders each child feed item so this module does not
    depend on the row dispatcher. The header stays a bare "Worked for 12s"; the
-   turn's detail belongs inside the fold, rendered at the configured density. ── */
+   turn's detail belongs inside the fold, rendered at the configured density.
+   The running turn's fold counts up as "Working 12s" and is the turn's one
+   live cue. ── */
 export function WorkedGroup({
   item,
   children,
@@ -97,7 +99,7 @@ export function WorkedGroup({
   return (
     <div
       // eslint-disable-next-line design-policy/design-tokens -- rules.md lines that carry meaning: marks where the turn's work ends and its answer begins
-      className="border-b border-divider pb-1.5"
+      className={`border-b pb-1.5 ${item.runningSince != null ? 'border-transparent' : 'border-divider'}`}
     >
       <button
         type="button"
@@ -107,12 +109,16 @@ export function WorkedGroup({
         }}
         className="flex h-control-sm min-w-0 items-center gap-1 text-left text-body-lg text-quiet transition-colors duration-150 hover:text-secondary focus-visible:text-secondary"
       >
-        <span className="shrink-0">
-          Worked
-          {item.durationMs >= 1000 && (
-            <span className="tabular-nums"> for {formatDuration(item.durationMs)}</span>
-          )}
-        </span>
+        {item.runningSince != null ? (
+          <WorkingLabel startTs={item.runningSince} />
+        ) : (
+          <span className="shrink-0">
+            Worked
+            {item.durationMs >= 1000 && (
+              <span className="tabular-nums"> for {formatDuration(item.durationMs)}</span>
+            )}
+          </span>
+        )}
         {/* Unlike row carets, always shown: it is the only cue that the turn's steps are folded here. */}
         <ChevronRight
           aria-hidden="true"
@@ -125,6 +131,21 @@ export function WorkedGroup({
         <div className="mt-3 space-y-2.5 pl-5">{children}</div>
       </Expand>
     </div>
+  );
+}
+
+function WorkingLabel({ startTs }: { startTs: number }) {
+  const elapsed = useElapsed(startTs, true);
+  return (
+    <span className="shimmer-text shrink-0">
+      <span aria-live="polite">Working</span>
+      {elapsed >= 1000 && (
+        <span aria-hidden="true" className="tabular-nums">
+          {' '}
+          {formatDuration(elapsed)}
+        </span>
+      )}
+    </span>
   );
 }
 

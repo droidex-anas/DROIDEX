@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFullTranscript } from './testing/sessionTranscriptSupport.js';
 import { transcriptToMarkdown } from './sessionMarkdown.js';
-import { parseFullSessionTranscript } from './sessionTranscript.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ProviderTranscriptFile } from './providers/ProviderTranscriptFile.js';
 import { CodexEventMapper } from './providers/codex/codexEvents.js';
 import { sessionSummary } from './testing/sessionSummaryFixture.js';
-import type { TranscriptEvent } from './protocol.js';
+import type { TranscriptEvent } from '@droidex/protocol';
 
 function ev(overrides: Partial<TranscriptEvent> & Pick<TranscriptEvent, 'kind'>): TranscriptEvent {
   return {
@@ -122,7 +122,7 @@ test('oversized tool output and thinking are truncated with a marker', () => {
   assert.ok(!md.includes('y'.repeat(4_500)));
 });
 
-test('native Canvas replay exports safe activity while preserving ordinary tools and user text', (t) => {
+test('native Canvas replay exports safe activity while preserving ordinary tools and user text', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'canvas-markdown-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const appSessionId = 'droid-canvas-export';
@@ -193,7 +193,7 @@ test('native Canvas replay exports safe activity while preserving ordinary tools
   );
   const path = join(directory, `${appSessionId}.jsonl`);
   writeFileSync(path, `${lines.join('\n')}\n`);
-  const replayed = parseFullSessionTranscript(appSessionId, appSessionId, path, 'primary');
+  const replayed = await readFullTranscript(appSessionId, appSessionId, path, 'primary');
   const md = transcriptToMarkdown(replayed, META);
   assert.match(md, /\*\*Canvas:\*\* Updated design · rev-1/);
   assert.match(md, /\*\*Canvas:\*\* Could not update design/);
@@ -273,7 +273,7 @@ test('Codex Canvas completion, failure and interruption export as safe activity 
     );
   }
   await file.flush();
-  const replayed = parseFullSessionTranscript(
+  const replayed = await readFullTranscript(
     summary.appSessionId,
     summary.appSessionId,
     file.path,

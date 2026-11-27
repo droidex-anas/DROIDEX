@@ -28,7 +28,7 @@ import {
 const POLL_MS = 12000;
 
 export function prActionError(message: string | undefined, fallback: string): string {
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty bridge message gets the fallback too
   return message || fallback;
 }
 
@@ -40,10 +40,7 @@ function sectionError(
   previous: string | null,
 ): string | null {
   if (!failed) return null;
-  // Empty bridge messages are not actionable; the product fallback must be
-  // shown for both undefined and empty strings.
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-  return showErrors ? message || fallback : previous;
+  return showErrors ? prActionError(message, fallback) : previous;
 }
 
 function commentsSectionError(
@@ -52,8 +49,9 @@ function commentsSectionError(
   previous: string | null,
 ): string | null {
   if (result.ok) {
-    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
-    return result.partial ? result.message || 'Some PR comments could not be loaded' : null;
+    return result.partial
+      ? prActionError(result.message, 'Some PR comments could not be loaded')
+      : null;
   }
   return sectionError(true, result.message, 'Could not load PR comments', showErrors, previous);
 }
@@ -122,6 +120,12 @@ export function usePullRequestDetail(
   // may settle: the generation alone cannot tell them apart.
   const metaRequestRef = useRef(0);
   const diffRequestRef = useRef(0);
+  // A gh child can outlive the poll interval on a slow network. Timed ticks
+  // skip while one is in flight rather than stacking another five-process fan-out,
+  // and consecutive failures back the cadence off exponentially.
+  const metaInFlightRef = useRef(false);
+  const metaFailuresRef = useRef(0);
+  const metaBackoffUntilRef = useRef(0);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -131,25 +135,43 @@ export function usePullRequestDetail(
       const generation = generationRef.current;
       metaRequestRef.current += 1;
       const request = metaRequestRef.current;
+      metaInFlightRef.current = true;
       if (userInitiated) dispatch({ type: 'meta-start', generation });
       void Promise.all([
         viewPullRequest(cwd, number),
         getPrChecks(cwd, number),
         getPrComments(cwd, number),
-      ]).then(([viewRes, checksRes, commentsRes]) => {
-        if (generation !== generationRef.current || request !== metaRequestRef.current) return;
-        const live = stateRef.current;
-        const prev = prevForSettledMeta(live, cwd, number);
-        const showErrors = !prev.loaded || userInitiated;
-        const resolved = resolveMeta(
-          generation,
-          { view: viewRes, checks: checksRes, comments: commentsRes },
-          prev,
-          showErrors,
-        );
-        if (resolved.pr) setPr(resolved.pr);
-        dispatch({ type: 'meta-success', ...resolved.event });
-      });
+      ])
+        .then(([viewRes, checksRes, commentsRes]) => {
+          if (viewRes.ok) {
+            metaFailuresRef.current = 0;
+            metaBackoffUntilRef.current = 0;
+          } else {
+            metaFailuresRef.current += 1;
+            metaBackoffUntilRef.current =
+              Date.now() + POLL_MS * 2 ** Math.min(metaFailuresRef.current, 4);
+          }
+          if (generation !== generationRef.current || request !== metaRequestRef.current) return;
+          const live = stateRef.current;
+          const prev = prevForSettledMeta(live, cwd, number);
+          const showErrors = !prev.loaded || userInitiated;
+          const resolved = resolveMeta(
+            generation,
+            { view: viewRes, checks: checksRes, comments: commentsRes },
+            prev,
+            showErrors,
+          );
+          if (resolved.pr) setPr(resolved.pr);
+          dispatch({ type: 'meta-success', ...resolved.event });
+        })
+        .catch(() => {
+          metaFailuresRef.current += 1;
+          metaBackoffUntilRef.current =
+            Date.now() + POLL_MS * 2 ** Math.min(metaFailuresRef.current, 4);
+        })
+        .finally(() => {
+          if (request === metaRequestRef.current) metaInFlightRef.current = false;
+        });
     },
     [active, cwd, number],
   );
@@ -190,7 +212,9 @@ export function usePullRequestDetail(
   useEffect(() => {
     if (!active || !cwd || number == null) return;
     const tick = () => {
-      if (!document.hidden) loadMeta(false);
+      if (document.hidden || metaInFlightRef.current) return;
+      if (Date.now() < metaBackoffUntilRef.current) return;
+      loadMeta(false);
     };
     const interval = window.setInterval(tick, POLL_MS);
     document.addEventListener('visibilitychange', tick);

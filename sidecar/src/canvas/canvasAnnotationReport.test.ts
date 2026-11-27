@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { agentAnnotation } from './canvasAnnotationReport.js';
-import type { Annotation } from './canvasAnnotationSchema.js';
+import type { Annotation } from '@droidex/protocol';
 
 // Two 720×520 frames side by side with the default 80px gap.
 const frames = [

@@ -1,4 +1,5 @@
 import { useCallback, useEffect } from 'react';
+import { bridge } from '../lib/bridge';
 import { listSessions } from '../lib/commands';
 import type { WorkspaceScope } from '../lib/workspaces';
 import { useStoreDispatch, useStoreSelector } from './useStore';
@@ -17,7 +18,11 @@ export function useWorkspaceSessionList(
   useEffect(() => {
     if (!enabled) return;
     const workspaceCwds = [...new Set(scopes.flatMap((scope) => scope.executionCwds))];
-    listSessions({ workspaceCwds, includePlainChats: true, revealEarlierCwds });
+    const refresh = () => {
+      listSessions({ workspaceCwds, includePlainChats: true, revealEarlierCwds });
+    };
+    refresh();
+    return bridge.onReconnected(refresh);
   }, [enabled, scopes, revealEarlierCwds]);
 
   return useCallback(

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 import { ToolConfirmationType, type RequestPermissionRequestParams } from '@factory/droid-sdk';
 
-import type { ServerEvent } from '../protocol.js';
+import type { ServerEvent } from '@droidex/protocol';
 import { droidInteractionHandlers } from '../providers/droid/droidInteractions.js';
 import { SessionInteractions, type InteractionLiveSession } from '../SessionInteractions.js';
 import { sessionSummary } from './sessionSummaryFixture.js';

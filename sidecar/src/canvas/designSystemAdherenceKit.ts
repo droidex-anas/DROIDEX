@@ -6,10 +6,10 @@ import postcss, { CssSyntaxError, type Root } from 'postcss';
 import valueParser from 'postcss-value-parser';
 import { KIT_SPECIFIER } from './designBundle.js';
 import { kitPrimitives } from './designSystemBrief.js';
-import { kitModes, type DocumentSection, type TokenSectionKind } from './designSystemDocument.js';
+import type { DocumentSection, CanvasDiagnostic } from '@droidex/protocol';
+import { kitModes, type TokenSectionKind } from './designSystemDocument.js';
 import { kitTailwindTheme, type KitTheme, type ThemeNamespace } from './kitTailwindTheme.js';
 import type { DesignSystem } from './designSystems.js';
-import type { CanvasDiagnostic } from './protocol.js';
 
 // Families that name no font file: CSS keywords and the platform's generic stacks.
 const GENERIC_FAMILIES = new Set([

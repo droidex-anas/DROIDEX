@@ -108,6 +108,6 @@ test('a Homebrew Devin update runs the owning brew cask updater', async (t) => {
     () => undefined,
     () => Promise.resolve(),
   );
-  await installer.update('devin');
+  await installer.handle({ type: 'harness.cli.update', provider: 'devin' });
   assert.deepEqual(JSON.parse(await readFile(output, 'utf8')), ['upgrade', '--cask', 'devin-cli']);
 });

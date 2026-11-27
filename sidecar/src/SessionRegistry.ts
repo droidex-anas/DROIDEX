@@ -1,12 +1,13 @@
 import { applyCachedSummary, type HistoricalSession, type HistoryIndex } from './history.js';
 import { isAbsolute, relative, resolve } from 'node:path';
-import type { BridgeFeature, SessionSummary } from './protocol.js';
+import type { BridgeFeature, SessionSummary } from '@droidex/protocol';
 import {
   filterSessionListSummaries,
   type SessionListFilterOptions,
   type SessionListPage,
 } from './sessionListFilter.js';
 import { uniqueStrings } from './values.js';
+import { isPathInside } from './usage/isPathInside.js';
 
 export interface RegisteredSession {
   summary: SessionSummary;
@@ -494,7 +495,7 @@ function copyFeature(feature: BridgeFeature): BridgeFeature {
 }
 
 function isInside(parent: string, candidate: string): boolean {
-  if (!candidate || !isAbsolute(candidate)) return false;
-  const path = relative(parent, resolve(candidate));
-  return path === '' || (!path.startsWith('..') && !isAbsolute(path));
+  if (!isAbsolute(candidate)) return false;
+  const path = resolve(candidate);
+  return path === parent || isPathInside(parent, path);
 }

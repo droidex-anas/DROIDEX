@@ -19,7 +19,7 @@ import {
   undoRemovalInputSchema,
 } from './frameEditSchema.js';
 import { editElementInputSchema } from './elementEditSchema.js';
-import type { CanvasCommand } from './protocol.js';
+import type { CanvasCommand } from '@droidex/protocol';
 import {
   CANVAS_LIMITS,
   canvasIdentifierSchema,
@@ -251,6 +251,13 @@ export const canvasCommandSchema = z.discriminatedUnion('type', [
   z
     .object({
       type: z.literal('canvas.readDesignSystem'),
+      ...request,
+      ref: designSystemVersionRefSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('canvas.readDesignSystemVersionContent'),
       ...request,
       ref: designSystemVersionRefSchema,
     })

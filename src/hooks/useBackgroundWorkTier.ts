@@ -10,8 +10,8 @@ import {
   isRemoteClient,
   onDesktopMemoryPressure,
   onDesktopPowerTier,
-  type DesktopPowerTierSnapshot,
 } from '../lib/desktop';
+import type { DesktopPowerTierSnapshot } from '../lib/desktopContract';
 
 interface SentBackgroundWork {
   tier: BackgroundWorkTier;

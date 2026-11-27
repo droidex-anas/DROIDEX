@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { Check } from 'lucide-react';
+import { Check } from '@droidex/icons';
 import { useStoreDispatch, useStoreSelector } from '../../hooks/useStore';
-import type { VoiceNarration } from '../../types/bridge';
+import type { VoiceNarration } from '@droidex/protocol';
 
 const HARNESS_DEFAULT = '';
 

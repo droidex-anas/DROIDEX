@@ -14,8 +14,9 @@ import type {
   SessionInteractionMode,
   SessionPhase,
   SessionSummary,
-} from './protocol.js';
-import { DEFAULT_PROVIDER, type ProviderKind } from './providers/providerKind.js';
+  ProviderKind,
+} from '@droidex/protocol';
+import { DEFAULT_PROVIDER } from './providers/providerKind.js';
 import { normalizeAutonomy, stringValue } from './values.js';
 
 function classifySession(

@@ -23,7 +23,7 @@ import { FrameThumbnail } from './FrameThumbnail';
 import { useOpenCanvasPane } from './openCanvasPane';
 import { PendingBloom } from './PendingBloom';
 import { frameStatus, type FrameStatus } from './previewLabels';
-import type { CanvasFrame, CanvasSnapshot } from './protocol';
+import type { CanvasFrame, CanvasSnapshot } from '@droidex/protocol';
 import { useCanvasMotion } from './useCanvasMotion';
 import type { CanvasActivityStage } from './canvasMotion';
 import { MAX_REVISION_PAGE_SIZE } from './wireValidation';

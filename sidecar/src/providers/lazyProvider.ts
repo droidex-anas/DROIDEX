@@ -1,5 +1,5 @@
-import type { ProviderKind } from './providerKind.js';
-import type { ModelInfo, ProviderStatus, SkillInfo } from '../protocol.js';
+import type { ModelInfo, ProviderKind, ProviderStatus, SkillInfo } from '@droidex/protocol';
+
 import type {
   ProbedProvider,
   ProviderForkHandle,

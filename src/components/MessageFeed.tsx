@@ -12,7 +12,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import { Button } from './ui/Button';
-import type { ChildSessionSummary, TranscriptEvent } from '../types/bridge';
+import type { ChildSessionSummary, TranscriptEvent } from '@droidex/protocol';
 import { SpecRenderer } from './SpecRenderer';
 import type { FileChange } from '../lib/diff';
 import type { OpenReviewFileHandler } from '../lib/reviewFocus';
@@ -224,9 +224,10 @@ export function MessageFeed({
             pending,
             specContent,
             changes,
+            density === 'compact',
           ),
       ),
-    [providedItems, events, pending, rich, changes, specContent, dockEnabled],
+    [providedItems, events, pending, rich, changes, specContent, dockEnabled, density],
   );
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
@@ -339,8 +340,12 @@ export function MessageFeed({
   );
   // A dock tail whose children are still running already speaks for the wave
   // with its own pills, timers and total, so the poll cue would only repeat it.
+  // A running fold counts the turn up itself and is its one live cue.
   const showWorking =
-    pending && !tailTyping && (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
+    pending &&
+    !tailTyping &&
+    !hasRunningFold(items) &&
+    (subagentPoll ? !lastDockRunning : !tailSelfIndicates);
   // Time the check from the poll itself; the visible tail can be minutes old.
   const workingStart = rich ? (subagentPoll?.ts ?? tailTimestamp(last)) : undefined;
 
@@ -423,6 +428,15 @@ export function MessageFeed({
       </div>
     </ProseFileLinks>
   );
+}
+
+function hasRunningFold(items: readonly FeedItem[]): boolean {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i];
+    if (item.type === 'worked') return item.runningSince != null;
+    if (item.type === 'message' && item.event.author === 'user') return false;
+  }
+  return false;
 }
 
 function feedWorkingLabel(last: FeedItem | undefined, pollingSubagents: boolean): string {

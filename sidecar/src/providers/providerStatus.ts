@@ -1,6 +1,10 @@
 import { isAbsolute } from 'node:path';
-import type { ModelInfo, ProviderStatus } from '../protocol.js';
-import { PROVIDER_KINDS, type ProviderKind } from './providerKind.js';
+import {
+  type ModelInfo,
+  type ProviderStatus,
+  PROVIDER_KINDS,
+  type ProviderKind,
+} from '@droidex/protocol';
 
 // What each provider can do for the user right now, ordered by PROVIDER_KINDS.
 // Pure over what the manager already knows so it can be emitted on any event

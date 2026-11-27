@@ -38,6 +38,11 @@ export default {
       full: '9999px',
     },
     extend: {
+      // Windows too short for the sidebar's announcement art and a readable
+      // chat list at once (the Electron minimum is 600px tall).
+      screens: {
+        short: { raw: '(max-height: 720px)' },
+      },
       // Names follow docs/design-system (README "Naming"). Text colours read
       // `text-primary`/`text-secondary`/`text-muted`; `text` is the same colour
       // for fills and rings (`bg-text`, `ring-text`).
@@ -125,7 +130,7 @@ export default {
         ],
         'code-sm': ['11px', { lineHeight: '16px', letterSpacing: '0px', fontWeight: '400' }],
       },
-      height: sizes,
+      height: { ...sizes, 'dialog-expanded': '82vh' },
       // The fixed shell columns (rules.md "Sizes"): `w-sidebar`, the floating
       // context panel the chat insets its content for and the pull-request
       // inbox, plus the transcript's media and browser cards.
@@ -143,6 +148,7 @@ export default {
         'dialog-confirm': '440px',
         'dialog-form': '560px',
         'dialog-content': '720px',
+        'dialog-expanded': '768px',
         palette: '576px',
       },
       size: sizes,

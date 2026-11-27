@@ -24,6 +24,33 @@ async function ledgerPath(t: TestContext): Promise<string> {
   return join(directory, 'projects.json');
 }
 
+test('clipped requested titles survive the ledger while unclipped titles need no field', async (t) => {
+  const h = await harness(t);
+  const { main } = await h.root();
+  const title = 'x'.repeat(LEDGER_LIMITS.title);
+  const original = await h.projects.spawn(main, { ...input, title });
+  const duplicate = await h.projects.spawn(main, { ...input, title });
+  const short = await h.projects.spawn(main, input);
+  const shortDuplicate = await h.projects.spawn(main, input);
+  const store = new ProjectStore(await ledgerPath(t));
+  await store.save(h.state.saved);
+  const loaded = await store.load();
+  const threads = loaded[0].threads;
+  assert.equal(
+    threads.find((thread) => thread.appSessionId === duplicate.appSessionId)?.requestedTitle,
+    title,
+  );
+  for (const spawned of [original, short, shortDuplicate]) {
+    const thread = threads.find((candidate) => candidate.appSessionId === spawned.appSessionId);
+    assert.ok(thread);
+    assert.equal(Object.hasOwn(thread, 'requestedTitle'), false);
+  }
+  const clipped = threads.find((thread) => thread.appSessionId === duplicate.appSessionId);
+  assert.ok(clipped);
+  clipped.requestedTitle = 'x'.repeat(LEDGER_LIMITS.title + 1);
+  await assert.rejects(store.save(loaded));
+});
+
 for (const kind of ['question', 'approval'] as const) {
   test(`a refused ${kind} waits outside a full inbox and delivers once when room opens`, async (t) => {
     const h = await harness(t);

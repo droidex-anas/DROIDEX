@@ -10,16 +10,11 @@ import {
   harness,
   input,
 } from '../../../sidecar/src/testing/projectServiceHarness';
-import {
-  adaptEvent,
-  initialState,
-  reducer,
-  StaticStoreProvider,
-  type AppState,
-} from '../../hooks/useStore';
+import { initialState, reducer, StaticStoreProvider, type AppState } from '../../hooks/useStore';
+import { adaptEvent } from '../../hooks/storeEvents';
 import { isServerEvent } from '../../lib/bridgeWireValidation';
-import type { SessionSummary, TranscriptEvent } from '../../types/bridge';
-import type { ProjectView } from './types';
+import type { SessionSummary, TranscriptEvent, ProjectView } from '@droidex/protocol';
+
 import { projectPulse } from './projectBoard';
 import { leadRow, threadCounts, threadGroups, threadRows } from './threadBoard';
 import { threadReports } from './threadNotices';

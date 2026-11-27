@@ -1,15 +1,15 @@
 import { automationExecutionPrompt } from './automationAttachments.js';
 import { randomUUID } from 'node:crypto';
-import type { ClientCommand } from '../protocol.js';
-import { assertModelSelection, isReasoningEffort } from './automationInput.js';
-import { isActiveRunStatus, isSettledRunStatus } from './automationStore.js';
 import type {
+  ClientCommand,
   Automation,
   AutomationRun,
   AutomationRunStatus,
-  AutomationStore,
   AutomationTrigger,
-} from './types.js';
+} from '@droidex/protocol';
+import { assertModelSelection, isReasoningEffort } from './automationInput.js';
+import { isActiveRunStatus, isSettledRunStatus } from './automationStore.js';
+import type { AutomationStore } from './types.js';
 import type { ReleasableAutomationWorkspace } from './workspace.js';
 
 export type SessionCreateCommand = Extract<ClientCommand, { type: 'session.create' }>;

@@ -10,13 +10,14 @@ import {
 } from './permissionOutcomes.js';
 import type {
   Autonomy,
+  ClientCommand,
   PermissionKind,
   PermissionOutcome,
   PermissionRequest,
   ServerEvent,
   SessionQuestion,
   SessionSummary,
-} from './protocol.js';
+} from '@droidex/protocol';
 import {
   nextInteractionRequestId,
   type ProviderApprovalRequest,
@@ -61,10 +62,24 @@ export interface SessionInteractionsDependencies {
   emitError: (error: InteractionError) => void;
 }
 
+type InteractionCommand = Extract<ClientCommand, { type: 'approval.respond' | 'question.respond' }>;
+
 export class SessionInteractions {
   private readonly scopes = new Map<string, InteractionScope>();
 
   constructor(private readonly dependencies: SessionInteractionsDependencies) {}
+
+  async handle(cmd: InteractionCommand): Promise<void> {
+    switch (cmd.type) {
+      case 'approval.respond':
+        await this.respondToApproval(cmd.appSessionId, cmd.requestId, cmd.outcome);
+        return;
+      case 'question.respond':
+        this.respondToQuestion(cmd.appSessionId, cmd.requestId, cmd.cancelled, cmd.answers);
+        return;
+    }
+    cmd satisfies never;
+  }
 
   interactionsFor(ref: { id: string }): ProviderInteractions {
     return {

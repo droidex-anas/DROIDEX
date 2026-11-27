@@ -1,7 +1,6 @@
-import { transcriptEventIsVisible } from '../lib/childSessions';
 import { insertChunkedSequence, replaceChunkedSequencePrefix } from '../lib/chunkedSequence';
 import type { TranscriptMutation } from '../lib/transcriptMutation';
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import type { FeedItem } from './chatFeed';
 import { buildGroupedFeed, type GroupedFeedOptions } from './chatFeedTurns';
 
@@ -29,22 +28,20 @@ export function projectPrependedFeed({
   previous,
   allTranscript,
   mutation,
-  childSessionId,
+  isVisible,
   options,
 }: {
   previous: PreviousFeedProjection;
   allTranscript: TranscriptEvent[];
   mutation: Extract<TranscriptMutation, { kind: 'prepend' }>;
-  childSessionId: string | null;
+  isVisible: (event: TranscriptEvent) => boolean;
   options: GroupedFeedOptions;
 }): PrependedFeedProjection | undefined {
   const insertedSourceEvents = allTranscript.slice(
     mutation.firstChangedIndex,
     mutation.firstChangedIndex + mutation.insertedCount,
   );
-  const insertedVisibleEvents = insertedSourceEvents.filter((event) =>
-    transcriptEventIsVisible(event, childSessionId),
-  );
+  const insertedVisibleEvents = insertedSourceEvents.filter(isVisible);
 
   if (insertedVisibleEvents.length === 0) {
     return {
@@ -58,7 +55,7 @@ export function projectPrependedFeed({
   const visibleInsertionIndex = countVisibleEventsBefore(
     previous.allTranscript,
     mutation.firstChangedIndex,
-    childSessionId,
+    isVisible,
   );
   if (visibleInsertionIndex !== 0) return undefined;
 
@@ -112,12 +109,12 @@ export function projectPrependedFeed({
 function countVisibleEventsBefore(
   events: readonly TranscriptEvent[],
   end: number,
-  childSessionId: string | null,
+  isVisible: (event: TranscriptEvent) => boolean,
 ): number {
   let count = 0;
   for (let index = 0; index < end; index += 1) {
     const event = events.at(index);
-    if (event && transcriptEventIsVisible(event, childSessionId)) count += 1;
+    if (event && isVisible(event)) count += 1;
   }
   return count;
 }

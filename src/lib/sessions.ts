@@ -1,4 +1,4 @@
-import type { ChildSessionSummary, SessionSummary } from '../types/bridge';
+import type { ChildSessionSummary, SessionSummary } from '@droidex/protocol';
 import { childSessionIsLive } from './childSessions';
 
 // Phases where the session is waiting on the user (or finished) — never "working".
@@ -18,6 +18,57 @@ export function sessionIsLive(session: Pick<SessionSummary, 'phase' | 'streaming
   // live forever — and the composer's queue drain would never fire.
   if (session.streaming === false) return false;
   return CLEARLY_ACTIVE.includes(session.phase);
+}
+
+// Per-reading token and context telemetry rewrites a session object several
+// times a second across a parallel fleet, and none of it is chrome. Subscribers
+// that need the session for display compare it with this instead of identity:
+// anything not listed here is display-relevant and still compares.
+const SESSION_TELEMETRY_FIELDS: ReadonlySet<string> = new Set([
+  'tokensIn',
+  'tokensOut',
+  'contextTokens',
+  'contextRemainingTokens',
+  'contextAccuracy',
+  'contextUpdatedAt',
+  'maxContextTokens',
+]);
+
+// Sessions arrive as fresh JSON graphs on every wire event, so even an
+// unchanged `features` array is a new array of new objects. Identity comparison
+// is meaningless past the boundary; these wire structures are shallow (arrays
+// of flat objects), so compare them structurally with a depth cap. Anything
+// deeper falls back to identity, which fails safe — a spurious re-render, never
+// a stale one.
+function sameWireValue(a: unknown, b: unknown, depth: number): boolean {
+  if (Object.is(a, b)) return true;
+  if (depth <= 0 || typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((item, i) => sameWireValue(item, b[i], depth - 1));
+  }
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  const recordA = a as Record<string, unknown>;
+  const recordB = b as Record<string, unknown>;
+  return keysA.every(
+    (key) => key in recordB && sameWireValue(recordA[key], recordB[key], depth - 1),
+  );
+}
+
+export function sameSessionExceptTelemetry(
+  previous: SessionSummary | null | undefined,
+  next: SessionSummary | null | undefined,
+): boolean {
+  if (previous === next) return true;
+  if (!previous || !next) return false;
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+    if (SESSION_TELEMETRY_FIELDS.has(key)) continue;
+    const field = key as keyof SessionSummary;
+    if (!sameWireValue(previous[field], next[field], 4)) return false;
+  }
+  return true;
 }
 
 interface SessionActivity {

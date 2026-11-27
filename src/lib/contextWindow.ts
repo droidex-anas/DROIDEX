@@ -1,4 +1,9 @@
-import type { ContextWindowTokens, ModelInfo, ProviderKind, ProviderStatus } from '../types/bridge';
+import type {
+  ContextWindowTokens,
+  ModelInfo,
+  ProviderKind,
+  ProviderStatus,
+} from '@droidex/protocol';
 
 // The context window is a per-chat preference distinct from the window the
 // chat is measured against: picking none leaves the provider's own in place.

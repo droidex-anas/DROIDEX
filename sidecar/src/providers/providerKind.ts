@@ -1,8 +1,5 @@
-// Which agent runtime a session runs on. Bound once when the session is created
-// and never changed afterwards. Kept dependency-free: the history worker bundles
-// this module and must pull in no third-party runtime.
-export const PROVIDER_KINDS = ['droid', 'claude', 'codex', 'devin'] as const;
-export type ProviderKind = (typeof PROVIDER_KINDS)[number];
+import { PROVIDER_KINDS, type ProviderKind } from '@droidex/protocol';
+
 export const DEFAULT_PROVIDER: ProviderKind = 'droid';
 
 // Lenient reader for persisted data: a stored session file written by an older

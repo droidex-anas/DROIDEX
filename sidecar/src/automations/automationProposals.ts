@@ -13,8 +13,8 @@ import type {
   AutomationInput,
   AutomationProposal,
   AutomationReasoningEffort,
-  AutomationStore,
-} from './types.js';
+} from '@droidex/protocol';
+import type { AutomationStore } from './types.js';
 
 /**
  * The automation records a confirmed proposal creates. Creation happens inside

@@ -1,17 +1,18 @@
-import { useMemo, useRef } from 'react';
+import { useCallback, useRef } from 'react';
 import { ArrowLeft } from '@droidex/icons';
-import type { ModelInfo, ProviderKind, TranscriptEvent } from '../../types/bridge';
+import type { ModelInfo, ProviderKind, TranscriptEvent } from '@droidex/protocol';
 import type { ChildSessionTarget } from '../../lib/childSessions';
+import { isSpawnEcho } from '../../lib/childSessionEvents';
 import type { ToolActivitySettings } from '../../lib/toolActivity';
 import type { ChildHistoryState } from '../../hooks/storeChildSession';
-import { buildFeed } from '../chatFeed';
+import type { TranscriptMutation } from '../../lib/transcriptMutation';
+import { createChatFeedProjector } from '../chatFeedProjector';
 import { MessageFeed } from '../MessageFeed';
 import { AgentAvatar } from '../AgentAvatar';
 import { Button } from '../ui/Button';
 import { AgentPaneExpand } from './AgentPaneExpand';
 import { AgentEffortChip } from './AgentRow';
 import type { AgentRow } from './agentMonitorModel';
-import { useAgentTranscript } from './useAgentTranscript';
 import { useAgentPaneScroll } from './useAgentPaneScroll';
 
 /* One agent in the agents pane: who it is, then its conversation exactly as the
@@ -24,6 +25,7 @@ export function AgentPaneDetail({
   row,
   models,
   transcript,
+  transcriptMutation,
   history,
   onRetryHistory,
   onLoadEarlier,
@@ -38,7 +40,8 @@ export function AgentPaneDetail({
   row: AgentRow;
   models: readonly ModelInfo[];
   // The parent transcript: child events are interleaved into it by source.
-  transcript: readonly TranscriptEvent[];
+  transcript: TranscriptEvent[];
+  transcriptMutation: TranscriptMutation | undefined;
   history?: ChildHistoryState;
   onRetryHistory: () => void;
   onLoadEarlier: () => void;
@@ -53,14 +56,32 @@ export function AgentPaneDetail({
   onToggleExpanded: () => void;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const events = useAgentTranscript(transcript, row.child);
-  const items = useMemo(() => buildFeed(events, { childSessionCards: true }), [events]);
+  const working = live && !row.queued && row.status === 'running';
+  // The projector compares this exclusion by identity; the prompt it reads is
+  // fixed for the child this pane is keyed to.
+  const hideSpawnEcho = useCallback(
+    (event: TranscriptEvent) => isSpawnEcho(event, row.child.prompt),
+    [row.child.prompt],
+  );
+  const feedProjectorRef = useRef<ReturnType<typeof createChatFeedProjector> | null>(null);
+  feedProjectorRef.current ??= createChatFeedProjector();
+  // The pane reads the chat's own projection: the projector scopes the
+  // interleaved transcript to this child and reuses completed feed rows for a
+  // proven append instead of rebuilding the feed on every token.
+  const { visibleTranscript: events, feedItems: items } = feedProjectorRef.current({
+    conversationKey: `${row.child.parentAppSessionId}:${row.child.childSessionId}:agent-pane`,
+    allTranscript: transcript,
+    transcriptMutation,
+    childSessionId: row.child.childSessionId,
+    pending: working,
+    hideEvent: hideSpawnEcho,
+    options: { childSessionCards: true, foldTurns: false },
+  });
   const { viewportLayoutRef, anchorHistory } = useAgentPaneScroll(
     scrollRef,
     row.child.childSessionId,
     items,
   );
-  const working = live && !row.queued && row.status === 'running';
 
   const modelName = models.find((entry) => entry.id === row.child.modelId)?.displayName;
 

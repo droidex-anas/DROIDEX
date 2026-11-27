@@ -6,7 +6,7 @@ import type {
   ProviderKind,
   ReasoningEffort,
   VoiceNarration,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { isReasoningEffort } from '../lib/reasoningEffort';
 import { DIFF_SCOPES, type DiffScope } from '../types/vcs';
 import type { ImagePasteQuality } from '../lib/images';
@@ -151,7 +151,6 @@ interface PersistedUiState {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  selectedFeatureId: string | null;
   mainView?: MainView;
   prWorkspaceCwd?: string | null;
   prWorkspaceNumber?: number | null;
@@ -335,8 +334,6 @@ export function loadPersistedUiState(): Partial<PersistedUiState> {
       missionControlMode:
         typeof parsed.missionControlMode === 'boolean' ? parsed.missionControlMode : undefined,
       browsers: loadPersistedBrowsers(parsed.browsers),
-      selectedFeatureId:
-        typeof parsed.selectedFeatureId === 'string' ? parsed.selectedFeatureId : null,
       mainView:
         parsed.mainView === 'session' ||
         parsed.mainView === 'pull-requests' ||
@@ -358,7 +355,6 @@ export interface PersistedUiStateSource {
   specMode: boolean;
   missionControlMode: boolean;
   browsers: Record<string, BrowserState>;
-  selectedFeatureId: string | null;
   mainView: MainView;
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
@@ -375,7 +371,6 @@ export function savePersistedUiState(state: PersistedUiStateSource): void {
     specMode: state.specMode,
     missionControlMode: state.missionControlMode,
     browsers: state.browsers,
-    selectedFeatureId: state.selectedFeatureId,
     mainView: state.mainView,
     prWorkspaceCwd: state.prWorkspaceCwd,
     prWorkspaceNumber: state.prWorkspaceNumber,

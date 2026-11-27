@@ -3,7 +3,7 @@ import { accessSync, constants, existsSync } from 'node:fs';
 import { homedir, release } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { EnvironmentReport, InstallChannel, PackageManagers } from './protocol.js';
+import type { EnvironmentReport, InstallChannel, PackageManagers } from '@droidex/protocol';
 import { childEnv } from './childEnv.js';
 
 const execFileAsync = promisify(execFile);

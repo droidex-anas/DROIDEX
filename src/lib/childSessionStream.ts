@@ -3,8 +3,9 @@ import type {
   ChildStatus,
   StreamFidelity,
   TranscriptEvent,
-} from '../types/bridge';
+} from '@droidex/protocol';
 import { childSessionKey, childSessionLatest, type ChildSessionActivity } from './childSessions';
+import { lastLines } from './textTail';
 
 export const CHILD_STREAM_PREVIEW_MAX_LINES = 3;
 export const CHILD_STREAM_PREVIEW_MAX_CHARS = 280;
@@ -17,8 +18,6 @@ export type ChildStreamPhase =
   | 'settled'
   | 'failed'
   | 'interrupted';
-
-export type ChildStreamPresentation = 'typewriter' | 'tool' | 'working' | 'idle';
 
 export const CHILD_STREAM_PHASE_LABEL: Record<ChildStreamPhase, string> = {
   queued: 'Queued',
@@ -40,15 +39,10 @@ export interface ChildStreamSnapshot {
   live: boolean;
 }
 
-export function boundChildStreamPreview(
-  text: string,
-  maxLines = CHILD_STREAM_PREVIEW_MAX_LINES,
-  maxChars = CHILD_STREAM_PREVIEW_MAX_CHARS,
-): string {
+export function boundChildStreamPreview(text: string): string {
   if (!text) return '';
-  const lines = text.replace(/\s+$/u, '').split('\n');
-  const tail = lines.slice(-Math.max(1, maxLines));
-  const perLine = Math.max(32, Math.floor(maxChars / Math.max(tail.length, 1)));
+  const tail = lastLines(text.trimEnd(), CHILD_STREAM_PREVIEW_MAX_LINES);
+  const perLine = Math.max(32, Math.floor(CHILD_STREAM_PREVIEW_MAX_CHARS / tail.length));
   return tail
     .map((line) => (line.length <= perLine ? line : line.slice(line.length - perLine)))
     .join('\n');
@@ -80,21 +74,6 @@ export function childStreamPhase(input: {
 export function childStreamPhaseLabel(phase: ChildStreamPhase, fidelity: StreamFidelity): string {
   if (phase === 'streaming' && fidelity !== 'token') return 'Working';
   return CHILD_STREAM_PHASE_LABEL[phase];
-}
-
-export function childStreamPresentation(
-  snapshot: Pick<ChildStreamSnapshot, 'live' | 'fidelity'>,
-): ChildStreamPresentation {
-  if (!snapshot.live) return 'idle';
-  if (snapshot.fidelity === 'token') return 'typewriter';
-  if (snapshot.fidelity === 'tool') return 'tool';
-  return 'working';
-}
-
-export function childStreamShowsCaret(
-  snapshot: Pick<ChildStreamSnapshot, 'live' | 'fidelity'>,
-): boolean {
-  return childStreamPresentation(snapshot) === 'typewriter';
 }
 
 export function sameChildStreamSnapshot(

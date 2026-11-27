@@ -6,7 +6,7 @@ import type {
   PermissionKind,
   PermissionOutcome,
   SessionSummary,
-} from '../../protocol.js';
+} from '@droidex/protocol';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import type { AppServerClient } from './appServer.js';
 

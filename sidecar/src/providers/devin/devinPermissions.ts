@@ -3,7 +3,7 @@ import type {
   RequestPermissionRequest,
   RequestPermissionResponse,
 } from '@agentclientprotocol/sdk/unstable';
-import type { PermissionKind } from '../../protocol.js';
+import type { PermissionKind } from '@droidex/protocol';
 import { objectValue, trimmedString } from '../../values.js';
 import { nextInteractionRequestId, type ProviderInteractions } from '../interactions.js';
 import { devinToolName } from './devinEvents.js';

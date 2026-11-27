@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   AgentProcessMonitor,
+  IDLE_TICK_MS,
   TICK_MS,
   type AgentProcessMonitorDependencies,
 } from './AgentProcessMonitor.js';
-import { commandLineContains } from './commandLineMatch.js';
+import { commandLineContains } from '@droidex/protocol';
 import type { ProcessRecord } from './processTree.js';
 
 function harness(
@@ -75,6 +76,44 @@ const rows: ProcessRecord[] = [
   { pid: 700, ppid: 600, startedAt: 0, command: '/bin/zsh -c npm run dev' },
   { pid: 800, ppid: 700, startedAt: 0, command: 'node /w/node_modules/.bin/vite' },
 ];
+
+test('a stable process tree drops to the idle cadence after the activity window', async () => {
+  const delays: number[] = [];
+  let held: Array<() => void> = [];
+  const h = harness(rows, new Map(), {
+    schedule: (cb, ms) => {
+      if (ms === TICK_MS || ms === IDLE_TICK_MS) {
+        delays.push(ms);
+        held.push(cb);
+        return {
+          cancel() {
+            held = held.filter((x) => x !== cb);
+          },
+        };
+      }
+      setImmediate(cb);
+      return { cancel() {} };
+    },
+  });
+  const fire = async () => {
+    const pending = held;
+    held = [];
+    for (const cb of pending) cb();
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  };
+
+  h.monitor.track('app-1', 600, () => true);
+  assert.equal(delays.at(-1), TICK_MS);
+  // Discovery of the first descendants counts as activity and keeps the fast
+  // cadence; only a scan with nothing new, past the window, may idle.
+  h.advance(70_000);
+  await fire();
+  assert.equal(delays.at(-1), TICK_MS);
+  h.advance(70_000);
+  await fire();
+  assert.equal(delays.at(-1), IDLE_TICK_MS);
+});
 
 test('unobserved recycled providers and stale cleanup cannot take another session’s processes', async () => {
   const h = harness(rows);

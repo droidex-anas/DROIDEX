@@ -1,12 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  classifyPermission,
-  confirmationType,
   extractCompactionNotification,
   mapProgress,
   normalizeNotification,
-  permissionSignature,
   normalizeStreamEvent,
 } from './normalize.js';
 
@@ -77,8 +74,19 @@ test('only a terminal background-task notification completes its child', () => {
     userMessage({ id: 'background-1', content: [{ type: 'text', text }] });
   assert.deepEqual(
     background('Background task completed.\ntask_id: child-background-1\noutput: done'),
-    [{ childSession: { providerSessionId: 'child-background-1', done: true } }],
+    [
+      {
+        childSession: { providerSessionId: 'child-background-1', done: true, status: 'completed' },
+      },
+    ],
   );
+  assert.deepEqual(
+    background('Background task failed.\ntask_id: child-background-2\nerror: limit'),
+    [{ childSession: { providerSessionId: 'child-background-2', done: true, status: 'failed' } }],
+  );
+  assert.deepEqual(background('Background task stopped.\ntask_id: child-background-3'), [
+    { childSession: { providerSessionId: 'child-background-3', done: true, status: 'paused' } },
+  ]);
   assert.deepEqual(background('Background task launched.\ntask_id: child-1'), []);
 });
 
@@ -133,7 +141,7 @@ test('token usage counts context the way the daemon threshold does, never from c
   // cacheRead (never cacheCreation), so the meter must count the same way.
   const lastCall = stream({
     type: 'session_token_usage_changed',
-    inclusiveTokenUsage: {
+    tokenUsage: {
       inputTokens: 100,
       outputTokens: 40,
       cacheReadTokens: 30,
@@ -163,85 +171,18 @@ test('token usage counts context the way the daemon threshold does, never from c
       cacheCreationTokens: 0,
     },
   });
-  assert.deepEqual(cumulative?.tokens, { tokensIn: 14_099_891, tokensOut: 242_687 });
+  assert.deepEqual(cumulative?.tokens, { tokensIn: 12_925_421, tokensOut: 179_985 });
 });
 
-test('classifyPermission reads the SDK toolUses shape for MCP tools and exec', () => {
-  const mcp = {
-    options: [{ value: 'proceed_once', label: 'Allow once' }],
-    toolUses: [
-      {
-        confirmationType: 'mcp_tool',
-        details: {
-          type: 'mcp_tool',
-          toolName: 'droidex-browser___design_reference',
-          impactLevel: 'low',
-        },
-        toolUse: {
-          type: 'tool_use',
-          id: 't1',
-          name: 'droidex-browser___design_reference',
-          input: { url: 'https://skeina.app' },
-        },
-      },
-    ],
-  } as never;
-  assert.equal(confirmationType(mcp), 'mcp_tool');
-  const tool = classifyPermission('m1', 'r1', mcp);
-  assert.equal(tool.kind, 'mcp');
-  assert.equal(tool.title, 'droidex-browser · design_reference');
-  assert.match(tool.detail, /url: https:\/\/skeina\.app/);
-  assert.match(tool.detail, /Impact: low/);
-  assert.equal(permissionSignature(mcp), 'mcp::::droidex-browser___design_reference');
-
-  const exec = {
-    options: [],
-    toolUses: [
-      {
-        confirmationType: 'exec',
-        details: { type: 'exec', command: 'rtk', fullCommand: 'rtk rm -rf build' },
-        toolUse: {
-          type: 'tool_use',
-          id: 't2',
-          name: 'Execute',
-          input: { command: 'rtk rm -rf build' },
-        },
-      },
-    ],
-  } as never;
-  const command = classifyPermission('m1', 'r2', exec);
-  assert.equal(command.kind, 'exec');
-  assert.equal(command.title, 'Run command');
-  assert.equal(command.detail, 'rtk rm -rf build');
-  assert.equal(permissionSignature(exec), 'exec::rtk rm -rf build');
-});
-
-test('permission grant keys hash automation payloads and name the kind of chat a spawn starts', () => {
-  const params = (details: Record<string, unknown>, input: Record<string, unknown>) =>
-    ({ toolUses: [{ details: { type: 'mcp_tool', ...details }, toolUse: { input } }] }) as never;
-  const prefix = 'x'.repeat(9_000);
-  for (const automation of [
-    { serverName: 'droidex-automations', toolName: 'automation_update' },
-    // Droid names the server inside the tool.
-    { toolName: 'droidex_automations___automation_update' },
-  ]) {
-    // A grant for one automation payload must not cover a different one.
-    assert.notEqual(
-      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}a` })),
-      permissionSignature(params(automation, { automationId: 'one', prompt: `${prefix}b` })),
-    );
-    // The same payload earns the same grant whatever order its keys arrive in.
-    assert.equal(
-      permissionSignature(params(automation, { automationId: 'one', prompt: 'p' })),
-      permissionSignature(params(automation, { prompt: 'p', automationId: 'one' })),
-    );
-  }
-
-  const spawn = (input: Record<string, unknown>) =>
-    permissionSignature(params({ toolName: 'droidex_sessions___thread_spawn' }, input));
-  assert.equal(spawn({ reportBack: true }), 'mcp::::droidex_sessions___thread_spawn::thread');
-  assert.equal(spawn({ reportBack: false }), 'mcp::::droidex_sessions___thread_spawn::chat');
-  assert.equal(spawn({}), '');
+test('a usage frame without cumulative totals publishes nothing', () => {
+  assert.equal(stream({ type: 'session_token_usage_changed' }), null);
+  assert.equal(
+    stream({
+      type: 'session_token_usage_changed',
+      lastCallTokenUsage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 3 },
+    }),
+    null,
+  );
 });
 
 test('captures Task prompt metadata before the subagent session id exists', () => {
@@ -334,7 +275,13 @@ test('a TaskOutput poll completes a child only on a terminal status, without ste
   );
   assert.equal(completed?.childSession?.providerSessionId, '7d32cc8f-77d5');
   assert.equal(completed?.childSession?.done, true);
+  assert.equal(completed?.childSession?.status, 'completed');
   assert.equal(running?.childSession?.done, false);
+  const failedPoll = poll(
+    'Task ID: 7d32cc8f-77d5\nSubagent Type: Worker\nStatus: failed\nDuration: 4.0s',
+  );
+  assert.equal(failedPoll?.childSession?.done, true);
+  assert.equal(failedPoll?.childSession?.status, 'failed');
   // The polling call's tool_use id is not the spawn; forwarding it would rekey
   // the child session away from its true spawn link.
   assert.equal(completed?.childSession?.toolUseId, undefined);
@@ -410,6 +357,10 @@ test('Task result text is never misparsed as a session id or a status', () => {
   const failed = result('Task', 'tool-failed', 'session_id: fake-provider\nspawn failed', true);
   assert.equal(laterOutput?.childSession?.providerSessionId, undefined);
   assert.equal(failed?.childSession?.providerSessionId, undefined);
+  assert.equal(failed?.childSession?.done, true);
+  assert.equal(failed?.childSession?.status, 'failed');
+  assert.equal(failed?.childSession?.toolUseId, 'tool-failed');
+  assert.equal(failed?.childSession?.transcriptAvailable, false);
 });
 
 test('only Task-family results can describe a subagent', () => {

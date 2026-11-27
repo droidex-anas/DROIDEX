@@ -1,4 +1,4 @@
-import type { ClientCommand } from '../../types/bridge';
+import type { ClientCommand } from '@droidex/protocol';
 
 /** One send owns its intent; retries retain the create request's mutation ID. */
 export function canvasIntentForDraft(

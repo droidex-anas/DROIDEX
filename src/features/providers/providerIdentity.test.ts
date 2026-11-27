@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ProviderStatus } from '../../types/bridge';
+import type { ProviderStatus } from '@droidex/protocol';
 import { offersFastMode } from '../../lib/fastMode';
 import {
   PROVIDER_LABELS,

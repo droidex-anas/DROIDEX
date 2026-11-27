@@ -3,9 +3,8 @@
 // to answer real `canvas.*` commands rather than stub the client.
 
 import assert from 'node:assert/strict';
-import type { ClientCommand, ServerEvent } from '../types/bridge';
+import type { ClientCommand, ServerEvent, CanvasCommand } from '@droidex/protocol';
 import type { CanvasTransport } from '../features/canvas/client';
-import type { CanvasCommand } from '../features/canvas/protocol';
 
 function isCanvasCommand(command: ClientCommand): command is CanvasCommand {
   return command.type.startsWith('canvas.');

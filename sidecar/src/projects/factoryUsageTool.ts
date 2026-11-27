@@ -1,11 +1,7 @@
 import { tool } from '@factory/droid-sdk';
 import { homedir } from 'node:os';
-import {
-  droidHome,
-  droidProfileLabel,
-  enabledDroidProfiles,
-  type DroidProfile,
-} from '../droidProfiles.js';
+import type { DroidProfile } from '@droidex/protocol';
+import { droidHome, droidProfileLabel, enabledDroidProfiles } from '../droidProfiles.js';
 import { errMsg } from '../errors.js';
 import { jsonResult, safeTool } from '../mcpToolUtils.js';
 import { readDroidLogin } from '../providers/droid/droidLogin.js';

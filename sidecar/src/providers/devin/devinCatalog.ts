@@ -1,5 +1,5 @@
 import type { AvailableCommand } from '@agentclientprotocol/sdk/unstable';
-import type { SkillInfo } from '../catalog.js';
+import type { SkillInfo } from '@droidex/protocol';
 
 // DROIDEX owns the overlapping mode, model, feedback, and title controls, so
 // offering these through text would change Devin behind those controls' backs.

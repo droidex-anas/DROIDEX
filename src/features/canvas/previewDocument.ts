@@ -11,7 +11,7 @@
 // shapes below; the intermediate in `electron/canvasPreview.cjs` enforces the
 // same caps on the way in.
 
-import type { CanvasDiagnostic, FrameRect } from './protocol';
+import type { CanvasDiagnostic, FrameRect } from '@droidex/protocol';
 
 /** Events one snapshot may carry, matching the intermediate's queue cap. */
 export const MAX_PREVIEW_SNAPSHOT_EVENTS = 64;

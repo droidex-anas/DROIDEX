@@ -5,7 +5,7 @@
 
 import ts from 'typescript';
 import { attribute, attributeValue, isLiteral, propertyName } from './jsxAttributes.js';
-import type { OutlineNode } from './protocol.js';
+import type { OutlineNode } from '@droidex/protocol';
 import { SourceElementError } from './sourceElementError.js';
 import type { ElementNode } from './sourceElements.js';
 import { cutRange, lineEnding, lineIndent, standsAlone, startsLine } from './sourceLines.js';

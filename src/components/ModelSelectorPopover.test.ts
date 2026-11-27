@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { initialState, StaticStoreProvider, type AppState } from '../hooks/useStore.js';
 import type { ExactChildSettingsTarget } from '../lib/exactChildSettings.js';
-import type { ModelInfo } from '../types/bridge.js';
+import type { ModelInfo } from '@droidex/protocol';
 import ModelSelectorPopover from './ModelSelectorPopover.js';
 
 function renderTarget(readiness: ExactChildSettingsTarget['readiness']): string {

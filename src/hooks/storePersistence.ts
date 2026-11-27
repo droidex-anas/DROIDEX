@@ -2,7 +2,8 @@ import { saveDraftProvider } from '../features/providers/providerDraft';
 import { saveTabStrip } from '../features/tabs/tabStorage';
 import { saveDefaultAutonomy } from '../lib/autonomy';
 import { CHAT_METADATA_STORAGE_KEY, saveChatMetadata } from '../lib/chatMetadata';
-import { writeSharedStorage, type SharedStorageKey } from '../lib/desktop';
+import { writeSharedStorage } from '../lib/desktop';
+import type { SharedStorageKey } from '../lib/desktopContract';
 import { isEmbedded } from '../lib/embed';
 import { saveSessionNotes } from '../lib/sessionNotes';
 import { saveToolActivity } from '../lib/toolActivity';
@@ -37,7 +38,6 @@ const UI_STATE_FIELDS = [
   'specMode',
   'missionControlMode',
   'browsers',
-  'selectedFeatureId',
   'mainView',
   'prWorkspaceCwd',
   'prWorkspaceNumber',

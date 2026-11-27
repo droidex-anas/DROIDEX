@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import type { ContentBlock, PromptCapabilities } from '@agentclientprotocol/sdk/unstable';
-import type { ProviderMention } from '../catalog.js';
+import type { ProviderMention } from '@droidex/protocol';
 
 export interface DevinForkContext {
   sessionId: string;

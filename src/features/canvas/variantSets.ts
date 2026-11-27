@@ -10,7 +10,7 @@ import { dismissToast, pushToast, toast } from '../../lib/toast';
 import { revisionEntry, type BoardHistory } from './boardHistory';
 import { CanvasRequestError, canvasMessage, type CanvasClient } from './client';
 import type { FrameRemovals } from './frameRemovals';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import type { RevisionRequests } from './revisionRequests';
 import type { SourceRequests } from './sourceRequests';
 

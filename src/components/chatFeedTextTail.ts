@@ -1,4 +1,4 @@
-import type { TranscriptEvent } from '../types/bridge';
+import type { TranscriptEvent } from '@droidex/protocol';
 import { isCancellationArtifact, type FeedItem } from './chatFeed';
 import type { ChatFeedProjection, ChatFeedProjectorInput } from './chatFeedProjector';
 

@@ -3,8 +3,7 @@ import test from 'node:test';
 import { chipNamedBy, composerMenu, composerTrigger, type MenuEntry } from './menuItems';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
 import type { SlashCommand } from '../ComposerMenu';
-import type { CanvasFrame, CatalogListing } from '../../features/canvas/protocol';
-import type { ProviderKind, SkillInfo } from '../../types/bridge';
+import type { CanvasFrame, CatalogListing, ProviderKind, SkillInfo } from '@droidex/protocol';
 
 const command = (cmd: string): SlashCommand => ({
   cmd,

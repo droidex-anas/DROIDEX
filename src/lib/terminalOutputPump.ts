@@ -1,28 +1,36 @@
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 const TERMINAL_HIDDEN_BUFFER_BYTES = 2 * 1024 * 1024;
+const TERMINAL_PENDING_BLOCK_BYTES = 16 * 1024;
 
-export function utf8ByteLength(text: string): number {
-  return encoder.encode(text).byteLength;
+interface PendingChunk {
+  parts: string[];
+  bytes: number;
+  next?: PendingChunk;
 }
 
-export function trimUtf8Prefix(
-  text: string,
-  dropBytes: number,
-): { text: string; droppedBytes: number } {
-  if (dropBytes <= 0) return { text, droppedBytes: 0 };
-  const encoded = encoder.encode(text);
-  if (encoded.byteLength <= dropBytes) {
-    return { text: '', droppedBytes: encoded.byteLength };
+function trimChunkPrefix(chunk: PendingChunk, dropBytes: number): number {
+  const text = chunk.parts.join('');
+  let end = 0;
+  let bytes = 0;
+  while (bytes < dropBytes && end < text.length) {
+    const codeUnit = text.charCodeAt(end);
+    const nextCodeUnit = text.charCodeAt(end + 1);
+    const isSurrogatePair =
+      codeUnit >= 0xd800 && codeUnit <= 0xdbff && nextCodeUnit >= 0xdc00 && nextCodeUnit <= 0xdfff;
+    if (codeUnit <= 0x7f) bytes += 1;
+    else if (codeUnit <= 0x7ff) bytes += 2;
+    else if (isSurrogatePair) bytes += 4;
+    else bytes += 3;
+    end += isSurrogatePair ? 2 : 1;
   }
-  let start = dropBytes;
-  while (start < encoded.length) {
-    const byte = encoded[start];
-    if ((byte & 0xc0) !== 0x80) break;
-    start += 1;
-  }
-  return { text: decoder.decode(encoded.subarray(start)), droppedBytes: start };
+  chunk.parts = [text.slice(end)];
+  chunk.bytes -= bytes;
+  return bytes;
+}
+
+function utf8ByteLength(text: string): number {
+  return encoder.encode(text).byteLength;
 }
 
 export function createTerminalOutputPump(options: {
@@ -33,7 +41,9 @@ export function createTerminalOutputPump(options: {
   maxHiddenBytes?: number;
 }) {
   const maxHiddenBytes = options.maxHiddenBytes ?? TERMINAL_HIDDEN_BUFFER_BYTES;
-  let pending = '';
+  let head: PendingChunk | undefined;
+  let tail: PendingChunk | undefined;
+  let lastCodeUnit = 0;
   let pendingBytes = 0;
   let droppedBytes = 0;
   let truncated = false;
@@ -47,27 +57,88 @@ export function createTerminalOutputPump(options: {
 
   function capPending() {
     if (pendingBytes <= maxHiddenBytes) return;
-    const overflow = pendingBytes - maxHiddenBytes;
-    const trimmed = trimUtf8Prefix(pending, overflow);
-    pending = trimmed.text;
-    pendingBytes = utf8ByteLength(pending);
-    droppedBytes += trimmed.droppedBytes;
     truncated = true;
+
+    while (head && pendingBytes > maxHiddenBytes) {
+      const overflow = pendingBytes - maxHiddenBytes;
+      if (head.bytes <= overflow) {
+        pendingBytes -= head.bytes;
+        droppedBytes += head.bytes;
+        head = head.next;
+        continue;
+      }
+      const bytes = trimChunkPrefix(head, overflow);
+      pendingBytes -= bytes;
+      droppedBytes += bytes;
+      if (!head.bytes) head = head.next;
+    }
+    if (!head) tail = undefined;
+  }
+
+  function joinPending() {
+    const chunks: string[] = [];
+    for (let chunk = head; chunk; chunk = chunk.next) {
+      for (const part of chunk.parts) chunks.push(part);
+    }
+    return chunks.join('');
+  }
+
+  function clearPending() {
+    head = tail = undefined;
+    pendingBytes = 0;
+    lastCodeUnit = 0;
   }
 
   function flush() {
     cancel();
-    if (!pending || options.isHidden()) return;
-    const data = pending;
-    pending = '';
-    pendingBytes = 0;
+    if (!head || options.isHidden()) return;
+    const data = joinPending();
+    clearPending();
     options.write(data);
+  }
+
+  function appendPending(data: string) {
+    let bytes = utf8ByteLength(data);
+    const firstCodeUnit = data.charCodeAt(0);
+    const completesPair =
+      tail !== undefined &&
+      lastCodeUnit >= 0xd800 &&
+      lastCodeUnit <= 0xdbff &&
+      firstCodeUnit >= 0xdc00 &&
+      firstCodeUnit <= 0xdfff;
+    const previousCodeUnit = lastCodeUnit;
+    lastCodeUnit = data.charCodeAt(data.length - 1);
+    if (completesPair) bytes -= 2;
+    pendingBytes += bytes;
+
+    if (tail && tail.bytes + bytes <= TERMINAL_PENDING_BLOCK_BYTES) {
+      tail.parts.push(data);
+      tail.bytes += bytes;
+      return;
+    }
+    if (tail) {
+      const text = tail.parts.join('');
+      tail.parts = [completesPair ? text.slice(0, -1) : text];
+      if (completesPair) {
+        tail.bytes -= 3;
+        data = String.fromCharCode(previousCodeUnit) + data;
+        bytes += 3;
+      }
+      if (!tail.bytes) {
+        tail.parts = [data];
+        tail.bytes = bytes;
+        return;
+      }
+    }
+    const chunk: PendingChunk = { parts: [data], bytes };
+    if (tail) tail.next = chunk;
+    else head = chunk;
+    tail = chunk;
   }
 
   function push(data: string) {
     if (!data) return;
-    pending += data;
-    pendingBytes += utf8ByteLength(data);
+    appendPending(data);
     if (options.isHidden()) {
       capPending();
       return;
@@ -82,16 +153,14 @@ export function createTerminalOutputPump(options: {
 
   function dispose() {
     cancel();
-    pending = '';
-    pendingBytes = 0;
+    clearPending();
   }
 
   // Restart clears the screen: buffered output from the previous shell must
   // not land in it, and the trimmed banner must not stick across it.
   function reset() {
     cancel();
-    pending = '';
-    pendingBytes = 0;
+    clearPending();
     droppedBytes = 0;
     truncated = false;
   }

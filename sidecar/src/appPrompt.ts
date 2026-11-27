@@ -1,4 +1,4 @@
-import type { ResponseFormat } from './protocol.js';
+import type { ResponseFormat } from '@droidex/protocol';
 
 const APP_PROMPT_HEADER = 'DROIDEX App request:';
 const APP_GUIDANCE_HEADER = 'Private generation guidance:';

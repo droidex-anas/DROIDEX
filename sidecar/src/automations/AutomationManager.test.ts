@@ -4,9 +4,13 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test, { type TestContext } from 'node:test';
-import type { ClientCommand, SessionSummary } from '../protocol.js';
+import type {
+  ClientCommand,
+  SessionSummary,
+  AutomationInput,
+  AutomationSnapshot,
+} from '@droidex/protocol';
 import { AutomationManager } from './AutomationManager.js';
-import type { AutomationInput, AutomationSnapshot } from './types.js';
 
 type SessionCreate = Extract<ClientCommand, { type: 'session.create' }>;
 

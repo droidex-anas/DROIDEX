@@ -1,5 +1,5 @@
 import { useStoreSelector } from '../../hooks/useStore';
-import type { ProviderKind } from '../../types/bridge';
+import type { ProviderKind } from '@droidex/protocol';
 import { effectiveProvider } from '../providers/providerDraft';
 
 // The harness a new chat is created on, as the composer resolves it.

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { toast } from '../../lib/toast';
 import { canvasMessage } from './client';
-import type { CanvasFrame } from './protocol';
+import type { CanvasFrame } from '@droidex/protocol';
 import { MAX_FRAME_NAME_LENGTH } from './wireValidation';
 
 /**
