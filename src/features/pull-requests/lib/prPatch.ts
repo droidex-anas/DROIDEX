@@ -1,9 +1,12 @@
-import { parseUnifiedDiff } from '../../../lib/unifiedDiff';
+import { parseUnifiedDiff, type ParsedDiff } from '../../../lib/unifiedDiff';
 import type { DiffFile, DiffFileStatus } from '../../../types/vcs';
 
 export interface PrPatchFile {
   file: DiffFile;
   diff: string;
+  // The parse the counts came from, kept so the renderer never parses the
+  // same patch text twice.
+  parsed: ParsedDiff;
 }
 
 const C_ESCAPES: Record<string, number | undefined> = {
@@ -138,6 +141,7 @@ export function splitPrPatch(diff: string): PrPatchFile[] {
         binary: parsed.binary || GIT_BINARY_PATCH.test(chunk),
       },
       diff: chunk,
+      parsed,
     });
   }
   return files;

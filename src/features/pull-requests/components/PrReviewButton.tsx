@@ -1,7 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ExternalLink } from '@droidex/icons';
 
-import { Octicon } from '../../../components/environment/GithubIcons';
 import { Badge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { Menu } from '../../../components/ui/Menu';
@@ -48,16 +47,13 @@ export function PrReviewButton({
         size="sm"
         aria-haspopup="menu"
         aria-expanded={open}
+        loading={requesting}
         title="Review this pull request"
         onClick={() => {
           setOpen((value) => !value);
         }}
       >
-        <span className="inline-flex items-center gap-1.5">
-          <Octicon name="check" size={13} />
-          {requesting ? 'Requesting…' : 'Review'}
-          <ChevronDown className="size-icon-sm text-muted" />
-        </span>
+        Review
       </Button>
       <Menu
         open={open}
@@ -83,7 +79,7 @@ export function PrReviewButton({
               <span className="flex items-center gap-1.5">
                 {option.title}
                 {option.action === 'enable-cubic' ? (
-                  <Octicon name="link-external" size={11} className="text-muted" />
+                  <ExternalLink className="size-icon-sm text-muted" aria-hidden="true" />
                 ) : null}
               </span>
               <span className="block text-caption text-muted">{option.hint}</span>
@@ -92,6 +88,7 @@ export function PrReviewButton({
         ))}
         {options.some((option) => option.action === 'enable-cubic') ? (
           <p
+            role="presentation"
             title="DROIDEX may receive a reward if you upgrade."
             className="px-2 pb-1 pt-0.5 text-caption text-muted"
           >

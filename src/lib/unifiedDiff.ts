@@ -27,6 +27,37 @@ export interface SplitRow {
   right: DiffLine | null;
 }
 
+// Line-anchored review content (notes, inline comments) keys a line by the
+// side of the diff it belongs to and its line number on that side.
+export type DiffLineSide = 'old' | 'new';
+
+export function diffLineAnchorKey(side: DiffLineSide, line: number): string {
+  return `${side}:${String(line)}`;
+}
+
+export interface DiffLineAnchor {
+  side: DiffLineSide;
+  line: number;
+}
+
+// Which anchors a unified-view line satisfies: a deletion only its old-side
+// anchor, an addition only its new-side one, a context line either.
+export function unifiedLineAnchors(line: DiffLine): DiffLineAnchor[] {
+  if (line.type === 'meta') return [];
+  const anchors: DiffLineAnchor[] = [];
+  if (line.oldLine != null) anchors.push({ side: 'old', line: line.oldLine });
+  if (line.newLine != null) anchors.push({ side: 'new', line: line.newLine });
+  return anchors;
+}
+
+// A split-view cell anchors only on its own pane's side: the left pane is the
+// old file, the right pane the new one.
+export function splitCellAnchor(cell: DiffLine | null, side: DiffLineSide): DiffLineAnchor | null {
+  if (!cell || cell.type === 'meta') return null;
+  const line = side === 'old' ? cell.oldLine : cell.newLine;
+  return line == null ? null : { side, line };
+}
+
 const HUNK_RE = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 
 export function parseUnifiedDiff(diff: string): ParsedDiff {

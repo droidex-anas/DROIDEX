@@ -25,7 +25,7 @@ function EmptyCopy({ children }: { children: string }) {
   return <p className="max-w-sm text-center text-body text-muted">{children}</p>;
 }
 
-export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) {
+function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) {
   const authCodeCopy = useGithubAuthCodeCopy(setup.authCode);
   const busy = setup.action !== 'idle' && !setup.authCode;
   const canCancel =
@@ -73,13 +73,9 @@ export function PrGithubSetupEmpty({ setup }: { setup: GithubSetupController }) 
 // unblocking it.
 export function PrWorkspaceEmpty({
   cwd,
-  gitLoaded,
-  isGitHub,
   setup,
 }: {
   cwd: string | null;
-  gitLoaded: boolean;
-  isGitHub: boolean;
   setup: GithubSetupController;
 }) {
   const dispatch = useStoreDispatch();
@@ -110,27 +106,7 @@ export function PrWorkspaceEmpty({
     );
   }
 
-  // Until the git environment has loaded, a folder that is not a repository is
-  // indistinguishable from one still being read, and GitHub setup would be
-  // offered for a folder that can never use it.
-  if (gitLoaded && !isGitHub) {
-    return (
-      <div className="flex h-full min-h-0 flex-1 flex-col items-center justify-center px-8">
-        <EmptyCopy>This folder is not a GitHub repository.</EmptyCopy>
-        <Button
-          variant="secondary"
-          className="mt-4"
-          onClick={() => {
-            void openWorkspace();
-          }}
-        >
-          Choose another workspace
-        </Button>
-      </div>
-    );
-  }
-
-  if (isGitHub && setup.availability && !setup.isReady) {
+  if (setup.availability && !setup.isReady) {
     return <PrGithubSetupEmpty setup={setup} />;
   }
 

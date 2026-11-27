@@ -1,10 +1,9 @@
-import type { OcticonName } from '../../../components/environment/GithubIcons';
 import type { PrComment } from '../../../types/vcs';
 
 // A review thread that is settled, and how it got settled.
 export interface PrThreadStatus {
   label: string;
-  icon: OcticonName;
+  icon: 'check' | 'clock';
   title: string;
 }
 
@@ -33,7 +32,7 @@ export function threadStatus(comment: PrComment): PrThreadStatus | null {
 const FOLD_LINES = 10;
 const FOLD_CHARACTERS = 700;
 
-export function isLongComment(body: string): boolean {
+function isLongComment(body: string): boolean {
   return body.split('\n').length > FOLD_LINES || body.length > FOLD_CHARACTERS;
 }
 

@@ -34,7 +34,7 @@ function Disclosure({ summary, body }: { summary: string; body: string }) {
 // renderer, because they are written and generated the same way.
 export function PrBody({ blocks }: { blocks: readonly PrCommentBlock[] }) {
   return (
-    <>
+    <div className="pr-body">
       {blocks.map((block, index) =>
         block.kind === 'markdown' ? (
           <div key={index} className="mt-2 first:mt-0">
@@ -44,6 +44,6 @@ export function PrBody({ blocks }: { blocks: readonly PrCommentBlock[] }) {
           <Disclosure key={index} summary={block.summary} body={block.body} />
         ),
       )}
-    </>
+    </div>
   );
 }

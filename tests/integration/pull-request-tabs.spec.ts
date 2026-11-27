@@ -91,7 +91,7 @@ async function expectSelected(tablist: Locator, name: string): Promise<void> {
   const tab = tablist.getByRole('tab', { name, exact: true });
   await expect(tab).toBeFocused();
   await expect(tab).toHaveAttribute('aria-selected', 'true');
-  await expect(tablist.locator('[role="tab"][tabindex="0"]')).toHaveText(name);
+  await expect(tablist.locator('[role="tab"][tabindex="0"]')).toHaveAccessibleName(name);
 }
 
 test('the inbox filters are one tab stop that the arrows move through and wrap', async ({
@@ -100,7 +100,7 @@ test('the inbox filters are one tab stop that the arrows move through and wrap',
   await openPullRequests(page);
   const filters = page.getByRole('tablist', { name: 'Pull request filters', exact: true });
   await page.getByRole('button', { name: 'Refresh', exact: true }).first().focus();
-  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Tab');
   await expectSelected(filters, 'All');
 
   await page.keyboard.press('ArrowRight');
@@ -113,7 +113,7 @@ test('the inbox filters are one tab stop that the arrows move through and wrap',
   await expectSelected(filters, 'All');
 
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('button', { name: 'Refresh', exact: true }).first()).toBeFocused();
+  await expect(page.getByRole('button', { name: 'Filter', exact: true })).toBeFocused();
 });
 
 test('the detail views switch with the arrows and keep their number shortcuts', async ({
@@ -125,12 +125,12 @@ test('the detail views switch with the arrows and keep their number shortcuts', 
   await views.getByRole('tab', { name: 'Summary', exact: true }).focus();
 
   await page.keyboard.press('ArrowRight');
-  await expectSelected(views, 'Code');
-  await expect(page.getByRole('tabpanel', { name: 'Code', exact: true })).toBeVisible();
+  await expectSelected(views, 'Changes');
+  await expect(page.getByRole('tabpanel', { name: 'Changes', exact: true })).toBeVisible();
   await page.keyboard.press('ArrowRight');
   await expectSelected(views, 'Summary');
   await page.keyboard.press('ArrowLeft');
-  await expectSelected(views, 'Code');
+  await expectSelected(views, 'Changes');
 
   await page.keyboard.press('Tab');
   await expect(page.getByRole('button', { name: 'Refresh', exact: true }).last()).toBeFocused();
@@ -140,9 +140,9 @@ test('the detail views switch with the arrows and keep their number shortcuts', 
     'true',
   );
 
-  // A shortcut can select Code while Summary keeps focus; the arrows move from the focused tab.
+  // A shortcut can select Changes while Summary keeps focus; the arrows move from the focused tab.
   await views.getByRole('tab', { name: 'Summary', exact: true }).click();
   await page.keyboard.press('2');
   await page.keyboard.press('ArrowRight');
-  await expectSelected(views, 'Code');
+  await expectSelected(views, 'Changes');
 });

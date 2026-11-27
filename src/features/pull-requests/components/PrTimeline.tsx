@@ -1,6 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
+import { GitCommit, GitPullRequest, GitPullRequestDraft, type IconComponent } from '@droidex/icons';
 
-import { Octicon } from '../../../components/environment/GithubIcons';
 import type { PrComment, PrCommit, PullRequest } from '../../../types/vcs';
 import { displayLogin } from '../lib/prIdentity';
 import { prAbsoluteTime, prRelativeTime } from '../lib/prTime';
@@ -18,17 +18,22 @@ function TimelineRow({ marker, children }: { marker: ReactNode; children: ReactN
   );
 }
 
+function IconMarker({ icon }: { icon: IconComponent }) {
+  const Icon = icon;
+  return (
+    <span className="flex size-8 items-center justify-center rounded-full bg-elevated text-secondary">
+      <Icon className="size-icon-md" aria-hidden="true" />
+    </span>
+  );
+}
+
 function EventRow({ pr }: { pr: PullRequest }) {
   const event = openedEvent(pr);
   if (!event) return null;
   const time = prRelativeTime(event.createdAt);
   return (
     <TimelineRow
-      marker={
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-elevated text-secondary">
-          <Octicon name={event.isDraft ? 'git-pull-request-draft' : 'git-pull-request'} size={14} />
-        </span>
-      }
+      marker={<IconMarker icon={event.isDraft ? GitPullRequestDraft : GitPullRequest} />}
     >
       <p className="pt-1.5 text-body text-secondary">
         <span className="font-medium text-primary">{displayLogin(event.author)}</span> opened this
@@ -72,32 +77,28 @@ function CommitsEntry({ commits }: { commits: PrCommit[] }) {
   const latest = commits.at(-1);
   const time = prRelativeTime(latest?.committedDate ?? null);
   return (
-    <TimelineRow
-      marker={
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-elevated text-secondary">
-          <Octicon name="git-commit" size={14} />
-        </span>
-      }
-    >
-      <div className="rounded-lg bg-surface px-3 py-2">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen((value) => !value);
-          }}
-          className="group flex w-full items-center gap-1.5 text-left"
-        >
-          <FoldChevron open={open} />
-          <span className="text-body-strong text-primary">
-            {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
-          </span>
-          {time ? (
-            <span className="ml-auto shrink-0 text-caption text-muted">{time} ago</span>
-          ) : null}
-        </button>
+    <TimelineRow marker={<IconMarker icon={GitCommit} />}>
+      <div className="pt-1">
+        <div className="-mx-2">
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => {
+              setOpen((value) => !value);
+            }}
+            className="group flex h-control-sm w-full items-center gap-1.5 rounded-md px-2 text-left transition-colors duration-quick hover:bg-elevated"
+          >
+            <span className="text-body text-secondary">
+              {commits.length} {commits.length === 1 ? 'commit' : 'commits'}
+            </span>
+            <FoldChevron open={open} />
+            {time ? (
+              <span className="ml-auto shrink-0 text-caption text-muted">{time} ago</span>
+            ) : null}
+          </button>
+        </div>
         <PrCollapse open={open}>
-          <div className="mt-1.5 pt-1.5">
+          <div className="pt-1">
             {commits.map((commit) => (
               <CommitRow key={commit.oid} commit={commit} />
             ))}
@@ -121,7 +122,7 @@ export function PrTimeline({
   loading: boolean;
   error: string | null;
 }) {
-  const items = buildPrTimeline(comments, commits);
+  const items = useMemo(() => buildPrTimeline(comments, commits), [comments, commits]);
   const showEmpty = items.length === 0 && !loading;
   return (
     <div>
