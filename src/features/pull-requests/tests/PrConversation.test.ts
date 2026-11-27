@@ -71,7 +71,6 @@ function renderSummary(
       comments: overrides.comments ?? [],
       commentsError: overrides.commentsError ?? null,
       commits: overrides.commits ?? [],
-      viewerLogin: 'ana',
       draft: '',
       posting: false,
       onDraftChange: noop,

@@ -48,7 +48,12 @@ import {
   isSettingsStatus,
   type FeedItem,
 } from './chatFeed';
-import { groupTurns, liveTurnStart, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
+import {
+  groupTurns,
+  liveExecutionTurnStart,
+  tailTimestamp,
+  trailingSubagentPoll,
+} from './chatFeedTurns';
 import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
@@ -231,7 +236,7 @@ export function MessageFeed({
   );
   // Rows before the live turn are settled: interrupted calls never receive
   // results, so only the live turn may treat them as in flight.
-  const liveTurnFrom = useMemo(() => liveTurnStart(items), [items]);
+  const liveTurnFrom = useMemo(() => liveExecutionTurnStart(items), [items]);
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
   const previousFeed = renderedFeedRef.current;

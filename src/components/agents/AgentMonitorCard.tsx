@@ -33,9 +33,8 @@ export function AgentMonitorCard({
   onOpen,
   activity,
 }: AgentMonitorData & {
-  // True only while this wave's turn is still streaming. It gates every ticking
-  // clock: once the turn ends (or the user stops it) the card must stop counting
-  // instead of accruing time forever against a run nobody is watching.
+  // True while this wave's turn is still streaming. Confirmed running children
+  // keep counting after it ends; this only owns launches no child has confirmed yet.
   live?: boolean;
   onOpen?: (child: ChildSessionSummary) => void;
   activity?: (target: ChildSessionTarget) => ChildSessionActivity | undefined;

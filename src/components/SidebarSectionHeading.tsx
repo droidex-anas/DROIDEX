@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ChevronRight } from '@droidex/icons';
+import { CountBadge } from './ui/Badge';
 
 // A collapsible sidebar section label: text with a trailing chevron, no fill.
 // The label brightens on hover; an optional trailing action (e.g. "+") sits
@@ -19,7 +20,7 @@ export function SidebarSectionHeading({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex items-center gap-1 pb-1 pl-3 pr-2.5 pt-1">
+    <div className="flex items-center gap-1.5 pb-1 pl-3 pr-2.5 pt-1">
       <h3 className="min-w-0 flex-1">
         <button
           type="button"
@@ -32,7 +33,9 @@ export function SidebarSectionHeading({
             className={`size-icon-sm shrink-0 opacity-50 transition group-hover/heading:opacity-100 ${open ? 'rotate-90' : ''}`}
           />
           {!open && count !== undefined && (
-            <span className="ml-auto text-caption tabular-nums opacity-70">{count}</span>
+            <CountBadge size="sm" className="ml-auto">
+              {count}
+            </CountBadge>
           )}
         </button>
       </h3>

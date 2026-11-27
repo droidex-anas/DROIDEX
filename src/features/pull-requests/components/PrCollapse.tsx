@@ -1,12 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown } from '@droidex/icons';
 
 // The fold affordance that goes with PrCollapse: one chevron, one rotation.
 export function FoldChevron({ open }: { open: boolean }) {
   return (
     <ChevronDown
       aria-hidden="true"
-      className={`h-3.5 w-3.5 shrink-0 text-muted transition-transform duration-200 ease-out group-hover:text-secondary motion-reduce:transition-none ${
+      className={`size-icon-sm shrink-0 text-muted transition-transform duration-fast ease-smooth-out group-hover:text-secondary motion-reduce:transition-none ${
         open ? '' : '-rotate-90'
       }`}
     />

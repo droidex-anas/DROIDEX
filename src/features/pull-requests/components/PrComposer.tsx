@@ -1,81 +1,51 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
-import { ArrowUp } from 'lucide-react';
+import { useEffect, useRef } from 'react';
 
-import { Button } from '../../../components/ui/Button';
-import { GithubAvatar } from './GithubAvatar';
+import { CompactComposer } from '../../../components/composer/CompactComposer';
 
 const MAX_HEIGHT = 200;
 
+// The same small composer as design mode's prompt and the side chat. Enter
+// posts, Shift+Enter adds a line.
 export function PrComposer({
-  viewerLogin,
   draft,
   posting,
   onDraftChange,
   onSubmit,
 }: {
-  viewerLogin: string | null;
   draft: string;
   posting: boolean;
   onDraftChange: (value: string) => void;
   onSubmit: () => void;
 }) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const postingRef = useRef(false);
 
   useEffect(() => {
     if (!posting) postingRef.current = false;
   }, [posting]);
 
-  // Grow with the draft instead of scrolling a three-row box, but never take
-  // over the conversation.
-  useLayoutEffect(() => {
-    const node = textareaRef.current;
-    if (!node) return;
-    node.style.height = 'auto';
-    node.style.height = `${String(Math.min(node.scrollHeight, MAX_HEIGHT))}px`;
-  }, [draft]);
+  const canSend = draft.trim().length > 0 && !posting;
 
   const submit = () => {
-    if (!draft.trim() || posting || postingRef.current) return;
+    if (!canSend || postingRef.current) return;
     postingRef.current = true;
     onSubmit();
   };
 
-  // Same shape as the chat composer: one rounded field with the author on the
-  // left of its footer and a round send button on the right.
   return (
-    <div className="rounded-xl bg-raised">
-      <textarea
-        ref={textareaRef}
-        value={draft}
-        onChange={(event) => {
-          onDraftChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
-            event.preventDefault();
-            submit();
-          }
-        }}
-        rows={1}
-        placeholder="Leave a comment"
-        className="w-full resize-none bg-transparent px-3.5 pt-3 text-body-lg text-primary outline-none placeholder:text-muted"
-      />
-      <div className="flex items-center gap-2 px-3 pb-2.5">
-        <GithubAvatar login={viewerLogin} size={20} />
-        <span className="min-w-0 flex-1 truncate text-caption text-muted">
-          {posting ? 'Posting…' : 'Markdown supported · ⌘⏎ to comment'}
-        </span>
-        <Button
-          variant="primary"
-          shape="round"
-          icon={ArrowUp}
-          onClick={submit}
-          disabled={!draft.trim() || posting}
-          title="Comment (⌘⏎)"
-          aria-label="Comment"
-        />
-      </div>
-    </div>
+    <CompactComposer
+      value={draft}
+      onChange={onDraftChange}
+      onSend={submit}
+      canSend={canSend}
+      placeholder="Leave a comment"
+      label="Leave a comment"
+      sendLabel="Comment"
+      maxHeight={MAX_HEIGHT}
+      status={
+        posting ? (
+          <span className="shrink-0 self-center text-caption text-muted">Posting…</span>
+        ) : null
+      }
+    />
   );
 }

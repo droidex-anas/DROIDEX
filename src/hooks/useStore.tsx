@@ -15,6 +15,11 @@ import { bridge } from '../lib/bridge';
 import { updateCompactionSettings } from '../lib/commands';
 import { reducePrInbox, type PrInboxAction } from '../features/pull-requests/lib/prInboxState';
 import {
+  reducePrReview,
+  type PrReviewAction,
+  type PrReviewSlice,
+} from '../features/pull-requests/lib/prReviewState';
+import {
   activeDraftTileId,
   composeOrigin,
   draftTileIds,
@@ -318,6 +323,7 @@ export interface AppState {
   prWorkspaceCwd: string | null;
   prWorkspaceNumber: number | null;
   prBacklogIds: string[];
+  prReviewDrafts: PrReviewSlice['prReviewDrafts'];
   specMode: boolean;
   settingsOpen: boolean;
   /** Where Settings opens when something outside it asks for a specific place. */
@@ -576,6 +582,7 @@ export type Action =
   | { type: 'CLOSE_AUTOMATIONS' }
   | { type: 'AUTOMATION_EDITOR_REQUEST_HANDLED'; requestId: number }
   | PrInboxAction
+  | PrReviewAction
   | TabAction
   // A chat dropped on a tile's center shows in that tile; a null tile is the
   // whole page of a tab that is not split.
@@ -702,6 +709,7 @@ export const initialState: AppState = {
   prWorkspaceCwd: persistedUiState.prWorkspaceCwd ?? null,
   prWorkspaceNumber: persistedUiState.prWorkspaceNumber ?? null,
   prBacklogIds: persistedUiState.prBacklogIds ?? [],
+  prReviewDrafts: {},
   specMode: persistedUiState.specMode ?? false,
   settingsOpen: false,
   settingsRequest: null,
@@ -1305,6 +1313,13 @@ function reduceAction(state: AppState, action: Action): AppState {
         automationEditorRequest: null,
         tabStrip: showView(state, { kind: 'pull-requests' }),
       };
+    case 'PR_REVIEW_NOTE_ADD':
+    case 'PR_REVIEW_NOTE_UPDATE':
+    case 'PR_REVIEW_NOTE_REMOVE':
+    case 'PR_REVIEW_NOTES_CLEAR':
+    case 'PR_FILE_VIEWED_TOGGLE':
+      return reducePrReview(state, action);
+
     case 'CLOSE_PULL_REQUESTS':
     case 'MOVE_PR_TO_BACKLOG':
     case 'RESTORE_PR_FROM_BACKLOG': {

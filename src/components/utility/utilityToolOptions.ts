@@ -2,6 +2,7 @@ import {
   Activity,
   ChangesIcon,
   Files,
+  GitPullRequest,
   Globe,
   Hierarchy,
   LayoutTemplate,
@@ -69,11 +70,21 @@ const SIDE_TOOL_OPTION: UtilityToolOption = {
   shortcut: '',
 };
 
+// Opened from a pull request link, never from the picker: the pane shows one
+// PR, so it only exists once a link names one.
+const PULL_REQUEST_TOOL_OPTION: UtilityToolOption = {
+  tool: 'pull-request',
+  label: 'Pull request',
+  icon: GitPullRequest,
+  shortcut: '',
+};
+
 export function utilityToolOption(tool: UtilityTool): UtilityToolOption {
   if (tool === 'agents') return AGENTS_TOOL_OPTION;
   if (tool === 'threads') return THREADS_TOOL_OPTION;
   if (tool === 'background') return BACKGROUND_TOOL_OPTION;
   if (tool === 'side') return SIDE_TOOL_OPTION;
   if (tool === 'canvas') return CANVAS_TOOL_OPTION;
+  if (tool === 'pull-request') return PULL_REQUEST_TOOL_OPTION;
   return UTILITY_TOOL_OPTIONS.find((option) => option.tool === tool) ?? UTILITY_TOOL_OPTIONS[0];
 }

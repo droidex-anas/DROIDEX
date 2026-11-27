@@ -27,6 +27,8 @@ export type UtilityPanelsAction =
       terminalId?: string;
       cwd?: string;
       filePath?: string;
+      prNumber?: number;
+      label?: string;
       agentId?: string;
       threadId?: string;
       canvasId?: string | null;
@@ -111,6 +113,8 @@ export function reduceUtilityPanels(state: AppState, action: UtilityPanelsAction
           terminalId: action.terminalId,
           cwd: action.cwd,
           filePath: action.filePath,
+          prNumber: action.prNumber,
+          label: action.label,
           agentId: action.agentId,
           threadId: action.threadId,
           canvasId: action.canvasId,
