@@ -103,6 +103,16 @@ const waveToolUseIds = (items: ReturnType<typeof buildFeed>) =>
     item.type === 'child_sessions' ? [item.events.map((e) => e.toolUseId)] : [],
   );
 
+test('a confirmed running child stays live after its spawning turn settles', () => {
+  const html = cardText({
+    sessions: [childSession('runner', 't1', 'running')],
+    models: [],
+    live: false,
+  });
+  assert.ok(html.includes('Working'));
+  assert.ok(!html.includes('0 of 1 agents finished'));
+});
+
 test('the collapsed card counts agents by their own status, with a completion summary', () => {
   // A background Task call returning means the launch was accepted, not that the
   // agent finished; only the child's state-only status may settle a row.
@@ -111,7 +121,7 @@ test('the collapsed card counts agents by their own status, with a completion su
     models: [],
     activity: () => ({ status: 'completed' }),
   });
-  assert.ok(outranked.includes('1 Running'));
+  assert.ok(outranked.includes('Running'));
   assert.ok(!outranked.includes('1 Done'));
 
   const failed = cardText({
@@ -127,10 +137,17 @@ test('the collapsed card counts agents by their own status, with a completion su
   const html = renderToStaticMarkup(createElement(AgentMonitorCard, monitorData));
   const collapsed = textOf(html);
   assert.ok(collapsed.includes('Agents'));
-  assert.ok(collapsed.includes('1 Running'));
-  assert.ok(collapsed.includes('1 Done'));
-  // Rows stay unmounted while collapsed.
-  assert.equal(html.includes('data-testid="agent-row"'), false);
+  assert.ok(collapsed.includes('Running'));
+  assert.ok(collapsed.includes('Done'));
+  // A running row opens itself; a settled wave stays collapsed.
+  assert.equal(html.includes('data-testid="agent-row"'), true);
+  const settled = renderToStaticMarkup(
+    createElement(AgentMonitorCard, {
+      sessions: [childSession('done', 't3', 'completed')],
+      models: [],
+    }),
+  );
+  assert.equal(settled.includes('data-testid="agent-row"'), false);
 
   const mixed = cardText({
     sessions: [
@@ -141,9 +158,9 @@ test('the collapsed card counts agents by their own status, with a completion su
     ],
     models: [],
   });
-  assert.ok(mixed.includes('2 Running'));
-  assert.ok(mixed.includes('1 Awaiting approval'));
-  assert.ok(mixed.includes('1 Done'));
+  assert.ok(mixed.includes('Running'));
+  assert.ok(mixed.includes('Awaiting approval'));
+  assert.ok(mixed.includes('Done'));
   assert.ok(mixed.includes('1 of 4 agents finished'));
   assert.ok(mixed.includes('25%'));
 });

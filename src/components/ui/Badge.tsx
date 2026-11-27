@@ -44,3 +44,49 @@ export function Badge({
     </span>
   );
 }
+
+type CountBadgeTone = 'subtle' | 'recessed' | 'active';
+type CountBadgeSize = 'sm' | 'md';
+
+const COUNT_TONE: Record<CountBadgeTone, string> = {
+  subtle: 'bg-elevated text-secondary',
+  recessed: 'bg-surface text-muted',
+  active: 'bg-surface text-primary',
+};
+
+const COUNT_SIZE: Record<CountBadgeSize, string> = {
+  sm: 'h-4 min-w-4 px-1',
+  md: 'h-5 min-w-5 px-1.5',
+};
+
+interface CountBadgeProps extends HTMLAttributes<HTMLSpanElement> {
+  ref?: Ref<HTMLSpanElement>;
+  tone?: CountBadgeTone;
+  size?: CountBadgeSize;
+  children: ReactNode;
+}
+
+/** Symmetrical numeric chip for section headers, filter tabs, and collapsed groups. */
+export function CountBadge({
+  ref,
+  tone = 'subtle',
+  size = 'md',
+  className,
+  children,
+  ...rest
+}: CountBadgeProps) {
+  return (
+    <span
+      ref={ref}
+      {...rest}
+      className={cn(
+        'inline-flex shrink-0 select-none items-center justify-center rounded-full text-caption font-medium tabular-nums',
+        COUNT_SIZE[size],
+        COUNT_TONE[tone],
+        className,
+      )}
+    >
+      {children}
+    </span>
+  );
+}

@@ -20,12 +20,8 @@ function normalizeLogin(login: string): string {
 // `cubic-dev-ai[bot]`; no other login counts as Cubic activity.
 const CUBIC_LOGIN = 'cubic-dev-ai';
 
-export function isCubicAuthor(login: string): boolean {
-  return normalizeLogin(login) === CUBIC_LOGIN;
-}
-
 export function hasCubicActivity(comments: readonly PrComment[]): boolean {
-  return comments.some((comment) => isCubicAuthor(comment.author));
+  return comments.some((comment) => normalizeLogin(comment.author) === CUBIC_LOGIN);
 }
 
 // Cubic is installed per repository, so its memory is keyed by the repository

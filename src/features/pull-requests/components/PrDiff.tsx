@@ -1,59 +1,321 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
+import { PanelRight, WrapText } from '@droidex/icons';
 
 import { DiffFileSection } from '../../../components/environment/DiffFileSection';
-import { FileTypeIcon } from '../../../components/FileTypeIcon';
+import type { DiffLineReview, DiffLineTarget } from '../../../components/environment/DiffBody';
+import { Badge, CountBadge } from '../../../components/ui/Badge';
+import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
-import type { DiffFile } from '../../../types/vcs';
-import { splitPrPatch } from '../lib/prPatch';
+import type { FileDiffEntry } from '../../../hooks/useReviewFileDiffs';
+import { diffLineAnchorKey, type DiffLineSide } from '../../../lib/unifiedDiff';
+import type { PrComment } from '../../../types/vcs';
+import { usePrReviewDraft } from '../hooks/usePrReviewDraft';
+import type { PrLineAnnotation } from '../lib/prAnnotations';
+import { splitPrPatch, type PrPatchFile } from '../lib/prPatch';
+import { PrAnchoredContent, type PrAnnotationEditingState } from './PrAnnotation';
+import { PR_FILE_TREE_ID, PrFileTree } from './PrFileTree';
+import { PrReviewBar } from './PrReviewBar';
 
 const AUTO_EXPAND_MAX = 25;
 
-function FileRow({
-  file,
-  selected,
-  onSelect,
-}: {
-  file: DiffFile;
-  selected: boolean;
-  onSelect: (path: string) => void;
-}) {
-  const slash = file.path.lastIndexOf('/');
-  const dir = slash >= 0 ? file.path.slice(0, slash + 1) : '';
-  const name = slash >= 0 ? file.path.slice(slash + 1) : file.path;
-  return (
-    <button
-      type="button"
-      aria-current={selected ? 'true' : undefined}
-      onClick={() => {
-        onSelect(file.path);
-      }}
-      title={file.path}
-      className={`flex w-full items-center gap-2 px-2.5 py-1.5 text-left transition-colors ${
-        selected ? 'bg-active' : 'hover:bg-elevated/50'
-      }`}
-    >
-      <FileTypeIcon filename={file.path} className="h-3.5 w-3.5" />
-      <span className="min-w-0 flex-1 truncate text-body">
-        {dir ? <span className="text-muted/70">{dir}</span> : null}
-        <span className="text-primary">{name}</span>
-      </span>
-      <span className="shrink-0 text-caption tabular-nums">
-        {file.additions > 0 ? (
-          <span style={{ color: 'var(--diff-add-fg)' }}>+{file.additions}</span>
-        ) : null}{' '}
-        {file.deletions > 0 ? (
-          <span style={{ color: 'var(--diff-del-fg)' }}>-{file.deletions}</span>
-        ) : null}
-      </span>
-    </button>
+type PrDiffFileEntry = PrPatchFile & { entry: FileDiffEntry };
+
+// The API numbers LEFT-side comments in the old file and everything else in
+// the new one; threads predating the side field default to the new side.
+function commentSide(comment: PrComment): DiffLineSide {
+  return comment.side === 'LEFT' ? 'old' : 'new';
+}
+
+function sameArrayItems<T>(left: readonly T[], right: readonly T[]): boolean {
+  return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+
+function inlineCommentsForPath(comments: readonly PrComment[], path: string): PrComment[] {
+  return comments.filter(
+    (comment) =>
+      comment.kind === 'inline' &&
+      comment.path === path &&
+      comment.line != null &&
+      comment.outdated !== true,
   );
 }
 
-export function PrDiff({ diff }: { diff: string }) {
+function annotationsForPath(
+  annotations: readonly PrLineAnnotation[],
+  path: string,
+): PrLineAnnotation[] {
+  return annotations.filter((note) => note.path === path);
+}
+
+function editingForPath(
+  editing: PrAnnotationEditingState | null,
+  path: string,
+): PrAnnotationEditingState | null {
+  return editing?.path === path ? editing : null;
+}
+
+const PrDiffFile = memo(
+  function PrDiffFile({
+    item,
+    comments,
+    annotations,
+    editing,
+    open,
+    active,
+    view,
+    wrap,
+    onToggle,
+    onSectionRef,
+    onOpenEditor,
+    onRemoveNote,
+    onSaveEditor,
+    onCancelEditor,
+  }: {
+    item: PrDiffFileEntry;
+    comments: PrComment[];
+    annotations: PrLineAnnotation[];
+    editing: PrAnnotationEditingState | null;
+    open: boolean;
+    active: boolean;
+    view: 'unified' | 'split';
+    wrap: boolean;
+    onToggle: (path: string) => void;
+    onSectionRef: (path: string, el: HTMLDivElement | null) => void;
+    onOpenEditor: (path: string, target: DiffLineTarget, annotationId: string | null) => void;
+    onRemoveNote: (id: string) => void;
+    onSaveEditor: (state: PrAnnotationEditingState, body: string) => void;
+    onCancelEditor: (state: PrAnnotationEditingState) => void;
+  }) {
+    const path = item.file.path;
+    // The API numbers inline comments on the new side of the diff; outdated
+    // ones keep their place in the timeline instead of anchoring wrong.
+    const fileComments = useMemo(() => inlineCommentsForPath(comments, path), [comments, path]);
+    const fileNotes = useMemo(() => annotationsForPath(annotations, path), [annotations, path]);
+    const editingHere = editing?.path === path ? editing : null;
+
+    const onAnnotate = useCallback(
+      (target: DiffLineTarget) => {
+        // A line that already carries a note opens that note for editing
+        // instead of a blank editor that would silently replace it.
+        const existing = fileNotes.find(
+          (note) =>
+            diffLineAnchorKey(note.side, note.line) === diffLineAnchorKey(target.side, target.line),
+        );
+        onOpenEditor(path, target, existing?.id ?? null);
+      },
+      [fileNotes, onOpenEditor, path],
+    );
+
+    const anchors = useMemo(() => {
+      const keys = new Set<string>();
+      for (const comment of fileComments) {
+        if (comment.line != null) keys.add(diffLineAnchorKey(commentSide(comment), comment.line));
+      }
+      for (const note of fileNotes) keys.add(diffLineAnchorKey(note.side, note.line));
+      if (editingHere) {
+        keys.add(diffLineAnchorKey(editingHere.target.side, editingHere.target.line));
+      }
+      return keys;
+    }, [fileComments, fileNotes, editingHere]);
+
+    const onEditNote = useCallback(
+      (note: PrLineAnnotation) => {
+        onOpenEditor(path, { side: note.side, line: note.line, text: note.code }, note.id);
+      },
+      [onOpenEditor, path],
+    );
+
+    const renderBelow = useCallback(
+      (side: DiffLineSide, line: number) => (
+        <PrAnchoredContent
+          side={side}
+          line={line}
+          path={path}
+          annotations={fileNotes}
+          comments={fileComments}
+          editing={editingHere}
+          onEditNote={onEditNote}
+          onRemoveNote={onRemoveNote}
+          onSaveEditor={onSaveEditor}
+          onCancelEditor={onCancelEditor}
+        />
+      ),
+      [
+        path,
+        fileNotes,
+        fileComments,
+        editingHere,
+        onEditNote,
+        onRemoveNote,
+        onSaveEditor,
+        onCancelEditor,
+      ],
+    );
+
+    const lineReview = useMemo(
+      (): DiffLineReview => ({ onAnnotate, anchors, renderBelow }),
+      [onAnnotate, anchors, renderBelow],
+    );
+
+    return (
+      <DiffFileSection
+        file={item.file}
+        open={open}
+        active={active}
+        entry={item.entry}
+        view={view}
+        wrap={wrap}
+        onToggle={onToggle}
+        onSectionRef={onSectionRef}
+        lineReview={lineReview}
+        parsed={item.parsed}
+      />
+    );
+  },
+  (prev, next) => {
+    const path = prev.item.file.path;
+    return (
+      prev.item === next.item &&
+      prev.open === next.open &&
+      prev.active === next.active &&
+      prev.view === next.view &&
+      prev.wrap === next.wrap &&
+      prev.onToggle === next.onToggle &&
+      prev.onSectionRef === next.onSectionRef &&
+      prev.onOpenEditor === next.onOpenEditor &&
+      prev.onRemoveNote === next.onRemoveNote &&
+      prev.onSaveEditor === next.onSaveEditor &&
+      prev.onCancelEditor === next.onCancelEditor &&
+      editingForPath(prev.editing, path) === editingForPath(next.editing, path) &&
+      sameArrayItems(
+        inlineCommentsForPath(prev.comments, path),
+        inlineCommentsForPath(next.comments, path),
+      ) &&
+      sameArrayItems(
+        annotationsForPath(prev.annotations, path),
+        annotationsForPath(next.annotations, path),
+      )
+    );
+  },
+);
+
+function PrDiffToolbar({
+  fileCount,
+  viewedCount,
+  additions,
+  deletions,
+  allExpanded,
+  wrap,
+  treeVisible,
+  onToggleAll,
+  onToggleWrap,
+  onToggleTree,
+}: {
+  fileCount: number;
+  viewedCount: number;
+  additions: number;
+  deletions: number;
+  allExpanded: boolean;
+  wrap: boolean;
+  treeVisible: boolean;
+  onToggleAll: () => void;
+  onToggleWrap: () => void;
+  onToggleTree: () => void;
+}) {
+  return (
+    <div className="flex h-10 shrink-0 select-none items-center gap-2 px-6">
+      <span className="flex min-w-0 items-center gap-1.5 text-label text-secondary">
+        <CountBadge size="sm">{fileCount}</CountBadge>
+        <span className="truncate">{fileCount === 1 ? 'file' : 'files'}</span>
+      </span>
+      <span className="shrink-0 text-caption tabular-nums">
+        {additions > 0 ? <span style={{ color: 'var(--diff-add-fg)' }}>+{additions}</span> : null}
+        {additions > 0 && deletions > 0 ? ' ' : null}
+        {deletions > 0 ? <span style={{ color: 'var(--diff-del-fg)' }}>−{deletions}</span> : null}
+      </span>
+      {viewedCount > 0 ? (
+        <Badge tone={viewedCount === fileCount ? 'success' : 'neutral'} className="tabular-nums">
+          {viewedCount}/{fileCount} reviewed
+        </Badge>
+      ) : null}
+      <div className="min-w-0 flex-1" />
+      {fileCount > 1 ? (
+        <Button variant="ghost" size="sm" onClick={onToggleAll}>
+          {allExpanded ? 'Collapse all' : 'Expand all'}
+        </Button>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={WrapText}
+        aria-pressed={wrap}
+        title={wrap ? 'Scroll long lines' : 'Wrap long lines'}
+        aria-label={wrap ? 'Scroll long lines' : 'Wrap long lines'}
+        onClick={onToggleWrap}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={PanelRight}
+        aria-expanded={treeVisible}
+        aria-controls={PR_FILE_TREE_ID}
+        onClick={onToggleTree}
+      >
+        {treeVisible ? 'Hide file tree' : 'Show file tree'}
+      </Button>
+    </div>
+  );
+}
+
+export function PrDiff({
+  diff,
+  cwd,
+  number,
+  comments,
+  compact = false,
+  onSendReview,
+}: {
+  diff: string;
+  cwd: string;
+  number: number;
+  comments: PrComment[];
+  // The narrow pane starts with the file tree hidden, so the diff keeps its width.
+  compact?: boolean;
+  onSendReview: ((annotations: PrLineAnnotation[]) => void) | null;
+}) {
   const diffView = useStoreSelector((state) => state.diffView);
-  const files = useMemo(() => splitPrPatch(diff), [diff]);
+  // Entries are built in the same memo as the parse, so the DiffFileSection
+  // memo holds across poll ticks: nothing downstream re-renders on identity.
+  const files = useMemo<PrDiffFileEntry[]>(
+    () =>
+      splitPrPatch(diff).map((item) => ({
+        ...item,
+        entry: {
+          diff: item.diff,
+          status: 'loaded',
+          loading: false,
+          binary: item.file.binary,
+        },
+      })),
+    [diff],
+  );
+  const diffFiles = useMemo(() => files.map((item) => item.file), [files]);
+  const { draft, addNote, updateNote, removeNote, clearNotes, toggleViewed } = usePrReviewDraft(
+    cwd,
+    number,
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [activePath, setActivePath] = useState<string | null>(null);
+  const [editing, setEditing] = useState<PrAnnotationEditingState | null>(null);
+  const [wrap, setWrap] = useState(false);
+  const [treeVisible, setTreeVisible] = useState(!compact);
+  // The tree's filter and folds live here, not in the tree: hiding the panel
+  // unmounts it for the exit animation, and reopening must return the reader
+  // to the tree they had. The caller keys this by pull request, so a new one
+  // starts them fresh, and a poll refresh of the diff keeps them.
+  const [treeFilter, setTreeFilter] = useState('');
+  const [treeCollapsed, setTreeCollapsed] = useState<Set<string>>(() => new Set());
   const sectionRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   useEffect(() => {
@@ -63,6 +325,7 @@ export function PrDiff({ diff }: { diff: string }) {
         : new Set(),
     );
     setActivePath(files[0]?.file.path ?? null);
+    setEditing(null);
   }, [files]);
 
   const registerSection = useCallback((path: string, el: HTMLDivElement | null) => {
@@ -90,6 +353,59 @@ export function PrDiff({ diff }: { diff: string }) {
     });
   }, []);
 
+  const openEditor = useCallback(
+    (path: string, target: DiffLineTarget, annotationId: string | null) => {
+      setEditing({ path, target, annotationId });
+    },
+    [],
+  );
+
+  // Closing the editor returns focus to the annotate button of its line, the
+  // control that opened it — Escape backs out to where the keyboard user was.
+  const closeEditor = useCallback((state: PrAnnotationEditingState | null) => {
+    setEditing(null);
+    if (!state) return;
+    requestAnimationFrame(() => {
+      const key = diffLineAnchorKey(state.target.side, state.target.line);
+      const section = sectionRefs.current.get(state.path);
+      const button = section?.querySelector(`[data-diff-line="${key}"]`);
+      if (button instanceof HTMLElement) button.focus();
+    });
+  }, []);
+
+  const saveEditor = useCallback(
+    (state: PrAnnotationEditingState, body: string) => {
+      if (state.annotationId) updateNote(state.annotationId, body);
+      else addNote({ ...state.target, path: state.path }, body);
+      closeEditor(state);
+    },
+    [addNote, updateNote, closeEditor],
+  );
+
+  const noteCount = draft.annotations.length;
+  const viewedFileSet = useMemo(() => new Set(draft.viewedFiles), [draft.viewedFiles]);
+  const viewedCount = draft.viewedFiles.filter((path) =>
+    files.some((item) => item.file.path === path),
+  ).length;
+  const totals = useMemo(
+    () =>
+      files.reduce(
+        (count, item) => ({
+          additions: count.additions + item.file.additions,
+          deletions: count.deletions + item.file.deletions,
+        }),
+        { additions: 0, deletions: 0 },
+      ),
+    [files],
+  );
+
+  const allExpanded = files.length > 0 && expanded.size === files.length;
+  const toggleAll = useCallback(() => {
+    setExpanded((current) =>
+      current.size === files.length ? new Set() : new Set(files.map((item) => item.file.path)),
+    );
+  }, [files]);
+
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-8">
@@ -99,39 +415,80 @@ export function PrDiff({ diff }: { diff: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0">
-      <nav
-        aria-label="Changed files"
-        className="pr-workspace-scroll w-56 shrink-0 overflow-y-auto py-1"
-      >
-        {files.map((item) => (
-          <FileRow
-            key={item.file.path}
-            file={item.file}
-            selected={activePath === item.file.path}
-            onSelect={jumpTo}
-          />
-        ))}
-      </nav>
-      <div className="pr-workspace-scroll min-h-0 min-w-0 flex-1 overflow-auto">
-        {files.map((item) => (
-          <DiffFileSection
-            key={item.file.path}
-            file={item.file}
-            open={expanded.has(item.file.path)}
-            active={activePath === item.file.path}
-            entry={{
-              diff: item.diff,
-              status: 'loaded',
-              loading: false,
-              binary: item.file.binary,
-            }}
-            view={diffView}
-            wrap={false}
-            onToggle={toggle}
-            onSectionRef={registerSection}
-          />
-        ))}
+    <div className="pr-diff flex h-full min-h-0 flex-col">
+      <PrDiffToolbar
+        fileCount={files.length}
+        viewedCount={viewedCount}
+        additions={totals.additions}
+        deletions={totals.deletions}
+        allExpanded={allExpanded}
+        wrap={wrap}
+        treeVisible={treeVisible}
+        onToggleAll={toggleAll}
+        onToggleWrap={() => {
+          setWrap((value) => !value);
+        }}
+        onToggleTree={() => {
+          setTreeVisible((visible) => !visible);
+        }}
+      />
+      <div className="flex min-h-0 flex-1">
+        <div className="relative min-h-0 min-w-0 flex-1">
+          {/* In the side panel the pane's resize handle covers its first 12px,
+              so the gutter and its note buttons start past it. */}
+          <div
+            className={`pr-workspace-scroll h-full overflow-auto pb-24 ${compact ? 'pl-3' : ''}`}
+          >
+            {files.map((item) => (
+              <PrDiffFile
+                key={item.file.path}
+                item={item}
+                comments={comments}
+                annotations={draft.annotations}
+                editing={editing}
+                open={expanded.has(item.file.path)}
+                active={activePath === item.file.path}
+                view={diffView}
+                wrap={wrap}
+                onToggle={toggle}
+                onSectionRef={registerSection}
+                onOpenEditor={openEditor}
+                onRemoveNote={removeNote}
+                onSaveEditor={saveEditor}
+                onCancelEditor={closeEditor}
+              />
+            ))}
+          </div>
+          {noteCount > 0 ? (
+            <PrReviewBar
+              count={noteCount}
+              onSend={
+                onSendReview
+                  ? () => {
+                      onSendReview(draft.annotations);
+                    }
+                  : null
+              }
+              onClear={clearNotes}
+            />
+          ) : null}
+        </div>
+        <AnimatePresence initial={false}>
+          {treeVisible ? (
+            <PrFileTree
+              key={`${cwd}#${String(number)}`}
+              files={diffFiles}
+              activePath={activePath}
+              viewedFiles={viewedFileSet}
+              filter={treeFilter}
+              collapsedDirectories={treeCollapsed}
+              onFilterChange={setTreeFilter}
+              onCollapsedDirectoriesChange={setTreeCollapsed}
+              onSelect={jumpTo}
+              onToggleViewed={toggleViewed}
+            />
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );

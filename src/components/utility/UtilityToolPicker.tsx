@@ -16,6 +16,7 @@ const TOOL_SURFACES: Record<UtilityTool, LazySurface> = {
   threads: 'threads',
   background: 'background',
   side: 'sideChats',
+  'pull-request': 'pullRequestPane',
 };
 
 function preloadHandlers(tool: UtilityTool) {

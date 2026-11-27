@@ -1,20 +1,16 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
-import { Octicon, PrStateIcon } from '../../../components/environment/GithubIcons';
-import { Button } from '../../../components/ui/Button';
-import { prKind } from '../../../lib/github';
-import { openExternal } from '../../../lib/onboarding';
-import type { PullRequest } from '../../../types/vcs';
+import { INLINE_CARD_EASE } from '../../../components/inlineCardMotion';
+import type { PrComment, PullRequest } from '../../../types/vcs';
+import type { PrLineAnnotation } from '../lib/prAnnotations';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
 import { isCubicRemembered, rememberCubic } from '../lib/cubicMemory';
 import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib/prReview';
-import { arrowKeyTab } from '../lib/prTabs';
+import { PR_DETAIL_TABS, prDetailTabId, prDetailTabPanelId, type PrDetailTab } from '../lib/prTabs';
 import { PrDiff } from './PrDiff';
-import { PrMergeButton } from './PrMergeButton';
-import { PrReviewButton } from './PrReviewButton';
 import { PrSummary } from './PrSummary';
-
-export type PrDetailTab = 'summary' | 'code';
+import { PrToolbar, type PrToolbarQueueNav } from './PrToolbar';
 
 export function applyCommentPostSettlement(
   submitted: { cwd: string; number: number },
@@ -25,25 +21,29 @@ export function applyCommentPostSettlement(
   return { clearDraft: resultOk, posting: false };
 }
 
-const TABS: { id: PrDetailTab; label: string; key: string }[] = [
-  { id: 'summary', label: 'Summary', key: '1' },
-  { id: 'code', label: 'Code', key: '2' },
-];
-
-function tabId(tab: PrDetailTab): string {
-  return `pull-request-${tab}-tab`;
-}
-
-function tabPanelId(tab: PrDetailTab): string {
-  return `pull-request-${tab}-tabpanel`;
-}
-
 function isTypingTarget(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"]'));
 }
 
-export function CodePane({ diff, diffError }: { diff: string | null; diffError: string | null }) {
+export function CodePane({
+  diff,
+  diffError,
+  cwd,
+  number,
+  comments,
+  compact,
+  onSendReview,
+}: {
+  diff: string | null;
+  diffError: string | null;
+  cwd: string;
+  number: number;
+  comments: PrComment[];
+  compact: boolean;
+  // Null until the pull request loads: notes can be written, not sent yet.
+  onSendReview: ((annotations: PrLineAnnotation[]) => void) | null;
+}) {
   if (diffError) {
     return (
       <div className="flex h-full items-center justify-center px-8">
@@ -51,7 +51,21 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
       </div>
     );
   }
-  if (diff !== null) return <PrDiff diff={diff} />;
+  if (diff !== null) {
+    return (
+      <PrDiff
+        // Notes being edited, folds and the tree filter all belong to one pull
+        // request; a remount drops them in the same commit as the switch.
+        key={`${cwd}#${String(number)}`}
+        diff={diff}
+        cwd={cwd}
+        number={number}
+        comments={comments}
+        compact={compact}
+        onSendReview={onSendReview}
+      />
+    );
+  }
   return (
     <div className="flex h-full items-center justify-center px-8">
       <div className="h-16 w-full max-w-2xl rounded-lg bg-elevated/40" />
@@ -59,21 +73,69 @@ export function CodePane({ diff, diffError }: { diff: string | null; diffError: 
   );
 }
 
+function handleDetailShortcut(
+  event: KeyboardEvent,
+  options: {
+    compact: boolean;
+    onBack?: () => void;
+    queueNav?: PrToolbarQueueNav | null;
+    onTab: (tab: PrDetailTab) => void;
+  },
+) {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (isTypingTarget(event.target)) return;
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.closest('[role="menu"], [role="dialog"]')
+  ) {
+    return;
+  }
+  if (event.key === 'Escape' && options.onBack && !options.compact) {
+    event.preventDefault();
+    options.onBack();
+    return;
+  }
+  if (event.key === '[' && options.queueNav?.onPrev) {
+    event.preventDefault();
+    options.queueNav.onPrev();
+    return;
+  }
+  if (event.key === ']' && options.queueNav?.onNext) {
+    event.preventDefault();
+    options.queueNav.onNext();
+    return;
+  }
+  if (event.target instanceof HTMLElement && !event.target.closest('[data-pr-detail-pane]')) {
+    return;
+  }
+  const next = PR_DETAIL_TABS.find((item) => item.key === event.key);
+  if (next) options.onTab(next.id);
+}
+
 export function PrDetail({
   cwd,
   number,
   pr,
-  viewerLogin,
+  compact = false,
+  onBack,
+  queueNav,
   onOpenChat,
   onReviewWithDroid,
+  onSendReview,
 }: {
   cwd: string;
   number: number;
   pr: PullRequest | null;
-  viewerLogin: string | null;
+  // The utility-pane layout: panel padding instead of page padding, a smaller
+  // title, and the link actions fold into one overflow menu.
+  compact?: boolean;
+  onBack?: () => void;
+  queueNav?: PrToolbarQueueNav | null;
   onOpenChat: (pr: PullRequest) => void;
   onReviewWithDroid: (pr: PullRequest) => void;
+  onSendReview: (pr: PullRequest, annotations: PrLineAnnotation[]) => void;
 }) {
+  const reduceMotion = useReducedMotion() === true;
   const [tab, setTab] = useState<PrDetailTab>('summary');
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
@@ -82,7 +144,7 @@ export function PrDetail({
   identityRef.current = { cwd, number };
   const detail = usePullRequestDetail(cwd, number, {
     active: true,
-    loadDiff: tab === 'code',
+    loadDiff: tab === 'changes',
   });
   const headerPr = detail.pr ?? pr;
 
@@ -104,22 +166,13 @@ export function PrDetail({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
-      if (
-        event.target instanceof HTMLElement &&
-        !event.target.closest('[data-testid="pull-requests-workspace"]')
-      ) {
-        return;
-      }
-      const next = TABS.find((item) => item.key === event.key);
-      if (next) setTab(next.id);
+      handleDetailShortcut(event, { compact, onBack, queueNav, onTab: setTab });
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [compact, onBack, queueNav]);
 
   const submit = () => {
     const body = draft.trim();
@@ -158,16 +211,7 @@ export function PrDetail({
     });
   };
 
-  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: PrDetailTab) => {
-    const next = arrowKeyTab(TABS, current, event.key);
-    if (!next) return;
-    event.preventDefault();
-    setTab(next);
-    document.getElementById(tabId(next))?.focus();
-  };
-
   const composer = {
-    viewerLogin,
     draft,
     posting,
     onDraftChange: setDraft,
@@ -175,125 +219,76 @@ export function PrDetail({
   };
 
   return (
-    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-      {/* This strip sits where the window's title bar would be, so it carries
-          the drag region the session view gets from its floating controls. */}
-      <div data-electron-drag-region className="flex items-center gap-2 px-8 pt-4 pb-2">
-        {headerPr ? (
-          <span className="shrink-0">
-            <PrStateIcon kind={prKind(headerPr)} size={16} checks={headerPr.checks} />
-          </span>
-        ) : null}
-        <div
-          role="tablist"
-          aria-label="Pull request views"
-          className="flex items-center gap-0.5 rounded-md bg-elevated/50 p-0.5"
-        >
-          {TABS.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              role="tab"
-              id={tabId(item.id)}
-              aria-controls={tabPanelId(item.id)}
-              aria-selected={tab === item.id}
-              tabIndex={tab === item.id ? 0 : -1}
-              onKeyDown={(event) => {
-                onTabKeyDown(event, item.id);
-              }}
-              onClick={() => {
-                setTab(item.id);
-              }}
-              className={`rounded-sm px-2.5 py-1 text-body-strong transition-colors ${
-                tab === item.id ? 'bg-surface text-primary' : 'text-muted hover:text-secondary'
-              }`}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <div className="ml-auto flex items-center gap-1.5">
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={
-              <Octicon name="sync" size={14} className={detail.loading ? 'animate-spin' : ''} />
-            }
-            title="Refresh"
-            aria-label="Refresh"
-            onClick={detail.refresh}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={<Octicon name="link-external" size={14} />}
-            title="Open on GitHub"
-            aria-label="Open on GitHub"
-            disabled={!headerPr?.url}
-            onClick={() => {
-              if (headerPr?.url) void openExternal(headerPr.url);
-            }}
-          />
-          <Button
-            variant="secondary"
-            size="sm"
-            title="Start a chat about this pull request"
-            disabled={!headerPr}
-            onClick={() => {
-              if (headerPr) onOpenChat(headerPr);
-            }}
+    <div data-pr-detail-pane className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+      <PrToolbar
+        tab={tab}
+        pr={headerPr}
+        compact={compact}
+        loading={detail.loading}
+        repositoryKey={cwd}
+        cubicInstalled={cubicActive || isCubicRemembered(repoKey)}
+        requestingReview={requestingReview}
+        merging={detail.merging}
+        onBack={onBack}
+        queueNav={queueNav}
+        onTabChange={setTab}
+        onRefresh={detail.refresh}
+        onOpenChat={onOpenChat}
+        onRunCubicReview={runCubicReview}
+        onReviewWithDroid={onReviewWithDroid}
+        onMerge={(method) => detail.merge(method).then((result) => result.ok)}
+      />
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={tab}
+            role="tabpanel"
+            id={prDetailTabPanelId(tab)}
+            aria-labelledby={prDetailTabId(tab)}
+            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            transition={{ duration: reduceMotion ? 0 : 0.14, ease: INLINE_CARD_EASE }}
+            className="h-full min-h-0"
           >
-            <span className="inline-flex items-center gap-1.5">
-              <Octicon name="comment-discussion" size={13} />
-              Chat
-            </span>
-          </Button>
-          <PrReviewButton
-            pr={headerPr}
-            cubicInstalled={cubicActive || isCubicRemembered(repoKey)}
-            requesting={requestingReview}
-            onRunCubicReview={runCubicReview}
-            onReviewWithDroid={() => {
-              if (headerPr) onReviewWithDroid(headerPr);
-            }}
-          />
-          <PrMergeButton
-            pr={headerPr}
-            repositoryKey={cwd}
-            merging={detail.merging}
-            onMerge={(method) => detail.merge(method).then((result) => result.ok)}
-          />
-        </div>
-      </div>
-      <div className="min-h-0 flex-1">
-        <div
-          role="tabpanel"
-          id={tabPanelId(tab)}
-          aria-labelledby={tabId(tab)}
-          className="h-full min-h-0"
-        >
-          {tab === 'summary' ? (
-            <PrSummary
-              // Section folds are per pull request, so the sections are rebuilt
-              // rather than carried over to the next one.
-              key={`${cwd}#${String(number)}`}
-              pr={headerPr}
-              number={number}
-              body={detail.body}
-              loaded={detail.loaded}
-              loading={detail.loading}
-              metaError={detail.metaError}
-              checks={detail.checks}
-              checksError={detail.checksError}
-              comments={detail.comments}
-              commentsError={detail.commentsError}
-              commits={detail.commits}
-              {...composer}
-            />
-          ) : (
-            <CodePane diff={detail.diff} diffError={detail.diffError} />
-          )}
-        </div>
+            {tab === 'summary' ? (
+              <PrSummary
+                // Section folds are per pull request, so the sections are rebuilt
+                // rather than carried over to the next one.
+                key={`${cwd}#${String(number)}`}
+                pr={headerPr}
+                number={number}
+                body={detail.body}
+                loaded={detail.loaded}
+                loading={detail.loading}
+                metaError={detail.metaError}
+                checks={detail.checks}
+                checksError={detail.checksError}
+                comments={detail.comments}
+                commentsError={detail.commentsError}
+                commits={detail.commits}
+                compact={compact}
+                {...composer}
+              />
+            ) : (
+              <CodePane
+                diff={detail.diff}
+                diffError={detail.diffError}
+                cwd={cwd}
+                number={number}
+                comments={detail.comments}
+                compact={compact}
+                onSendReview={
+                  headerPr
+                    ? (annotations) => {
+                        onSendReview(headerPr, annotations);
+                      }
+                    : null
+                }
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

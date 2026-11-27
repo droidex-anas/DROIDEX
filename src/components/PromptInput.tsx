@@ -2054,8 +2054,9 @@ export default function PromptInput({
           </div>
         )}
 
-        {/* Design reads the plan from the status line instead. */}
-        {!designComposer && <ComposerDock appSessionId={appSessionId} />}
+        {/* Design reads the plan from the status line instead. Dock lines are
+            composer attachments, so they leave while a question owns the field. */}
+        {!designComposer && !questionCoversField && <ComposerDock appSessionId={appSessionId} />}
 
         {voiceHere && (
           <Suspense fallback={null}>
@@ -2063,18 +2064,22 @@ export default function PromptInput({
           </Suspense>
         )}
 
-        {/* A question takes the field's place; the draft stays mounted behind it. */}
-        <InlineInteractions appSessionId={appSessionId} questions={!voiceCoversComposer} />
-
-        {/* No stroke at rest or in focus. Light keeps its grey while typing;
-            dark lifts the fill a touch with a translucent text layer, since its
-            raised rung is the elevated one. */}
+        {/* A question takes the draft's place inside the composer's own slot;
+            the draft stays mounted behind it. While it is asked the slot reads
+            as a docked surface rather than a typeable field. */}
         <div
-          className={`relative z-10 rounded-xl bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5 ${
-            questionCoversField ? 'hidden' : ''
+          className={`relative z-10 rounded-xl ${
+            questionCoversField
+              ? 'bg-surface shadow-sm'
+              : 'bg-elevated dark:focus-within:bg-gradient-to-b dark:focus-within:from-text/5 dark:focus-within:to-text/5'
           }`}
         >
-          {(hasAttachmentChips || designMarks.length > 0) && (
+          <InlineInteractions
+            appSessionId={appSessionId}
+            questions={!voiceCoversComposer}
+            questionSurface="composer"
+          />
+          {!questionCoversField && (hasAttachmentChips || designMarks.length > 0) && (
             <ComposerAttachments
               designMarks={designMarks}
               images={imageAttachments.images}
@@ -2098,7 +2103,7 @@ export default function PromptInput({
             />
           )}
 
-          {missionAutonomyGateOpen && missionPreview && !activeSession && (
+          {!questionCoversField && missionAutonomyGateOpen && missionPreview && !activeSession && (
             <div className="mx-3 mt-3 flex items-center gap-3 rounded-lg bg-bg/60 px-3 py-2.5">
               <p className="flex-1 min-w-0 text-caption text-secondary">
                 Missions run unattended, so they need{' '}
@@ -2126,7 +2131,7 @@ export default function PromptInput({
             </div>
           )}
 
-          <div className="relative min-w-0" style={fieldStyle}>
+          <div className="relative min-w-0" style={fieldStyle} hidden={questionCoversField}>
             <DraftSelections items={composerSelections} onWidthChange={setSelectionsIndent} />
             {/* The draft renders markdown as it is typed; the editor owns
                 typing while `input` here stays the source of truth for sends,

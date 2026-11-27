@@ -2,13 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { PrComment, PullRequest } from '../../../types/vcs';
-import {
-  droidReviewSeed,
-  hasCubicActivity,
-  isCubicAuthor,
-  prReviewOptions,
-  repoKeyFromPrUrl,
-} from './prReview';
+import { droidReviewSeed, hasCubicActivity, prReviewOptions, repoKeyFromPrUrl } from './prReview';
 
 const comment = (author: string): PrComment => ({
   id: author,
@@ -22,14 +16,13 @@ const comment = (author: string): PrComment => ({
 });
 
 test('cubic is recognised as both a user and a bot account', () => {
-  assert.equal(isCubicAuthor('cubic-dev-ai'), true);
-  assert.equal(isCubicAuthor('cubic-dev-ai[bot]'), true);
-  assert.equal(isCubicAuthor('Cubic-Dev-AI[bot]'), true);
-  assert.equal(isCubicAuthor('cubicle'), false);
-  assert.equal(isCubicAuthor('ana'), false);
+  for (const login of ['cubic-dev-ai', 'cubic-dev-ai[bot]', 'Cubic-Dev-AI[bot]']) {
+    assert.equal(hasCubicActivity([comment(login)]), true, login);
+  }
   // Only the documented account counts: a lookalike login is not Cubic.
-  assert.equal(isCubicAuthor('cubic-dev-ai-impostor'), false);
-  assert.equal(isCubicAuthor('cubic-developer'), false);
+  for (const login of ['cubicle', 'ana', 'cubic-dev-ai-impostor', 'cubic-developer']) {
+    assert.equal(hasCubicActivity([comment(login)]), false, login);
+  }
 });
 
 test('cubic activity is detected from any comment on the pull request', () => {

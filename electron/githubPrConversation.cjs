@@ -277,8 +277,12 @@ function normalizePrComments(data, inlineRows = [], threadStatus = new Map()) {
         path: comment.path || null,
         line: comment.line ?? comment.original_line ?? null,
         diffHunk: comment.diff_hunk || null,
+        side: comment.side === 'LEFT' ? 'LEFT' : comment.side === 'RIGHT' ? 'RIGHT' : null,
         resolved: status?.resolved === true,
-        outdated: status?.outdated === true,
+        // GitHub clears `line` once the commented lines left the diff; the
+        // original line still labels the comment but must not anchor it.
+        outdated:
+          status?.outdated === true || (comment.line == null && comment.original_line != null),
         resolvedBy: status?.resolvedBy ?? null,
         reactions: normalizeRestReactions(comment.reactions),
       };

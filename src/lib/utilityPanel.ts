@@ -7,7 +7,8 @@ export type UtilityTool =
   | 'agents'
   | 'threads'
   | 'background'
-  | 'side';
+  | 'side'
+  | 'pull-request';
 
 export interface UtilityTab {
   id: string;
@@ -16,6 +17,8 @@ export interface UtilityTab {
   terminalId?: string;
   cwd?: string;
   filePath?: string;
+  // The pull-request pane: the number it shows in the tab's cwd repository.
+  prNumber?: number;
   // The agents pane: the agent it is showing, absent while it shows the list.
   agentId?: string;
   // The threads pane: the thread it is showing, absent while it shows the list.
@@ -82,12 +85,18 @@ export function openUtilityTool(
   panel: UtilityPanelState | undefined,
   tool: UtilityTool,
   createId: () => string,
-  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | TargetKey>> = {},
+  details: Partial<Pick<UtilityTab, 'terminalId' | 'cwd' | 'filePath' | 'prNumber' | TargetKey>> & {
+    label?: string;
+  } = {},
 ): UtilityPanelState {
   const current = panel ?? CLOSED_UTILITY_PANEL;
-  const existing = SINGLETON_TOOLS.has(tool)
-    ? current.tabs.find((tab) => tab.tool === tool)
-    : undefined;
+  const id = createId();
+  // Tab ids are unique within a panel (restoration enforces it), so reopening
+  // a multi-instance tool with the id of a live tab — the same pull request
+  // clicked twice — activates that tab instead of duplicating it.
+  const existing =
+    current.tabs.find((tab) => tab.id === id) ??
+    (SINGLETON_TOOLS.has(tool) ? current.tabs.find((tab) => tab.tool === tool) : undefined);
   if (existing) {
     const requested =
       existing.designSystemId && showsBoard(details)
@@ -111,11 +120,12 @@ export function openUtilityTool(
         : {}),
     };
   }
+  const { label, ...rest } = details;
   const tab: UtilityTab = {
-    id: createId(),
+    id,
     tool,
-    label: utilityToolLabel(tool, current.tabs),
-    ...details,
+    label: label ?? utilityToolLabel(tool, current.tabs),
+    ...rest,
   };
   return {
     open: true,
@@ -253,6 +263,19 @@ export function sanitizeUtilityPanels(value: unknown): Record<string, UtilityPan
       };
       if (typeof rawTab.terminalId === 'string') tab.terminalId = rawTab.terminalId;
       if (typeof rawTab.filePath === 'string') tab.filePath = rawTab.filePath;
+      if (tool === 'pull-request') {
+        // The pane is meaningless without its target, so a tab that lost the
+        // repository or the number is dropped rather than restored broken.
+        const prNumber =
+          typeof rawTab.prNumber === 'number' &&
+          Number.isInteger(rawTab.prNumber) &&
+          rawTab.prNumber > 0
+            ? rawTab.prNumber
+            : null;
+        if (typeof rawTab.cwd !== 'string' || !rawTab.cwd || prNumber === null) continue;
+        tab.cwd = rawTab.cwd;
+        tab.prNumber = prNumber;
+      }
       tabs.push(tab);
     }
     const activeTabId =
@@ -279,6 +302,10 @@ export function persistUtilityPanels(
         .map((tab) => {
           const saved: UtilityTab = { id: tab.id, tool: tab.tool, label: tab.label };
           if (tab.filePath !== undefined) saved.filePath = tab.filePath;
+          if (tab.tool === 'pull-request') {
+            if (tab.cwd !== undefined) saved.cwd = tab.cwd;
+            if (tab.prNumber !== undefined) saved.prNumber = tab.prNumber;
+          }
           return saved;
         });
       const activeTabId = tabs.some((tab) => tab.id === panel.activeTabId)
@@ -318,6 +345,7 @@ function isRestoredTool(tool: UtilityTool): boolean {
 function utilityToolLabel(tool: UtilityTool, tabs: UtilityTab[]): string {
   if (tool === 'agents') return 'Subagents';
   if (tool === 'side') return 'Side chat';
+  if (tool === 'pull-request') return 'Pull request';
   if (tool !== 'terminal') return tool[0].toUpperCase() + tool.slice(1);
   const count = tabs.filter((tab) => tab.tool === 'terminal').length;
   return count === 0 ? 'Terminal' : `Terminal ${String(count + 1)}`;
@@ -332,7 +360,8 @@ function isUtilityTool(value: unknown): value is UtilityTool {
     value === 'canvas' ||
     value === 'threads' ||
     value === 'background' ||
-    value === 'side'
+    value === 'side' ||
+    value === 'pull-request'
   );
 }
 

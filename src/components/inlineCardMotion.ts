@@ -1,5 +1,5 @@
-// Entry/exit motion shared by the inline request cards above the composer
-// (permission, ask-user, plan approval) so they behave as one family.
+// Entry/exit motion shared by the inline request cards (permission, ask-user,
+// plan approval) so they behave as one family.
 //
 // Under prefers-reduced-motion the cards must not move or scale at all: a zero
 // duration alone still commits Chromium to the transformed keyframes, so the

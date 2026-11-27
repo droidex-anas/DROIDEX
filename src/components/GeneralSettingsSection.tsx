@@ -9,7 +9,8 @@ import {
 } from '../hooks/useStore';
 import type { DiffStyle } from '../hooks/persistedThemePreferences';
 import type { DiffViewMode, LiveEnterBehavior } from '../hooks/persistedUiPreferences';
-import { applyTheme } from '../lib/theme';
+import { diffPaletteForTheme } from '../lib/diffTheme';
+import { applyTheme, resolveScheme } from '../lib/theme';
 import { ModelIcon, providerOf } from './ModelIcon';
 import { Dropdown, GroupLabel, SectionTitle, SettingRow, type DropdownOption } from './settingsKit';
 import { HardwareAccelerationSetting } from './HardwareAccelerationSetting';
@@ -228,6 +229,101 @@ function CompactionModelPicker({
 }
 
 /* ── general content ── */
+
+// The diff skin picker shows the treatment itself rather than naming it: a
+// miniature patch per style, painted with that style's real palette in the
+// scheme the app is in, so the choice is what the user will actually read.
+function DiffSkinPreview({ style, isDark }: { style: DiffStyle; isDark: boolean }) {
+  const palette = diffPaletteForTheme(isDark, style);
+  const rows: { gutter: string; fg: string; bg: string; sign: string; text: string }[] = [
+    {
+      gutter: '',
+      fg: 'var(--droid-text-muted)',
+      bg: 'transparent',
+      sign: ' ',
+      text: 'return items',
+    },
+    {
+      gutter: palette.delGutter,
+      fg: palette.delFg,
+      bg: palette.delBg,
+      sign: '−',
+      text: 'filter(items)',
+    },
+    {
+      gutter: palette.addGutter,
+      fg: palette.addFg,
+      bg: palette.addBg,
+      sign: '+',
+      text: 'sort(items)',
+    },
+  ];
+  return (
+    <div aria-hidden className="overflow-hidden rounded-md font-mono text-caption leading-4">
+      <div className="px-1.5 py-px" style={{ background: palette.hunkBg, color: palette.hunkFg }}>
+        @@ -1,3 +1,3 @@
+      </div>
+      {rows.map((row) => (
+        <div key={row.text} className="flex" style={{ background: row.bg }}>
+          <span
+            className="w-7 shrink-0 px-1 text-right tabular-nums"
+            style={{ background: row.gutter, color: row.fg }}
+          >
+            {row.sign}
+          </span>
+          <span className="truncate px-1.5" style={{ color: row.fg }}>
+            {row.text}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DiffSkinPicker({
+  value,
+  isDark,
+  onChange,
+}: {
+  value: DiffStyle;
+  isDark: boolean;
+  onChange: (style: DiffStyle) => void;
+}) {
+  const options: { value: DiffStyle; label: string }[] = [
+    { value: 'soft', label: 'Soft' },
+    { value: 'focused', label: 'Focused' },
+  ];
+  return (
+    <div role="radiogroup" aria-label="Diff theme" className="flex gap-2">
+      {options.map((option) => {
+        const selected = option.value === value;
+        return (
+          <button
+            key={option.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            onClick={() => {
+              onChange(option.value);
+            }}
+            className={`w-32 rounded-lg p-1.5 text-left transition-colors ${
+              selected ? 'bg-active' : 'bg-elevated hover:bg-active/60'
+            }`}
+          >
+            <DiffSkinPreview style={option.value} isDark={isDark} />
+            <span className="mt-1 flex items-center gap-1 px-0.5 text-caption text-secondary">
+              {selected ? (
+                <Check size={11} strokeWidth={3} className="text-primary" aria-hidden />
+              ) : null}
+              {option.label}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function GeneralSettingsSection() {
   const dispatch = useStoreDispatch();
   const state = useStoreSelector(
@@ -380,16 +476,10 @@ export function GeneralSettingsSection() {
           label="Diff theme"
           description="Choose a softer GitHub-style tint or a stronger focused change treatment."
         >
-          <Dropdown
-            ariaLabel="Diff theme"
+          <DiffSkinPicker
             value={state.theme.diffStyle}
-            width="w-44"
-            options={[
-              { value: 'soft', label: 'Soft contrast' },
-              { value: 'focused', label: 'Focused contrast' },
-            ]}
-            onChange={(value) => {
-              const diffStyle = value as DiffStyle;
+            isDark={resolveScheme(state.theme.mode) === 'dark'}
+            onChange={(diffStyle) => {
               const theme = { ...state.theme, diffStyle };
               dispatch({ type: 'SET_THEME', theme: { diffStyle } });
               applyTheme(theme);

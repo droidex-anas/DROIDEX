@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { initialState, StaticStoreProvider } from '../../../hooks/useStore';
 import type { GithubSetupController } from '../../../hooks/useGithubSetup';
-import { PrGithubSetupEmpty, PrWorkspaceEmpty } from './PrWorkspaceEmpty';
+import { PrWorkspaceEmpty } from './PrWorkspaceEmpty';
 
 const signedOut = {
   installed: true,
@@ -33,7 +33,11 @@ function setupController(overrides: Partial<GithubSetupController> = {}): Github
 
 function renderSetup(overrides: Partial<GithubSetupController> = {}): string {
   return renderToStaticMarkup(
-    createElement(PrGithubSetupEmpty, { setup: setupController(overrides) }),
+    createElement(
+      StaticStoreProvider,
+      { state: initialState, dispatch: () => undefined },
+      createElement(PrWorkspaceEmpty, { cwd: '/repo', setup: setupController(overrides) }),
+    ),
   );
 }
 
@@ -83,22 +87,4 @@ test('setup errors are announced when they change', () => {
 
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /GitHub CLI setup failed/);
-});
-
-test('a non-GitHub binding offers a replacement workspace action', () => {
-  const html = renderToStaticMarkup(
-    createElement(
-      StaticStoreProvider,
-      { state: initialState, dispatch: () => undefined },
-      createElement(PrWorkspaceEmpty, {
-        cwd: '/removed-repository',
-        gitLoaded: true,
-        isGitHub: false,
-        setup: setupController(),
-      }),
-    ),
-  );
-
-  assert.match(html, /This folder is not a GitHub repository\./);
-  assert.match(html, /Choose another workspace/);
 });

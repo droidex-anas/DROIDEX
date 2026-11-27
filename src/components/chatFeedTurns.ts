@@ -423,15 +423,29 @@ function workedFold(entries: { index: number; item: FeedItem }[], phase: TurnPha
 }
 
 // While the turn runs, everything after the user's last real prompt is live,
-// including the work before a steer they sent into it.
-export function liveTurnStart(items: FeedItem[]): number {
+// including the work before a steer they sent into it. Settings rows open a
+// visual turn, but they do not prove the prior generation stopped executing.
+function turnStartIndex(items: FeedItem[], includeSettingsStatus: boolean): number {
   for (let k = items.length - 1; k >= 0; k -= 1) {
     const item = items[k];
-    if (isTurnBoundary(item) && !(item.type === 'message' && isSteeredPrompt(item.event))) {
+    const boundary = item.type === 'message' || (includeSettingsStatus && item.type === 'status');
+    if (
+      boundary &&
+      startsTurn(item.event) &&
+      !(item.type === 'message' && isSteeredPrompt(item.event))
+    ) {
       return k + 1;
     }
   }
   return 0;
+}
+
+export function liveTurnStart(items: FeedItem[]): number {
+  return turnStartIndex(items, true);
+}
+
+export function liveExecutionTurnStart(items: FeedItem[]): number {
+  return turnStartIndex(items, false);
 }
 
 // A completed turn that edited files gets a top-level "Changes · N files"

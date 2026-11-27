@@ -3,7 +3,9 @@ import { ArrowUp } from '@droidex/icons';
 
 function fitToContent(el: HTMLTextAreaElement, maxHeight: number) {
   el.style.height = 'auto';
-  el.style.height = `${String(Math.min(el.scrollHeight, maxHeight))}px`;
+  const nextHeight = Math.min(el.scrollHeight, maxHeight);
+  el.style.height = `${String(nextHeight)}px`;
+  el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
 }
 
 /* The small composer the side chat and the design prompt box share: a
@@ -97,8 +99,8 @@ export function CompactComposer({
           if (canSend) onSend();
         }
       }}
-      className={`block w-full resize-none bg-transparent text-body text-primary placeholder:text-muted focus:outline-none ${
-        leading ? 'px-3.5 pt-3' : 'min-w-0 flex-1 py-1'
+      className={`block w-full min-w-0 resize-none overflow-x-hidden break-words bg-transparent text-body text-primary placeholder:text-muted focus:outline-none ${
+        leading ? 'px-3.5 pt-3' : 'flex-1 py-1'
       }`}
     />
   );
@@ -121,7 +123,7 @@ export function CompactComposer({
   );
 
   return leading ? (
-    <div className={`rounded-xl bg-elevated ${className}`}>
+    <div className={`min-w-0 max-w-full rounded-xl bg-elevated ${className}`}>
       {textarea}
       <div className="flex items-center gap-2 px-2 pb-2">
         <div className="min-w-0 flex-1">{leading}</div>
@@ -130,7 +132,7 @@ export function CompactComposer({
     </div>
   ) : (
     <div
-      className={`flex items-end gap-2 rounded-xl bg-elevated py-1.5 pl-3.5 pr-1.5 ${className}`}
+      className={`flex min-w-0 max-w-full items-end gap-2 rounded-xl bg-elevated py-1.5 pl-3.5 pr-1.5 ${className}`}
     >
       {textarea}
       {trailing}
