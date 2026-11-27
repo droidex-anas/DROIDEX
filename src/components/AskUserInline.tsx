@@ -5,7 +5,7 @@ import { useStoreDispatch, useStoreSelector } from '../hooks/useStore';
 import { respondQuestion } from '../lib/commands';
 import type { QuestionAnswer, SessionQuestion } from '@droidex/protocol';
 import { ActivityStatusGlyph } from './ActivityStatusGlyph';
-import { inlineCardMotion } from './inlineCardMotion';
+import { INLINE_CARD_EASE, inlineCardMotion, type InlineCardMotion } from './inlineCardMotion';
 import { Button } from './ui/Button';
 import { cn } from './ui/cn';
 import {
@@ -17,18 +17,23 @@ import {
   submissionAnswers,
 } from './askUserStepper';
 
-// The question a chat is waiting on, drawn as the composer's own field: the
-// main composer shows it in place of the draft, and the other surfaces stack it
-// above theirs. Questions are session-scoped and queue per session: the oldest
+// The question a chat is waiting on, drawn in the composer's slot: the main
+// composer owns its surface there, and the other hosts draw it as their own
+// docked card. Questions are session-scoped and queue per session: the oldest
 // is the one on screen for the chat given, and other sessions signal via the
 // sidebar.
+export type QuestionSurface = 'card' | 'composer';
+
 export default function AskUserInline({
   appSessionId,
   className,
+  surface = 'card',
 }: {
   appSessionId: string;
   /** Layout only: the gap a host leaves under the card. */
   className?: string;
+  /** Whether the card draws its own docked surface or renders inside the composer's. */
+  surface?: QuestionSurface;
 }) {
   const dispatch = useStoreDispatch();
   const question = useStoreSelector((current) => current.pendingQuestions[appSessionId]?.[0]);
@@ -78,6 +83,7 @@ export default function AskUserInline({
       key={question.requestId}
       question={question}
       className={className}
+      surface={surface}
       onAnswer={(answers) => {
         settle(false, answers);
       }}
@@ -89,7 +95,7 @@ export default function AskUserInline({
 }
 
 const ROW =
-  'flex w-full items-start gap-2.5 rounded-md px-2 py-2 text-left transition-colors duration-150';
+  'flex w-full items-start gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors duration-150';
 
 function rowClass(active: boolean): string {
   return cn(ROW, active ? 'bg-active' : 'hover:bg-active/55');
@@ -100,6 +106,18 @@ function PickedMark({ picked }: { picked: boolean }) {
   return (
     <Check className={cn('mt-0.5 size-icon-sm shrink-0 text-primary', !picked && 'invisible')} />
   );
+}
+
+// Inside the composer the surrounding field is already in place; only the
+// question's content fades in. Other hosts use the shared card entry motion.
+function composerFieldMotion(reduceMotion: boolean | null): InlineCardMotion {
+  if (reduceMotion) return inlineCardMotion(true);
+  return {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.15, ease: INLINE_CARD_EASE },
+  };
 }
 
 function StepDots({
@@ -138,11 +156,13 @@ function StepDots({
 export function QuestionCard({
   question,
   className,
+  surface = 'card',
   onAnswer,
   onCancel,
 }: {
   question: SessionQuestion;
   className?: string;
+  surface?: QuestionSurface;
   onAnswer: (answers: QuestionAnswer[]) => void;
   onCancel: () => void;
 }) {
@@ -157,6 +177,10 @@ export function QuestionCard({
   const isLast = isLastStep(stepper);
   const held = answerFor(stepper, q.index);
   const advanceEnabled = canAdvance(stepper, q.index);
+  const inComposer = surface === 'composer';
+  const textInset = inComposer ? 'px-3' : 'px-4';
+  const optionsInset = inComposer ? 'px-1' : 'px-2';
+  const actionsInset = inComposer ? 'px-2.5' : 'px-3';
 
   // The number keys answer once the card holds focus. It takes focus only from
   // nothing or from its own host (the composer it replaced), never from
@@ -214,10 +238,10 @@ export function QuestionCard({
       ref={cardRef}
       tabIndex={-1}
       onKeyDown={onKeyDown}
-      {...inlineCardMotion(reduceMotion)}
-      className={cn('rounded-xl bg-elevated outline-none', className)}
+      {...(inComposer ? composerFieldMotion(reduceMotion) : inlineCardMotion(reduceMotion))}
+      className={cn('outline-none', inComposer ? '' : 'rounded-xl bg-surface shadow-sm', className)}
     >
-      <div className="flex items-center gap-2 px-4 pt-3.5">
+      <div className={cn('flex items-center gap-2 pt-3', textInset)}>
         <ActivityStatusGlyph status="input" decorative />
         <span className="min-w-0 truncate text-label text-secondary">
           {q.header ?? 'Waiting for your answer'}
@@ -231,12 +255,14 @@ export function QuestionCard({
         )}
       </div>
 
-      <div className="px-4 pt-2 text-body-strong text-primary break-words">{q.question}</div>
+      <div className={cn('pt-1.5 text-body-strong text-primary break-words', textInset)}>
+        {q.question}
+      </div>
       {multiSelect && (
-        <div className="px-4 pt-0.5 text-caption text-muted">Choose any that apply</div>
+        <div className={cn('pt-0.5 text-caption text-muted', textInset)}>Choose any that apply</div>
       )}
 
-      <div className="px-2 pt-2.5">
+      <div className={cn('pt-1.5', optionsInset)}>
         {q.options.map((opt, i) => {
           const selected = held.selected.includes(opt.label);
           return (
@@ -251,8 +277,8 @@ export function QuestionCard({
             >
               <kbd
                 className={cn(
-                  'flex size-5 shrink-0 items-center justify-center rounded-xs font-sans text-caption tabular-nums',
-                  selected ? 'bg-text text-bg' : 'bg-bg/70 text-secondary',
+                  'flex size-5 shrink-0 items-center justify-center font-sans text-caption tabular-nums',
+                  selected ? 'text-primary' : 'text-muted',
                 )}
               >
                 {i + 1}
@@ -303,7 +329,7 @@ export function QuestionCard({
         </label>
       </div>
 
-      <div className="flex items-center gap-1 px-3 pb-3 pt-2">
+      <div className={cn('flex items-center gap-1 pb-2.5 pt-1.5', actionsInset)}>
         {step > 0 && (
           <Button
             variant="ghost"

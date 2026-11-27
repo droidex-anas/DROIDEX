@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStoreSelector } from '../hooks/useStore';
+import type { QuestionSurface } from './AskUserInline';
 
 const PlanApprovalInline = lazy(() => import('./PlanApprovalInline'));
 const PermissionInline = lazy(() => import('./PermissionInline'));
@@ -20,11 +21,13 @@ export default function InlineInteractions({
   plans = false,
   permissions = false,
   questions = false,
+  questionSurface = 'card',
 }: {
   appSessionId: string | null;
   plans?: boolean;
   permissions?: boolean;
   questions?: boolean;
+  questionSurface?: QuestionSurface;
 }) {
   const pending = useStoreSelector((current) => {
     if (!appSessionId) return false;
@@ -44,7 +47,7 @@ export default function InlineInteractions({
     <Suspense fallback={null}>
       {plans && <PlanApprovalInline appSessionId={appSessionId} />}
       {permissions && <PermissionInline appSessionId={appSessionId} />}
-      {questions && <AskUserInline appSessionId={appSessionId} />}
+      {questions && <AskUserInline appSessionId={appSessionId} surface={questionSurface} />}
     </Suspense>
   );
 }
