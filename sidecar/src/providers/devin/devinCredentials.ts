@@ -16,9 +16,16 @@ export function devinCredentialsPath(): string {
   );
 }
 
-export async function readDevinApiKey(): Promise<string | undefined> {
+export interface DevinLogin {
+  apiKey: string;
+  // The server the key belongs to. Devin rejects a key from a non-default
+  // server unless the server is sent with it.
+  apiServerUrl?: string;
+}
+
+export async function readDevinLogin(): Promise<DevinLogin | undefined> {
   const environmentKey = process.env.WINDSURF_API_KEY?.trim();
-  if (environmentKey) return environmentKey;
+  if (environmentKey) return { apiKey: environmentKey };
   let text: string;
   try {
     text = await readFile(devinCredentialsPath(), 'utf8');
@@ -27,5 +34,14 @@ export async function readDevinApiKey(): Promise<string | undefined> {
       return undefined;
     throw error;
   }
-  return /^\s*windsurf_api_key\s*=\s*["']?([^"'\r\n]+)["']?\s*$/m.exec(text)?.[1]?.trim();
+  const apiKey = credentialValue(text, 'windsurf_api_key');
+  if (!apiKey) return undefined;
+  const apiServerUrl = credentialValue(text, 'api_server_url');
+  return apiServerUrl ? { apiKey, apiServerUrl } : { apiKey };
+}
+
+function credentialValue(text: string, key: string): string | undefined {
+  return new RegExp(`^\\s*${key}\\s*=\\s*["']?([^"'\\r\\n]+)["']?\\s*$`, 'm')
+    .exec(text)?.[1]
+    ?.trim();
 }

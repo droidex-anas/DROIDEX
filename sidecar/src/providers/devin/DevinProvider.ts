@@ -15,7 +15,7 @@ import { resolveDevinPath } from './devinExecutable.js';
 import { DevinSession } from './devinSession.js';
 import { DevinClient } from './devinClient.js';
 import { DevinTerminals } from './devinTerminals.js';
-import { readDevinApiKey } from './devinCredentials.js';
+import { readDevinLogin } from './devinCredentials.js';
 import { readDevinForkSeed, saveDevinForkSeed } from './devinForkSeed.js';
 import {
   configModels,
@@ -152,7 +152,7 @@ export class DevinProvider implements ProbedProvider {
       };
       const reported = await exec(executable, ['--version'], options);
       version = /devin\s+(\S+)/i.exec(reported.stdout)?.[1];
-      if (!(await readDevinApiKey()))
+      if (!(await readDevinLogin()))
         return unavailable('unauthenticated', 'Run devin auth login to sign in.', version);
       abort.throwIfAborted();
       this.retainEnrichmentVersion(version);
