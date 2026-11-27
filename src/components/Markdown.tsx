@@ -1,7 +1,15 @@
 import ReactMarkdown, { type Components, type ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
-import { Children, createContext, isValidElement, useContext, memo, type ReactNode } from 'react';
+import {
+  Children,
+  createContext,
+  isValidElement,
+  useContext,
+  memo,
+  type ReactElement,
+  type ReactNode,
+} from 'react';
 import { AppBlock } from './AppBlock';
 import { appFencesInMarkdown, type MarkdownAppFence } from '../lib/appBlocks';
 import { CodeCard, highlightFence } from './MarkdownCode';
@@ -12,6 +20,7 @@ import { remarkInlineCodeRuns } from '../lib/remarkInlineCodeRuns';
 import { TranscriptImage } from './media/TranscriptImage';
 import { MermaidBlock, SvgCodeBlock } from './MarkdownDiagrams';
 import { InlineCode, ProseFileLinks } from './transcript/ProseFileLink';
+import { cachedMarkdownOutputTree, type MarkdownOutputVariant } from '../lib/markdownOutputCache';
 
 function slugify(text: string): string {
   return text
@@ -336,6 +345,22 @@ export function markdownFenceOptions(
   return { ...flags, appFences: appFencesInMarkdown(source) };
 }
 
+// react-markdown's `Markdown` is documented as a synchronous component: no
+// hooks, no state, a pure function from options to the rendered element tree.
+// Calling it as a function skips only the fiber React would wrap around it,
+// and the tree it returns is immutable — safe to build once and share across
+// any number of mounts. Everything per-row (fence building state, file-link
+// handlers) reaches components through context at render time, not through
+// the tree, so a shared tree never captures one row's behavior.
+function renderMarkdownOutput(source: string, variant: MarkdownOutputVariant): ReactElement {
+  return ReactMarkdown({
+    children: source,
+    disallowedElements: variant.allowImages ? undefined : ['img'],
+    remarkPlugins: variant.breaks ? REMARK_BREAKS_PLUGINS : REMARK_PLUGINS,
+    components: variant.specMode ? SPEC_COMPONENTS : CHAT_COMPONENTS,
+  });
+}
+
 export function MarkdownTree({
   children,
   specMode,
@@ -351,13 +376,7 @@ export function MarkdownTree({
 }) {
   return (
     <FenceOptionsContext.Provider value={fenceOptions}>
-      <ReactMarkdown
-        disallowedElements={allowImages ? undefined : ['img']}
-        remarkPlugins={breaks ? REMARK_BREAKS_PLUGINS : REMARK_PLUGINS}
-        components={specMode ? SPEC_COMPONENTS : CHAT_COMPONENTS}
-      >
-        {children}
-      </ReactMarkdown>
+      {renderMarkdownOutput(children, { specMode, breaks, allowImages })}
     </FenceOptionsContext.Provider>
   );
 }
@@ -367,6 +386,10 @@ export function MarkdownTree({
 // stay visible breaks, and their fences stay code instead of launching
 // generated-content runtimes. Both sides then share the same typography,
 // spacing, tables and code cards, so a sent message reads like the reply to it.
+//
+// Every caller of this component renders settled text, so the parsed output
+// tree comes from the shared LRU: unmounting and remounting a row — scrolling
+// it out and back in, switching sessions — no longer re-parses the source.
 function MarkdownImpl({
   children,
   specMode = false,
@@ -389,16 +412,13 @@ function MarkdownImpl({
     buildingAppBlocks,
     cutOffAppBlocks,
   });
+  const variant = { specMode, breaks: authored, allowImages };
+  const output = cachedMarkdownOutputTree(children, variant, () =>
+    renderMarkdownOutput(children, variant),
+  );
   const tree = (
     <div className={markdownShellClass(specMode)}>
-      <MarkdownTree
-        specMode={specMode}
-        fenceOptions={fenceOptions}
-        allowImages={allowImages}
-        breaks={authored}
-      >
-        {children}
-      </MarkdownTree>
+      <FenceOptionsContext.Provider value={fenceOptions}>{output}</FenceOptionsContext.Provider>
     </div>
   );
   // Text the user typed names files they already have in front of them, so a

@@ -8,14 +8,7 @@ import { PROVIDER_LABELS, PROVIDER_MARKS } from '../providers/providerIdentity';
 import type { ThreadBrief, ThreadReport, ThreadSender } from './threadNotices';
 
 export function ThreadBriefNotice({ brief }: { brief: ThreadBrief }) {
-  return (
-    <NoticeCard
-      testId="thread-brief-notice"
-      lead={brief.lead}
-      text={brief.task}
-      cacheId="thread-brief"
-    />
-  );
+  return <NoticeCard testId="thread-brief-notice" lead={brief.lead} text={brief.task} />;
 }
 
 /* A project reads like a group chat: the user's filled bubbles on the right,
@@ -39,7 +32,6 @@ export function ThreadReportNotice({ reports }: { reports: readonly ThreadReport
             key={`${report.lead}:${report.body.slice(0, 40)}`}
             lead={report.lead}
             text={report.body}
-            cacheId={`thread-report:${report.lead}`}
           />
         ),
       )}
@@ -86,7 +78,7 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
           className="rounded-xl rounded-tl-sm border border-divider bg-bg px-3.5 py-2.5 text-body text-secondary"
         >
           <ClampedBlock lines={8} lineHeightPx={BUBBLE_LINE_PX} fade="from-bg via-bg/90">
-            <MessageBody text={text} live={false} cacheId={`thread-message:${from.threadId}`} />
+            <MessageBody text={text} live={false} />
           </ClampedBlock>
         </div>
       </div>
@@ -96,17 +88,7 @@ function ThreadMessage({ from, text, index }: { from: ThreadSender; text: string
 
 // A brief or a report is the model's own prose: it reads with the same markdown
 // the chat gives every other reply.
-function NoticeCard({
-  lead,
-  text,
-  cacheId,
-  testId,
-}: {
-  lead: string;
-  text: string;
-  cacheId: string;
-  testId?: string;
-}) {
+function NoticeCard({ lead, text, testId }: { lead: string; text: string; testId?: string }) {
   return (
     <div
       data-testid={testId}
@@ -115,7 +97,7 @@ function NoticeCard({
     >
       <p className="text-label text-muted">{lead}</p>
       <div className="mt-1.5 text-body text-secondary">
-        <MessageBody text={text} live={false} cacheId={cacheId} />
+        <MessageBody text={text} live={false} />
       </div>
     </div>
   );

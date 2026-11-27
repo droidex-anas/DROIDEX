@@ -12,11 +12,6 @@ import {
 } from './Markdown';
 import { CodeCard } from './MarkdownCode';
 import {
-  getSettledMarkdownElement,
-  settledMarkdownCacheKey,
-  settledMarkdownFlags,
-} from '../lib/settledMarkdownCache';
-import {
   ingestStreamingMarkdown,
   pendingFenceBody,
   type StreamingBlock,
@@ -26,7 +21,6 @@ import {
 export interface StreamingMarkdownProps {
   source: string;
   live: boolean;
-  cacheId: string;
   specMode?: boolean;
   allowGeneratedContent?: boolean;
   buildingAppBlocks?: boolean;
@@ -106,29 +100,6 @@ const PendingMarkdown = memo(function PendingMarkdown({
   );
 });
 
-function SettledMarkdown({
-  source,
-  cacheId,
-  specMode,
-  flags,
-}: {
-  source: string;
-  cacheId: string;
-  specMode: boolean;
-  flags: MarkdownFenceFlags;
-}) {
-  const key = settledMarkdownCacheKey(
-    cacheId,
-    source,
-    settledMarkdownFlags({ specMode, ...flags }),
-  );
-  return getSettledMarkdownElement(key, () => (
-    <Markdown specMode={specMode} {...flags}>
-      {source}
-    </Markdown>
-  ));
-}
-
 function LiveStreamingMarkdown({
   source,
   live,
@@ -170,7 +141,6 @@ function LiveStreamingMarkdown({
 function StreamingMarkdownImpl({
   source,
   live,
-  cacheId,
   specMode = false,
   allowGeneratedContent = true,
   buildingAppBlocks = false,
@@ -183,10 +153,15 @@ function StreamingMarkdownImpl({
   };
   const streamedOnThisMount = useRef(live);
   if (live) streamedOnThisMount.current = true;
-  // Historical rows use the settled LRU. A row that streamed on this mount keeps
-  // its frozen block instances so mermaid/images/apps do not remount on settle.
+  // Historical rows share one cached output tree per unique text. A row that
+  // streamed on this mount keeps its frozen block instances so
+  // mermaid/images/apps do not remount on settle.
   if (!live && !streamedOnThisMount.current) {
-    return <SettledMarkdown source={source} cacheId={cacheId} specMode={specMode} flags={flags} />;
+    return (
+      <Markdown specMode={specMode} {...flags}>
+        {source}
+      </Markdown>
+    );
   }
   return <LiveStreamingMarkdown source={source} live={live} specMode={specMode} flags={flags} />;
 }

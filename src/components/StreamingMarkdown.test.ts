@@ -12,15 +12,11 @@ function canonical(source: string, extra: Record<string, unknown> = {}): string 
 }
 
 function settled(source: string, extra: Record<string, unknown> = {}): string {
-  return renderToStaticMarkup(
-    createElement(StreamingMarkdown, { source, live: false, cacheId: 'fixture', ...extra }),
-  );
+  return renderToStaticMarkup(createElement(StreamingMarkdown, { source, live: false, ...extra }));
 }
 
 function streaming(source: string, extra: Record<string, unknown> = {}): string {
-  return renderToStaticMarkup(
-    createElement(StreamingMarkdown, { source, live: true, cacheId: 'fixture', ...extra }),
-  );
+  return renderToStaticMarkup(createElement(StreamingMarkdown, { source, live: true, ...extra }));
 }
 
 function assertSettledMatchesCanonical(source: string, extra: Record<string, unknown> = {}): void {
