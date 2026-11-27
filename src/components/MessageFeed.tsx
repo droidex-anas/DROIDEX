@@ -48,7 +48,7 @@ import {
   isSettingsStatus,
   type FeedItem,
 } from './chatFeed';
-import { groupTurns, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
+import { groupTurns, liveTurnStart, tailTimestamp, trailingSubagentPoll } from './chatFeedTurns';
 import { isSpecEcho } from './chat';
 import { ForkedFromDivider, WorkingIndicator } from './transcript/primitives';
 import type { AgentMonitorData } from './agents/AgentMonitorCard';
@@ -229,6 +229,9 @@ export function MessageFeed({
       ),
     [providedItems, events, pending, rich, changes, specContent, dockEnabled, density],
   );
+  // Rows before the live turn are settled: interrupted calls never receive
+  // results, so only the live turn may treat them as in flight.
+  const liveTurnFrom = useMemo(() => liveTurnStart(items), [items]);
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
   const previousFeed = renderedFeedRef.current;
@@ -382,7 +385,7 @@ export function MessageFeed({
                   animateOnMount={shouldAnimateFeedRow(item, animateKeys, enteredKeys)}
                   onEnter={recordEntrance}
                   live={pending && index === lastIdx && !subagentPoll}
-                  sessionLive={pending}
+                  sessionLive={pending && index >= liveTurnFrom}
                   compacting={compacting && index === lastIdx}
                   cwd={cwd}
                   onOpenDiff={onOpenDiff ? callbacks.onOpenDiff : undefined}

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MessageFeed } from './MessageFeed';
-import { sameFeedEvents, type FeedItem } from './chatFeed';
+import { buildFeed, sameFeedEvents, type FeedItem } from './chatFeed';
 import { buildGroupedFeed } from './chatFeedTurns';
 import type { TranscriptEvent } from '@droidex/protocol';
 
@@ -113,4 +113,28 @@ test('compact lets the running fold speak for a subagent poll', () => {
   const compact = render('compact');
   assert.match(compact, /Working/);
   assert.doesNotMatch(compact, /Checking subagents/);
+});
+
+test('settled turn rows never shimmer while the session is live on a newer turn', () => {
+  // A call whose turn was interrupted never receives its result: it stays
+  // unpaired forever. Scoping sessionLive to the live turn keeps that history
+  // still — before the scope, every such row shimmered for the session's life.
+  const events = [
+    userMsg('first'),
+    grep(), // turn one's call, deliberately never answered
+    userMsg('second'),
+    grep(), // the live turn's in-flight call
+  ];
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, {
+      events,
+      items: buildFeed(events),
+      pending: true,
+      density: 'balanced',
+    }),
+  );
+  // Both rows render (non-vacuous), but only the live turn's may shimmer.
+  assert.equal((html.match(/>(?:Searching|Searched)</g) ?? []).length, 2, 'both rows render');
+  const shimmering = html.match(/shimmer-text[^>]*>Searching</g) ?? [];
+  assert.equal(shimmering.length, 1, `exactly one row may shimmer, got: ${shimmering.join(' | ')}`);
 });
