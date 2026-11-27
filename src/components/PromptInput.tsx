@@ -2054,8 +2054,9 @@ export default function PromptInput({
           </div>
         )}
 
-        {/* Design reads the plan from the status line instead. */}
-        {!designComposer && <ComposerDock appSessionId={appSessionId} />}
+        {/* Design reads the plan from the status line instead. Dock lines are
+            composer attachments, so they leave while a question owns the field. */}
+        {!designComposer && !questionCoversField && <ComposerDock appSessionId={appSessionId} />}
 
         {voiceHere && (
           <Suspense fallback={null}>
