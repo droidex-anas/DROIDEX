@@ -180,9 +180,9 @@ function ToolGroupWithCards({
 export interface FeedItemViewProps {
   item: FeedItem;
   live: boolean;
-  // True while the whole turn is still streaming, regardless of where this item
-  // sits. Subagent waves need this rather than `live`: work continues after the
-  // wave stops being the last item (a plan update or assistant text follows it),
+  // True while the item's owning turn is still streaming, regardless of where
+  // it sits. Subagent waves need this rather than `live`: work continues after
+  // the wave stops being the last item (a plan update or assistant text follows it),
   // and treating that as settled froze the card on "Never started".
   sessionLive?: boolean;
   compacting?: boolean;
@@ -583,9 +583,8 @@ export const FeedItemView = memo(function FeedItemView({
       // Completed turns fold identically at every density; the density reaches
       // the folded children so a compact feed keeps aggregate lines inside an
       // expanded Worked group (two-level disclosure). Nested rows stay
-      // `live={false}` so their own streaming chrome stops, but sessionLive
-      // still reaches a nested wave: background children can keep in-flight
-      // dock chrome while a later turn streams.
+      // `live={false}` so their own streaming chrome stops; MessageFeed scopes
+      // sessionLive to the owning turn, so settled folds stay still.
       return (
         <WorkedGroup item={item}>
           {item.items.map((child) => (
