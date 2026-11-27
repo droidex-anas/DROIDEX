@@ -229,11 +229,8 @@ export function MessageFeed({
       ),
     [providedItems, events, pending, rich, changes, specContent, dockEnabled, density],
   );
-  // Rows before the live turn sit in settled turns: nothing there can be in
-  // flight, so they must not shimmer even while the session is live on a newer
-  // turn. Interrupted calls never receive results, so without the turn scope
-  // they would shimmer for the rest of the session's life. Shares groupTurns'
-  // definition of where the live turn starts so the two never disagree.
+  // Rows before the live turn are settled: interrupted calls never receive
+  // results, so only the live turn may treat them as in flight.
   const liveTurnFrom = useMemo(() => liveTurnStart(items), [items]);
   const feedIdentity = `${events[0]?.appSessionId ?? ''}:${events[0]?.sourceSessionId ?? ''}`;
   const renderedFeedRef = useRef<{ identity: string; items: FeedItem[] } | null>(null);
