@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
 import { createSdkMcpServer } from '@factory/droid-sdk';
@@ -125,6 +125,8 @@ test('Devin context-only and malformed counters preserve known spend across turn
 
 test('Devin client terminals stream shell output with cwd and env, then retain the result after release', async (t) => {
   const h = await fixture(t);
+  // The shell reports the resolved cwd; macOS temp dirs sit behind /var -> /private/var.
+  const shellCwd = await realpath(h.cwd);
   const session = await h.create();
   const events: NormalizedEvent[] = [];
   let continued = false;
@@ -136,7 +138,7 @@ test('Devin client terminals stream shell output with cwd and env, then retain t
       event.transcript.text?.includes('READY')
     ) {
       continued = true;
-      assert.equal(event.transcript.text, `READY|terminal-env|${h.cwd}`);
+      assert.equal(event.transcript.text, `READY|terminal-env|${shellCwd}`);
       await writeFile(join(h.cwd, 'terminal-go'), 'go');
     }
   }
@@ -145,7 +147,7 @@ test('Devin client terminals stream shell output with cwd and env, then retain t
   assert.equal(response.initial.exitStatus, undefined);
   assert.equal(response.exit.exitCode, 0);
   assert.equal(response.output.truncated, false);
-  assert.equal(response.output.output, `READY|terminal-env|${h.cwd}|DONE`);
+  assert.equal(response.output.output, `READY|terminal-env|${shellCwd}|DONE`);
   assert.match(response.released.error, /Unknown Devin terminal/);
   assert.equal(
     events.find((event) => event.transcript?.kind === 'tool_result')?.transcript?.text,
