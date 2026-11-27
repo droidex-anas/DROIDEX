@@ -64,7 +64,7 @@ function FileRowContent({
         className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted transition-colors hover:text-primary"
       >
         <span
-          className={`flex size-4 items-center justify-center rounded transition-colors duration-quick ${
+          className={`flex size-4 items-center justify-center rounded-xs transition-colors duration-quick ${
             viewed ? 'bg-accent text-bg' : 'bg-elevated group-hover:bg-active'
           }`}
         >
@@ -332,7 +332,7 @@ export function PrFileTree({
           spellCheck={false}
           autoCorrect="off"
           autoCapitalize="off"
-          leading={<Search className="size-icon-sm" />}
+          leading={<Search className="mr-1.5 size-icon-sm" />}
           actions={
             <button
               type="button"

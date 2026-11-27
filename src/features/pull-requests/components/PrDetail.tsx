@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 
+import { INLINE_CARD_EASE } from '../../../components/inlineCardMotion';
 import type { PrComment, PullRequest } from '../../../types/vcs';
 import type { PrLineAnnotation } from '../lib/prAnnotations';
 import { usePullRequestDetail } from '../hooks/usePullRequestDetail';
@@ -8,7 +10,7 @@ import { CUBIC_REVIEW_MENTION, hasCubicActivity, repoKeyFromPrUrl } from '../lib
 import { PR_DETAIL_TABS, prDetailTabId, prDetailTabPanelId, type PrDetailTab } from '../lib/prTabs';
 import { PrDiff } from './PrDiff';
 import { PrSummary } from './PrSummary';
-import { PrToolbar } from './PrToolbar';
+import { PrToolbar, type PrToolbarQueueNav } from './PrToolbar';
 
 export function applyCommentPostSettlement(
   submitted: { cwd: string; number: number },
@@ -71,11 +73,52 @@ export function CodePane({
   );
 }
 
+function handleDetailShortcut(
+  event: KeyboardEvent,
+  options: {
+    compact: boolean;
+    onBack?: () => void;
+    queueNav?: PrToolbarQueueNav | null;
+    onTab: (tab: PrDetailTab) => void;
+  },
+) {
+  if (event.defaultPrevented || event.metaKey || event.ctrlKey || event.altKey) return;
+  if (isTypingTarget(event.target)) return;
+  if (
+    event.target instanceof HTMLElement &&
+    event.target.closest('[role="menu"], [role="dialog"]')
+  ) {
+    return;
+  }
+  if (event.key === 'Escape' && options.onBack && !options.compact) {
+    event.preventDefault();
+    options.onBack();
+    return;
+  }
+  if (event.key === '[' && options.queueNav?.onPrev) {
+    event.preventDefault();
+    options.queueNav.onPrev();
+    return;
+  }
+  if (event.key === ']' && options.queueNav?.onNext) {
+    event.preventDefault();
+    options.queueNav.onNext();
+    return;
+  }
+  if (event.target instanceof HTMLElement && !event.target.closest('[data-pr-detail-pane]')) {
+    return;
+  }
+  const next = PR_DETAIL_TABS.find((item) => item.key === event.key);
+  if (next) options.onTab(next.id);
+}
+
 export function PrDetail({
   cwd,
   number,
   pr,
   compact = false,
+  onBack,
+  queueNav,
   onOpenChat,
   onReviewWithDroid,
   onSendReview,
@@ -86,10 +129,13 @@ export function PrDetail({
   // The utility-pane layout: panel padding instead of page padding, a smaller
   // title, and the link actions fold into one overflow menu.
   compact?: boolean;
+  onBack?: () => void;
+  queueNav?: PrToolbarQueueNav | null;
   onOpenChat: (pr: PullRequest) => void;
   onReviewWithDroid: (pr: PullRequest) => void;
   onSendReview: (pr: PullRequest, annotations: PrLineAnnotation[]) => void;
 }) {
+  const reduceMotion = useReducedMotion() === true;
   const [tab, setTab] = useState<PrDetailTab>('summary');
   const [draft, setDraft] = useState('');
   const [posting, setPosting] = useState(false);
@@ -120,19 +166,13 @@ export function PrDetail({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (isTypingTarget(event.target)) return;
-      if (event.target instanceof HTMLElement && !event.target.closest('[data-pr-detail-pane]')) {
-        return;
-      }
-      const next = PR_DETAIL_TABS.find((item) => item.key === event.key);
-      if (next) setTab(next.id);
+      handleDetailShortcut(event, { compact, onBack, queueNav, onTab: setTab });
     };
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, []);
+  }, [compact, onBack, queueNav]);
 
   const submit = () => {
     const body = draft.trim();
@@ -189,6 +229,8 @@ export function PrDetail({
         cubicInstalled={cubicActive || isCubicRemembered(repoKey)}
         requestingReview={requestingReview}
         merging={detail.merging}
+        onBack={onBack}
+        queueNav={queueNav}
         onTabChange={setTab}
         onRefresh={detail.refresh}
         onOpenChat={onOpenChat}
@@ -196,50 +238,57 @@ export function PrDetail({
         onReviewWithDroid={onReviewWithDroid}
         onMerge={(method) => detail.merge(method).then((result) => result.ok)}
       />
-      <div className="min-h-0 flex-1">
-        <div
-          role="tabpanel"
-          id={prDetailTabPanelId(tab)}
-          aria-labelledby={prDetailTabId(tab)}
-          className="h-full min-h-0"
-        >
-          {tab === 'summary' ? (
-            <PrSummary
-              // Section folds are per pull request, so the sections are rebuilt
-              // rather than carried over to the next one.
-              key={`${cwd}#${String(number)}`}
-              pr={headerPr}
-              number={number}
-              body={detail.body}
-              loaded={detail.loaded}
-              loading={detail.loading}
-              metaError={detail.metaError}
-              checks={detail.checks}
-              checksError={detail.checksError}
-              comments={detail.comments}
-              commentsError={detail.commentsError}
-              commits={detail.commits}
-              compact={compact}
-              {...composer}
-            />
-          ) : (
-            <CodePane
-              diff={detail.diff}
-              diffError={detail.diffError}
-              cwd={cwd}
-              number={number}
-              comments={detail.comments}
-              compact={compact}
-              onSendReview={
-                headerPr
-                  ? (annotations) => {
-                      onSendReview(headerPr, annotations);
-                    }
-                  : null
-              }
-            />
-          )}
-        </div>
+      <div className="min-h-0 flex-1 overflow-hidden">
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={tab}
+            role="tabpanel"
+            id={prDetailTabPanelId(tab)}
+            aria-labelledby={prDetailTabId(tab)}
+            initial={reduceMotion ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4 }}
+            transition={{ duration: reduceMotion ? 0 : 0.14, ease: INLINE_CARD_EASE }}
+            className="h-full min-h-0"
+          >
+            {tab === 'summary' ? (
+              <PrSummary
+                // Section folds are per pull request, so the sections are rebuilt
+                // rather than carried over to the next one.
+                key={`${cwd}#${String(number)}`}
+                pr={headerPr}
+                number={number}
+                body={detail.body}
+                loaded={detail.loaded}
+                loading={detail.loading}
+                metaError={detail.metaError}
+                checks={detail.checks}
+                checksError={detail.checksError}
+                comments={detail.comments}
+                commentsError={detail.commentsError}
+                commits={detail.commits}
+                compact={compact}
+                {...composer}
+              />
+            ) : (
+              <CodePane
+                diff={detail.diff}
+                diffError={detail.diffError}
+                cwd={cwd}
+                number={number}
+                comments={detail.comments}
+                compact={compact}
+                onSendReview={
+                  headerPr
+                    ? (annotations) => {
+                        onSendReview(headerPr, annotations);
+                      }
+                    : null
+                }
+              />
+            )}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </div>
   );

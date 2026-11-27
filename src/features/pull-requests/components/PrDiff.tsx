@@ -4,6 +4,7 @@ import { PanelRight, WrapText } from '@droidex/icons';
 
 import { DiffFileSection } from '../../../components/environment/DiffFileSection';
 import type { DiffLineReview, DiffLineTarget } from '../../../components/environment/DiffBody';
+import { Badge, CountBadge } from '../../../components/ui/Badge';
 import { Button } from '../../../components/ui/Button';
 import { useStoreSelector } from '../../../hooks/useStore';
 import type { FileDiffEntry } from '../../../hooks/useReviewFileDiffs';
@@ -199,12 +200,80 @@ const PrDiffFile = memo(
   },
 );
 
+function PrDiffToolbar({
+  fileCount,
+  viewedCount,
+  additions,
+  deletions,
+  allExpanded,
+  wrap,
+  treeVisible,
+  onToggleAll,
+  onToggleWrap,
+  onToggleTree,
+}: {
+  fileCount: number;
+  viewedCount: number;
+  additions: number;
+  deletions: number;
+  allExpanded: boolean;
+  wrap: boolean;
+  treeVisible: boolean;
+  onToggleAll: () => void;
+  onToggleWrap: () => void;
+  onToggleTree: () => void;
+}) {
+  return (
+    <div className="flex h-10 shrink-0 select-none items-center gap-2 px-6">
+      <span className="flex min-w-0 items-center gap-1.5 text-label text-secondary">
+        <CountBadge size="sm">{fileCount}</CountBadge>
+        <span className="truncate">{fileCount === 1 ? 'file' : 'files'}</span>
+      </span>
+      <span className="shrink-0 text-caption tabular-nums">
+        {additions > 0 ? <span style={{ color: 'var(--diff-add-fg)' }}>+{additions}</span> : null}
+        {additions > 0 && deletions > 0 ? ' ' : null}
+        {deletions > 0 ? <span style={{ color: 'var(--diff-del-fg)' }}>−{deletions}</span> : null}
+      </span>
+      {viewedCount > 0 ? (
+        <Badge tone={viewedCount === fileCount ? 'success' : 'neutral'} className="tabular-nums">
+          {viewedCount}/{fileCount} reviewed
+        </Badge>
+      ) : null}
+      <div className="min-w-0 flex-1" />
+      {fileCount > 1 ? (
+        <Button variant="ghost" size="sm" onClick={onToggleAll}>
+          {allExpanded ? 'Collapse all' : 'Expand all'}
+        </Button>
+      ) : null}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={WrapText}
+        aria-pressed={wrap}
+        title={wrap ? 'Scroll long lines' : 'Wrap long lines'}
+        aria-label={wrap ? 'Scroll long lines' : 'Wrap long lines'}
+        onClick={onToggleWrap}
+      />
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={PanelRight}
+        aria-expanded={treeVisible}
+        aria-controls={PR_FILE_TREE_ID}
+        onClick={onToggleTree}
+      >
+        {treeVisible ? 'Hide file tree' : 'Show file tree'}
+      </Button>
+    </div>
+  );
+}
+
 export function PrDiff({
   diff,
   cwd,
   number,
   comments,
-  compact,
+  compact = false,
   onSendReview,
 }: {
   diff: string;
@@ -212,7 +281,7 @@ export function PrDiff({
   number: number;
   comments: PrComment[];
   // The narrow pane starts with the file tree hidden, so the diff keeps its width.
-  compact: boolean;
+  compact?: boolean;
   onSendReview: ((annotations: PrLineAnnotation[]) => void) | null;
 }) {
   const diffView = useStoreSelector((state) => state.diffView);
@@ -330,6 +399,13 @@ export function PrDiff({
     [files],
   );
 
+  const allExpanded = files.length > 0 && expanded.size === files.length;
+  const toggleAll = useCallback(() => {
+    setExpanded((current) =>
+      current.size === files.length ? new Set() : new Set(files.map((item) => item.file.path)),
+    );
+  }, [files]);
+
   if (files.length === 0) {
     return (
       <div className="flex h-full items-center justify-center px-8">
@@ -340,45 +416,22 @@ export function PrDiff({
 
   return (
     <div className="pr-diff flex h-full min-h-0 flex-col">
-      <div className="flex h-9 shrink-0 select-none items-center gap-3 px-4">
-        <span className="min-w-0 truncate text-caption text-muted">
-          {files.length} {files.length === 1 ? 'file' : 'files'}
-          {viewedCount > 0 ? ` · ${String(viewedCount)} reviewed` : ''}
-        </span>
-        <span className="shrink-0 text-caption tabular-nums">
-          {totals.additions > 0 ? (
-            <span style={{ color: 'var(--diff-add-fg)' }}>+{totals.additions}</span>
-          ) : null}
-          {totals.additions > 0 && totals.deletions > 0 ? ' ' : null}
-          {totals.deletions > 0 ? (
-            <span style={{ color: 'var(--diff-del-fg)' }}>−{totals.deletions}</span>
-          ) : null}
-        </span>
-        <div className="min-w-0 flex-1" />
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={WrapText}
-          aria-pressed={wrap}
-          title={wrap ? 'Scroll long lines' : 'Wrap long lines'}
-          aria-label={wrap ? 'Scroll long lines' : 'Wrap long lines'}
-          onClick={() => {
-            setWrap((value) => !value);
-          }}
-        />
-        <Button
-          variant="ghost"
-          size="sm"
-          icon={PanelRight}
-          aria-expanded={treeVisible}
-          aria-controls={PR_FILE_TREE_ID}
-          onClick={() => {
-            setTreeVisible((visible) => !visible);
-          }}
-        >
-          {treeVisible ? 'Hide file tree' : 'Show file tree'}
-        </Button>
-      </div>
+      <PrDiffToolbar
+        fileCount={files.length}
+        viewedCount={viewedCount}
+        additions={totals.additions}
+        deletions={totals.deletions}
+        allExpanded={allExpanded}
+        wrap={wrap}
+        treeVisible={treeVisible}
+        onToggleAll={toggleAll}
+        onToggleWrap={() => {
+          setWrap((value) => !value);
+        }}
+        onToggleTree={() => {
+          setTreeVisible((visible) => !visible);
+        }}
+      />
       <div className="flex min-h-0 flex-1">
         <div className="relative min-h-0 min-w-0 flex-1">
           {/* In the side panel the pane's resize handle covers its first 12px,

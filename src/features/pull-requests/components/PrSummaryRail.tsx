@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 
 import { CheckStatusIcon } from '../../../components/environment/GithubIcons';
-import { Badge } from '../../../components/ui/Badge';
+import { Badge, CountBadge } from '../../../components/ui/Badge';
 import {
   bucketToStatus,
   checksBadge,
@@ -191,18 +191,24 @@ function Details({
   commitCount: number;
 }) {
   const mergeState = mergeStateBadge(pr);
+  const opened = prRelativeTime(pr.createdAt);
   return (
     <dl>
       <Fact label="Files">
-        {pr.changedFiles}{' '}
-        <span style={{ color: 'var(--diff-add-fg)' }}>+{pr.additions.toLocaleString('en')}</span>{' '}
+        {pr.changedFiles}
+        {' · '}
+        <span style={{ color: 'var(--diff-add-fg)' }}>
+          +{pr.additions.toLocaleString('en')}
+        </span>{' '}
         <span style={{ color: 'var(--diff-del-fg)' }}>−{pr.deletions.toLocaleString('en')}</span>
       </Fact>
       <Fact label="Commits">{commitCount}</Fact>
       <Fact label="Comments">{commentCount}</Fact>
-      {pr.createdAt ? (
+      {opened ? (
         <Fact label="Opened">
-          <span title={prAbsoluteTime(pr.createdAt)}>{prRelativeTime(pr.createdAt)} ago</span>
+          <span title={prAbsoluteTime(pr.createdAt)}>
+            {opened === 'now' ? 'now' : `${opened} ago`}
+          </span>
         </Fact>
       ) : null}
       {mergeState ? (
@@ -264,9 +270,13 @@ export function PrRailFacts({
   commentCount: number;
   commitCount: number;
 }) {
+  const reviewerCount = reviewerRows(pr).length;
   return (
-    <aside aria-label="Reviewers and details" className="pr-summary-facts flex flex-col gap-8">
-      <RailGroup title="Reviewers">
+    <aside aria-label="Reviewers and details" className="pr-summary-facts flex flex-col gap-7">
+      <RailGroup
+        title="Reviewers"
+        meta={reviewerCount > 0 ? <CountBadge size="sm">{reviewerCount}</CountBadge> : null}
+      >
         <Reviewers pr={pr} />
       </RailGroup>
       <RailGroup title="Details">

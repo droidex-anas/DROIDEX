@@ -4,6 +4,7 @@ import { LayoutGroup, useReducedMotion } from 'framer-motion';
 import { ListTodo, MessageSquareText, type IconComponent } from '@droidex/icons';
 import { ActivityStatusGlyph } from '../../components/ActivityStatusGlyph';
 import { SidebarSectionHeading } from '../../components/SidebarSectionHeading';
+import { CountBadge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
 import { PlanMeter, ProjectPlan } from './ProjectPlan';
 import { AttentionThreadRow, ThreadRow } from './ThreadRow';
@@ -111,11 +112,7 @@ export function ThreadList({
             onToggle={() => {
               toggle(group.key);
             }}
-            action={
-              <span className="w-7 shrink-0 text-right text-caption tabular-nums text-muted">
-                {group.rows.length}
-              </span>
-            }
+            action={<CountBadge size="sm">{group.rows.length}</CountBadge>}
           />
         </div>
       ),

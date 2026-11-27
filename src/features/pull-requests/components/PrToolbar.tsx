@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
-import { Check, Copy, Ellipsis, ExternalLink, MessageBubble, RefreshCw } from '@droidex/icons';
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Ellipsis,
+  ExternalLink,
+  MessageBubble,
+  RefreshCw,
+} from '@droidex/icons';
+import { motion, useReducedMotion } from 'framer-motion';
 
 import { Button } from '../../../components/ui/Button';
 import { Menu } from '../../../components/ui/Menu';
@@ -16,7 +27,15 @@ import {
 import { PrMergeButton } from './PrMergeButton';
 import { PrReviewButton } from './PrReviewButton';
 
+export interface PrToolbarQueueNav {
+  index: number;
+  total: number;
+  onPrev: (() => void) | null;
+  onNext: (() => void) | null;
+}
+
 const COPIED_MS = 1200;
+const TAB_SPRING = { type: 'spring', stiffness: 520, damping: 38 } as const;
 const compactCount = new Intl.NumberFormat('en', {
   notation: 'compact',
   maximumFractionDigits: 1,
@@ -42,6 +61,7 @@ function PrTabs({
   showCounts: boolean;
   onTabChange: (tab: PrDetailTab) => void;
 }) {
+  const reduceMotion = useReducedMotion() === true;
   const onKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, current: PrDetailTab) => {
     const next = arrowKeyTab(PR_DETAIL_TABS, current, event.key);
     if (!next) return;
@@ -53,7 +73,7 @@ function PrTabs({
     <div
       role="tablist"
       aria-label="Pull request views"
-      className="flex shrink-0 items-center gap-0.5 rounded-md bg-elevated p-0.5"
+      className="relative isolate flex shrink-0 items-center gap-0.5 rounded-md bg-elevated p-0.5"
     >
       {PR_DETAIL_TABS.map((item) => {
         const selected = tab === item.id;
@@ -72,12 +92,20 @@ function PrTabs({
             onClick={() => {
               onTabChange(item.id);
             }}
-            className={`flex h-control-sm select-none items-center gap-1.5 rounded-sm px-2.5 text-label transition-colors duration-quick ${
-              selected ? 'bg-active text-primary' : 'text-muted hover:text-secondary'
+            className={`relative flex h-control-sm select-none items-center gap-1.5 rounded-sm px-2.5 text-label transition-colors duration-quick ${
+              selected ? 'text-primary' : 'text-muted hover:text-secondary'
             }`}
           >
             {item.label}
             {item.id === 'changes' && showCounts && pr ? <ChangeCounts pr={pr} /> : null}
+            {selected ? (
+              <motion.span
+                layoutId="pr-detail-tab-pill"
+                aria-hidden="true"
+                transition={reduceMotion ? { duration: 0 } : TAB_SPRING}
+                className="pointer-events-none absolute inset-0 -z-10 rounded-sm bg-active shadow-sm"
+              />
+            ) : null}
           </button>
         );
       })}
@@ -265,6 +293,8 @@ export function PrToolbar({
   cubicInstalled,
   requestingReview,
   merging,
+  onBack,
+  queueNav,
   onTabChange,
   onRefresh,
   onOpenChat,
@@ -280,6 +310,8 @@ export function PrToolbar({
   cubicInstalled: boolean;
   requestingReview: boolean;
   merging: boolean;
+  onBack?: () => void;
+  queueNav?: PrToolbarQueueNav | null;
   onTabChange: (tab: PrDetailTab) => void;
   onRefresh: () => void;
   onOpenChat: (pr: PullRequest) => void;
@@ -294,6 +326,44 @@ export function PrToolbar({
       data-electron-drag-region
       className={`flex h-12 shrink-0 items-center gap-2 ${compact ? 'px-3' : 'px-6'}`}
     >
+      {onBack && !compact ? (
+        <Tooltip label="Back to pull requests (Esc)" placement="bottom">
+          <Button variant="ghost" size="sm" icon={ArrowLeft} className="-ml-2.5" onClick={onBack}>
+            Pull Requests
+          </Button>
+        </Tooltip>
+      ) : null}
+      {queueNav && queueNav.total > 1 && !compact ? (
+        <div className="flex shrink-0 items-center gap-0.5">
+          <Tooltip label="Previous pull request ([)" placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ChevronUp}
+              aria-label="Previous pull request"
+              disabled={!queueNav.onPrev}
+              onClick={() => {
+                queueNav.onPrev?.();
+              }}
+            />
+          </Tooltip>
+          <span className="px-1 text-caption tabular-nums text-muted">
+            {queueNav.index + 1}/{queueNav.total}
+          </span>
+          <Tooltip label="Next pull request (])" placement="bottom">
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ChevronDown}
+              aria-label="Next pull request"
+              disabled={!queueNav.onNext}
+              onClick={() => {
+                queueNav.onNext?.();
+              }}
+            />
+          </Tooltip>
+        </div>
+      ) : null}
       <PrTabs tab={tab} pr={pr} showCounts={!compact} onTabChange={onTabChange} />
       <div className="ml-auto flex min-w-0 items-center gap-2">
         {compact ? (

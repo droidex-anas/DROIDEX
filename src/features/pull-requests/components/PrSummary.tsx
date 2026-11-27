@@ -101,42 +101,66 @@ export function PrSummary({
 }) {
   const pending = loading && !loaded;
 
+  const mainSections = (
+    <div className="min-w-0">
+      {pr && hasMergeConflicts(pr) ? (
+        <PrSection key="merge-conflicts" title="Merge conflicts">
+          <MergeConflicts pr={pr} />
+        </PrSection>
+      ) : null}
+      <PrSection key="description" title="Description">
+        <Description loaded={loaded} body={body} metaError={metaError} />
+      </PrSection>
+      <PrSection key="conversation" title="Conversation" count={comments.length}>
+        <PrTimeline
+          pr={pr}
+          comments={comments}
+          commits={commits}
+          loading={pending}
+          error={commentsError}
+        />
+      </PrSection>
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <PrConversation
+        compact
+        draft={draft}
+        posting={posting}
+        onDraftChange={onDraftChange}
+        onSubmit={onSubmit}
+      >
+        <PrHeader pr={pr} number={number} compact />
+        <div className="mt-6 flex flex-col gap-7">
+          <PrRailChecks checks={checks} loading={pending} error={checksError} />
+          {mainSections}
+          {pr ? (
+            <PrRailFacts pr={pr} commentCount={comments.length} commitCount={commits.length} />
+          ) : null}
+        </div>
+      </PrConversation>
+    );
+  }
+
   return (
     <PrConversation
-      compact={compact}
+      rail={
+        <div className="flex flex-col gap-7">
+          <PrRailChecks checks={checks} loading={pending} error={checksError} />
+          {pr ? (
+            <PrRailFacts pr={pr} commentCount={comments.length} commitCount={commits.length} />
+          ) : null}
+        </div>
+      }
       draft={draft}
       posting={posting}
       onDraftChange={onDraftChange}
       onSubmit={onSubmit}
     >
-      <div className="pr-summary pr-reading-width">
-        <PrHeader pr={pr} number={number} compact={compact} />
-        <div className="pr-summary-grid">
-          <PrRailChecks checks={checks} loading={pending} error={checksError} />
-          <div className="pr-summary-main min-w-0">
-            {pr && hasMergeConflicts(pr) ? (
-              <PrSection key="merge-conflicts" title="Merge conflicts">
-                <MergeConflicts pr={pr} />
-              </PrSection>
-            ) : null}
-            <PrSection key="description" title="Description">
-              <Description loaded={loaded} body={body} metaError={metaError} />
-            </PrSection>
-            <PrSection key="conversation" title="Conversation" count={comments.length}>
-              <PrTimeline
-                pr={pr}
-                comments={comments}
-                commits={commits}
-                loading={pending}
-                error={commentsError}
-              />
-            </PrSection>
-          </div>
-          {pr ? (
-            <PrRailFacts pr={pr} commentCount={comments.length} commitCount={commits.length} />
-          ) : null}
-        </div>
-      </div>
+      <PrHeader pr={pr} number={number} />
+      <div className="mt-6">{mainSections}</div>
     </PrConversation>
   );
 }
