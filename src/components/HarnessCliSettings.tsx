@@ -26,7 +26,7 @@ const SOURCE_LABELS: Record<HarnessInstallSource, string> = {
 };
 
 /**
- * Claude Code and Codex as installed on this machine. Each updates through
+ * Agent CLIs installed on this machine. Each updates through
  * whichever installer owns its binary, detected from where the binary lives.
  */
 export function HarnessCliSettings({
@@ -42,7 +42,7 @@ export function HarnessCliSettings({
   return (
     <div className="rounded-xl bg-surface shadow-lg mb-8">
       {clis === null ? (
-        <SettingRow label="Claude Code and Codex" description="Detecting installed CLIs…">
+        <SettingRow label="Agent CLIs" description="Detecting installed CLIs…">
           <span />
         </SettingRow>
       ) : (
@@ -55,11 +55,11 @@ export function HarnessCliSettings({
         ))
       )}
       <SettingRow
-        label="Keep Claude Code and Codex up to date"
+        label="Keep agent CLIs up to date"
         description="Updates installed CLIs on launch."
       >
         <Switch
-          label="Keep Claude Code and Codex up to date"
+          label="Keep agent CLIs up to date"
           checked={autoUpdate}
           onChange={onAutoUpdateChange}
         />
@@ -118,8 +118,8 @@ function HarnessCliRow({ cli, status }: { cli: HarnessCliState; status?: Provide
   );
 }
 
-// Sign-in is informational: a CLI without one can still run through a gateway
-// or key its own config names, so chats on it stay available either way.
+// Claude and Codex can use a gateway without a CLI login. Devin's ready probe
+// already confirms its CLI login, even when it supplies no account label.
 function SignInBadge({
   provider,
   status,
@@ -127,9 +127,9 @@ function SignInBadge({
   provider: HarnessCliProvider;
   status: ProviderStatus;
 }) {
-  if (status.accountLabel) {
+  if (status.accountLabel || (provider === 'devin' && status.readiness === 'ready')) {
     return (
-      <Badge tone="success" title={status.accountLabel}>
+      <Badge tone="success" title={status.accountLabel ?? 'Devin CLI login'}>
         Signed in
       </Badge>
     );

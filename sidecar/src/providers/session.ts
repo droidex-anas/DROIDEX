@@ -85,6 +85,8 @@ export interface ProviderForkSource {
   // The answer the copy ends with, as the provider stamped it on its text
   // events. Absent copies the whole conversation.
   forkPointId?: string;
+  // App-owned context for providers that seed a new session instead of copying native history.
+  transcriptSeed?: string;
 }
 
 // How to resume a copied conversation: the same pair a stored session carries.
@@ -174,6 +176,11 @@ export interface ProviderChildSession {
 /** Only false permits replay; withdrawal and uncertainty settle without it. */
 export type SteerOutcome = boolean | 'withdrawn' | 'unconfirmed';
 
+export interface ProviderProcess {
+  readonly pid: number;
+  isAlive(): boolean;
+}
+
 export interface ProviderSession {
   readonly provider: ProviderKind;
   // Local approval policy: revocations apply immediately, grants after acceptance.
@@ -187,7 +194,9 @@ export interface ProviderSession {
   // that start declared the Canvas tools. A resumed session leaves it unset.
   readonly canvasTools?: SessionSummary['canvasTools'];
   // The live agent process, when the provider runs one, so it can be tracked.
-  readonly process?: { pid: number; isAlive(): boolean };
+  readonly process?: ProviderProcess;
+  // Additional session-owned work roots. Subscribing immediately reports the live snapshot.
+  onProcessRootsChanged?(listener: (roots: readonly ProviderProcess[]) => void): () => void;
   // Whether a process under it, by its command line, is one the provider runs
   // for itself rather than for the agent, and so not the session's work.
   isHarnessProcess?(command: string): boolean;

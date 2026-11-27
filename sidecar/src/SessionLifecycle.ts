@@ -248,6 +248,10 @@ export interface SessionLifecycleDependencies {
 }
 export class SessionLifecycle {
   private readonly deferredCloses = new WeakMap<LiveSession, DeferredClose>();
+  private readonly processSubscriptions = new WeakMap<
+    ProviderSession,
+    { stop(): void; release(): void }
+  >();
   private automaticCreates = 0;
   private readonly steerOutcomes = new WeakMap<
     LiveSession,
@@ -655,7 +659,7 @@ export class SessionLifecycle {
       pendingLiveSession = liveSession;
       this.subscribeAutomaticCompaction(liveSession);
       await d.registry.register(liveSession, requireCurrentResume);
-      if (kind === 'claude')
+      if (kind === 'claude' || kind === 'devin')
         d.context.preserveUsage(appSessionId, {
           tokensIn: projectedSummary.tokensIn,
           tokensOut: projectedSummary.tokensOut,
@@ -1451,6 +1455,37 @@ export class SessionLifecycle {
     );
     const process = session.process;
     if (process) d.agentProcesses.track(appSessionId, process.pid, () => process.isAlive());
+    if (!session.onProcessRootsChanged) return;
+    let active = true;
+    let unsubscribe: () => void = () => undefined;
+    const pids = new Set<number>();
+    const stop = () => {
+      if (!active) return;
+      active = false;
+      unsubscribe();
+    };
+    this.processSubscriptions.set(session, {
+      stop,
+      release: () => {
+        stop();
+        for (const pid of pids) d.agentProcesses.untrack(pid, appSessionId);
+        pids.clear();
+      },
+    });
+    unsubscribe = session.onProcessRootsChanged((roots) => {
+      if (!active || d.registry.getLive(appSessionId)?.session !== session) return;
+      const live = roots.filter((root) => root.isAlive());
+      const next = new Set(live.map((root) => root.pid));
+      for (const pid of pids) {
+        if (next.has(pid)) continue;
+        d.agentProcesses.untrack(pid, appSessionId);
+        pids.delete(pid);
+      }
+      for (const root of live) {
+        pids.add(root.pid);
+        d.agentProcesses.track(appSessionId, root.pid, () => root.isAlive(), 'work');
+      }
+    });
   }
 
   // The pid has to be read while the session still holds it, but released only
@@ -1459,10 +1494,15 @@ export class SessionLifecycle {
     appSessionId: string,
     session: ProviderSession,
   ): (() => void) | undefined {
+    const subscription = this.processSubscriptions.get(session);
+    this.processSubscriptions.delete(session);
+    subscription?.stop();
     const processId = session.process?.pid;
-    if (processId === undefined) return undefined;
+    if (processId === undefined && !subscription) return undefined;
     return () => {
-      this.dependencies.agentProcesses.untrack(processId, appSessionId);
+      if (processId !== undefined)
+        this.dependencies.agentProcesses.untrack(processId, appSessionId);
+      subscription?.release();
     };
   }
 

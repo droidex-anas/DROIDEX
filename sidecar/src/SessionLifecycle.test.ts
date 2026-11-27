@@ -25,11 +25,20 @@ import {
 } from './testing/projectServiceHarness.js';
 import { SessionModelSettings } from './SessionModelSettings.js';
 import type { LiveSession } from './SessionLifecycle.js';
-import type { DelegatedTurnEnd, Provider, ProviderResumeInput } from './providers/session.js';
+import type {
+  DelegatedTurnEnd,
+  Provider,
+  ProviderResumeInput,
+  ProviderProcess,
+} from './providers/session.js';
+import { AgentProcessMonitor } from './processes/AgentProcessMonitor.js';
 import { runPrimaryTurn } from './providers/primaryTurn.js';
 import { SessionEventFlow } from './SessionEventFlow.js';
 import { ClaudeProvider } from './providers/claude/ClaudeProvider.js';
 import { CodexProvider } from './providers/codex/CodexProvider.js';
+import { DevinProvider } from './providers/devin/DevinProvider.js';
+import { devinAcpCli, writeDevinTestCredentials } from './testing/devinAcpCli.js';
+import { SessionContext } from './SessionContext.js';
 import { providerIdentityCli } from './testing/providerIdentityCli.js';
 import { DroidProvider } from './providers/droid/DroidProvider.js';
 import { DroidProviderSession } from './providers/droid/DroidProviderSession.js';
@@ -134,6 +143,65 @@ test('create and cold resume publish only after registration', async () => {
   );
   assert.equal(resumed.runtime.loadCalls[0]?.handlers.cwd, '/workspace');
   assert.equal(resumed.publicationRegistration.every(Boolean), true);
+});
+
+test('extra provider roots reach retirement visibility and recovery, and ignore stale notifications', async (t) => {
+  const root = { pid: 12345, isAlive: () => true };
+  const row = { pid: root.pid, ppid: 1, startedAt: 0, command: 'devin-terminal watcher' };
+  let table = [row];
+  const killed: number[] = [];
+  const monitor = new AgentProcessMonitor({
+    listProcesses: async () => table,
+    listListeningPorts: async () => new Map(),
+    kill: (pid) => {
+      killed.push(pid);
+      table = table.filter((item) => item.pid !== pid);
+    },
+    emit: () => undefined,
+    schedule: () => ({ cancel() {} }),
+    scheduleKillPoll: (callback) => {
+      setImmediate(callback);
+      return { cancel() {} };
+    },
+    now: () => 100_000,
+  });
+  t.after(() => monitor.dispose());
+  const h = createHarness([], undefined, { agentProcesses: monitor });
+  queueCreate(h, 'app-processes');
+  const provider = new DroidProvider(h.runtime, () => undefined);
+  const create = provider.create.bind(provider);
+  let notify: (roots: readonly ProviderProcess[]) => void = () => undefined;
+  let unsubscribed = false;
+  provider.create = async (input) =>
+    Object.assign(await create(input), {
+      onProcessRootsChanged: (listener: typeof notify) => {
+        notify = listener;
+        listener([root]);
+        return () => {
+          unsubscribed = true;
+        };
+      },
+    });
+  h.setProvider(provider);
+  await h.lifecycle.create(createCommand());
+  await monitor.scan();
+  assert.equal(monitor.hasProcesses('app-processes'), true);
+  const recorded = monitor.snapshotPids();
+  assert.deepEqual(recorded, [{ appSessionId: 'app-processes', pid: root.pid, startedAt: 0 }]);
+  notify([]);
+  assert.equal(monitor.hasProcesses('app-processes'), false);
+  assert.deepEqual(monitor.snapshotPids(), []);
+  notify([root]);
+  await monitor.scan();
+  await monitor.killRecorded(recorded);
+  assert.deepEqual(killed, [root.pid]);
+  await h.lifecycle.close('app-processes');
+  assert.equal(unsubscribed, true);
+  table = [row];
+  notify([root]);
+  await monitor.scan();
+  assert.equal(monitor.hasProcesses('app-processes'), false);
+  assert.deepEqual(monitor.snapshotPids(), []);
 });
 
 test('folder-less chats run and resume in the DROIDEX chats directory', async (t) => {
@@ -2017,6 +2085,69 @@ test('a cold Claude resume seeds historical billing usage once before new turns'
     h.calls.filter((call) => call.method === 'context.preserveUsage').map((call) => call.args),
     [['claude-chat', { tokensIn: 100, tokensOut: 40 }]],
   );
+});
+
+test('Devin resume preserves saved spend through context-only and inference updates without reseeding live runtimes', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'devin-resume-usage-'));
+  const executable = join(cwd, 'devin.cjs');
+  await writeFile(executable, devinAcpCli, { mode: 0o755 });
+  await writeDevinTestCredentials();
+  await writeFile(join(cwd, 'persisted-sessions'), 'devin-one\n');
+  const previous = process.env.DEVIN_PATH;
+  process.env.DEVIN_PATH = executable;
+  t.after(async () => {
+    await h.lifecycle.closeAll();
+    if (previous === undefined) delete process.env.DEVIN_PATH;
+    else process.env.DEVIN_PATH = previous;
+    await rm(cwd, { recursive: true, force: true });
+  });
+  const context: SessionContext = new SessionContext({
+    get registry() {
+      return h.registry;
+    },
+    get runtime() {
+      return h.runtime;
+    },
+    emit: () => undefined,
+    maxContextTokensForSummary: (item) => item.maxContextTokens,
+    noteContextWindow: () => undefined,
+  });
+  const historical = [
+    summary('devin-chat', 'devin-one', { provider: 'devin', cwd, tokensIn: 100, tokensOut: 40 }),
+  ];
+  const h: Harness = createHarness(historical, undefined, { context });
+  h.setProvider(new DevinProvider());
+  const resumed = await h.lifecycle.resume('devin-chat');
+  assert.ok(resumed);
+  const applyTurn = async (prompt: string) => {
+    const live = requireLive(h, 'devin-chat');
+    for await (const event of live.session.stream(prompt))
+      if (event.tokens) context.recordUsage('devin-chat', 'devin-chat', event.tokens);
+    return [live.summary.tokensIn, live.summary.tokensOut];
+  };
+  assert.deepEqual(await applyTurn('hello'), [100, 40]);
+  await writeFile(
+    join(cwd, 'usage.json'),
+    JSON.stringify([
+      {
+        sessionUpdate: 'usage_update',
+        used: 13,
+        size: 100,
+        _meta: {
+          'cognition.ai/inputTokens': 10,
+          'cognition.ai/outputTokens': 3,
+        },
+      },
+    ]),
+  );
+  assert.deepEqual(await applyTurn('usage'), [110, 43]);
+  assert.equal(await h.lifecycle.resume('devin-chat'), resumed);
+  assert.deepEqual(await applyTurn('hello'), [110, 43]);
+  historical[0] = { ...resumed.summary };
+  await h.lifecycle.close('devin-chat');
+  assert.ok(await h.lifecycle.resume('devin-chat'));
+  assert.deepEqual(await applyTurn('hello'), [110, 43]);
+  assert.deepEqual(await applyTurn('usage'), [120, 46]);
 });
 
 test('Droid resume reapplies edits-only while keeping the stored or native autonomy', async () => {

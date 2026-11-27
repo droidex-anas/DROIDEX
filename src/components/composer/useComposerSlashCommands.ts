@@ -106,6 +106,7 @@ export function useComposerSlashCommands({
       cmd: '/bug',
       desc: 'Send a private bug report',
       icon: Bug,
+      supersedesHarnessCommand: true,
       run: () => {
         openFeedbackReport('bug');
       },

@@ -88,6 +88,29 @@ export function readSessionRawWindow(
   }
 }
 
+export function parseTranscriptLines(
+  appSessionId: string,
+  providerSessionId: string,
+  lines: readonly string[],
+  role: SessionRole,
+): TranscriptEvent[] {
+  const events: TranscriptEvent[] = [];
+  const canvas = new CanvasToolPresentation(readCanvasToolBindings(appSessionId));
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    try {
+      const stored = JSON.parse(trimmed) as StoredMessageLine | StoredSessionStart;
+      events.push(
+        ...parseSessionLineEvents(appSessionId, providerSessionId, role, stored, { canvas }),
+      );
+    } catch {
+      /* skip partial/corrupt JSONL rows */
+    }
+  }
+  return coalesceMessages(events);
+}
+
 function appendMessageChunk(older: TranscriptEvent, newer: TranscriptEvent): TranscriptEvent {
   return {
     ...older,
@@ -104,6 +127,33 @@ function messageSnapshot(event: TranscriptEvent): TranscriptEvent {
     ...event,
     textUpdate: { messageId: event.textUpdate.messageId, kind: 'snapshot' },
   };
+}
+
+function coalesceMessages(events: TranscriptEvent[]): TranscriptEvent[] {
+  // Corrections append to JSONL; replay exposes only the latest text per row id.
+  const latestSpoken = new Set<string>();
+  const uniqueEvents = events.some((event) => event.spoken)
+    ? events
+        .toReversed()
+        .filter((event) => {
+          if (!event.spoken) return true;
+          if (latestSpoken.has(event.id)) return false;
+          latestSpoken.add(event.id);
+          return true;
+        })
+        .reverse()
+    : events;
+  const messages: TranscriptEvent[] = [];
+  const indexes = new Map<string, number>();
+  for (const event of uniqueEvents) {
+    const index = event.textUpdate ? indexes.get(event.id) : undefined;
+    if (index !== undefined) messages[index] = appendMessageChunk(messages[index], event);
+    else {
+      if (event.textUpdate) indexes.set(event.id, messages.length);
+      messages.push(event);
+    }
+  }
+  return messages.map(messageSnapshot);
 }
 
 // Byte offset of every line start in the file, bounded to `size` so bytes

@@ -11,6 +11,7 @@ export const PROVIDER_LABELS: Record<ProviderKind, string> = {
   droid: 'Droid',
   claude: 'Claude Code',
   codex: 'Codex',
+  devin: 'Devin',
 };
 
 // Each Alt profile is signed in through its own wrapper command.
@@ -25,6 +26,7 @@ export const PROVIDER_USAGE_URLS: Record<ProviderKind, string> = {
   droid: 'https://app.factory.ai/settings/usage',
   claude: 'https://claude.ai/settings/usage',
   codex: 'https://chatgpt.com/codex/settings/usage',
+  devin: 'https://app.devin.ai',
 };
 
 // What each harness's own CLI runs to sign in, typed in a terminal.
@@ -32,20 +34,21 @@ export const PROVIDER_SIGN_IN_COMMANDS: Record<ProviderKind, string> = {
   droid: 'droid',
   claude: 'claude',
   codex: 'codex login',
+  devin: 'devin auth login',
 };
 
-// Each provider carries the official mark of the harness it runs, full color
-// and at one size so the three read as one family.
+// Harness marks share one size across the provider pickers.
 export const PROVIDER_MARKS: Record<ProviderKind, keyof typeof MARK_PATHS> = {
   droid: 'factory',
   claude: 'claude',
   codex: 'openai',
+  devin: 'devin',
 };
 
 // A provider whose sessions can plan before they act, so the composer offers
 // the Spec toggle for a chat on it. Mission Control and compaction remain
 // Droid's own subsystems.
-const PLANNING_PROVIDERS = new Set<ProviderKind>(['droid', 'claude']);
+const PLANNING_PROVIDERS = new Set<ProviderKind>(['droid', 'claude', 'devin']);
 
 export function supportsSpecMode(provider: ProviderKind): boolean {
   return PLANNING_PROVIDERS.has(provider);
@@ -175,5 +178,7 @@ export function sessionResumeCommand(provider: ProviderKind, quotedId: string): 
       return `claude --resume ${quotedId}`;
     case 'codex':
       return `codex resume ${quotedId}`;
+    case 'devin':
+      return `devin --resume ${quotedId}`;
   }
 }

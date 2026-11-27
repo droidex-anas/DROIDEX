@@ -130,7 +130,7 @@ test('a non-mergeable event lands behind its own source and ahead of nothing els
   );
 });
 
-test('coalesced tool calls keep the latest targeted Canvas activity', () => {
+test('coalesced tool calls keep the latest output and targeted Canvas activity', () => {
   const activity: NonNullable<TranscriptEvent['canvasActivity']> = {
     toolUseId: 'canvas-call',
     action: 'write',
@@ -155,7 +155,7 @@ test('coalesced tool calls keep the latest targeted Canvas activity', () => {
     coalescer.accept(
       childDelta('canvas-first', 'child-1', {
         kind: 'tool_call',
-        text: undefined,
+        text: 'First output',
         toolName: 'Canvas',
         toolUseId: activity.toolUseId,
         canvasActivity: { ...activity, designIds: previous },
@@ -164,7 +164,7 @@ test('coalesced tool calls keep the latest targeted Canvas activity', () => {
     coalescer.accept(
       childDelta('canvas-later', 'child-1', {
         kind: 'tool_call',
-        text: undefined,
+        text: 'Latest output',
         toolUseId: activity.toolUseId,
         canvasActivity:
           next === undefined
@@ -176,6 +176,7 @@ test('coalesced tool calls keep the latest targeted Canvas activity', () => {
     coalescer.flushAll();
 
     assert.equal(delivered.length, 1);
+    assert.equal(delivered[0]?.text, 'Latest output');
     assert.deepEqual(delivered[0]?.canvasActivity, {
       ...activity,
       designIds: expected,

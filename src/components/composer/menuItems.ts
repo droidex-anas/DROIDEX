@@ -1,6 +1,7 @@
 import type { CanvasFrame, CatalogListing, SkillInfo } from '@droidex/protocol';
 import { menuMatchRank, rankMenuCandidates } from '../../lib/composerMenuRanking';
 import { VISUALIZE_COMMAND } from '../../lib/composePrompt';
+import { PROVIDER_LABELS } from '../../features/providers/providerIdentity';
 import { catalogRowKey } from './composerCatalog';
 
 import type { SlashCommand } from '../ComposerMenu';
@@ -328,13 +329,12 @@ export function chipNamedBy(trigger: ComposerTrigger, menu: ComposerMenu): MenuI
 }
 
 function slashSections(query: string, commands: SlashCommand[], catalog: SkillInfo[]): Section[] {
+  const harness = catalog.find((item) => item.kind === 'command')?.provider ?? 'droid';
   return orderByRank(query, [
+    ...section('DROIDEX Commands', [group(rankCommands(query, commands), query)], query),
     ...section(
-      'Commands',
-      [
-        group(rankCommands(query, commands), query),
-        group(rankHarnessCommands(query, commands, catalog), query),
-      ],
+      `${PROVIDER_LABELS[harness]} Commands`,
+      [group(rankHarnessCommands(query, commands, catalog), query)],
       query,
     ),
     ...section('Skills', skillGroups(query, catalog), query),

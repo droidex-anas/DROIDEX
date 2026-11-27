@@ -7,9 +7,9 @@ import type { ModelInfo, ProviderKind } from '@droidex/protocol';
 export const FAST_MODE_LABEL = 'Fast mode';
 export const FAST_MODE_HINT = '1.5x speed · Uses your limits faster';
 
-/** Droid's runtime has no fast mode, so its chats are never offered one. */
+/** Droid and Devin have no separate fast-mode toggle. */
 export function offersFastMode(provider: ProviderKind | undefined): boolean {
-  return provider !== 'droid';
+  return provider !== 'droid' && provider !== 'devin';
 }
 
 /**
