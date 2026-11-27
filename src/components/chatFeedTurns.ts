@@ -435,7 +435,9 @@ function liveTurnStart(items: FeedItem[]): number {
 }
 
 // A completed turn that edited files gets a top-level "Changes · N files"
-// summary so it survives the Worked-for folding.
+// summary so it survives the Worked-for folding. The line counts are the
+// panel's to read: totalling them here would compute every diff of every
+// settled turn at projection time, most of which never mount.
 function turnChangesSummary(run: FeedItem[]): FeedItem[] {
   const files = collectTurnFiles(run);
   if (files.length === 0) return [];
@@ -445,8 +447,6 @@ function turnChangesSummary(run: FeedItem[]): FeedItem[] {
       key: `changes-${run[0].key}`,
       tailEventId: feedItemTailId(run[run.length - 1]),
       files,
-      added: files.reduce((s, f) => s + f.added, 0),
-      removed: files.reduce((s, f) => s + f.removed, 0),
     },
   ];
 }

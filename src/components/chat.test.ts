@@ -398,6 +398,25 @@ test('both inline diff toggles expose expansion when no review handler exists', 
   assert.equal((review.match(/aria-expanded="false"/g) ?? []).length, 1);
 });
 
+test('a mounted diff row reads its stats off the lazily extracted change', () => {
+  // The extraction defers the line diff until a row actually renders; this is
+  // the first render that forces it.
+  const edit = ev({
+    kind: 'tool_call',
+    toolName: 'Edit',
+    toolUseId: 'e1',
+    toolArgs: { file_path: 'src/app.ts', old_string: 'before', new_string: 'after' },
+  });
+  const done = ev({ kind: 'tool_result', toolName: '', toolUseId: 'e1', text: 'ok' });
+  const html = renderToStaticMarkup(
+    createElement(MessageFeed, { events: [userMsg('go'), edit, done], pending: true }),
+  );
+  const text = html.replace(/<[^>]+>/g, '');
+  assert.ok(text.includes('src/app.ts'));
+  assert.ok(text.includes('+1'), 'additions count');
+  assert.ok(text.includes('−1'), 'deletions count');
+});
+
 test('fetch size badge counts the truncated-away characters', () => {
   // The sentinel's number is the omitted character count, so a kept 10-char
   // body with 4096 omitted chars must badge the full fetched size, not "10+".
@@ -510,17 +529,7 @@ test('sameFeedEvents compares grouped rows by their nested events, not object id
     type: 'turnChanges',
     key: 'changes:1',
     tailEventId: 't1',
-    files: [
-      {
-        path: 'a.ts',
-        added,
-        removed: 0,
-        verb: 'edit',
-        change: { path: 'a.ts', verb: 'edit', ops: [], added, removed: 0 },
-      },
-    ],
-    added,
-    removed: 0,
+    files: [{ path: 'a.ts', verb: 'edit', ops: [], added, removed: 0 }],
   });
   assert.equal(sameFeedEvents(changes(1), changes(1)), true);
   assert.equal(sameFeedEvents(changes(1), changes(2)), false);

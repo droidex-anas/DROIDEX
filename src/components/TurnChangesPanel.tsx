@@ -5,21 +5,11 @@ import type { FileChange } from '../lib/diff';
 import { displayPath } from '../lib/pathDisplay';
 import { Expand } from './transcript/primitives';
 
-export interface TurnFile {
-  path: string;
-  added: number;
-  removed: number;
-  verb: FileChange['verb'];
-  change: FileChange;
-}
-
 export interface TurnChangesItem {
   type: 'turnChanges';
   key: string;
   tailEventId: string;
-  files: TurnFile[];
-  added: number;
-  removed: number;
+  files: FileChange[];
 }
 
 function ChangeCount({ added, removed }: { added: number; removed: number }) {
@@ -43,7 +33,11 @@ export default function TurnChangesPanel({
   onOpenFile?: (path: string, change?: FileChange) => void;
 }) {
   const [open, setOpen] = useState(true);
-  const { files, added, removed } = item;
+  const { files } = item;
+  // The header totals are read off the captured diffs here, in the mounted
+  // panel, rather than at projection time.
+  const added = files.reduce((sum, file) => sum + file.added, 0);
+  const removed = files.reduce((sum, file) => sum + file.removed, 0);
   return (
     <div className="overflow-hidden rounded-xl bg-surface">
       <button
@@ -73,7 +67,7 @@ export default function TurnChangesPanel({
             return (
               <button
                 key={file.path}
-                onClick={() => onOpenFile?.(file.path, file.change)}
+                onClick={() => onOpenFile?.(file.path, file)}
                 disabled={!onOpenFile}
                 title={file.path}
                 className="flex w-full items-center gap-3 px-3 py-1.5 text-left transition-colors enabled:hover:bg-elevated/40 disabled:cursor-default"
