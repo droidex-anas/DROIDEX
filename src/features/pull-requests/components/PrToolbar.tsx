@@ -43,7 +43,7 @@ const compactCount = new Intl.NumberFormat('en', {
 
 function ChangeCounts({ pr }: { pr: PullRequest }) {
   return (
-    <span className="text-caption tabular-nums">
+    <span aria-hidden="true" className="text-caption tabular-nums">
       <span style={{ color: 'var(--diff-add-fg)' }}>+{compactCount.format(pr.additions)}</span>{' '}
       <span style={{ color: 'var(--diff-del-fg)' }}>−{compactCount.format(pr.deletions)}</span>
     </span>
