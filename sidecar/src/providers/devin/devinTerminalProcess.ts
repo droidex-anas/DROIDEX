@@ -4,6 +4,8 @@ import { childEnv } from '../../childEnv.js';
 import { tolerantCommandRunner } from '../../processes/processTree.js';
 
 // Keep the group leader alive until release; only a live member may signal its group.
+// Never rename it with process.title: macOS would register each Electron helper
+// as another foreground DROIDEX app in the Dock.
 const GROUP_OWNER = String.raw`
 const { spawn } = require('node:child_process');
 let command, status, drain, finished = false, stopping = false;
@@ -31,7 +33,6 @@ process.on('disconnect', killGroup);
 process.on('error', killGroup);
 process.once('message', ({ command: executable, args, env }) => {
   if (stopping) return;
-  process.title = 'devin-terminal ' + executable;
   command = spawn(executable, args, { shell: args.length === 0, env, stdio: 'pipe', windowsHide: true });
   command.stdin.end();
   for (const stream of [command.stdout, command.stderr]) {
@@ -73,6 +74,7 @@ async function waitForGroupExit(pgid: number): Promise<void> {
 export class DevinTerminalProcess {
   private stopping?: Promise<void>;
   readonly child: ChildProcess;
+  readonly displayCommand: string;
   readonly started: Promise<void>;
   readonly exited: Promise<WaitForTerminalExitResponse>;
   readonly closed: Promise<void>;
@@ -84,6 +86,7 @@ export class DevinTerminalProcess {
     env: NodeJS.ProcessEnv,
     output: (text: string) => void,
   ) {
+    this.displayCommand = `devin-terminal ${command}`;
     const child = spawn(process.execPath, ['-e', GROUP_OWNER], {
       cwd,
       env: { ...childEnv(), ELECTRON_RUN_AS_NODE: '1' },

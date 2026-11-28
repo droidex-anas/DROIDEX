@@ -139,8 +139,8 @@ function createHarness(options: { adoptSucceeds?: boolean; adopt?: () => Promise
     runtime,
     canvasTurns: new CanvasTurns(new CanvasScopes(), () => null),
     agentProcesses: {
-      track: (_appSessionId, pid, _isAlive, kind = 'provider') => {
-        tracked.set(pid, kind);
+      track: (_appSessionId, pid, _isAlive, options) => {
+        tracked.set(pid, options?.kind ?? 'provider');
       },
       untrack: (pid) => {
         untracked.push(pid);

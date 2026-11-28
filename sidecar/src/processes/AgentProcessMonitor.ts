@@ -28,10 +28,16 @@ const PORT_SCAN_EVERY = 3;
 
 type TrackedRoot = {
   appSessionId: string;
+  displayCommand?: string | undefined;
 } & (
   | { kind: 'provider' | 'provisional' | 'work'; isAlive: () => boolean; startedAt?: number }
   | { kind: 'adopted'; startedAt: number }
 );
+
+interface TrackRootOptions {
+  kind?: 'provider' | 'provisional' | 'work';
+  displayCommand?: string | undefined;
+}
 
 function matchesRoot(root: TrackedRoot, row: ProcessRecord | undefined): boolean {
   if (!row || (root.kind !== 'adopted' && !root.isAlive())) return false;
@@ -86,9 +92,10 @@ export class AgentProcessMonitor {
     appSessionId: string,
     rootPid: number,
     isAlive: () => boolean,
-    kind: 'provider' | 'provisional' | 'work' = 'provider',
+    options: TrackRootOptions = {},
   ): void {
     if (this.disposed || this.closing.has(appSessionId) || !isAlive()) return;
+    const kind = options.kind ?? 'provider';
     const previous = this.roots.get(rootPid);
     if (
       previous?.appSessionId === appSessionId &&
@@ -98,7 +105,12 @@ export class AgentProcessMonitor {
       if (previous.kind === 'provisional') previous.kind = kind;
       return;
     }
-    this.roots.set(rootPid, { appSessionId, kind, isAlive });
+    this.roots.set(rootPid, {
+      appSessionId,
+      kind,
+      isAlive,
+      displayCommand: options.displayCommand,
+    });
     this.lastActivityAt = this.d.now();
     this.arm();
   }
@@ -408,6 +420,13 @@ export class AgentProcessMonitor {
     return stable;
   }
 
+  private rowsForPresentation(rows: readonly ProcessRecord[]): ProcessRecord[] {
+    return rows.map((row) => {
+      const displayCommand = this.roots.get(row.pid)?.displayCommand;
+      return displayCommand === undefined ? row : { ...row, command: displayCommand };
+    });
+  }
+
   private async scanOnce(): Promise<void> {
     // Populated only once everything below has succeeded and been committed;
     // the publish loop runs after this try/catch (see below) so a throwing
@@ -454,7 +473,7 @@ export class AgentProcessMonitor {
     if (!toPublish) return;
     this.persistSnapshot();
     for (const [appSessionId, rows] of toPublish) {
-      this.publish(appSessionId, visibleProcesses(rows, now, this.ports));
+      this.publish(appSessionId, visibleProcesses(this.rowsForPresentation(rows), now, this.ports));
     }
   }
 

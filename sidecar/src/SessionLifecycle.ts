@@ -1483,7 +1483,10 @@ export class SessionLifecycle {
       }
       for (const root of live) {
         pids.add(root.pid);
-        d.agentProcesses.track(appSessionId, root.pid, () => root.isAlive(), 'work');
+        d.agentProcesses.track(appSessionId, root.pid, () => root.isAlive(), {
+          kind: 'work',
+          displayCommand: root.displayCommand,
+        });
       }
     });
   }

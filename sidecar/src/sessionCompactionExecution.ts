@@ -195,7 +195,7 @@ export class SessionCompactionExecution {
           appSessionId,
           replacementPid,
           () => this.dependencies.runtime.isProcessAlive(replacement),
-          'provisional',
+          { kind: 'provisional' },
         );
       provider = new DroidProviderSession(
         appSessionId,
