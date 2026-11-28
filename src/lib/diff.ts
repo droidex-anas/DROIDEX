@@ -188,10 +188,76 @@ function parsePatch(patch: string): DiffOp[] {
   return ops;
 }
 
+// Extraction is cached on the tool-args object: transcript events are immutable
+// once ingested (the store replaces growing snapshots instead of mutating), so
+// one args object always yields the same change. The feed scans each edit
+// several times per projection and re-projects on every update, and this makes
+// every repeat free. WeakMap entries die with the transcript events that carry
+// them, so the cache never retains a released window.
+// The result depends only on the args, never on which edit tool name was used.
+const fileChangeCache = new WeakMap<object, FileChange | null>();
+
 export function extractFileChange(toolName?: string, args?: unknown): FileChange | null {
   if (!toolName) return null;
   if (!isEditTool(toolName)) return null;
+  if (!args || typeof args !== 'object') return computeFileChange(args);
+  const cached = fileChangeCache.get(args);
+  if (cached !== undefined) return cached;
+  const extracted = computeFileChange(args);
+  fileChangeCache.set(args, extracted);
+  return extracted;
+}
 
+// A change whose diff lines are computed on first access and memoized, so
+// projecting a feed never pays the quadratic LCS cost for edits whose cards
+// are never mounted or opened. The computation inputs are resolved strings
+// captured at extraction time — exactly what an eager diff would have used —
+// and they are released once the ops exist.
+function lazyFileChange(
+  path: string,
+  verb: FileChange['verb'],
+  computeOps: () => DiffOp[],
+): FileChange {
+  interface Resolved {
+    ops: DiffOp[];
+    added: number;
+    removed: number;
+  }
+  // The pending closure is dropped in the same pass that resolves, so a
+  // materialized change never retains the edit strings it was computed from.
+  let state: { kind: 'pending'; compute: () => DiffOp[] } | ({ kind: 'resolved' } & Resolved) = {
+    kind: 'pending',
+    compute: computeOps,
+  };
+  const materialize = (): Resolved => {
+    if (state.kind === 'pending') {
+      const ops = state.compute();
+      let added = 0;
+      let removed = 0;
+      for (const op of ops) {
+        if (op.type === 'add') added++;
+        else if (op.type === 'del') removed++;
+      }
+      state = { kind: 'resolved', ops, added, removed };
+    }
+    return state;
+  };
+  return {
+    path,
+    verb,
+    get ops() {
+      return materialize().ops;
+    },
+    get added() {
+      return materialize().added;
+    },
+    get removed() {
+      return materialize().removed;
+    },
+  };
+}
+
+function computeFileChange(args: unknown): FileChange | null {
   const a: Record<string, unknown> =
     args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
   const argPath = firstString(a, [
@@ -213,26 +279,37 @@ export function extractFileChange(toolName?: string, args?: unknown): FileChange
   const path = argPath ?? 'file';
 
   if (Array.isArray(a.edits)) {
-    const ops: DiffOp[] = [];
-    for (const e of a.edits as Record<string, unknown>[]) {
-      const o = firstString(e, ['old_string', 'old_str', 'oldText', 'old']) ?? '';
-      const nw = firstString(e, ['new_string', 'new_str', 'newText', 'new']) ?? '';
-      ops.push(...lineDiff(o, nw));
-    }
-    return finalize(path, 'edit', ops);
+    const pairs = (a.edits as Record<string, unknown>[]).map(
+      (e) =>
+        [
+          firstString(e, ['old_string', 'old_str', 'oldText', 'old']) ?? '',
+          firstString(e, ['new_string', 'new_str', 'newText', 'new']) ?? '',
+        ] as const,
+    );
+    // A diff of identical strings is all context lines, which `finalize` drops:
+    // the emptiness check is exact without running the LCS.
+    if (pairs.every(([oldText, newText]) => oldText === newText)) return null;
+    return lazyFileChange(path, 'edit', () =>
+      pairs.flatMap(([oldText, newText]) => lineDiff(oldText, newText)),
+    );
   }
 
   const oldS = firstString(a, ['old_string', 'old_str', 'oldText', 'old']);
   const newS = firstString(a, ['new_string', 'new_str', 'newText', 'new']);
-  if (oldS !== undefined || newS !== undefined)
-    return finalize(path, 'edit', lineDiff(oldS ?? '', newS ?? ''));
+  if (oldS !== undefined || newS !== undefined) {
+    const oldText = oldS ?? '';
+    const newText = newS ?? '';
+    if (oldText === newText) return null;
+    return lazyFileChange(path, 'edit', () => lineDiff(oldText, newText));
+  }
 
   const content = firstString(a, ['content', 'contents', 'text']);
   if (content !== undefined)
-    return finalize(
+    return lazyFileChange(
       path,
       'create',
-      content.split('\n').map((t) => ({ type: 'add' as const, text: t })),
+      // One add per line, so a create is never empty — not even for "".
+      () => content.split('\n').map((t) => ({ type: 'add' as const, text: t })),
     );
 
   return null;

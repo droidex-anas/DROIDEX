@@ -11,6 +11,7 @@ import {
   type FeedItem,
 } from './chatFeed';
 import { buildGroupedFeed, groupTurns, promptAnchorsFromItems } from './chatFeedTurns';
+import TurnChangesPanel from './TurnChangesPanel';
 import { feedRowId } from '../hooks/conversationViewportAnchor';
 import {
   browserPageOf,
@@ -810,8 +811,6 @@ test('#27 collectTurnFiles keeps repeated edits aligned with the latest captured
   assert.equal(files.length, 1);
   assert.equal(files[0].path, 'src/a.ts');
   assert.equal(files[0].added, 3);
-  assert.equal(files[0].change.path, 'src/a.ts');
-  assert.equal(files[0].change.added, 3);
 });
 
 test('#27 a completed turn that edited files gets a top-level changes summary', () => {
@@ -832,7 +831,13 @@ test('#27 a completed turn that edited files gets a top-level changes summary', 
   );
   assert.ok(changes, 'expected a turnChanges summary');
   assert.equal(changes.files.length, 2);
-  assert.equal(changes.added, 5);
+  assert.deepEqual(
+    changes.files.map((file) => file.added),
+    [2, 3],
+  );
+  // The panel totals the captured counts where it renders them.
+  const html = renderToStaticMarkup(createElement(TurnChangesPanel, { item: changes }));
+  assert.ok(html.includes('+5'), 'header totals the captured additions');
   // The summary is top-level, never nested inside the Worked group.
   assert.ok(!workedChildren(grouped).some((c) => c.type === 'turnChanges'));
 });

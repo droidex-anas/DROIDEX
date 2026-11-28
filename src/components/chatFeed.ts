@@ -5,7 +5,7 @@ import { classifyEvent } from '../lib/transcript';
 import { hasTodoPayload, isChildSessionTool, isImageGenerationTool } from '../lib/tools';
 import type { TranscriptEvent } from '@droidex/protocol';
 import { canvasArtifactRows, type CanvasArtifactItem } from './chatFeedArtifacts';
-import type { TurnChangesItem, TurnFile } from './TurnChangesPanel';
+import type { TurnChangesItem } from './TurnChangesPanel';
 
 // A status line that signals compaction is in progress (not the completion
 // line). Match the active gerund ("Compacting conversation...") specifically so
@@ -112,7 +112,10 @@ export type FeedItem =
   | CanvasArtifactItem
   | TurnChangesItem;
 
+// Extraction is cached per tool-args object, so unchanged edits compare equal
+// by identity before any diff line is read.
 function sameFileChange(a: FileChange, b: FileChange): boolean {
+  if (a === b) return true;
   return (
     a.path === b.path &&
     a.verb === b.verb &&
@@ -120,16 +123,6 @@ function sameFileChange(a: FileChange, b: FileChange): boolean {
     a.removed === b.removed &&
     a.ops.length === b.ops.length &&
     a.ops.every((op, i) => op.type === b.ops[i].type && op.text === b.ops[i].text)
-  );
-}
-
-function sameTurnFile(a: TurnFile, b: TurnFile): boolean {
-  return (
-    a.path === b.path &&
-    a.added === b.added &&
-    a.removed === b.removed &&
-    a.verb === b.verb &&
-    sameFileChange(a.change, b.change)
   );
 }
 
@@ -176,10 +169,8 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
   if (a.type === 'turnChanges' && b.type === 'turnChanges') {
     return (
       a.tailEventId === b.tailEventId &&
-      a.added === b.added &&
-      a.removed === b.removed &&
       a.files.length === b.files.length &&
-      a.files.every((file, i) => sameTurnFile(file, b.files[i]))
+      a.files.every((file, i) => sameFileChange(file, b.files[i]))
     );
   }
   if (a.type === 'thinking' && b.type === 'thinking') {
@@ -203,18 +194,13 @@ export function sameFeedEvents(a: FeedItem, b: FeedItem): boolean {
 }
 
 // Collect the files a turn's run edited, folding repeated edits to the same
-// path into its latest captured change. Counts and verb describe that same diff.
-// Order follows first touch.
-export function collectTurnFiles(run: FeedItem[]): TurnFile[] {
-  const byPath = new Map<string, TurnFile>();
+// path into its latest captured change. Order follows first touch. The changes
+// stay lazy: nothing here reads their diff lines, so folding a turn never
+// forces the computation.
+export function collectTurnFiles(run: FeedItem[]): FileChange[] {
+  const byPath = new Map<string, FileChange>();
   const consider = (c: FileChange) => {
-    byPath.set(c.path, {
-      path: c.path,
-      added: c.added,
-      removed: c.removed,
-      verb: c.verb,
-      change: c,
-    });
+    byPath.set(c.path, c);
   };
   for (const it of run) {
     if (it.type === 'diff') consider(it.change);
