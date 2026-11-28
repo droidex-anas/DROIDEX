@@ -22,7 +22,9 @@ test('the terminal owner does not rename itself as user work', async (t) => {
     '-p',
     String(terminal.child.pid),
   ]);
-  assert.doesNotMatch(command.trim(), /^devin-terminal(?:\s|$)/);
+  const ownerCommand = command.trim();
+  assert.notEqual(ownerCommand, '');
+  assert.doesNotMatch(ownerCommand, /^devin-terminal(?:\s|$)/);
 });
 
 test('a dead terminal owner never signals its recycled process group', async (t) => {
