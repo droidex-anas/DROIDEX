@@ -8,11 +8,9 @@ import { parseTruncatedTail } from '../lib/tools';
 export const MessageBody = memo(function MessageBody({
   text,
   live,
-  cacheId,
 }: {
   text: string;
   live: boolean;
-  cacheId: string;
 }) {
   const { body, truncatedChars } = parseTruncatedTail(text);
   const buildingAppBlocks = live && hasAppBlock(body);
@@ -20,7 +18,6 @@ export const MessageBody = memo(function MessageBody({
   if (!hasJsonRender(body)) {
     return (
       <StreamingMarkdown
-        cacheId={cacheId}
         source={body}
         live={live}
         buildingAppBlocks={buildingAppBlocks}
@@ -37,7 +34,6 @@ export const MessageBody = memo(function MessageBody({
         return (
           <StreamingMarkdown
             key={i}
-            cacheId={`${cacheId}:${String(i)}`}
             source={seg.value}
             live={live}
             buildingAppBlocks={buildingAppBlocks}

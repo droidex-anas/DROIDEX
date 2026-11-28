@@ -258,7 +258,6 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork,
   forkPointId,
   forking,
-  cacheId,
   specContent,
   spoken,
   isLatestReply,
@@ -273,7 +272,6 @@ const AssistantMessage = memo(function AssistantMessage({
   onFork?: (forkPointId?: string) => void;
   forkPointId?: string;
   forking?: boolean;
-  cacheId: string;
   specContent?: string;
   /** The reply was said out loud in a voice conversation. */
   spoken?: boolean;
@@ -304,7 +302,7 @@ const AssistantMessage = memo(function AssistantMessage({
           <SpokenMark />
         </div>
       )}
-      <MessageBody text={text} live={live} cacheId={cacheId} />
+      <MessageBody text={text} live={live} />
       {hasActions ? (
         <ResponseActions
           text={copyTextForMessage(text)}
@@ -468,7 +466,6 @@ export const FeedItemView = memo(function FeedItemView({
           {...(onFork !== undefined ? { onFork } : {})}
           {...(forkPointId !== undefined ? { forkPointId } : {})}
           {...(forking !== undefined ? { forking } : {})}
-          cacheId={item.key}
           specContent={specContent}
           spoken={item.event.spoken}
         />

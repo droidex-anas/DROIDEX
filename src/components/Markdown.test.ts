@@ -1,16 +1,12 @@
 import assert from 'node:assert/strict';
 import { text } from 'node:stream/consumers';
 import test from 'node:test';
-import { createElement, type ReactElement } from 'react';
+import { createElement, isValidElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { Markdown, MarkdownTree, markdownFenceOptions } from './Markdown';
 import { SpecRenderer } from './SpecRenderer';
-
-interface MarkdownProps {
-  children: string;
-  specMode?: boolean;
-}
+import { resetMarkdownOutputCacheForTest } from '../lib/markdownOutputCache';
 
 test('disabled generated content renders svg and app fences as escaped code', () => {
   const disabled = (source: string) =>
@@ -189,29 +185,75 @@ test('a streaming response keeps the same element types across renders', () => {
   // react-markdown uses each `components` entry as the JSX element type, so a
   // map rebuilt per render makes React remount the whole response on every
   // streamed token: App iframes reload, Mermaid diagrams restart, and anything
-  // the reader is interacting with is thrown away.
-  const renderMarkdown = (Markdown as unknown as { type: (props: MarkdownProps) => ReactElement })
-    .type;
-  const childOf = (element: ReactElement) => (element.props as { children: ReactElement }).children;
-  const componentsFor = (props: MarkdownProps) => {
-    const shell = renderMarkdown(props);
-    const tree = childOf(shell);
-    const renderedTree = (tree.type as (treeProps: unknown) => ReactElement)(tree.props);
-    const markdown = childOf(renderedTree);
-    return (markdown.props as { components: Record<string, unknown> }).components;
+  // the reader is interacting with is thrown away. The output tree carries
+  // those types, so type identity across two renders is the invariant.
+  const typesIn = (node: ReactNode, types: unknown[] = []): unknown[] => {
+    if (Array.isArray(node)) {
+      for (const child of node) typesIn(child, types);
+      return types;
+    }
+    if (!isValidElement(node)) return types;
+    types.push(node.type);
+    return typesIn((node.props as { children?: ReactNode }).children, types);
   };
+  const renderTree = (source: string, specMode = false) =>
+    MarkdownTree({
+      children: source,
+      specMode,
+      fenceOptions: markdownFenceOptions(source, {
+        allowGeneratedContent: true,
+        buildingAppBlocks: true,
+        cutOffAppBlocks: false,
+      }),
+    });
 
-  const source = '```app\n<main>Live app</main>\n```\n';
-  const first = componentsFor({ children: source });
-  const second = componentsFor({
-    children: `${source}\nTrailing prose while the answer streams.`,
-  });
+  const source = '```app\n<main>Live app</main>\n```\n\nA paragraph with `inline code`.';
+  const first = typesIn(renderTree(source)).filter((type) => typeof type === 'function');
+  const second = typesIn(
+    renderTree(`${source}\n\nTrailing prose while the answer streams.`),
+  ).filter((type) => typeof type === 'function');
 
-  assert.equal(first, second);
-  assert.equal(first.code, second.code);
-  assert.equal(first.p, second.p);
+  assert.ok(first.length > 0);
+  // Depth-first order is document order, so the prefix covers the shared head:
+  // the same fence, paragraph and inline code types serve both renders.
+  assert.deepEqual(second.slice(0, first.length), first);
   // Spec mode is a different presentation, and so a different stable map.
-  assert.notEqual(first, componentsFor({ children: source, specMode: true }));
+  const spec = typesIn(renderTree(source, true)).filter((type) => typeof type === 'function');
+  assert.notEqual(spec[0], first[0]);
+});
+
+test('settled rows share one output tree without baking in per-row fence state', () => {
+  // The cache stores the parsed tree, but building/cut-off/generated-content
+  // state is per-row context read at render time: whichever row populates the
+  // entry must never decide how another row with the same source renders.
+  const source = '```app\n<main>partial';
+  resetMarkdownOutputCacheForTest();
+  const building = renderToStaticMarkup(
+    createElement(Markdown, { buildingAppBlocks: true }, source),
+  );
+  const settled = renderToStaticMarkup(createElement(Markdown, null, source));
+
+  assert.match(building, /Building interactive app/);
+  assert.doesNotMatch(settled, /Building interactive app/);
+  assert.match(settled, /role="alert"/);
+
+  // Opposite order over a cold cache: whichever row populates the entry first
+  // must never decide how the other renders.
+  resetMarkdownOutputCacheForTest();
+  assert.equal(renderToStaticMarkup(createElement(Markdown, null, source)), settled);
+  assert.equal(
+    renderToStaticMarkup(createElement(Markdown, { buildingAppBlocks: true }, source)),
+    building,
+  );
+
+  const generatedOff = renderToStaticMarkup(
+    createElement(Markdown, { allowGeneratedContent: false }, '```app\n<p>x</p>\n```'),
+  );
+  assert.match(generatedOff, /&lt;p&gt;x/);
+  assert.match(
+    renderToStaticMarkup(createElement(Markdown, null, '```app\n<p>x</p>\n```')),
+    />Starting interactive app</,
+  );
 });
 
 test('copy gracefully declines when the Clipboard API is unavailable', async () => {
