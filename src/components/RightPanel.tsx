@@ -5,12 +5,9 @@ import { useGitEnvironment } from '../hooks/useGitEnvironment';
 import { useSessionWorkingDirectory } from '../hooks/useSessionWorkingDirectory';
 import { usePullRequest } from '../hooks/usePullRequest';
 import { useGithubSetup } from '../hooks/useGithubSetup';
-import { reasoningEffortLabel, resolveReasoningEffortDisplay } from '../lib/reasoningEffort';
-import {
-  PROVIDER_MARKS,
-  providerDefaultModel,
-  providerModelCatalog,
-} from '../features/providers/providerIdentity';
+import { reasoningEffortLabel } from '../lib/reasoningEffort';
+import { sessionModelDisplay } from '../features/providers/sessionModelDisplay';
+import { PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import { ChevronRight, FileText } from 'lucide-react';
 import {
   ModelIcon,
@@ -25,7 +22,6 @@ import { useOpenAgent } from './agents/useOpenAgent';
 import { Row, SectionHeader } from './ui/Row';
 import { EnvironmentSection } from './environment/EnvironmentSection';
 import type { DiffStatMode } from '../types/vcs';
-import type { ModelInfo, ProviderStatus, ReasoningEffort, SessionSummary } from '@droidex/protocol';
 import { diffModeToReviewScope } from '../lib/reviewScopes';
 import {
   childSessionIsLive,
@@ -105,7 +101,7 @@ export default function RightPanel() {
     ),
   );
 
-  const { modelInfo, modelLabel, reasoningEffort } = modelRowContent(activeSession, state);
+  const { modelInfo, modelLabel, reasoningEffort } = sessionModelDisplay(activeSession, state);
 
   // Folderless chats have no git environment to load — the panel skips the
   // Environment section so nothing spins forever. Subagents, spec, and notes
@@ -271,33 +267,4 @@ export default function RightPanel() {
       </div>
     </div>
   );
-}
-
-// The model row in the chat's own provider terms: its provider's catalog names
-// the model, and the model itself says whether its harness offers a reasoning
-// effort to show.
-function modelRowContent(
-  session: SessionSummary | null,
-  state: {
-    models: ModelInfo[];
-    providerStatuses: ProviderStatus[];
-  },
-): { modelInfo?: ModelInfo; modelLabel: string; reasoningEffort?: ReasoningEffort } {
-  if (!session) return { modelLabel: 'default' };
-  const catalog = providerModelCatalog(session.provider, state.models, state.providerStatuses);
-  const pinned = session.modelId
-    ? catalog.find((model) => model.id === session.modelId)
-    : undefined;
-  // A chat with no model of its own runs on its harness's configured default, so
-  // the row names that model instead of the word "default".
-  const shown =
-    pinned ??
-    (session.modelId
-      ? undefined
-      : providerDefaultModel(session.provider, catalog, state.providerStatuses));
-  return {
-    ...(shown ? { modelInfo: shown } : {}),
-    modelLabel: shown?.displayName ?? session.modelId ?? 'default',
-    reasoningEffort: resolveReasoningEffortDisplay(session.reasoningEffort, shown),
-  };
 }

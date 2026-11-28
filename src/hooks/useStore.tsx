@@ -90,7 +90,12 @@ import type {
   BrowserState,
   VoiceNarration,
 } from '@droidex/protocol';
-import { addWorkspaceCwd, removeWorkspaceCwd, withRevealedCwds } from '../lib/workspaces';
+import {
+  addWorkspaceCwd,
+  removeWorkspaceCwd,
+  reorderWorkspaceCwds,
+  withRevealedCwds,
+} from '../lib/workspaces';
 import type { QueuedPrompt } from '../lib/promptQueue';
 import { createOrderedActionBatcher, type OrderedActionBatcher } from './orderedActionBatcher';
 import { applyHistoryServerEvent } from '../lib/historyHealth';
@@ -613,6 +618,7 @@ export type Action =
   | { type: 'ADD_WORKSPACE'; cwd: string }
   | { type: 'REMOVE_WORKSPACE'; cwd: string }
   | { type: 'SET_WORKSPACE_CWDS'; cwds: string[] }
+  | { type: 'REORDER_WORKSPACES'; cwds: string[] }
   | { type: 'REVEAL_EARLIER_SESSIONS'; executionCwds: readonly string[] }
   | { type: 'SET_THEME'; theme: Partial<ThemeConfig> }
   | { type: 'SAVE_CUSTOM_THEME'; preset: ThemePreset }
@@ -1462,6 +1468,10 @@ function reduceAction(state: AppState, action: Action): AppState {
       };
     case 'SET_WORKSPACE_CWDS':
       return { ...state, workspaceCwds: action.cwds };
+    case 'REORDER_WORKSPACES': {
+      const workspaceCwds = reorderWorkspaceCwds(state.workspaceCwds, action.cwds);
+      return workspaceCwds === state.workspaceCwds ? state : { ...state, workspaceCwds };
+    }
 
     case 'REVEAL_EARLIER_SESSIONS': {
       const revealEarlierCwds = withRevealedCwds(state.revealEarlierCwds, action.executionCwds);

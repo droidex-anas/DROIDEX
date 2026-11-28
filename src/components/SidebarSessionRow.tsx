@@ -18,9 +18,8 @@ import { isEmbedded } from '../lib/embed';
 import { endPlaceDrag, startPlaceDrag } from '../features/tabs/tileDrag';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import type { RowMenuAnchor } from '../hooks/useSidebarRowActions';
-import type { SessionSummary, SessionActivityStatus } from '@droidex/protocol';
+import type { SessionSummary, SessionActivityStatus, ReasoningEffort } from '@droidex/protocol';
 import type { SessionAttentionKind } from '../lib/sessionAttention';
-import { ACTIVITY_LABELS } from '../lib/sidebarActivity';
 import { ActivityStatusGlyph, ActivityToggleGlyph } from './ActivityStatusGlyph';
 import { TitleSweep } from './ui/TitleSweep';
 import { PrStateIcon } from './environment/GithubIcons';
@@ -29,6 +28,8 @@ import { AccountMark } from '../features/providers/AccountMark';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import type { PrKind } from '../lib/github';
 import type { PrChecksRollup } from '../types/vcs';
+import type { SessionWorkspaceContext } from '../lib/workspaces';
+import { SidebarSessionHoverCard } from './SidebarSessionHoverCard';
 
 const AutomationSessionBadge = lazy(async () => {
   const module = await import('../features/automations/AutomationSessionBadge');
@@ -73,6 +74,10 @@ export interface SessionRowProps {
   agentsWorking: boolean;
   attention: SessionAttentionKind | null;
   activityStatus: SessionActivityStatus;
+  modelLabel: string;
+  // The effort the shown model can actually run; unset stays provider-managed.
+  modelReasoningEffort?: ReasoningEffort;
+  workspace: SessionWorkspaceContext;
   // Activity view only: a second line saying why the chat is listed.
   detail?: string;
   // Linked pull request state, with its check rollup as the icon's dot. List
@@ -106,9 +111,13 @@ export function areSessionRowPropsEqual(prev: SessionRowProps, next: SessionRowP
     prev.agentsWorking === next.agentsWorking &&
     prev.attention === next.attention &&
     prev.activityStatus === next.activityStatus &&
+    prev.modelLabel === next.modelLabel &&
+    prev.modelReasoningEffort === next.modelReasoningEffort &&
+    prev.workspace === next.workspace &&
     prev.detail === next.detail &&
     prev.session.droidProfile === next.session.droidProfile &&
     prev.session.reasoningEffort === next.session.reasoningEffort &&
+    (prev.session.fastMode ?? false) === (next.session.fastMode ?? false) &&
     prev.pr?.kind === next.pr?.kind &&
     prev.pr?.checks === next.pr?.checks &&
     prev.design === next.design &&
@@ -142,6 +151,9 @@ export const SessionRow = memo(function SessionRow({
   agentsWorking,
   attention,
   activityStatus,
+  modelLabel,
+  modelReasoningEffort,
+  workspace,
   detail,
   pr,
   design,
@@ -309,7 +321,7 @@ export const SessionRow = memo(function SessionRow({
   const titleLine = (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span
-        className="block min-w-0 overflow-hidden"
+        className="block min-w-0 flex-1 overflow-hidden"
         style={
           marquee
             ? // The travel is set here rather than on the title, which a new
@@ -325,14 +337,24 @@ export const SessionRow = memo(function SessionRow({
         }
       >
         {/* Follows the chat header's sweep a beat later. */}
-        <TitleSweep
-          ref={titleRef}
+        <SidebarSessionHoverCard
+          provider={session.provider}
           title={title}
-          delayMs={80}
-          className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-            active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
-          } ${unread && !active ? 'font-semibold' : ''}`}
-        />
+          timeLabel={timeLabel}
+          modelLabel={modelLabel}
+          reasoningEffort={modelReasoningEffort}
+          fastMode={session.fastMode ?? false}
+          workspace={workspace}
+        >
+          <TitleSweep
+            ref={titleRef}
+            title={title}
+            delayMs={80}
+            className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+              active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
+            } ${unread && !active ? 'font-semibold' : ''}`}
+          />
+        </SidebarSessionHoverCard>
       </span>
       {forkNumber !== undefined && (
         <span className="shrink-0 text-caption tabular-nums text-muted">fork {forkNumber}</span>
@@ -353,7 +375,6 @@ export const SessionRow = memo(function SessionRow({
         ref={rowButtonRef}
         data-testid="session-row"
         data-app-session-id={session.appSessionId}
-        title={`${title} · ${ACTIVITY_LABELS[activityStatus]}`}
         aria-current={active ? 'true' : undefined}
         // Dropped on the chat area, a chat splits a tile or takes its place.
         // Mission Control fills the whole area, so a mission never tiles.

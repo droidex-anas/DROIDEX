@@ -1,6 +1,13 @@
 import { useSidebarPagination } from '../hooks/useSidebarPagination';
-import { useState, type ReactNode } from 'react';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useId, useRef, useState, type ReactNode } from 'react';
+import {
+  AnimatePresence,
+  motion,
+  Reorder,
+  useDragControls,
+  useReducedMotion,
+  type DragControls,
+} from 'framer-motion';
 import { FolderOpen, Plus } from '@droidex/icons';
 import { Row } from './ui/Row';
 import { Tooltip } from './ui/Tooltip';
@@ -34,6 +41,38 @@ function Expand({ open, children }: { open: boolean; children: ReactNode }) {
   );
 }
 
+// Reorder owns the pointer gesture; the row owns how the grip looks and how
+// Alt+Arrow moves it. Keeping the controls here gives every folder one stable
+// drag identity without making the session rows inside it draggable.
+function WorkspaceReorderItem({
+  cwd,
+  enabled,
+  onCommit,
+  children,
+}: {
+  cwd: string;
+  enabled: boolean;
+  onCommit: () => void;
+  children: (dragControls: DragControls | undefined) => ReactNode;
+}) {
+  const dragControls = useDragControls();
+  const reduceMotion = useReducedMotion();
+  return (
+    <Reorder.Item
+      as="div"
+      value={cwd}
+      dragListener={false}
+      dragControls={dragControls}
+      layout="position"
+      transition={reduceMotion ? { duration: 0 } : undefined}
+      onDragEnd={onCommit}
+      className="relative"
+    >
+      {children(enabled ? dragControls : undefined)}
+    </Reorder.Item>
+  );
+}
+
 interface Props {
   workspaces: WorkspaceSection[];
   chatSessions: SessionSummary[];
@@ -44,6 +83,7 @@ interface Props {
   onAddWorkspace: () => Promise<void>;
   onNewChat: (cwd: string) => void;
   onRemoveWorkspace: (cwd: string) => void;
+  onReorderWorkspaces: (cwds: string[]) => void;
   onShowEarlierSessions: (cwds: readonly string[]) => void;
   limit?: number;
 }
@@ -59,6 +99,7 @@ export function SidebarWorkspaceList({
   onAddWorkspace,
   onNewChat,
   onRemoveWorkspace,
+  onReorderWorkspaces,
   onShowEarlierSessions,
   limit = SIDEBAR_VISIBLE_SESSION_LIMIT,
 }: Props) {
@@ -72,6 +113,37 @@ export function SidebarWorkspaceList({
       else next.add(key);
       return next;
     });
+  };
+
+  const reorderHelpId = useId();
+  const canReorder = !isFiltered && workspaces.length > 1;
+  const [dragOrder, setDragOrder] = useState<string[] | null>(null);
+  const dragOrderRef = useRef<string[] | null>(null);
+  const previewReorder = (cwds: string[]) => {
+    dragOrderRef.current = cwds;
+    setDragOrder(cwds);
+  };
+  const commitReorder = () => {
+    const ordered = dragOrderRef.current;
+    dragOrderRef.current = null;
+    setDragOrder(null);
+    if (ordered) onReorderWorkspaces(ordered);
+  };
+  const orderedWorkspaces = dragOrder
+    ? dragOrder.flatMap((cwd) => {
+        const workspace = workspaces.find((item) => item.cwd === cwd);
+        return workspace ? [workspace] : [];
+      })
+    : workspaces;
+  const moveWorkspace = (cwd: string, step: -1 | 1) => {
+    const order = workspaces.map((workspace) => workspace.cwd);
+    const from = order.indexOf(cwd);
+    const to = from + step;
+    if (from < 0 || to < 0 || to >= order.length) return;
+    const next = [...order];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    onReorderWorkspaces(next);
   };
 
   const order = sidebarOrder([
@@ -175,46 +247,77 @@ export function SidebarWorkspaceList({
             />
 
             <Expand open={open}>
-              <div className="space-y-2.5">
-                {workspaces.map((ws) => {
-                  const wsOpen = !collapsed.has(ws.cwd);
-                  return (
-                    <SidebarWorkspaceRow
-                      key={ws.cwd}
-                      name={ws.name}
-                      open={wsOpen}
-                      onToggle={() => {
-                        toggleCollapse(ws.cwd);
-                      }}
-                      onNewChat={() => {
-                        onNewChat(ws.cwd);
-                      }}
-                      onRemove={() => {
-                        onRemoveWorkspace(ws.cwd);
-                      }}
-                    >
-                      <Expand open={wsOpen}>
-                        {renderSessionList(ws.cwd, ws.sessions, {
-                          count: ws.earlierSessionCount,
-                          onShow: () => {
-                            onShowEarlierSessions(ws.executionCwds);
-                          },
-                        })}
-                      </Expand>
-                    </SidebarWorkspaceRow>
-                  );
-                })}
-
-                {workspaces.length === 0 && (
-                  <Row
-                    icon={<FolderOpen className="size-icon-md" />}
-                    label="Open workspace"
-                    onClick={() => {
-                      void onAddWorkspace();
-                    }}
-                  />
-                )}
-              </div>
+              {workspaces.length === 0 ? (
+                <Row
+                  icon={<FolderOpen className="size-icon-md" />}
+                  label="Open workspace"
+                  onClick={() => {
+                    void onAddWorkspace();
+                  }}
+                />
+              ) : (
+                <>
+                  {canReorder && (
+                    <span id={reorderHelpId} className="sr-only">
+                      Drag the grip to reorder this workspace. Alt with Up or Down moves it.
+                    </span>
+                  )}
+                  <Reorder.Group
+                    as="div"
+                    axis="y"
+                    layoutScroll
+                    values={orderedWorkspaces.map((workspace) => workspace.cwd)}
+                    onReorder={previewReorder}
+                    className="flex flex-col gap-2.5"
+                  >
+                    {orderedWorkspaces.map((ws) => {
+                      const wsOpen = !collapsed.has(ws.cwd);
+                      return (
+                        <WorkspaceReorderItem
+                          key={ws.cwd}
+                          cwd={ws.cwd}
+                          enabled={canReorder}
+                          onCommit={commitReorder}
+                        >
+                          {(dragControls) => (
+                            <SidebarWorkspaceRow
+                              name={ws.name}
+                              open={wsOpen}
+                              dragControls={dragControls}
+                              onMove={
+                                dragControls
+                                  ? (step) => {
+                                      moveWorkspace(ws.cwd, step);
+                                    }
+                                  : undefined
+                              }
+                              reorderHelpId={dragControls ? reorderHelpId : undefined}
+                              onToggle={() => {
+                                toggleCollapse(ws.cwd);
+                              }}
+                              onNewChat={() => {
+                                onNewChat(ws.cwd);
+                              }}
+                              onRemove={() => {
+                                onRemoveWorkspace(ws.cwd);
+                              }}
+                            >
+                              <Expand open={wsOpen}>
+                                {renderSessionList(ws.cwd, ws.sessions, {
+                                  count: ws.earlierSessionCount,
+                                  onShow: () => {
+                                    onShowEarlierSessions(ws.executionCwds);
+                                  },
+                                })}
+                              </Expand>
+                            </SidebarWorkspaceRow>
+                          )}
+                        </WorkspaceReorderItem>
+                      );
+                    })}
+                  </Reorder.Group>
+                </>
+              )}
             </Expand>
           </div>
         );

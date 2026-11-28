@@ -30,6 +30,21 @@ export interface WorkspaceScope {
   executionCwds: string[];
 }
 
+export type SessionWorkspaceContext =
+  | { kind: 'none' }
+  | {
+      kind: 'workspace' | 'folder';
+      workspaceCwd: string;
+      workspaceName: string;
+    }
+  | {
+      kind: 'worktree';
+      workspaceCwd: string;
+      workspaceName: string;
+      worktreeCwd: string;
+      worktreeName: string;
+    };
+
 export interface WorkspaceDiscovery {
   scopes: WorkspaceScope[];
   complete: boolean;
@@ -90,6 +105,16 @@ export function resolveNewChatCwd(
   return typeof draftChat?.cwd === 'string' ? draftChat.cwd.trim() : '';
 }
 
+// A reorder is only a permutation of the workspaces already stored. Anything
+// narrower would silently drop folders hidden by a filter or added meanwhile.
+export function reorderWorkspaceCwds(existing: string[], ordered: readonly string[]): string[] {
+  if (ordered.length !== existing.length) return existing;
+  if (new Set(ordered).size !== ordered.length) return existing;
+  const known = new Set(existing);
+  if (ordered.some((cwd) => !known.has(cwd))) return existing;
+  return ordered.every((cwd, index) => cwd === existing[index]) ? existing : [...ordered];
+}
+
 export function addWorkspaceCwd(existing: string[], cwd: string): string[] {
   const next = cwd.trim();
   if (!next) return existing;
@@ -136,6 +161,67 @@ export function repositoryRootCwd(cwd: string | null | undefined): string | null
   return uniqueRepositoryWorkspaceCwds([cwd])[0] ?? null;
 }
 
+function nestedWorktreeCwd(cwd: string): string | null {
+  const match = /^(.+[\\/]\.worktrees[\\/][^\\/]+)(?:[\\/]|$)/.exec(cwd);
+  return match?.[1] ?? null;
+}
+
+function pathWithin(path: string, root: string): boolean {
+  return path === root || path.startsWith(`${root}/`);
+}
+
+// The folder a sidebar chat belongs to, and whether its execution directory is
+// the repository itself or one of its worktrees. Sessions outside the sidebar's
+// workspaces still name their working folder rather than pretending to belong.
+export function sessionWorkspaceContext(
+  cwd: string,
+  scopes: readonly WorkspaceScope[],
+): SessionWorkspaceContext {
+  const workingCwd = cwd.trim();
+  if (!workingCwd) return { kind: 'none' };
+  const normalizedCwd = comparablePath(workingCwd);
+  const candidates = scopes
+    .flatMap((scope) =>
+      (scope.executionCwds.length > 0 ? scope.executionCwds : [scope.cwd]).map((executionCwd) => ({
+        scope,
+        executionCwd,
+        comparableExecutionCwd: comparablePath(executionCwd),
+      })),
+    )
+    .sort((a, b) => b.comparableExecutionCwd.length - a.comparableExecutionCwd.length);
+  const match = candidates.find((candidate) =>
+    pathWithin(normalizedCwd, candidate.comparableExecutionCwd),
+  );
+  if (!match) {
+    return {
+      kind: 'folder',
+      workspaceCwd: workingCwd,
+      workspaceName: workspaceName(workingCwd),
+    };
+  }
+
+  const { scope } = match;
+  const rootComparable = comparablePath(scope.cwd);
+  const executionIsRoot = match.comparableExecutionCwd === rootComparable;
+  const explicitWorktreeCwd = executionIsRoot ? null : match.executionCwd;
+  const implicitWorktreeCwd = executionIsRoot ? nestedWorktreeCwd(workingCwd) : null;
+  const worktreeCwd = explicitWorktreeCwd ?? implicitWorktreeCwd;
+  if (worktreeCwd) {
+    return {
+      kind: 'worktree',
+      workspaceCwd: scope.cwd,
+      workspaceName: workspaceName(scope.cwd),
+      worktreeCwd,
+      worktreeName: workspaceName(worktreeCwd),
+    };
+  }
+  return {
+    kind: 'workspace',
+    workspaceCwd: scope.cwd,
+    workspaceName: workspaceName(scope.cwd),
+  };
+}
+
 export function buildWorkspaceSections(
   workspaceCwds: string[],
   sessions: SessionSummary[],
@@ -162,11 +248,7 @@ export function buildWorkspaceSections(
   const sessionsByOwner = new Map<string, SessionSummary[]>(workspaces.map((cwd) => [cwd, []]));
   for (const session of sessions) {
     const normalizedSessionCwd = comparablePath(session.cwd);
-    const owner = owners.find(
-      ({ executionCwd }) =>
-        normalizedSessionCwd === executionCwd ||
-        normalizedSessionCwd.startsWith(`${executionCwd}/`),
-    );
+    const owner = owners.find(({ executionCwd }) => pathWithin(normalizedSessionCwd, executionCwd));
     if (owner) sessionsByOwner.get(owner.cwd)?.push(session);
   }
 

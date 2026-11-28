@@ -10,6 +10,7 @@ import {
   SIDEBAR_VISIBLE_SESSION_LIMIT,
   uniqueRepositoryWorkspaceCwds,
   repositoryRootCwd,
+  sessionWorkspaceContext,
   withRevealedCwds,
 } from './workspaces';
 import { sessionSummary } from '../test/sessionSummary';
@@ -188,6 +189,31 @@ test('buildWorkspaceSections matches Windows worktree paths without case sensiti
     sections[0].sessions.map((item) => item.appSessionId),
     ['worktree'],
   );
+});
+
+test('sessionWorkspaceContext distinguishes repositories, linked worktrees, and nested worktrees', () => {
+  const linked = [{ cwd: '/repo/app', executionCwds: ['/repo/app', '/outside/app-review'] }];
+  assert.deepEqual(sessionWorkspaceContext('/outside/app-review', linked), {
+    kind: 'worktree',
+    workspaceCwd: '/repo/app',
+    workspaceName: 'app',
+    worktreeCwd: '/outside/app-review',
+    worktreeName: 'app-review',
+  });
+
+  const nested = [{ cwd: '/repo/app', executionCwds: ['/repo/app'] }];
+  assert.deepEqual(sessionWorkspaceContext('/repo/app/.worktrees/fix-sidebar', nested), {
+    kind: 'worktree',
+    workspaceCwd: '/repo/app',
+    workspaceName: 'app',
+    worktreeCwd: '/repo/app/.worktrees/fix-sidebar',
+    worktreeName: 'fix-sidebar',
+  });
+  assert.deepEqual(sessionWorkspaceContext('/repo/app', nested), {
+    kind: 'workspace',
+    workspaceCwd: '/repo/app',
+    workspaceName: 'app',
+  });
 });
 
 test('buildWorkspaceScopes resolves linked paths to one main repository', () => {

@@ -32,6 +32,8 @@ import {
   pinnedChats,
 } from '../lib/chatMetadata';
 import { useSidebarRowActions } from '../hooks/useSidebarRowActions';
+import { useSessionWorkspaceContexts } from '../hooks/useSessionWorkspaceContexts';
+import { sessionModelDisplay } from '../features/providers/sessionModelDisplay';
 import { useForkChat } from '../hooks/useForkChat';
 import { SessionContextMenu } from './SessionContextMenu';
 import { SessionRow } from './SidebarSessionRow';
@@ -64,6 +66,8 @@ export default function Sidebar({
       draftChat: current.draftChat,
       earlierSessionsByCwd: current.earlierSessionsByCwd,
       mainView: current.mainView,
+      models: current.models,
+      providerStatuses: current.providerStatuses,
       pendingPermissions: current.pendingPermissions,
       pendingQuestions: current.pendingQuestions,
       sessionLastSeen: current.sessionLastSeen,
@@ -271,9 +275,14 @@ export default function Sidebar({
   );
   const rowPr = (link: ChatPullRequest | undefined) =>
     link ? { kind: prKind(link), checks: link.checks ?? null } : undefined;
+  const workspaceContextForCwd = useSessionWorkspaceContexts(workspaceScopes);
   const renderRow = (m: SessionSummary) => {
     const status = statusFor(m);
     const inbox = view === 'activity';
+    const model = sessionModelDisplay(m, {
+      models: state.models,
+      providerStatuses: state.providerStatuses,
+    });
     return (
       <SessionRow
         key={m.appSessionId}
@@ -284,6 +293,9 @@ export default function Sidebar({
         running={sessionIsLive(m)}
         agentsWorking={Boolean(state.agentsWorkingByParent[m.appSessionId])}
         activityStatus={status}
+        modelLabel={model.modelLabel}
+        modelReasoningEffort={model.reasoningEffort}
+        workspace={workspaceContextForCwd(m.cwd)}
         detail={inbox ? reasonFor(m, status) || ACTIVITY_LABELS[status] : undefined}
         // The PR view already names the PR in its group header.
         pr={view === 'pull-requests' ? undefined : rowPr(linkedPr(chatMetadata[m.appSessionId]))}
@@ -419,6 +431,9 @@ export default function Sidebar({
               onNewChat={startChat}
               onRemoveWorkspace={(cwd) => {
                 dispatch({ type: 'REMOVE_WORKSPACE', cwd });
+              }}
+              onReorderWorkspaces={(cwds) => {
+                dispatch({ type: 'REORDER_WORKSPACES', cwds });
               }}
               onShowEarlierSessions={onShowEarlierSessions}
             />
