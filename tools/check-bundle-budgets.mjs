@@ -220,8 +220,15 @@ import { join } from 'node:path';
 // the link-actions provider, its menu, the pull-request link routing and the
 // pane's utility-tab validation all sit on the entry (~7.6KB measured against
 // main at e1fe545d4, 1_487_035); the pull request workspace itself stays lazy.
+//
+// Raised from 1_504_000 to 1_508_000 for workspace reordering. Main at
+// 52fa1af72 measures 1_498_770 and this branch 1_503_452 after the session
+// hover card moved into its own deferred chunk. The remaining entry cost is
+// the sidebar's direct-manipulation reordering: workspace rows paint at first
+// frame and the grip must capture the pointer as soon as it is pressed. The
+// raise leaves ~4.5KB, in line with the earlier sidebar primitives.
 const BUDGETS = {
-  initialRendererJsBytes: 1_504_000,
+  initialRendererJsBytes: 1_508_000,
   initialCssBytes: 110_000,
   largestLazyChunkBytes: 700_000,
   duplicatePackageMaxBytes: 120_000,

@@ -27,6 +27,8 @@ function makeSession(overrides: Partial<SessionSummary> = {}): SessionSummary {
   };
 }
 
+const NO_WORKSPACE: SessionRowProps['workspace'] = { kind: 'none' };
+
 function makeProps(overrides: Partial<SessionRowProps> = {}): SessionRowProps {
   return {
     session: makeSession(),
@@ -37,6 +39,8 @@ function makeProps(overrides: Partial<SessionRowProps> = {}): SessionRowProps {
     agentsWorking: false,
     attention: null,
     activityStatus: 'ready',
+    modelLabel: 'Model Alpha',
+    workspace: NO_WORKSPACE,
     design: false,
     renaming: false,
     now: 5_000,
@@ -86,6 +90,19 @@ test('areSessionRowPropsEqual detects every row-visible prop change', () => {
     [{ unread: false }, { unread: true }],
     [{ running: false }, { running: true }],
     [{ attention: null }, { attention: 'approval' }],
+    [{ modelLabel: 'Model Alpha' }, { modelLabel: 'Model Beta' }],
+    [{}, { modelReasoningEffort: 'high' }],
+    [{}, { session: makeSession({ fastMode: true }) }],
+    [
+      { workspace: NO_WORKSPACE },
+      {
+        workspace: {
+          kind: 'workspace',
+          workspaceCwd: '/repo/app',
+          workspaceName: 'app',
+        },
+      },
+    ],
     [{ now: 5_000 }, { now: 35_000 }],
     [{ renaming: false }, { renaming: true }],
     [{ agentsWorking: false }, { agentsWorking: true }],
@@ -212,7 +229,6 @@ test('activity status changes invalidate the row memo and expose readable status
     assert.equal(areSessionRowPropsEqual(props, next), false);
     const label = activityStatus === 'review' ? 'Needs review' : 'Failed';
     const html = render(next);
-    assert.ok(html.includes(`title="Build the thing · ${label}"`));
     assert.ok(html.includes(`aria-label="${label}"`));
   }
 });
