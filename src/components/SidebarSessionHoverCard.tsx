@@ -9,13 +9,16 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { FolderOpen, WorktreeIcon } from '@droidex/icons';
-import type { ProviderKind, ReasoningEffort } from '@droidex/protocol';
+import type { ProviderKind, ReasoningEffort, SessionActivityStatus } from '@droidex/protocol';
 import type { SessionWorkspaceContext } from '../lib/workspaces';
 import { reasoningEffortLabel } from '../lib/reasoningEffort';
 import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerIdentity';
 import { ModelIcon } from './ModelIcon';
 import { cn } from './ui/cn';
 import { usePopoverPosition } from './ui/usePopoverPosition';
+import { pushEscapeLayer } from './ui/escapeStack';
+import { ActivityStatusGlyph } from './ActivityStatusGlyph';
+import { ACTIVITY_LABELS } from '../lib/sidebarActivity';
 
 const SHOW_DELAY_MS = 500;
 const HIDE_DELAY_MS = 100;
@@ -124,6 +127,7 @@ export function SidebarSessionHoverCard({
   modelLabel,
   reasoningEffort,
   fastMode,
+  activityStatus,
   workspace,
   children,
 }: {
@@ -133,6 +137,7 @@ export function SidebarSessionHoverCard({
   modelLabel: string;
   reasoningEffort?: ReasoningEffort;
   fastMode: boolean;
+  activityStatus: SessionActivityStatus;
   workspace: SessionWorkspaceContext;
   children: ReactNode;
 }) {
@@ -229,6 +234,11 @@ export function SidebarSessionHoverCard({
     [clearTimers, closeImmediately],
   );
 
+  useEffect(() => {
+    if (!open) return;
+    return pushEscapeLayer(closeNow);
+  }, [open, closeNow]);
+
   useLayoutEffect(() => {
     if (!open) return;
     const control = anchorRef.current?.closest('button');
@@ -244,21 +254,25 @@ export function SidebarSessionHoverCard({
     const showForFocus = () => {
       if (control.matches(':focus-visible')) showNow();
     };
-    const closeForEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeNow();
-    };
     control.addEventListener('focus', showForFocus);
     control.addEventListener('blur', scheduleClose);
-    control.addEventListener('keydown', closeForEscape);
     return () => {
       control.removeEventListener('focus', showForFocus);
       control.removeEventListener('blur', scheduleClose);
-      control.removeEventListener('keydown', closeForEscape);
     };
   }, [showNow, scheduleClose, closeNow]);
 
   const modelDetail = harnessDetail({ provider, modelLabel, reasoningEffort, fastMode });
   const rows = workspaceRows(workspace);
+  // "Recent" and "settled" add nothing to a workspace scan; every other
+  // status is information the row itself does not always have room to draw.
+  const statusRow =
+    activityStatus === 'ready' || activityStatus === 'settled' ? null : (
+      <MetadataRow
+        icon={<ActivityStatusGlyph status={activityStatus} decorative />}
+        value={ACTIVITY_LABELS[activityStatus]}
+      />
+    );
 
   return (
     <>
@@ -303,6 +317,7 @@ export function SidebarSessionHoverCard({
                 </div>
                 <div className="mt-2.5 space-y-2">
                   {rows}
+                  {statusRow}
                   <MetadataRow
                     icon={<ModelIcon provider={PROVIDER_MARKS[provider]} size={14} />}
                     value={PROVIDER_LABELS[provider]}

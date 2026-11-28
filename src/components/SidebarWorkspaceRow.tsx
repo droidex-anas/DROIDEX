@@ -109,7 +109,7 @@ export function SidebarWorkspaceRow({
               event.stopPropagation();
               onMove(step);
             }}
-            className="pointer-events-none absolute left-1.5 top-1/2 z-10 flex size-7 -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-primary opacity-0 transition-opacity duration-quick active:cursor-grabbing group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
+            className="pointer-events-none absolute left-1.5 top-1/2 z-10 flex size-7 touch-none -translate-y-1/2 cursor-grab items-center justify-center rounded-sm text-primary opacity-0 transition-opacity duration-quick active:cursor-grabbing group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 focus-visible:pointer-events-auto focus-visible:opacity-100"
           >
             <GripVertical className="size-icon-md" />
           </button>

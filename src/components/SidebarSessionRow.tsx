@@ -29,7 +29,10 @@ import { PROVIDER_LABELS, PROVIDER_MARKS } from '../features/providers/providerI
 import type { PrKind } from '../lib/github';
 import type { PrChecksRollup } from '../types/vcs';
 import type { SessionWorkspaceContext } from '../lib/workspaces';
-import { SidebarSessionHoverCard } from './SidebarSessionHoverCard';
+const SidebarSessionHoverCard = lazy(async () => {
+  const module = await import('./SidebarSessionHoverCard');
+  return { default: module.SidebarSessionHoverCard };
+});
 
 const AutomationSessionBadge = lazy(async () => {
   const module = await import('../features/automations/AutomationSessionBadge');
@@ -318,6 +321,16 @@ export const SessionRow = memo(function SessionRow({
     return null;
   };
 
+  const titleSweep = (
+    <TitleSweep
+      ref={titleRef}
+      title={title}
+      delayMs={80}
+      className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
+        active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
+      } ${unread && !active ? 'font-semibold' : ''}`}
+    />
+  );
   const titleLine = (
     <span className="flex min-w-0 flex-1 items-center gap-1.5">
       <span
@@ -337,24 +350,20 @@ export const SessionRow = memo(function SessionRow({
         }
       >
         {/* Follows the chat header's sweep a beat later. */}
-        <SidebarSessionHoverCard
-          provider={session.provider}
-          title={title}
-          timeLabel={timeLabel}
-          modelLabel={modelLabel}
-          reasoningEffort={modelReasoningEffort}
-          fastMode={session.fastMode ?? false}
-          workspace={workspace}
-        >
-          <TitleSweep
-            ref={titleRef}
+        <Suspense fallback={<span className="block min-w-0">{titleSweep}</span>}>
+          <SidebarSessionHoverCard
+            provider={session.provider}
             title={title}
-            delayMs={80}
-            className={`block text-body ${marquee ? 'title-marquee whitespace-nowrap' : 'truncate'} ${
-              active || unread ? 'text-primary' : 'text-secondary group-hover:text-primary'
-            } ${unread && !active ? 'font-semibold' : ''}`}
-          />
-        </SidebarSessionHoverCard>
+            timeLabel={timeLabel}
+            modelLabel={modelLabel}
+            reasoningEffort={modelReasoningEffort}
+            fastMode={session.fastMode ?? false}
+            activityStatus={activityStatus}
+            workspace={workspace}
+          >
+            {titleSweep}
+          </SidebarSessionHoverCard>
+        </Suspense>
       </span>
       {forkNumber !== undefined && (
         <span className="shrink-0 text-caption tabular-nums text-muted">fork {forkNumber}</span>

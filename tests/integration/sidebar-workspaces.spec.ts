@@ -9,9 +9,11 @@ const sessions: SessionSummary[] = [
     title: 'Alpha session',
     cwd: '/repo',
     workspaceKind: 'folder',
-    modelId: 'claude-fable-5-1',
+    provider: 'claude',
+    modelId: 'claude-opus-4-5',
     reasoningEffort: 'high',
     fastMode: true,
+    phase: 'failed',
     updatedAt: now - 60_000,
   }),
   sessionSummary('beta', {
@@ -55,10 +57,20 @@ async function bridge(page: Page) {
             type: 'provider.status',
             statuses: [
               {
-                provider: 'droid',
+                provider: 'claude',
                 readiness: 'ready',
-                defaultModelId: 'claude-fable-5-1',
-                models: [],
+                defaultModelId: 'claude-opus-4-5',
+                models: [
+                  {
+                    id: 'claude-opus-4-5',
+                    displayName: 'Opus 4.5',
+                    isCustom: false,
+                    isDefault: true,
+                    supportedReasoningEfforts: ['low', 'medium', 'high'],
+                    defaultReasoningEffort: 'high',
+                    supportsFastMode: true,
+                  },
+                ],
               },
             ],
           });
@@ -73,8 +85,8 @@ async function bridge(page: Page) {
             catalog: 'models',
             items: [
               {
-                id: 'claude-fable-5-1',
-                displayName: 'Fable 5.1',
+                id: 'droid-model',
+                displayName: 'Droid model',
                 isCustom: false,
                 isDefault: true,
                 supportedReasoningEfforts: ['low', 'medium', 'high'],
@@ -136,8 +148,9 @@ test('the session hover card names workspace, harness, model, effort, and worktr
   await expect(tooltip).toContainText('Alpha session');
   await expect(tooltip).toContainText('repo');
   await expect(tooltip).toContainText('Workspace');
-  await expect(tooltip).toContainText('Droid');
-  await expect(tooltip).toContainText('Fable 5.1 · high · fast mode');
+  await expect(tooltip).toContainText('Claude Code');
+  await expect(tooltip).toContainText('Opus 4.5 · high · fast mode');
+  await expect(tooltip).toContainText('Failed');
 
   const box = await tooltip.boundingBox();
   expect(box).not.toBeNull();
@@ -149,6 +162,9 @@ test('the session hover card names workspace, harness, model, effort, and worktr
   await expect(tooltip).toContainText('Worktree session');
   await expect(tooltip).toContainText('feature');
   await expect(tooltip).toContainText('Worktree');
+
+  await page.keyboard.press('Escape');
+  await expect(tooltip).toBeHidden();
 });
 
 test('pointer drag reorders workspaces', async ({ page }) => {
