@@ -156,7 +156,7 @@ export class DevinTerminals {
     return [...this.terminals.values()].flatMap(({ process }) => {
       const pid = process.child.pid;
       return pid !== undefined && process.isAlive()
-        ? [{ pid, isAlive: () => process.isAlive() }]
+        ? [{ pid, displayCommand: process.displayCommand, isAlive: () => process.isAlive() }]
         : [];
     });
   }

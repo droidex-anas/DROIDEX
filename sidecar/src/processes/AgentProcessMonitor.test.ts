@@ -387,7 +387,7 @@ test('the grace sweep discovers new descendants and counts process-read time', a
     },
   });
   h.monitor.track('s1', 600, () => true);
-  h.monitor.track('s1', 610, () => true, 'provisional');
+  h.monitor.track('s1', 610, () => true, { kind: 'provisional' });
   await h.monitor.killSession('s1');
   assert.ok(now - 100_000 <= 3500, 'ps time is part of the grace budget');
   assert.deepEqual(

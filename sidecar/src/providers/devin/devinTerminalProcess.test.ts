@@ -6,6 +6,27 @@ import { DevinTerminalProcess } from './devinTerminalProcess.js';
 import { deferred } from '../../testing/projectServiceHarness.js';
 import { tolerantCommandRunner } from '../../processes/processTree.js';
 
+test('the terminal owner does not rename itself as user work', async (t) => {
+  const terminal = new DevinTerminalProcess(
+    process.execPath,
+    ['-e', 'setInterval(() => {}, 1000);'],
+    tmpdir(),
+    childEnv(),
+    () => undefined,
+  );
+  t.after(() => terminal.stop());
+  await terminal.started;
+  const command = await tolerantCommandRunner('ps', [
+    '-o',
+    'command=',
+    '-p',
+    String(terminal.child.pid),
+  ]);
+  const ownerCommand = command.trim();
+  assert.notEqual(ownerCommand, '');
+  assert.doesNotMatch(ownerCommand, /^devin-terminal(?:\s|$)/);
+});
+
 test('a dead terminal owner never signals its recycled process group', async (t) => {
   const terminal = new DevinTerminalProcess(
     process.execPath,

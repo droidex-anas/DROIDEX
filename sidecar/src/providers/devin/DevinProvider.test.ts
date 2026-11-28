@@ -234,11 +234,14 @@ test('Devin cleans redirected background jobs after their shell and output pipes
         assert.match(next.value?.transcript?.text ?? '', /^REDIRECTED:\d+$/);
         if (action === 'interrupt') await collect({ [Symbol.asyncIterator]: () => stream });
         const roots: number[][] = [];
+        const displayCommands: (string | undefined)[][] = [];
         const unsubscribe = session.onProcessRootsChanged((live) => {
           roots.push(live.map((root) => root.pid));
+          displayCommands.push(live.map((root) => root.displayCommand));
         });
         assert.equal(roots[0]?.length, 1);
         assert.notEqual(roots[0]?.[0], session.process?.pid);
+        assert.match(displayCommands[0]?.[0] ?? '', /^devin-terminal /);
         await session[action]();
         assert.deepEqual(roots.at(-1), []);
         unsubscribe();

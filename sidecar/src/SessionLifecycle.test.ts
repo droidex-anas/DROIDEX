@@ -146,8 +146,8 @@ test('create and cold resume publish only after registration', async () => {
 });
 
 test('extra provider roots reach retirement visibility and recovery, and ignore stale notifications', async (t) => {
-  const root = { pid: 12345, isAlive: () => true };
-  const row = { pid: root.pid, ppid: 1, startedAt: 0, command: 'devin-terminal watcher' };
+  const root = { pid: 12345, displayCommand: 'devin-terminal watcher', isAlive: () => true };
+  const row = { pid: root.pid, ppid: 1, startedAt: 0, command: 'DROIDEX -e owner' };
   let table = [row];
   const killed: number[] = [];
   const monitor = new AgentProcessMonitor({
@@ -185,7 +185,10 @@ test('extra provider roots reach retirement visibility and recovery, and ignore 
   h.setProvider(provider);
   await h.lifecycle.create(createCommand());
   await monitor.scan();
-  assert.equal(monitor.hasProcesses('app-processes'), true);
+  assert.deepEqual(
+    monitor.processesFor('app-processes').map((entry) => entry.command),
+    ['devin-terminal watcher'],
+  );
   const recorded = monitor.snapshotPids();
   assert.deepEqual(recorded, [{ appSessionId: 'app-processes', pid: root.pid, startedAt: 0 }]);
   notify([]);

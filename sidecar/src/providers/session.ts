@@ -178,6 +178,8 @@ export type SteerOutcome = boolean | 'withdrawn' | 'unconfirmed';
 
 export interface ProviderProcess {
   readonly pid: number;
+  // The command line a wrapper process represents in user-facing process lists.
+  readonly displayCommand?: string;
   isAlive(): boolean;
 }
 
