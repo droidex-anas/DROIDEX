@@ -1,9 +1,17 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import { devinCredentialsPath } from '../providers/devin/devinCredentials.js';
+// Keep even direct harness invocations away from the real home.
+import './isolatedTestEnv.js';
 
 export async function writeDevinTestCredentials(): Promise<string> {
   const credentials = devinCredentialsPath();
+  const offset = relative(resolve(tmpdir()), resolve(credentials));
+  if (offset === '' || offset === '..' || offset.startsWith(`..${sep}`) || isAbsolute(offset))
+    throw new Error(
+      `Refusing to write Devin test credentials outside the isolated test home: ${credentials}. Run sidecar tests through npm test.`,
+    );
   await mkdir(dirname(credentials), { recursive: true });
   await writeFile(
     credentials,
